@@ -8,37 +8,32 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Config:etc/system_file.xsd">
     <system>
-        <tab id="two_gateway" translate="label" class="two-extension" sortOrder="500">
-            <label>TWO</label>
+        <tab id="abn_gateway" translate="label" class="abn-extension" sortOrder="500">
+            <label>Achteraf betalen van ABN AMRO</label>
         </tab>
-        <section id="two_general" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
+        <section id="abn_general" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                  showInStore="1">
             <class>separator-top</class>
             <label>General</label>
-            <tab>two_gateway</tab>
+            <tab>abn_gateway</tab>
             <resource>Magento_Sales::config_sales</resource>
-            <group id="branding" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
-                   showInStore="1">
-                <label>Branding</label>
-                <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\Header</frontend_model>
-            </group>
             <group id="general" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>General</label>
                 <field id="version" translate="label" type="button" sortOrder="10" showInDefault="1"
                        showInWebsite="1" showInStore="1">
                     <label>Version</label>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\Version</frontend_model>
+                    <frontend_model>ABN\Gateway\Block\Adminhtml\System\Config\Field\Version</frontend_model>
                 </field>
                 <field id="mode" translate="label" type="select" sortOrder="35" showInDefault="1" showInWebsite="1"
                        showInStore="1">
                     <label>Environment</label>
                     <comment>Select between sandbox and production environment. The sandbox environment is for testing purposes and does not involve real money.</comment>
-                    <source_model>Two\Gateway\Model\Config\Source\Mode</source_model>
+                    <source_model>ABN\Gateway\Model\Config\Source\Mode</source_model>
                     <depends>
                         <field id="active">1</field>
                     </depends>
-                    <config_path>payment/two_payment/mode</config_path>
+                    <config_path>payment/abn_payment/mode</config_path>
                 </field>
                 <field id="api_key" translate="label" type="obscure" sortOrder="50" showInDefault="1" showInWebsite="1"
                        showInStore="1">
@@ -49,36 +44,36 @@
                     <depends>
                         <field id="active">1</field>
                     </depends>
-                    <config_path>payment/two_payment/api_key</config_path>
+                    <config_path>payment/abn_payment/api_key</config_path>
                 </field>
                 <field id="api_key_check" translate="label" type="button" sortOrder="55" showInDefault="1"
                        showInWebsite="1" showInStore="1">
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck</frontend_model>
+                    <frontend_model>ABN\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck</frontend_model>
                 </field>
                 <field id="debug" translate="label" type="select" sortOrder="60" showInDefault="1" showInWebsite="1"
                        showInStore="1">
                     <label>Debug mode</label>
                     <comment>The debug mode enables writing to the error logs below. Debug mode should only be enabled when the sandbox enviroment is active</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/two_payment/debug</config_path>
+                    <config_path>payment/abn_payment/debug</config_path>
                 </field>
                 <field id="debug_button" translate="label" type="button" sortOrder="70" showInDefault="1"
                        showInWebsite="0" showInStore="0">
                     <label/>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Button\DebugCheck</frontend_model>
+                    <frontend_model>ABN\Gateway\Block\Adminhtml\System\Config\Button\DebugCheck</frontend_model>
                 </field>
                 <field id="error_button" translate="label" type="button" sortOrder="80" showInDefault="1"
                        showInWebsite="0" showInStore="0">
                     <label/>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Button\ErrorCheck</frontend_model>
+                    <frontend_model>ABN\Gateway\Block\Adminhtml\System\Config\Button\ErrorCheck</frontend_model>
                 </field>
             </group>
         </section>
-        <section id="two_payment" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
+        <section id="abn_payment" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                  showInStore="1">
             <class>separator-top</class>
             <label>Payment</label>
-            <tab>two_gateway</tab>
+            <tab>abn_gateway</tab>
             <resource>Magento_Sales::config_sales</resource>
             <group id="payment_method" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                    showInStore="1">
@@ -88,38 +83,38 @@
                     <label>Enable payment method</label>
                     <comment>Activates this plugin as a payment option in the checkout page</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/two_payment/active</config_path>
+                    <config_path>payment/abn_payment/active</config_path>
                 </field>
                 <field id="title" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                        showInStore="1">
                     <label>Title</label>
-                    <comment>Descriptive title which gives the buyer a better understanding of this payment method e.g. Business invoice - 30 days</comment>
+                    <comment>Descriptive title which gives the buyer a better understanding of this payment method</comment>
                     <validate>required-entry</validate>
                     <depends>
                         <field id="active">1</field>
                     </depends>
-                    <config_path>payment/two_payment/title</config_path>
+                    <config_path>payment/abn_payment/title</config_path>
                 </field>
                 <field id="fulfill_trigger" translate="label" type="select" sortOrder="30" showInDefault="1"
                        showInWebsite="1" showInStore="1">
                     <label>Fulfilment trigger</label>
                     <comment>Fulfilment can be trigger by either initializing shipping or creating an invoice in the Magento admin</comment>
-                    <source_model>Two\Gateway\Model\Config\Source\FulfillTrigger</source_model>
+                    <source_model>ABN\Gateway\Model\Config\Source\FulfillTrigger</source_model>
                     <depends>
                         <field id="active">1</field>
                     </depends>
-                    <config_path>payment/two_payment/fulfill_trigger</config_path>
+                    <config_path>payment/abn_payment/fulfill_trigger</config_path>
                 </field>
                 <field id="fulfill_order_status" translate="label" type="multiselect" sortOrder="30" showInDefault="1"
                        showInWebsite="1" showInStore="1">
                     <label>Fulfilment order status</label>
                     <comment>If fulfilment trigger is On Completion, select one of more order statuses which can trigger fulfilment.</comment>
-                    <source_model>Two\Gateway\Model\Config\Source\FulfillOrderStatus</source_model>
+                    <source_model>ABN\Gateway\Model\Config\Source\FulfillOrderStatus</source_model>
                     <depends>
                         <field id="active">1</field>
                         <field id="fulfill_trigger">complete</field>
                     </depends>
-                    <config_path>payment/two_payment/fulfill_order_status</config_path>
+                    <config_path>payment/abn_payment/fulfill_order_status</config_path>
                 </field>
                 <field id="sort_order" translate="label" type="text" sortOrder="40" showInDefault="1" showInWebsite="1"
                        showInStore="1">
@@ -127,7 +122,7 @@
                     <depends>
                         <field id="active">1</field>
                     </depends>
-                    <config_path>payment/two_payment/sort_order</config_path>
+                    <config_path>payment/abn_payment/sort_order</config_path>
                 </field>
                 <field id="sallowspecific" translate="label" type="select" sortOrder="50" showInDefault="1" showInWebsite="1" showInStore="0" canRestore="1">
                     <label>Allow to applicable countries</label>
@@ -136,7 +131,7 @@
                     <depends>
                         <field id="active">1</field>
                     </depends>
-                    <config_path>payment/two_payment/allowspecific</config_path>
+                    <config_path>payment/abn_payment/allowspecific</config_path>
                 </field>
                 <field id="specificcountry" translate="label" type="multiselect" sortOrder="60" showInDefault="1" showInWebsite="1" showInStore="0">
                     <label>Allow to specific countries</label>
@@ -146,7 +141,7 @@
                     <depends>
                         <field id="active">1</field>
                     </depends>
-                    <config_path>payment/two_payment/specificcountry</config_path>
+                    <config_path>payment/abn_payment/specificcountry</config_path>
                 </field>
                 <field id="enable_order_intent" translate="label" type="select" sortOrder="75" showInDefault="1"
                        showInWebsite="1" showInStore="1">
@@ -156,7 +151,7 @@
                     <depends>
                         <field id="active">1</field>
                     </depends>
-                    <config_path>payment/two_payment/enable_order_intent</config_path>
+                    <config_path>payment/abn_payment/enable_order_intent</config_path>
                 </field>
                 <field id="enable_tax_subtotals" translate="label" type="select" sortOrder="75" showInDefault="1"
                        showInWebsite="1" showInStore="1">
@@ -166,7 +161,7 @@
                     <depends>
                         <field id="active">1</field>
                     </depends>
-                    <config_path>payment/two_payment/enable_tax_subtotals</config_path>
+                    <config_path>payment/abn_payment/enable_tax_subtotals</config_path>
                 </field>
                 <field id="enable_department" translate="label" type="select" sortOrder="80" showInDefault="1"
                        showInWebsite="1" showInStore="1">
@@ -177,7 +172,7 @@
                     <depends>
                         <field id="active">1</field>
                     </depends>
-                    <config_path>payment/two_payment/enable_department</config_path>
+                    <config_path>payment/abn_payment/enable_department</config_path>
                 </field>
                 <field id="enable_order_note" translate="label" type="select" sortOrder="90" showInDefault="1"
                        showInWebsite="1" showInStore="1">
@@ -188,7 +183,7 @@
                     <depends>
                         <field id="active">1</field>
                     </depends>
-                    <config_path>payment/two_payment/enable_order_note</config_path>
+                    <config_path>payment/abn_payment/enable_order_note</config_path>
                 </field>
                 <field id="enable_project" translate="label" type="select" sortOrder="100" showInDefault="1"
                        showInWebsite="1" showInStore="1">
@@ -199,7 +194,7 @@
                     <depends>
                         <field id="active">1</field>
                     </depends>
-                    <config_path>payment/two_payment/enable_project</config_path>
+                    <config_path>payment/abn_payment/enable_project</config_path>
                 </field>
                 <field id="enable_po_number" translate="label" type="select" sortOrder="100" showInDefault="1"
                        showInWebsite="1" showInStore="1">
@@ -209,15 +204,15 @@
                     <depends>
                         <field id="active">1</field>
                     </depends>
-                    <config_path>payment/two_payment/enable_po_number</config_path>
+                    <config_path>payment/abn_payment/enable_po_number</config_path>
                 </field>
             </group>
         </section>
-        <section id="two_search" translate="label" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"
+        <section id="abn_search" translate="label" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"
                  showInStore="1">
             <class>separator-top</class>
             <label>Search</label>
-            <tab>two_gateway</tab>
+            <tab>abn_gateway</tab>
             <resource>Magento_Sales::config_sales</resource>
             <group id="search" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                    showInStore="1">
@@ -230,7 +225,7 @@
                     <depends>
                         <field id="active">1</field>
                     </depends>
-                    <config_path>payment/two_payment/enable_company_search</config_path>
+                    <config_path>payment/abn_payment/enable_company_search</config_path>
                 </field>
                 <field id="enable_address_search" translate="label" type="select" sortOrder="20" showInDefault="1"
                        showInWebsite="1" showInStore="1">
@@ -241,7 +236,7 @@
                         <field id="active">1</field>
                         <field id="enable_company_search">1</field>
                     </depends>
-                    <config_path>payment/two_payment/enable_address_search</config_path>
+                    <config_path>payment/abn_payment/enable_address_search</config_path>
                 </field>
             </group>
         </section>

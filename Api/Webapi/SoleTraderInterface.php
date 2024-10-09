@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Api\Webapi;
+namespace ABN\Gateway\Api\Webapi;
 
 interface SoleTraderInterface
 {
