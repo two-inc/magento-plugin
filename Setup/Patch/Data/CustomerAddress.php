@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Setup\Patch\Data;
+namespace ABN\Gateway\Setup\Patch\Data;
 
 use Magento\Framework\Setup\ModuleDataSetupInterface;
 use Magento\Framework\Setup\Patch\DataPatchInterface;

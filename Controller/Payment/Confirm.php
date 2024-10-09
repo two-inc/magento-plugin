@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Controller\Payment;
+namespace ABN\Gateway\Controller\Payment;
 
 use Exception;
 use Magento\Customer\Api\AddressRepositoryInterface;
@@ -14,8 +14,8 @@ use Magento\Framework\App\Action\Context;
 use Magento\Framework\App\ResponseInterface;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Sales\Model\Order\Email\Sender\OrderSender;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Service\Payment\OrderService;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Service\Payment\OrderService;
 
 /**
  * Payment confirm controller
@@ -94,7 +94,7 @@ class Confirm extends Action
                 $message = __(
                     'Unable to retrieve payment information for your invoice purchase with %1. ' .
                     'The cart will be restored.',
-                    $this->configRepository::PROVIDER
+                    $this->configRepository::PRODUCT_NAME
                 );
                 if (!empty($twoOrder['decline_reason'])) {
                     $message = __('%1 Decline reason: %2', $message, $twoOrder['decline_reason']);
