@@ -7,15 +7,15 @@
 -->
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:Event/etc/events.xsd">
     <event name="sales_order_shipment_save_after">
-        <observer name="two_admin_sales_order_shipment_after" instance="Two\Gateway\Observer\SalesOrderShipmentAfter"/>
+        <observer name="abn_admin_sales_order_shipment_after" instance="ABN\Gateway\Observer\SalesOrderShipmentAfter"/>
     </event>
     <event name="sales_order_save_after">
-        <observer name="two_admin_sales_order_save_after" instance="Two\Gateway\Observer\SalesOrderSaveAfter"/>
+        <observer name="abn_admin_sales_order_save_after" instance="ABN\Gateway\Observer\SalesOrderSaveAfter"/>
     </event>
-    <event name="payment_method_assign_data_two_payment">
-        <observer name="two_payment_data_assign" instance="Two\Gateway\Observer\DataAssignObserver"/>
+    <event name="payment_method_assign_data_abn_payment">
+        <observer name="abn_payment_data_assign" instance="ABN\Gateway\Observer\DataAssignObserver"/>
     </event>
     <event name="sales_order_place_after">
-        <observer name="two_sales_order_place_after" instance="Two\Gateway\Observer\SalesOrderPlaceAfter" />
+        <observer name="abn_sales_order_place_after" instance="ABN\Gateway\Observer\SalesOrderPlaceAfter" />
     </event>
 </config>

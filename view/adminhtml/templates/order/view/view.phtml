@@ -4,12 +4,12 @@
  * See COPYING.txt for license details.
  */
 ?>
-<?php /* @var \Two\Gateway\Block\Adminhtml\Order\View $block */ ?>
-<?php if ($block->getMethod() == \Two\Gateway\Model\Two::CODE): ?>
-    <?php $provider = $block->configRepository::PROVIDER; ?>
+<?php /* @var \ABN\Gateway\Block\Adminhtml\Order\View $block */ ?>
+<?php if ($block->getMethod() == \ABN\Gateway\Model\Two::CODE): ?>
+    <?php $productName = $block->configRepository::PRODUCT_NAME; ?>
     <section class="admin__page-section order-view-account-information">
         <div class="admin__page-section-title">
-            <span class="title"><?= $block->escapeHtml(__('%1 Details', $provider)) ?></span>
+            <span class="title"><?= $block->escapeHtml(__('%1 Details', $productName)) ?></span>
         </div>
         <div class="admin__page-section-content">
             <div>
@@ -18,7 +18,7 @@
                     <?php if ($twoOrderId != ''): ?>
                         <tr>
                             <td>
-                                <strong><?= $block->escapeHtml(__('%1 Order ID', $provider)); ?></strong>
+                                <strong><?= $block->escapeHtml(__('%1 Order ID', $productName)); ?></strong>
                             </td>
                             <td>
                                 <?= $block->escapeHtml($twoOrderId); ?>
@@ -29,7 +29,7 @@
                     <?php if (!empty($fulfillments['fulfilled_orders'])): ?>
                         <tr>
                             <td>
-                                <strong><?= $block->escapeHtml(__('%1 Invoice', $provider)); ?></strong>
+                                <strong><?= $block->escapeHtml(__('%1 Invoice', $productName)); ?></strong>
                             </td>
                             <td>
                                 <?php foreach ($fulfillments['fulfilled_orders'] ?? [] as $fulfilled_order) { ?>
@@ -42,7 +42,7 @@
                     <?php if (!empty($fulfillments['refunds'])): ?>
                         <tr>
                             <td>
-                                <strong><?= $block->escapeHtml(__('%1 Credit Note', $provider)); ?></strong>
+                                <strong><?= $block->escapeHtml(__('%1 Credit Note', $productName)); ?></strong>
                             </td>
                             <td>
                                 <?php foreach ($fulfillments['refunds'] ?? [] as $refund) { ?>

@@ -5,12 +5,12 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Model\Ui;
+namespace ABN\Gateway\Model\Ui;
 
 use Magento\Checkout\Model\ConfigProviderInterface;
 use Magento\Framework\View\Asset\Repository as AssetRepository;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Service\UrlCookie;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Service\UrlCookie;
 
 /**
  * Ui Config Provider
@@ -56,11 +56,12 @@ class ConfigProvider implements ConfigProviderInterface
             'weightUnit' => $this->configRepository->getWeightUnit(),
         ];
 
-        $provider = $this->configRepository::PROVIDER;
         $tryAgainLater = __('Please try again later.');
         $soleTraderaccountCouldNotBeVerified = __('Your sole trader account could not be verified.');
-        $paymentTerms = __("Payment Terms");
+        // Set isTermsAndConditionsEnabled based on provider
+        $paymentTerms = __("terms and conditions of %1", $this->configRepository::PRODUCT_NAME);
         $paymentTermsLink = $this->configRepository->getCheckoutPageUrl() . '/terms';
+        $paymentTermsEmail = $this->configRepository::PAYMENT_TERMS_EMAIL;
 
         return [
             'payment' => [
@@ -81,26 +82,36 @@ class ConfigProvider implements ConfigProviderInterface
                     'isPaymentTermsEnabled' => true,
                     'redirectMessage' => __(
                         'You will be redirected to %1 when you place order.',
-                        $provider
+                        $this->configRepository::PRODUCT_NAME
                     ),
                     'orderIntentApprovedMessage' => __(
                         'Your invoice purchase with %1 is likely to be accepted subject to additional checks.',
-                        $provider
+                        $this->configRepository::PRODUCT_NAME
                     ),
-                    'orderIntentDeclinedMessage' => __('Your invoice purchase with %1 has been declined.', $provider),
+                    'orderIntentDeclinedMessage' => __(
+                        'Your invoice purchase with %1 has been declined.',
+                        $this->configRepository::PRODUCT_NAME
+                    ),
                     'generalErrorMessage' => __(
                         'Something went wrong with your request to %1. %2',
-                        $provider,
+                        $this->configRepository::PRODUCT_NAME,
                         $tryAgainLater
                     ),
                     'paymentTermsMessage' => __(
-                        'By checking this box, I confirm that I have read and agree to the %1.',
-                        sprintf('<a href="%s" target="_blank">%s</a>', $paymentTermsLink, $paymentTerms)
+                        'I have filled in all the details truthfully and accept to pay the invoice in 30 days. '.
+                        'I agree to the %1. ' .
+                        'You hereby give permission to %2 to decide on the basis ' .
+                        'of automated processing of (personal) data whether you can use %3. ' .
+                        'You can withdraw this permission by sending an e-mail to %4.',
+                        sprintf('<a href="%s" target="_blank">%s</a>', $paymentTermsLink, $paymentTerms),
+                        $this->configRepository::PROVIDER_FULL_NAME,
+                        $this->configRepository::PRODUCT_NAME,
+                        sprintf('<a href="mailto:%s">%s</a>', $paymentTermsEmail, $paymentTermsEmail)
                     ),
                     'termsNotAcceptedMessage' => __('You must first accept the payment terms.'),
                     'soleTraderErrorMessage' => __(
                         'Something went wrong with your request to %1. %2',
-                        $provider,
+                        $this->configRepository::PRODUCT_NAME,
                         $soleTraderaccountCouldNotBeVerified
                     ),
                 ],
