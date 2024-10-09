@@ -4,10 +4,10 @@
  * See COPYING.txt for license details.
  */
 
-namespace Two\Gateway\Plugin\Model\Sales;
+namespace ABN\Gateway\Plugin\Model\Sales;
 
 use Magento\Sales\Model\Order;
-use Two\Gateway\Model\Two;
+use ABN\Gateway\Model\Two;
 use Magento\Sales\Api\OrderRepositoryInterface;
 
 /**
