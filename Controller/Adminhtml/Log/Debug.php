@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Controller\Adminhtml\Log;
+namespace ABN\Gateway\Controller\Adminhtml\Log;
 
 use Exception;
 use Magento\Backend\App\Action;

@@ -54,7 +54,7 @@ Step-by-step to install the Magento® 2 extension through Composer:
 4. Once completed run the Magento® module enable command:
 
     ```bash
-    php bin/magento module:enable Two_Gateway
+    php bin/magento module:enable ABN_Gateway
     ```
 
 5. After that run the Magento® upgrade and clean the caches:

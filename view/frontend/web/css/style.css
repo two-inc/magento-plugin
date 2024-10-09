@@ -27,6 +27,10 @@
     background-image: url('../images/logo.svg');
 }
 
+.abn-payment-option-logo {
+    background-image: url('../images/abnLogo.svg');
+}
+
 .payment-option-title-container {
     position: relative;
     display: flex;
@@ -107,7 +111,30 @@
     background-color: var(--color-blue2);
 }
 
-.tooltip-container:hover .two-tooltip-text {
+.abn-tooltip-text {
+    visibility: hidden;
+    width: 200px;
+    height: auto;
+    background-color: rgb(34, 34, 34);
+    color: #fff !important;
+    text-align: left;
+    padding: 10px;
+    border-radius: 5px;
+    /* Position the tooltip text */
+    position: absolute;
+    z-index: 1;
+    bottom: 120%;
+    /* Adjust this to move the tooltip above the question mark */
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    white-space: normal;
+    line-height: 1.5;
+}
+
+.tooltip-container:hover .abn-tooltip-text {
     visibility: visible;
     opacity: 1;
 }

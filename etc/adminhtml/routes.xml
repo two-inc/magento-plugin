@@ -7,7 +7,7 @@
         xsi:noNamespaceSchemaLocation="urn:magento:framework:App/etc/routes.xsd">
     <router id="admin">
         <route id="two" frontName="two">
-            <module before="Magento_Backend" name="Two_Gateway"/>
+            <module before="Magento_Backend" name="ABN_Gateway"/>
         </route>
     </router>
 </config>

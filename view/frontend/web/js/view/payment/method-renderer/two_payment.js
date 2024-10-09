@@ -38,7 +38,7 @@ define([
 
     return Component.extend({
         defaults: {
-            template: 'Two_Gateway/payment/two_payment'
+            template: 'ABN_Gateway/payment/two_payment'
         },
         redirectAfterPlaceOrder: false,
         redirectMessage: config.redirectMessage,
@@ -77,6 +77,8 @@ define([
         showSoleTrader: ko.observable(false),
         showWhatIsTwo: ko.observable(false),
         showModeTab: ko.observable(false),
+        termsAccepted: ko.observable(false), // Observable for terms accepted state
+        BVCompanyRegex: /(?:^|\s)B(?:\.)?V(?:\.)?$/i,
 
         initialize: function () {
             this._super();
@@ -247,8 +249,6 @@ define([
                 } else {
                     this.showErrorMessage(this.orderIntentDeclinedMessage);
                 }
-            } else {
-                this.showErrorMessage(this.generalErrorMessage);
             }
         },
         processOrderIntentErrorResponse: function (response) {
@@ -318,6 +318,20 @@ define([
             let totals = quote.getTotals()(),
                 billingAddress = quote.billingAddress(),
                 lineItems = [];
+
+            // Do not fire order intent for BV companies in NL
+            if (billingAddress.countryId.toLowerCase() == 'nl') {
+                const isBVCompany = this.BVCompanyRegex.test(this.companyName());
+                console.debug({
+                    logger: 'twoPayment.placeOrderIntent',
+                    countryId: billingAddress.countryId,
+                    isBVCompany
+                });
+                if (!isBVCompany) {
+                    return $.Deferred().resolve(null);
+                }
+            }
+
             _.each(quote.getItems(), function (item) {
                 lineItems.push({
                     name: item['name'],
@@ -396,7 +410,7 @@ define([
         },
         enableCompanySearch: function () {
             let self = this;
-            require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
+            require(['ABN_Gateway/select2-4.1.0/js/select2.min'], function () {
                 $.async(self.companyIdSelector, function (companyIdField) {
                     $(companyIdField).prop('disabled', true);
                 });

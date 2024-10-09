@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Api\Config;
+namespace ABN\Gateway\Api\Config;
 
 /**
  * Config Repository Interface
@@ -14,9 +14,11 @@ interface RepositoryInterface
 {
     /** Provider specific config */
     public const CODE = 'two_payment';
-    public const PROVIDER = 'Two';
-    public const PAYMENT_TERMS_LINK = 'https://www.two.inc/terms-privacy';
-    public const URL_TEMPLATE = 'https://%s.two.inc';
+    public const PROVIDER = 'ABN AMRO';
+    public const PROVIDER_FULL_NAME = 'ABN AMRO Asset Based Finance N.V.';
+    public const PRODUCT_NAME = 'Achteraf betalen van ABN AMRO';
+    public const PAYMENT_TERMS_EMAIL = 'achterafbetalen@nl.abnamro.com';
+    public const URL_TEMPLATE = 'https://%s.achterafbetalen.abnamro.nl';
 
     /** Payment Group */
     public const XML_PATH_ENABLED = 'payment/two_payment/active';

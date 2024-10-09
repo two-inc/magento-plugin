@@ -48,14 +48,24 @@
                             >
                         </p>
                     </span>
+                    <span class="abn-tooltip-text">
+                        <!-- ko i18n: 'Order on invoice and pay within 30 days after delivery. Enabled by ABN AMRO.' --><!-- /ko --><br />
+                        <br />
+                        <!-- ko i18n: '• Order on invoice' --><!-- /ko --><br />
+                        <!-- ko i18n: '• Pay within 30 days' --><!-- /ko --><br />
+                        <!-- ko i18n: '• No extra costs' --><!-- /ko --><br />
+                        <br />
+                        <!-- ko i18n: 'You don\'t need to be an ABN AMRO customer.' --><!-- /ko -->
+                    </span>
                 </div>
             </span>
-            <div class="payment-option-logo two-payment-option-logo"></div>
+            <div class="payment-option-logo abn-payment-option-logo"></div>
         </div>
     </div>
 
     <div class="payment-method-content">
         <div class="redirect_message" data-bind="text: redirectMessage"></div>
+        <!-- <div class="redirect_message" data-bind="text: redirectMessage"></div> -->
         <!-- ko if: showModeTab -->
         <!-- ko ifnot: showSoleTrader -->
         <div class="mode_selector" data-element="popup-message">
@@ -155,7 +165,7 @@
                 </div>
                 <div class="field field-text required">
                     <label for="company_id" class="label">
-                        <span><!-- ko i18n: 'Company ID'--><!-- /ko --></span>
+                        <span><!-- ko i18n: 'KVK number'--><!-- /ko --></span>
                     </label>
                     <div class="control">
                         <input
@@ -165,7 +175,7 @@
                             required="true"
                             data-bind='
                             attr: {
-                                title: $t("Company ID")
+                                title: $t("KVK number")
                             },
                             value: companyId'
                             class="input-text"

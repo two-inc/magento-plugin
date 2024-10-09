@@ -10,6 +10,7 @@
 "%1 order marked as partially completed.","%1 order markerad som delvis slutförd."
 "%1 requires whole order to be shipped before it can be fulfilled.","%1 kräver att hela beställningen skickas innan den kan uppfyllas."
 "* Required Fields","* Obligatoriska fält"
+"ABN AMRO","ABN AMRO"
 "API key",API-nyckel
 "Add PO number field","Lägg till PO-nummerfält"
 "Add department field","Lägg till fält för avdelning"
@@ -18,15 +19,13 @@
 "Allow to applicable countries","Tillåt till tillämpliga länder"
 "Allow to specific countries","Tillåt till specifika länder"
 "Amount is missing","Belopp saknas"
-Branding,Branding
 "Buy now, receive your goods, pay your invoice later.","Köp nu, få dina varor, betala din faktura senare."
-"By checking this box, I confirm that I have read and agree to the %1.","Genom att markera denna ruta bekräftar jag att jag har läst och godkänner %1."
 "Check last 100 debug log records","Kontrollera de senaste 100 felsökningsloggposterna"
 "Check last 100 error log records","Kontrollera de senaste 100 felloggposterna"
 "City is not valid.","Stad är inte giltig."
 "Click here to log in or sign up as a Sole Trader.","Klicka här för att logga in eller registrera dig som enskild näringsidkare."
-"Company ID",Organisationsnummer
-"Company ID is not valid.","Företags-ID är inte giltigt."
+"KVK number",KVK-nummer
+"KVK number is not valid.","KVK-nummer är inte giltigt."
 "Company Name",Företagsnamn
 "Could not initiate capture with %1","Kunde inte initiera infångning med %1"
 "Could not initiate refund with %1","Kunde inte initiera återbetalning med %1"
@@ -57,6 +56,7 @@ Environment,Miljö
 "Fulfilment order status","Uppfyllande orderstatus"
 "Fulfilment trigger","Uppfyllelse trigger"
 General,Generellt
+"I have filled in all the details truthfully and accept to pay the invoice in 30 days. I agree to the %1. You hereby give permission to %2 to decide on the basis of automated processing of (personal) data whether you can use %3. You can withdraw this permission by sending an e-mail to %4.","Jag har fyllt i alla uppgifter sanningsenligt och accepterar att betala fakturan inom 30 dagar. Jag godkänner %1. Du ger härmed tillstånd till %2 att utifrån automatiserad behandling av (personliga) uppgifter besluta om du kan använda %3. Du kan återkalla denna behörighet genom att skicka ett e-postmeddelande till %4."
 "Invalid API response from %1.","Ogiltigt API-svar från %1."
 "Invoice purchase with %1 is not available for this order.","Fakturaköp med %1 är inte tillgängligt för den här beställningen."
 "Last 100 debug log lines","Senaste 100 felsökningsloggraderna"
@@ -69,9 +69,9 @@ OK,OK
 "On Shipment","Vid leverans"
 "Order Note",Beställningsanmärkning
 "Order edit request was accepted by %1","Begäran om beställningsredigering accepterades av %1"
+"Order on invoice and pay within 30 days after delivery. Enabled by ABN AMRO.","Beställ på faktura och betala inom 30 dagar efter leverans. Möjliggjort av ABN AMRO."
 "PO Number",PO-nummer
 Payment,Betalning
-"Payment Terms",Betalningsvillkor
 "Payment method",Betalningsmetod
 "Phone Number is not valid.","Telefonnummer är inte giltigt."
 "Place Order",Beställa
@@ -88,7 +88,6 @@ Search,Sök
 "Sort order",Sorteringsordning
 "Street Address is not valid.","Gatuadress är inte giltig."
 "Successfully refunded order with %1 for order ID: %2. Refund reference: %3","Återbetalad beställning med %1 för beställnings-ID: %2. Återbetalningsreferens: %3"
-TWO,TWO
 "The %1 payment plugin for Magento simplifies B2B shopping, making it easy and safe for merchants to offer invoices as a payment method.<br>The payment method lives next to other payment methods in your existing checkout, and offers a variety of configuration options to suit your businesses needs.<br>If you would like to know more about how to configure the plugin, check out our <a href=""%2"" target=""_blank"">step by step guide</a>.","Betalningspluginet %1 för Magento förenklar B2B-shopping, vilket gör det enkelt och säkert för handlare att erbjuda fakturor som betalningsmetod. <br> Betalningsmetoden finns bredvid andra betalningsmetoder i din befintliga kassa, och erbjuder en mängd olika konfigurationsalternativ för att passa ditt företags behov. <br> Om du vill veta mer om hur du konfigurerar plugin-programmet, kolla in vår <a href=""%2"" target=""_blank""> steg-för-steg-guide </a> ."
 "The buyer and the seller are the same company.","Köparen och säljaren är samma företag."
 "The capture action is not available.","Infångningsåtgärden är inte tillgänglig."
@@ -99,6 +98,7 @@ Title,Titel
 Username,Användarnamn
 "Username should be set to %1","Användarnamn ska ställas in till %1"
 Version,Version
+"You don't need to be an ABN AMRO customer.","Du behöver inte vara en ABN AMRO-kund."
 "You must first accept the payment terms.","Du måste först acceptera betalningsvillkoren."
 "You will be redirected to %1 when you place order.","Du kommer att omdirigeras till %1 när du beställer."
 "Your invoice purchase with %1 failed verification. The cart will be restored.","Ditt fakturaköp med %1 misslyckades med verifiering. Vagnen kommer att återställas."
@@ -107,4 +107,8 @@ Version,Version
 "Your invoice purchase with %1 is likely to be accepted subject to additional checks.","Ditt fakturaköp med %1 kommer sannolikt att accepteras under förutsättning av ytterligare kontroller."
 "Your request to %1 failed. Reason: %2","Din begäran till %1 misslyckades. Orsak: %2"
 "Your sole trader account could not be verified.","Ditt enskild näringsidkarekonto kunde inte verifieras."
+"terms and conditions of %1","villkor för %1"
+"• No extra costs","• Inga extra kostnader"
+"• Order on invoice","• Beställ på faktura"
+"• Pay within 30 days","• Betala inom 30 dagar"
 "Zip/Postal Code is not valid.","Postnummer är inte giltigt."

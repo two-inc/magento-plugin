@@ -8,8 +8,8 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Config:etc/system_file.xsd">
     <system>
-        <tab id="two_gateway" translate="label" class="two-extension" sortOrder="500">
-            <label>TWO</label>
+        <tab id="two_gateway" translate="label" class="abn-extension" sortOrder="500">
+            <label>ABN AMRO</label>
         </tab>
         <section id="two_general" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                  showInStore="1">
@@ -17,24 +17,19 @@
             <label>General</label>
             <tab>two_gateway</tab>
             <resource>Magento_Sales::config_sales</resource>
-            <group id="branding" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
-                   showInStore="1">
-                <label>Branding</label>
-                <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\Header</frontend_model>
-            </group>
             <group id="general" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>General</label>
                 <field id="version" translate="label" type="button" sortOrder="10" showInDefault="1"
                        showInWebsite="1" showInStore="1">
                     <label>Version</label>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\Version</frontend_model>
+                    <frontend_model>ABN\Gateway\Block\Adminhtml\System\Config\Field\Version</frontend_model>
                 </field>
                 <field id="mode" translate="label" type="select" sortOrder="35" showInDefault="1" showInWebsite="1"
                        showInStore="1">
                     <label>Environment</label>
                     <comment>Select between sandbox and production environment. The sandbox environment is for testing purposes and does not involve real money.</comment>
-                    <source_model>Two\Gateway\Model\Config\Source\Mode</source_model>
+                    <source_model>ABN\Gateway\Model\Config\Source\Mode</source_model>
                     <depends>
                         <field id="active">1</field>
                     </depends>
@@ -63,7 +58,7 @@
                 <field id="api_key_check" translate="label" type="button" sortOrder="55" showInDefault="1"
                        showInWebsite="1" showInStore="1">
                     <label>Credentials</label>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck</frontend_model>
+                    <frontend_model>ABN\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck</frontend_model>
                 </field>
                 <field id="debug" translate="label" type="select" sortOrder="60" showInDefault="1" showInWebsite="1"
                        showInStore="1">
@@ -75,12 +70,12 @@
                 <field id="debug_button" translate="label" type="button" sortOrder="70" showInDefault="1"
                        showInWebsite="0" showInStore="0">
                     <label/>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Button\DebugCheck</frontend_model>
+                    <frontend_model>ABN\Gateway\Block\Adminhtml\System\Config\Button\DebugCheck</frontend_model>
                 </field>
                 <field id="error_button" translate="label" type="button" sortOrder="80" showInDefault="1"
                        showInWebsite="0" showInStore="0">
                     <label/>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Button\ErrorCheck</frontend_model>
+                    <frontend_model>ABN\Gateway\Block\Adminhtml\System\Config\Button\ErrorCheck</frontend_model>
                 </field>
             </group>
         </section>
@@ -103,7 +98,7 @@
                 <field id="title" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                        showInStore="1">
                     <label>Title</label>
-                    <comment>Descriptive title which gives the buyer a better understanding of this payment method e.g. Business invoice - 30 days</comment>
+                    <comment>Descriptive title which gives the buyer a better understanding of this payment method</comment>
                     <validate>required-entry</validate>
                     <depends>
                         <field id="active">1</field>
@@ -114,7 +109,7 @@
                        showInWebsite="1" showInStore="1">
                     <label>Fulfilment trigger</label>
                     <comment>Fulfilment can be trigger by either initializing shipping or creating an invoice in the Magento admin</comment>
-                    <source_model>Two\Gateway\Model\Config\Source\FulfillTrigger</source_model>
+                    <source_model>ABN\Gateway\Model\Config\Source\FulfillTrigger</source_model>
                     <depends>
                         <field id="active">1</field>
                     </depends>
@@ -124,7 +119,7 @@
                        showInWebsite="1" showInStore="1">
                     <label>Fulfilment order status</label>
                     <comment>If fulfilment trigger is On Completion, select one of more order statuses which can trigger fulfilment.</comment>
-                    <source_model>Two\Gateway\Model\Config\Source\FulfillOrderStatus</source_model>
+                    <source_model>ABN\Gateway\Model\Config\Source\FulfillOrderStatus</source_model>
                     <depends>
                         <field id="active">1</field>
                         <field id="fulfill_trigger">complete</field>

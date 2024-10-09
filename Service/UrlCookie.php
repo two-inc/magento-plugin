@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Service;
+namespace ABN\Gateway\Service;
 
 use Magento\Framework\Exception\InputException;
 use Magento\Framework\Exception\LocalizedException;

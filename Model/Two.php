@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Model;
+namespace ABN\Gateway\Model;
 
 use Exception;
 use Magento\Framework\Api\AttributeValueFactory;
@@ -28,13 +28,13 @@ use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Status\HistoryFactory;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Service\Api\Adapter;
-use Two\Gateway\Service\Order\ComposeCapture;
-use Two\Gateway\Service\Order\ComposeOrder;
-use Two\Gateway\Service\Order\ComposeRefund;
-use Two\Gateway\Service\UrlCookie;
-use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Service\Api\Adapter;
+use ABN\Gateway\Service\Order\ComposeCapture;
+use ABN\Gateway\Service\Order\ComposeOrder;
+use ABN\Gateway\Service\Order\ComposeRefund;
+use ABN\Gateway\Service\UrlCookie;
+use ABN\Gateway\Api\Log\RepositoryInterface as LogRepository;
 
 /**
  * Two Payment Model
@@ -219,11 +219,11 @@ class Two extends AbstractMethod
 
         if ($response['status'] !== 'APPROVED') {
             $this->logRepository->addDebugLog(
-                sprintf('Order was not accepted by %s', $this->configRepository::PROVIDER),
+                sprintf('Order was not accepted by %s', $this->configRepository::PRODUCT_NAME),
                 $response
             );
             throw new LocalizedException(
-                __('Invoice purchase with %1 is not available for this order.', $this->configRepository::PROVIDER)
+                __('Invoice purchase with %1 is not available for this order.', $this->configRepository::PRODUCT_NAME)
             );
         }
 
@@ -277,7 +277,7 @@ class Two extends AbstractMethod
         $tryAgainLater = __('Please try again later.');
         $generalError = __(
             'Something went wrong with your request to %1. %2',
-            $this->configRepository::PROVIDER,
+            $this->configRepository::PRODUCT_NAME,
             $tryAgainLater
         );
         if (!$response || !is_array($response)) {
@@ -306,7 +306,7 @@ class Two extends AbstractMethod
             if (count($errs) > 0) {
                 $message = __(
                     'Your request to %1 failed. Reason: %2',
-                    $this->configRepository::PROVIDER,
+                    $this->configRepository::PRODUCT_NAME,
                     join(' ', $errs)
                 );
                 return $this->_getMessageWithTrace($message, $traceID);
@@ -321,7 +321,7 @@ class Two extends AbstractMethod
             }
             $message = __(
                 'Your request to %1 failed. Reason: %2',
-                $this->configRepository::PROVIDER,
+                $this->configRepository::PRODUCT_NAME,
                 $reason
             );
             return $this->_getMessageWithTrace($message, $traceID);
@@ -341,7 +341,7 @@ class Two extends AbstractMethod
         $loc_str = preg_replace('/\s+/', '', $loc_str);
         $fieldLocStrMapping = [
             '["buyer","representative","phone_number"]' => __('Phone Number is not valid.'),
-            '["buyer","company","organization_number"]' => __('Company ID is not valid.'),
+            '["buyer","company","organization_number"]' => __('KVK number is not valid.'),
             '["buyer","representative","first_name"]' => __('First Name is not valid.'),
             '["buyer","representative","last_name"]' => __('Last Name is not valid.'),
             '["buyer","representative","email"]' => __('Email Address is not valid.'),
@@ -379,7 +379,7 @@ class Two extends AbstractMethod
                 $comment = __(
                     'Could not update %1 order status to cancelled. ' .
                     'Please contact support with order ID %2. Error: %3',
-                    $this->configRepository::PROVIDER,
+                    $this->configRepository::PRODUCT_NAME,
                     $twoOrderId,
                     $error
                 );
@@ -387,7 +387,7 @@ class Two extends AbstractMethod
             } else {
                 $order->addStatusToHistory(
                     $order->getStatus(),
-                    __('%1 order has been marked as cancelled', $this->configRepository::PROVIDER)
+                    __('%1 order has been marked as cancelled', $this->configRepository::PRODUCT_NAME)
                 );
             }
 
@@ -422,7 +422,7 @@ class Two extends AbstractMethod
             $twoOrderId = $order->getTwoOrderId();
             if (!$twoOrderId) {
                 throw new LocalizedException(
-                    __('Could not initiate capture with %1', $this->configRepository::PROVIDER)
+                    __('Could not initiate capture with %1', $this->configRepository::PRODUCT_NAME)
                 );
             }
 
@@ -502,12 +502,12 @@ class Two extends AbstractMethod
         if (empty($response['remained_order'])) {
             $comment = __(
                 '%1 order marked as completed.',
-                $this->configRepository::PROVIDER,
+                $this->configRepository::PRODUCT_NAME,
             );
         } else {
             $comment = __(
                 '%1 order marked as partially completed.',
-                $this->configRepository::PROVIDER,
+                $this->configRepository::PRODUCT_NAME,
             );
         }
 
@@ -540,7 +540,7 @@ class Two extends AbstractMethod
         $twoOrderId = $order->getTwoOrderId();
         if (!$twoOrderId) {
             throw new LocalizedException(
-                __('Could not initiate refund with %1', $this->configRepository::PROVIDER),
+                __('Could not initiate refund with %1', $this->configRepository::PRODUCT_NAME),
             );
         }
 
@@ -571,7 +571,7 @@ class Two extends AbstractMethod
             $reason = __('Amount is missing');
             $message = __(
                 'Failed to refund order with %1. Reason: %2',
-                $this->configRepository::PROVIDER,
+                $this->configRepository::PRODUCT_NAME,
                 $reason
             );
             $this->addOrderComment($order, $message);
@@ -582,7 +582,7 @@ class Two extends AbstractMethod
 
         $comment = __(
             'Successfully refunded order with %1 for order ID: %2. Refund reference: %3',
-            $this->configRepository::PROVIDER,
+            $this->configRepository::PRODUCT_NAME,
             $twoOrderId,
             $response['refund_no']
         );
