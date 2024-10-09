@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Model\Config\Source;
+namespace ABN\Gateway\Model\Config\Source;
 
 use Magento\Framework\Data\OptionSourceInterface;
 use Magento\Sales\Model\ResourceModel\Order\Status\Collection as OrderStatusCollection;
