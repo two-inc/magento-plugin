@@ -5,14 +5,14 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Plugin\Block\Widget\Button;
+namespace ABN\Gateway\Plugin\Block\Widget\Button;
 
 use Magento\Backend\Block\Widget\Button\ButtonList;
 use Magento\Backend\Block\Widget\Button\Toolbar as ToolbarContext;
 use Magento\Framework\View\Element\AbstractBlock;
 use Magento\Sales\Block\Adminhtml\Order\View;
 use Magento\Sales\Model\Order;
-use Two\Gateway\Model\Two;
+use ABN\Gateway\Model\Two;
 
 /**
  * Plugin for remove order buttons
