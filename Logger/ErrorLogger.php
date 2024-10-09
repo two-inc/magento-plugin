@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Logger;
+namespace ABN\Gateway\Logger;
 
 use Magento\Framework\Serialize\Serializer\Json;
 use Monolog\Logger;

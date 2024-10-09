@@ -5,8 +5,8 @@ define(['uiComponent', 'Magento_Checkout/js/model/payment/renderer-list'], funct
     'use strict';
 
     rendererList.push({
-        type: 'two_payment',
-        component: 'Two_Gateway/js/view/payment/method-renderer/two_payment'
+        type: 'abn_payment',
+        component: 'ABN_Gateway/js/view/payment/method-renderer/abn_payment'
     });
     return Component.extend({});
 });

@@ -8,8 +8,8 @@
 <page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
     <head>
-        <css src="Two_Gateway::css/style.css"/>
-	<css src="Two_Gateway::select2-4.1.0/css/select2.min.css"/>
+        <css src="ABN_Gateway::css/style.css"/>
+	<css src="ABN_Gateway::select2-4.1.0/css/select2.min.css"/>
     </head>
     <body>
         <referenceBlock name="checkout.root">
@@ -29,8 +29,8 @@
                                                                 <item name="country_id" xsi:type="array">
                                                                     <item name="sortOrder" xsi:type="string">50</item>
                                                                 </item>
-                                                                <item name="two_payment" xsi:type="array">
-                                                                    <item name="component" xsi:type="string">Two_Gateway/js/view/address-autocomplete</item>
+                                                                <item name="abn_payment" xsi:type="array">
+                                                                    <item name="component" xsi:type="string">ABN_Gateway/js/view/address-autocomplete</item>
                                                                     <item name="sortOrder" xsi:type="string">53</item>
                                                                 </item>
                                                             </item>
@@ -45,10 +45,10 @@
                                                     <item name="children" xsi:type="array">
                                                         <item name="renders" xsi:type="array">
                                                             <item name="children" xsi:type="array">
-                                                                <item name="two_payment" xsi:type="array">
-                                                                    <item name="component" xsi:type="string">Two_Gateway/js/view/payment/two_payment</item>
+                                                                <item name="abn_payment" xsi:type="array">
+                                                                    <item name="component" xsi:type="string">ABN_Gateway/js/view/payment/abn_payment</item>
                                                                     <item name="methods" xsi:type="array">
-                                                                        <item name="two_payment" xsi:type="array">
+                                                                        <item name="abn_payment" xsi:type="array">
                                                                             <item name="isBillingAddressRequired" xsi:type="boolean">true</item>
                                                                         </item>
                                                                     </item>

@@ -9,12 +9,12 @@
     <type name="Magento\Checkout\Model\CompositeConfigProvider">
         <arguments>
             <argument name="configProviders" xsi:type="array">
-                <item name="two_gateway_config_provider" xsi:type="object">Two\Gateway\Model\Ui\ConfigProvider</item>
+                <item name="abn_gateway_config_provider" xsi:type="object">ABN\Gateway\Model\Ui\ConfigProvider</item>
             </argument>
         </arguments>
     </type>
     <type name="Magento\Checkout\Block\Checkout\LayoutProcessor">
         <plugin name="add-delivery-date-field"
-                type="Two\Gateway\Plugin\Model\Checkout\LayoutProcessorPlugin" sortOrder="10"/>
+                type="ABN\Gateway\Plugin\Model\Checkout\LayoutProcessorPlugin" sortOrder="10"/>
     </type>
 </config>
