@@ -3,76 +3,58 @@
     data-bind="css: {'_active': (getCode() == isChecked())}"
 >
     <div class="payment-method-title field choice">
-        <input
-            type="radio"
-            name="payment[method]"
-            class="radio"
-            data-bind="attr: {'id': getCode()}, value: getCode(), checked: isChecked, click: selectPaymentMethod, visible: isRadioButtonVisible()"
-        />
-        <label data-bind="attr: {'for': getCode()}" class="label">
-            <span data-bind="text: getTitle()"></span>
-            <span
-                data-bind="visible: isTwoLinkEnabled, event: { click: () => showWhatIsTwo(true) }"
-                class="what_is_two"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0,0,256,256">
-                    <g
-                        fill="currentColor"
-                        fill-rule="nonzero"
-                        stroke="none"
-                        stroke-width="1"
-                        stroke-linecap="butt"
-                        stroke-linejoin="miter"
-                        stroke-miterlimit="10"
-                        stroke-dasharray=""
-                        stroke-dashoffset="0"
-                        font-family="none"
-                        font-weight="none"
-                        font-size="none"
-                        text-anchor="none"
-                        style="mix-blend-mode: normal"
+        <div class="payment-option-title-container">
+            <input
+                type="radio"
+                name="payment[method]"
+                class="radio"
+                data-bind="attr: {'id': getCode()}, value: getCode(),
+                checked: isChecked, click: selectPaymentMethod,
+                visible: isRadioButtonVisible()"
+            />
+            <span class="title-with-tooltip">
+                <span data-bind="text: getTitle()"></span>
+                <div class="tooltip-container">
+                    <svg
+                        class="tooltip-svg"
+                        width="20"
+                        height="21"
+                        viewBox="0 0 20 21"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
                     >
-                        <g transform="scale(9.84615,9.84615)">
-                            <path
-                                d="M13,1.1875c-6.52344,0 -11.8125,5.28906 -11.8125,11.8125c0,6.52344 5.28906,11.8125 11.8125,11.8125c6.52344,0 11.8125,-5.28906 11.8125,-11.8125c0,-6.52344 -5.28906,-11.8125 -11.8125,-11.8125zM15.46094,19.49609c-0.60937,0.23828 -1.09375,0.42188 -1.45703,0.54688c-0.36328,0.125 -0.78125,0.1875 -1.26172,0.1875c-0.73437,0 -1.30859,-0.17969 -1.71875,-0.53906c-0.40625,-0.35547 -0.60937,-0.8125 -0.60937,-1.36719c0,-0.21484 0.01563,-0.43359 0.04688,-0.65625c0.02734,-0.22656 0.07813,-0.47656 0.14453,-0.76172l0.76172,-2.6875c0.06641,-0.25781 0.125,-0.5 0.17188,-0.73047c0.04688,-0.23047 0.06641,-0.44141 0.06641,-0.63281c0,-0.33984 -0.07031,-0.58203 -0.21094,-0.71484c-0.14453,-0.13672 -0.41406,-0.20312 -0.8125,-0.20312c-0.19531,0 -0.39844,0.03125 -0.60547,0.08984c-0.20703,0.0625 -0.38281,0.12109 -0.53125,0.17578l0.20313,-0.82812c0.49609,-0.20312 0.97266,-0.375 1.42969,-0.51953c0.45313,-0.14453 0.88672,-0.21875 1.28906,-0.21875c0.73047,0 1.29688,0.17969 1.69141,0.53125c0.39453,0.35156 0.59375,0.8125 0.59375,1.375c0,0.11719 -0.01172,0.32422 -0.03906,0.61719c-0.02734,0.29297 -0.07812,0.5625 -0.15234,0.8125l-0.75781,2.67969c-0.0625,0.21484 -0.11719,0.46094 -0.16797,0.73438c-0.04687,0.27344 -0.07031,0.48438 -0.07031,0.625c0,0.35547 0.07813,0.60156 0.23828,0.73047c0.15625,0.12891 0.43359,0.19141 0.82813,0.19141c0.18359,0 0.39063,-0.03125 0.625,-0.09375c0.23047,-0.06641 0.39844,-0.12109 0.50391,-0.17187zM15.32422,8.61719c-0.35156,0.32813 -0.77734,0.49219 -1.27344,0.49219c-0.49609,0 -0.92578,-0.16406 -1.28125,-0.49219c-0.35547,-0.32812 -0.53125,-0.72656 -0.53125,-1.19141c0,-0.46484 0.17969,-0.86719 0.53125,-1.19922c0.35547,-0.33203 0.78516,-0.49609 1.28125,-0.49609c0.49609,0 0.92188,0.16406 1.27344,0.49609c0.35547,0.33203 0.53125,0.73438 0.53125,1.19922c0,0.46484 -0.17578,0.86328 -0.53125,1.19141z"
-                            ></path>
-                        </g>
-                    </g>
-                </svg>
+                        <path
+                            d="M8.33317 9.14058V8.72392C8.33317 7.80344 9.07936 7.05725 9.99984 7.05725C10.9203 7.05725 11.6665 7.80344 11.6665 8.72392V8.82502C11.6665 9.29386 11.4803 9.7435 11.1487 10.075L9.99984 11.2239M10.4165 13.7239C10.4165 13.954 10.23 14.1406 9.99984 14.1406C9.76972 14.1406 9.58317 13.954 9.58317 13.7239M10.4165 13.7239C10.4165 13.4938 10.23 13.3073 9.99984 13.3073C9.76972 13.3073 9.58317 13.4938 9.58317 13.7239M10.4165 13.7239H9.58317M18.3332 10.3906C18.3332 14.993 14.6022 18.7239 9.99984 18.7239C5.39746 18.7239 1.6665 14.993 1.6665 10.3906C1.6665 5.78821 5.39746 2.05725 9.99984 2.05725C14.6022 2.05725 18.3332 5.78821 18.3332 10.3906Z"
+                            stroke="#616161"
+                            stroke-width="1.5"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        />
+                    </svg>
+                    <span class="two-tooltip-text">
+                        <p>
+                            <!-- ko i18n: 'Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple.' --><!-- /ko -->
+                        </p>
+                        <br />
+                        <p>
+                            <b
+                                ><!-- ko i18n: 'Buy now, receive your goods, pay your invoice later.' --><!-- /ko --></b
+                            >
+                        </p>
+                        <br />
+                        <p>
+                            <a href="https://www.two.inc/what-is-two" target="_blank"
+                                ><!-- ko i18n: 'Find out more' --><!-- /ko --></a
+                            >
+                        </p>
+                    </span>
+                </div>
             </span>
-        </label>
-    </div>
-
-    <div class="what_is_two_overlay" data-bind="visible: showWhatIsTwo">
-        <div class="what_is_two_popup">
-            <img alt="Two logo" />
-            <a class="close" data-bind="event: { click: () => showWhatIsTwo(false) }">×</a>
-            <div class="content">
-                <p>
-                    <b>Two</b> is a payment solution for B2B purchases online, allowing you to buy
-                    from your favourite merchants and suppliers on trade credit. Using Two, you can
-                    access flexible trade credit instantly to make purchasing simple.
-                </p>
-                <br />
-                <p><b>Buy now, receive your goods, pay your invoice later.</b></p>
-                <br />
-                <p>
-                    <a
-                        data-bind='attr: {href: $t("https://www.two.inc/what-is-two")}, text: $t("Find out more")'
-                        target="_blank"
-                    ></a>
-                </p>
-            </div>
+            <div class="payment-option-logo"></div>
         </div>
     </div>
 
     <div class="payment-method-content">
-        <!-- ko if: isTermsAndConditionsEnabled -->
-        <div class="payment-method-content terms-container">
-            <input type="checkbox" name="terms-checkbox" data-bind="checked: termsAccepted, event: { change: checkTerms }" />
-            <span class="terms-text" data-bind="html: termsAndConditionsMessage"></span>
-        </div>
-        <!-- /ko -->
         <div class="redirect_message" data-bind="text: redirectMessage"></div>
         <!-- ko if: showModeTab -->
         <!-- ko ifnot: showSoleTrader -->
@@ -254,6 +236,16 @@
                         />
                     </div>
                 </div>
+                <!-- ko if: isTermsAndConditionsEnabled -->
+                <div class="payment-method-content terms-container">
+                    <input
+                        type="checkbox"
+                        name="terms-checkbox"
+                        data-bind="checked: termsAccepted, event: { change: checkTerms }"
+                    />
+                    <span class="terms-text" data-bind="html: paymentTermsMessage"></span>
+                </div>
+                <!-- /ko -->
             </fieldset>
         </form>
         <div class="actions-toolbar">
@@ -277,6 +269,105 @@
 </div>
 
 <style>
+    .payment-option-title-container {
+        position: relative;
+        display: flex;
+        flex-direction: row;
+        justify-content: flex-start;
+        align-items: flex-start;
+        /* gap: 8px; */
+        width: 100%;
+        min-height: max-content;
+    }
+
+    .payment-option-title-container span {
+        color: inherit;
+    }
+
+    .tooltip-svg {
+        cursor: pointer;
+        width: 20px;
+        height: auto;
+        margin-left: 5px;
+        align-self: center;
+        /* Center the SVG vertically with the text */
+    }
+
+    .title-with-tooltip {
+        display: inline-flex;
+        align-items: center;
+        /* Keeps the text and the tooltip icon inline */
+        gap: 5px;
+        font-weight: 600;
+        /* Optional: space between the title text and the icon */
+    }
+
+    .tooltip-container {
+        position: relative;
+        display: inline-block;
+        cursor: pointer;
+        /* Indicate the icon is interactive */
+    }
+
+    .tooltip-container svg {
+        margin-left: 5px;
+        /* Space between the title and the icon */
+        vertical-align: middle;
+        /* Ensures alignment with text */
+    }
+
+    .two-tooltip-text {
+        visibility: hidden;
+        width: 276px;
+        height: auto;
+        background-color: rgb(34, 34, 34);
+        color: #fff !important;
+        text-align: left;
+        padding: 10px;
+        border-radius: 5px;
+        /* Position the tooltip text */
+        position: absolute;
+        z-index: 1;
+        bottom: 120%;
+        /* Adjust this to move the tooltip above the question mark */
+        left: 50%;
+        transform: translateX(-50%);
+        opacity: 0;
+        transition: opacity 0.3s;
+        font-size: 12px;
+        white-space: normal;
+        line-height: 1.5;
+    }
+
+    .tooltip-container:hover .two-tooltip-text {
+        visibility: visible;
+        opacity: 1;
+        transition-delay: 1s;
+    }
+
+    .payment-terms-and-conditions-container {
+        margin-top: 1.5rem;
+        padding: 1rem;
+        background-color: rgb(245, 245, 245);
+        font-size: 12px !important;
+        border-radius: 0.5rem;
+    }
+
+    .payment-method-content.payment-terms-and-conditions-container {
+        padding: 1rem !important;
+    }
+
+    .terms-text {
+        cursor: pointer;
+        color: rgba(0, 76, 76, 1);
+        font-weight: 500;
+    }
+
+    .terms-text a {
+        text-decoration: none;
+        /* Style the anchor tags inside .terms-text */
+    }
+
     .terms-container {
         margin-top: 1.5rem;
         padding: 1rem;
@@ -287,16 +378,5 @@
 
     .payment-method-content.terms-container {
         padding: 1rem !important;
-    }
-
-    .terms-text {
-        color: rgba(0, 76, 76, 1);
-        font-weight: 500;
-    }
-
-    .terms-text a {
-        cursor: pointer;
-        text-decoration: none;
-        /* Style the anchor tags inside .terms-text */
     }
 </style>

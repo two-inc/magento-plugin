@@ -9,27 +9,19 @@
     margin-top: 40px;
 }
 
-input#two_payment {
-    margin-right: 80px;
-    /* float:
-    left; */
-    /* width: 200px; */
-}
-
-input#two_payment:before {
-    content: '';
-    display: block;
-    border: 1px solid #cccccc;
+.payment-option-logo {
+    /* relative to payment-option-title-container */
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 32px;
+    height: 32px;
     background-image: url('../images/logo.svg');
-    background-position: 10px 8px;
-    background-size: 44px;
+    background-size: contain;
     background-repeat: no-repeat;
-    width: 60px;
-    height: 30px;
-    float: left;
-    margin-top: -10px;
-    margin-left: 25px;
-    border-radius: 8px;
+    background-position: center;
+    display: inline-block;
 }
 
 .enter_details_manually {
@@ -248,4 +240,20 @@ input#two_payment:before {
 .sole_trader_note.show .overlay {
     opacity: 1;
     visibility: visible;
+}
+
+/* Theme specific css for fire checkout on select2 */
+.firecheckout .select2-container {
+    width: 100% !important;
+}
+
+.firecheckout .select2-container--default .select2-selection--single {
+    background-color: inherit !important;
+    border: 2px solid #f2f5f7;
+    border-radius: 3px;
+    height: 50px;
+    padding: 1em 0em;
+    box-sizing: border-box;
+    transition: all 100ms ease-in-out;
+    width: 100%;
 }

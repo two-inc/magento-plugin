@@ -22,7 +22,9 @@ define([
         isInternationalTelephoneEnabled: config.isInternationalTelephoneEnabled,
         countrySelector: '#shipping-new-address-form select[name="country_id"]',
         companyNameSelector: '#shipping-new-address-form input[name="company"]',
+        companyNameLabel: 'div[name="shippingAddress.company"] label',
         companyIdSelector: '#shipping-new-address-form input[name="custom_attributes[company_id]"]',
+        companyNamePlaceholder: config.companyNamePlaceholder,
         shippingTelephoneSelector: '#shipping-new-address-form input[name="telephone"]',
         enterDetailsManuallyText: $t('Enter details manually'),
         enterDetailsManuallyButton: '#shipping_enter_details_manually',
@@ -31,6 +33,11 @@ define([
         initialize: function () {
             let self = this;
             this._super();
+
+            // Check if we're in the FireCheckout theme
+            // Leaving here in case we wanto to do some conditional logic against this
+            const isFireCheckout = $('body').hasClass('firecheckout');
+
             $.async(this.countrySelector, function (countrySelector) {
                 self.toggleCompanyVisibility();
                 $(countrySelector).on('change', function () {
@@ -52,6 +59,9 @@ define([
             customerData.set('countryCode', countryCode);
             let field = $(this.companyNameSelector).closest('.field');
             field.show();
+            field.attr('style', function (i, style) {
+                return (style || '') + 'width: 100% !important;';
+            });
         },
         setCompanyData: function (companyId = '', companyName = '') {
             console.debug({ logger: 'addressAutocomplete.setCompanyData', companyId, companyName });
@@ -109,7 +119,6 @@ define([
                         .select2({
                             minimumInputLength: 3,
                             width: '100%',
-                            placeholder: '',
                             escapeMarkup: function (markup) {
                                 return markup;
                             },
@@ -117,7 +126,7 @@ define([
                                 return data.html;
                             },
                             templateSelection: function (data) {
-                                return data.text;
+                                return data.text || self.companyNamePlaceholder;
                             },
                             ajax: {
                                 dataType: 'json',
@@ -185,6 +194,13 @@ define([
                                 self.addressLookup(selectedItem, countryCode);
                             }
                         });
+                    // Set initial placeholder text for the company search
+                    if (!$(self.companyNameSelector).val()) {
+                        $(self.companyNameSelector)
+                            .closest('.field')
+                            .find('.select2-selection__rendered')
+                            .text(self.companyNamePlaceholder);
+                    }
                     if ($(self.companyNameSelector).val()) {
                         // pre-fill on checkout render
                         $('.select2-selection__rendered').text($(self.companyNameSelector).val());
