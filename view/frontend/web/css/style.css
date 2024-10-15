@@ -97,6 +97,17 @@
     line-height: 1.5;
 }
 
+.two-tooltip-text a {
+    text-decoration: none;
+    text-underline-offset: 2px;
+    cursor: pointer;
+    padding: 5px 10px;
+    border-radius: 5px;
+    border: 1px solid var(--color-gray89);
+    color: var(--color-white);
+    background-color: var(--color-blue2);
+}
+
 .tooltip-container:hover .two-tooltip-text {
     visibility: visible;
     opacity: 1;
