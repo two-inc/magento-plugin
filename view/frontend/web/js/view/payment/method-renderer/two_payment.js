@@ -42,7 +42,7 @@ define([
         },
         redirectAfterPlaceOrder: false,
         redirectMessage: config.redirectMessage,
-        termsAndConditionsMessage: config.termsAndConditionsMessage,
+        paymentTermsMessage: config.paymentTermsMessage,
         termsNotAcceptedMessage: config.termsNotAcceptedMessage,
         isTermsAndConditionsEnabled: config.isTermsAndConditionsEnabled,
         termsAccepted: ko.observable(false),

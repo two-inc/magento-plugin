@@ -11,7 +11,7 @@
 "%1 order marked as completed with invoice number %2","%1 order markerad som slutförd med fakturanummer %2"
 "%1 requires whole order to be shipped before it can be fulfilled.","%1 kräver att hela beställningen skickas innan den kan uppfyllas."
 "* Required Fields","* Obligatoriska fält"
-"API key","API-nyckel"
+"API key",API-nyckel
 "Add PO number field","Lägg till PO-nummerfält"
 "Add department field","Lägg till fält för avdelning"
 "Add order note field","Lägg till orderanteckningsfält"
@@ -19,7 +19,8 @@
 "Allow to applicable countries","Tillåt till tillämpliga länder"
 "Allow to specific countries","Tillåt till specifika länder"
 "Amount is missing","Belopp saknas"
-"Branding","Branding"
+Branding,Branding
+"Buy now, receive your goods, pay your invoice later.","Köp nu, få dina varor, betala din faktura senare."
 "Buyer address is invalid.","Köparens adress är ogiltig"
 "Buyer authentication failed.","Köparens autentisering misslyckades."
 "Buyer info is inconsistent.","Köparinformation är inkonsekvent."
@@ -29,74 +30,76 @@
 "Check last 100 debug log records","Kontrollera de senaste 100 felsökningsloggposterna"
 "Check last 100 error log records","Kontrollera de senaste 100 felloggposterna"
 "Click here to log in or sign up as a Sole Trader.","Klicka här för att logga in eller registrera dig som enskild näringsidkare."
-"Company ID","Organisationsnummer"
-"Company Name","Företagsnamn"
+"Company ID",Organisationsnummer
+"Company Name",Företagsnamn
 "Could not initiate capture with %1","Kunde inte initiera infångning med %1"
 "Could not initiate refund with %1","Kunde inte initiera återbetalning med %1"
 "Could not update %1 order status to cancelled. Please contact support with order ID %2. Error: %3","Kunde inte uppdatera %1 orderstatus till annullerad. Kontakta supporten med beställnings-ID %2. Fel: %3"
-"Credentials","Autentiseringsuppgifter"
+Credentials,Autentiseringsuppgifter
 "Credentials are invalid","Autentiseringsuppgifterna är ogiltiga"
 "Credentials are missing","Autentiseringsuppgifterna saknas"
 "Credentials are valid","Autentiseringsuppgifterna är giltiga"
-"Debug mode","Felsökningsläge"
-"Department","Avdelning"
+"Debug mode",Felsökningsläge
+Department,Avdelning
 "Developed by Magmodules.","Utvecklad av Magmodules."
 "Display info link","Visa infolänk"
-"Download","Ladda ner"
+Download,"Ladda ner"
 "Download as .txt file","Ladda ner som .txt-fil"
 "Enable address search","Aktivera adresssökning"
 "Enable company search","Aktivera företagssökning"
 "Enable order intent","Aktivera orderavsikt"
 "Enable payment method","Aktivera betalningsmetod"
 "Enable tax subtotals","Aktivera delsummor för skatt"
+"Enter company name to search","Ange företagsnamn för att söka"
 "Enter details manually","Ange detaljer manuellt"
-"Environment","Miljö"
+Environment,Miljö
 "Failed to refund order with %1. Reason: %2","Det gick inte att återbetala beställningen med %1. Orsak: %2"
 "Find out more","Ta reda på mer"
 "Fulfilment order status","Uppfyllande orderstatus"
 "Fulfilment trigger","Uppfyllelse trigger"
-"General","Generellt"
+General,Generellt
 "Invalid API response from %1.","Ogiltigt API-svar från %1."
 "Invoice purchase with %1 is not available for this order.","Fakturaköp med %1 är inte tillgängligt för den här beställningen."
 "Last 100 debug log lines","Senaste 100 felsökningsloggraderna"
 "Last 100 error log records","Senaste 100 felloggposter"
 "Log is empty","Loggen är tom"
-"OK","OK"
+OK,OK
 "On Completion","Vid färdigställande"
 "On Invoice","På faktura"
 "On Shipment","Vid leverans"
-"Order Note","Beställningsanmärkning"
+"Order Note",Beställningsanmärkning
 "Order edit request was accepted by %1","Begäran om beställningsredigering accepterades av %1"
-"PO Number","PO-nummer"
-"Payment","Betalning"
-"Payment method","Betalningsmetod"
-"Place Order","Beställa"
+"PO Number",PO-nummer
+Payment,Betalning
+"Payment Terms",Betalningsvillkor
+"Payment method",Betalningsmetod
+"Place Order",Beställa
 "Please try again later.","Försök igen senare."
-"Production","Produktion"
-"Project","Projekt"
-"Reason","Orsak"
+Production,Produktion
+Project,Projekt
+Reason,Orsak
 "Registered Organisation","Registrerad organisation"
 "Risk too high.","För hög risk."
-"Sandbox","Sandbox"
-"Search","Sök"
+Sandbox,Sandbox
+Search,Sök
 "Search for company","Sök efter företag"
 "Sign up now","Registrera nu"
 "Sole Trader","Enskild näringsidkare"
 "Something went wrong with your request to %1. %2","Något gick fel med din begäran till %1. %2"
-"Sort order","Sorteringsordning"
+"Sort order",Sorteringsordning
 "Successfully refunded order with %1 for order ID: %2. Refund reference: %3","Återbetalad beställning med %1 för beställnings-ID: %2. Återbetalningsreferens: %3"
-"TWO","TWO"
-"Terms & Conditions","Villkor och bestämmelser"
+TWO,TWO
 "The %1 payment plugin for Magento simplifies B2B shopping, making it easy and safe for merchants to offer invoices as a payment method.<br>The payment method lives next to other payment methods in your existing checkout, and offers a variety of configuration options to suit your businesses needs.<br>If you would like to know more about how to configure the plugin, check out our <a href=""%2"" target=""_blank"">step by step guide</a>.","Betalningspluginet %1 för Magento förenklar B2B-shopping, vilket gör det enkelt och säkert för handlare att erbjuda fakturor som betalningsmetod. <br> Betalningsmetoden finns bredvid andra betalningsmetoder i din befintliga kassa, och erbjuder en mängd olika konfigurationsalternativ för att passa ditt företags behov. <br> Om du vill veta mer om hur du konfigurerar plugin-programmet, kolla in vår <a href=""%2"" target=""_blank""> steg-för-steg-guide </a> ."
 "The buyer and the seller are the same company.","Köparen och säljaren är samma företag."
 "The capture action is not available.","Infångningsåtgärden är inte tillgänglig."
-"Title","Titel"
+Title,Titel
+"Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple.","Two är en betalningslösning för B2B-köp online, som låter dig köpa från dina favorithandlare och leverantörer på handelskredit. Med Two får du omedelbar tillgång till flexibel handelskredit för att göra inköp enkelt."
 "Unable to find the requested %1 order","Det gick inte att hitta den begärda beställningen %1"
 "Unable to retrieve payment information for your invoice purchase with %1. The cart will be restored.","Det gick inte att hämta betalningsinformation för ditt fakturaköp med %1. Vagnen kommer att återställas."
-"Username","Användarnamn"
+Username,Användarnamn
 "Username should be set to %1","Användarnamn ska ställas in till %1"
-"Version","Version"
-"You must first accept the payment Terms & Conditions.","Du måste först acceptera betalningsvillkoren."
+Version,Version
+"You must first accept the payment terms.","Du måste först acceptera betalningsvillkoren."
 "You will be redirected to %1 when you place order.","Du kommer att omdirigeras till %1 när du beställer."
 "Your invoice purchase with %1 failed verification. The cart will be restored.","Ditt fakturaköp med %1 misslyckades med verifiering. Vagnen kommer att återställas."
 "Your invoice purchase with %1 has been cancelled. The cart will be restored.","Ditt fakturaköp med %1 har annullerats. Vagnen kommer att återställas."
@@ -104,4 +107,3 @@
 "Your invoice purchase with %1 is likely to be accepted subject to additional checks.","Ditt fakturaköp med %1 kommer sannolikt att accepteras under förutsättning av ytterligare kontroller."
 "Your request to %1 failed. Reason: %2","Din begäran till %1 misslyckades. Orsak: %2"
 "Your sole trader account could not be verified.","Ditt enskild näringsidkarekonto kunde inte verifieras."
-"https://www.two.inc/what-is-two","https://www.two.inc/what-is-two"

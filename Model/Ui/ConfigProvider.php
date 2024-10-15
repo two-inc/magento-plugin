@@ -65,10 +65,10 @@ class ConfigProvider implements ConfigProviderInterface
         $tryAgainLater = __('Please try again later.');
         $soleTraderaccountCouldNotBeVerified = __('Your sole trader account could not be verified.');
         // Set isTermsAndConditionsEnabled based on provider
-        $termsAndConditions = __("Terms & Conditions");
-        $termsAndConditionsLink = $this->configRepository::TERMS_AND_CONDITIONS_LINK;
+        $paymentTerms = __("Payment Terms");
+        $paymentTermsLink = $this->configRepository::PAYMENT_TERMS_LINK;
         // This check here is present to only enable the terms and conditions
-        $isTermsAndConditionsEnabled = !empty($termsAndConditionsLink);
+        $isTermsAndConditionsEnabled = !empty($paymentTermsLink);
 
         return [
             'payment' => [
@@ -88,7 +88,7 @@ class ConfigProvider implements ConfigProviderInterface
                     'isPONumberFieldEnabled' => $this->configRepository->isPONumberEnabled(),
                     'isTwoLinkEnabled' => $this->configRepository->isTwoLinkEnabled(),
                     'isTermsAndConditionsEnabled' => $isTermsAndConditionsEnabled,
-                    'termsAndConditionsLink' => $termsAndConditionsLink,
+                    'paymentTermsLink' => $paymentTermsLink,
                     'redirectMessage' => __(
                         'You will be redirected to %1 when you place order.',
                         $provider
@@ -103,16 +103,17 @@ class ConfigProvider implements ConfigProviderInterface
                         $provider,
                         $tryAgainLater
                     ),
-                    'termsAndConditionsMessage' => __(
+                    'paymentTermsMessage' => __(
                         'By checking this box, I confirm that I have read and agree to the %1.',
-                        sprintf('<a href="%s" target="_blank">%s</a>', $termsAndConditionsLink, $termsAndConditions)
+                        sprintf('<a href="%s" target="_blank">%s</a>', $paymentTermsLink, $paymentTerms)
                     ),
-                    'termsNotAcceptedMessage' => __('You must first accept the payment Terms & Conditions.'),
+                    'termsNotAcceptedMessage' => __('You must first accept the payment terms.'),
                     'soleTraderErrorMessage' => __(
                         'Something went wrong with your request to %1. %2',
                         $provider,
                         $soleTraderaccountCouldNotBeVerified
-                    )
+                    ),
+                    'companyNamePlaceholder' => __("Enter company name to search")
                 ],
             ],
         ];

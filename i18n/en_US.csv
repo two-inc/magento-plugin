@@ -20,6 +20,7 @@
 "Allow to specific countries","Allow to specific countries"
 "Amount is missing","Amount is missing"
 Branding,Branding
+"Buy now, receive your goods, pay your invoice later.","Buy now, receive your goods, pay your invoice later."
 "Buyer address is invalid.","Buyer address is invalid."
 "Buyer authentication failed.","Buyer authentication failed."
 "Buyer info is inconsistent.","Buyer info is inconsistent."
@@ -49,6 +50,7 @@ Download,Download
 "Enable order intent","Enable order intent"
 "Enable payment method","Enable payment method"
 "Enable tax subtotals","Enable tax subtotals"
+"Enter company name to search","Enter company name to search"
 "Enter details manually","Enter details manually"
 Environment,Environment
 "Failed to refund order with %1. Reason: %2","Failed to refund order with %1. Reason: %2"
@@ -69,6 +71,7 @@ OK,OK
 "Order edit request was accepted by %1","Order edit request was accepted by %1"
 "PO Number","PO Number"
 Payment,Payment
+"Payment Terms","Payment Terms"
 "Payment method","Payment method"
 "Place Order","Place Order"
 "Please try again later.","Please try again later."
@@ -86,17 +89,17 @@ Search,Search
 "Sort order","Sort order"
 "Successfully refunded order with %1 for order ID: %2. Refund reference: %3","Successfully refunded order with %1 for order ID: %2. Refund reference: %3"
 TWO,TWO
-"Terms & Conditions","Terms & Conditions"
 "The %1 payment plugin for Magento simplifies B2B shopping, making it easy and safe for merchants to offer invoices as a payment method.<br>The payment method lives next to other payment methods in your existing checkout, and offers a variety of configuration options to suit your businesses needs.<br>If you would like to know more about how to configure the plugin, check out our <a href=""%2"" target=""_blank"">step by step guide</a>.","The %1 payment plugin for Magento simplifies B2B shopping, making it easy and safe for merchants to offer invoices as a payment method.<br>The payment method lives next to other payment methods in your existing checkout, and offers a variety of configuration options to suit your businesses needs.<br>If you would like to know more about how to configure the plugin, check out our <a href=""%2"" target=""_blank"">step by step guide</a>."
 "The buyer and the seller are the same company.","The buyer and the seller are the same company."
 "The capture action is not available.","The capture action is not available."
 Title,Title
+"Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple.","Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple."
 "Unable to find the requested %1 order","Unable to find the requested %1 order"
 "Unable to retrieve payment information for your invoice purchase with %1. The cart will be restored.","Unable to retrieve payment information for your invoice purchase with %1. The cart will be restored."
 Username,Username
 "Username should be set to %1","Username should be set to %1"
 Version,Version
-"You must first accept the payment Terms & Conditions.","You must first accept the payment Terms & Conditions."
+"You must first accept the payment terms.","You must first accept the payment terms."
 "You will be redirected to %1 when you place order.","You will be redirected to %1 when you place order."
 "Your invoice purchase with %1 failed verification. The cart will be restored.","Your invoice purchase with %1 failed verification. The cart will be restored."
 "Your invoice purchase with %1 has been cancelled. The cart will be restored.","Your invoice purchase with %1 has been cancelled. The cart will be restored."
@@ -104,4 +107,3 @@ Version,Version
 "Your invoice purchase with %1 is likely to be accepted subject to additional checks.","Your invoice purchase with %1 is likely to be accepted subject to additional checks."
 "Your request to %1 failed. Reason: %2","Your request to %1 failed. Reason: %2"
 "Your sole trader account could not be verified.","Your sole trader account could not be verified."
-https://www.two.inc/what-is-two,https://www.two.inc/what-is-two
