@@ -103,7 +103,7 @@
                 <field id="title" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                        showInStore="1">
                     <label>Title</label>
-                    <comment>Descriptive title which gives the buyer a better understanding of this payment method e.g. Business invoice 30 days</comment>
+                    <comment>Descriptive title which gives the buyer a better understanding of this payment method e.g. Business invoice - 30 days</comment>
                     <validate>required-entry</validate>
                     <depends>
                         <field id="active">1</field>
