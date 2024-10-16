@@ -133,7 +133,7 @@ define([
                                 delay: 400,
                                 url: function (params) {
                                     const queryParams = new URLSearchParams({
-                                        country: $(self.countrySelector).val(),
+                                        country: $(self.countrySelector).val()?.toUpperCase(),
                                         limit: searchLimit,
                                         offset: ((params.page || 1) - 1) * searchLimit,
                                         q: unescape(params.term)
