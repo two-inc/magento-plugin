@@ -90,28 +90,41 @@ class SalesOrderShipmentAfter implements ObserverInterface
             && $order->getTwoOrderId()
         ) {
             if ($this->configRepository->getFulfillTrigger() == 'shipment') {
-                if (!$this->isWholeOrderShipped($order)) {
-                    $response = $this->partialFulfill($shipment);
-                    $this->parseResponse($response, $order);
-                    return;
+                $payload = [];
+                $isWholeOrderShipped = $this->isWholeOrderShipped($order);
+                $isPartialOrder = !$isWholeOrderShipped;
+                while (true) {
+                    if ($isPartialOrder) {
+                        // partial fulfilment
+                        $payload = [
+                            'partial' => $this->composeShipment->execute($shipment, $order),
+                        ];
+                    }
+                    $response = $this->apiAdapter->execute(
+                        "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
+                        $payload
+                    );
+
+                    $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
+
+                    if ($error) {
+                        if ($response['error_code'] == 'PARTIAL_ORDER_MISSING_DATA') {
+                            $isPartialOrder = true;
+                            continue;
+                        }
+                        throw new LocalizedException($error);
+                    }
+                    break;
                 }
 
-                $langParams = '?lang=en_US';
-                if ($order->getBillingAddress()->getCountryId() == 'NO') {
-                    $langParams = '?lang=nb_NO';
+                $this->parseFulfillResponse($response, $order);
+                if ($isWholeOrderShipped) {
+                    foreach ($order->getInvoiceCollection() as $invoice) {
+                        $invoice->pay();
+                        $invoice->setTransactionId($order->getPayment()->getLastTransId());
+                        $invoice->save();
+                    }
                 }
-
-                //full fulfilment
-                $response = $this->apiAdapter->execute(
-                    "/v1/order/" . $order->getTwoOrderId() . "/fulfilled" . $langParams
-                );
-                foreach ($order->getInvoiceCollection() as $invoice) {
-                    $invoice->pay();
-                    $invoice->setTransactionId($order->getPayment()->getLastTransId());
-                    $invoice->save();
-                }
-
-                $this->parseResponse($response, $order);
             } elseif ($this->configRepository->getFulfillTrigger() == 'complete') {
                 foreach ($order->getInvoiceCollection() as $invoice) {
                     $invoice->pay();
@@ -147,52 +160,34 @@ class SalesOrderShipmentAfter implements ObserverInterface
     }
 
     /**
-     * @param ShipmentInterface $shipment
-     * @return array
-     * @throws NoSuchEntityException
-     * @throws LocalizedException
-     */
-    private function partialFulfill(ShipmentInterface $shipment): array
-    {
-        $order = $shipment->getOrder();
-        $twoOrderId = $order->getTwoOrderId();
-
-        $payload = $this->composeShipment->execute($shipment, $order);
-
-        return $this->apiAdapter->execute('/v1/order/' . $twoOrderId . '/fulfilled', $payload);
-    }
-
-    /**
      * @param array $response
      * @param Order $order
      * @return void
      * @throws Exception
      */
-    private function parseResponse(array $response, Order $order): void
+    private function parseFulfillResponse(array $response, Order $order): void
     {
-        $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
-
-        if ($error) {
-            throw new LocalizedException($error);
-        }
-
-        if (empty($response['invoice_details'] ||
-            empty($response['invoice_details']['invoice_number']))) {
+        if (empty($response['fulfilled_order'] ||
+            empty($response['fulfilled_order']['id']))) {
             return;
         }
-
         $additionalInformation = $order->getPayment()->getAdditionalInformation();
-        $additionalInformation['gateway_data']['invoice_number'] = $response['invoice_details']['invoice_number'];
-        $additionalInformation['gateway_data']['invoice_url'] = $response['invoice_url'];
         $additionalInformation['marked_completed'] = true;
 
         $order->getPayment()->setAdditionalInformation($additionalInformation);
 
-        $comment = __(
-            '%1 order marked as completed with invoice number %2',
-            $this->configRepository::PROVIDER,
-            $response['invoice_details']['invoice_number']
-        );
+        if (empty($response['remained_order'])) {
+            $comment = __(
+                '%1 order marked as completed.',
+                $this->configRepository::PROVIDER,
+            );
+        } else {
+            $comment = __(
+                '%1 order marked as partially completed.',
+                $this->configRepository::PROVIDER,
+            );
+        }
+
         $this->addStatusToOrderHistory($order, $comment->render());
     }
 

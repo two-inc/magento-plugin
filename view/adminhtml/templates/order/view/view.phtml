@@ -13,36 +13,45 @@
         </div>
         <div class="admin__page-section-content">
             <div>
-                <?php $data = $block->getAdditionalData(); ?>
-                <table>
-                    <?php if ($block->getTwoOrderId($data) != ''): ?>
+                <table width="100%">
+                    <?php $twoOrderId = $block->getTwoOrderId(); ?>
+                    <?php if ($twoOrderId != ''): ?>
                         <tr>
                             <td>
-                                <?= $block->escapeHtml(__('%1 Order ID', $provider)); ?>:
-                                <strong><?= $block->escapeHtml($block->getTwoOrderId($data)); ?></strong></td>
-                        </tr>
-                    <?php endif; ?>
-                    <?php if ($block->getTwoInvoiceUrl($data) != ''): ?>
-                        <tr>
+                                <strong><?= $block->escapeHtml(__('%1 Order ID', $provider)); ?></strong>
+                            </td>
                             <td>
-                                <?= $block->escapeHtml(__('%1 Invoice', $provider)); ?>:
-                                <a href="<?= $block->escapeHtml($block->getTwoInvoiceUrl($data)); ?>"
-                                   target="_blank">
-                                    <?= $block->escapeHtml(__('Download')); ?>
+                                <?= $block->escapeHtml($twoOrderId); ?>
                             </td>
                         </tr>
                     <?php endif; ?>
-                    <?php if ($block->getTwoCreditNoteUrl($data) != ''): ?>
+                    <?php $fulfillments = $block->getTwoOrderFulfillments(); ?>
+                    <?php if (!empty($fulfillments['fulfilled_orders'])): ?>
                         <tr>
                             <td>
-                                <?= $block->escapeHtml(__('%1 Credit Note', $provider)); ?>:
-                                <a href="<?= $block->escapeHtml($block->getTwoCreditNoteUrl($data)); ?>"
-                                   target="_blank">
-                                    <?= $block->escapeHtml(__('Download')); ?>
+                                <strong><?= $block->escapeHtml(__('%1 Invoice', $provider)); ?></strong>
+                            </td>
+                            <td>
+                                <?php foreach ($fulfillments['fulfilled_orders'] ?? [] as $fulfilled_order) { ?>
+                                <a href="<?= $block->escapeHtml($fulfilled_order['invoice_url']); ?>" target="_blank">
+                                    <?= $block->escapeHtml(__('Download')); ?></a>
+                                <?php } ?>
                             </td>
                         </tr>
                     <?php endif; ?>
-
+                    <?php if (!empty($fulfillments['refunds'])): ?>
+                        <tr>
+                            <td>
+                                <strong><?= $block->escapeHtml(__('%1 Credit Note', $provider)); ?></strong>
+                            </td>
+                            <td>
+                                <?php foreach ($fulfillments['refunds'] ?? [] as $refund) { ?>
+                                <a href="<?= $block->escapeHtml($refund['credit_note_url']); ?>" target="_blank">
+                                    <?= $block->escapeHtml(__('Download')); ?></a>
+                                <?php } ?>
+                            </td>
+                        </tr>
+                    <?php endif; ?>
                 </table>
             </div>
         </div>

@@ -8,7 +8,8 @@
 "%1 [Trace ID: %2]","%1 [Spår-ID: %2]"
 "%1 order has been marked as cancelled","%1 beställning har markerats som avbruten"
 "%1 order invoice has not been issued yet.","%1 orderfaktura har inte utfärdats ännu."
-"%1 order marked as completed with invoice number %2","%1 order markerad som slutförd med fakturanummer %2"
+"%1 order marked as completed.","%1 order markerad som slutförd."
+"%1 order marked as partially completed.","%1 order markerad som delvis slutförd."
 "%1 requires whole order to be shipped before it can be fulfilled.","%1 kräver att hela beställningen skickas innan den kan uppfyllas."
 "* Required Fields","* Obligatoriska fält"
 "API key",API-nyckel

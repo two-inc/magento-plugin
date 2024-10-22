@@ -9,6 +9,7 @@ namespace Two\Gateway\Block\Adminhtml\Order;
 
 use Magento\Sales\Block\Adminhtml\Order\View as OrderView;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Service\Api\Adapter as Adapter;
 
 /**
  * Order View Block
@@ -21,9 +22,15 @@ class View extends OrderView
     public $configRepository;
 
     /**
+     * @var Adapter
+     */
+    private $apiAdapter;
+
+    /**
      * View constructor.
      *
      * @param ConfigRepository $configRepository
+     * @param Adapter $adapter
      * @param \Magento\Backend\Block\Widget\Context $context
      * @param \Magento\Framework\Registry $registry
      * @param \Magento\Sales\Model\Config $salesConfig
@@ -32,6 +39,7 @@ class View extends OrderView
      */
     public function __construct(
         ConfigRepository $configRepository,
+        Adapter $apiAdapter,
         \Magento\Backend\Block\Widget\Context $context,
         \Magento\Framework\Registry $registry,
         \Magento\Sales\Model\Config $salesConfig,
@@ -39,53 +47,31 @@ class View extends OrderView
         array $data = []
     ) {
         $this->configRepository = $configRepository;
+        $this->apiAdapter = $apiAdapter;
         parent::__construct($context, $registry, $salesConfig, $reorderHelper, $data);
     }
 
     /**
-     * Get payment additional data
+     * Get Two Fulfillments
+     *
+     * @param array $data
      *
      * @return array
      */
-    public function getAdditionalData(): array
+    public function getTwoOrderFulfillments(): array
     {
         $order = $this->getOrder();
-        $payment = $order->getPayment();
-        return $payment->getAdditionalInformation();
-    }
+        $response = $this->apiAdapter->execute(
+            "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
+            [],
+            'GET'
+        );
+        $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
+        if ($error) {
+            return [];
+        }
 
-    /**
-     * Get Two Credit Note Url
-     *
-     * @param array $data
-     *
-     * @return string
-     */
-    public function getTwoCreditNoteUrl(array $data): string
-    {
-        $order = $this->getOrder();
-        $billingAddress = $order->getBillingAddress();
-        $langParams = $billingAddress->getCountryId() == 'NO' ? '?lang=nb_NO' : '?lang=en_US';
-
-        return isset($data['gateway_data']['credit_note_url'])
-            ? $data['gateway_data']['credit_note_url'] . $langParams
-            : '';
-    }
-
-    /**
-     * Get Two Credit Invoice Url
-     *
-     * @param array $data
-     *
-     * @return string
-     */
-    public function getTwoInvoiceUrl(array $data): string
-    {
-        $order = $this->getOrder();
-        $billingAddress = $order->getBillingAddress();
-        $langParams = $billingAddress->getCountryId() == 'NO' ? '?lang=nb_NO' : '?lang=en_US';
-
-        return (isset($data['gateway_data']['invoice_url'])) ? $data['gateway_data']['invoice_url'] . $langParams : '';
+        return $response;
     }
 
     /**
@@ -95,9 +81,9 @@ class View extends OrderView
      *
      * @return string
      */
-    public function getTwoOrderId(array $data): string
+    public function getTwoOrderId(): string
     {
-        return (isset($data['gateway_data']['external_order_id'])) ? $data['gateway_data']['external_order_id'] : '';
+        return $this->getOrder()->getTwoOrderId();
     }
 
     /**

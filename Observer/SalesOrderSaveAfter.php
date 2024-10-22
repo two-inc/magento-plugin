@@ -88,23 +88,12 @@ class SalesOrderSaveAfter implements ObserverInterface
                     throw new LocalizedException($error);
                 }
 
-                $langParams = '?lang=en_US';
-                if ($order->getBillingAddress()->getCountryId() == 'NO') {
-                    $langParams = '?lang=nb_NO';
-                }
-
-                //full fulfilment
+                // full fulfilment
                 $response = $this->apiAdapter->execute(
-                    "/v1/order/" . $order->getTwoOrderId() . "/fulfilled" . $langParams
+                    "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
                 );
 
-                foreach ($order->getInvoiceCollection() as $invoice) {
-                    $invoice->pay();
-                    $invoice->setTransactionId($order->getPayment()->getLastTransId());
-                    $invoice->save();
-                }
-
-                $this->parseResponse($response, $order);
+                $this->parseFulfillResponse($response, $order);
             }
         }
     }
@@ -131,7 +120,7 @@ class SalesOrderSaveAfter implements ObserverInterface
      * @return void
      * @throws Exception
      */
-    private function parseResponse(array $response, Order $order): void
+    private function parseFulfillResponse(array $response, Order $order): void
     {
         $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
 
@@ -139,23 +128,27 @@ class SalesOrderSaveAfter implements ObserverInterface
             throw new LocalizedException($error);
         }
 
-        if (empty($response['invoice_details'] ||
-            empty($response['invoice_details']['invoice_number']))) {
+        if (empty($response['fulfilled_order'] ||
+            empty($response['fulfilled_order']['id']))) {
             return;
         }
-
         $additionalInformation = $order->getPayment()->getAdditionalInformation();
-        $additionalInformation['gateway_data']['invoice_number'] = $response['invoice_details']['invoice_number'];
-        $additionalInformation['gateway_data']['invoice_url'] = $response['invoice_url'];
         $additionalInformation['marked_completed'] = true;
 
         $order->getPayment()->setAdditionalInformation($additionalInformation);
 
-        $comment = __(
-            '%1 order marked as completed with invoice number %2',
-            $this->configRepository::PROVIDER,
-            $response['invoice_details']['invoice_number']
-        );
+        if (empty($response['remained_order'])) {
+            $comment = __(
+                '%1 order marked as completed.',
+                $this->configRepository::PROVIDER,
+            );
+        } else {
+            $comment = __(
+                '%1 order marked as partially completed.',
+                $this->configRepository::PROVIDER,
+            );
+        }
+
         $this->addStatusToOrderHistory($order, $comment->render());
     }
 
