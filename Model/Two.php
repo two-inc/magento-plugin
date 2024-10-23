@@ -25,6 +25,7 @@ use Magento\Payment\Model\Method\Logger;
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\Sales\Api\OrderStatusHistoryRepositoryInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
+use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
@@ -227,9 +228,9 @@ class Two extends AbstractMethod
             );
         }
 
+        $twoOrderId = $response['id'];
+        $order->setTwoOrderId($twoOrderId);
         $order->setTwoOrderReference($orderReference);
-        $order->setTwoOrderId($response['id']);
-        $payload['gateway_data']['external_order_id'] = $response['id'];
         $payload['gateway_data']['external_order_status'] = $response['external_order_status'];
         $payload['gateway_data']['original_order_id'] = $response['original_order_id'];
         $payload['gateway_data']['state'] = $response['state'];
@@ -242,7 +243,7 @@ class Two extends AbstractMethod
         unset($payload['merchant_urls']);
 
         $payment->setAdditionalInformation($payload);
-        $payment->setTransactionId($response['external_order_id'])
+        $payment->setTransactionId($twoOrderId)
             ->setIsTransactionClosed(0)
             ->setIsTransactionPending(true);
         $this->urlCookie->set($response['payment_url']);
@@ -327,10 +328,6 @@ class Two extends AbstractMethod
             return $this->_getMessageWithTrace($message, $traceID);
         }
 
-        if (empty($response['id'])) {
-            return $this->_getMessageWithTrace($generalError, $traceID);
-        }
-
         return null;
     }
 
@@ -403,6 +400,18 @@ class Two extends AbstractMethod
         return $this;
     }
 
+    private function isWholeOrderInvoiced(OrderInterface $order): bool
+    {
+        foreach ($order->getAllVisibleItems() as $orderItem) {
+            /** @var Order\Item $orderItem */
+            if ($orderItem->getQtyInvoiced() < $orderItem->getQtyOrdered()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /**
      * @inheritDoc
      */
@@ -417,46 +426,47 @@ class Two extends AbstractMethod
                     __('Could not initiate capture with %1', $this->configRepository::PROVIDER)
                 );
             }
-            $orderItems = $order->getAllVisibleItems();
-            $wholeOrderInvoiced = 1;
-            if ($orderItems) {
-                foreach ($orderItems as $item) {
-                    if ($item->getQtyInvoiced() < $item->getQtyOrdered()) {
-                        $wholeOrderInvoiced = 0;
-                        break;
+
+            $payload = [];
+            $isWholeOrderInvoiced = $this->isWholeOrderInvoiced($order);
+            $isPartialOrder = !$isWholeOrderInvoiced;
+            while (true) {
+                if ($isPartialOrder) {
+                    $invoices = $order->getInvoiceCollection();
+                    $totalInvoices = count($invoices);
+                    $cnt = 1;
+                    $createdInvoice = null;
+                    foreach ($invoices as $invoice) {
+                        if ($cnt == $totalInvoices) {
+                            $createdInvoice = $invoice;
+                        }
+                        $cnt++;
                     }
+                    $payload = [
+                        'partial' => $this->composeCapture->execute($createdInvoice),
+                    ];
                 }
+                $response = $this->apiAdapter->execute('/v1/order/' . $twoOrderId . '/fulfillments', $payload);
+                $error = $this->getErrorFromResponse($response);
+
+                if ($error) {
+                    if ($response['error_code'] == 'PARTIAL_ORDER_MISSING_DATA') {
+                        $isPartialOrder = true;
+                        continue;
+                    }
+                    throw new LocalizedException($error);
+                }
+                break;
             }
 
-            if ($wholeOrderInvoiced == 1) {
-                $response = $this->apiAdapter->execute('/v1/order/' . $twoOrderId . '/fulfilled');
-            } else {
-                $invoices = $order->getInvoiceCollection();
-                $totalInvoices = count($invoices);
-                $cnt = 1;
-                $createdInvoice = null;
-                foreach ($invoices as $invoice) {
-                    if ($cnt == $totalInvoices) {
-                        $createdInvoice = $invoice;
-                    }
-                    $cnt++;
-                }
-                $remainItemInvoice = $payment->getOrder()->prepareInvoice();
-                $response = $this->partialMainOrder($order, $createdInvoice, $remainItemInvoice);
-            }
-
-            if (!empty($response) && isset($response['id'])) {
-                $payment->setTransactionId($response['id'])->setIsTransactionClosed(0);
+            if (!empty($response) && isset($response['fulfilled_order']['id'])) {
+                $payment->setTransactionId($response['fulfilled_order']['id'])->setIsTransactionClosed(0);
             } else {
                 $payment->setIsTransactionClosed(0);
             }
-            $this->parseFulfillResponse($response, $order);
             $payment->save();
 
-            $error = $this->getErrorFromResponse($response);
-            if ($error) {
-                throw new LocalizedException($error);
-            }
+            $this->parseFulfillResponse($response, $order);
         } else {
             throw new LocalizedException(__('The capture action is not available.'));
         }
@@ -472,25 +482,6 @@ class Two extends AbstractMethod
     }
 
     /**
-     * Partial Capture
-     *
-     * @param Order $order
-     * @param Order\Invoice|null $invoice
-     * @param Order\Invoice $remainItemInvoice
-     * @return array
-     * @throws LocalizedException
-     */
-    public function partialMainOrder(Order $order, ?Order\Invoice $invoice, Order\Invoice $remainItemInvoice): array
-    {
-        $twoOrderId = $order->getTwoOrderId();
-        $payload['partially_fulfilled_order'] = $this->composeCapture->execute($invoice);
-        $payload['remained_order'] = $this->composeCapture->execute($remainItemInvoice);
-
-        /* Partially fulfill order*/
-        return $this->apiAdapter->execute('/v1/order/' . $twoOrderId . '/fulfilled', $payload);
-    }
-
-    /**
      * Parse Fulfill Response
      *
      * @param array $response
@@ -500,29 +491,27 @@ class Two extends AbstractMethod
      */
     private function parseFulfillResponse(array $response, Order $order): void
     {
-        $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
-
-        if ($error) {
-            throw new LocalizedException($error);
-        }
-
-        if (empty($response['invoice_details'] ||
-            empty($response['invoice_details']['invoice_number']))) {
+        if (empty($response['fulfilled_order'] ||
+            empty($response['fulfilled_order']['id']))) {
             return;
         }
-
         $additionalInformation = $order->getPayment()->getAdditionalInformation();
-        $additionalInformation['gateway_data']['invoice_number'] = $response['invoice_details']['invoice_number'];
-        $additionalInformation['gateway_data']['invoice_url'] = $response['invoice_url'];
         $additionalInformation['marked_completed'] = true;
 
         $order->getPayment()->setAdditionalInformation($additionalInformation);
 
-        $comment = __(
-            '%1 order marked as completed with invoice number %2',
-            $this->configRepository::PROVIDER,
-            $response['invoice_details']['invoice_number'],
-        );
+        if (empty($response['remained_order'])) {
+            $comment = __(
+                '%1 order marked as completed.',
+                $this->configRepository::PROVIDER,
+            );
+        } else {
+            $comment = __(
+                '%1 order marked as partially completed.',
+                $this->configRepository::PROVIDER,
+            );
+        }
+
         $this->addStatusToOrderHistory($order, $comment->render());
     }
 
@@ -565,7 +554,7 @@ class Two extends AbstractMethod
 
         $payload = $this->composeRefund->execute(
             $payment->getCreditmemo(),
-            (double)$amount,
+            (float)$amount,
             $order
         );
         $response = $this->apiAdapter->execute(
@@ -587,14 +576,10 @@ class Two extends AbstractMethod
                 $reason
             );
             $this->addOrderComment($order, $message);
-            throw new  LocalizedException(
+            throw new LocalizedException(
                 $message
             );
         }
-
-        $additionalInformation = $payment->getAdditionalInformation();
-        $additionalInformation['gateway_data']['credit_note_url'] = $response['credit_note_url'];
-        $payment->setAdditionalInformation($additionalInformation);
 
         $comment = __(
             'Successfully refunded order with %1 for order ID: %2. Refund reference: %3',

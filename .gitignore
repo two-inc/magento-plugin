@@ -8,3 +8,8 @@
 .direnv/
 .envrc
 
+# PHP
+.php-cs-fixer.cache
+auth.json
+vendor/
+composer.lock

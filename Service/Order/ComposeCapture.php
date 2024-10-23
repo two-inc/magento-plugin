@@ -16,7 +16,6 @@ use Two\Gateway\Service\Order as OrderService;
  */
 class ComposeCapture extends OrderService
 {
-
     /**
      * Compose request body for two capture order
      *
@@ -28,30 +27,15 @@ class ComposeCapture extends OrderService
     public function execute(Order\Invoice $invoice, ?string $twoOriginalOrderId = ''): array
     {
         $order = $invoice->getOrder();
+        $lineItems = $this->getLineItemsInvoice($invoice, $order);
         $reqBody = [
-            'billing_address' => $this->getAddress($order, [], 'billing'),
-            'shipping_address' => $this->getAddress($order, [], 'shipping'),
-            'currency' => $invoice->getOrderCurrencyCode(),
             'discount_amount' => $this->roundAmt(abs((float)$invoice->getDiscountAmount())),
             'gross_amount' => $this->roundAmt($invoice->getGrandTotal()),
+            'line_items' => $lineItems,
             'net_amount' => $this->roundAmt($invoice->getGrandTotal() - $invoice->getTaxAmount()),
             'tax_amount' => $this->roundAmt($invoice->getTaxAmount()),
-            'tax_rate' => $this->roundAmt(
-                (1.0 * $order->getTaxAmount() / ($order->getGrandTotal() - $order->getTaxAmount()))
-            ),
-            'discount_rate' => '0',
-            'invoice_type' => 'FUNDED_INVOICE',
-            'line_items' => $this->getLineItemsInvoice($invoice, $order),
-            'merchant_order_id' => (string)($order->getIncrementId()),
-            'merchant_reference' => '',
-            'merchant_additional_info' => '',
+            'tax_subtotal' => $this->getTaxSubtotals($lineItems),
         ];
-        if (!$order->getIsVirtual()) {
-            $reqBody['shipping_details'] = $this->getShippingDetails($order);
-        }
-        if ($twoOriginalOrderId) {
-            $reqBody['original_order_id'] = $twoOriginalOrderId;
-        }
         return $reqBody;
     }
 

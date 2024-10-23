@@ -8,7 +8,8 @@
 "%1 [Trace ID: %2]","%1 [Trace-ID: %2]"
 "%1 order has been marked as cancelled","%1 bestelling is gemarkeerd als geannuleerd"
 "%1 order invoice has not been issued yet.","%1 bestelfactuur is nog niet verzonden."
-"%1 order marked as completed with invoice number %2","%1 bestelling gemarkeerd als voltooid met factuurnummer %2"
+"%1 order marked as completed.","%1 bestelling gemarkeerd als voltooid."
+"%1 order marked as partially completed.","%1 bestilling merket som delvis fullført."
 "%1 requires whole order to be shipped before it can be fulfilled.","%1 vereist dat de gehele bestelling wordt verzonden voordat deze kan worden uitgevoerd."
 "* Required Fields","* Verplichte velden"
 "API key",API-sleutel

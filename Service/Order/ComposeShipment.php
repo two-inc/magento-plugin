@@ -20,7 +20,6 @@ use Two\Gateway\Service\Order as OrderService;
  */
 class ComposeShipment extends OrderService
 {
-
     /**
      * Compose request body for two ship order
      *
@@ -33,41 +32,14 @@ class ComposeShipment extends OrderService
     public function execute(Order\Shipment $shipment, Order $order): array
     {
         $shipmentItems = $this->getLineItemsShipment($order, $shipment);
-        $orderItems = $this->getRemainingItems($order);
 
         return [
-            'partially_fulfilled_order' => [
-                'billing_address' => $this->getAddress($order, [], 'billing'),
-                'shipping_address' => $this->getAddress($order, [], 'shipping'),
-                'currency' => $order->getOrderCurrencyCode(),
-                'discount_amount' => $this->getSum($shipmentItems, 'discount_amount'),
-                'gross_amount' => $this->getSum($shipmentItems, 'gross_amount'),
-                'net_amount' => $this->getSum($shipmentItems, 'net_amount'),
-                'tax_amount' => $this->getSum($shipmentItems, 'tax_amount'),
-                'tax_rate' => reset($shipmentItems)['tax_rate'] ?? 0,
-                'discount_rate' => '0',
-                'invoice_type' => 'FUNDED_INVOICE',
-                'line_items' => array_values($shipmentItems),
-                'merchant_additional_info' => $order->getIncrementId(),
-                'merchant_order_id' => (string)($order->getIncrementId()),
-                'merchant_reference' => $order->getIncrementId(),
-            ],
-            'remained_order' => [
-                'billing_address' => $this->getAddress($order, [], 'billing'),
-                'shipping_address' => $this->getAddress($order, [], 'shipping'),
-                'currency' => $order->getOrderCurrencyCode(),
-                'discount_amount' => $this->getSum($orderItems, 'discount_amount'),
-                'gross_amount' => $this->getSum($orderItems, 'gross_amount'),
-                'net_amount' => $this->getSum($orderItems, 'net_amount'),
-                'tax_amount' => $this->getSum($orderItems, 'tax_amount'),
-                'tax_rate' => reset($orderItems)['tax_rate'] ?? 0,
-                'discount_rate' => '0',
-                'invoice_type' => 'FUNDED_INVOICE',
-                'line_items' => array_values($orderItems),
-                'merchant_additional_info' => $order->getIncrementId(),
-                'merchant_order_id' => (string)($order->getIncrementId()),
-                'merchant_reference' => $order->getIncrementId(),
-            ],
+            'discount_amount' => $this->getSum($shipmentItems, 'discount_amount'),
+            'gross_amount' => $this->getSum($shipmentItems, 'gross_amount'),
+            'line_items' => array_values($shipmentItems),
+            'net_amount' => $this->getSum($shipmentItems, 'net_amount'),
+            'tax_amount' => $this->getSum($shipmentItems, 'tax_amount'),
+            'tax_subtotals' => $this->getTaxSubtotals($shipmentItems),
         ];
     }
 

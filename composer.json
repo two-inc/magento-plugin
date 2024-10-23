@@ -2,7 +2,7 @@
     "name": "two-inc/magento2",
     "description": "Two B2B BNPL payments extension",
     "type": "magento2-module",
-    "version": "1.5.1",
+    "version": "1.6.0",
     "license": [
         "OSL-3.0",
         "AFL-3.0"
@@ -16,6 +16,17 @@
         ],
         "psr-4": {
             "Two\\Gateway\\": ""
+        }
+    },
+    "repositories": [
+        {
+            "type": "composer",
+            "url": "https://repo.magento.com/"
+        }
+    ],
+    "config": {
+        "allow-plugins": {
+            "magento/composer-dependency-version-audit-plugin": true
         }
     }
 }
