@@ -45,8 +45,7 @@ class Two extends AbstractMethod
 
     public const STATUS_NEW = 'two_new';
     public const STATUS_FAILED = 'two_failed';
-    public const STATUS_APPROVED = 'APPROVED';
-    public const STATUS_TWO_PENDING = 'pending_two_payment';
+    public const STATUS_PENDING = 'pending_two_payment';
     /**
      * @var RequestInterface
      */
@@ -218,7 +217,7 @@ class Two extends AbstractMethod
             throw new LocalizedException($error);
         }
 
-        if ($response['status'] !== static::STATUS_APPROVED) {
+        if ($response['status'] !== 'APPROVED') {
             $this->logRepository->addDebugLog(
                 sprintf('Order was not accepted by %s', $this->configRepository::PROVIDER),
                 $response

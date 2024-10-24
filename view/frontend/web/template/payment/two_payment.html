@@ -236,12 +236,12 @@
                         />
                     </div>
                 </div>
-                <!-- ko if: isTermsAndConditionsEnabled -->
+                <!-- ko if: isPaymentTermsEnabled -->
                 <div class="payment-method-content terms-container">
                     <input
                         type="checkbox"
                         name="terms-checkbox"
-                        data-bind="checked: termsAccepted, event: { change: checkTerms }"
+                        data-bind="checked: isPaymentTermsAccepted, event: { change: logIsPaymentsAccepted }"
                     />
                     <span class="terms-text" data-bind="html: paymentTermsMessage"></span>
                 </div>
