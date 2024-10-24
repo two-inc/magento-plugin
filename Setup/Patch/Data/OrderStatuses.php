@@ -28,6 +28,7 @@ class OrderStatuses implements DataPatchInterface
     private $moduleDataSetup;
 
     /**
+     * @param ConfigRepository $configRepository
      * @param ModuleDataSetupInterface $moduleDataSetup
      */
     public function __construct(
@@ -47,8 +48,8 @@ class OrderStatuses implements DataPatchInterface
 
         $data = [];
         $statuses = [
-            Two::STATUS_NEW => __('%1 New Order', $this->configRepository::PROVIDER),
-            Two::STATUS_FAILED => __('%1 Failed', $this->configRepository::PROVIDER),
+            Two::STATUS_NEW => sprintf('%s New Order', $this->configRepository::PROVIDER),
+            Two::STATUS_FAILED => sprintf('%s Failed', $this->configRepository::PROVIDER),
         ];
 
         foreach ($statuses as $code => $info) {

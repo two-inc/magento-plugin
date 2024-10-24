@@ -33,7 +33,7 @@ class AfterPlaceOrder
     {
         if ($order->getPayment()->getMethod() == Two::CODE) {
             $order->setState(Order::STATE_PENDING_PAYMENT);
-            $order->setStatus(Two::STATUS_TWO_PENDING);
+            $order->setStatus(Two::STATUS_PENDING);
             $this->orderRepository->save($order);
         }
         return $order;
