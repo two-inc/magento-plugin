@@ -44,8 +44,8 @@ define([
         redirectMessage: config.redirectMessage,
         paymentTermsMessage: config.paymentTermsMessage,
         termsNotAcceptedMessage: config.termsNotAcceptedMessage,
-        isTermsAndConditionsEnabled: config.isTermsAndConditionsEnabled,
-        termsAccepted: ko.observable(false),
+        isPaymentTermsEnabled: config.isPaymentTermsEnabled,
+        isPaymentTermsAccepted: ko.observable(false),
         orderIntentApprovedMessage: config.orderIntentApprovedMessage,
         orderIntentDeclinedMessage: config.orderIntentDeclinedMessage,
         generalErrorMessage: config.generalErrorMessage,
@@ -86,10 +86,11 @@ define([
             this.configureFormValidation();
             this.popupMessageListener();
         },
-        checkTerms: function (data, event) {
-            // Update the termsAccepted observable based on the checkbox state
-            // And added logging
-            console.debug({ logger: 'checkTerms', termsAccepted: this.termsAccepted() });
+        logIsPaymentsAccepted: function (data, event) {
+            console.debug({
+                logger: 'logIsPaymentsAccepted',
+                isPaymentTermsAccepted: this.isPaymentTermsAccepted()
+            });
         },
         fillCompanyData: function ({ companyId, companyName }) {
             console.debug({ logger: 'twoPayment.fillCompanyData', companyId, companyName });
@@ -207,17 +208,20 @@ define([
             }
         },
         placeOrder: function (data, event) {
-            // Additional logging to check termsAccepted
-            console.debug({ logger: 'placeOrder', termsAccepted: this.termsAccepted() });
+            // Additional logging to check isPaymentTermsAccepted
+            console.debug({
+                logger: 'placeOrder',
+                isPaymentTermsAccepted: this.isPaymentTermsAccepted()
+            });
             if (event) event.preventDefault();
-            if (this.isTermsAndConditionsEnabled && !this.termsAccepted()) {
+            if (this.isPaymentTermsEnabled && !this.isPaymentTermsAccepted()) {
                 this.processTermsNotAcceptedErrorResponse();
                 return;
             }
             if (
                 this.validate() &&
                 additionalValidators.validate() &&
-                this.termsAccepted() === true &&
+                this.isPaymentTermsAccepted() === true &&
                 this.isPlaceOrderActionAllowed() === true
             )
                 this.placeOrderBackend();

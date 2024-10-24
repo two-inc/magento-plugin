@@ -64,11 +64,11 @@ class ConfigProvider implements ConfigProviderInterface
         $provider = $this->configRepository::PROVIDER;
         $tryAgainLater = __('Please try again later.');
         $soleTraderaccountCouldNotBeVerified = __('Your sole trader account could not be verified.');
-        // Set isTermsAndConditionsEnabled based on provider
+        // Set isPaymentTermsEnabled based on provider
         $paymentTerms = __("Payment Terms");
-        $paymentTermsLink = $this->configRepository::PAYMENT_TERMS_LINK;
+        $paymentTermsLink = $this->configRepository->getCheckoutPageUrl() . '/terms';
         // This check here is present to only enable the terms and conditions
-        $isTermsAndConditionsEnabled = !empty($paymentTermsLink);
+        $isPaymentTermsEnabled = !empty($paymentTermsLink);
 
         return [
             'payment' => [
@@ -87,8 +87,7 @@ class ConfigProvider implements ConfigProviderInterface
                     'isOrderNoteFieldEnabled' => $this->configRepository->isOrderNoteEnabled(),
                     'isPONumberFieldEnabled' => $this->configRepository->isPONumberEnabled(),
                     'isTwoLinkEnabled' => $this->configRepository->isTwoLinkEnabled(),
-                    'isTermsAndConditionsEnabled' => $isTermsAndConditionsEnabled,
-                    'paymentTermsLink' => $paymentTermsLink,
+                    'isPaymentTermsEnabled' => $isPaymentTermsEnabled,
                     'redirectMessage' => __(
                         'You will be redirected to %1 when you place order.',
                         $provider
