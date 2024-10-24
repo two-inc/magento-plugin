@@ -22,11 +22,6 @@
 "Amount is missing","Bedrag ontbreekt"
 Branding,Merknaam
 "Buy now, receive your goods, pay your invoice later.","Koop nu, ontvang uw goederen, betaal uw factuur later."
-"Buyer address is invalid.","Het adres van de koper is ongeldig."
-"Buyer authentication failed.","Authenticatie van koper mislukt."
-"Buyer info is inconsistent.","De informatie over de koper is inconsistent."
-"Buyer limit exceeded.","Koperslimiet overschreden."
-"Buyer not found.","Koper niet gevonden."
 "By checking this box, I confirm that I have read and agree to the %1.","Door dit vakje aan te vinken bevestig ik dat ik de %1 heb gelezen en ermee akkoord ga."
 "Check last 100 debug log records","Controleer de laatste 100 debug-logboek records"
 "Check last 100 error log records","Controleer de laatste 100 foutenlogboek records"
@@ -78,9 +73,7 @@ Payment,Betaling
 "Please try again later.","Probeer het later opnieuw."
 Production,Productie
 Project,Project
-Reason,Reden
 "Registered Organisation","Geregistreerde organisatie"
-"Risk too high.","Risico te hoog."
 Sandbox,Zandbak
 Search,Zoekopdracht
 "Search for company","Zoek naar bedrijf"

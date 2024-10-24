@@ -243,39 +243,11 @@ define([
                         message: this.orderIntentApprovedMessage
                     });
                 } else {
-                    this.showErrorMessage(this.getDeclinedErrorMessage(response.decline_reason));
+                    this.showErrorMessage(this.orderIntentDeclinedMessage);
                 }
             } else {
                 this.showErrorMessage(this.generalErrorMessage);
             }
-        },
-        getDeclinedErrorMessage: function (declineReason) {
-            var message = this.orderIntentDeclinedMessage,
-                reason = '';
-            switch (declineReason) {
-                case 'TOO_HIGH_RISK':
-                    reason = $t('Risk too high.');
-                    break;
-                case 'BUYER_LIMIT_EXCEEDED':
-                    reason = $t('Buyer limit exceeded.');
-                    break;
-                case 'BUYER_NOT_FOUND':
-                    reason = $t('Buyer not found.');
-                    break;
-                case 'BUYER_ADDRESS_DEVIATION':
-                    reason = $t('Buyer address is invalid.');
-                    break;
-                case 'BUYER_INFO_INCONSISTENT':
-                    reason = $t('Buyer info is inconsistent.');
-                    break;
-                case 'BUYER_AUTHENTICATION_FAILED':
-                    reason = $t('Buyer authentication failed.');
-                    break;
-            }
-            if (reason) {
-                message += ' ' + $t('Reason') + ': ' + reason;
-            }
-            return message;
         },
         processOrderIntentErrorResponse: function (response) {
             var message = this.generalErrorMessage,

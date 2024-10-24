@@ -22,11 +22,6 @@
 "Amount is missing","Amount is missing"
 Branding,Branding
 "Buy now, receive your goods, pay your invoice later.","Buy now, receive your goods, pay your invoice later."
-"Buyer address is invalid.","Buyer address is invalid."
-"Buyer authentication failed.","Buyer authentication failed."
-"Buyer info is inconsistent.","Buyer info is inconsistent."
-"Buyer limit exceeded.","Buyer limit exceeded."
-"Buyer not found.","Buyer not found."
 "By checking this box, I confirm that I have read and agree to the %1.","By checking this box, I confirm that I have read and agree to the %1."
 "Check last 100 debug log records","Check last 100 debug log records"
 "Check last 100 error log records","Check last 100 error log records"
@@ -78,9 +73,7 @@ Payment,Payment
 "Please try again later.","Please try again later."
 Production,Production
 Project,Project
-Reason,Reason
 "Registered Organisation","Registered Organisation"
-"Risk too high.","Risk too high."
 Sandbox,Sandbox
 Search,Search
 "Search for company","Search for company"

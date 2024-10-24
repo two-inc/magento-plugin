@@ -22,11 +22,6 @@
 "Amount is missing","Belopp saknas"
 Branding,Branding
 "Buy now, receive your goods, pay your invoice later.","Köp nu, få dina varor, betala din faktura senare."
-"Buyer address is invalid.","Köparens adress är ogiltig"
-"Buyer authentication failed.","Köparens autentisering misslyckades."
-"Buyer info is inconsistent.","Köparinformation är inkonsekvent."
-"Buyer limit exceeded.","Inköpsgränsen har uppnåtts."
-"Buyer not found.","Köparen hittades inte."
 "By checking this box, I confirm that I have read and agree to the %1.","Genom att markera denna ruta bekräftar jag att jag har läst och godkänner %1."
 "Check last 100 debug log records","Kontrollera de senaste 100 felsökningsloggposterna"
 "Check last 100 error log records","Kontrollera de senaste 100 felloggposterna"
@@ -78,9 +73,7 @@ Payment,Betalning
 "Please try again later.","Försök igen senare."
 Production,Produktion
 Project,Projekt
-Reason,Orsak
 "Registered Organisation","Registrerad organisation"
-"Risk too high.","För hög risk."
 Sandbox,Sandbox
 Search,Sök
 "Search for company","Sök efter företag"

@@ -22,11 +22,6 @@
 "Amount is missing","Beløp mangler"
 Branding,Merkevarebygging
 "Buy now, receive your goods, pay your invoice later.","Kjøp nå, motta varene dine, betal fakturaen senere."
-"Buyer address is invalid.","Kjøperens adresse er ugyldig."
-"Buyer authentication failed.","Kjøperautentisering feilet."
-"Buyer info is inconsistent.","Kjøperinformasjon er inkonsekvent."
-"Buyer limit exceeded.","Kjøpsgrense er nådd."
-"Buyer not found.","Kjøper ikke funnet."
 "By checking this box, I confirm that I have read and agree to the %1.","Ved å krysse av denne boksen bekrefter jeg at jeg har lest og godtar %1."
 "Check last 100 debug log records","Sjekk siste 100 feilsøkingsloggposter"
 "Check last 100 error log records","Sjekk siste 100 feilloggposter"
@@ -78,9 +73,7 @@ Payment,Betaling
 "Please try again later.","Vennligst prøv igjen senere."
 Production,Produksjon
 Project,Prosjekt
-Reason,Årsak
 "Registered Organisation","Registrert organisasjon"
-"Risk too high.","For høy risiko."
 Sandbox,Sandbox
 Search,Søk
 "Search for company","Søk etter selskap"
