@@ -23,12 +23,15 @@ Branding,Branding
 "By checking this box, I confirm that I have read and agree to the %1.","By checking this box, I confirm that I have read and agree to the %1."
 "Check last 100 debug log records","Check last 100 debug log records"
 "Check last 100 error log records","Check last 100 error log records"
+"City is not valid.","City is not valid."
 "Click here to log in or sign up as a Sole Trader.","Click here to log in or sign up as a Sole Trader."
 "Company ID","Company ID"
+"Company ID is not valid.","Company ID is not valid."
 "Company Name","Company Name"
 "Could not initiate capture with %1","Could not initiate capture with %1"
 "Could not initiate refund with %1","Could not initiate refund with %1"
 "Could not update %1 order status to cancelled. Please contact support with order ID %2. Error: %3","Could not update %1 order status to cancelled. Please contact support with order ID %2. Error: %3"
+"Country is not valid.","Country is not valid."
 Credentials,Credentials
 "Credentials are invalid","Credentials are invalid"
 "Credentials are missing","Credentials are missing"
@@ -39,6 +42,7 @@ Department,Department
 "Display info link","Display info link"
 Download,Download
 "Download as .txt file","Download as .txt file"
+"Email Address is not valid.","Email Address is not valid."
 "Enable address search","Enable address search"
 "Enable company search","Enable company search"
 "Enable order intent","Enable order intent"
@@ -49,6 +53,7 @@ Download,Download
 Environment,Environment
 "Failed to refund order with %1. Reason: %2","Failed to refund order with %1. Reason: %2"
 "Find out more","Find out more"
+"First Name is not valid.","First Name is not valid."
 "Fulfilment order status","Fulfilment order status"
 "Fulfilment trigger","Fulfilment trigger"
 General,General
@@ -56,6 +61,7 @@ General,General
 "Invoice purchase with %1 is not available for this order.","Invoice purchase with %1 is not available for this order."
 "Last 100 debug log lines","Last 100 debug log lines"
 "Last 100 error log records","Last 100 error log records"
+"Last Name is not valid.","Last Name is not valid."
 "Log is empty","Log is empty"
 OK,OK
 "On Completion","On Completion"
@@ -67,6 +73,7 @@ OK,OK
 Payment,Payment
 "Payment Terms","Payment Terms"
 "Payment method","Payment method"
+"Phone Number is not valid.","Phone Number is not valid."
 "Place Order","Place Order"
 "Please try again later.","Please try again later."
 Production,Production
@@ -79,6 +86,7 @@ Search,Search
 "Sole Trader","Sole Trader"
 "Something went wrong with your request to %1. %2","Something went wrong with your request to %1. %2"
 "Sort order","Sort order"
+"Street Address is not valid.","Street Address is not valid."
 "Successfully refunded order with %1 for order ID: %2. Refund reference: %3","Successfully refunded order with %1 for order ID: %2. Refund reference: %3"
 TWO,TWO
 "The %1 payment plugin for Magento simplifies B2B shopping, making it easy and safe for merchants to offer invoices as a payment method.<br>The payment method lives next to other payment methods in your existing checkout, and offers a variety of configuration options to suit your businesses needs.<br>If you would like to know more about how to configure the plugin, check out our <a href=""%2"" target=""_blank"">step by step guide</a>.","The %1 payment plugin for Magento simplifies B2B shopping, making it easy and safe for merchants to offer invoices as a payment method.<br>The payment method lives next to other payment methods in your existing checkout, and offers a variety of configuration options to suit your businesses needs.<br>If you would like to know more about how to configure the plugin, check out our <a href=""%2"" target=""_blank"">step by step guide</a>."
@@ -99,3 +107,4 @@ Version,Version
 "Your invoice purchase with %1 is likely to be accepted subject to additional checks.","Your invoice purchase with %1 is likely to be accepted subject to additional checks."
 "Your request to %1 failed. Reason: %2","Your request to %1 failed. Reason: %2"
 "Your sole trader account could not be verified.","Your sole trader account could not be verified."
+"Zip/Postal Code is not valid.","Zip/Postal Code is not valid."

@@ -23,12 +23,15 @@ Branding,Branding
 "By checking this box, I confirm that I have read and agree to the %1.","Genom att markera denna ruta bekräftar jag att jag har läst och godkänner %1."
 "Check last 100 debug log records","Kontrollera de senaste 100 felsökningsloggposterna"
 "Check last 100 error log records","Kontrollera de senaste 100 felloggposterna"
+"City is not valid.","Stad är inte giltig."
 "Click here to log in or sign up as a Sole Trader.","Klicka här för att logga in eller registrera dig som enskild näringsidkare."
 "Company ID",Organisationsnummer
+"Company ID is not valid.","Företags-ID är inte giltigt."
 "Company Name",Företagsnamn
 "Could not initiate capture with %1","Kunde inte initiera infångning med %1"
 "Could not initiate refund with %1","Kunde inte initiera återbetalning med %1"
 "Could not update %1 order status to cancelled. Please contact support with order ID %2. Error: %3","Kunde inte uppdatera %1 orderstatus till annullerad. Kontakta supporten med beställnings-ID %2. Fel: %3"
+"Country is not valid.","Land är inte giltigt."
 Credentials,Autentiseringsuppgifter
 "Credentials are invalid","Autentiseringsuppgifterna är ogiltiga"
 "Credentials are missing","Autentiseringsuppgifterna saknas"
@@ -39,6 +42,7 @@ Department,Avdelning
 "Display info link","Visa infolänk"
 Download,"Ladda ner"
 "Download as .txt file","Ladda ner som .txt-fil"
+"Email Address is not valid.","E-postadress är inte giltig."
 "Enable address search","Aktivera adresssökning"
 "Enable company search","Aktivera företagssökning"
 "Enable order intent","Aktivera orderavsikt"
@@ -49,6 +53,7 @@ Download,"Ladda ner"
 Environment,Miljö
 "Failed to refund order with %1. Reason: %2","Det gick inte att återbetala beställningen med %1. Orsak: %2"
 "Find out more","Ta reda på mer"
+"First Name is not valid.","Förnamn är inte giltigt."
 "Fulfilment order status","Uppfyllande orderstatus"
 "Fulfilment trigger","Uppfyllelse trigger"
 General,Generellt
@@ -56,6 +61,7 @@ General,Generellt
 "Invoice purchase with %1 is not available for this order.","Fakturaköp med %1 är inte tillgängligt för den här beställningen."
 "Last 100 debug log lines","Senaste 100 felsökningsloggraderna"
 "Last 100 error log records","Senaste 100 felloggposter"
+"Last Name is not valid.","Efternamn är inte giltigt."
 "Log is empty","Loggen är tom"
 OK,OK
 "On Completion","Vid färdigställande"
@@ -67,6 +73,7 @@ OK,OK
 Payment,Betalning
 "Payment Terms",Betalningsvillkor
 "Payment method",Betalningsmetod
+"Phone Number is not valid.","Telefonnummer är inte giltigt."
 "Place Order",Beställa
 "Please try again later.","Försök igen senare."
 Production,Produktion
@@ -79,6 +86,7 @@ Search,Sök
 "Sole Trader","Enskild näringsidkare"
 "Something went wrong with your request to %1. %2","Något gick fel med din begäran till %1. %2"
 "Sort order",Sorteringsordning
+"Street Address is not valid.","Gatuadress är inte giltig."
 "Successfully refunded order with %1 for order ID: %2. Refund reference: %3","Återbetalad beställning med %1 för beställnings-ID: %2. Återbetalningsreferens: %3"
 TWO,TWO
 "The %1 payment plugin for Magento simplifies B2B shopping, making it easy and safe for merchants to offer invoices as a payment method.<br>The payment method lives next to other payment methods in your existing checkout, and offers a variety of configuration options to suit your businesses needs.<br>If you would like to know more about how to configure the plugin, check out our <a href=""%2"" target=""_blank"">step by step guide</a>.","Betalningspluginet %1 för Magento förenklar B2B-shopping, vilket gör det enkelt och säkert för handlare att erbjuda fakturor som betalningsmetod. <br> Betalningsmetoden finns bredvid andra betalningsmetoder i din befintliga kassa, och erbjuder en mängd olika konfigurationsalternativ för att passa ditt företags behov. <br> Om du vill veta mer om hur du konfigurerar plugin-programmet, kolla in vår <a href=""%2"" target=""_blank""> steg-för-steg-guide </a> ."
@@ -99,3 +107,4 @@ Version,Version
 "Your invoice purchase with %1 is likely to be accepted subject to additional checks.","Ditt fakturaköp med %1 kommer sannolikt att accepteras under förutsättning av ytterligare kontroller."
 "Your request to %1 failed. Reason: %2","Din begäran till %1 misslyckades. Orsak: %2"
 "Your sole trader account could not be verified.","Ditt enskild näringsidkarekonto kunde inte verifieras."
+"Zip/Postal Code is not valid.","Postnummer är inte giltigt."

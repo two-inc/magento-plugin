@@ -340,15 +340,15 @@ class Two extends AbstractMethod
     {
         $loc_str = preg_replace('/\s+/', '', $loc_str);
         $fieldLocStrMapping = [
-            '["buyer","representative","phone_number"]' => 'Phone Number is not valid.',
-            '["buyer","company","organization_number"]' => 'Company ID is not valid.',
-            '["buyer","representative","first_name"]' => 'First Name is not valid.',
-            '["buyer","representative","last_name"]' => 'Last Name is not valid.',
-            '["buyer","representative","email"]' => 'Email Address is not valid.',
-            '["billing_address","street_address"]' => 'Street Address is not valid.',
-            '["billing_address","city"]' => 'City is not valid.',
-            '["billing_address","country"]' => 'Country is not valid.',
-            '["billing_address","postal_code"]' => 'Zip/Postal Code is not valid.',
+            '["buyer","representative","phone_number"]' => __('Phone Number is not valid.'),
+            '["buyer","company","organization_number"]' => __('Company ID is not valid.'),
+            '["buyer","representative","first_name"]' => __('First Name is not valid.'),
+            '["buyer","representative","last_name"]' => __('Last Name is not valid.'),
+            '["buyer","representative","email"]' => __('Email Address is not valid.'),
+            '["billing_address","street_address"]' => __('Street Address is not valid.'),
+            '["billing_address","city"]' => __('City is not valid.'),
+            '["billing_address","country"]' => __('Country is not valid.'),
+            '["billing_address","postal_code"]' => __('Zip/Postal Code is not valid.'),
         ];
         if (array_key_exists($loc_str, $fieldLocStrMapping)) {
             return $fieldLocStrMapping[$loc_str];

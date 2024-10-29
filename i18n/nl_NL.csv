@@ -23,12 +23,15 @@ Branding,Merknaam
 "By checking this box, I confirm that I have read and agree to the %1.","Door dit vakje aan te vinken bevestig ik dat ik de %1 heb gelezen en ermee akkoord ga."
 "Check last 100 debug log records","Controleer de laatste 100 debug-logboek records"
 "Check last 100 error log records","Controleer de laatste 100 foutenlogboek records"
+"City is not valid.","Stad is niet geldig."
 "Click here to log in or sign up as a Sole Trader.","Klik hier om in te loggen of u aan te melden als zelfstandig ondernemer."
 "Company ID",Bedrijfs-ID
+"Company ID is not valid.","Bedrijfs-ID is niet geldig."
 "Company Name",Bedrijfsnaam
 "Could not initiate capture with %1","Kon geen vastlegging starten met %1"
 "Could not initiate refund with %1","Kon geen terugbetaling starten met %1"
 "Could not update %1 order status to cancelled. Please contact support with order ID %2. Error: %3","Kon %1 orderstatus niet updaten naar geannuleerd. Neem contact op met support met bestelnummer %2. Fout: %3"
+"Country is not valid.","Land is niet geldig."
 Credentials,Inloggegevens
 "Credentials are invalid","Inloggegevens zijn ongeldig"
 "Credentials are missing","Inloggegevens ontbreken"
@@ -39,6 +42,7 @@ Department,Afdeling
 "Display info link","Infolink weergeven"
 Download,Download
 "Download as .txt file","Downloaden als .txt-bestand"
+"Email Address is not valid.","E-mailadres is niet geldig."
 "Enable address search","Adres zoeken inschakelen"
 "Enable company search","Bedrijf zoeken inschakelen"
 "Enable order intent","Bestelintentie inschakelen"
@@ -49,6 +53,7 @@ Download,Download
 Environment,Omgeving
 "Failed to refund order with %1. Reason: %2","Het is niet gelukt om de bestelling met %1 terug te betalen. Reden: %2"
 "Find out more","Meer informatie"
+"First Name is not valid.","Voornaam is niet geldig."
 "Fulfilment order status","Status van vervulling bestelling"
 "Fulfilment trigger","Trigger voor vervulling"
 General,Algemeen
@@ -56,6 +61,7 @@ General,Algemeen
 "Invoice purchase with %1 is not available for this order.","Aankoop op factuur met %1 is niet beschikbaar voor deze bestelling."
 "Last 100 debug log lines","Laatste 100 debug-logregels"
 "Last 100 error log records","Laatste 100 foutenlogboek records"
+"Last Name is not valid.","Achternaam is niet geldig."
 "Log is empty","Logboek is leeg"
 OK,OK
 "On Completion","Bij voltooiing"
@@ -67,6 +73,7 @@ OK,OK
 Payment,Betaling
 "Payment Terms",Betaalvoorwaarden
 "Payment method",Betaalmethode
+"Phone Number is not valid.","Telefoonnummer is niet geldig."
 "Place Order","Bestelling plaatsen"
 "Please try again later.","Probeer het later opnieuw."
 Production,Productie
@@ -79,6 +86,7 @@ Search,Zoekopdracht
 "Sole Trader",Eenmanszaak
 "Something went wrong with your request to %1. %2","Er is iets misgegaan met uw verzoek aan %1. %2"
 "Sort order",Sorteervolgorde
+"Street Address is not valid.","Straatadres is niet geldig."
 "Successfully refunded order with %1 for order ID: %2. Refund reference: %3","Bestelling succesvol terugbetaald met %1 voor bestelnummer: %2. Terugbetalingsreferentie: %3"
 TWO,TWO
 "The %1 payment plugin for Magento simplifies B2B shopping, making it easy and safe for merchants to offer invoices as a payment method.<br>The payment method lives next to other payment methods in your existing checkout, and offers a variety of configuration options to suit your businesses needs.<br>If you would like to know more about how to configure the plugin, check out our <a href=""%2"" target=""_blank"">step by step guide</a>.","De %1-betaalplug-in voor Magento vereenvoudigt B2B-shoppen en maakt het voor verkopers eenvoudig en veilig om facturen als betaalmethode aan te bieden. <br> De betaalmethode staat naast andere betaalmethoden in je bestaande kassa en biedt een verscheidenheid aan configuratieopties die aansluiten op de behoeften van je bedrijf. <br> Als je meer wilt weten over het configureren van de plug-in, bekijk dan onze <a href=""%2"" target=""_blank""> stapsgewijze handleiding </a> ."
@@ -99,3 +107,4 @@ Version,Versie
 "Your invoice purchase with %1 is likely to be accepted subject to additional checks.","Uw aankoop op factuur met %1 wordt waarschijnlijk geaccepteerd, mits er aanvullende controles worden uitgevoerd."
 "Your request to %1 failed. Reason: %2","Uw verzoek aan %1 is mislukt. Reden: %2"
 "Your sole trader account could not be verified.","Uw eenmanszaakaccount kon niet worden geverifieerd."
+"Zip/Postal Code is not valid.","Postcode is niet geldig."

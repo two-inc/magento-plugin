@@ -23,12 +23,15 @@ Branding,Merkevarebygging
 "By checking this box, I confirm that I have read and agree to the %1.","Ved å krysse av denne boksen bekrefter jeg at jeg har lest og godtar %1."
 "Check last 100 debug log records","Sjekk siste 100 feilsøkingsloggposter"
 "Check last 100 error log records","Sjekk siste 100 feilloggposter"
+"City is not valid.","By er ikke gyldig."
 "Click here to log in or sign up as a Sole Trader.","Klikk her for å logge inn eller registrere deg som eneforhandler."
 "Company ID",Organisasjonsnummer
+"Company ID is not valid.","Firma-ID er ikke gyldig."
 "Company Name",Selskapsnavn
 "Could not initiate capture with %1","Kunne ikke starte fangst med %1"
 "Could not initiate refund with %1","Kunne ikke starte refusjon med %1"
 "Could not update %1 order status to cancelled. Please contact support with order ID %2. Error: %3","Kunne ikke oppdatere %1 ordrestatus til kansellert. Ta kontakt med brukerstøtten med ordre-ID %2. Feil: %3"
+"Country is not valid.","Land er ikke gyldig."
 Credentials,Legitimasjon
 "Credentials are invalid","Legitimasjonen er ugyldig"
 "Credentials are missing","Legitimasjon mangler"
@@ -39,6 +42,7 @@ Department,Avdeling
 "Display info link","Vis infolink"
 Download,"Last ned"
 "Download as .txt file","Last ned som .txt-fil"
+"Email Address is not valid.","E-postadresse er ikke gyldig."
 "Enable address search","Aktiver adressesøk"
 "Enable company search","Aktiver firmasøk"
 "Enable order intent","Aktiver ordrehensikt"
@@ -49,6 +53,7 @@ Download,"Last ned"
 Environment,Miljø
 "Failed to refund order with %1. Reason: %2","Kunne ikke refundere bestillingen med %1. Årsak: %2"
 "Find out more","Finn ut mer"
+"First Name is not valid.","Fornavn er ikke gyldig."
 "Fulfilment order status","Oppfyllelse av ordrestatus"
 "Fulfilment trigger","Oppfyllelse utløser"
 General,Generelt
@@ -56,6 +61,7 @@ General,Generelt
 "Invoice purchase with %1 is not available for this order.","Fakturakjøp med %1 er ikke tilgjengelig for denne bestillingen."
 "Last 100 debug log lines","Siste 100 feilsøkingslogglinjer"
 "Last 100 error log records","Siste 100 feilloggposter"
+"Last Name is not valid.","Etternavn er ikke gyldig."
 "Log is empty","Loggen er tom"
 OK,OK
 "On Completion","Ved ferdigstillelse"
@@ -67,6 +73,7 @@ OK,OK
 Payment,Betaling
 "Payment Terms",Betalingsvilkår
 "Payment method",Betalingsmetode
+"Phone Number is not valid.","Telefonnummer er ikke gyldig."
 "Place Order","Plasser ordre"
 "Please try again later.","Vennligst prøv igjen senere."
 Production,Produksjon
@@ -79,6 +86,7 @@ Search,Søk
 "Sole Trader",Eneforhandler
 "Something went wrong with your request to %1. %2","Noe gikk galt med forespørselen din til %1. %2"
 "Sort order",Sorteringsrekkefølge
+"Street Address is not valid.","Gateadresse er ikke gyldig."
 "Successfully refunded order with %1 for order ID: %2. Refund reference: %3","Vellykket refundert bestilling med %1 for bestillings-ID: %2. Refusjonsreferanse: %3"
 TWO,TWO
 "The %1 payment plugin for Magento simplifies B2B shopping, making it easy and safe for merchants to offer invoices as a payment method.<br>The payment method lives next to other payment methods in your existing checkout, and offers a variety of configuration options to suit your businesses needs.<br>If you would like to know more about how to configure the plugin, check out our <a href=""%2"" target=""_blank"">step by step guide</a>.","%1 betalingsplugin for Magento forenkler B2B shopping, og gjør det enkelt og trygt for selgere å tilby fakturaer som betalingsmåte. <br> Betalingsmetoden lever ved siden av andre betalingsmetoder i din eksisterende kassen, og tilbyr en rekke konfigurasjonsalternativer for å passe bedriftens behov. <br> Hvis du vil vite mer om hvordan du konfigurerer programtillegget, sjekk ut vår <a href=""%2"" target=""_blank""> trinnvise veiledning </a> ."
@@ -99,3 +107,4 @@ Version,Versjon
 "Your invoice purchase with %1 is likely to be accepted subject to additional checks.","Fakturakjøpet ditt med %1 vil sannsynligvis bli akseptert med forbehold om ytterligere kontroller."
 "Your request to %1 failed. Reason: %2","Din forespørsel til %1 mislyktes. Årsak: %2"
 "Your sole trader account could not be verified.","Din eneforhandlerkonto kunne ikke bekreftes."
+"Zip/Postal Code is not valid.","Postnummer er ikke gyldig."
