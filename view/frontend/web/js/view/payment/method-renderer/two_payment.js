@@ -404,7 +404,6 @@ define([
                     $(companyIdField).prop('disabled', true);
                 });
                 $.async(self.companyNameSelector, function (companyNameField) {
-                    var searchLimit = config.companySearchConfig.searchLimit;
                     $(companyNameField)
                         .select2({
                             minimumInputLength: 3,
@@ -424,13 +423,14 @@ define([
                                 url: function (params) {
                                     const queryParams = new URLSearchParams({
                                         country: self.countryCode()?.toUpperCase(),
-                                        limit: searchLimit,
-                                        offset: ((params.page || 1) - 1) * searchLimit,
+                                        limit: config.companySearchLimit,
+                                        offset:
+                                            ((params.page || 1) - 1) * config.companySearchLimit,
                                         q: unescape(params.term)
                                     });
                                     return `${
-                                        config.companySearchConfig.searchHost
-                                    }/companies/v1/company?${queryParams.toString()}`;
+                                        config.checkoutApiUrl
+                                    }/companies/v2/company?${queryParams.toString()}`;
                                 },
                                 processResults: function (response, params) {
                                     var items = [];

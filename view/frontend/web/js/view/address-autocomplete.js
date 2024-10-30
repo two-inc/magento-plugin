@@ -81,8 +81,8 @@ define([
         },
         addressLookup: function (selectedCompany, countryCode) {
             const self = this;
-            if (this.supportedCountryCodes.includes(countryCode.toLowerCase())) {
-                // Use legacy address search for supported country codes
+            if (countryCode.toLowerCase() == 'gb') {
+                // Use legacy address search for GB
                 const addressResponse = $.ajax({
                     dataType: 'json',
                     url: `${config.checkoutApiUrl}/v1/${countryCode}/company/${selectedCompany.companyId}/address`
@@ -100,12 +100,12 @@ define([
                 // Use new address lookup for unsupported country codes
                 const addressResponse = $.ajax({
                     dataType: 'json',
-                    url: `${config.companySearchConfig.searchHost}/companies/v1/company/${selectedCompany.lookupId}`
+                    url: `${config.checkoutApiUrl}/companies/v2/company/${selectedCompany.lookupId}`
                 });
                 addressResponse.done(function (response) {
                     // Use new address lookup by default
-                    if (response.address) {
-                        self.setAddressData(response.address);
+                    if (response.addresses) {
+                        self.setAddressData(response.addresses[0]);
                     }
                 });
             }
@@ -114,7 +114,6 @@ define([
             const self = this;
             require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
                 $.async(self.companyNameSelector, function (companyNameField) {
-                    var searchLimit = config.companySearchConfig.searchLimit;
                     $(companyNameField)
                         .select2({
                             minimumInputLength: 3,
@@ -134,13 +133,14 @@ define([
                                 url: function (params) {
                                     const queryParams = new URLSearchParams({
                                         country: $(self.countrySelector).val()?.toUpperCase(),
-                                        limit: searchLimit,
-                                        offset: ((params.page || 1) - 1) * searchLimit,
+                                        limit: config.companySearchLimit,
+                                        offset:
+                                            ((params.page || 1) - 1) * config.companySearchLimit,
                                         q: unescape(params.term)
                                     });
                                     return `${
-                                        config.companySearchConfig.searchHost
-                                    }/companies/v1/company?${queryParams.toString()}`;
+                                        config.checkoutApiUrl
+                                    }/companies/v2/company?${queryParams.toString()}`;
                                 },
                                 processResults: function (response, params) {
                                     var items = [];

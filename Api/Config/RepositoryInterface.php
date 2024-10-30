@@ -207,13 +207,6 @@ interface RepositoryInterface
     public function getUrls(string $route, ?array $params = []): string;
 
     /**
-     * Get search host url
-     *
-     * @return array
-     */
-    public function getSearchHostUrl(): string;
-
-    /**
      * Get checkout API url
      *
      * @return string

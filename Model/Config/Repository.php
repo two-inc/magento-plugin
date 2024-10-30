@@ -231,16 +231,6 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
-    public function getSearchHostUrl(?string $mode = null): string
-    {
-        $mode = $mode ?: $this->getMode();
-        $prefix = $mode == 'production' ? 'search' : ('search.' . $mode);
-        return sprintf(self::URL_TEMPLATE, $prefix);
-    }
-
-    /**
-     * @inheritDoc
-     */
     public function getMode(?int $storeId = null): string
     {
         return (string)$this->getConfig(self::XML_PATH_MODE, $storeId);
