@@ -296,7 +296,7 @@ class Two extends AbstractMethod
                 if ($err && $err['loc']) {
                     $err_field = $this->getFieldFromLocStr(json_encode($err['loc']));
                     if ($err_field) {
-                        array_push($errs, __($err_field));
+                        array_push($errs, $err_field);
                     } else {
                         // Since err_field is empty, return general error message
                         return $this->_getMessageWithTrace($generalError, $traceID);
@@ -336,7 +336,7 @@ class Two extends AbstractMethod
      * @param $loc_str
      * @return string|null
      */
-    public function getFieldFromLocStr($loc_str): ?string
+    public function getFieldFromLocStr($loc_str): ?Phrase
     {
         $loc_str = preg_replace('/\s+/', '', $loc_str);
         $fieldLocStrMapping = [
