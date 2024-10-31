@@ -13,7 +13,7 @@ define([
 ], function ($, $t, _, Component, customerData, stepNavigator, uiRegistry) {
     'use strict';
 
-    var config = window.checkoutConfig.payment.two_payment;
+    const config = window.checkoutConfig.payment.two_payment;
 
     return Component.extend({
         countrySelector: '#shipping-new-address-form select[name="country_id"]',
@@ -29,10 +29,6 @@ define([
         initialize: function () {
             let self = this;
             this._super();
-
-            // Check if we're in the FireCheckout theme
-            // Leaving here in case we wanto to do some conditional logic against this
-            const isFireCheckout = $('body').hasClass('firecheckout');
 
             $.async(this.countrySelector, function (countrySelector) {
                 self.toggleCompanyVisibility();
@@ -138,9 +134,9 @@ define([
                                     }/companies/v2/company?${queryParams.toString()}`;
                                 },
                                 processResults: function (response, params) {
-                                    var items = [];
-                                    for (var i = 0; i < response.items.length; i++) {
-                                        var item = response.items[i];
+                                    const items = [];
+                                    for (let i = 0; i < response.items.length; i++) {
+                                        const item = response.items[i];
                                         items.push({
                                             id: item.name,
                                             text: item.name,
@@ -181,11 +177,11 @@ define([
                             document.querySelector('.select2-search__field').focus();
                         })
                         .on('select2:select', function (e) {
-                            var selectedItem = e.params.data;
+                            const selectedItem = e.params.data;
                             $('.select2-selection__rendered').text(selectedItem.id);
                             self.setCompanyData(selectedItem.companyId, selectedItem.text);
-                            if (self.isAddressSearchEnabled) {
-                                const countryCode = $(self.countrySelector).val().toLowerCase();
+                            if (config.isAddressSearchEnabled) {
+                                const countryCode = $(self.countrySelector).val()?.toLowerCase();
                                 self.addressLookup(selectedItem, countryCode);
                             }
                         });

@@ -102,7 +102,7 @@ define([
             $(this.companyIdSelector).val(companyId);
             if (this.isOrderIntentEnabled) {
                 fullScreenLoader.startLoader();
-                var self = this;
+                const self = this;
                 this.placeOrderIntent()
                     .always(function () {
                         fullScreenLoader.stopLoader();
@@ -177,7 +177,7 @@ define([
             this.updateAddress(billingAddress);
         },
         fillCustomerData: function () {
-            var self = this;
+            const self = this;
             quote.shippingAddress.subscribe((address) => self.updateShippingAddress(address));
             this.updateShippingAddress(quote.shippingAddress());
 
@@ -200,7 +200,7 @@ define([
             this.fillCountryCode(customerData.get('countryCode')());
         },
         afterPlaceOrder: function () {
-            var url = $.mage.cookies.get(config.redirectUrlCookieCode);
+            const url = $.mage.cookies.get(config.redirectUrlCookieCode);
             if (url) {
                 $.mage.redirect(url);
             }
@@ -225,7 +225,7 @@ define([
                 this.placeOrderBackend();
         },
         placeOrderBackend: function () {
-            var self = this;
+            const self = this;
             this.isPlaceOrderActionAllowed(false);
             return this.getPlaceOrderDeferredObject()
                 .done(function () {
@@ -252,15 +252,15 @@ define([
             }
         },
         processOrderIntentErrorResponse: function (response) {
-            var message = this.generalErrorMessage,
+            const message = this.generalErrorMessage,
                 self = this;
             if (response && response.responseJSON) {
-                var errorCode = response.responseJSON.error_code,
+                const errorCode = response.responseJSON.error_code,
                     errorMessage = response.responseJSON.error_message,
                     errorDetails = response.responseJSON.error_details;
                 switch (errorCode) {
                     case 'SCHEMA_ERROR':
-                        var errors = response.responseJSON.error_json;
+                        const errors = response.responseJSON.error_json;
                         if (errors) {
                             message = '';
                             self.messageContainer.clear();
@@ -288,8 +288,7 @@ define([
             }
         },
         processTermsNotAcceptedErrorResponse: function (response) {
-            var message = this.termsNotAcceptedMessage;
-            this.showErrorMessage(message);
+            this.showErrorMessage(this.termsNotAcceptedMessage);
         },
         getEmail: function () {
             return quote.guestEmail ? quote.guestEmail : window.checkoutConfig.customerData.email;
@@ -431,9 +430,9 @@ define([
                                     }/companies/v2/company?${queryParams.toString()}`;
                                 },
                                 processResults: function (response, params) {
-                                    var items = [];
-                                    for (var i = 0; i < response.items.length; i++) {
-                                        var item = response.items[i];
+                                    const items = [];
+                                    for (let i = 0; i < response.items.length; i++) {
+                                        const item = response.items[i];
                                         items.push({
                                             id: item.name,
                                             text: item.name,
@@ -502,7 +501,7 @@ define([
             $.async(this.formSelector, function (form) {
                 $(form).validation({
                     errorPlacement: function (error, element) {
-                        var errorPlacement = element.closest('.field');
+                        let errorPlacement = element.closest('.field');
                         if (element.is(':checkbox') || element.is(':radio')) {
                             errorPlacement = element.parents('.control').children().last();
                             if (!errorPlacement.length) {
