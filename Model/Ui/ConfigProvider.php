@@ -48,11 +48,6 @@ class ConfigProvider implements ConfigProviderInterface
      */
     public function getConfig(): array
     {
-        $companySearchConfig = [
-            'searchHost' => $this->configRepository->getSearchHostUrl(),
-            'searchLimit' => 50,
-        ];
-
         $orderIntentConfig = [
             'extensionPlatformName' => $this->configRepository->getExtensionPlatformName(),
             'extensionDBVersion' => $this->configRepository->getExtensionDBVersion(),
@@ -77,13 +72,12 @@ class ConfigProvider implements ConfigProviderInterface
                     'orderIntentConfig' => $orderIntentConfig,
                     'isCompanySearchEnabled' => $this->configRepository->isCompanySearchEnabled(),
                     'isAddressSearchEnabled' => $this->configRepository->isAddressSearchEnabled(),
-                    'companySearchConfig' => $companySearchConfig,
-                    'supportedCountryCodes' => ['no', 'gb', 'se'],
+                    'companySearchLimit' => 50,
+                    'supportedCountryCodes' => ['no', 'gb', 'se', 'nl'],
                     'isDepartmentFieldEnabled' => $this->configRepository->isDepartmentEnabled(),
                     'isProjectFieldEnabled' => $this->configRepository->isProjectEnabled(),
                     'isOrderNoteFieldEnabled' => $this->configRepository->isOrderNoteEnabled(),
                     'isPONumberFieldEnabled' => $this->configRepository->isPONumberEnabled(),
-                    'isTwoLinkEnabled' => $this->configRepository->isTwoLinkEnabled(),
                     'isPaymentTermsEnabled' => true,
                     'redirectMessage' => __(
                         'You will be redirected to %1 when you place order.',
@@ -109,7 +103,6 @@ class ConfigProvider implements ConfigProviderInterface
                         $provider,
                         $soleTraderaccountCouldNotBeVerified
                     ),
-                    'companyNamePlaceholder' => __("Enter company name to search")
                 ],
             ],
         ];

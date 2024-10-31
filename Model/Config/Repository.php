@@ -207,14 +207,6 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
-    public function isTwoLinkEnabled(?int $storeId = null): bool
-    {
-        return $this->isSetFlag(self::XML_PATH_ENABLE_TWO_LINK, $storeId);
-    }
-
-    /**
-     * @inheritDoc
-     */
     public function getWeightUnit(?int $storeId = null): string
     {
         return $this->getConfig(self::XML_PATH_WEIGHT_UNIT, $storeId);
@@ -226,16 +218,6 @@ class Repository implements RepositoryInterface
     public function getUrls(string $route, ?array $params = []): string
     {
         return $this->urlBuilder->getUrl($route, $params);
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function getSearchHostUrl(?string $mode = null): string
-    {
-        $mode = $mode ?: $this->getMode();
-        $prefix = $mode == 'production' ? 'search' : ('search.' . $mode);
-        return sprintf(self::URL_TEMPLATE, $prefix);
     }
 
     /**

@@ -13,19 +13,15 @@ define([
 ], function ($, $t, _, Component, customerData, stepNavigator, uiRegistry) {
     'use strict';
 
-    var config = window.checkoutConfig.payment.two_payment;
+    const config = window.checkoutConfig.payment.two_payment;
 
     return Component.extend({
-        isCompanySearchEnabled: config.isCompanySearchEnabled,
-        isAddressSearchEnabled: config.isAddressSearchEnabled,
-        supportedCountryCodes: config.supportedCountryCodes,
-        isInternationalTelephoneEnabled: config.isInternationalTelephoneEnabled,
         countrySelector: '#shipping-new-address-form select[name="country_id"]',
         companyNameSelector: '#shipping-new-address-form input[name="company"]',
         companyNameLabel: 'div[name="shippingAddress.company"] label',
         companyIdSelector: '#shipping-new-address-form input[name="custom_attributes[company_id]"]',
-        companyNamePlaceholder: config.companyNamePlaceholder,
         shippingTelephoneSelector: '#shipping-new-address-form input[name="telephone"]',
+        companyNamePlaceholder: $t('Enter company name to search'),
         enterDetailsManuallyText: $t('Enter details manually'),
         enterDetailsManuallyButton: '#shipping_enter_details_manually',
         searchForCompanyText: $t('Search for company'),
@@ -34,19 +30,13 @@ define([
             let self = this;
             this._super();
 
-            // Check if we're in the FireCheckout theme
-            // Leaving here in case we wanto to do some conditional logic against this
-            const isFireCheckout = $('body').hasClass('firecheckout');
-
             $.async(this.countrySelector, function (countrySelector) {
                 self.toggleCompanyVisibility();
                 $(countrySelector).on('change', function () {
                     self.toggleCompanyVisibility();
                 });
             });
-            if (this.isCompanySearchEnabled) {
-                this.enableCompanySearch();
-            }
+            this.enableCompanySearch();
             const setTwoTelephone = (e) => customerData.set('shippingTelephone', e.target.value);
             $.async(self.shippingTelephoneSelector, function (telephoneSelector) {
                 $(telephoneSelector).on('change keyup', setTwoTelephone);
@@ -81,8 +71,8 @@ define([
         },
         addressLookup: function (selectedCompany, countryCode) {
             const self = this;
-            if (this.supportedCountryCodes.includes(countryCode.toLowerCase())) {
-                // Use legacy address search for supported country codes
+            if (countryCode.toLowerCase() == 'gb') {
+                // Use legacy address search for GB
                 const addressResponse = $.ajax({
                     dataType: 'json',
                     url: `${config.checkoutApiUrl}/v1/${countryCode}/company/${selectedCompany.companyId}/address`
@@ -100,21 +90,21 @@ define([
                 // Use new address lookup for unsupported country codes
                 const addressResponse = $.ajax({
                     dataType: 'json',
-                    url: `${config.companySearchConfig.searchHost}/companies/v1/company/${selectedCompany.lookupId}`
+                    url: `${config.checkoutApiUrl}/companies/v2/company/${selectedCompany.lookupId}`
                 });
                 addressResponse.done(function (response) {
                     // Use new address lookup by default
-                    if (response.address) {
-                        self.setAddressData(response.address);
+                    if (response.addresses) {
+                        self.setAddressData(response.addresses[0]);
                     }
                 });
             }
         },
         enableCompanySearch: function () {
+            if (!config.isCompanySearchEnabled) return;
             const self = this;
             require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
                 $.async(self.companyNameSelector, function (companyNameField) {
-                    var searchLimit = config.companySearchConfig.searchLimit;
                     $(companyNameField)
                         .select2({
                             minimumInputLength: 3,
@@ -134,18 +124,19 @@ define([
                                 url: function (params) {
                                     const queryParams = new URLSearchParams({
                                         country: $(self.countrySelector).val()?.toUpperCase(),
-                                        limit: searchLimit,
-                                        offset: ((params.page || 1) - 1) * searchLimit,
+                                        limit: config.companySearchLimit,
+                                        offset:
+                                            ((params.page || 1) - 1) * config.companySearchLimit,
                                         q: unescape(params.term)
                                     });
                                     return `${
-                                        config.companySearchConfig.searchHost
-                                    }/companies/v1/company?${queryParams.toString()}`;
+                                        config.checkoutApiUrl
+                                    }/companies/v2/company?${queryParams.toString()}`;
                                 },
                                 processResults: function (response, params) {
-                                    var items = [];
-                                    for (var i = 0; i < response.items.length; i++) {
-                                        var item = response.items[i];
+                                    const items = [];
+                                    for (let i = 0; i < response.items.length; i++) {
+                                        const item = response.items[i];
                                         items.push({
                                             id: item.name,
                                             text: item.name,
@@ -186,11 +177,11 @@ define([
                             document.querySelector('.select2-search__field').focus();
                         })
                         .on('select2:select', function (e) {
-                            var selectedItem = e.params.data;
+                            const selectedItem = e.params.data;
                             $('.select2-selection__rendered').text(selectedItem.id);
                             self.setCompanyData(selectedItem.companyId, selectedItem.text);
-                            if (self.isAddressSearchEnabled) {
-                                const countryCode = $(self.countrySelector).val().toLowerCase();
+                            if (config.isAddressSearchEnabled) {
+                                const countryCode = $(self.countrySelector).val()?.toLowerCase();
                                 self.addressLookup(selectedItem, countryCode);
                             }
                         });
