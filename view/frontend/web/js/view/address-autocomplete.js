@@ -16,16 +16,12 @@ define([
     var config = window.checkoutConfig.payment.two_payment;
 
     return Component.extend({
-        isCompanySearchEnabled: config.isCompanySearchEnabled,
-        isAddressSearchEnabled: config.isAddressSearchEnabled,
-        supportedCountryCodes: config.supportedCountryCodes,
-        isInternationalTelephoneEnabled: config.isInternationalTelephoneEnabled,
         countrySelector: '#shipping-new-address-form select[name="country_id"]',
         companyNameSelector: '#shipping-new-address-form input[name="company"]',
         companyNameLabel: 'div[name="shippingAddress.company"] label',
         companyIdSelector: '#shipping-new-address-form input[name="custom_attributes[company_id]"]',
-        companyNamePlaceholder: config.companyNamePlaceholder,
         shippingTelephoneSelector: '#shipping-new-address-form input[name="telephone"]',
+        companyNamePlaceholder: $t('Enter company name to search'),
         enterDetailsManuallyText: $t('Enter details manually'),
         enterDetailsManuallyButton: '#shipping_enter_details_manually',
         searchForCompanyText: $t('Search for company'),
@@ -44,9 +40,7 @@ define([
                     self.toggleCompanyVisibility();
                 });
             });
-            if (this.isCompanySearchEnabled) {
-                this.enableCompanySearch();
-            }
+            this.enableCompanySearch();
             const setTwoTelephone = (e) => customerData.set('shippingTelephone', e.target.value);
             $.async(self.shippingTelephoneSelector, function (telephoneSelector) {
                 $(telephoneSelector).on('change keyup', setTwoTelephone);
@@ -111,6 +105,7 @@ define([
             }
         },
         enableCompanySearch: function () {
+            if (!config.isCompanySearchEnabled) return;
             const self = this;
             require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
                 $.async(self.companyNameSelector, function (companyNameField) {

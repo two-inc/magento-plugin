@@ -35,7 +35,6 @@ interface RepositoryInterface
     public const XML_PATH_ENABLE_PROJECT_NAME = 'payment/two_payment/enable_project';
     public const XML_PATH_ENABLE_ORDER_NOTE = 'payment/two_payment/enable_order_note';
     public const XML_PATH_ENABLE_PO_NUMBER = 'payment/two_payment/enable_po_number';
-    public const XML_PATH_ENABLE_TWO_LINK = 'payment/two_payment/enable_two_link';
     public const XML_PATH_VERSION = 'payment/two_payment/version';
     public const XML_PATH_DEBUG = 'payment/two_payment/debug';
 
@@ -177,15 +176,6 @@ interface RepositoryInterface
      * @return bool
      */
     public function isPONumberEnabled(?int $storeId = null): bool;
-
-    /**
-     * Check if TWO link is enabled
-     *
-     * @param int|null $storeId
-     *
-     * @return bool
-     */
-    public function isTwoLinkEnabled(?int $storeId = null): bool;
 
     /**
      * Get weight unit

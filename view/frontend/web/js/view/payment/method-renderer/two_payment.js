@@ -55,8 +55,6 @@ define([
         isProjectFieldEnabled: config.isProjectFieldEnabled,
         isOrderNoteFieldEnabled: config.isOrderNoteFieldEnabled,
         isPONumberFieldEnabled: config.isPONumberFieldEnabled,
-        isTwoLinkEnabled: config.isTwoLinkEnabled,
-        supportedCountryCodes: config.supportedCountryCodes,
         soleTraderCountryCodes: ['gb'],
         formSelector: 'form#two_gateway_form',
         companyNameSelector: 'input#company_name',

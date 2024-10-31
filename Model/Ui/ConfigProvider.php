@@ -78,7 +78,6 @@ class ConfigProvider implements ConfigProviderInterface
                     'isProjectFieldEnabled' => $this->configRepository->isProjectEnabled(),
                     'isOrderNoteFieldEnabled' => $this->configRepository->isOrderNoteEnabled(),
                     'isPONumberFieldEnabled' => $this->configRepository->isPONumberEnabled(),
-                    'isTwoLinkEnabled' => $this->configRepository->isTwoLinkEnabled(),
                     'isPaymentTermsEnabled' => true,
                     'redirectMessage' => __(
                         'You will be redirected to %1 when you place order.',
@@ -104,7 +103,6 @@ class ConfigProvider implements ConfigProviderInterface
                         $provider,
                         $soleTraderaccountCouldNotBeVerified
                     ),
-                    'companyNamePlaceholder' => __("Enter company name to search")
                 ],
             ],
         ];

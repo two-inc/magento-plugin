@@ -221,16 +221,6 @@
                     </depends>
                     <config_path>payment/two_payment/enable_po_number</config_path>
                 </field>
-                <field id="enable_two_link" translate="label" type="select" sortOrder="100" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
-                    <label>Display info link</label>
-                    <comment>Display a modal next to the payment option in the checkout page which describes how this payment method works from a buyer perspective with a URL to find out more.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
-                    <config_path>payment/two_payment/enable_two_link</config_path>
-                </field>
             </group>
         </section>
         <section id="two_search" translate="label" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"

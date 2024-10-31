@@ -27,7 +27,6 @@
                 <enable_order_note>0</enable_order_note>
                 <enable_project>1</enable_project>
                 <enable_po_number>0</enable_po_number>
-                <enable_two_link>0</enable_two_link>
                 <can_use_internal>0</can_use_internal>
                 <can_use_checkout>1</can_use_checkout>
                 <payment_action>authorize</payment_action>

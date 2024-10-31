@@ -207,14 +207,6 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
-    public function isTwoLinkEnabled(?int $storeId = null): bool
-    {
-        return $this->isSetFlag(self::XML_PATH_ENABLE_TWO_LINK, $storeId);
-    }
-
-    /**
-     * @inheritDoc
-     */
     public function getWeightUnit(?int $storeId = null): string
     {
         return $this->getConfig(self::XML_PATH_WEIGHT_UNIT, $storeId);
