@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://user-images.githubusercontent.com/24823946/157635240-66cf8713-3912-4db8-b729-597b376a0453.jpg" width="128" height="128"/>
+  <img src="view/frontend/web/images/logo.svg" width="128" height="128"/>
 </p>
 <h1 align="center">Two payment plugin for Magento 2.3.3 and higher</h1>
 Sell to your business customers in one click. The Two payment Module simplifies B2B shopping, making it easy and safe for Merchants to offer invoices as payment method.
@@ -39,7 +39,7 @@ Check if your server has composer installed by running the following command:
 composer –v
 ```
 
-If your server doesn’t have composer installed, you can easily install it by using this manual: https://getcomposer.org/doc/00-intro.md
+If your server doesn’t have composer installed, you can easily install it by using this manual: <https://getcomposer.org/doc/00-intro.md>
 
 Step-by-step to install the Magento® 2 extension through Composer:
 
