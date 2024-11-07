@@ -28,7 +28,7 @@ class Error extends Action
     /**
      * Error log file path pattern
      */
-    public const ERROR_LOG_FILE = '%s/log/two/error.log';
+    public const ERROR_LOG_FILE = '%s/log/abn/error.log';
 
     /**
      * @var JsonFactory

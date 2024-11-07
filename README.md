@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="view/frontend/web/images/logo.svg" width="128" height="128"/>
+  <img src="view/frontend/web/images/abnLogo.svg" width="128" height="128"/>
 </p>
-<h1 align="center">Two payment plugin for Magento 2.3.3 and higher</h1>
-Sell to your business customers in one click. The Two payment Module simplifies B2B shopping, making it easy and safe for Merchants to offer invoices as payment method.
+<h1 align="center">Achterafbetalen with ABN AMRO payment plugin for Magento 2.3.3 and higher</h1>
+Sell to your business customers in one click. The payment Module simplifies B2B shopping, making it easy and safe for Merchants to offer invoices as payment method.
 
 ### Benefits for Merchants
 
-Two allows you to offer a seamless Buy now, Pay later option for your business customers which will enhance the buyer journey and reduce the manual work related to doing business with other Businesses.
+The payment plugin allows you to offer a seamless Buy now, Pay later option for your business customers which will enhance the buyer journey and reduce the manual work related to doing business with other Businesses.
 
-Two will:
+We will:
 
 - Run an instant credit check on your customers
 - Allow you to enable a B2B Guest Checkout - increases conversion by up to 36%
@@ -17,17 +17,17 @@ Two will:
 - Handle partial capture and refunds in a click
 - You get paid instantly on fulfilment of an order
 
-Completely remove any credit risk - if the customer doesn't repay, it's Two's problem, and not yours.
+Completely remove any credit risk - if the customer doesn't repay, it's our problem, and not yours.
 
 ### Benefit for customers
 
-**Two Buy now, Pay later** offers your business customers the option to pay with a frictionless invoice solution that will send the invoice directly to their accountant through electronic invoicing.
+**Achterafbetalen with ABN AMRO** offers your business customers the option to pay with a frictionless invoice solution that will send the invoice directly to their accountant through electronic invoicing.
 
 - Total flexibility on repayment terms - customers can choose to repay on any timescale they like
 - Instantly checkout without any burdensome onboarding
 - PDF + Electronic invoicing using the [PEPPOL](https://peppol.eu/) framework - invoices flow straight to the ERP
 
-To make the integration process as easy as possible for you, Two.inc offers an easy integration using this Magento® 2 Plugin. Before you start up the installation process, we recommend that you make a backup of your webshop files, as well as the database.
+To make the integration process as easy as possible for you, we offer an easy integration using this Magento® 2 Plugin. Before you start up the installation process, we recommend that you make a backup of your webshop files, as well as the database.
 
 ### Installation using Composer
 

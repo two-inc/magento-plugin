@@ -13,7 +13,7 @@ define([
 ], function ($, $t, _, Component, customerData, stepNavigator, uiRegistry) {
     'use strict';
 
-    const config = window.checkoutConfig.payment.two_payment;
+    const config = window.checkoutConfig.payment.abn_payment;
 
     return Component.extend({
         countrySelector: '#shipping-new-address-form select[name="country_id"]',

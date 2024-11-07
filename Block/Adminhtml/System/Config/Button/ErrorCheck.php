@@ -72,7 +72,7 @@ class ErrorCheck extends Field
      */
     public function getErrorCheckUrl()
     {
-        return $this->getUrl('two/log/error');
+        return $this->getUrl('abn/log/error');
     }
 
     /**

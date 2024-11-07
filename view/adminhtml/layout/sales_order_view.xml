@@ -10,7 +10,7 @@
     <body>
         <referenceBlock name="order_additional_info">
             <block class="ABN\Gateway\Block\Adminhtml\Order\View"
-                   name="two_custom_view"
+                   name="abn_custom_view"
                    template="ABN_Gateway::order/view/view.phtml"/>
         </referenceBlock>
     </body>

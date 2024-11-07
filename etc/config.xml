@@ -9,7 +9,7 @@
         xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Store:etc/config.xsd">
     <default>
         <payment>
-            <two_payment>
+            <abn_payment>
                 <active>1</active>
                 <version>1.6.6</version>
                 <title>Achteraf betalen - Bestel op factuur</title>
@@ -31,7 +31,7 @@
                 <can_use_checkout>1</can_use_checkout>
                 <payment_action>authorize</payment_action>
                 <model>ABN\Gateway\Model\Two</model>
-            </two_payment>
+            </abn_payment>
         </payment>
     </default>
 </config>

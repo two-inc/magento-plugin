@@ -48,16 +48,16 @@ class ComposeOrder extends OrderService
             'merchant_order_id' => (string)($order->getIncrementId()),
             'merchant_urls' => [
                 'merchant_confirmation_url' => $this->url->getUrl(
-                    'two/payment/confirm',
+                    'abn/payment/confirm',
                     ['_two_order_reference' => base64_encode($orderReference)]
                 ),
                 'merchant_cancel_order_url' => $this->url->getUrl(
-                    'two/payment/cancel',
+                    'abn/payment/cancel',
                     ['_two_order_reference' => base64_encode($orderReference)]
                 ),
                 'merchant_edit_order_url' => '',
                 'merchant_order_verification_failed_url' => $this->url->getUrl(
-                    'two/payment/verificationfailed',
+                    'abn/payment/verificationfailed',
                     ['_two_order_reference' => base64_encode($orderReference)]
                 ),
             ],

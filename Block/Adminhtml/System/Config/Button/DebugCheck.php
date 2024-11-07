@@ -72,7 +72,7 @@ class DebugCheck extends Field
      */
     public function getDebugCheckUrl()
     {
-        return $this->getUrl('two/log/debug');
+        return $this->getUrl('abn/log/debug');
     }
 
     /**

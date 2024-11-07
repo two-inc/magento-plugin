@@ -41,11 +41,11 @@ use ABN\Gateway\Api\Log\RepositoryInterface as LogRepository;
  */
 class Two extends AbstractMethod
 {
-    public const CODE = 'two_payment';
+    public const CODE = 'abn_payment';
 
-    public const STATUS_NEW = 'two_new';
-    public const STATUS_FAILED = 'two_failed';
-    public const STATUS_PENDING = 'pending_two_payment';
+    public const STATUS_NEW = 'abn_new';
+    public const STATUS_FAILED = 'abn_failed';
+    public const STATUS_PENDING = 'pending_abn_payment';
     /**
      * @var RequestInterface
      */

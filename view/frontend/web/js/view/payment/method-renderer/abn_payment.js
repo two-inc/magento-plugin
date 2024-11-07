@@ -33,12 +33,12 @@ define([
 ) {
     'use strict';
 
-    let config = window.checkoutConfig.payment.two_payment;
+    let config = window.checkoutConfig.payment.abn_payment;
     window.quote = quote;
 
     return Component.extend({
         defaults: {
-            template: 'ABN_Gateway/payment/two_payment'
+            template: 'ABN_Gateway/payment/abn_payment'
         },
         redirectAfterPlaceOrder: false,
         redirectMessage: config.redirectMessage,
@@ -393,7 +393,7 @@ define([
             return $(this.formSelector).valid();
         },
         getCode: function () {
-            return 'two_payment';
+            return 'abn_payment';
         },
         getData: function () {
             return {
@@ -548,7 +548,7 @@ define([
             }
         },
         getTokens() {
-            const URL = url.build('rest/V1/two/get-tokens');
+            const URL = url.build('rest/V1/abn/get-tokens');
             const OPTIONS = {
                 method: 'POST',
                 headers: {
