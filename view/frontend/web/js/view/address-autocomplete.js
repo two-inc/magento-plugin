@@ -71,34 +71,16 @@ define([
         },
         addressLookup: function (selectedCompany, countryCode) {
             const self = this;
-            if (countryCode.toLowerCase() == 'gb') {
-                // Use legacy address search for GB
-                const addressResponse = $.ajax({
-                    dataType: 'json',
-                    url: `${config.checkoutApiUrl}/v1/${countryCode}/company/${selectedCompany.companyId}/address`
-                });
-                addressResponse.done(function (response) {
-                    if (response.address) {
-                        self.setAddressData({
-                            city: response.address.city,
-                            postal_code: response.address.postalCode,
-                            street_address: response.address.streetAddress
-                        });
-                    }
-                });
-            } else {
-                // Use new address lookup for unsupported country codes
-                const addressResponse = $.ajax({
-                    dataType: 'json',
-                    url: `${config.checkoutApiUrl}/companies/v2/company/${selectedCompany.lookupId}`
-                });
-                addressResponse.done(function (response) {
-                    // Use new address lookup by default
-                    if (response.addresses) {
-                        self.setAddressData(response.addresses[0]);
-                    }
-                });
-            }
+            const addressResponse = $.ajax({
+                dataType: 'json',
+                url: `${config.checkoutApiUrl}/companies/v2/company/${selectedCompany.lookupId}`
+            });
+            addressResponse.done(function (response) {
+                // Use new address lookup by default
+                if (response.addresses) {
+                    self.setAddressData(response.addresses[0]);
+                }
+            });
         },
         enableCompanySearch: function () {
             if (!config.isCompanySearchEnabled) return;
