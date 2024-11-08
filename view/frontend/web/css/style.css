@@ -59,14 +59,14 @@
     /* Optional: space between the title text and the icon */
 }
 
-.tooltip-container {
+.two-tooltip-container {
     position: relative;
     display: inline-block;
     cursor: pointer;
     /* Indicate the icon is interactive */
 }
 
-.tooltip-container svg {
+.two-tooltip-container svg {
     margin-left: 5px;
     /* Space between the title and the icon */
     vertical-align: middle;
@@ -107,7 +107,7 @@
     background-color: var(--color-blue2);
 }
 
-.tooltip-container:hover .two-tooltip-text {
+.two-tooltip-container:hover .two-tooltip-text {
     visibility: visible;
     opacity: 1;
 }
