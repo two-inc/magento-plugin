@@ -545,11 +545,6 @@ class Two extends AbstractMethod
         }
 
         $billingAddress = $order->getBillingAddress();
-        if ($billingAddress->getCountryId() == 'NO') {
-            $langParams = '?lang=nb_NO';
-        } else {
-            $langParams = '?lang=en_US';
-        }
 
         $payload = $this->composeRefund->execute(
             $payment->getCreditmemo(),
@@ -557,7 +552,7 @@ class Two extends AbstractMethod
             $order
         );
         $response = $this->apiAdapter->execute(
-            "/v1/order/" . $twoOrderId . "/refund" . $langParams,
+            "/v1/order/" . $twoOrderId . "/refund",
             $payload
         );
 
