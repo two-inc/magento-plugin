@@ -59,16 +59,20 @@ class ComposeShipment extends OrderService
             }
 
             // Part of the item line that is shipped.
-            $part = $orderItem->getQtyOrdered() / $item->getQty();
+            $part = $item->getQty() / $orderItem->getQtyOrdered();
+
+            $grossAmount = $this->roundAmt($this->getGrossAmountItem($orderItem) * $part);
+            $netAmount = $this->roundAmt($this->getNetAmountItem($orderItem) * $part);
+            $taxAmount = $grossAmount - $netAmount;
 
             $items[$orderItem->getItemId()] = [
                 'order_item_id' => $item->getOrderItemId(),
                 'name' => $item->getName(),
                 'description' => $item->getName(),
-                'gross_amount' => $this->roundAmt($this->getGrossAmountItem($orderItem) / $part),
-                'net_amount' => $this->roundAmt($this->getNetAmountItem($orderItem) / $part),
-                'discount_amount' => $this->roundAmt($this->getDiscountAmountItem($orderItem) / $part),
-                'tax_amount' => $this->roundAmt($this->getTaxAmountItem($orderItem) / $part),
+                'gross_amount' => $grossAmount,
+                'net_amount' => $netAmount,
+                'tax_amount' => $taxAmount,
+                'discount_amount' => $this->roundAmt($this->getDiscountAmountItem($orderItem) * $part),
                 'tax_class_name' => 'VAT ' . $this->roundAmt($orderItem->getTaxPercent()) . '%',
                 'tax_rate' => $this->roundAmt(($orderItem->getTaxPercent() / 100)),
                 'unit_price' => $this->roundAmt($this->getUnitPriceItem($orderItem), 6),
@@ -95,35 +99,6 @@ class ComposeShipment extends OrderService
             $items['shipping'] = $this->getShippingLineOrder($order);
         }
 
-        return $items;
-    }
-
-    /**
-     * @param Order $order
-     * @return array
-     */
-    private function getRemainingItems(Order $order): array
-    {
-        $orderItems = $this->getLineItemsOrder($order);
-        $items = [];
-        foreach ($orderItems as $id => $item) {
-            // Remove Shipping cost line from remaining items if it is set
-            if ($item['order_item_id'] == 'shipping') {
-                continue;
-            }
-            $remaining = $item['qty_to_ship'];
-            if ($remaining == 0) {
-                continue;
-            }
-            $total = $item['quantity'];
-            $part = $remaining / $total;
-            $item['quantity'] = $remaining;
-            $item['gross_amount'] = $this->roundAmt($item['gross_amount'] * $part);
-            $item['discount_amount'] = $this->roundAmt($item['discount_amount'] * $part);
-            $item['net_amount'] = $this->roundAmt($item['net_amount'] * $part);
-            $item['tax_amount'] = $this->roundAmt($item['tax_amount'] * $part);
-            $items[$id] = $item;
-        }
         return $items;
     }
 }
