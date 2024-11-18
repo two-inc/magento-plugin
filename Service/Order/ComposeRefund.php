@@ -18,7 +18,6 @@ use Two\Gateway\Service\Order as OrderService;
  */
 class ComposeRefund extends OrderService
 {
-
     /**
      * Compose request body for two refund order
      *
@@ -64,17 +63,21 @@ class ComposeRefund extends OrderService
             }
 
             // Part of the item line that is shipped.
-            $part = $orderItem->getQtyOrdered() / $item->getQty();
+            $part = $item->getQty() / $orderItem->getQtyOrdered();
+
+            $grossAmount = $this->roundAmt($this->getGrossAmountItem($orderItem) * $part);
+            $netAmount = $this->roundAmt($this->getNetAmountItem($orderItem) * $part);
+            $taxAmount = $grossAmount - $netAmount;
 
             $items[$orderItem->getItemId()] = [
                 'order_item_id' => $item->getOrderItemId(),
                 'name' => $item->getName(),
                 'description' => $item->getName(),
-                'gross_amount' => $this->roundAmt($this->getGrossAmountItem($orderItem) / $part) * -1,
-                'net_amount' => $this->roundAmt($this->getNetAmountItem($orderItem) / $part) * -1,
-                'tax_amount' => $this->roundAmt($this->getTaxAmountItem($orderItem) / $part) * -1,
-                'discount_amount' => $this->roundAmt($this->getDiscountAmountItem($orderItem) / $part) * -1,
-                'unit_price' => $this->roundAmt($this->getUnitPriceItem($orderItem), 6) * -1,
+                'gross_amount' => $grossAmount,
+                'net_amount' => $netAmount,
+                'tax_amount' => $taxAmount,
+                'discount_amount' => $this->roundAmt($this->getDiscountAmountItem($orderItem) * $part),
+                'unit_price' => $this->roundAmt($this->getUnitPriceItem($orderItem), 6),
                 'tax_rate' => $this->roundAmt(($orderItem->getTaxPercent() / 100)),
                 'tax_class_name' => 'VAT ' . $this->roundAmt($orderItem->getTaxPercent()) . '%',
                 'quantity' => $item->getQty(),
@@ -95,17 +98,22 @@ class ComposeRefund extends OrderService
         }
 
         if (!$order->getIsVirtual() && $creditmemo->getShippingAmount()) {
+
+            $grossAmount = $this->roundAmt($this->getGrossAmountShipping($creditmemo));
+            $netAmount = $this->roundAmt($this->getNetAmountShipping($creditmemo));
+            $taxAmount = $grossAmount - $netAmount;
+
             $items['shipping'] = [
                 'name' => 'Shipping - ' . $order->getShippingDescription(),
                 'description' => '',
                 'type' => 'SHIPPING_FEE',
                 'image_url' => '',
                 'product_page_url' => '',
-                'gross_amount' => $this->roundAmt($this->getGrossAmountShipping($creditmemo)) * -1,
-                'net_amount' => $this->roundAmt($this->getNetAmountShipping($creditmemo)) * -1,
-                'tax_amount' => $this->roundAmt($this->getTaxAmountShipping($creditmemo)) * -1,
-                'discount_amount' => $this->roundAmt($this->getDiscountAmountShipping($creditmemo)) * -1,
-                'unit_price' => $this->roundAmt($this->getUnitPriceShipping($creditmemo), 6) * -1,
+                'gross_amount' => $grossAmount,
+                'net_amount' => $netAmount,
+                'tax_amount' => $taxAmount,
+                'discount_amount' => $this->roundAmt($this->getDiscountAmountShipping($creditmemo)),
+                'unit_price' => $this->roundAmt($this->getUnitPriceShipping($creditmemo), 6),
                 'tax_rate' => $this->roundAmt($this->getTaxRateShipping($creditmemo)),
                 'tax_class_name' => 'VAT ' . $this->roundAmt($this->getTaxRateShipping($creditmemo) * 100) . '%',
                 'quantity' => 1,

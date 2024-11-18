@@ -226,6 +226,7 @@ abstract class Order
      *
      * @param mixed $amt
      * @param int $dp
+     *
      * @return string
      */
     public function roundAmt($amt, $dp = 2): string
@@ -234,77 +235,80 @@ abstract class Order
     }
 
     /**
+     * Get gross amount (inclusive of tax)
+     *
      * @param OrderItem|InvoiceItem|CreditmemoItem $item
+     *
      * @return float
      */
     public function getGrossAmountItem($item): float
     {
-        return $this->getNetAmountItem($item) + $this->roundAmt($this->getTaxAmountItem($item));
+        return $this->getNetAmountItem($item) + $this->getTaxAmountItem($item);
     }
 
     /**
+     *  Get net amount (inclusive of discount)
+     *
      * @param OrderItem|InvoiceItem|CreditmemoItem $item
      * @return float
      */
     public function getNetAmountItem($item): float
     {
-        return $this->getNetAmountBeforeDiscountItem($item) - $this->getDiscountAmountItem($item);
+        return (float)$item->getRowTotal() - $this->getDiscountAmountItem($item);
     }
 
     /**
+     * Get unit price
+     *
      * @param OrderItem|InvoiceItem|CreditmemoItem $item
-     * @return float
-     */
-    public function getNetAmountBeforeDiscountItem($item): float
-    {
-        return (float)$item->getRowTotalInclTax() / (1 + $this->getTaxRateItem($item));
-    }
-
-    /**
-     * @param OrderItem|InvoiceItem|CreditmemoItem $item
+     *
      * @return float
      */
     public function getUnitPriceItem($item): float
     {
-        return $this->getNetAmountBeforeDiscountItem($item) / $item->getQtyOrdered();
+        // $item->getRowTotal() is before discount
+        return (float)$item->getRowTotal() / (float)$item->getQtyOrdered();
     }
 
     /**
      * @param OrderItem|InvoiceItem|CreditmemoItem $item
+     *
      * @return float
      */
     public function getTaxRateItem($item): float
     {
-        return $item->getTaxPercent() / 100;
+        return (float)$item->getTaxPercent() / 100;
     }
 
     /**
+     * Get tax amount inclusive of discount
+     *
      * @param OrderItem|InvoiceItem|CreditmemoItem $item
+     *
      * @return float
      */
     public function getTaxAmountItem($item): float
     {
-        return $this->getNetAmountItem($item) * $this->getTaxRateItem($item);
+        return (float)$item->getTaxAmount();
     }
 
     /**
+     * Get discount amount before tax
+     *
      * @param OrderItem|InvoiceItem|CreditmemoItem $item
+     *
      * @return float
      */
     public function getDiscountAmountItem($item): float
     {
-        $discount = abs((float)$item->getDiscountAmount());
-        $discountTaxCompensation = abs((float)$item->getDiscountTaxCompensationAmount());
-        if ($discountTaxCompensation > 0) {
-            $discountTaxCompensation = $discount * (1 - 1 / (1 + $this->getTaxRateItem($item)));
-        }
-        return $discount - $discountTaxCompensation;
+        return (float)$item->getDiscountAmount() - (float)$item->getDiscountTaxCompensationAmount();
     }
 
     /**
      * Get category array by category ids
      *
      * @param array $categoryIds
+     *
      * @return array
      * @throws LocalizedException
      */
@@ -324,7 +328,9 @@ abstract class Order
 
     /**
      * Get category collection
-     * @param $categoryIds
+     *
+     * @param array $categoryIds
+     *
      * @return Collection
      */
     private function getCategoryCollection($categoryIds): Collection
