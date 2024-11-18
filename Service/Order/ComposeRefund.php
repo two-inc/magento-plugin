@@ -33,7 +33,7 @@ class ComposeRefund extends OrderService
         $lineItems = array_values($this->getLineItemsCreditmemo($order, $creditmemo));
         $grossAmount = $this->getSum($lineItems, 'gross_amount');
         $result = [
-            'amount' => min($this->roundAmt($amount) * -1, $grossAmount),
+            'amount' => $grossAmount,
             'currency' => $order->getOrderCurrencyCode(),
             'line_items' => $lineItems,
         ];
