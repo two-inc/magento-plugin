@@ -1,8 +1,5 @@
-"%1 Credit Note","%1 Credit Note"
 "%1 Decline reason: %2","%1 Decline reason: %2"
 "%1 Details","%1 Details"
-"%1 Invoice","%1 Invoice"
-"%1 Order ID","%1 Order ID"
 "%1 [Trace ID: %2]","%1 [Trace ID: %2]"
 "%1 order has been marked as cancelled","%1 order has been marked as cancelled"
 "%1 order invoice has not been issued yet.","%1 order invoice has not been issued yet."
@@ -36,6 +33,7 @@ Credentials,Credentials
 "Credentials are invalid","Credentials are invalid"
 "Credentials are missing","Credentials are missing"
 "Credentials are valid","Credentials are valid"
+"Credit Note","Credit Note"
 "Debug mode","Debug mode"
 Department,Department
 "Developed by Magmodules.","Developed by Magmodules."
@@ -58,6 +56,7 @@ Environment,Environment
 "Fulfilment trigger","Fulfilment trigger"
 General,General
 "Invalid API response from %1.","Invalid API response from %1."
+Invoice,Invoice
 "Invoice purchase with %1 is not available for this order.","Invoice purchase with %1 is not available for this order."
 "Last 100 debug log lines","Last 100 debug log lines"
 "Last 100 error log records","Last 100 error log records"
@@ -67,6 +66,7 @@ OK,OK
 "On Completion","On Completion"
 "On Invoice","On Invoice"
 "On Shipment","On Shipment"
+"Order ID","Order ID"
 "Order Note","Order Note"
 "Order edit request was accepted by %1","Order edit request was accepted by %1"
 "PO Number","PO Number"

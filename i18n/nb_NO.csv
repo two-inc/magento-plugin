@@ -1,8 +1,5 @@
-"%1 Credit Note","%1 kreditnota"
 "%1 Decline reason: %2","%1 Årsak til avvisning: %2"
 "%1 Details","%1 Detaljer"
-"%1 Invoice","%1 Faktura"
-"%1 Order ID","%1 Bestillings-ID"
 "%1 [Trace ID: %2]","%1 [Sporings-ID: %2]"
 "%1 order has been marked as cancelled","%1 ordre er merket som kansellert"
 "%1 order invoice has not been issued yet.","%1 ordrefaktura er ikke utstedt ennå."
@@ -36,6 +33,7 @@ Credentials,Legitimasjon
 "Credentials are invalid","Legitimasjonen er ugyldig"
 "Credentials are missing","Legitimasjon mangler"
 "Credentials are valid","Legitimasjonen er gyldig"
+"Credit Note",Kreditnota
 "Debug mode",Feilsøkingsmodus
 Department,Avdeling
 "Developed by Magmodules.","Utviklet av Magmodules."
@@ -58,6 +56,7 @@ Environment,Miljø
 "Fulfilment trigger","Oppfyllelse utløser"
 General,Generelt
 "Invalid API response from %1.","Ugyldig API-svar fra %1."
+Invoice,Faktura
 "Invoice purchase with %1 is not available for this order.","Fakturakjøp med %1 er ikke tilgjengelig for denne bestillingen."
 "Last 100 debug log lines","Siste 100 feilsøkingslogglinjer"
 "Last 100 error log records","Siste 100 feilloggposter"
@@ -67,6 +66,7 @@ OK,OK
 "On Completion","Ved ferdigstillelse"
 "On Invoice","På faktura"
 "On Shipment","På forsendelse"
+"Order ID",Bestillings-ID
 "Order Note",Bestillingsmerknad
 "Order edit request was accepted by %1","Bestillingsredigeringsforespørsel ble akseptert av %1"
 "PO Number",PO-nummer

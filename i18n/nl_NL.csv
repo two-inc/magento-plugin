@@ -1,8 +1,5 @@
-"%1 Credit Note","%1 Creditnota"
 "%1 Decline reason: %2","%1 Reden voor afwijzing: %2"
 "%1 Details","%1 Gegevens"
-"%1 Invoice","%1 Factuur"
-"%1 Order ID","%1 Bestelnummer"
 "%1 [Trace ID: %2]","%1 [Trace-ID: %2]"
 "%1 order has been marked as cancelled","%1 bestelling is gemarkeerd als geannuleerd"
 "%1 order invoice has not been issued yet.","%1 bestelfactuur is nog niet verzonden."
@@ -36,6 +33,7 @@ Credentials,Inloggegevens
 "Credentials are invalid","Inloggegevens zijn ongeldig"
 "Credentials are missing","Inloggegevens ontbreken"
 "Credentials are valid","Inloggegevens zijn geldig"
+"Credit Note",Creditnota
 "Debug mode",Debug-modus
 Department,Afdeling
 "Developed by Magmodules.","Ontwikkeld door Magmodules."
@@ -58,6 +56,7 @@ Environment,Omgeving
 "Fulfilment trigger","Trigger voor vervulling"
 General,Algemeen
 "Invalid API response from %1.","Ongeldige API-respons van %1."
+Invoice,Factuur
 "Invoice purchase with %1 is not available for this order.","Aankoop op factuur met %1 is niet beschikbaar voor deze bestelling."
 "Last 100 debug log lines","Laatste 100 debug-logregels"
 "Last 100 error log records","Laatste 100 foutenlogboek records"
@@ -67,6 +66,7 @@ OK,OK
 "On Completion","Bij voltooiing"
 "On Invoice","Op factuur"
 "On Shipment","Bij verzending"
+"Order ID",Bestelnummer
 "Order Note",Bestelnotitie
 "Order edit request was accepted by %1","Bestellingswijzigingsverzoek is geaccepteerd door %1"
 "PO Number",PO-nummer

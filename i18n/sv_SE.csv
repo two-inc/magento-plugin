@@ -1,8 +1,5 @@
-"%1 Credit Note","%1 Kreditnota"
 "%1 Decline reason: %2","%1 Orsak till avslag: %2"
 "%1 Details","%1 Detaljer"
-"%1 Invoice","%1 Faktura"
-"%1 Order ID","%1 Beställnings-ID"
 "%1 [Trace ID: %2]","%1 [Spår-ID: %2]"
 "%1 order has been marked as cancelled","%1 beställning har markerats som avbruten"
 "%1 order invoice has not been issued yet.","%1 orderfaktura har inte utfärdats ännu."
@@ -36,6 +33,7 @@ Credentials,Autentiseringsuppgifter
 "Credentials are invalid","Autentiseringsuppgifterna är ogiltiga"
 "Credentials are missing","Autentiseringsuppgifterna saknas"
 "Credentials are valid","Autentiseringsuppgifterna är giltiga"
+"Credit Note",Kreditnota
 "Debug mode",Felsökningsläge
 Department,Avdelning
 "Developed by Magmodules.","Utvecklad av Magmodules."
@@ -58,6 +56,7 @@ Environment,Miljö
 "Fulfilment trigger","Uppfyllelse trigger"
 General,Generellt
 "Invalid API response from %1.","Ogiltigt API-svar från %1."
+Invoice,Faktura
 "Invoice purchase with %1 is not available for this order.","Fakturaköp med %1 är inte tillgängligt för den här beställningen."
 "Last 100 debug log lines","Senaste 100 felsökningsloggraderna"
 "Last 100 error log records","Senaste 100 felloggposter"
@@ -67,6 +66,7 @@ OK,OK
 "On Completion","Vid färdigställande"
 "On Invoice","På faktura"
 "On Shipment","Vid leverans"
+"Order ID",Beställnings-ID
 "Order Note",Beställningsanmärkning
 "Order edit request was accepted by %1","Begäran om beställningsredigering accepterades av %1"
 "PO Number",PO-nummer

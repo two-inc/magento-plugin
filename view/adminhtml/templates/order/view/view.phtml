@@ -18,7 +18,7 @@
                     <?php if ($twoOrderId != ''): ?>
                         <tr>
                             <td>
-                                <strong><?= $block->escapeHtml(__('%1 Order ID', $provider)); ?></strong>
+                                <strong><?= $block->escapeHtml(__('Order ID')); ?></strong>
                             </td>
                             <td>
                                 <?= $block->escapeHtml($twoOrderId); ?>
@@ -29,7 +29,7 @@
                     <?php if (!empty($fulfillments['fulfilled_orders'])): ?>
                         <tr>
                             <td>
-                                <strong><?= $block->escapeHtml(__('%1 Invoice', $provider)); ?></strong>
+                                <strong><?= $block->escapeHtml(__('Invoice')); ?></strong>
                             </td>
                             <td>
                                 <?php foreach ($fulfillments['fulfilled_orders'] ?? [] as $fulfilled_order) { ?>
@@ -42,7 +42,7 @@
                     <?php if (!empty($fulfillments['refunds'])): ?>
                         <tr>
                             <td>
-                                <strong><?= $block->escapeHtml(__('%1 Credit Note', $provider)); ?></strong>
+                                <strong><?= $block->escapeHtml(__('Credit Note')); ?></strong>
                             </td>
                             <td>
                                 <?php foreach ($fulfillments['refunds'] ?? [] as $refund) { ?>
