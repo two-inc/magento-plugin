@@ -8,6 +8,9 @@
 "%1 requires whole order to be shipped before it can be fulfilled.","%1 requires whole order to be shipped before it can be fulfilled."
 "* Required Fields","* Required Fields"
 "API key","API key"
+"API key is missing","API key is missing"
+"API key is not valid","API key is not valid"
+"API key is valid","API key is valid"
 "Add PO number field","Add PO number field"
 "Add department field","Add department field"
 "Add order note field","Add order note field"
@@ -29,15 +32,10 @@ Branding,Branding
 "Could not initiate refund with %1","Could not initiate refund with %1"
 "Could not update %1 order status to cancelled. Please contact support with order ID %2. Error: %3","Could not update %1 order status to cancelled. Please contact support with order ID %2. Error: %3"
 "Country is not valid.","Country is not valid."
-Credentials,Credentials
-"Credentials are invalid","Credentials are invalid"
-"Credentials are missing","Credentials are missing"
-"Credentials are valid","Credentials are valid"
 "Credit Note","Credit Note"
 "Debug mode","Debug mode"
 Department,Department
 "Developed by Magmodules.","Developed by Magmodules."
-"Display info link","Display info link"
 Download,Download
 "Download as .txt file","Download as .txt file"
 "Email Address is not valid.","Email Address is not valid."
@@ -96,8 +94,6 @@ Title,Title
 "Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple.","Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple."
 "Unable to find the requested %1 order","Unable to find the requested %1 order"
 "Unable to retrieve payment information for your invoice purchase with %1. The cart will be restored.","Unable to retrieve payment information for your invoice purchase with %1. The cart will be restored."
-Username,Username
-"Username should be set to %1","Username should be set to %1"
 Version,Version
 "You must first accept the payment terms.","You must first accept the payment terms."
 "You will be redirected to %1 when you place order.","You will be redirected to %1 when you place order."

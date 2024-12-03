@@ -8,6 +8,9 @@
 "%1 requires whole order to be shipped before it can be fulfilled.","%1 kräver att hela beställningen skickas innan den kan uppfyllas."
 "* Required Fields","* Obligatoriska fält"
 "API key",API-nyckel
+"API key is missing","API-nyckel saknas"
+"API key is not valid","API-nyckeln är inte giltig"
+"API key is valid","API-nyckeln är giltig"
 "Add PO number field","Lägg till PO-nummerfält"
 "Add department field","Lägg till fält för avdelning"
 "Add order note field","Lägg till orderanteckningsfält"
@@ -29,15 +32,10 @@ Branding,Branding
 "Could not initiate refund with %1","Kunde inte initiera återbetalning med %1"
 "Could not update %1 order status to cancelled. Please contact support with order ID %2. Error: %3","Kunde inte uppdatera %1 orderstatus till annullerad. Kontakta supporten med beställnings-ID %2. Fel: %3"
 "Country is not valid.","Land är inte giltigt."
-Credentials,Autentiseringsuppgifter
-"Credentials are invalid","Autentiseringsuppgifterna är ogiltiga"
-"Credentials are missing","Autentiseringsuppgifterna saknas"
-"Credentials are valid","Autentiseringsuppgifterna är giltiga"
 "Credit Note",Kreditnota
 "Debug mode",Felsökningsläge
 Department,Avdelning
 "Developed by Magmodules.","Utvecklad av Magmodules."
-"Display info link","Visa infolänk"
 Download,"Ladda ner"
 "Download as .txt file","Ladda ner som .txt-fil"
 "Email Address is not valid.","E-postadress är inte giltig."
@@ -96,8 +94,6 @@ Title,Titel
 "Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple.","Two är en betalningslösning för B2B-köp online, som låter dig köpa från dina favorithandlare och leverantörer på handelskredit. Med Two får du omedelbar tillgång till flexibel handelskredit för att göra inköp enkelt."
 "Unable to find the requested %1 order","Det gick inte att hitta den begärda beställningen %1"
 "Unable to retrieve payment information for your invoice purchase with %1. The cart will be restored.","Det gick inte att hämta betalningsinformation för ditt fakturaköp med %1. Vagnen kommer att återställas."
-Username,Användarnamn
-"Username should be set to %1","Användarnamn ska ställas in till %1"
 Version,Version
 "You must first accept the payment terms.","Du måste först acceptera betalningsvillkoren."
 "You will be redirected to %1 when you place order.","Du kommer att omdirigeras till %1 när du beställer."

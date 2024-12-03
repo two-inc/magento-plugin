@@ -356,7 +356,8 @@ define([
                         phone_number: this.getTelephone()
                     }
                 },
-                merchant_short_name: config.orderIntentConfig.merchantShortName
+                merchant_id: config.orderIntentConfig.merchant?.id,
+                merchant_short_name: config.orderIntentConfig.merchant?.short_name
             };
 
             console.debug({ logger: 'twoPayment.placeOrderIntent', orderIntentRequestBody });

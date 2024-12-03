@@ -80,14 +80,6 @@ class Repository implements RepositoryInterface
     }
 
     /**
-     * @inheritDoc
-     */
-    public function getMerchantShortName(?int $storeId = null): string
-    {
-        return (string)$this->getConfig(self::XML_PATH_MERCHANT_SHORT_NAME, $storeId);
-    }
-
-    /**
      * Retrieve config value
      *
      * @param string $configPath

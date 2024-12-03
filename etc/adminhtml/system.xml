@@ -40,15 +40,6 @@
                     </depends>
                     <config_path>payment/two_payment/mode</config_path>
                 </field>
-                <field id="merchant_short_name" translate="label" type="text" sortOrder="40" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
-                    <label>Username</label>
-                    <comment>Username for your merchant account</comment>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
-                    <config_path>payment/two_payment/merchant_short_name</config_path>
-                </field>
                 <field id="api_key" translate="label" type="obscure" sortOrder="50" showInDefault="1" showInWebsite="1"
                        showInStore="1">
                     <label>API key</label>
@@ -62,7 +53,6 @@
                 </field>
                 <field id="api_key_check" translate="label" type="button" sortOrder="55" showInDefault="1"
                        showInWebsite="1" showInStore="1">
-                    <label>Credentials</label>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck</frontend_model>
                 </field>
                 <field id="debug" translate="label" type="select" sortOrder="60" showInDefault="1" showInWebsite="1"

@@ -8,6 +8,9 @@
 "%1 requires whole order to be shipped before it can be fulfilled.","%1 krever at hele bestillingen sendes før den kan oppfylles."
 "* Required Fields","* Obligatoriske felter"
 "API key",API-nøkkel
+"API key is missing","API-nøkkel mangler"
+"API key is not valid","API-nøkkel er ikke gyldig"
+"API key is valid","API-nøkkel er gyldig"
 "Add PO number field","Legg til PO-nummerfelt"
 "Add department field","Legg til felt for avdeling"
 "Add order note field","Legg til bestillingsnotatfelt"
@@ -29,15 +32,10 @@ Branding,Merkevarebygging
 "Could not initiate refund with %1","Kunne ikke starte refusjon med %1"
 "Could not update %1 order status to cancelled. Please contact support with order ID %2. Error: %3","Kunne ikke oppdatere %1 ordrestatus til kansellert. Ta kontakt med brukerstøtten med ordre-ID %2. Feil: %3"
 "Country is not valid.","Land er ikke gyldig."
-Credentials,Legitimasjon
-"Credentials are invalid","Legitimasjonen er ugyldig"
-"Credentials are missing","Legitimasjon mangler"
-"Credentials are valid","Legitimasjonen er gyldig"
 "Credit Note",Kreditnota
 "Debug mode",Feilsøkingsmodus
 Department,Avdeling
 "Developed by Magmodules.","Utviklet av Magmodules."
-"Display info link","Vis infolink"
 Download,"Last ned"
 "Download as .txt file","Last ned som .txt-fil"
 "Email Address is not valid.","E-postadresse er ikke gyldig."
@@ -96,8 +94,6 @@ Title,Tittel
 "Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple.","Two er en betalingsløsning for B2B-kjøp på nettet, som lar deg kjøpe fra dine favorittforhandlere og leverandører på handelskreditt. Med Two kan du få tilgang til fleksibel handelskreditt umiddelbart for å gjøre innkjøp enkelt."
 "Unable to find the requested %1 order","Kan ikke finne den forespurte bestillingen %1"
 "Unable to retrieve payment information for your invoice purchase with %1. The cart will be restored.","Kan ikke hente betalingsinformasjon for fakturakjøpet med %1. Vognen vil bli restaurert."
-Username,Brukernavn
-"Username should be set to %1","Brukernavn skal settes til %1"
 Version,Versjon
 "You must first accept the payment terms.","Du må først godta betalingsvilkårene."
 "You will be redirected to %1 when you place order.","Du vil bli omdirigert til %1 når du legger inn bestilling."
