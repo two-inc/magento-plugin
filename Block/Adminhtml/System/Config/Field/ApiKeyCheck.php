@@ -19,7 +19,6 @@ use Two\Gateway\Model\Two;
  */
 class ApiKeyCheck extends Field
 {
-
     /**
      * @var string
      */
@@ -28,24 +27,25 @@ class ApiKeyCheck extends Field
     /**
      * @var ConfigRepository
      */
-    private $_configRepository;
+    private $configRepository;
 
     /**
      * @var Two
      */
-    private $_two;
+    private $two;
 
     /**
      * @var Adapter
      */
-    private $_adapter;
+    private $adapter;
 
     /**
      * Version constructor.
      *
-     * @param Context $context
-    * @param Adapter $adapter
      * @param ConfigRepository $configRepository
+     * @param Adapter $adapter
+     * @param Two $two
+     * @param Context $context
      * @param array $data
      */
     public function __construct(
@@ -55,9 +55,9 @@ class ApiKeyCheck extends Field
         Context $context,
         array $data = []
     ) {
-        $this->_configRepository = $configRepository;
-        $this->_adapter = $adapter;
-        $this->_two = $two;
+        $this->configRepository = $configRepository;
+        $this->adapter = $adapter;
+        $this->two = $two;
         parent::__construct($context, $data);
     }
 
@@ -68,32 +68,25 @@ class ApiKeyCheck extends Field
      */
     public function getApiKeyStatus(): array
     {
-        $short_name = $this->_configRepository->getMerchantShortName();
-        if ($short_name && $this->_configRepository->getApiKey()) {
-            $result = $this->_adapter->execute('/v1/merchant/' . $short_name, [], 'GET');
-            $error = $this->_two->getErrorFromResponse($result);
-            if ($error) {
-                return [
-                    'message' => __('Credentials are invalid'),
-                    'status' => 'error',
-                    'error' => $error
-                ];
-            } else {
-                if ($result['short_name'] != $short_name) {
-                    return [
-                        'message' => __('Username should be set to %1', $result['short_name']),
-                        'status' => 'warning',
-                    ];
-                }
-                return [
-                    'message' => __('Credentials are valid'),
-                    'status' => 'success'
-                ];
-            }
+        if (!$this->configRepository->getApiKey()) {
+            return [
+                'message' => __('API key is missing'),
+                'status' => 'warning'
+            ];
+        }
+
+        $result = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
+        $error = $this->two->getErrorFromResponse($result);
+        if ($error) {
+            return [
+                'message' => __('API key is not valid'),
+                'status' => 'error',
+                'error' => $error
+            ];
         } else {
             return [
-                'message' => __('Credentials are missing'),
-                'status' => 'warning'
+                'message' => __('API key is valid'),
+                'status' => 'success'
             ];
         }
     }

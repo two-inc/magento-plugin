@@ -22,7 +22,6 @@ interface RepositoryInterface
     public const XML_PATH_ENABLED = 'payment/two_payment/active';
     public const XML_PATH_TITLE = 'payment/two_payment/title';
     public const XML_PATH_MODE = 'payment/two_payment/mode';
-    public const XML_PATH_MERCHANT_SHORT_NAME = 'payment/two_payment/merchant_short_name';
     public const XML_PATH_API_KEY = 'payment/two_payment/api_key';
     public const XML_PATH_DAYS_ON_INVOICE = 'payment/two_payment/days_on_invoice';
     public const XML_PATH_FULFILL_TRIGGER = 'payment/two_payment/fulfill_trigger';
@@ -58,15 +57,6 @@ interface RepositoryInterface
      * @return string
      */
     public function getMode(?int $storeId = null): string;
-
-    /**
-     * Get merchant short name
-     *
-     * @param int|null $storeId
-     *
-     * @return string
-     */
-    public function getMerchantShortName(?int $storeId = null): string;
 
     /**
      * Get API key

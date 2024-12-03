@@ -11,6 +11,8 @@ use Magento\Checkout\Model\ConfigProviderInterface;
 use Magento\Framework\View\Asset\Repository as AssetRepository;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\UrlCookie;
+use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Model\Two;
 
 /**
  * Ui Config Provider
@@ -23,6 +25,16 @@ class ConfigProvider implements ConfigProviderInterface
     private $configRepository;
 
     /**
+     * @var Two
+     */
+    private $two;
+
+    /**
+     * @var Adapter
+     */
+    private $adapter;
+
+    /**
      * @var AssetRepository
      */
     private $assetRepository;
@@ -31,13 +43,19 @@ class ConfigProvider implements ConfigProviderInterface
      * ConfigProvider constructor.
      *
      * @param ConfigRepository $configRepository
+     * @param Adapter $adapter
+     * @param Two $two
      * @param AssetRepository $assetRepository
      */
     public function __construct(
         ConfigRepository $configRepository,
+        Adapter $adapter,
+        Two $two,
         AssetRepository $assetRepository
     ) {
         $this->configRepository = $configRepository;
+        $this->adapter = $adapter;
+        $this->two = $two;
         $this->assetRepository = $assetRepository;
     }
 
@@ -48,12 +66,16 @@ class ConfigProvider implements ConfigProviderInterface
      */
     public function getConfig(): array
     {
+        $merchant = null;
+        if ($this->configRepository->getApiKey()) {
+            $merchant = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
+        }
         $orderIntentConfig = [
             'extensionPlatformName' => $this->configRepository->getExtensionPlatformName(),
             'extensionDBVersion' => $this->configRepository->getExtensionDBVersion(),
             'invoiceType' => 'FUNDED_INVOICE',
-            'merchantShortName' => $this->configRepository->getMerchantShortName(),
             'weightUnit' => $this->configRepository->getWeightUnit(),
+            'merchant' => $merchant,
         ];
 
         $provider = $this->configRepository::PROVIDER;
