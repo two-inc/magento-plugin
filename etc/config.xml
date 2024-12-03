@@ -11,7 +11,7 @@
         <payment>
             <two_payment>
                 <active>1</active>
-                <version>1.7.2</version>
+                <version>1.7.3</version>
                 <title>Business invoice - 30 days</title>
                 <mode>sandbox</mode>
                 <invoice_type>FUNDED_INVOICE</invoice_type>
