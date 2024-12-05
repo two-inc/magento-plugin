@@ -301,25 +301,27 @@ class OrderService
             $order->setState(Order::STATE_PROCESSING);
             $order->setStatus(Order::STATE_PROCESSING);
             $invoice = $this->invoiceService->prepareInvoice($order);
-            $invoice->setRequestedCaptureCase(Invoice::CAPTURE_ONLINE);
-            $invoice->register();
-            $this->addOrderComment(
-                $order,
-                sprintf(
-                    '%s order payment has been verified',
-                    $this->configRepository::PROVIDER
-                )
-            );
-            $transactionSave = $this->transaction
-                ->addObject(
-                    $payment
-                )->addObject(
-                    $invoice
-                )->addObject(
-                    $invoice->getOrder()
+            if ($invoice->getGrandTotal() > 0) {
+                $invoice->setRequestedCaptureCase(Invoice::CAPTURE_ONLINE);
+                $invoice->register();
+                $this->addOrderComment(
+                    $order,
+                    sprintf(
+                        '%s order payment has been verified',
+                        $this->configRepository::PROVIDER
+                    )
                 );
-            $transactionSave->save();
-            $this->addAuthorizationTransaction($order, $transactionId);
+                $transactionSave = $this->transaction
+                    ->addObject(
+                        $payment
+                    )->addObject(
+                        $invoice
+                    )->addObject(
+                        $invoice->getOrder()
+                    );
+                $transactionSave->save();
+                $this->addAuthorizationTransaction($order, $transactionId);
+            }
         }
         return $this;
     }

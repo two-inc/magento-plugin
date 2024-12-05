@@ -17,8 +17,8 @@ repos:
                 - -l
             language: system
             files: '\.(php)$'
-    - repo: git@github.com:two-inc/git-hooks
-      rev: 24.07.26
+    - repo: https://github.com/two-inc/git-hooks
+      rev: 24.11.29
       hooks:
           - id: commit-msg
             stages: [commit-msg]
