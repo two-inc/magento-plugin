@@ -178,11 +178,6 @@ define([
         },
         fillCustomerData: function () {
             const self = this;
-            quote.shippingAddress.subscribe((address) => self.updateShippingAddress(address));
-            this.updateShippingAddress(quote.shippingAddress());
-
-            quote.billingAddress.subscribe((address) => self.updateBillingAddress(address));
-            this.updateBillingAddress(quote.billingAddress());
 
             customerData
                 .get('companyData')
@@ -198,6 +193,12 @@ define([
                 .get('countryCode')
                 .subscribe((countryCode) => self.fillCountryCode(countryCode));
             this.fillCountryCode(customerData.get('countryCode')());
+
+            quote.shippingAddress.subscribe((address) => self.updateShippingAddress(address));
+            this.updateShippingAddress(quote.shippingAddress());
+
+            quote.billingAddress.subscribe((address) => self.updateBillingAddress(address));
+            this.updateBillingAddress(quote.billingAddress());
         },
         afterPlaceOrder: function () {
             const url = $.mage.cookies.get(config.redirectUrlCookieCode);
