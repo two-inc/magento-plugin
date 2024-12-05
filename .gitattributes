@@ -1,4 +1,15 @@
-.git* export-ignore
+# Folders to ignore
+.git/ export-ignore
+.github/ export-ignore
+scripts/ export-ignore
+
+# Files to ignore
+.distignore export-ignore
+.gitignore export-ignore
+.gitattributes export-ignore
 .prettierrc export-ignore
-Makefile export-ignore
 bumpver.toml export-ignore
+docker-compose.yaml export-ignore
+README.md export-ignore
+Makefile export-ignore
+CODEOWNERS export-ignore
