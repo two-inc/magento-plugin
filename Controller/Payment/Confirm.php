@@ -78,43 +78,10 @@ class Confirm extends Action
                     $this->orderService->confirmOrder($order);
                 }
                 $this->orderSender->send($order);
-                if ($order->getCustomerId()) {
-                    if ($order->getBillingAddress()->getCustomerAddressId()) {
-                        $customerAddress = $this->addressRepository->getById(
-                            $order->getBillingAddress()->getCustomerAddressId()
-                        );
-                    } else {
-                        $this->searchCriteria
-                            ->setField('parent_id')
-                            ->setValue($order->getCustomerId())
-                            ->setConditionType('eq');
-                        $customerAddressCollection = $this->addressRepository
-                            ->getList($this->searchCriteria)
-                            ->getItems();
-                        $customerAddress = $customerAddressCollection[0] ?? null;
-                    }
-                    if ($customerAddress && $customerAddress->getId()) {
-                        $this->copyMetadataToAddress(
-                            $twoOrder,
-                            $customerAddress
-                        );
-                        $this->addressRepository->save($customerAddress);
-                    }
-                } else {
-                    // Save metadata to shipping address
-                    $shippingAddress = $order->getShippingAddress();
-                    $this->copyMetadataToAddress(
-                        $twoOrder,
-                        $shippingAddress
-                    );
-                    $shippingAddress->save();
-                    // Save metadata to billing address
-                    $billingAddress = $order->getBillingAddress();
-                    $this->copyMetadataToAddress(
-                        $twoOrder,
-                        $billingAddress
-                    );
-                    $billingAddress->save();
+                try {
+                    $this->saveAddress($order, $twoOrder);
+                } catch (Exception $exception) {
+                    $this->orderService->addOrderComment($order, $exception->getMessage());
                 }
                 $this->orderService->processOrder($order, $twoOrder['id']);
                 return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/onepage/success'));
@@ -142,11 +109,62 @@ class Confirm extends Action
     }
 
     /**
+     * Save address
+     *
+     * @param $order
+     * @param array $twoOrder
+     *
+     * @throws Exception
+     */
+    private function saveAddress($order, $twoOrder)
+    {
+        if ($order->getCustomerId()) {
+            if ($order->getBillingAddress()->getCustomerAddressId()) {
+                $customerAddress = $this->addressRepository->getById(
+                    $order->getBillingAddress()->getCustomerAddressId()
+                );
+            } else {
+                $this->searchCriteria
+                    ->setField('parent_id')
+                    ->setValue($order->getCustomerId())
+                    ->setConditionType('eq');
+                $customerAddressCollection = $this->addressRepository
+                    ->getList($this->searchCriteria)
+                    ->getItems();
+                $customerAddress = $customerAddressCollection[0] ?? null;
+            }
+            if ($customerAddress && $customerAddress->getId()) {
+                $this->copyMetadataToAddress(
+                    $twoOrder,
+                    $customerAddress
+                );
+                $this->addressRepository->save($customerAddress);
+            }
+        } else {
+            // Save metadata to shipping address
+            $shippingAddress = $order->getShippingAddress();
+            $this->copyMetadataToAddress(
+                $twoOrder,
+                $shippingAddress
+            );
+            $shippingAddress->save();
+            // Save metadata to billing address
+            $billingAddress = $order->getBillingAddress();
+            $this->copyMetadataToAddress(
+                $twoOrder,
+                $billingAddress
+            );
+            $billingAddress->save();
+        }
+    }
+
+    /**
      * Set metadata to customer address
      *
      * @param array $twoOrder
      * @param $address
      *
+     * @return void
      * @throws Exception
      */
     public function copyMetadataToAddress(array $twoOrder, $address)

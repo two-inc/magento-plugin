@@ -153,6 +153,8 @@ class OrderService
 
     /**
      * Get Two Order by Reference
+     *
+     * @return Order
      */
     public function getOrderByReference()
     {
