@@ -23,9 +23,6 @@ use Two\Gateway\Service\Payment\OrderService;
  */
 class Confirm extends Action
 {
-    public const STATE_CONFIRMED = 'CONFIRMED';
-    public const STATE_VERIFIED = 'VERIFIED';
-
     /**
      * @var ConfigRepository
      */
@@ -76,10 +73,10 @@ class Confirm extends Action
         try {
             $order = $this->orderService->getOrderByReference();
             $twoOrder = $this->orderService->getTwoOrderFromApi($order);
-            if (isset($twoOrder['state']) &&
-                (($twoOrder['state'] == self::STATE_VERIFIED) || ($twoOrder['state'] == self::STATE_CONFIRMED))
-            ) {
-                $this->orderService->confirmOrder($order);
+            if (isset($twoOrder['state']) && $twoOrder['state'] != 'UNVERIFIED') {
+                if (in_array($twoOrder['state'], ['VERIFIED', 'CONFIRMED'])) {
+                    $this->orderService->confirmOrder($order);
+                }
                 $this->orderSender->send($order);
                 if ($order->getCustomerId()) {
                     if ($order->getBillingAddress()->getCustomerAddressId()) {
@@ -97,20 +94,27 @@ class Confirm extends Action
                         $customerAddress = $customerAddressCollection[0] ?? null;
                     }
                     if ($customerAddress && $customerAddress->getId()) {
-                        $this->saveAddressMetadata(
+                        $this->copyMetadataToAddress(
                             $twoOrder,
                             $customerAddress
                         );
+                        $this->addressRepository->save($customerAddress);
                     }
                 } else {
-                    $this->saveAddressMetadata(
+                    // Save metadata to shipping address
+                    $shippingAddress = $order->getShippingAddress();
+                    $this->copyMetadataToAddress(
                         $twoOrder,
-                        $order->getShippingAddress()
+                        $shippingAddress
                     );
-                    $this->saveAddressMetadata(
+                    $shippingAddress->save();
+                    // Save metadata to billing address
+                    $billingAddress = $order->getBillingAddress();
+                    $this->copyMetadataToAddress(
                         $twoOrder,
-                        $order->getBillingAddress()
+                        $billingAddress
                     );
+                    $billingAddress->save();
                 }
                 $this->orderService->processOrder($order, $twoOrder['id']);
                 return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/onepage/success'));
@@ -145,7 +149,7 @@ class Confirm extends Action
      *
      * @throws Exception
      */
-    public function saveAddressMetadata(array $twoOrder, $address)
+    public function copyMetadataToAddress(array $twoOrder, $address)
     {
         if (isset($twoOrder['buyer']['company']['organization_number'])) {
             $address->setData('company_id', $twoOrder['buyer']['company']['organization_number']);
@@ -159,6 +163,5 @@ class Confirm extends Action
         if (isset($twoOrder['buyer_project'])) {
             $address->setData('project', $twoOrder['buyer_project']);
         }
-        $address->save();
     }
 }
