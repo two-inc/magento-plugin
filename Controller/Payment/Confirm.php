@@ -167,7 +167,7 @@ class Confirm extends Action
      * @return void
      * @throws Exception
      */
-    public function copyMetadataToAddress(array $twoOrder, $address)
+    private function copyMetadataToAddress(array $twoOrder, $address)
     {
         if (isset($twoOrder['buyer']['company']['organization_number'])) {
             $address->setData('company_id', $twoOrder['buyer']['company']['organization_number']);
