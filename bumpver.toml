@@ -3,9 +3,9 @@ current_version = "1.7.3"
 version_pattern = "MAJOR.MINOR.PATCH[-TAGNUM]"
 commit_message = "chore: Bump version {old_version} -> {new_version}"
 commit = true
-fetch = false
-tag = false
-push = false
+fetch = true
+tag = true
+push = true
 
 [tool.bumpver.file_patterns]
 "composer.json" = [
