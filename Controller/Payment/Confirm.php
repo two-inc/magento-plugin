@@ -62,6 +62,7 @@ class Confirm extends Action
      */
     public function execute()
     {
+        $order = null;
         try {
             $order = $this->orderService->getOrderByReference();
             $twoOrder = $this->orderService->getTwoOrderFromApi($order);
@@ -103,10 +104,9 @@ class Confirm extends Action
             }
         } catch (Exception $exception) {
             $this->orderService->restoreQuote();
-            if (isset($order)) {
+            if ($order !== null) {
                 $this->orderService->failOrder($order, $exception->getMessage());
             }
-
             $this->messageManager->addErrorMessage($exception->getMessage());
             return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
         }
