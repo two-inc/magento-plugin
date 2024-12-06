@@ -9,7 +9,6 @@ namespace Two\Gateway\Controller\Payment;
 
 use Exception;
 use Magento\Customer\Api\AddressRepositoryInterface;
-use Magento\Framework\Api\SearchCriteriaInterface;
 use Magento\Framework\App\Action\Action;
 use Magento\Framework\App\Action\Context;
 use Magento\Framework\App\ResponseInterface;
@@ -34,11 +33,6 @@ class Confirm extends Action
     private $addressRepository;
 
     /**
-     * @var SearchCriteriaInterface
-     */
-    private $searchCriteria;
-
-    /**
      * @var OrderService
      */
     private $orderService;
@@ -51,13 +45,11 @@ class Confirm extends Action
     public function __construct(
         Context $context,
         AddressRepositoryInterface $addressRepository,
-        SearchCriteriaInterface $searchCriteria,
         OrderService $orderService,
         OrderSender $orderSender,
         ConfigRepository $configRepository
     ) {
         $this->addressRepository = $addressRepository;
-        $this->searchCriteria = $searchCriteria;
         $this->orderService = $orderService;
         $this->orderSender = $orderSender;
         $this->configRepository = $configRepository;
@@ -70,6 +62,7 @@ class Confirm extends Action
      */
     public function execute()
     {
+        $order = null;
         try {
             $order = $this->orderService->getOrderByReference();
             $twoOrder = $this->orderService->getTwoOrderFromApi($order);
@@ -79,9 +72,21 @@ class Confirm extends Action
                 }
                 $this->orderSender->send($order);
                 try {
-                    $this->saveAddress($order, $twoOrder);
+                    $this->updateCustomerAddress($order, $twoOrder);
+                } catch (LocalizedException $exception) {
+                    $message = __(
+                        "Failed to update %1 customer address: %2",
+                        $this->configRepository::PROVIDER,
+                        $exception->getMessage()
+                    );
+                    $this->orderService->addOrderComment($order, $message);
                 } catch (Exception $exception) {
-                    $this->orderService->addOrderComment($order, $exception->getMessage());
+                    $message = __(
+                        "Failed to update %1 customer address: %2",
+                        $this->configRepository::PROVIDER,
+                        $exception->getMessage()
+                    );
+                    $this->orderService->addOrderComment($order, $message);
                 }
                 $this->orderService->processOrder($order, $twoOrder['id']);
                 return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/onepage/success'));
@@ -99,87 +104,45 @@ class Confirm extends Action
             }
         } catch (Exception $exception) {
             $this->orderService->restoreQuote();
-            if (isset($order)) {
+            if ($order !== null) {
                 $this->orderService->failOrder($order, $exception->getMessage());
             }
-
             $this->messageManager->addErrorMessage($exception->getMessage());
             return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
         }
     }
 
     /**
-     * Save address
+     * Update customer address
      *
      * @param $order
      * @param array $twoOrder
      *
-     * @throws Exception
-     */
-    private function saveAddress($order, $twoOrder)
-    {
-        if ($order->getCustomerId()) {
-            if ($order->getBillingAddress()->getCustomerAddressId()) {
-                $customerAddress = $this->addressRepository->getById(
-                    $order->getBillingAddress()->getCustomerAddressId()
-                );
-            } else {
-                $this->searchCriteria
-                    ->setField('parent_id')
-                    ->setValue($order->getCustomerId())
-                    ->setConditionType('eq');
-                $customerAddressCollection = $this->addressRepository
-                    ->getList($this->searchCriteria)
-                    ->getItems();
-                $customerAddress = $customerAddressCollection[0] ?? null;
-            }
-            if ($customerAddress && $customerAddress->getId()) {
-                $this->copyMetadataToAddress(
-                    $twoOrder,
-                    $customerAddress
-                );
-                $this->addressRepository->save($customerAddress);
-            }
-        } else {
-            // Save metadata to shipping address
-            $shippingAddress = $order->getShippingAddress();
-            $this->copyMetadataToAddress(
-                $twoOrder,
-                $shippingAddress
-            );
-            $shippingAddress->save();
-            // Save metadata to billing address
-            $billingAddress = $order->getBillingAddress();
-            $this->copyMetadataToAddress(
-                $twoOrder,
-                $billingAddress
-            );
-            $billingAddress->save();
-        }
-    }
-
-    /**
-     * Set metadata to customer address
-     *
-     * @param array $twoOrder
-     * @param $address
-     *
      * @return void
      * @throws Exception
      */
-    private function copyMetadataToAddress(array $twoOrder, $address)
+    private function updateCustomerAddress($order, $twoOrder)
     {
-        if (isset($twoOrder['buyer']['company']['organization_number'])) {
-            $address->setData('company_id', $twoOrder['buyer']['company']['organization_number']);
-        }
-        if (isset($twoOrder['buyer']['company']['company_name'])) {
-            $address->setData('company_name', $twoOrder['buyer']['company']['company_name']);
-        }
-        if (isset($twoOrder['buyer_department'])) {
-            $address->setData('department', $twoOrder['buyer_department']);
-        }
-        if (isset($twoOrder['buyer_project'])) {
-            $address->setData('project', $twoOrder['buyer_project']);
+        $customerAddress = null;
+        if ($order->getBillingAddress()->getCustomerAddressId()) {
+            $customerAddress = $this->addressRepository->getById(
+                $order->getBillingAddress()->getCustomerAddressId()
+            );
+            if ($customerAddress && $customerAddress->getId()) {
+                if (isset($twoOrder['buyer']['company']['organization_number'])) {
+                    $customerAddress->setData('company_id', $twoOrder['buyer']['company']['organization_number']);
+                }
+                if (isset($twoOrder['buyer']['company']['company_name'])) {
+                    $customerAddress->setData('company_name', $twoOrder['buyer']['company']['company_name']);
+                }
+                if (isset($twoOrder['buyer_department'])) {
+                    $customerAddress->setData('department', $twoOrder['buyer_department']);
+                }
+                if (isset($twoOrder['buyer_project'])) {
+                    $customerAddress->setData('project', $twoOrder['buyer_project']);
+                }
+                $this->addressRepository->save($customerAddress);
+            }
         }
     }
 }

@@ -48,6 +48,7 @@ Download,Download
 "Enter details manually","Enter details manually"
 Environment,Environment
 "Failed to refund order with %1. Reason: %2","Failed to refund order with %1. Reason: %2"
+"Failed to update %1 customer address: %2","Failed to update %1 customer address: %2"
 "Find out more","Find out more"
 "First Name is not valid.","First Name is not valid."
 "Fulfilment order status","Fulfilment order status"

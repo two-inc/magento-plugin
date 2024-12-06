@@ -48,6 +48,7 @@ Download,Download
 "Enter details manually","Gegevens handmatig invoeren"
 Environment,Omgeving
 "Failed to refund order with %1. Reason: %2","Het is niet gelukt om de bestelling met %1 terug te betalen. Reden: %2"
+"Failed to update %1 customer address: %2","Kon het adres van klant %1 niet bijwerken: %2"
 "Find out more","Meer informatie"
 "First Name is not valid.","Voornaam is niet geldig."
 "Fulfilment order status","Status van vervulling bestelling"

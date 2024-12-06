@@ -48,6 +48,7 @@ Download,"Last ned"
 "Enter details manually","Skriv inn detaljer manuelt"
 Environment,Miljø
 "Failed to refund order with %1. Reason: %2","Kunne ikke refundere bestillingen med %1. Årsak: %2"
+"Failed to update %1 customer address: %2","Kunne ikke oppdatere %1 kundeadresse: %2"
 "Find out more","Finn ut mer"
 "First Name is not valid.","Fornavn er ikke gyldig."
 "Fulfilment order status","Oppfyllelse av ordrestatus"

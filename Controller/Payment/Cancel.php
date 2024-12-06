@@ -52,6 +52,7 @@ class Cancel extends Action
      */
     public function execute()
     {
+        $order = null;
         try {
             $order = $this->orderService->getOrderByReference();
             $this->orderService->cancelTwoOrder($order);
@@ -62,10 +63,9 @@ class Cancel extends Action
             throw new LocalizedException($message);
         } catch (Exception $exception) {
             $this->orderService->restoreQuote();
-            if (isset($order)) {
+            if ($order !== null) {
                 $this->orderService->failOrder($order, $exception->getMessage());
             }
-
             $this->messageManager->addErrorMessage($exception->getMessage());
             return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/cart'));
         }
