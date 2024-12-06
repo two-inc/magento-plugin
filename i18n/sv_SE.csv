@@ -48,6 +48,7 @@ Download,"Ladda ner"
 "Enter details manually","Ange detaljer manuellt"
 Environment,Miljö
 "Failed to refund order with %1. Reason: %2","Det gick inte att återbetala beställningen med %1. Orsak: %2"
+"Failed to update %1 customer address: %2","Misslyckades med att uppdatera %1 kundadress: %2"
 "Find out more","Ta reda på mer"
 "First Name is not valid.","Förnamn är inte giltigt."
 "Fulfilment order status","Uppfyllande orderstatus"
