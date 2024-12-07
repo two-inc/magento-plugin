@@ -1,11 +1,15 @@
 "%1 Decline reason: %2","%1 Orsak till avslag: %2"
 "%1 Details","%1 Detaljer"
 "%1 [Trace ID: %2]","%1 [Spår-ID: %2]"
+"%1 customer address updated.","%1 kundadress uppdaterad."
 "%1 order has been marked as cancelled","%1 beställning har markerats som avbruten"
 "%1 order invoice has not been issued yet.","%1 orderfaktura har inte utfärdats ännu."
 "%1 order marked as completed.","%1 order markerad som slutförd."
 "%1 order marked as partially completed.","%1 order markerad som delvis slutförd."
+"%1 payment has been verified by the customer.","%1 betalning har verifierats av kunden."
+"%1 payment terms","%1 betalningsvillkor"
 "%1 requires whole order to be shipped before it can be fulfilled.","%1 kräver att hela beställningen skickas innan den kan uppfyllas."
+"%1 terms and conditions","%1 villkor och bestämmelser"
 "* Required Fields","* Obligatoriska fält"
 "API key",API-nyckel
 "API key is missing","API-nyckel saknas"
@@ -20,6 +24,7 @@
 "Amount is missing","Belopp saknas"
 Branding,Branding
 "Buy now, receive your goods, pay your invoice later.","Köp nu, få dina varor, betala din faktura senare."
+"By checking this box, I confirm that I have read and agree to %1.","Genom att kryssa i denna ruta bekräftar jag att jag har läst och godkänner %1."
 "By checking this box, I confirm that I have read and agree to the %1.","Genom att markera denna ruta bekräftar jag att jag har läst och godkänner %1."
 "Check last 100 debug log records","Kontrollera de senaste 100 felsökningsloggposterna"
 "Check last 100 error log records","Kontrollera de senaste 100 felloggposterna"
@@ -93,11 +98,14 @@ TWO,TWO
 "The capture action is not available.","Infångningsåtgärden är inte tillgänglig."
 Title,Titel
 "Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple.","Two är en betalningslösning för B2B-köp online, som låter dig köpa från dina favorithandlare och leverantörer på handelskredit. Med Two får du omedelbar tillgång till flexibel handelskredit för att göra inköp enkelt."
+"Unable to confirm %1 order with %2 state.","Kan inte bekräfta %1 beställning med %2 status."
 "Unable to find the requested %1 order","Det gick inte att hitta den begärda beställningen %1"
 "Unable to retrieve payment information for your invoice purchase with %1. The cart will be restored.","Det gick inte att hämta betalningsinformation för ditt fakturaköp med %1. Vagnen kommer att återställas."
 Version,Version
+"You must accept %1 to place order.","Du måste acceptera %1 för att göra en beställning."
 "You must first accept the payment terms.","Du måste först acceptera betalningsvillkoren."
 "You will be redirected to %1 when you place order.","Du kommer att omdirigeras till %1 när du beställer."
+"Your invoice purchase with %1 could not be processed. The cart will be restored.","Ditt fakturaköp med %1 kunde inte behandlas. Varukorgen kommer att återställas."
 "Your invoice purchase with %1 failed verification. The cart will be restored.","Ditt fakturaköp med %1 misslyckades med verifiering. Vagnen kommer att återställas."
 "Your invoice purchase with %1 has been cancelled. The cart will be restored.","Ditt fakturaköp med %1 har annullerats. Vagnen kommer att återställas."
 "Your invoice purchase with %1 has been declined.","Ditt fakturaköp med %1 har avvisats."

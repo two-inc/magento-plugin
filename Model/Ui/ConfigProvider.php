@@ -81,7 +81,7 @@ class ConfigProvider implements ConfigProviderInterface
         $provider = $this->configRepository::PROVIDER;
         $tryAgainLater = __('Please try again later.');
         $soleTraderaccountCouldNotBeVerified = __('Your sole trader account could not be verified.');
-        $paymentTerms = __("Payment Terms");
+        $paymentTerms = __("%1 terms and conditions", $this->configRepository::PROVIDER);
         $paymentTermsLink = $this->configRepository->getCheckoutPageUrl() . '/terms';
 
         return [
@@ -116,10 +116,10 @@ class ConfigProvider implements ConfigProviderInterface
                         $tryAgainLater
                     ),
                     'paymentTermsMessage' => __(
-                        'By checking this box, I confirm that I have read and agree to the %1.',
+                        'By checking this box, I confirm that I have read and agree to %1.',
                         sprintf('<a href="%s" target="_blank">%s</a>', $paymentTermsLink, $paymentTerms)
                     ),
-                    'termsNotAcceptedMessage' => __('You must first accept the payment terms.'),
+                    'termsNotAcceptedMessage' => __('You must accept %1 to place order.', $paymentTerms),
                     'soleTraderErrorMessage' => __(
                         'Something went wrong with your request to %1. %2',
                         $provider,
