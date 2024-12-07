@@ -306,13 +306,11 @@ class OrderService
             if ($invoice->getGrandTotal() > 0) {
                 $invoice->setRequestedCaptureCase(Invoice::CAPTURE_ONLINE);
                 $invoice->register();
-                $this->addOrderComment(
-                    $order,
-                    sprintf(
-                        '%s order payment has been verified',
-                        $this->configRepository::PROVIDER
-                    )
+                $message = __(
+                    '%1 payment has been verified by the customer.',
+                    $this->configRepository::PROVIDER
                 );
+                $this->addOrderComment($order, $message);
                 $transactionSave = $this->transaction
                     ->addObject(
                         $payment

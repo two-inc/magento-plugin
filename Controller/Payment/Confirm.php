@@ -92,15 +92,16 @@ class Confirm extends Action
                 $this->orderService->processOrder($order, $twoOrder['id']);
                 return $this->getResponse()->setRedirect($this->_url->getUrl('checkout/onepage/success'));
             } else {
+                $comment = __(
+                    'Unable to confirm %1 order with %2 state.',
+                    $this->configRepository::PROVIDER,
+                    $twoOrder['state'] ?? 'undefined'
+                );
+                $this->orderService->addOrderComment($order, $comment);
                 $message = __(
-                    'Unable to retrieve payment information for your invoice purchase with %1. ' .
-                    'The cart will be restored.',
+                    'Your invoice purchase with %1 could not be processed. The cart will be restored.',
                     $this->configRepository::PROVIDER
                 );
-                if (!empty($twoOrder['decline_reason'])) {
-                    $message = __('%1 Decline reason: %2', $message, $twoOrder['decline_reason']);
-                }
-                $this->orderService->addOrderComment($order, $message);
                 throw new LocalizedException($message);
             }
         } catch (Exception $exception) {
