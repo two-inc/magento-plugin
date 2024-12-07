@@ -1,4 +1,3 @@
-"%1 Decline reason: %2","%1 Reden voor afwijzing: %2"
 "%1 Details","%1 Gegevens"
 "%1 [Trace ID: %2]","%1 [Trace-ID: %2]"
 "%1 customer address updated.","%1 klantadres bijgewerkt."
@@ -7,7 +6,6 @@
 "%1 order marked as completed.","%1 bestelling gemarkeerd als voltooid."
 "%1 order marked as partially completed.","%1 bestilling merket som delvis fullført."
 "%1 payment has been verified by the customer.","%1 betaling is door de klant geverifieerd."
-"%1 payment terms","%1 betalingsvoorwaarden"
 "%1 requires whole order to be shipped before it can be fulfilled.","%1 vereist dat de gehele bestelling wordt verzonden voordat deze kan worden uitgevoerd."
 "%1 terms and conditions","%1 voorwaarden en condities"
 "* Required Fields","* Verplichte velden"
@@ -25,7 +23,6 @@
 Branding,Merknaam
 "Buy now, receive your goods, pay your invoice later.","Koop nu, ontvang uw goederen, betaal uw factuur later."
 "By checking this box, I confirm that I have read and agree to %1.","Door dit vakje aan te vinken, bevestig ik dat ik de %1 heb gelezen en ermee akkoord ga."
-"By checking this box, I confirm that I have read and agree to the %1.","Door dit vakje aan te vinken bevestig ik dat ik de %1 heb gelezen en ermee akkoord ga."
 "Check last 100 debug log records","Controleer de laatste 100 debug-logboek records"
 "Check last 100 error log records","Controleer de laatste 100 foutenlogboek records"
 "City is not valid.","Stad is niet geldig."
@@ -75,7 +72,6 @@ OK,OK
 "Order edit request was accepted by %1","Bestellingswijzigingsverzoek is geaccepteerd door %1"
 "PO Number",PO-nummer
 Payment,Betaling
-"Payment Terms",Betaalvoorwaarden
 "Payment method",Betaalmethode
 "Phone Number is not valid.","Telefoonnummer is niet geldig."
 "Place Order","Bestelling plaatsen"
@@ -100,10 +96,8 @@ Title,Titel
 "Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple.","Two is een betalingsoplossing voor online B2B-aankopen, waarmee u op handelskrediet kunt kopen bij uw favoriete handelaren en leveranciers. Met Two heeft u direct toegang tot flexibel handelskrediet om het aankopen eenvoudig te maken."
 "Unable to confirm %1 order with %2 state.","Kan %1 bestelling met %2 status niet bevestigen."
 "Unable to find the requested %1 order","Kan de gevraagde %1 bestelling niet vinden"
-"Unable to retrieve payment information for your invoice purchase with %1. The cart will be restored.","Betalingsgegevens voor uw aankoop op factuur met %1 kunnen niet worden opgehaald. De winkelwagen wordt hersteld."
 Version,Versie
 "You must accept %1 to place order.","U moet %1 accepteren om de bestelling te plaatsen."
-"You must first accept the payment terms.","U moet eerst de betaalvoorwaarden accepteren."
 "You will be redirected to %1 when you place order.","U wordt doorgestuurd naar %1 wanneer u een bestelling plaatst."
 "Your invoice purchase with %1 could not be processed. The cart will be restored.","Uw factuuraankoop met %1 kon niet worden verwerkt. De winkelwagen wordt hersteld."
 "Your invoice purchase with %1 failed verification. The cart will be restored.","Uw aankoop op factuur met %1 is niet geverifieerd. De winkelwagen wordt hersteld."

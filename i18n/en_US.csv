@@ -1,4 +1,3 @@
-"%1 Decline reason: %2","%1 Decline reason: %2"
 "%1 Details","%1 Details"
 "%1 [Trace ID: %2]","%1 [Trace ID: %2]"
 "%1 customer address updated.","%1 customer address updated."
@@ -7,7 +6,6 @@
 "%1 order marked as completed.","%1 order marked as completed."
 "%1 order marked as partially completed.","%1 order marked as partially completed."
 "%1 payment has been verified by the customer.","%1 payment has been verified by the customer."
-"%1 payment terms","%1 payment terms"
 "%1 requires whole order to be shipped before it can be fulfilled.","%1 requires whole order to be shipped before it can be fulfilled."
 "%1 terms and conditions","%1 terms and conditions"
 "* Required Fields","* Required Fields"
@@ -25,7 +23,6 @@
 Branding,Branding
 "Buy now, receive your goods, pay your invoice later.","Buy now, receive your goods, pay your invoice later."
 "By checking this box, I confirm that I have read and agree to %1.","By checking this box, I confirm that I have read and agree to %1."
-"By checking this box, I confirm that I have read and agree to the %1.","By checking this box, I confirm that I have read and agree to the %1."
 "Check last 100 debug log records","Check last 100 debug log records"
 "Check last 100 error log records","Check last 100 error log records"
 "City is not valid.","City is not valid."
@@ -75,7 +72,6 @@ OK,OK
 "Order edit request was accepted by %1","Order edit request was accepted by %1"
 "PO Number","PO Number"
 Payment,Payment
-"Payment Terms","Payment Terms"
 "Payment method","Payment method"
 "Phone Number is not valid.","Phone Number is not valid."
 "Place Order","Place Order"
@@ -100,10 +96,8 @@ Title,Title
 "Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple.","Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple."
 "Unable to confirm %1 order with %2 state.","Unable to confirm %1 order with %2 state."
 "Unable to find the requested %1 order","Unable to find the requested %1 order"
-"Unable to retrieve payment information for your invoice purchase with %1. The cart will be restored.","Unable to retrieve payment information for your invoice purchase with %1. The cart will be restored."
 Version,Version
 "You must accept %1 to place order.","You must accept %1 to place order."
-"You must first accept the payment terms.","You must first accept the payment terms."
 "You will be redirected to %1 when you place order.","You will be redirected to %1 when you place order."
 "Your invoice purchase with %1 could not be processed. The cart will be restored.","Your invoice purchase with %1 could not be processed. The cart will be restored."
 "Your invoice purchase with %1 failed verification. The cart will be restored.","Your invoice purchase with %1 failed verification. The cart will be restored."
