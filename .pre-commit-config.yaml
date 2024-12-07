@@ -16,7 +16,7 @@ repos:
           - id: detect-private-key
           - id: end-of-file-fixer
           - id: pretty-format-json
-            args: ["--indent=\t", '--no-sort-keys']
+            args: ['--indent=4', '--no-sort-keys']
           - id: requirements-txt-fixer
           - id: trailing-whitespace
     - repo: https://github.com/pre-commit/mirrors-prettier
