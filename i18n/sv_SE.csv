@@ -113,3 +113,5 @@ Version,Version
 "Your request to %1 failed. Reason: %2","Din begäran till %1 misslyckades. Orsak: %2"
 "Your sole trader account could not be verified.","Ditt enskild näringsidkarekonto kunde inte verifieras."
 "Zip/Postal Code is not valid.","Postnummer är inte giltigt."
+"Forward invoice to email list (optional)","Vidarebefordra faktura till e-postlista (valfritt)"
+"Please ensure your forward to email list only contains valid emails seperated by commas.","Se till att din vidarebefordran till e-postlista endast innehåller giltiga e-postmeddelanden separerade med kommatecken."

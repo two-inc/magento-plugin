@@ -113,3 +113,5 @@ Version,Versjon
 "Your request to %1 failed. Reason: %2","Din forespørsel til %1 mislyktes. Årsak: %2"
 "Your sole trader account could not be verified.","Din eneforhandlerkonto kunne ikke bekreftes."
 "Zip/Postal Code is not valid.","Postnummer er ikke gyldig."
+"Forward invoice to email list (optional)","Videresend faktura til e-postliste (valgfritt)"
+"Please ensure your forward to email list only contains valid emails seperated by commas.","Sørg for at listen over videresending til e-post kun inneholder gyldige e-poster atskilt med komma."

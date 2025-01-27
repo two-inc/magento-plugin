@@ -204,11 +204,18 @@ class Two extends AbstractMethod
         $order = $payment->getOrder();
         $this->urlCookie->delete();
         $orderReference = (string)rand();
+
+        $additionalInformation = $payment->getAdditionalInformation();
+
+        $multipleInvoiceEmails = $additionalInformation['multipleInvoiceEmails'] ?? null;
+
         $payload = $this->compositeOrder->execute(
             $order,
             $orderReference,
-            $payment->getAdditionalInformation()
+            $additionalInformation
         );
+
+
 
         // Create order
         $response = $this->apiAdapter->execute('/v1/order', $payload);

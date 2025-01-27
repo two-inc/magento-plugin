@@ -49,8 +49,10 @@ define([
         orderIntentApprovedMessage: config.orderIntentApprovedMessage,
         orderIntentDeclinedMessage: config.orderIntentDeclinedMessage,
         generalErrorMessage: config.generalErrorMessage,
+        invalidEmailListMessage: config.invalidEmailListMessage,
         soleTraderErrorMessage: config.soleTraderErrorMessage,
         isOrderIntentEnabled: config.isOrderIntentEnabled,
+        isMultipleInvoiceEmailsEnabled: config.isMultipleInvoiceEmailsEnabled,
         isDepartmentFieldEnabled: config.isDepartmentFieldEnabled,
         isProjectFieldEnabled: config.isProjectFieldEnabled,
         isOrderNoteFieldEnabled: config.isOrderNoteFieldEnabled,
@@ -67,6 +69,7 @@ define([
         autofillToken: '',
         companyName: ko.observable(''),
         companyId: ko.observable(''),
+        multipleInvoiceEmails: ko.observable(''),
         project: ko.observable(''),
         department: ko.observable(''),
         orderNote: ko.observable(''),
@@ -83,6 +86,28 @@ define([
             this.registeredOrganisationMode();
             this.configureFormValidation();
             this.popupMessageListener();
+        },
+        showErrorMessage: function (message, duration) {
+            messageList.addErrorMessage({ message: message });
+
+            if (duration) {
+                setTimeout(function () {
+                    messageList.messages.remove(function (item) {
+                        return item.message === message;
+                    });
+                }, duration);
+            }
+        },
+        validateMultipleEmails: function () {
+            const emails = this.multipleInvoiceEmails();
+            let emailArray = emails.split(',').map((email) => email.trim());
+
+            const isValid = emailArray.every((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+            if (!isValid && emails) {
+                this.showErrorMessage(this.invalidEmailListMessage, 3);
+                return false;
+            }
+            return true;
         },
         logIsPaymentsAccepted: function (data, event) {
             console.debug({
@@ -217,6 +242,13 @@ define([
                 this.processTermsNotAcceptedErrorResponse();
                 return;
             }
+
+            // Validate emails on the forward list
+            if (this.isMultipleInvoiceEmailsEnabled && !this.validateMultipleEmails()) {
+                this.showErrorMessage(this.invalidEmailListMessage);
+                return;
+            }
+
             if (
                 this.validate() &&
                 additionalValidators.validate() &&
@@ -392,7 +424,8 @@ define([
                     project: this.project(),
                     department: this.department(),
                     orderNote: this.orderNote(),
-                    poNumber: this.poNumber()
+                    poNumber: this.poNumber(),
+                    multipleInvoiceEmails: this.multipleInvoiceEmails()
                 }
             };
         },

@@ -113,3 +113,5 @@ Version,Version
 "Your request to %1 failed. Reason: %2","Your request to %1 failed. Reason: %2"
 "Your sole trader account could not be verified.","Your sole trader account could not be verified."
 "Zip/Postal Code is not valid.","Zip/Postal Code is not valid."
+"Forward invoice to email list (optional)","Forward invoice to email list (optional)"
+"Please ensure your forward to email list only contains valid emails seperated by commas.", "Please ensure your forward to email list only contains valid emails seperated by commas."

@@ -91,6 +91,7 @@ class ConfigProvider implements ConfigProviderInterface
                     'checkoutPageUrl' => $this->configRepository->getCheckoutPageUrl(),
                     'redirectUrlCookieCode' => UrlCookie::COOKIE_NAME,
                     'isOrderIntentEnabled' => $this->configRepository->isOrderIntentEnabled(),
+                    'isMultipleInvoiceEmailsEnabled' => $this->configRepository->isMultipleInvoiceEmailsEnabled(),
                     'orderIntentConfig' => $orderIntentConfig,
                     'isCompanySearchEnabled' => $this->configRepository->isCompanySearchEnabled(),
                     'isAddressSearchEnabled' => $this->configRepository->isAddressSearchEnabled(),
@@ -115,6 +116,7 @@ class ConfigProvider implements ConfigProviderInterface
                         $provider,
                         $tryAgainLater
                     ),
+                    'invalidEmailListMessage' => __('Please ensure your forward to email list only contains valid emails seperated by commas.'),
                     'paymentTermsMessage' => __(
                         'By checking this box, I confirm that I have read and agree to %1.',
                         sprintf('<a href="%s" target="_blank">%s</a>', $paymentTermsLink, $paymentTerms)
