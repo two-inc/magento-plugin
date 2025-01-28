@@ -113,5 +113,5 @@ Version,Versie
 "Your request to %1 failed. Reason: %2","Uw verzoek aan %1 is mislukt. Reden: %2"
 "Your sole trader account could not be verified.","Uw eenmanszaakaccount kon niet worden geverifieerd."
 "Zip/Postal Code is not valid.","Postcode is niet geldig."
-"Forward invoice to email list (optional)","Factuur doorsturen naar e-maillijst (optioneel)"
+"Invoice email address","E-mailadres factuur"
 "Please ensure your forward to email list only contains valid emails seperated by commas.","Zorg ervoor dat uw doorstuur-naar-e-maillijst alleen geldige e-mails bevat, gescheiden door komma's."
