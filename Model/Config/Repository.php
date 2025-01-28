@@ -159,9 +159,9 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
-    public function isMultipleInvoiceEmailsEnabled(?int $storeId = null): bool
+    public function isInvoiceEmailsEnabled(?int $storeId = null): bool
     {
-        return $this->isSetFlag(self::XML_PATH_ENABLE_MULTIPLE_INVOICE_EMAILS, $storeId);
+        return $this->isSetFlag(self::XML_PATH_ENABLE_INVOICE_EMAILS, $storeId);
     }
 
     /**

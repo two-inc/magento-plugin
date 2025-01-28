@@ -158,15 +158,15 @@
                     </depends>
                     <config_path>payment/two_payment/enable_order_intent</config_path>
                 </field>
-                <field id="enable_multiple_invoice_emails" translate="label" type="select" sortOrder="75" showInDefault="1"
+                <field id="enable_invoice_emails" translate="label" type="select" sortOrder="75" showInDefault="1"
                        showInWebsite="1" showInStore="1">
-                    <label>Enable multiple invoice emails</label>
+                    <label>Enable invoice emails</label>
                     <comment>Let your buyer input additional emails to forward the invoice to on order fulfilment.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <depends>
                         <field id="active">1</field>
                     </depends>
-                    <config_path>payment/two_payment/enable_multiple_invoice_emails</config_path>
+                    <config_path>payment/two_payment/enable_invoice_emails</config_path>
                 </field>
                 <field id="enable_tax_subtotals" translate="label" type="select" sortOrder="75" showInDefault="1"
                        showInWebsite="1" showInStore="1">

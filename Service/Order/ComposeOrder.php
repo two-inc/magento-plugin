@@ -32,10 +32,10 @@ class ComposeOrder extends OrderService
     $lineItems = $this->getLineItemsOrder($order);
 
 
-    // Initialize invoice_details only if multipleInvoiceEmails is present
+    // Initialize invoice_details only if invoiceEmails is present
     $invoiceDetails = [];
-    if (!empty($additionalData['multipleInvoiceEmails'])) {
-        $invoiceDetails['invoice_emails'] = explode(',', $additionalData['multipleInvoiceEmails']);
+    if (!empty($additionalData['invoiceEmails'])) {
+        $invoiceDetails['invoice_emails'] = explode(',', $additionalData['invoiceEmails']);
         // Required placeholders to pass create order API Schema requirements
         $invoiceDetails['payment_reference_message'] = "";
         $invoiceDetails['payment_reference_ocr'] = "";

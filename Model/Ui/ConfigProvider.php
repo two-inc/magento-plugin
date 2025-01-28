@@ -91,7 +91,7 @@ class ConfigProvider implements ConfigProviderInterface
                     'checkoutPageUrl' => $this->configRepository->getCheckoutPageUrl(),
                     'redirectUrlCookieCode' => UrlCookie::COOKIE_NAME,
                     'isOrderIntentEnabled' => $this->configRepository->isOrderIntentEnabled(),
-                    'isMultipleInvoiceEmailsEnabled' => $this->configRepository->isMultipleInvoiceEmailsEnabled(),
+                    'isInvoiceEmailsEnabled' => $this->configRepository->isInvoiceEmailsEnabled(),
                     'orderIntentConfig' => $orderIntentConfig,
                     'isCompanySearchEnabled' => $this->configRepository->isCompanySearchEnabled(),
                     'isAddressSearchEnabled' => $this->configRepository->isAddressSearchEnabled(),

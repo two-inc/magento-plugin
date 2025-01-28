@@ -207,7 +207,7 @@ class Two extends AbstractMethod
 
         $additionalInformation = $payment->getAdditionalInformation();
 
-        $multipleInvoiceEmails = $additionalInformation['multipleInvoiceEmails'] ?? null;
+        $invoiceEmails = $additionalInformation['invoiceEmails'] ?? null;
 
         $payload = $this->compositeOrder->execute(
             $order,

@@ -52,7 +52,7 @@ define([
         invalidEmailListMessage: config.invalidEmailListMessage,
         soleTraderErrorMessage: config.soleTraderErrorMessage,
         isOrderIntentEnabled: config.isOrderIntentEnabled,
-        isMultipleInvoiceEmailsEnabled: config.isMultipleInvoiceEmailsEnabled,
+        isInvoiceEmailsEnabled: config.isInvoiceEmailsEnabled,
         isDepartmentFieldEnabled: config.isDepartmentFieldEnabled,
         isProjectFieldEnabled: config.isProjectFieldEnabled,
         isOrderNoteFieldEnabled: config.isOrderNoteFieldEnabled,
@@ -69,7 +69,7 @@ define([
         autofillToken: '',
         companyName: ko.observable(''),
         companyId: ko.observable(''),
-        multipleInvoiceEmails: ko.observable(''),
+        invoiceEmails: ko.observable(''),
         project: ko.observable(''),
         department: ko.observable(''),
         orderNote: ko.observable(''),
@@ -98,8 +98,8 @@ define([
                 }, duration);
             }
         },
-        validateMultipleEmails: function () {
-            const emails = this.multipleInvoiceEmails();
+        validateEmails: function () {
+            const emails = this.invoiceEmails();
             let emailArray = emails.split(',').map((email) => email.trim());
 
             const isValid = emailArray.every((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
@@ -244,7 +244,7 @@ define([
             }
 
             // Validate emails on the forward list
-            if (this.isMultipleInvoiceEmailsEnabled && !this.validateMultipleEmails()) {
+            if (this.isInvoiceEmailsEnabled && !this.validateEmails()) {
                 this.showErrorMessage(this.invalidEmailListMessage);
                 return;
             }
@@ -425,7 +425,7 @@ define([
                     department: this.department(),
                     orderNote: this.orderNote(),
                     poNumber: this.poNumber(),
-                    multipleInvoiceEmails: this.multipleInvoiceEmails()
+                    invoiceEmails: this.invoiceEmails()
                 }
             };
         },

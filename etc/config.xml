@@ -18,7 +18,7 @@
                 <days_on_invoice>14</days_on_invoice>
                 <finalize_purchase>1</finalize_purchase>
                 <enable_order_intent>1</enable_order_intent>
-                <enable_multiple_invoice_emails>0</enable_multiple_invoice_emails>
+                <enable_invoice_emails>0</enable_invoice_emails>
                 <enable_tax_subtotals>1</enable_tax_subtotals>
                 <fulfill_trigger>shipment</fulfill_trigger>
                 <fulfill_order_status>complete</fulfill_order_status>

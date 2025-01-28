@@ -24,7 +24,7 @@ class DataAssignObserver extends AbstractDataAssignObserver
         'department',
         'orderNote',
         'poNumber',
-        'multipleInvoiceEmails'
+        'invoiceEmails'
     ];
 
     /**

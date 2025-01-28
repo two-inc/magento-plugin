@@ -172,15 +172,15 @@
                         />
                     </div>
                 </div>
-                <div class="field field-text" data-bind="visible: isMultipleInvoiceEmailsEnabled">
-                    <label for="multiple_invoice_emails" class="label">
+                <div class="field field-text" data-bind="visible: isInvoiceEmailsEnabled">
+                    <label for="invoice_emails" class="label">
                         <span data-bind="i18n: 'Forward invoice to email list (optional)'"></span>
                     </label>
                     <div class="control">
                         <input
                             type="text"
-                            id="multiple_invoice_emails"
-                            data-bind="value: multipleInvoiceEmails, event: { change: validateMultipleEmails }"
+                            id="invoice_emails"
+                            data-bind="value: invoiceEmails, event: { change: validateEmails }"
                             class="input-text"
                         />
                     </div>
