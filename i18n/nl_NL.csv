@@ -107,3 +107,5 @@ Version,Versie
 "Your request to %1 failed. Reason: %2","Uw verzoek aan %1 is mislukt. Reden: %2"
 "Your sole trader account could not be verified.","Uw eenmanszaakaccount kon niet worden geverifieerd."
 "Zip/Postal Code is not valid.","Postcode is niet geldig."
+"Invoice email address","E-mailadres factuur"
+"Please ensure that your invoice email address list only contains valid email addresses separated by commas.","Zorg ervoor dat uw factuur-e-mailadreslijst alleen geldige e-mailadressen bevat, gescheiden door komma's."

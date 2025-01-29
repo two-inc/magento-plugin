@@ -172,6 +172,19 @@
                         />
                     </div>
                 </div>
+                <div class="field field-text" data-bind="visible: isInvoiceEmailsEnabled">
+                    <label for="invoice_emails" class="label">
+                        <span data-bind="i18n: 'Invoice email address'"></span>
+                    </label>
+                    <div class="control">
+                        <input
+                            type="text"
+                            id="invoice_emails"
+                            data-bind="value: invoiceEmails, event: { change: validateEmails }"
+                            class="input-text"
+                        />
+                    </div>
+                </div>
                 <div class="field field-text" data-bind="visible: isProjectFieldEnabled">
                     <label for="two_project" class="label">
                         <span> <!-- ko i18n: 'Project'--><!-- /ko --> </span>

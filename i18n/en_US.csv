@@ -107,3 +107,5 @@ Version,Version
 "Your request to %1 failed. Reason: %2","Your request to %1 failed. Reason: %2"
 "Your sole trader account could not be verified.","Your sole trader account could not be verified."
 "Zip/Postal Code is not valid.","Zip/Postal Code is not valid."
+"Invoice email address","Invoice email address"
+"Please ensure that your invoice email address list only contains valid email addresses separated by commas.","Please ensure that your invoice email address list only contains valid email addresses separated by commas."
