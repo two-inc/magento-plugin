@@ -114,4 +114,4 @@ Version,Version
 "Your sole trader account could not be verified.","Ditt enskild näringsidkarekonto kunde inte verifieras."
 "Zip/Postal Code is not valid.","Postnummer är inte giltigt."
 "Invoice email address","E-postadress för faktura"
-"Please ensure your forward to email list only contains valid emails seperated by commas.","Se till att din vidarebefordran till e-postlista endast innehåller giltiga e-postmeddelanden separerade med kommatecken."
+"Please ensure that your invoice email address list only contains valid email addresses separated by commas.","Se till att din e-postadresslista för faktura endast innehåller giltiga e-postadresser separerade med kommatecken."

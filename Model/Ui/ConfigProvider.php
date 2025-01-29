@@ -116,7 +116,7 @@ class ConfigProvider implements ConfigProviderInterface
                         $provider,
                         $tryAgainLater
                     ),
-                    'invalidEmailListMessage' => __('Please ensure your forward to email list only contains valid emails seperated by commas.'),
+                    'invalidEmailListMessage' => __('Please ensure that your invoice email address list only contains valid email addresses separated by commas.'),
                     'paymentTermsMessage' => __(
                         'By checking this box, I confirm that I have read and agree to %1.',
                         sprintf('<a href="%s" target="_blank">%s</a>', $paymentTermsLink, $paymentTerms)

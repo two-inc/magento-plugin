@@ -114,4 +114,4 @@ Version,Versjon
 "Your sole trader account could not be verified.","Din eneforhandlerkonto kunne ikke bekreftes."
 "Zip/Postal Code is not valid.","Postnummer er ikke gyldig."
 "Invoice email address","E-postadresse for faktura"
-"Please ensure your forward to email list only contains valid emails seperated by commas.","Sørg for at listen over videresending til e-post kun inneholder gyldige e-poster atskilt med komma."
+"Please ensure that your invoice email address list only contains valid email addresses separated by commas.","Sørg for at listen over e-postadresser for faktura bare inneholder gyldige e-postadresser atskilt med komma."
