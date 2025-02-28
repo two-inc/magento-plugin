@@ -5,14 +5,14 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
+namespace ABN\Gateway\Block\Adminhtml\System\Config\Field;
 
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Service\Api\Adapter;
-use Two\Gateway\Model\Two;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Service\Api\Adapter;
+use ABN\Gateway\Model\Two;
 
 /**
  * Render version field html element in Stores Configuration
@@ -22,7 +22,7 @@ class ApiKeyCheck extends Field
     /**
      * @var string
      */
-    protected $_template = 'Two_Gateway::system/config/field/apikey.phtml';
+    protected $_template = 'ABN_Gateway::system/config/field/apikey.phtml';
 
     /**
      * @var ConfigRepository
