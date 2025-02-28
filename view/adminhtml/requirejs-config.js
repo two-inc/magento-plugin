@@ -1,5 +1,3 @@
 var config = {
-    deps: [
-        'Two_Gateway/js/button-functions',
-    ]
+    deps: ['ABN_Gateway/js/button-functions']
 };

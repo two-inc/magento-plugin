@@ -5,13 +5,13 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
+namespace ABN\Gateway\Block\Adminhtml\System\Config\Field;
 
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Backend\Block\Template\Context;
 
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
  * Render module information html element in Stores Configuration
@@ -31,7 +31,7 @@ class Header extends Field
     /**
      * @var string
      */
-    protected $_template = 'Two_Gateway::system/config/field/header.phtml';
+    protected $_template = 'ABN_Gateway::system/config/field/header.phtml';
 
     /**
      * @param Context $context

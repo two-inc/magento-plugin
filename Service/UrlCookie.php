@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Service;
+namespace ABN\Gateway\Service;
 
 use Magento\Framework\Exception\InputException;
 use Magento\Framework\Exception\LocalizedException;
@@ -24,7 +24,7 @@ class UrlCookie
     /**
      * Name of cookie that holds private content version
      */
-    public const COOKIE_NAME = 'two_redirect_url';
+    public const COOKIE_NAME = 'abn_redirect_url';
 
     /**
      * @var CookieManagerInterface
@@ -78,7 +78,7 @@ class UrlCookie
     }
 
     /**
-     * Set 'two_redirect_url' cookie meta data
+     * Set 'abn_redirect_url' cookie meta data
      *
      * @param string $value
      * @param int $duration
@@ -103,7 +103,7 @@ class UrlCookie
     }
 
     /**
-     * Delete 'two_redirect_url' cookie meta data
+     * Delete 'abn_redirect_url' cookie meta data
      *
      * @return void
      * @throws FailureToSendException
