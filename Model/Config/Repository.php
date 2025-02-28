@@ -5,14 +5,14 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Model\Config;
+namespace ABN\Gateway\Model\Config;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
 use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\UrlInterface;
 use Magento\Store\Model\ScopeInterface;
-use Two\Gateway\Api\Config\RepositoryInterface;
+use ABN\Gateway\Api\Config\RepositoryInterface;
 
 /**
  * Config Repository

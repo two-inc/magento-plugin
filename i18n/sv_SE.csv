@@ -7,12 +7,12 @@
 "%1 order marked as partially completed.","%1 order markerad som delvis slutförd."
 "%1 payment has been verified by the customer.","%1 betalning har verifierats av kunden."
 "%1 requires whole order to be shipped before it can be fulfilled.","%1 kräver att hela beställningen skickas innan den kan uppfyllas."
-"%1 terms and conditions","%1 villkor och bestämmelser"
 "* Required Fields","* Obligatoriska fält"
 "API key",API-nyckel
 "API key is missing","API-nyckel saknas"
 "API key is not valid","API-nyckeln är inte giltig"
 "API key is valid","API-nyckeln är giltig"
+"Achteraf betalen van ABN AMRO","Achteraf betalen van ABN AMRO"
 "Add PO number field","Lägg till PO-nummerfält"
 "Add department field","Lägg till fält för avdelning"
 "Add order note field","Lägg till orderanteckningsfält"
@@ -20,15 +20,10 @@
 "Allow to applicable countries","Tillåt till tillämpliga länder"
 "Allow to specific countries","Tillåt till specifika länder"
 "Amount is missing","Belopp saknas"
-Branding,Branding
-"Buy now, receive your goods, pay your invoice later.","Köp nu, få dina varor, betala din faktura senare."
-"By checking this box, I confirm that I have read and agree to %1.","Genom att kryssa i denna ruta bekräftar jag att jag har läst och godkänner %1."
 "Check last 100 debug log records","Kontrollera de senaste 100 felsökningsloggposterna"
 "Check last 100 error log records","Kontrollera de senaste 100 felloggposterna"
 "City is not valid.","Stad är inte giltig."
 "Click here to log in or sign up as a Sole Trader.","Klicka här för att logga in eller registrera dig som enskild näringsidkare."
-"Company ID",Organisationsnummer
-"Company ID is not valid.","Företags-ID är inte giltigt."
 "Company Name",Företagsnamn
 "Could not initiate capture with %1","Kunde inte initiera infångning med %1"
 "Could not initiate refund with %1","Kunde inte initiera återbetalning med %1"
@@ -51,14 +46,16 @@ Download,"Ladda ner"
 Environment,Miljö
 "Failed to refund order with %1. Reason: %2","Det gick inte att återbetala beställningen med %1. Orsak: %2"
 "Failed to update %1 customer address: %2","Misslyckades med att uppdatera %1 kundadress: %2"
-"Find out more","Ta reda på mer"
 "First Name is not valid.","Förnamn är inte giltigt."
 "Fulfilment order status","Uppfyllande orderstatus"
 "Fulfilment trigger","Uppfyllelse trigger"
 General,Generellt
+"I have filled in all the details truthfully and accept to pay the invoice in 30 days. I agree to the %1. You hereby give permission to %2 to decide on the basis of automated processing of (personal) data whether you can use %3. You can withdraw this permission by sending an e-mail to %4.","Jag har fyllt i alla uppgifter sanningsenligt och accepterar att betala fakturan inom 30 dagar. Jag godkänner %1. Du ger härmed tillstånd till %2 att utifrån automatiserad behandling av (personliga) uppgifter besluta om du kan använda %3. Du kan återkalla denna behörighet genom att skicka ett e-postmeddelande till %4."
 "Invalid API response from %1.","Ogiltigt API-svar från %1."
 Invoice,Faktura
 "Invoice purchase with %1 is not available for this order.","Fakturaköp med %1 är inte tillgängligt för den här beställningen."
+"KVK number",KVK-nummer
+"KVK number is not valid.","KVK-nummer är inte giltigt."
 "Last 100 debug log lines","Senaste 100 felsökningsloggraderna"
 "Last 100 error log records","Senaste 100 felloggposter"
 "Last Name is not valid.","Efternamn är inte giltigt."
@@ -70,6 +67,7 @@ OK,OK
 "Order ID",Beställnings-ID
 "Order Note",Beställningsanmärkning
 "Order edit request was accepted by %1","Begäran om beställningsredigering accepterades av %1"
+"Order on invoice and pay within 30 days after delivery. Enabled by ABN AMRO.","Beställ på faktura och betala inom 30 dagar efter leverans. Möjliggjort av ABN AMRO."
 "PO Number",PO-nummer
 Payment,Betalning
 "Payment method",Betalningsmetod
@@ -88,15 +86,14 @@ Search,Sök
 "Sort order",Sorteringsordning
 "Street Address is not valid.","Gatuadress är inte giltig."
 "Successfully refunded order with %1 for order ID: %2. Refund reference: %3","Återbetalad beställning med %1 för beställnings-ID: %2. Återbetalningsreferens: %3"
-TWO,TWO
 "The %1 payment plugin for Magento simplifies B2B shopping, making it easy and safe for merchants to offer invoices as a payment method.<br>The payment method lives next to other payment methods in your existing checkout, and offers a variety of configuration options to suit your businesses needs.<br>If you would like to know more about how to configure the plugin, check out our <a href=""%2"" target=""_blank"">step by step guide</a>.","Betalningspluginet %1 för Magento förenklar B2B-shopping, vilket gör det enkelt och säkert för handlare att erbjuda fakturor som betalningsmetod. <br> Betalningsmetoden finns bredvid andra betalningsmetoder i din befintliga kassa, och erbjuder en mängd olika konfigurationsalternativ för att passa ditt företags behov. <br> Om du vill veta mer om hur du konfigurerar plugin-programmet, kolla in vår <a href=""%2"" target=""_blank""> steg-för-steg-guide </a> ."
 "The buyer and the seller are the same company.","Köparen och säljaren är samma företag."
 "The capture action is not available.","Infångningsåtgärden är inte tillgänglig."
 Title,Titel
-"Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple.","Two är en betalningslösning för B2B-köp online, som låter dig köpa från dina favorithandlare och leverantörer på handelskredit. Med Two får du omedelbar tillgång till flexibel handelskredit för att göra inköp enkelt."
 "Unable to confirm %1 order with %2 state.","Kan inte bekräfta %1 beställning med %2 status."
 "Unable to find the requested %1 order","Det gick inte att hitta den begärda beställningen %1"
 Version,Version
+"You don't need to be an ABN AMRO customer.","Du behöver inte vara en ABN AMRO-kund."
 "You must accept %1 to place order.","Du måste acceptera %1 för att göra en beställning."
 "You will be redirected to %1 when you place order.","Du kommer att omdirigeras till %1 när du beställer."
 "Your invoice purchase with %1 could not be processed. The cart will be restored.","Ditt fakturaköp med %1 kunde inte behandlas. Varukorgen kommer att återställas."
@@ -109,3 +106,7 @@ Version,Version
 "Zip/Postal Code is not valid.","Postnummer är inte giltigt."
 "Invoice email address","E-postadress för faktura"
 "Please ensure that your invoice email address list only contains valid email addresses separated by commas.","Se till att din e-postadresslista för faktura endast innehåller giltiga e-postadresser separerade med kommatecken."
+"terms and conditions of %1","villkor för %1"
+"• No extra costs","• Inga extra kostnader"
+"• Order on invoice","• Beställ på faktura"
+"• Pay within 30 days","• Betala inom 30 dagar"

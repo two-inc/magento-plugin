@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Service\Payment;
+namespace ABN\Gateway\Service\Payment;
 
 use Exception;
 use Magento\Framework\App\RequestInterface;
@@ -21,11 +21,11 @@ use Magento\Sales\Model\Order\Payment\Transaction\Repository as PaymentTransacti
 use Magento\Sales\Model\OrderFactory;
 use Magento\Sales\Model\ResourceModel\Order as OrderResource;
 use Magento\Sales\Model\Service\InvoiceService;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Model\Two;
-use Two\Gateway\Service\Api\Adapter;
-use Two\Gateway\Service\UrlCookie;
-use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Model\Two;
+use ABN\Gateway\Service\Api\Adapter;
+use ABN\Gateway\Service\UrlCookie;
+use ABN\Gateway\Api\Log\RepositoryInterface as LogRepository;
 
 /**
  * Payment Order Service
@@ -158,7 +158,7 @@ class OrderService
      */
     public function getOrderByReference()
     {
-        $generalErrorMessage = __('Unable to find the requested %1 order', $this->configRepository::PROVIDER);
+        $generalErrorMessage = __('Unable to find the requested %1 order', $this->configRepository::PRODUCT_NAME);
         $this->urlCookie->delete();
         if (!$this->getOrderReference()) {
             throw new LocalizedException($generalErrorMessage);
@@ -308,7 +308,7 @@ class OrderService
                 $invoice->register();
                 $message = __(
                     '%1 payment has been verified by the customer.',
-                    $this->configRepository::PROVIDER
+                    $this->configRepository::PRODUCT_NAME
                 );
                 $this->addOrderComment($order, $message);
                 $transactionSave = $this->transaction
