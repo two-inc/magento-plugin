@@ -207,15 +207,11 @@ class Two extends AbstractMethod
 
         $additionalInformation = $payment->getAdditionalInformation();
 
-        $invoiceEmails = $additionalInformation['invoiceEmails'] ?? null;
-
         $payload = $this->compositeOrder->execute(
             $order,
             $orderReference,
             $additionalInformation
         );
-
-
 
         // Create order
         $response = $this->apiAdapter->execute('/v1/order', $payload);

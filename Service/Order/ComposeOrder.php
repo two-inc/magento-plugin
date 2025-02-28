@@ -77,7 +77,6 @@ class ComposeOrder extends OrderService
             $payload['invoice_details'] = $invoiceDetails;
         }
 
-
         return $payload;
     }
 }
