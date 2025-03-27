@@ -326,27 +326,6 @@ define([
         getEmail: function () {
             return quote.guestEmail ? quote.guestEmail : window.checkoutConfig.customerData.email;
         },
-        calculateTaxSubtotals: function (lineItems) {
-            const taxSubtotals = {};
-
-            lineItems.forEach((item) => {
-                const taxRate = parseFloat(item.tax_rate);
-                const taxAmount = parseFloat(item.tax_amount);
-                const taxableAmount = parseFloat(item.net_amount);
-
-                if (!taxSubtotals[taxRate]) {
-                    taxSubtotals[taxRate] = {
-                        tax_amount: 0,
-                        taxable_amount: 0,
-                        tax_rate: taxRate
-                    };
-                }
-                taxSubtotals[taxRate].tax_amount += taxAmount;
-                taxSubtotals[taxRate].taxable_amount += taxableAmount;
-            });
-
-            return Object.values(taxSubtotals);
-        },
         placeOrderIntent: function () {
             let totals = quote.getTotals()(),
                 billingAddress = quote.billingAddress(),
@@ -368,13 +347,33 @@ define([
                     type: item['is_virtual'] === '0' ? 'PHYSICAL' : 'DIGITAL'
                 });
             });
+            lineItems.push({
+                name: 'Shipping',
+                description: 'Shipping fee',
+                gross_amount: parseFloat(totals['shipping_incl_tax']).toFixed(2),
+                net_amount: parseFloat(totals['shipping_amount']).toFixed(2),
+                quantity: 1,
+                unit_price: parseFloat(totals['shipping_amount']).toFixed(2),
+                tax_amount: parseFloat(totals['shipping_tax_amount']).toFixed(2),
+                tax_rate: (
+                    parseFloat(totals['shipping_tax_amount']) /
+                    parseFloat(totals['shipping_amount'])
+                ).toFixed(6),
+                tax_class_name: '',
+                quantity_unit: 'unit',
+                type: 'SHIPPING_FEE'
+            });
 
+            const gross_amount = parseFloat(totals['grand_total']);
+            const tax_amount =
+                parseFloat(totals['tax_amount']) + parseFloat(totals['shipping_tax_amount']);
+            const net_amount = gross_amount - tax_amount;
             const orderIntentRequestBody = {
-                gross_amount: parseFloat(totals['grand_total']).toFixed(2),
-                invoice_type: config.orderIntentConfig.invoiceType,
-                currency: totals['base_currency_code'],
+                gross_amount: gross_amount.toFixed(2),
+                net_amount: net_amount.toFixed(2),
+                tax_amount: tax_amount.toFixed(2),
+                currency: totals['quote_currency_code'],
                 line_items: lineItems,
-                tax_subtotals: this.calculateTaxSubtotals(lineItems),
                 buyer: {
                     company: {
                         organization_number: this.companyId(),
