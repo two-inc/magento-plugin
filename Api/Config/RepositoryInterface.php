@@ -15,6 +15,7 @@ interface RepositoryInterface
     /** Provider specific config */
     public const CODE = 'two_payment';
     public const PROVIDER = 'Two';
+    public const PRODUCT_NAME = 'Two';
     public const PAYMENT_TERMS_LINK = 'https://www.two.inc/terms-privacy';
     public const URL_TEMPLATE = 'https://%s.two.inc';
 
