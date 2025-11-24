@@ -12,7 +12,7 @@ jobs:
           - PHP_VERSION: php82-fpm
             MAGENTO_VERSION: 2.4.6
 
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER_STANDARD }}
     steps:
       - uses: actions/checkout@v4
 
