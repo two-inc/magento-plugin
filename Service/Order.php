@@ -431,9 +431,19 @@ abstract class Order
      */
     public function getAddress(OrderModel $order, ?array $additionalData, string $type): array
     {
-        $address = !$order->getIsVirtual() || $type != 'billing'
-            ? $order->getShippingAddress()
-            : $order->getBillingAddress();
+        $address = $type === 'billing'
+            ? $order->getBillingAddress()
+            : $order->getShippingAddress();
+
+        // For virtual orders requesting shipping, use billing address instead
+        if ($type !== 'billing' && $order->getIsVirtual()) {
+            $address = $order->getBillingAddress();
+        }
+
+        // Basic safety check
+        if (!$address) {
+            $address = $order->getBillingAddress();
+        }
 
         return [
             'city' => $address->getCity(),
