@@ -320,4 +320,20 @@ class Repository implements RepositoryInterface
         return $this->isSetFlag(self::XML_PATH_ENABLE_COMPANY_SEARCH, $storeId) &&
             $this->isSetFlag(self::XML_PATH_ENABLE_ADDRESS_SEARCH, $storeId);
     }
+
+    /**
+     * @inheritDoc
+     */
+    public function getPaymentTermsType(?int $storeId = null): string
+    {
+        return (string)$this->getConfig(self::XML_PATH_PAYMENT_TERMS_TYPE, $storeId) ?: 'standard';
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getPaymentTermsDurationDays(?int $storeId = null): int
+    {
+        return (int)$this->getConfig(self::XML_PATH_PAYMENT_TERMS_DURATION_DAYS, $storeId) ?: 30;
+    }
 }

@@ -46,6 +46,7 @@ class ComposeOrder extends OrderService
             'net_amount' => $this->roundAmt($order->getGrandTotal() - $order->getTaxAmount()),
             'tax_amount' => $this->roundAmt($order->getTaxAmount()),
             'tax_subtotals' => $this->getTaxSubtotals($lineItems),
+            'terms' => $this->getPaymentTerms($order->getStoreId()),
             'invoice_type' => 'FUNDED_INVOICE',
             'line_items' => $lineItems,
             'merchant_order_id' => (string)($order->getIncrementId()),
@@ -78,5 +79,29 @@ class ComposeOrder extends OrderService
         }
 
         return $payload;
+    }
+
+
+    /**
+     * Get payment terms for Two API
+     *
+     * @param int|null $storeId
+     * @return array
+     */
+    private function getPaymentTerms(?int $storeId = null): array
+    {
+        $termsType = $this->configRepository->getPaymentTermsType($storeId);
+        $durationDays = $this->configRepository->getPaymentTermsDurationDays($storeId);
+
+        $terms = [
+            'type' => 'NET_TERMS',
+            'duration_days' => (int)$durationDays
+        ];
+
+        if ($termsType === 'end_of_month') {
+            $terms['duration_days_calculated_from'] = 'END_OF_MONTH';
+        }
+
+        return $terms;
     }
 }

@@ -28,6 +28,8 @@
                 <enable_order_note>0</enable_order_note>
                 <enable_project>1</enable_project>
                 <enable_po_number>0</enable_po_number>
+                <payment_terms_type>standard</payment_terms_type>
+                <payment_terms_duration_days>30</payment_terms_duration_days>
                 <can_use_internal>0</can_use_internal>
                 <can_use_checkout>1</can_use_checkout>
                 <payment_action>authorize</payment_action>
