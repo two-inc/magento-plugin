@@ -13,3 +13,6 @@
 auth.json
 vendor/
 composer.lock
+
+# Python
+*.venv
