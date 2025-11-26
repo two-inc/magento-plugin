@@ -221,6 +221,26 @@
                     </depends>
                     <config_path>payment/two_payment/enable_po_number</config_path>
                 </field>
+                <field id="payment_terms_type" translate="label" type="select" sortOrder="110" showInDefault="1"
+                       showInWebsite="1" showInStore="1">
+                    <label>Payment Terms Type</label>
+                    <comment><![CDATA[<strong>Standard:</strong> Payment due after a fixed number of days from fulfillment.<br/><strong>End of Month:</strong> Payment due at the end of month plus additional days from fulfillment.]]></comment>
+                    <source_model>Two\Gateway\Model\Config\Source\PaymentTermsType</source_model>
+                    <depends>
+                        <field id="active">1</field>
+                    </depends>
+                    <config_path>payment/two_payment/payment_terms_type</config_path>
+                </field>
+                <field id="payment_terms_duration_days" translate="label" type="select" sortOrder="120" showInDefault="1"
+                       showInWebsite="1" showInStore="1">
+                    <label>Payment Terms Duration (Days)</label>
+                    <comment><![CDATA[Select the number of days for payment terms. Available options depend on your selected Payment Terms Type above.]]></comment>
+                    <source_model>Two\Gateway\Model\Config\Source\PaymentTermsDurationDays</source_model>
+                    <depends>
+                        <field id="active">1</field>
+                    </depends>
+                    <config_path>payment/two_payment/payment_terms_duration_days</config_path>
+                </field>
             </group>
         </section>
         <section id="two_search" translate="label" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"

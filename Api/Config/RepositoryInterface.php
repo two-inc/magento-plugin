@@ -38,6 +38,8 @@ interface RepositoryInterface
     public const XML_PATH_ENABLE_PROJECT_NAME = 'payment/two_payment/enable_project';
     public const XML_PATH_ENABLE_ORDER_NOTE = 'payment/two_payment/enable_order_note';
     public const XML_PATH_ENABLE_PO_NUMBER = 'payment/two_payment/enable_po_number';
+    public const XML_PATH_PAYMENT_TERMS_TYPE = 'payment/two_payment/payment_terms_type';
+    public const XML_PATH_PAYMENT_TERMS_DURATION_DAYS = 'payment/two_payment/payment_terms_duration_days';
     public const XML_PATH_VERSION = 'payment/two_payment/version';
     public const XML_PATH_DEBUG = 'payment/two_payment/debug';
 
@@ -250,4 +252,22 @@ interface RepositoryInterface
      * @return bool
      */
     public function isAddressSearchEnabled(?int $storeId = null): bool;
+
+    /**
+     * Get payment terms type
+     *
+     * @param int|null $storeId
+     *
+     * @return string
+     */
+    public function getPaymentTermsType(?int $storeId = null): string;
+
+    /**
+     * Get payment terms duration days
+     *
+     * @param int|null $storeId
+     *
+     * @return int
+     */
+    public function getPaymentTermsDurationDays(?int $storeId = null): int;
 }
