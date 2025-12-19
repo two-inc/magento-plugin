@@ -109,3 +109,4 @@ Version,Version
 "Zip/Postal Code is not valid.","Zip/Postal Code is not valid."
 "Invoice email address","Invoice email address"
 "Please ensure that your invoice email address list only contains valid email addresses separated by commas.","Please ensure that your invoice email address list only contains valid email addresses separated by commas."
+"Please enter 3 or more characters","Please enter 3 or more characters"

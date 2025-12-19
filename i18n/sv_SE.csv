@@ -109,3 +109,4 @@ Version,Version
 "Zip/Postal Code is not valid.","Postnummer är inte giltigt."
 "Invoice email address","E-postadress för faktura"
 "Please ensure that your invoice email address list only contains valid email addresses separated by commas.","Se till att din e-postadresslista för faktura endast innehåller giltiga e-postadresser separerade med kommatecken."
+"Please enter 3 or more characters","Ange 3 eller fler tecken"
