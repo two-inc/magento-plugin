@@ -31,7 +31,7 @@
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\Version</frontend_model>
                 </field>
                 <field id="mode" translate="label" type="select" sortOrder="35" showInDefault="1" showInWebsite="1"
-                       showInStore="1">
+                       showInStore="1" canRestore="1">
                     <label>Environment</label>
                     <comment>Select between sandbox and production environment. The sandbox environment is for testing purposes and does not involve real money.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\Mode</source_model>
@@ -41,7 +41,7 @@
                     <config_path>payment/two_payment/mode</config_path>
                 </field>
                 <field id="api_key" translate="label" type="obscure" sortOrder="50" showInDefault="1" showInWebsite="1"
-                       showInStore="1">
+                       showInStore="1" canRestore="1">
                     <label>API Key</label>
                     <comment>API key for sandbox environment is available on your merchant portal (however please reach out to integration@two.inc for access to production keys).</comment>
                     <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>
@@ -56,7 +56,7 @@
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck</frontend_model>
                 </field>
                 <field id="debug" translate="label" type="select" sortOrder="60" showInDefault="1" showInWebsite="1"
-                       showInStore="1">
+                       showInStore="1" canRestore="1">
                     <label>Debug Mode</label>
                     <comment>The debug mode enables writing to the error logs below. Debug mode should only be enabled when the sandbox enviroment is active</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
@@ -84,14 +84,14 @@
                    showInStore="1">
                 <label>Payment Method</label>
                 <field id="active" translate="label" type="select" sortOrder="10" showInDefault="1" showInWebsite="1"
-                       showInStore="1">
+                       showInStore="1" canRestore="1">
                     <label>Enable Payment Method</label>
                     <comment>Activates this plugin as a payment option in the checkout page</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/active</config_path>
                 </field>
                 <field id="title" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
-                       showInStore="1">
+                       showInStore="1" canRestore="1">
                     <label>Title</label>
                     <comment>Descriptive title which gives the buyer a better understanding of this payment method e.g. Business invoice - 30 days</comment>
                     <validate>required-entry</validate>
@@ -105,35 +105,35 @@
                    showInStore="1">
                 <label>Checkout Fields</label>
                 <field id="enable_department" translate="label" type="select" sortOrder="10" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
+                       showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Add Department Field</label>
                     <comment>Optional field which enables the buyer to register the department the purchase is connected to. The information is eventually displayed on the invoice.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/enable_department</config_path>
                 </field>
                 <field id="enable_order_note" translate="label" type="select" sortOrder="20" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
+                       showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Add Order Note Field</label>
                     <comment>Optional field which enables the buyer to register a note to the merchant. The information is eventually displayed on the invoice.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/enable_order_note</config_path>
                 </field>
                 <field id="enable_project" translate="label" type="select" sortOrder="30" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
+                       showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Add Project Field</label>
                     <comment>Optional field which enables the buyer to register the project the purchase is connected to. The information is eventually displayed on the invoice.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/enable_project</config_path>
                 </field>
                 <field id="enable_po_number" translate="label" type="select" sortOrder="40" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
+                       showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Add PO Number Field</label>
                     <comment>Optional field which enables the buyer to register their purchase order number.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/enable_po_number</config_path>
                 </field>
                 <field id="enable_invoice_emails" translate="label" type="select" sortOrder="50" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
+                       showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Enable Invoice Emails</label>
                     <comment>Let your buyer input additional emails to forward the invoice to on order fulfilment.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
@@ -150,7 +150,7 @@
                     <source_model>Magento\Shipping\Model\Config\Source\Allspecificcountries</source_model>
                     <config_path>payment/two_payment/allowspecific</config_path>
                 </field>
-                <field id="specificcountry" translate="label comment" type="multiselect" sortOrder="6" showInDefault="1" showInWebsite="1" showInStore="0">
+                <field id="specificcountry" translate="label comment" type="multiselect" sortOrder="6" showInDefault="1" showInWebsite="1" showInStore="0" canRestore="1">
                     <label>Allowed Countries</label>
                     <comment>Select the countries where this payment method should be available.</comment>
                     <source_model>Magento\Directory\Model\Config\Source\Country</source_model>
@@ -161,14 +161,14 @@
                     <config_path>payment/two_payment/specificcountry</config_path>
                 </field>
                 <field id="fulfill_trigger" translate="label" type="select" sortOrder="10" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
+                       showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Fulfilment Trigger</label>
                     <comment>Fulfilment can be triggered by either initializing shipping or creating an invoice in the Magento admin</comment>
                     <source_model>Two\Gateway\Model\Config\Source\FulfillTrigger</source_model>
                     <config_path>payment/two_payment/fulfill_trigger</config_path>
                 </field>
                 <field id="fulfill_order_status" translate="label" type="multiselect" sortOrder="20" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
+                       showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Fulfilment Order Status</label>
                     <comment>If fulfilment trigger is On Completion, select one or more order statuses which can trigger fulfilment.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\FulfillOrderStatus</source_model>
@@ -178,35 +178,35 @@
                     <config_path>payment/two_payment/fulfill_order_status</config_path>
                 </field>
                 <field id="enable_order_intent" translate="label" type="select" sortOrder="30" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
+                       showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Enable Order Intent</label>
                     <comment>Perform a check during checkout to inform the buyer whether an order is likely to be accepted before being placed (recommended).</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/enable_order_intent</config_path>
                 </field>
                 <field id="enable_tax_subtotals" translate="label" type="select" sortOrder="40" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
+                       showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Enable Tax Subtotals</label>
                     <comment>Add optional tax_subtotals metadata to order creation payload to enforce additional validation (recommended).</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/enable_tax_subtotals</config_path>
                 </field>
                 <field id="payment_terms_type" translate="label" type="select" sortOrder="50" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
+                       showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Payment Terms Type</label>
                     <comment><![CDATA[<strong>Standard:</strong> Payment due after a fixed number of days from fulfillment.<br/><strong>End of Month:</strong> Payment due at the end of month plus additional days from fulfillment.]]></comment>
                     <source_model>Two\Gateway\Model\Config\Source\PaymentTermsType</source_model>
                     <config_path>payment/two_payment/payment_terms_type</config_path>
                 </field>
                 <field id="payment_terms_duration_days" translate="label" type="select" sortOrder="60" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
+                       showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Payment Terms Duration</label>
                     <comment><![CDATA[Select the number of days for payment terms. Available options depend on your selected Payment Term Type above.]]></comment>
                     <source_model>Two\Gateway\Model\Config\Source\PaymentTermsDurationDays</source_model>
                     <config_path>payment/two_payment/payment_terms_duration_days</config_path>
                 </field>
                 <field id="sort_order" translate="label comment" type="text" sortOrder="70" showInDefault="1" showInWebsite="1"
-                       showInStore="1">
+                       showInStore="1" canRestore="1">
                     <label>Sort Order</label>
                     <comment>Controls the position of this payment method relative to other payment methods at checkout. Lower numbers appear first. Default is empty (no specific order).</comment>
                     <config_path>payment/two_payment/sort_order</config_path>
@@ -223,7 +223,7 @@
                    showInStore="1">
                 <label>Search</label>
                 <field id="enable_company_search" translate="label" type="select" sortOrder="10"
-                       showInDefault="1" showInWebsite="1" showInStore="1">
+                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Enable Company Search</label>
                     <comment>Adds a searchable company name input field on shipping details page where the buyer can select their company from a dropdown menu.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
@@ -233,7 +233,7 @@
                     <config_path>payment/two_payment/enable_company_search</config_path>
                 </field>
                 <field id="enable_address_search" translate="label" type="select" sortOrder="20" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
+                       showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Enable Address Search</label>
                     <comment>Autocomplete address based on selected country and company.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
