@@ -9,16 +9,16 @@
 "%1 requires whole order to be shipped before it can be fulfilled.","%1 kräver att hela beställningen skickas innan den kan uppfyllas."
 "%1 terms and conditions","%1 villkor och bestämmelser"
 "* Required Fields","* Obligatoriska fält"
-"API key",API-nyckel
+"API Key",API-nyckel
 "API key is missing","API-nyckel saknas"
 "API key is not valid","API-nyckeln är inte giltig"
 "API key is valid","API-nyckeln är giltig"
-"Add PO number field","Lägg till PO-nummerfält"
-"Add department field","Lägg till fält för avdelning"
-"Add order note field","Lägg till orderanteckningsfält"
-"Add project field","Lägg till fält för projekt"
-"Allow to applicable countries","Tillåt till tillämpliga länder"
-"Allow to specific countries","Tillåt till specifika länder"
+"Add PO Number Field","Lägg till PO-nummerfält"
+"Add Department Field","Lägg till fält för avdelning"
+"Add Order Note Field","Lägg till orderanteckningsfält"
+"Add Project Field","Lägg till fält för projekt"
+"Allow to Applicable Countries","Tillåt till tillämpliga länder"
+"Allow to Specific Countries","Tillåt till specifika länder"
 "Amount is missing","Belopp saknas"
 Branding,Branding
 "Buy now, receive your goods, pay your invoice later.","Köp nu, få dina varor, betala din faktura senare."
@@ -35,17 +35,17 @@ Branding,Branding
 "Could not update %1 order status to cancelled. Please contact support with order ID %2. Error: %3","Kunde inte uppdatera %1 orderstatus till annullerad. Kontakta supporten med beställnings-ID %2. Fel: %3"
 "Country is not valid.","Land är inte giltigt."
 "Credit Note",Kreditnota
-"Debug mode",Felsökningsläge
+"Debug Mode",Felsökningsläge
 Department,Avdelning
 "Developed by Magmodules.","Utvecklad av Magmodules."
 Download,"Ladda ner"
 "Download as .txt file","Ladda ner som .txt-fil"
 "Email Address is not valid.","E-postadress är inte giltig."
-"Enable address search","Aktivera adresssökning"
-"Enable company search","Aktivera företagssökning"
-"Enable order intent","Aktivera orderavsikt"
-"Enable payment method","Aktivera betalningsmetod"
-"Enable tax subtotals","Aktivera delsummor för skatt"
+"Enable Address Search","Aktivera adresssökning"
+"Enable Company Search","Aktivera företagssökning"
+"Enable Order Intent","Aktivera orderavsikt"
+"Enable Payment Method","Aktivera betalningsmetod"
+"Enable Tax Subtotals","Aktivera delsummor för skatt"
 "Enter company name to search","Ange företagsnamn för att söka"
 "Enter details manually","Ange detaljer manuellt"
 Environment,Miljö
@@ -53,8 +53,8 @@ Environment,Miljö
 "Failed to update %1 customer address: %2","Misslyckades med att uppdatera %1 kundadress: %2"
 "Find out more","Ta reda på mer"
 "First Name is not valid.","Förnamn är inte giltigt."
-"Fulfilment order status","Uppfyllande orderstatus"
-"Fulfilment trigger","Uppfyllelse trigger"
+"Fulfilment Order Status","Uppfyllande orderstatus"
+"Fulfilment Trigger","Uppfyllelse trigger"
 General,Generellt
 "Invalid API response from %1.","Ogiltigt API-svar från %1."
 Invoice,Faktura
@@ -72,7 +72,7 @@ OK,OK
 "Order edit request was accepted by %1","Begäran om beställningsredigering accepterades av %1"
 "PO Number",PO-nummer
 Payment,Betalning
-"Payment method",Betalningsmetod
+"Payment Method",Betalningsmetod
 "Phone Number is not valid.","Telefonnummer är inte giltigt."
 "Place Order",Beställa
 "Please try again later.","Försök igen senare."
@@ -85,7 +85,7 @@ Search,Sök
 "Sign up now","Registrera nu"
 "Sole Trader","Enskild näringsidkare"
 "Something went wrong with your request to %1. %2","Något gick fel med din begäran till %1. %2"
-"Sort order",Sorteringsordning
+"Sort Order",Sorteringsordning
 "Street Address is not valid.","Gatuadress är inte giltig."
 "Successfully refunded order with %1 for order ID: %2. Refund reference: %3","Återbetalad beställning med %1 för beställnings-ID: %2. Återbetalningsreferens: %3"
 TWO,TWO
@@ -110,3 +110,12 @@ Version,Version
 "Invoice email address","E-postadress för faktura"
 "Please ensure that your invoice email address list only contains valid email addresses separated by commas.","Se till att din e-postadresslista för faktura endast innehåller giltiga e-postadresser separerade med kommatecken."
 "Please enter 3 or more characters","Ange 3 eller fler tecken"
+"Enable Invoice Emails","Aktivera fakturameddelanden"
+"Payment Terms Type","Betalningsvillkorstyp"
+"Payment Terms Duration","Betalningsvillkors varaktighet"
+"Hyva Extension","Hyva-tillägg"
+"Checkout Fields","Kassafält"
+Advanced,Avancerat
+Standard,Standard
+"End of Month","Månadsskifte"
+"%1 days","%1 dagar"

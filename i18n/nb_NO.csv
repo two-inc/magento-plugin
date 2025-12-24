@@ -9,16 +9,16 @@
 "%1 requires whole order to be shipped before it can be fulfilled.","%1 krever at hele bestillingen sendes før den kan oppfylles."
 "%1 terms and conditions","%1 vilkår og betingelser"
 "* Required Fields","* Obligatoriske felter"
-"API key",API-nøkkel
-"API key is missing","API-nøkkel mangler"
-"API key is not valid","API-nøkkel er ikke gyldig"
-"API key is valid","API-nøkkel er gyldig"
-"Add PO number field","Legg til PO-nummerfelt"
-"Add department field","Legg til felt for avdeling"
-"Add order note field","Legg til bestillingsnotatfelt"
-"Add project field","Legg til felt for prosjekt"
-"Allow to applicable countries","Tillat til gjeldende land"
-"Allow to specific countries","Tillat til bestemte land"
+"API Key",API-nøkkel
+"API Key is missing","API-nøkkel mangler"
+"API Key is not valid","API-nøkkel er ikke gyldig"
+"API Key is valid","API-nøkkel er gyldig"
+"Add PO Number Field","Legg til PO-nummerfelt"
+"Add Department Field","Legg til felt for avdeling"
+"Add Order Note Field","Legg til bestillingsnotatfelt"
+"Add Project Field","Legg til felt for prosjekt"
+"Allow to Applicable Countries","Tillat til gjeldende land"
+"Allow to Specific Countries","Tillat til bestemte land"
 "Amount is missing","Beløp mangler"
 Branding,Merkevarebygging
 "Buy now, receive your goods, pay your invoice later.","Kjøp nå, motta varene dine, betal fakturaen senere."
@@ -35,17 +35,17 @@ Branding,Merkevarebygging
 "Could not update %1 order status to cancelled. Please contact support with order ID %2. Error: %3","Kunne ikke oppdatere %1 ordrestatus til kansellert. Ta kontakt med brukerstøtten med ordre-ID %2. Feil: %3"
 "Country is not valid.","Land er ikke gyldig."
 "Credit Note",Kreditnota
-"Debug mode",Feilsøkingsmodus
+"Debug Mode",Feilsøkingsmodus
 Department,Avdeling
 "Developed by Magmodules.","Utviklet av Magmodules."
 Download,"Last ned"
 "Download as .txt file","Last ned som .txt-fil"
 "Email Address is not valid.","E-postadresse er ikke gyldig."
-"Enable address search","Aktiver adressesøk"
-"Enable company search","Aktiver firmasøk"
-"Enable order intent","Aktiver ordrehensikt"
-"Enable payment method","Aktiver betalingsmåte"
-"Enable tax subtotals","Aktiver delsummer for avgifter"
+"Enable Address Search","Aktiver adressesøk"
+"Enable Company Search","Aktiver firmasøk"
+"Enable Order Intent","Aktiver ordrehensikt"
+"Enable Payment Method","Aktiver betalingsmåte"
+"Enable Tax Subtotals","Aktiver delsummer for avgifter"
 "Enter company name to search","Skriv inn firmanavn for å søke"
 "Enter details manually","Skriv inn detaljer manuelt"
 Environment,Miljø
@@ -53,8 +53,8 @@ Environment,Miljø
 "Failed to update %1 customer address: %2","Kunne ikke oppdatere %1 kundeadresse: %2"
 "Find out more","Finn ut mer"
 "First Name is not valid.","Fornavn er ikke gyldig."
-"Fulfilment order status","Oppfyllelse av ordrestatus"
-"Fulfilment trigger","Oppfyllelse utløser"
+"Fulfilment Order Status","Oppfyllelse av ordrestatus"
+"Fulfilment Trigger","Oppfyllelse utløser"
 General,Generelt
 "Invalid API response from %1.","Ugyldig API-svar fra %1."
 Invoice,Faktura
@@ -72,7 +72,7 @@ OK,OK
 "Order edit request was accepted by %1","Bestillingsredigeringsforespørsel ble akseptert av %1"
 "PO Number",PO-nummer
 Payment,Betaling
-"Payment method",Betalingsmetode
+"Payment Method",Betalingsmetode
 "Phone Number is not valid.","Telefonnummer er ikke gyldig."
 "Place Order","Plasser ordre"
 "Please try again later.","Vennligst prøv igjen senere."
@@ -85,7 +85,7 @@ Search,Søk
 "Sign up now","Registrer deg nå"
 "Sole Trader",Eneforhandler
 "Something went wrong with your request to %1. %2","Noe gikk galt med forespørselen din til %1. %2"
-"Sort order",Sorteringsrekkefølge
+"Sort Order",Sorteringsrekkefølge
 "Street Address is not valid.","Gateadresse er ikke gyldig."
 "Successfully refunded order with %1 for order ID: %2. Refund reference: %3","Vellykket refundert bestilling med %1 for bestillings-ID: %2. Refusjonsreferanse: %3"
 TWO,TWO
@@ -110,3 +110,12 @@ Version,Versjon
 "Invoice email address","E-postadresse for faktura"
 "Please ensure that your invoice email address list only contains valid email addresses separated by commas.","Sørg for at listen over e-postadresser for faktura bare inneholder gyldige e-postadresser atskilt med komma."
 "Please enter 3 or more characters","Vennligst skriv inn 3 eller flere tegn"
+"Enable Invoice Emails","Aktiver fakturamail"
+"Payment Terms Type","Betalingsvilkårstype"
+"Payment Terms Duration","Betalingsvilkårs varighet"
+"Hyva Extension","Hyva-utvidelse"
+"Checkout Fields","Kassefelt"
+Advanced,Avansert
+Standard,Standard
+"End of Month","Slutten av måneden"
+"%1 days","%1 dager"
