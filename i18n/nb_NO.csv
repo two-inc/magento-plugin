@@ -17,8 +17,10 @@
 "Add Department Field","Legg til felt for avdeling"
 "Add Order Note Field","Legg til bestillingsnotatfelt"
 "Add Project Field","Legg til felt for prosjekt"
-"Allow to Applicable Countries","Tillat til gjeldende land"
-"Allow to Specific Countries","Tillat til bestemte land"
+"Allowed Countries","Tillatte land"
+"Choose whether to enable this payment method for all allowed countries or only specific ones.","Velg om du vil aktivere denne betalingsmetoden for alle tillatte land eller bare bestemte."
+"Country Availability","Landtilgjengelighet"
+"Select the countries where this payment method should be available.","Velg landene der denne betalingsmetoden skal være tilgjengelig."
 "Amount is missing","Beløp mangler"
 Branding,Merkevarebygging
 "Buy now, receive your goods, pay your invoice later.","Kjøp nå, motta varene dine, betal fakturaen senere."

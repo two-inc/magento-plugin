@@ -17,8 +17,10 @@
 "Add Department Field","Lägg till fält för avdelning"
 "Add Order Note Field","Lägg till orderanteckningsfält"
 "Add Project Field","Lägg till fält för projekt"
-"Allow to Applicable Countries","Tillåt till tillämpliga länder"
-"Allow to Specific Countries","Tillåt till specifika länder"
+"Allowed Countries","Tillåtna länder"
+"Choose whether to enable this payment method for all allowed countries or only specific ones.","Välj om du vill aktivera denna betalningsmetod för alla tillåtna länder eller bara specifika."
+"Country Availability","Landstillgänglighet"
+"Select the countries where this payment method should be available.","Välj de länder där denna betalningsmetod ska vara tillgänglig."
 "Amount is missing","Belopp saknas"
 Branding,Branding
 "Buy now, receive your goods, pay your invoice later.","Köp nu, få dina varor, betala din faktura senare."

@@ -143,15 +143,16 @@
             <group id="advanced" translate="label" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>Advanced</label>
-                <field id="sallowspecific" translate="label" type="select" sortOrder="5" showInDefault="1" showInWebsite="1" showInStore="0" canRestore="1">
-                    <label>Allow to Applicable Countries</label>
+                <field id="sallowspecific" translate="label comment" type="select" sortOrder="5" showInDefault="1" showInWebsite="1" showInStore="0" canRestore="1">
+                    <label>Country Availability</label>
+                    <comment>Choose whether to enable this payment method for all allowed countries or only specific ones.</comment>
                     <frontend_class>shipping-applicable-country</frontend_class>
                     <source_model>Magento\Shipping\Model\Config\Source\Allspecificcountries</source_model>
                     <config_path>payment/two_payment/allowspecific</config_path>
                 </field>
-                <field id="specificcountry" translate="label" type="multiselect" sortOrder="6" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>Allow to Specific Countries</label>
-                    <comment>Select the countries where this payment method should be an available payment option</comment>
+                <field id="specificcountry" translate="label comment" type="multiselect" sortOrder="6" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Allowed Countries</label>
+                    <comment>Select the countries where this payment method should be available.</comment>
                     <source_model>Magento\Directory\Model\Config\Source\Country</source_model>
                     <can_be_empty>1</can_be_empty>
                     <depends>

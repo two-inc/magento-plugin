@@ -17,8 +17,10 @@
 "Add Department Field","Afdelingsveld toevoegen"
 "Add Order Note Field","Bestelnotitie veld toevoegen"
 "Add Project Field","Projectveld toevoegen"
-"Allow to Applicable Countries","Toestaan voor toepasselijke landen"
-"Allow to Specific Countries","Toestaan voor specifieke landen"
+"Allowed Countries","Toegestane landen"
+"Choose whether to enable this payment method for all allowed countries or only specific ones.","Kies of je deze betaalmethode wilt inschakelen voor alle toegestane landen of alleen voor specifieke."
+"Country Availability","Beschikbaarheid per land"
+"Select the countries where this payment method should be available.","Selecteer de landen waar deze betaalmethode beschikbaar moet zijn."
 "Amount is missing","Bedrag ontbreekt"
 Branding,Merknaam
 "Buy now, receive your goods, pay your invoice later.","Koop nu, ontvang uw goederen, betaal uw factuur later."
