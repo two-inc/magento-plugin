@@ -108,25 +108,6 @@
                     </depends>
                     <config_path>payment/two_payment/sort_order</config_path>
                 </field>
-                <field id="sallowspecific" translate="label" type="select" sortOrder="40" showInDefault="1" showInWebsite="1" showInStore="0" canRestore="1">
-                    <label>Allow to Applicable Countries</label>
-                    <frontend_class>shipping-applicable-country</frontend_class>
-                    <source_model>Magento\Shipping\Model\Config\Source\Allspecificcountries</source_model>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
-                    <config_path>payment/two_payment/allowspecific</config_path>
-                </field>
-                <field id="specificcountry" translate="label" type="multiselect" sortOrder="50" showInDefault="1" showInWebsite="1" showInStore="0">
-                    <label>Allow to Specific Countries</label>
-                    <comment>Select the countries where this payment method should be an available payment option</comment>
-                    <source_model>Magento\Directory\Model\Config\Source\Country</source_model>
-                    <can_be_empty>1</can_be_empty>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
-                    <config_path>payment/two_payment/specificcountry</config_path>
-                </field>
             </group>
             <group id="checkout_fields" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                    showInStore="1">
@@ -170,6 +151,22 @@
             <group id="advanced" translate="label" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>Advanced</label>
+                <field id="sallowspecific" translate="label" type="select" sortOrder="5" showInDefault="1" showInWebsite="1" showInStore="0" canRestore="1">
+                    <label>Allow to Applicable Countries</label>
+                    <frontend_class>shipping-applicable-country</frontend_class>
+                    <source_model>Magento\Shipping\Model\Config\Source\Allspecificcountries</source_model>
+                    <config_path>payment/two_payment/allowspecific</config_path>
+                </field>
+                <field id="specificcountry" translate="label" type="multiselect" sortOrder="6" showInDefault="1" showInWebsite="1" showInStore="0">
+                    <label>Allow to Specific Countries</label>
+                    <comment>Select the countries where this payment method should be an available payment option</comment>
+                    <source_model>Magento\Directory\Model\Config\Source\Country</source_model>
+                    <can_be_empty>1</can_be_empty>
+                    <depends>
+                        <field id="sallowspecific">1</field>
+                    </depends>
+                    <config_path>payment/two_payment/specificcountry</config_path>
+                </field>
                 <field id="fulfill_trigger" translate="label" type="select" sortOrder="10" showInDefault="1"
                        showInWebsite="1" showInStore="1">
                     <label>Fulfilment Trigger</label>
