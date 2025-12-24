@@ -31,7 +31,7 @@
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\Version</frontend_model>
                 </field>
                 <field id="mode" translate="label" type="select" sortOrder="35" showInDefault="1" showInWebsite="1"
-                       showInStore="1" canRestore="1">
+                       showInStore="1">
                     <label>Environment</label>
                     <comment>Select between sandbox and production environment. The sandbox environment is for testing purposes and does not involve real money.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\Mode</source_model>
@@ -41,7 +41,7 @@
                     <config_path>payment/two_payment/mode</config_path>
                 </field>
                 <field id="api_key" translate="label" type="obscure" sortOrder="50" showInDefault="1" showInWebsite="1"
-                       showInStore="1" canRestore="1">
+                       showInStore="1">
                     <label>API Key</label>
                     <comment>API key for sandbox environment is available on your merchant portal (however please reach out to integration@two.inc for access to production keys).</comment>
                     <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>
@@ -56,7 +56,7 @@
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck</frontend_model>
                 </field>
                 <field id="debug" translate="label" type="select" sortOrder="60" showInDefault="1" showInWebsite="1"
-                       showInStore="1" canRestore="1">
+                       showInStore="1">
                     <label>Debug Mode</label>
                     <comment>The debug mode enables writing to the error logs below. Debug mode should only be enabled when the sandbox enviroment is active</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
