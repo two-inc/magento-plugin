@@ -119,3 +119,4 @@ Advanced,Geavanceerd
 Standard,Standaard
 "End of Month","Einde van de maand"
 "%1 days","%1 dagen"
+"Controls the position of this payment method relative to other payment methods at checkout. Lower numbers appear first. Default is empty (no specific order).","Bepaalt de positie van deze betaalmethode ten opzichte van andere betaalmethoden bij het afrekenen. Lagere nummers verschijnen eerst. Standaard is leeg (geen specifieke volgorde)."

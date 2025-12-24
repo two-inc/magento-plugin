@@ -100,14 +100,6 @@
                     </depends>
                     <config_path>payment/two_payment/title</config_path>
                 </field>
-                <field id="sort_order" translate="label" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"
-                       showInStore="1">
-                    <label>Sort Order</label>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
-                    <config_path>payment/two_payment/sort_order</config_path>
-                </field>
             </group>
             <group id="checkout_fields" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                    showInStore="1">
@@ -211,6 +203,12 @@
                     <comment><![CDATA[Select the number of days for payment terms. Available options depend on your selected Payment Term Type above.]]></comment>
                     <source_model>Two\Gateway\Model\Config\Source\PaymentTermsDurationDays</source_model>
                     <config_path>payment/two_payment/payment_terms_duration_days</config_path>
+                </field>
+                <field id="sort_order" translate="label comment" type="text" sortOrder="70" showInDefault="1" showInWebsite="1"
+                       showInStore="1">
+                    <label>Sort Order</label>
+                    <comment>Controls the position of this payment method relative to other payment methods at checkout. Lower numbers appear first. Default is empty (no specific order).</comment>
+                    <config_path>payment/two_payment/sort_order</config_path>
                 </field>
             </group>
         </section>

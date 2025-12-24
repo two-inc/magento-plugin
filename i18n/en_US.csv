@@ -119,3 +119,4 @@ Advanced,Advanced
 Standard,Standard
 "End of Month","End of Month"
 "%1 days","%1 days"
+"Controls the position of this payment method relative to other payment methods at checkout. Lower numbers appear first. Default is empty (no specific order).","Controls the position of this payment method relative to other payment methods at checkout. Lower numbers appear first. Default is empty (no specific order)."

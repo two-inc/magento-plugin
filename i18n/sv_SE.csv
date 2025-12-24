@@ -119,3 +119,4 @@ Advanced,Avancerat
 Standard,Standard
 "End of Month","Månadsskifte"
 "%1 days","%1 dagar"
+"Controls the position of this payment method relative to other payment methods at checkout. Lower numbers appear first. Default is empty (no specific order).","Styr positionen för denna betalningsmetod i förhållande till andra betalningsmetoder vid kassan. Lägre nummer visas först. Standard är tom (ingen specifik ordning)."

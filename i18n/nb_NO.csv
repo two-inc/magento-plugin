@@ -119,3 +119,4 @@ Advanced,Avansert
 Standard,Standard
 "End of Month","Slutten av måneden"
 "%1 days","%1 dager"
+"Controls the position of this payment method relative to other payment methods at checkout. Lower numbers appear first. Default is empty (no specific order).","Styrer plasseringen av denne betalingsmetoden i forhold til andre betalingsmetoder ved utsjekking. Lavere tall vises først. Standard er tom (ingen spesifikk rekkefølge)."
