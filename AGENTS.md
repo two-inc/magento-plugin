@@ -54,9 +54,34 @@ Applies ABN-specific customizations on top of main branch:
 - ABN branding (logo, messaging)
 - Remove bumpver.toml (versioning managed on main)"
 
-# 8. Force push
+# 8. Verify no Two references remain (CRITICAL!)
+rg -i "two_payment|Two_Gateway|Two\\\\Gateway" --glob '!AGENTS.md' --glob '!README.md'
+
+# 9. Force push
 git push origin abn-main --force
 ```
+
+### Verifying ABN Namespace Changes
+
+After rebasing, always check for leftover Two references that should be ABN:
+
+```bash
+# Check for any remaining Two references (should return empty except AGENTS.md/README.md)
+rg -i "two_payment|Two_Gateway" --glob '!AGENTS.md' --glob '!README.md'
+
+# Check PHP namespace references
+rg "Two\\\\Gateway" --glob '*.php' --glob '*.phtml' --glob '*.xml'
+
+# Check config paths
+rg "two_payment" --glob '*.xml' --glob '*.phtml'
+```
+
+If any matches are found, they need to be renamed to the ABN equivalent:
+
+-   `two_payment` → `abn_payment`
+-   `Two_Gateway` → `ABN_Gateway`
+-   `Two\Gateway` → `ABN\Gateway`
+-   `two_*` config paths → `abn_*`
 
 ## Version Management
 
@@ -141,6 +166,7 @@ bin/magento cache:flush
 3. **Admin CSS/logo missing**: Redeploy admin static content
 4. **Permission denied on var/cache**: Fix ownership with `chown -R www-data:www-data var/ generated/`
 5. **Config changes not appearing**: Flush config cache and clear opcache
+6. **Namespace/class not found errors after rebase**: Some Two references may not have been renamed. Run the verification commands in "Verifying ABN Namespace Changes" section and rename any leftover Two references.
 
 ## Publishing ABN Plugin
 
