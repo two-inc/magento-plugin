@@ -88,3 +88,60 @@ These files contain ABN namespace/branding and need updating during rebase:
 -   `view/frontend/web/css/` - ABN styling
 -   `README.md` - ABN documentation
 -   `i18n/*.csv` - Translations with ABN-specific strings
+
+## Staging Environments
+
+| Branch     | URL                                        | Namespace   |
+| ---------- | ------------------------------------------ | ----------- |
+| `main`     | https://magento.staging.two.inc            | Two_Gateway |
+| `abn-main` | https://magento.staging.achterafbetalen.co | ABN_Gateway |
+
+### Clearing Caches on Staging
+
+After pushing changes, git-sync will pick them up within ~30 seconds. Clear caches to see changes:
+
+```bash
+# Clear opcache (required for PHP changes due to opcache.validate_timestamps=0)
+curl -s https://magento.staging.two.inc/opcache-clear.php
+curl -s https://magento.staging.achterafbetalen.co/opcache-clear.php
+
+# Flush Magento cache via kubectl
+kubectl exec -n staging <pod-name> -c magento -- bin/magento cache:flush
+
+# Find pod names
+kubectl get pods -n staging | grep magento
+```
+
+### Deploying Admin Static Content
+
+If admin CSS/JS changes aren't showing:
+
+```bash
+kubectl exec -n staging <pod-name> -c magento -- bash -c '
+  rm -rf pub/static/adminhtml/* var/view_preprocessed/pub/static/adminhtml/*
+  bin/magento setup:static-content:deploy -f --area=adminhtml
+  bin/magento cache:flush
+'
+```
+
+Then clear opcache via the HTTP endpoint.
+
+### Regenerating DI (Interceptors)
+
+If you get class/interceptor errors:
+
+```bash
+kubectl exec -n staging <pod-name> -c magento -- bin/magento setup:di:compile
+```
+
+## Translations
+
+-   `main` branch has: `nb_NO.csv`, `nl_NL.csv`, `sv_SE.csv`
+-   `abn-main` branch has: `nl_NL.csv` only (ABN is NL-focused)
+-   No `en_US.csv` needed - Magento falls back to source strings for English
+
+## Admin Panel Configuration
+
+-   All config fields should have `canRestore="1"` to allow website/store scope inheritance
+-   Button-type fields (version, api_key_check, etc.) don't need `canRestore`
+-   Use `translate="label comment"` when field has both label and comment to translate
