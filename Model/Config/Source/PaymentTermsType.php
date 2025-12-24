@@ -5,12 +5,13 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Model\Config\Source;
+namespace ABN\Gateway\Model\Config\Source;
 
 use Magento\Framework\Data\OptionSourceInterface;
 
 /**
  * Payment Terms Type Source Model
+ * ABN only supports standard payment terms
  */
 class PaymentTermsType implements OptionSourceInterface
 {
@@ -22,9 +23,9 @@ class PaymentTermsType implements OptionSourceInterface
      */
     public function toOptionArray(): array
     {
+        // ABN only supports standard payment terms
         return [
-            ['value' => self::STANDARD, 'label' => __('Standard')],
-            ['value' => self::END_OF_MONTH, 'label' => __('End of Month')]
+            ['value' => self::STANDARD, 'label' => __('Standard')]
         ];
     }
 }

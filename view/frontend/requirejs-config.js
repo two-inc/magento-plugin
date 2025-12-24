@@ -4,7 +4,7 @@ var config = {
     config: {
         mixins: {
             'Magento_Checkout/js/action/set-shipping-information': {
-                'Two_Gateway/js/action/set-shipping-information-mixin': true
+                'ABN_Gateway/js/action/set-shipping-information-mixin': true
             }
         }
     }

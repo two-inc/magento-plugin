@@ -5,12 +5,13 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Model\Config\Source;
+namespace ABN\Gateway\Model\Config\Source;
 
 use Magento\Framework\Data\OptionSourceInterface;
 
 /**
  * Payment Terms Duration Days Source Model
+ * ABN only supports 30-day payment terms
  */
 class PaymentTermsDurationDays implements OptionSourceInterface
 {
@@ -25,10 +26,9 @@ class PaymentTermsDurationDays implements OptionSourceInterface
      */
     public function toOptionArray(): array
     {
-        $options = [];
-        foreach (self::STANDARD_OPTIONS as $days) {
-            $options[] = ['value' => $days, 'label' => __('%1 days', $days)];
-        }
-        return $options;
+        // ABN only supports 30-day payment terms
+        return [
+            ['value' => 30, 'label' => __('30 days')]
+        ];
     }
 }

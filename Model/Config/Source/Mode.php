@@ -5,10 +5,10 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Model\Config\Source;
+namespace ABN\Gateway\Model\Config\Source;
 
 use Magento\Framework\Data\OptionSourceInterface;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
  * Mode Options

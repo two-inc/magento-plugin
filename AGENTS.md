@@ -1,46 +1,104 @@
-# Magento Plugin (Two Gateway)
+# Magento Plugin (ABN Gateway)
 
 ## Git Workflow
 
--   Use `SKIP=commit-msg` when committing on `main` branch (no Linear ticket needed)
+-   Use `SKIP=commit-msg` when committing on `abn-main` branch (no Linear ticket needed)
 -   Do NOT skip commit-msg hook on feature branches
 -   Never use `--no-verify` flag
 
-## Version Management
+## Branch Structure
 
-Version bumps are done using `bumpver`:
+-   `main` - Two.inc version (Two_Gateway namespace)
+-   `abn-main` - ABN AMRO version (ABN_Gateway namespace) - **THIS BRANCH**
+
+The `abn-main` branch should always be `main` + a single "ABN layer" commit on top.
+
+## Rebasing abn-main onto main
+
+When main has new changes that need to be incorporated into abn-main:
 
 ```bash
-SKIP=commit-msg bumpver update --patch  # or --minor, --major
-git push origin main --tags
+# 1. Ensure main is up to date
+git checkout main
+git pull origin main
+
+# 2. Reset abn-main to main
+git checkout abn-main
+git fetch origin abn-main
+git reset --hard origin/main
+
+# 3. Cherry-pick the ABN layer commit (get hash from previous abn-main)
+git cherry-pick <abn-layer-commit-hash> --no-commit
+
+# 4. If there are conflicts, resolve them manually
+# Key ABN-specific changes:
+#   - Namespace: Two -> ABN
+#   - Payment method: two_payment -> abn_payment
+#   - Config paths: two_* -> abn_*
+#   - Template paths: Two_Gateway:: -> ABN_Gateway::
+
+# 5. Update any new files that need ABN namespace changes
+# Check Block/, etc/adminhtml/, etc/config.xml, view/adminhtml/templates/
+
+# 6. Remove bumpver.toml (versioning managed on main only)
+rm -f bumpver.toml
+
+# 7. Stage and commit as single ABN layer commit
+git add -A
+SKIP=commit-msg git commit -m "chore: ABN layer
+
+Applies ABN-specific customizations on top of main branch:
+- Namespace changes: Two -> ABN
+- Payment method: two_payment -> abn_payment
+- Config paths: two_* -> abn_*
+- ABN branding (logo, messaging)
+- Remove bumpver.toml (versioning managed on main)"
+
+# 8. Force push
+git push origin abn-main --force
 ```
+
+## Version Management
+
+-   Version bumps are done on `main` only using `bumpver`
+-   The `abn-main` branch inherits the version from main via rebase
+-   `bumpver.toml` is removed from abn-main to avoid confusion
 
 ## Translations
 
--   Translation files: `nb_NO.csv`, `nl_NL.csv`, `sv_SE.csv`
+-   ABN is Dutch-only: only `nl_NL.csv` translation file
 -   No `en_US.csv` needed - Magento falls back to source strings for English
+-   Norwegian (`nb_NO.csv`) and Swedish (`sv_SE.csv`) are NOT included in ABN version
+
+## ABN-specific Differences
+
+-   Namespace: `ABN\Gateway` instead of `Two\Gateway`
+-   Payment method code: `abn_payment` instead of `two_payment`
+-   Config section: `abn_*` instead of `two_*`
+-   Dutch title: "Achteraf betalen - Bestel op factuur"
+-   ABN logo assets in `view/*/web/images/abnLogo.svg`
+-   Fixed 30-day standard payment terms (no other options)
 
 ## Admin Panel Configuration
 
 -   Most config fields should have `canRestore="1"` to allow website/store scope inheritance
 -   Sensitive fields (mode, api_key, debug) should NOT have `canRestore` - they must be explicitly set
 -   Button-type fields (version, api_key_check, etc.) don't need `canRestore`
--   Use `translate="label comment"` when field has both label and comment to translate
 
 ### Config Paths
 
-All payment config is stored under `payment/two_payment/`:
+All payment config is stored under `payment/abn_payment/`:
 
--   `payment/two_payment/active` - Enable/disable
--   `payment/two_payment/mode` - Environment (sandbox/staging/production)
--   `payment/two_payment/api_key` - API key (encrypted)
--   `payment/two_payment/debug` - Debug mode
+-   `payment/abn_payment/active` - Enable/disable
+-   `payment/abn_payment/mode` - Environment (sandbox/staging/production)
+-   `payment/abn_payment/api_key` - API key (encrypted)
+-   `payment/abn_payment/debug` - Debug mode
 
 ### Setting Config via CLI
 
 ```bash
-bin/magento config:set payment/two_payment/mode sandbox
-bin/magento config:set payment/two_payment/active 1
+bin/magento config:set payment/abn_payment/mode sandbox
+bin/magento config:set payment/abn_payment/active 1
 bin/magento cache:flush config
 ```
 
@@ -60,7 +118,7 @@ After making changes, clear caches in this order:
 
 ```bash
 # 1. Clear generated code (if PHP classes changed)
-rm -rf generated/code/Two
+rm -rf generated/code/ABN
 
 # 2. Recompile DI (if new classes/interceptors)
 bin/magento setup:di:compile
@@ -79,7 +137,46 @@ bin/magento cache:flush
 ### Common Issues
 
 1. **Template not found error**: Run `setup:di:compile` and clear opcache
-2. **Stale worktree paths in errors**: Delete `generated/code/Two` and recompile DI
+2. **Stale worktree paths in errors**: Delete `generated/code/ABN` and recompile DI
 3. **Admin CSS/logo missing**: Redeploy admin static content
 4. **Permission denied on var/cache**: Fix ownership with `chown -R www-data:www-data var/ generated/`
 5. **Config changes not appearing**: Flush config cache and clear opcache
+
+## Publishing ABN Plugin
+
+The ABN plugin is published to a GCS bucket for distribution:
+
+```bash
+# 1. Tag the release (creates abn-<version> tag)
+make tag
+
+# 2. Create archive and publish to GCS
+make publish
+```
+
+`make publish` runs:
+
+1. `make archive` - creates `artifacts/<version>/magento-abn-plugin.zip`
+2. `gsutil cp` - uploads to `gs://achteraf-betalen/magento/`
+3. `scripts/publish-to-bucket.py` - regenerates index.html with download links
+
+The published plugin is available at: https://plugins.achterafbetalen.co/magento/index.html
+
+## Files with ABN-specific Changes
+
+These files contain ABN namespace/branding and need updating during rebase:
+
+-   `registration.php` - Module name
+-   `composer.json` - Package name and description
+-   `etc/module.xml` - Module name
+-   `etc/adminhtml/system.xml` - Section ID, frontend_model references
+-   `etc/config.xml` - Config paths
+-   `etc/frontend/di.xml` - Class references
+-   `etc/frontend/routes.xml` - Route frontName
+-   All PHP files in `Block/`, `Controller/`, `Helper/`, `Model/`, `Observer/`, `Plugin/`
+-   All layout XML files in `view/adminhtml/layout/` and `view/frontend/layout/`
+-   All template files in `view/adminhtml/templates/` and `view/frontend/templates/`
+-   `view/frontend/web/images/` - ABN logo assets
+-   `view/frontend/web/css/` - ABN styling
+-   `README.md` - ABN documentation
+-   `i18n/nl_NL.csv` - Dutch translations with ABN-specific strings

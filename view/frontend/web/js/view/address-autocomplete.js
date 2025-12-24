@@ -13,7 +13,7 @@ define([
 ], function ($, $t, _, Component, customerData, stepNavigator, uiRegistry) {
     'use strict';
 
-    const config = window.checkoutConfig.payment.two_payment;
+    const config = window.checkoutConfig.payment.abn_payment;
 
     return Component.extend({
         countrySelector: '#shipping-new-address-form select[name="country_id"]',
@@ -85,7 +85,7 @@ define([
         enableCompanySearch: function () {
             if (!config.isCompanySearchEnabled) return;
             const self = this;
-            require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
+            require(['ABN_Gateway/select2-4.1.0/js/select2.min'], function () {
                 $.async(self.companyNameSelector, function (companyNameField) {
                     $(companyNameField)
                         .select2({

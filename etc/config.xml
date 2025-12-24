@@ -9,10 +9,10 @@
         xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Store:etc/config.xsd">
     <default>
         <payment>
-            <two_payment>
+            <abn_payment>
                 <active>1</active>
                 <version>1.13.2</version>
-                <title>Business invoice - 30 days</title>
+                <title>Achteraf betalen - Bestel op factuur</title>
                 <mode>sandbox</mode>
                 <invoice_type>FUNDED_INVOICE</invoice_type>
                 <days_on_invoice>14</days_on_invoice>
@@ -28,13 +28,14 @@
                 <enable_order_note>0</enable_order_note>
                 <enable_project>1</enable_project>
                 <enable_po_number>0</enable_po_number>
+                <!-- ABN only supports 30-day standard payment terms -->
                 <payment_terms_type>standard</payment_terms_type>
                 <payment_terms_duration_days>30</payment_terms_duration_days>
                 <can_use_internal>0</can_use_internal>
                 <can_use_checkout>1</can_use_checkout>
                 <payment_action>authorize</payment_action>
-                <model>Two\Gateway\Model\Two</model>
-            </two_payment>
+                <model>ABN\Gateway\Model\Two</model>
+            </abn_payment>
         </payment>
     </default>
 </config>

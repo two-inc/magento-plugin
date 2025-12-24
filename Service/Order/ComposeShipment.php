@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Service\Order;
+namespace ABN\Gateway\Service\Order;
 
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Exception\NoSuchEntityException;
@@ -13,7 +13,7 @@ use Magento\Sales\Api\Data\OrderItemInterface;
 use Magento\Sales\Api\Data\ShipmentInterface;
 use Magento\Sales\Api\Data\ShipmentItemInterface;
 use Magento\Sales\Model\Order;
-use Two\Gateway\Service\Order as OrderService;
+use ABN\Gateway\Service\Order as OrderService;
 
 /**
  * Compose Shipment Service

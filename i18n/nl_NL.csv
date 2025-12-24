@@ -1,37 +1,36 @@
 "%1 Details","%1 Gegevens"
 "%1 [Trace ID: %2]","%1 [Trace-ID: %2]"
 "%1 customer address updated.","%1 klantadres bijgewerkt."
+"%1 days","%1 dagen"
 "%1 order has been marked as cancelled","%1 bestelling is gemarkeerd als geannuleerd"
 "%1 order invoice has not been issued yet.","%1 bestelfactuur is nog niet verzonden."
 "%1 order marked as completed.","%1 bestelling gemarkeerd als voltooid."
 "%1 order marked as partially completed.","%1 bestilling merket som delvis fullført."
 "%1 payment has been verified by the customer.","%1 betaling is door de klant geverifieerd."
 "%1 requires whole order to be shipped before it can be fulfilled.","%1 vereist dat de gehele bestelling wordt verzonden voordat deze kan worden uitgevoerd."
-"%1 terms and conditions","%1 voorwaarden en condities"
 "* Required Fields","* Verplichte velden"
-"API Key",API-sleutel
-"API key is missing","API-sleutel ontbreekt"
-"API key is not valid","API-sleutel is niet geldig"
-"API key is valid","API-sleutel is geldig"
-"Add PO Number Field","PO-nummer veld toevoegen"
+"Achteraf betalen van ABN AMRO","Achteraf betalen van ABN AMRO"
 "Add Department Field","Afdelingsveld toevoegen"
 "Add Order Note Field","Bestelnotitie veld toevoegen"
+"Add PO Number Field","PO-nummer veld toevoegen"
 "Add Project Field","Projectveld toevoegen"
 "Allowed Countries","Toegestane landen"
 "Choose whether to enable this payment method for all allowed countries or only specific ones.","Kies of je deze betaalmethode wilt inschakelen voor alle toegestane landen of alleen voor specifieke."
 "Country Availability","Beschikbaarheid per land"
 "Select the countries where this payment method should be available.","Selecteer de landen waar deze betaalmethode beschikbaar moet zijn."
 "Amount is missing","Bedrag ontbreekt"
-Branding,Merknaam
-"Buy now, receive your goods, pay your invoice later.","Koop nu, ontvang uw goederen, betaal uw factuur later."
-"By checking this box, I confirm that I have read and agree to %1.","Door dit vakje aan te vinken, bevestig ik dat ik de %1 heb gelezen en ermee akkoord ga."
+"API Key",API-sleutel
+"API key is missing","API-sleutel ontbreekt"
+"API key is not valid","API-sleutel is niet geldig"
+"API key is valid","API-sleutel is geldig"
+Advanced,Geavanceerd
 "Check last 100 debug log records","Controleer de laatste 100 debug-logboek records"
 "Check last 100 error log records","Controleer de laatste 100 foutenlogboek records"
+"Checkout Fields","Afrekenvelden"
 "City is not valid.","Stad is niet geldig."
 "Click here to log in or sign up as a Sole Trader.","Klik hier om in te loggen of u aan te melden als zelfstandig ondernemer."
-"Company ID",Bedrijfs-ID
-"Company ID is not valid.","Bedrijfs-ID is niet geldig."
 "Company Name",Bedrijfsnaam
+"Controls the position of this payment method relative to other payment methods at checkout. Lower numbers appear first. Default is empty (no specific order).","Bepaalt de positie van deze betaalmethode ten opzichte van andere betaalmethoden bij het afrekenen. Lagere nummers verschijnen eerst. Standaard is leeg (geen specifieke volgorde)."
 "Could not initiate capture with %1","Kon geen vastlegging starten met %1"
 "Could not initiate refund with %1","Kon geen terugbetaling starten met %1"
 "Could not update %1 order status to cancelled. Please contact support with order ID %2. Error: %3","Kon %1 orderstatus niet updaten naar geannuleerd. Neem contact op met support met bestelnummer %2. Fout: %3"
@@ -45,22 +44,29 @@ Download,Download
 "Email Address is not valid.","E-mailadres is niet geldig."
 "Enable Address Search","Adres zoeken inschakelen"
 "Enable Company Search","Bedrijf zoeken inschakelen"
+"Enable Invoice Emails","Factuur-e-mails inschakelen"
 "Enable Order Intent","Bestelintentie inschakelen"
 "Enable Payment Method","Betaalmethode inschakelen"
 "Enable Tax Subtotals","Btw subtotalen inschakelen"
+"End of Month","Einde van de maand"
 "Enter company name to search","Voer bedrijfsnaam in om te zoeken"
 "Enter details manually","Gegevens handmatig invoeren"
 Environment,Omgeving
 "Failed to refund order with %1. Reason: %2","Het is niet gelukt om de bestelling met %1 terug te betalen. Reden: %2"
 "Failed to update %1 customer address: %2","Kon het adres van klant %1 niet bijwerken: %2"
-"Find out more","Meer informatie"
 "First Name is not valid.","Voornaam is niet geldig."
 "Fulfilment Order Status","Status van vervulling bestelling"
 "Fulfilment Trigger","Trigger voor vervulling"
 General,Algemeen
+"Hyva Extension","Hyva-extensie"
+"I have filled in all the details truthfully and accept to pay the invoice in 30 days. I agree to the %1. You hereby give permission to %2 to decide on the basis of automated processing of (personal) data whether you can use %3. You can withdraw this permission by sending an e-mail to %4.","Ik heb alle gegevens naar waarheid ingevuld en accepteer het om de factuur te betalen in 30 dagen. Ik ga akkoord met de %1.
+Hierbij geeft u toestemming aan %2 om op basis van geautomatiseerde verwerking van (persoons) gegevens te besluiten of u gebruik kunt maken van %3. U kunt deze toestemming intrekken door een e-mail te sturen aan %4."
 "Invalid API response from %1.","Ongeldige API-respons van %1."
 Invoice,Factuur
+"Invoice email address","E-mailadres factuur"
 "Invoice purchase with %1 is not available for this order.","Aankoop op factuur met %1 is niet beschikbaar voor deze bestelling."
+"KVK number",KVK-nummer
+"KVK number is not valid.","KVK-nummer is niet geldig."
 "Last 100 debug log lines","Laatste 100 debug-logregels"
 "Last 100 error log records","Laatste 100 foutenlogboek records"
 "Last Name is not valid.","Achternaam is niet geldig."
@@ -72,11 +78,17 @@ OK,OK
 "Order ID",Bestelnummer
 "Order Note",Bestelnotitie
 "Order edit request was accepted by %1","Bestellingswijzigingsverzoek is geaccepteerd door %1"
+"Order on invoice and pay within 30 days after delivery. Enabled by ABN AMRO.","Bestel op factuur en betaal binnen 30 dagen na levering. Mogelijk gemaakt door ABN AMRO."
 "PO Number",PO-nummer
+"Pay within 30 days of delivery. There are no additional costs for you.","Betaal binnen 30 dagen na levering. Er zijn geen extra kosten voor u."
 Payment,Betaling
 "Payment Method",Betaalmethode
+"Payment Terms Duration","Betalingsvoorwaarden duur"
+"Payment Terms Type","Betalingsvoorwaarden type"
 "Phone Number is not valid.","Telefoonnummer is niet geldig."
 "Place Order","Bestelling plaatsen"
+"Please ensure that your invoice email address list only contains valid email addresses separated by commas.","Zorg ervoor dat uw factuur-e-mailadreslijst alleen geldige e-mailadressen bevat, gescheiden door komma's."
+"Please enter 3 or more characters","Voer 3 of meer tekens in"
 "Please try again later.","Probeer het later opnieuw."
 Production,Productie
 Project,Project
@@ -88,19 +100,19 @@ Search,Zoekopdracht
 "Sole Trader",Eenmanszaak
 "Something went wrong with your request to %1. %2","Er is iets misgegaan met uw verzoek aan %1. %2"
 "Sort Order",Sorteervolgorde
+Standard,Standaard
 "Street Address is not valid.","Straatadres is niet geldig."
 "Successfully refunded order with %1 for order ID: %2. Refund reference: %3","Bestelling succesvol terugbetaald met %1 voor bestelnummer: %2. Terugbetalingsreferentie: %3"
-TWO,TWO
+"terms and conditions of %1","voorwaarden van %1"
 "The %1 payment plugin for Magento simplifies B2B shopping, making it easy and safe for merchants to offer invoices as a payment method.<br>The payment method lives next to other payment methods in your existing checkout, and offers a variety of configuration options to suit your businesses needs.<br>If you would like to know more about how to configure the plugin, check out our <a href=""%2"" target=""_blank"">step by step guide</a>.","De %1-betaalplug-in voor Magento vereenvoudigt B2B-shoppen en maakt het voor verkopers eenvoudig en veilig om facturen als betaalmethode aan te bieden. <br> De betaalmethode staat naast andere betaalmethoden in je bestaande kassa en biedt een verscheidenheid aan configuratieopties die aansluiten op de behoeften van je bedrijf. <br> Als je meer wilt weten over het configureren van de plug-in, bekijk dan onze <a href=""%2"" target=""_blank""> stapsgewijze handleiding </a> ."
 "The buyer and the seller are the same company.","De koper en de verkoper zijn hetzelfde bedrijf."
 "The capture action is not available.","De vastleg actie is niet beschikbaar."
 Title,Titel
-"Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple.","Two is een betalingsoplossing voor online B2B-aankopen, waarmee u op handelskrediet kunt kopen bij uw favoriete handelaren en leveranciers. Met Two heeft u direct toegang tot flexibel handelskrediet om het aankopen eenvoudig te maken."
 "Unable to confirm %1 order with %2 state.","Kan %1 bestelling met %2 status niet bevestigen."
 "Unable to find the requested %1 order","Kan de gevraagde %1 bestelling niet vinden"
 Version,Versie
+"You don't need to be an ABN AMRO customer.","Je hoeft geen klant van ABN AMRO te zijn."
 "You must accept %1 to place order.","U moet %1 accepteren om de bestelling te plaatsen."
-"You will be redirected to %1 when you place order.","U wordt doorgestuurd naar %1 wanneer u een bestelling plaatst."
 "Your invoice purchase with %1 could not be processed. The cart will be restored.","Uw factuuraankoop met %1 kon niet worden verwerkt. De winkelwagen wordt hersteld."
 "Your invoice purchase with %1 failed verification. The cart will be restored.","Uw aankoop op factuur met %1 is niet geverifieerd. De winkelwagen wordt hersteld."
 "Your invoice purchase with %1 has been cancelled. The cart will be restored.","Uw aankoop op factuur met %1 is geannuleerd. De winkelwagen wordt hersteld."
@@ -109,16 +121,6 @@ Version,Versie
 "Your request to %1 failed. Reason: %2","Uw verzoek aan %1 is mislukt. Reden: %2"
 "Your sole trader account could not be verified.","Uw eenmanszaakaccount kon niet worden geverifieerd."
 "Zip/Postal Code is not valid.","Postcode is niet geldig."
-"Invoice email address","E-mailadres factuur"
-"Please ensure that your invoice email address list only contains valid email addresses separated by commas.","Zorg ervoor dat uw factuur-e-mailadreslijst alleen geldige e-mailadressen bevat, gescheiden door komma's."
-"Please enter 3 or more characters","Voer 3 of meer tekens in"
-"Enable Invoice Emails","Factuur-e-mails inschakelen"
-"Payment Terms Type","Betalingsvoorwaarden type"
-"Payment Terms Duration","Betalingsvoorwaarden duur"
-"Hyva Extension","Hyva-extensie"
-"Checkout Fields","Afrekenveldenst"
-Advanced,Geavanceerd
-Standard,Standaard
-"End of Month","Einde van de maand"
-"%1 days","%1 dagen"
-"Controls the position of this payment method relative to other payment methods at checkout. Lower numbers appear first. Default is empty (no specific order).","Bepaalt de positie van deze betaalmethode ten opzichte van andere betaalmethoden bij het afrekenen. Lagere nummers verschijnen eerst. Standaard is leeg (geen specifieke volgorde)."
+"• No extra costs","• Geen extra kosten"
+"• Order on invoice","• Bestellen op factuur"
+"• Pay within 30 days","• Betaal binnen 30 dagen"

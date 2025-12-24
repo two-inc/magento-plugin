@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Observer;
+namespace ABN\Gateway\Observer;
 
 use Exception;
 use Magento\Framework\Event\Observer;
@@ -17,10 +17,10 @@ use Magento\Sales\Api\Data\ShipmentInterface;
 use Magento\Sales\Api\OrderStatusHistoryRepositoryInterface;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Status\HistoryFactory;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Model\Two;
-use Two\Gateway\Service\Api\Adapter;
-use Two\Gateway\Service\Order\ComposeShipment;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Model\Two;
+use ABN\Gateway\Service\Api\Adapter;
+use ABN\Gateway\Service\Order\ComposeShipment;
 
 /**
  * After Order Shipment Save Observer
@@ -137,7 +137,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
 
                 $order->getPayment()->setAdditionalInformation($additionalInformation);
 
-                $comment = __('%1 order invoice has not been issued yet.', $this->configRepository::PROVIDER);
+                $comment = __('%1 order invoice has not been issued yet.', $this->configRepository::PRODUCT_NAME);
                 $this->addStatusToOrderHistory($order, $comment->render());
             }
         }
@@ -179,12 +179,12 @@ class SalesOrderShipmentAfter implements ObserverInterface
         if (empty($response['remained_order'])) {
             $comment = __(
                 '%1 order marked as completed.',
-                $this->configRepository::PROVIDER,
+                $this->configRepository::PRODUCT_NAME,
             );
         } else {
             $comment = __(
                 '%1 order marked as partially completed.',
-                $this->configRepository::PROVIDER,
+                $this->configRepository::PRODUCT_NAME,
             );
         }
 

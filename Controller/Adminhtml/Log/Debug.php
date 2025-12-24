@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Controller\Adminhtml\Log;
+namespace ABN\Gateway\Controller\Adminhtml\Log;
 
 use Exception;
 use Magento\Backend\App\Action;
@@ -28,7 +28,7 @@ class Debug extends Action
     /**
      * Debug log file path pattern
      */
-    public const DEBUG_LOG_FILE = '%s/log/two/debug.log';
+    public const DEBUG_LOG_FILE = '%s/log/abn/debug.log';
 
     /**
      * @var JsonFactory

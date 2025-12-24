@@ -26,10 +26,10 @@ jobs:
         run: docker cp $(pwd) magento-project-community-edition:/data/extensions/
 
       - name: Install the extensions in Magento
-        run: docker exec magento-project-community-edition composer require two-inc/magento2:@dev --no-plugins
+        run: docker exec magento-project-community-edition composer require two-inc/magento-abn-plugin:@dev --no-plugins
 
       - name: Activate the extension
-        run: docker exec magento-project-community-edition ./retry "php bin/magento module:enable Two_Gateway && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
+        run: docker exec magento-project-community-edition ./retry "php bin/magento module:enable ABN_Gateway && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
 
       - name: Run PHPStan
         run: docker exec magento-project-community-edition /bin/bash -c "./vendor/bin/phpstan analyse --no-progress -c /data/extensions/*/phpstan.neon /data/extensions"

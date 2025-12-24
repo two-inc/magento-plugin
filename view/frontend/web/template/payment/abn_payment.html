@@ -14,7 +14,7 @@
             />
             <span class="title-with-tooltip">
                 <span data-bind="text: getTitle()"></span>
-                <div class="two-tooltip-container">
+                <div class="abn-tooltip-container">
                     <svg
                         class="tooltip-svg"
                         width="20"
@@ -31,31 +31,24 @@
                             stroke-linejoin="round"
                         />
                     </svg>
-                    <span class="two-tooltip-text">
-                        <p>
-                            <!-- ko i18n: 'Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple.' --><!-- /ko -->
-                        </p>
+                    <span class="abn-tooltip-text">
+                        <!-- ko i18n: 'Order on invoice and pay within 30 days after delivery. Enabled by ABN AMRO.' --><!-- /ko --><br />
                         <br />
-                        <p>
-                            <b
-                                ><!-- ko i18n: 'Buy now, receive your goods, pay your invoice later.' --><!-- /ko --></b
-                            >
-                        </p>
+                        <!-- ko i18n: '• Order on invoice' --><!-- /ko --><br />
+                        <!-- ko i18n: '• Pay within 30 days' --><!-- /ko --><br />
+                        <!-- ko i18n: '• No extra costs' --><!-- /ko --><br />
                         <br />
-                        <p>
-                            <a href="https://www.two.inc/what-is-two" target="_blank"
-                                ><!-- ko i18n: 'Find out more' --><!-- /ko --></a
-                            >
-                        </p>
+                        <!-- ko i18n: 'You don\'t need to be an ABN AMRO customer.' --><!-- /ko -->
                     </span>
                 </div>
             </span>
-            <div class="payment-option-logo two-payment-option-logo"></div>
+            <div class="payment-option-logo abn-payment-option-logo"></div>
         </div>
     </div>
 
     <div class="payment-method-content">
         <div class="redirect_message" data-bind="text: redirectMessage"></div>
+        <!-- <div class="redirect_message" data-bind="text: redirectMessage"></div> -->
         <!-- ko if: showModeTab -->
         <!-- ko ifnot: showSoleTrader -->
         <div class="mode_selector" data-element="popup-message">
@@ -155,7 +148,7 @@
                 </div>
                 <div class="field field-text required">
                     <label for="company_id" class="label">
-                        <span><!-- ko i18n: 'Company ID'--><!-- /ko --></span>
+                        <span><!-- ko i18n: 'KVK number'--><!-- /ko --></span>
                     </label>
                     <div class="control">
                         <input
@@ -165,7 +158,7 @@
                             required="true"
                             data-bind='
                             attr: {
-                                title: $t("Company ID")
+                                title: $t("KVK number")
                             },
                             value: companyId'
                             class="input-text"

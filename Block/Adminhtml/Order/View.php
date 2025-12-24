@@ -5,11 +5,11 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Block\Adminhtml\Order;
+namespace ABN\Gateway\Block\Adminhtml\Order;
 
 use Magento\Sales\Block\Adminhtml\Order\View as OrderView;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Service\Api\Adapter as Adapter;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Service\Api\Adapter as Adapter;
 
 /**
  * Order View Block

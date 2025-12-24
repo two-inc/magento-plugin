@@ -5,14 +5,14 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Service\Api;
+namespace ABN\Gateway\Service\Api;
 
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\HTTP\Client\Curl;
 use Throwable;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
-use Two\Gateway\Api\Webapi\SoleTraderInterface;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use ABN\Gateway\Api\Webapi\SoleTraderInterface;
 
 /**
  * Api Adapter
@@ -116,7 +116,7 @@ class Adapter
                         'Invalid API response.'
                     );
                     throw new LocalizedException(
-                        __('Invalid API response from %1.', $this->configRepository::PROVIDER)
+                        __('Invalid API response from %1.', $this->configRepository::PRODUCT_NAME)
                     );
                 }
             }

@@ -1,6 +1,6 @@
 {
-    "name": "two-inc/magento2",
-    "description": "Two B2B BNPL payments extension",
+    "name": "two-inc/magento-abn-plugin",
+    "description": "ABN B2B BNPL payments extension",
     "type": "magento2-module",
     "version": "1.13.2",
     "license": [
@@ -15,7 +15,7 @@
             "registration.php"
         ],
         "psr-4": {
-            "Two\\Gateway\\": ""
+            "ABN\\Gateway\\": ""
         }
     },
     "repositories": [

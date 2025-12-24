@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Api\Log;
+namespace ABN\Gateway\Api\Log;
 
 /**
  * Log repository interface

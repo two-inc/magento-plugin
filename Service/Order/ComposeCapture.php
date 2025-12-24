@@ -5,11 +5,11 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Service\Order;
+namespace ABN\Gateway\Service\Order;
 
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Sales\Model\Order;
-use Two\Gateway\Service\Order as OrderService;
+use ABN\Gateway\Service\Order as OrderService;
 
 /**
  * Compose Capture Service

@@ -7,7 +7,7 @@
 -->
 <schema xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:Setup/Declaration/Schema/etc/schema.xsd">
     <table name="sales_order">
-        <column xsi:type="varchar" name="two_order_reference" nullable="true" length="255" comment="Two Order Reference"/>
-        <column xsi:type="varchar" name="two_order_id" nullable="true" length="255" comment="Two Order Id"/>
+        <column xsi:type="varchar" name="two_order_reference" nullable="true" length="255" comment="Achteraf betalen van ABN AMRO Order Reference"/>
+        <column xsi:type="varchar" name="two_order_id" nullable="true" length="255" comment="Achteraf betalen van ABN AMRO Order Id"/>
     </table>
 </schema>

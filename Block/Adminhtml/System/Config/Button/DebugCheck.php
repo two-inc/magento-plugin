@@ -5,14 +5,14 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Block\Adminhtml\System\Config\Button;
+namespace ABN\Gateway\Block\Adminhtml\System\Config\Button;
 
 use Exception;
 use Magento\Backend\Block\Template\Context;
 use Magento\Backend\Block\Widget\Button;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
-use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use ABN\Gateway\Api\Log\RepositoryInterface as LogRepository;
 
 /**
  * Debug log check button class
@@ -23,7 +23,7 @@ class DebugCheck extends Field
     /**
      * @var string
      */
-    protected $_template = 'Two_Gateway::system/config/button/debug.phtml';
+    protected $_template = 'ABN_Gateway::system/config/button/debug.phtml';
 
     /**
      * @var LogRepository
@@ -72,7 +72,7 @@ class DebugCheck extends Field
      */
     public function getDebugCheckUrl()
     {
-        return $this->getUrl('two/log/debug');
+        return $this->getUrl('abn/log/debug');
     }
 
     /**

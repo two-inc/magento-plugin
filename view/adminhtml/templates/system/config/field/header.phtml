@@ -3,7 +3,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * @var $block Two\Gateway\Block\Adminhtml\System\Config\Field\Header
+ * @var $block ABN\Gateway\Block\Adminhtml\System\Config\Field\Header
  */
 ?>
 <div class="two-header">
@@ -18,12 +18,12 @@
         <p>
             <?=$block->escapeHtml(__(
                 'The %1 payment plugin for Magento simplifies B2B shopping, ' .
-                'making it easy and safe for merchants to offer invoices as a payment method.<br>' .
-                'The payment method lives next to other payment methods in your existing checkout, ' .
-                'and offers a variety of configuration options to suit your businesses needs.<br>' .
-                'If you would like to know more about how to configure the plugin, ' .
-                'check out our <a href="%2" target="_blank">step by step guide</a>.',
-                $block->configRepository::PROVIDER,
+                        'making it easy and safe for merchants to offer invoices as a payment method.<br>' .
+                        'The payment method lives next to other payment methods in your existing checkout, ' .
+                        'and offers a variety of configuration options to suit your businesses needs.<br>' .
+                        'If you would like to know more about how to configure the plugin, ' .
+                        'check out our <a href="%2" target="_blank">step by step guide</a>.',
+                $block->configRepository::PRODUCT_NAME,
                 $block->escapeUrl($block->getDocumentationUrl())
             ), ['br', 'a']); ?>
         </p>
