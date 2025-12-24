@@ -1,8 +1,11 @@
 .vscode/
 .json/
 .idea
-*.zip
 .DS_Store
+
+# Artifacts
+index.html
+*.zip
 
 # Direnv
 .direnv/
