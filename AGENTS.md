@@ -96,6 +96,21 @@ These files contain ABN namespace/branding and need updating during rebase:
 | `main`     | https://magento.staging.two.inc            | Two_Gateway |
 | `abn-main` | https://magento.staging.achterafbetalen.co | ABN_Gateway |
 
+### Running Commands on Staging
+
+**Important**: Run Magento CLI commands as `www-data` user to avoid permission issues:
+
+```bash
+# Correct - run as www-data
+kubectl exec -n staging <pod-name> -c magento -- su www-data -s /bin/bash -c 'bin/magento cache:flush'
+
+# Also correct - the container often defaults to www-data
+kubectl exec -n staging <pod-name> -c magento -- bin/magento cache:flush
+
+# Find pod names
+kubectl get pods -n staging | grep magento
+```
+
 ### Clearing Caches on Staging
 
 After pushing changes, git-sync will pick them up within ~30 seconds. Clear caches to see changes:
@@ -107,9 +122,6 @@ curl -s https://magento.staging.achterafbetalen.co/opcache-clear.php
 
 # Flush Magento cache via kubectl
 kubectl exec -n staging <pod-name> -c magento -- bin/magento cache:flush
-
-# Find pod names
-kubectl get pods -n staging | grep magento
 ```
 
 ### Deploying Admin Static Content
