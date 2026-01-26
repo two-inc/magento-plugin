@@ -1,0 +1,41 @@
+name: Claude Code Review
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+  issue_comment:
+    types: [created, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  code-review:
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    if: >
+      (github.event_name == 'pull_request_target') ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '@claude'))
+    steps:
+      - uses: two-inc/claude-code-reviewer@v4
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_prompt: |
+
+            ## Magento Plugin Specific Guidelines:
+
+            For this PHP Magento 2 plugin, pay special attention to:
+            - **Magento conventions**: Follow Magento 2 coding standards and module structure
+            - **Dependency injection**: Use Magento DI patterns, avoid direct instantiation
+            - **Database schema**: Review db_schema.xml changes for proper declarative schema
+            - **API contracts**: Verify API interfaces follow backward compatibility
+            - **Plugin/Observer pattern**: Check for proper plugin and event observer implementation
+            - **Security**: Validate input sanitization and ACL permissions
+            - **Performance**: Review query efficiency and caching strategies
+            - **Composer**: Check composer.json dependencies and version constraints
