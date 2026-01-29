@@ -16,7 +16,7 @@ interface SoleTraderInterface
      * @api
      *
      * @param string $cartId
-     * @return array
+     * @return mixed
      */
     public function getTokens(string $cartId): array;
 }
