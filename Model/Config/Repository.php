@@ -233,6 +233,10 @@ class Repository implements RepositoryInterface
      */
     public function getCheckoutApiUrl(?string $mode = null): string
     {
+        $envUrl = getenv('TWO_API_BASE_URL');
+        if ($envUrl !== false && $envUrl !== '') {
+            return $envUrl;
+        }
         $mode = $mode ?: $this->getMode();
         $prefix = $mode == 'production' ? 'api' : ('api.' . $mode);
         return sprintf(self::URL_TEMPLATE, $prefix);
@@ -243,6 +247,10 @@ class Repository implements RepositoryInterface
      */
     public function getCheckoutPageUrl(?string $mode = null): string
     {
+        $envUrl = getenv('TWO_CHECKOUT_BASE_URL');
+        if ($envUrl !== false && $envUrl !== '') {
+            return $envUrl;
+        }
         $mode = $mode ?: $this->getMode();
         $prefix = $mode == 'production' ? 'checkout' : ('checkout.' . $mode);
         return sprintf(self::URL_TEMPLATE, $prefix);
