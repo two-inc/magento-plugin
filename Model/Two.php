@@ -292,8 +292,10 @@ class Two extends AbstractMethod
             $traceID = $response['error_trace_id'];
         }
 
+        $isClientError = isset($response['http_status']) && $response['http_status'] == 400;
+
         // Validation errors — user-facing, no trace ID
-        if (isset($response['error_json']) && is_array($response['error_json'])) {
+        if ($isClientError && isset($response['error_json']) && is_array($response['error_json'])) {
             $errs = [];
             foreach ($response['error_json'] as $err) {
                 $fieldName = isset($err['loc'])
@@ -322,7 +324,7 @@ class Two extends AbstractMethod
             if ($errorCode == 'SAME_BUYER_SELLER_ERROR') {
                 $reason = __('The buyer and the seller are the same company.');
             }
-            if (in_array($errorCode, ['SCHEMA_ERROR', 'SAME_BUYER_SELLER_ERROR', 'ORDER_INVALID'])) {
+            if ($isClientError && in_array($errorCode, ['SCHEMA_ERROR', 'SAME_BUYER_SELLER_ERROR', 'ORDER_INVALID'])) {
                 return $reason;
             }
 
