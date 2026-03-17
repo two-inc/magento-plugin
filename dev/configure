@@ -1,3 +1,4 @@
+#!/usr/bin/env php
 <?php
 /**
  * Configure the Two payment plugin for local development.
