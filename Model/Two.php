@@ -292,7 +292,7 @@ class Two extends AbstractMethod
             $traceID = $response['error_trace_id'];
         }
 
-        // Validation errors
+        // Validation errors — user-facing, no trace ID
         if (isset($response['error_json']) && is_array($response['error_json'])) {
             $errs = [];
             foreach ($response['error_json'] as $err) {
@@ -310,21 +310,23 @@ class Two extends AbstractMethod
                 }
             }
             if (count($errs) > 0) {
-                $message = __(
-                    'Your request to %1 failed. Reason: %2',
-                    $this->configRepository::PROVIDER,
-                    join(' ', $errs)
-                );
-                return $this->_getMessageWithTrace($message, $traceID);
+                return __(join(' ', $errs));
             }
         }
 
         if (isset($response['error_code'])) {
-            // Custom errors
+            $errorCode = $response['error_code'];
             $reason = $response['error_message'];
-            if ($response['error_code'] == 'SAME_BUYER_SELLER_ERROR') {
+
+            // User errors — no trace ID
+            if ($errorCode == 'SAME_BUYER_SELLER_ERROR') {
                 $reason = __('The buyer and the seller are the same company.');
             }
+            if (in_array($errorCode, ['SCHEMA_ERROR', 'SAME_BUYER_SELLER_ERROR', 'ORDER_INVALID'])) {
+                return $reason;
+            }
+
+            // System errors — include trace ID
             $message = __(
                 'Your request to %1 failed. Reason: %2',
                 $this->configRepository::PROVIDER,
