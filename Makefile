@@ -38,6 +38,7 @@ install: clean
 	docker exec $(CONTAINER) php bin/magento module:disable Magento_AdminAdobeImsTwoFactorAuth Magento_TwoFactorAuth
 	docker exec $(CONTAINER) php bin/magento module:enable Two_Gateway
 	docker exec $(CONTAINER) php bin/magento setup:upgrade
+	docker exec $(CONTAINER) php bin/magento deploy:mode:set developer
 	docker exec $(CONTAINER) php bin/magento setup:di:compile
 	$(MAKE) configure TWO_API_KEY=dummy-dev-key
 	@echo ""

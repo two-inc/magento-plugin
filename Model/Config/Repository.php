@@ -9,6 +9,7 @@ namespace Two\Gateway\Model\Config;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
+use Magento\Framework\App\State;
 use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\UrlInterface;
 use Magento\Store\Model\ScopeInterface;
@@ -35,23 +36,30 @@ class Repository implements RepositoryInterface
      * @var ProductMetadataInterface
      */
     private $productMetadata;
+    /**
+     * @var State
+     */
+    private $appState;
 
     /**
      * @param ScopeConfigInterface $scopeConfig
      * @param EncryptorInterface $encryptor
      * @param UrlInterface $urlBuilder
      * @param ProductMetadataInterface $productMetadata
+     * @param State $appState
      */
     public function __construct(
         ScopeConfigInterface $scopeConfig,
         EncryptorInterface $encryptor,
         UrlInterface $urlBuilder,
-        ProductMetadataInterface $productMetadata
+        ProductMetadataInterface $productMetadata,
+        State $appState
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->encryptor = $encryptor;
         $this->urlBuilder = $urlBuilder;
         $this->productMetadata = $productMetadata;
+        $this->appState = $appState;
     }
 
     /**
@@ -233,9 +241,11 @@ class Repository implements RepositoryInterface
      */
     public function getCheckoutApiUrl(?string $mode = null): string
     {
-        $envUrl = getenv('TWO_API_BASE_URL');
-        if ($envUrl !== false && $envUrl !== '') {
-            return $envUrl;
+        if ($this->appState->getMode() === State::MODE_DEVELOPER) {
+            $envUrl = getenv('TWO_API_BASE_URL');
+            if ($envUrl !== false && $envUrl !== '') {
+                return $envUrl;
+            }
         }
         $mode = $mode ?: $this->getMode();
         $prefix = $mode == 'production' ? 'api' : ('api.' . $mode);
@@ -247,9 +257,11 @@ class Repository implements RepositoryInterface
      */
     public function getCheckoutPageUrl(?string $mode = null): string
     {
-        $envUrl = getenv('TWO_CHECKOUT_BASE_URL');
-        if ($envUrl !== false && $envUrl !== '') {
-            return $envUrl;
+        if ($this->appState->getMode() === State::MODE_DEVELOPER) {
+            $envUrl = getenv('TWO_CHECKOUT_BASE_URL');
+            if ($envUrl !== false && $envUrl !== '') {
+                return $envUrl;
+            }
         }
         $mode = $mode ?: $this->getMode();
         $prefix = $mode == 'production' ? 'checkout' : ('checkout.' . $mode);
