@@ -28,6 +28,7 @@ install: clean
 		--name=$(CONTAINER) \
 		-p $(PORT):80 \
 		-e URL=$(URL) \
+		-e MAGE_MODE=developer \
 		-e TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
 		-e TWO_CHECKOUT_BASE_URL=$(TWO_CHECKOUT_BASE_URL) \
 		-v $(CURDIR):/data/extensions/workdir \
