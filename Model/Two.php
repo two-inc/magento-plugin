@@ -302,7 +302,7 @@ class Two extends AbstractMethod
                 $msg = isset($err['msg']) ? $this->cleanValidationMessage($err['msg']) : null;
 
                 if ($fieldName && $msg) {
-                    $errs[] = __('%1: %2.', $fieldName, $msg);
+                    $errs[] = __('%1: %2.', $fieldName, rtrim($msg, '.'));
                 } elseif ($fieldName) {
                     $errs[] = __('%1 is not valid.', $fieldName);
                 } elseif ($msg) {
@@ -344,18 +344,21 @@ class Two extends AbstractMethod
      */
     public function getFieldNameFromLoc(string $locStr): ?Phrase
     {
+        static $fieldNames = null;
+        if ($fieldNames === null) {
+            $fieldNames = [
+                '["buyer","representative","phone_number"]' => __('Phone Number'),
+                '["buyer","company","organization_number"]' => __('Company ID'),
+                '["buyer","representative","first_name"]' => __('First Name'),
+                '["buyer","representative","last_name"]' => __('Last Name'),
+                '["buyer","representative","email"]' => __('Email Address'),
+                '["billing_address","street_address"]' => __('Street Address'),
+                '["billing_address","city"]' => __('City'),
+                '["billing_address","country"]' => __('Country'),
+                '["billing_address","postal_code"]' => __('Zip/Postal Code'),
+            ];
+        }
         $locStr = preg_replace('/\s+/', '', $locStr);
-        $fieldNames = [
-            '["buyer","representative","phone_number"]' => __('Phone Number'),
-            '["buyer","company","organization_number"]' => __('Company ID'),
-            '["buyer","representative","first_name"]' => __('First Name'),
-            '["buyer","representative","last_name"]' => __('Last Name'),
-            '["buyer","representative","email"]' => __('Email Address'),
-            '["billing_address","street_address"]' => __('Street Address'),
-            '["billing_address","city"]' => __('City'),
-            '["billing_address","country"]' => __('Country'),
-            '["billing_address","postal_code"]' => __('Zip/Postal Code'),
-        ];
         return $fieldNames[$locStr] ?? null;
     }
 
