@@ -28,6 +28,7 @@ install: clean
 		--name=$(CONTAINER) \
 		-p $(PORT):80 \
 		-e URL=$(URL) \
+		-e MAGE_MODE=developer \
 		-e TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
 		-e TWO_CHECKOUT_BASE_URL=$(TWO_CHECKOUT_BASE_URL) \
 		-v $(CURDIR):/data/extensions/workdir \
@@ -53,7 +54,7 @@ configure:
 	docker exec \
 		-e TWO_API_KEY=$(TWO_API_KEY) \
 		-e TWO_STORE_COUNTRY=$(TWO_STORE_COUNTRY) \
-		$(CONTAINER) php /data/extensions/workdir/dev/configure.php
+		$(CONTAINER) php /data/extensions/workdir/dev/configure
 	docker exec $(CONTAINER) php bin/magento cache:flush
 
 ## Start the Magento container
