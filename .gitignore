@@ -17,5 +17,8 @@ auth.json
 vendor/
 composer.lock
 
+# Local dev config
+.env.local
+
 # Python
 *.venv

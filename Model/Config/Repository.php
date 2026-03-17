@@ -35,7 +35,6 @@ class Repository implements RepositoryInterface
      * @var ProductMetadataInterface
      */
     private $productMetadata;
-
     /**
      * @param ScopeConfigInterface $scopeConfig
      * @param EncryptorInterface $encryptor
@@ -233,6 +232,12 @@ class Repository implements RepositoryInterface
      */
     public function getCheckoutApiUrl(?string $mode = null): string
     {
+        if (getenv('MAGE_MODE') === 'developer') {
+            $envUrl = getenv('TWO_API_BASE_URL');
+            if ($envUrl !== false && $envUrl !== '') {
+                return $envUrl;
+            }
+        }
         $mode = $mode ?: $this->getMode();
         $prefix = $mode == 'production' ? 'api' : ('api.' . $mode);
         return sprintf(self::URL_TEMPLATE, $prefix);
@@ -243,6 +248,12 @@ class Repository implements RepositoryInterface
      */
     public function getCheckoutPageUrl(?string $mode = null): string
     {
+        if (getenv('MAGE_MODE') === 'developer') {
+            $envUrl = getenv('TWO_CHECKOUT_BASE_URL');
+            if ($envUrl !== false && $envUrl !== '') {
+                return $envUrl;
+            }
+        }
         $mode = $mode ?: $this->getMode();
         $prefix = $mode == 'production' ? 'checkout' : ('checkout.' . $mode);
         return sprintf(self::URL_TEMPLATE, $prefix);
