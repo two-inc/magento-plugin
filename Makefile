@@ -14,7 +14,7 @@ TWO_API_BASE_URL     ?= https://api.staging.two.inc
 TWO_CHECKOUT_BASE_URL ?= https://checkout.staging.two.inc
 TWO_STORE_COUNTRY    ?= NO
 
-.PHONY: help install configure compile run stop clean logs archive patch minor major format
+.PHONY: help install configure compile run stop clean logs archive patch minor major format test
 
 .DEFAULT_GOAL := help
 
@@ -94,6 +94,12 @@ patch: bumpver-patch
 minor: bumpver-minor
 ## Bump major version
 major: bumpver-major
+## Run PHPUnit tests
+test:
+	docker run --rm -v $(CURDIR):/app -w /app php:8.1-cli bash -c \
+		"php -r \"copy('https://phar.phpunit.de/phpunit-9.6.phar', '/tmp/phpunit.phar');\" \
+		&& php /tmp/phpunit.phar"
+
 ## Format frontend assets with Prettier
 format:
 	prettier -w view/frontend/web/js/
