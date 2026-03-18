@@ -14,7 +14,7 @@ TWO_API_BASE_URL     ?= https://api.staging.two.inc
 TWO_CHECKOUT_BASE_URL ?= https://checkout.staging.two.inc
 TWO_STORE_COUNTRY    ?= NO
 
-.PHONY: help install configure run stop clean logs archive patch minor major format
+.PHONY: help install configure compile run stop clean logs archive patch minor major format
 
 .DEFAULT_GOAL := help
 
@@ -28,7 +28,6 @@ install: clean
 		--name=$(CONTAINER) \
 		-p $(PORT):80 \
 		-e URL=$(URL) \
-		-e MAGE_MODE=developer \
 		-e TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
 		-e TWO_CHECKOUT_BASE_URL=$(TWO_CHECKOUT_BASE_URL) \
 		-v $(CURDIR):/data/extensions/workdir \
@@ -56,6 +55,12 @@ configure:
 		-e TWO_STORE_COUNTRY=$(TWO_STORE_COUNTRY) \
 		$(CONTAINER) php /data/extensions/workdir/dev/configure
 	docker exec $(CONTAINER) php bin/magento cache:flush
+	docker restart $(CONTAINER)
+
+## Recompile DI and restart
+compile:
+	docker exec $(CONTAINER) php bin/magento setup:di:compile
+	docker restart $(CONTAINER)
 
 ## Start the Magento container
 run:

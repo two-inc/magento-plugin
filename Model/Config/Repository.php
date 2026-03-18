@@ -9,6 +9,7 @@ namespace Two\Gateway\Model\Config;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
+use Magento\Framework\App\State;
 use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\UrlInterface;
 use Magento\Store\Model\ScopeInterface;
@@ -36,21 +37,29 @@ class Repository implements RepositoryInterface
      */
     private $productMetadata;
     /**
+     * @var State
+     */
+    private $appState;
+
+    /**
      * @param ScopeConfigInterface $scopeConfig
      * @param EncryptorInterface $encryptor
      * @param UrlInterface $urlBuilder
      * @param ProductMetadataInterface $productMetadata
+     * @param State $appState
      */
     public function __construct(
         ScopeConfigInterface $scopeConfig,
         EncryptorInterface $encryptor,
         UrlInterface $urlBuilder,
-        ProductMetadataInterface $productMetadata
+        ProductMetadataInterface $productMetadata,
+        State $appState
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->encryptor = $encryptor;
         $this->urlBuilder = $urlBuilder;
         $this->productMetadata = $productMetadata;
+        $this->appState = $appState;
     }
 
     /**
@@ -232,7 +241,7 @@ class Repository implements RepositoryInterface
      */
     public function getCheckoutApiUrl(?string $mode = null): string
     {
-        if (getenv('MAGE_MODE') === 'developer') {
+        if ($this->appState->getMode() === State::MODE_DEVELOPER) {
             $envUrl = getenv('TWO_API_BASE_URL');
             if ($envUrl !== false && $envUrl !== '') {
                 return $envUrl;
@@ -248,7 +257,7 @@ class Repository implements RepositoryInterface
      */
     public function getCheckoutPageUrl(?string $mode = null): string
     {
-        if (getenv('MAGE_MODE') === 'developer') {
+        if ($this->appState->getMode() === State::MODE_DEVELOPER) {
             $envUrl = getenv('TWO_CHECKOUT_BASE_URL');
             if ($envUrl !== false && $envUrl !== '') {
                 return $envUrl;

@@ -292,36 +292,43 @@ class Two extends AbstractMethod
             $traceID = $response['error_trace_id'];
         }
 
-        // Validation errors
-        if (isset($response['error_json']) && is_array($response['error_json'])) {
+        $isClientError = isset($response['http_status']) && $response['http_status'] == 400;
+
+        // Validation errors — user-facing, no trace ID
+        if ($isClientError && isset($response['error_json']) && is_array($response['error_json'])) {
             $errs = [];
             foreach ($response['error_json'] as $err) {
-                if ($err && $err['loc']) {
-                    $err_field = $this->getFieldFromLocStr(json_encode($err['loc']));
-                    if ($err_field) {
-                        array_push($errs, $err_field);
-                    } else {
-                        // Since err_field is empty, return general error message
-                        return $this->_getMessageWithTrace($generalError, $traceID);
-                    }
+                $fieldName = isset($err['loc'])
+                    ? $this->getFieldNameFromLoc(json_encode($err['loc']))
+                    : null;
+                $msg = isset($err['msg']) ? $this->cleanValidationMessage($err['msg']) : null;
+
+                if ($fieldName && $msg) {
+                    $errs[] = __('%1: %2.', $fieldName, rtrim($msg, '.'));
+                } elseif ($fieldName) {
+                    $errs[] = __('%1 is not valid.', $fieldName);
+                } elseif ($msg) {
+                    $errs[] = $msg;
                 }
             }
             if (count($errs) > 0) {
-                $message = __(
-                    'Your request to %1 failed. Reason: %2',
-                    $this->configRepository::PROVIDER,
-                    join(' ', $errs)
-                );
-                return $this->_getMessageWithTrace($message, $traceID);
+                return __(join(' ', $errs));
             }
         }
 
         if (isset($response['error_code'])) {
-            // Custom errors
+            $errorCode = $response['error_code'];
             $reason = $response['error_message'];
-            if ($response['error_code'] == 'SAME_BUYER_SELLER_ERROR') {
+
+            // User errors — no trace ID
+            if ($errorCode == 'SAME_BUYER_SELLER_ERROR') {
                 $reason = __('The buyer and the seller are the same company.');
             }
+            if ($isClientError && in_array($errorCode, ['SCHEMA_ERROR', 'SAME_BUYER_SELLER_ERROR', 'ORDER_INVALID'])) {
+                return $reason;
+            }
+
+            // System errors — include trace ID
             $message = __(
                 'Your request to %1 failed. Reason: %2',
                 $this->configRepository::PROVIDER,
@@ -334,29 +341,42 @@ class Two extends AbstractMethod
     }
 
     /**
-     * Get validation message
+     * Get human-readable field name from a pydantic error loc array.
      *
-     * @param $loc_str
-     * @return string|null
+     * @param string $locStr JSON-encoded loc array, e.g. '["buyer","representative","phone_number"]'
+     * @return Phrase|null
      */
-    public function getFieldFromLocStr($loc_str): ?Phrase
+    public function getFieldNameFromLoc(string $locStr): ?Phrase
     {
-        $loc_str = preg_replace('/\s+/', '', $loc_str);
-        $fieldLocStrMapping = [
-            '["buyer","representative","phone_number"]' => __('Phone Number is not valid.'),
-            '["buyer","company","organization_number"]' => __('Company ID is not valid.'),
-            '["buyer","representative","first_name"]' => __('First Name is not valid.'),
-            '["buyer","representative","last_name"]' => __('Last Name is not valid.'),
-            '["buyer","representative","email"]' => __('Email Address is not valid.'),
-            '["billing_address","street_address"]' => __('Street Address is not valid.'),
-            '["billing_address","city"]' => __('City is not valid.'),
-            '["billing_address","country"]' => __('Country is not valid.'),
-            '["billing_address","postal_code"]' => __('Zip/Postal Code is not valid.'),
-        ];
-        if (array_key_exists($loc_str, $fieldLocStrMapping)) {
-            return $fieldLocStrMapping[$loc_str];
+        static $fieldNames = null;
+        if ($fieldNames === null) {
+            $fieldNames = [
+                '["buyer","representative","phone_number"]' => __('Phone Number'),
+                '["buyer","company","organization_number"]' => __('Company ID'),
+                '["buyer","representative","first_name"]' => __('First Name'),
+                '["buyer","representative","last_name"]' => __('Last Name'),
+                '["buyer","representative","email"]' => __('Email Address'),
+                '["billing_address","street_address"]' => __('Street Address'),
+                '["billing_address","city"]' => __('City'),
+                '["billing_address","country"]' => __('Country'),
+                '["billing_address","postal_code"]' => __('Zip/Postal Code'),
+            ];
         }
-        return null;
+        $locStr = preg_replace('/\s+/', '', $locStr);
+        return $fieldNames[$locStr] ?? null;
+    }
+
+    /**
+     * Clean up a pydantic validation message for user display.
+     *
+     * @param string $msg Raw message, e.g. "Value error, Invalid phone number for GB: 00123456789"
+     * @return string Cleaned message, e.g. "Invalid phone number for GB: 00123456789"
+     */
+    private function cleanValidationMessage(string $msg): string
+    {
+        $msg = preg_replace('/^Value error,\s*/i', '', $msg);
+        $msg = preg_replace('/\s*\[type=.*$/', '', $msg);
+        return trim($msg);
     }
 
     /**

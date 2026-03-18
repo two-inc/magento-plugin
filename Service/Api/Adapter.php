@@ -105,6 +105,7 @@ class Adapter
             } else {
                 if ($body) {
                     $result = json_decode($body, true) ?: [];
+                    $result['http_status'] = $this->curlClient->getStatus();
                     $this->logRepository->addDebugLog(
                         sprintf('API response %s %s (status: %s)', $method, $endpoint, $this->curlClient->getStatus()),
                         $result
