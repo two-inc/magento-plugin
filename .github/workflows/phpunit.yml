@@ -22,7 +22,12 @@ jobs:
           php-version: ${{ matrix.php-version }}
 
       - name: Download PHPUnit
-        run: php -r "copy('https://phar.phpunit.de/phpunit-9.6.phar', 'phpunit.phar');"
+        env:
+          PHPUNIT_VERSION: '9.6.34'
+          PHPUNIT_SHA256: 'e7264ae61fe58a487c2bd741905b85940d8fbc2b32cf4a279949b6d9a172a06a'
+        run: |
+          php -r "copy('https://phar.phpunit.de/phpunit-${PHPUNIT_VERSION}.phar', 'phpunit.phar');"
+          echo "${PHPUNIT_SHA256}  phpunit.phar" | sha256sum -c -
 
       - name: Run tests
         run: php phpunit.phar

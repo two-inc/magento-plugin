@@ -94,10 +94,14 @@ patch: bumpver-patch
 minor: bumpver-minor
 ## Bump major version
 major: bumpver-major
+PHPUNIT_VERSION := 9.6.34
+PHPUNIT_SHA256  := e7264ae61fe58a487c2bd741905b85940d8fbc2b32cf4a279949b6d9a172a06a
+
 ## Run PHPUnit tests
 test:
 	docker run --rm -v $(CURDIR):/app -w /app php:8.1-cli bash -c \
-		"php -r \"copy('https://phar.phpunit.de/phpunit-9.6.phar', '/tmp/phpunit.phar');\" \
+		"php -r \"copy('https://phar.phpunit.de/phpunit-$(PHPUNIT_VERSION).phar', '/tmp/phpunit.phar');\" \
+		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
 		&& php /tmp/phpunit.phar"
 
 ## Format frontend assets with Prettier
