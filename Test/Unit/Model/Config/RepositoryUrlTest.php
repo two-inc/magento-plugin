@@ -121,6 +121,15 @@ class RepositoryUrlTest extends TestCase
         );
     }
 
+    public function testApiUrlDeveloperModeEnvVarOverridesExplicitMode(): void
+    {
+        $this->appState->method('getMode')->willReturn(State::MODE_DEVELOPER);
+        $this->setEnv('TWO_API_BASE_URL', 'http://localhost:8000');
+
+        // Env var takes precedence over explicit $mode in developer mode
+        $this->assertEquals('http://localhost:8000', $this->repository->getCheckoutApiUrl('sandbox'));
+    }
+
     // ── getCheckoutPageUrl ──────────────────────────────────────────────
 
     public function testPageUrlProductionMode(): void
@@ -173,5 +182,14 @@ class RepositoryUrlTest extends TestCase
             'https://checkout.staging.two.inc',
             $this->repository->getCheckoutPageUrl('staging')
         );
+    }
+
+    public function testPageUrlDeveloperModeEnvVarOverridesExplicitMode(): void
+    {
+        $this->appState->method('getMode')->willReturn(State::MODE_DEVELOPER);
+        $this->setEnv('TWO_CHECKOUT_BASE_URL', 'http://localhost:3000');
+
+        // Env var takes precedence over explicit $mode in developer mode
+        $this->assertEquals('http://localhost:3000', $this->repository->getCheckoutPageUrl('sandbox'));
     }
 }
