@@ -192,4 +192,39 @@ class RepositoryUrlTest extends TestCase
         // Env var takes precedence over explicit $mode in developer mode
         $this->assertEquals('http://localhost:3000', $this->repository->getCheckoutPageUrl('sandbox'));
     }
+
+    // ── addVersionDataInURL ─────────────────────────────────────────────
+
+    public function testAddVersionDataAppendsQueryStringToPlainUrl(): void
+    {
+        $this->scopeConfig->method('getValue')->willReturn('1.2.3');
+
+        $result = $this->repository->addVersionDataInURL('https://api.two.inc/v1/order');
+
+        $this->assertStringStartsWith('https://api.two.inc/v1/order?', $result);
+        $this->assertStringContainsString('client=Magento', $result);
+        $this->assertStringContainsString('client_v=1.2.3', $result);
+    }
+
+    public function testAddVersionDataAppendsWithAmpersandWhenQueryExists(): void
+    {
+        $this->scopeConfig->method('getValue')->willReturn('1.2.3');
+
+        $result = $this->repository->addVersionDataInURL('https://api.two.inc/v1/order?foo=bar');
+
+        $this->assertStringContainsString('?foo=bar&', $result);
+        $this->assertStringContainsString('client=Magento', $result);
+        $this->assertStringContainsString('client_v=1.2.3', $result);
+    }
+
+    public function testAddVersionDataWithNullVersionOmitsVersionParam(): void
+    {
+        $this->scopeConfig->method('getValue')->willReturn(null);
+
+        $result = $this->repository->addVersionDataInURL('https://api.two.inc/v1/order');
+
+        $this->assertStringContainsString('client=Magento', $result);
+        // http_build_query omits null values entirely
+        $this->assertStringNotContainsString('client_v', $result);
+    }
 }
