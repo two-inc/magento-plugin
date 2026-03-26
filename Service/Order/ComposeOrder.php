@@ -47,6 +47,7 @@ class ComposeOrder extends OrderService
             'tax_amount' => $this->roundAmt($order->getTaxAmount()),
             'tax_subtotals' => $this->getTaxSubtotals($lineItems),
             'terms' => $this->getPaymentTerms($order->getStoreId()),
+            'available_terms' => $this->getAvailableBuyerTerms($order->getStoreId()),
             'invoice_type' => 'FUNDED_INVOICE',
             'line_items' => $lineItems,
             'merchant_order_id' => (string)($order->getIncrementId()),
@@ -83,7 +84,10 @@ class ComposeOrder extends OrderService
 
 
     /**
-     * Get payment terms for Two API
+     * Get payment terms for Two API.
+     *
+     * Returns the default term for the order. The full set of available terms
+     * is communicated separately so the buyer can choose during checkout.
      *
      * @param int|null $storeId
      * @return array
@@ -91,11 +95,11 @@ class ComposeOrder extends OrderService
     private function getPaymentTerms(?int $storeId = null): array
     {
         $termsType = $this->configRepository->getPaymentTermsType($storeId);
-        $durationDays = $this->configRepository->getPaymentTermsDurationDays($storeId);
+        $defaultDays = $this->configRepository->getDefaultPaymentTerm($storeId);
 
         $terms = [
             'type' => 'NET_TERMS',
-            'duration_days' => (int)$durationDays
+            'duration_days' => $defaultDays,
         ];
 
         if ($termsType === 'end_of_month') {
@@ -103,5 +107,31 @@ class ComposeOrder extends OrderService
         }
 
         return $terms;
+    }
+
+    /**
+     * Get all available buyer terms for the checkout term selector.
+     *
+     * @param int|null $storeId
+     * @return array
+     */
+    private function getAvailableBuyerTerms(?int $storeId = null): array
+    {
+        $termsType = $this->configRepository->getPaymentTermsType($storeId);
+        $allTerms = $this->configRepository->getAllBuyerTerms($storeId);
+
+        $available = [];
+        foreach ($allTerms as $days) {
+            $term = [
+                'type' => 'NET_TERMS',
+                'duration_days' => $days,
+            ];
+            if ($termsType === 'end_of_month') {
+                $term['duration_days_calculated_from'] = 'END_OF_MONTH';
+            }
+            $available[] = $term;
+        }
+
+        return $available;
     }
 }

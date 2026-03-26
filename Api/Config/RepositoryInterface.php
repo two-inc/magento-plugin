@@ -40,8 +40,20 @@ interface RepositoryInterface
     public const XML_PATH_ENABLE_PO_NUMBER = 'payment/two_payment/enable_po_number';
     public const XML_PATH_PAYMENT_TERMS_TYPE = 'payment/two_payment/payment_terms_type';
     public const XML_PATH_PAYMENT_TERMS_DURATION_DAYS = 'payment/two_payment/payment_terms_duration_days';
+    public const XML_PATH_PAYMENT_TERMS = 'payment/two_payment/payment_terms';
+    public const XML_PATH_DEFAULT_PAYMENT_TERM = 'payment/two_payment/default_payment_term';
+    public const XML_PATH_SURCHARGE_TYPE = 'payment/two_payment/surcharge_type';
+    public const XML_PATH_SURCHARGE_DIFFERENTIAL = 'payment/two_payment/surcharge_differential';
+    public const XML_PATH_SURCHARGE_LINE_DESCRIPTION = 'payment/two_payment/surcharge_line_description';
+    public const XML_PATH_SURCHARGE_SHOW_TAX_RATE = 'payment/two_payment/surcharge_show_tax_rate';
+    public const XML_PATH_SURCHARGE_TAX_RATE = 'payment/two_payment/surcharge_tax_rate';
     public const XML_PATH_VERSION = 'payment/two_payment/version';
     public const XML_PATH_DEBUG = 'payment/two_payment/debug';
+
+    /** Configurable limits — override in fork */
+    public const AVAILABLE_PAYMENT_TERMS = [14, 30, 60, 90];
+    public const SURCHARGE_FIXED_MAX = 100;
+    public const SURCHARGE_PERCENTAGE_MAX = 100;
 
     /** Weight unit */
     public const XML_PATH_WEIGHT_UNIT = 'general/locale/weight_unit';
@@ -263,11 +275,84 @@ interface RepositoryInterface
     public function getPaymentTermsType(?int $storeId = null): string;
 
     /**
-     * Get payment terms duration days
+     * Get payment terms duration days (custom term, 0 = not set)
      *
      * @param int|null $storeId
      *
      * @return int
      */
     public function getPaymentTermsDurationDays(?int $storeId = null): int;
+
+    /**
+     * Get selected payment terms from multiselect
+     *
+     * @param int|null $storeId
+     *
+     * @return array
+     */
+    public function getPaymentTerms(?int $storeId = null): array;
+
+    /**
+     * Get all buyer-facing terms (union of multiselect + custom duration)
+     *
+     * @param int|null $storeId
+     *
+     * @return array
+     */
+    public function getAllBuyerTerms(?int $storeId = null): array;
+
+    /**
+     * Get default payment term
+     *
+     * @param int|null $storeId
+     *
+     * @return int
+     */
+    public function getDefaultPaymentTerm(?int $storeId = null): int;
+
+    /**
+     * Get surcharge type
+     *
+     * @param int|null $storeId
+     *
+     * @return string
+     */
+    public function getSurchargeType(?int $storeId = null): string;
+
+    /**
+     * Check if differential surcharge is enabled
+     *
+     * @param int|null $storeId
+     *
+     * @return bool
+     */
+    public function isSurchargeDifferential(?int $storeId = null): bool;
+
+    /**
+     * Get surcharge line item description
+     *
+     * @param int|null $storeId
+     *
+     * @return string
+     */
+    public function getSurchargeLineDescription(?int $storeId = null): string;
+
+    /**
+     * Get surcharge tax rate (percentage)
+     *
+     * @param int|null $storeId
+     *
+     * @return float
+     */
+    public function getSurchargeTaxRate(?int $storeId = null): float;
+
+    /**
+     * Get surcharge config for a specific term
+     *
+     * @param int $days
+     * @param int|null $storeId
+     *
+     * @return array{percentage: int, fixed: int, limit: float}
+     */
+    public function getSurchargeConfig(int $days, ?int $storeId = null): array;
 }

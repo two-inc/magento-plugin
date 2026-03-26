@@ -140,6 +140,164 @@
                     <config_path>payment/two_payment/enable_invoice_emails</config_path>
                 </field>
             </group>
+            <group id="payment_terms" translate="label" type="text" sortOrder="25" showInDefault="1" showInWebsite="1"
+                   showInStore="1">
+                <label>Payment Terms</label>
+                <field id="payment_terms" translate="label comment" type="multiselect" sortOrder="10" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Payment Terms</label>
+                    <comment>Select the payment term(s) you want to offer. If a custom duration is set below, this selection is optional.</comment>
+                    <source_model>Two\Gateway\Model\Config\Source\AvailablePaymentTerms</source_model>
+                    <can_be_empty>1</can_be_empty>
+                    <config_path>payment/two_payment/payment_terms</config_path>
+                </field>
+                <field id="payment_terms_duration_days" translate="label comment" type="text" sortOrder="20" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Custom Payment Term (days)</label>
+                    <comment>Optional. Enter a custom number of days to offer alongside the selected terms above.</comment>
+                    <validate>validate-digits validate-zero-or-greater</validate>
+                    <config_path>payment/two_payment/payment_terms_duration_days</config_path>
+                </field>
+                <field id="payment_terms_type" translate="label comment" type="select" sortOrder="30" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Payment Terms Type</label>
+                    <comment><![CDATA[<strong>Standard:</strong> Payment due after a fixed number of days from fulfillment.<br/><strong>End of Month:</strong> Payment due at the end of month plus additional days from fulfillment.]]></comment>
+                    <source_model>Two\Gateway\Model\Config\Source\PaymentTermsType</source_model>
+                    <config_path>payment/two_payment/payment_terms_type</config_path>
+                </field>
+                <field id="default_payment_term" translate="label comment" type="select" sortOrder="40" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Default Payment Term</label>
+                    <comment>Select the payment term that will be automatically selected for your customer.</comment>
+                    <source_model>Two\Gateway\Model\Config\Source\AvailablePaymentTerms</source_model>
+                    <config_path>payment/two_payment/default_payment_term</config_path>
+                </field>
+                <field id="surcharge_type" translate="label comment" type="select" sortOrder="50" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Surcharge Payment Method</label>
+                    <comment>Select a method to surcharge your customer.</comment>
+                    <source_model>Two\Gateway\Model\Config\Source\SurchargeType</source_model>
+                    <config_path>payment/two_payment/surcharge_type</config_path>
+                </field>
+                <field id="surcharge_differential" translate="label comment" type="select" sortOrder="60" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Only surcharge term extensions</label>
+                    <comment>When enabled, surcharge applies only to the additional cost of terms longer than the default. Buyers selecting the default term pay no surcharge.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/two_payment/surcharge_differential</config_path>
+                </field>
+                <field id="surcharge_line_description" translate="label comment" type="text" sortOrder="70" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Surcharge Line Description</label>
+                    <comment>Description shown to the buyer for the surcharge line item.</comment>
+                    <config_path>payment/two_payment/surcharge_line_description</config_path>
+                </field>
+                <field id="surcharge_show_tax_rate" translate="label comment" type="select" sortOrder="80" showInDefault="1"
+                       showInWebsite="1" showInStore="1">
+                    <label>Configure Surcharge Tax Rate</label>
+                    <comment>Enable to configure the tax rate applied to surcharges.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/two_payment/surcharge_show_tax_rate</config_path>
+                </field>
+                <field id="surcharge_tax_rate" translate="label comment" type="text" sortOrder="90" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Surcharge Tax Rate (%)</label>
+                    <comment>Tax rate applied to the surcharge. Payment service fees are generally tax-exempt.</comment>
+                    <validate>validate-number validate-zero-or-greater</validate>
+                    <depends>
+                        <field id="surcharge_show_tax_rate">1</field>
+                    </depends>
+                    <config_path>payment/two_payment/surcharge_tax_rate</config_path>
+                </field>
+                <!-- Per-term surcharge fields: 14 days -->
+                <field id="surcharge_14_percentage" translate="label comment" type="text" sortOrder="100" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>14 days - Payment Surcharge percentage</label>
+                    <comment>Enter the percentage of the fee Two charges you want to charge your customer. E.g.: 25, your customer pays 25% of the fee and you pay the remaining 75%.</comment>
+                    <validate>validate-digits validate-zero-or-greater</validate>
+                    <config_path>payment/two_payment/surcharge_14_percentage</config_path>
+                </field>
+                <field id="surcharge_14_limit" translate="label comment" type="text" sortOrder="101" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>14 days - Payment Surcharge limit</label>
+                    <comment>Enter the maximum amount that you want to charge your customer.</comment>
+                    <validate>validate-number validate-zero-or-greater</validate>
+                    <config_path>payment/two_payment/surcharge_14_limit</config_path>
+                </field>
+                <field id="surcharge_14_fixed" translate="label comment" type="text" sortOrder="102" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>14 days - Payment Surcharge fixed amount</label>
+                    <comment>Enter the amount you want to charge your customer.</comment>
+                    <validate>validate-digits validate-zero-or-greater</validate>
+                    <config_path>payment/two_payment/surcharge_14_fixed</config_path>
+                </field>
+                <!-- Per-term surcharge fields: 30 days -->
+                <field id="surcharge_30_percentage" translate="label comment" type="text" sortOrder="110" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>30 days - Payment Surcharge percentage</label>
+                    <comment>Enter the percentage of the fee Two charges you want to charge your customer. E.g.: 25, your customer pays 25% of the fee and you pay the remaining 75%.</comment>
+                    <validate>validate-digits validate-zero-or-greater</validate>
+                    <config_path>payment/two_payment/surcharge_30_percentage</config_path>
+                </field>
+                <field id="surcharge_30_limit" translate="label comment" type="text" sortOrder="111" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>30 days - Payment Surcharge limit</label>
+                    <comment>Enter the maximum amount that you want to charge your customer.</comment>
+                    <validate>validate-number validate-zero-or-greater</validate>
+                    <config_path>payment/two_payment/surcharge_30_limit</config_path>
+                </field>
+                <field id="surcharge_30_fixed" translate="label comment" type="text" sortOrder="112" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>30 days - Payment Surcharge fixed amount</label>
+                    <comment>Enter the amount you want to charge your customer.</comment>
+                    <validate>validate-digits validate-zero-or-greater</validate>
+                    <config_path>payment/two_payment/surcharge_30_fixed</config_path>
+                </field>
+                <!-- Per-term surcharge fields: 60 days -->
+                <field id="surcharge_60_percentage" translate="label comment" type="text" sortOrder="120" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>60 days - Payment Surcharge percentage</label>
+                    <comment>Enter the percentage of the fee Two charges you want to charge your customer. E.g.: 25, your customer pays 25% of the fee and you pay the remaining 75%.</comment>
+                    <validate>validate-digits validate-zero-or-greater</validate>
+                    <config_path>payment/two_payment/surcharge_60_percentage</config_path>
+                </field>
+                <field id="surcharge_60_limit" translate="label comment" type="text" sortOrder="121" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>60 days - Payment Surcharge limit</label>
+                    <comment>Enter the maximum amount that you want to charge your customer.</comment>
+                    <validate>validate-number validate-zero-or-greater</validate>
+                    <config_path>payment/two_payment/surcharge_60_limit</config_path>
+                </field>
+                <field id="surcharge_60_fixed" translate="label comment" type="text" sortOrder="122" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>60 days - Payment Surcharge fixed amount</label>
+                    <comment>Enter the amount you want to charge your customer.</comment>
+                    <validate>validate-digits validate-zero-or-greater</validate>
+                    <config_path>payment/two_payment/surcharge_60_fixed</config_path>
+                </field>
+                <!-- Per-term surcharge fields: 90 days -->
+                <field id="surcharge_90_percentage" translate="label comment" type="text" sortOrder="130" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>90 days - Payment Surcharge percentage</label>
+                    <comment>Enter the percentage of the fee Two charges you want to charge your customer. E.g.: 25, your customer pays 25% of the fee and you pay the remaining 75%.</comment>
+                    <validate>validate-digits validate-zero-or-greater</validate>
+                    <config_path>payment/two_payment/surcharge_90_percentage</config_path>
+                </field>
+                <field id="surcharge_90_limit" translate="label comment" type="text" sortOrder="131" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>90 days - Payment Surcharge limit</label>
+                    <comment>Enter the maximum amount that you want to charge your customer.</comment>
+                    <validate>validate-number validate-zero-or-greater</validate>
+                    <config_path>payment/two_payment/surcharge_90_limit</config_path>
+                </field>
+                <field id="surcharge_90_fixed" translate="label comment" type="text" sortOrder="132" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>90 days - Payment Surcharge fixed amount</label>
+                    <comment>Enter the amount you want to charge your customer.</comment>
+                    <validate>validate-digits validate-zero-or-greater</validate>
+                    <config_path>payment/two_payment/surcharge_90_fixed</config_path>
+                </field>
+            </group>
             <group id="advanced" translate="label" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>Advanced</label>
@@ -190,20 +348,6 @@
                     <comment>Add optional tax_subtotals metadata to order creation payload to enforce additional validation (recommended).</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/enable_tax_subtotals</config_path>
-                </field>
-                <field id="payment_terms_type" translate="label" type="select" sortOrder="50" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Payment Terms Type</label>
-                    <comment><![CDATA[<strong>Standard:</strong> Payment due after a fixed number of days from fulfillment.<br/><strong>End of Month:</strong> Payment due at the end of month plus additional days from fulfillment.]]></comment>
-                    <source_model>Two\Gateway\Model\Config\Source\PaymentTermsType</source_model>
-                    <config_path>payment/two_payment/payment_terms_type</config_path>
-                </field>
-                <field id="payment_terms_duration_days" translate="label" type="select" sortOrder="60" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Payment Terms Duration</label>
-                    <comment><![CDATA[Select the number of days for payment terms. Available options depend on your selected Payment Term Type above.]]></comment>
-                    <source_model>Two\Gateway\Model\Config\Source\PaymentTermsDurationDays</source_model>
-                    <config_path>payment/two_payment/payment_terms_duration_days</config_path>
                 </field>
                 <field id="sort_order" translate="label comment" type="text" sortOrder="70" showInDefault="1" showInWebsite="1"
                        showInStore="1" canRestore="1">
