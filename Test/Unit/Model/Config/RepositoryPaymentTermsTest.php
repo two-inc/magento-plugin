@@ -8,6 +8,7 @@ use Magento\Framework\App\ProductMetadataInterface;
 use Magento\Framework\App\State;
 use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\UrlInterface;
+use Magento\Tax\Api\TaxCalculationInterface;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Model\Config\Repository;
 
@@ -16,19 +17,24 @@ class RepositoryPaymentTermsTest extends TestCase
     /** @var ScopeConfigInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $scopeConfig;
 
+    /** @var TaxCalculationInterface|\PHPUnit\Framework\MockObject\MockObject */
+    private $taxCalculation;
+
     /** @var Repository */
     private $repository;
 
     protected function setUp(): void
     {
         $this->scopeConfig = $this->createMock(ScopeConfigInterface::class);
+        $this->taxCalculation = $this->createMock(TaxCalculationInterface::class);
 
         $this->repository = new Repository(
             $this->scopeConfig,
             $this->createMock(EncryptorInterface::class),
             $this->createMock(UrlInterface::class),
             $this->createMock(ProductMetadataInterface::class),
-            $this->createMock(State::class)
+            $this->createMock(State::class),
+            $this->taxCalculation
         );
     }
 
@@ -198,18 +204,38 @@ class RepositoryPaymentTermsTest extends TestCase
 
     // ── getSurchargeTaxRate ──────────────────────────────────────────
 
-    public function testGetSurchargeTaxRateReturnsZeroWhenHidden(): void
+    public function testGetSurchargeTaxRateReturnsExplicitValue(): void
     {
-        $this->stubFlags(['payment/two_payment/surcharge_show_tax_rate' => false]);
-        $this->stubConfig(['payment/two_payment/surcharge_tax_rate' => '25']);
+        $this->stubConfig(['payment/two_payment/surcharge_tax_rate' => '21']);
+        $this->assertEquals(21.0, $this->repository->getSurchargeTaxRate());
+    }
+
+    public function testGetSurchargeTaxRateExplicitZeroMeansTaxExempt(): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_tax_rate' => '0']);
         $this->assertEquals(0.0, $this->repository->getSurchargeTaxRate());
     }
 
-    public function testGetSurchargeTaxRateReturnsValueWhenShown(): void
+    public function testGetSurchargeTaxRateFallsBackToDefaultRate(): void
     {
-        $this->stubFlags(['payment/two_payment/surcharge_show_tax_rate' => true]);
-        $this->stubConfig(['payment/two_payment/surcharge_tax_rate' => '25']);
+        $this->stubConfig([
+            'payment/two_payment/surcharge_tax_rate' => null,
+            'tax/classes/default_product_tax_class' => '2',
+        ]);
+        $this->taxCalculation->method('getDefaultCalculatedRate')
+            ->with(2, null, null)
+            ->willReturn(25.0);
+
         $this->assertEquals(25.0, $this->repository->getSurchargeTaxRate());
+    }
+
+    public function testGetSurchargeTaxRateReturnsZeroWhenNoTaxRulesConfigured(): void
+    {
+        $this->stubConfig([
+            'payment/two_payment/surcharge_tax_rate' => null,
+            'tax/classes/default_product_tax_class' => null,
+        ]);
+        $this->assertEquals(0.0, $this->repository->getSurchargeTaxRate());
     }
 
     // ── getSurchargeConfig ──────────────────────────────────────────

@@ -45,8 +45,8 @@ interface RepositoryInterface
     public const XML_PATH_SURCHARGE_TYPE = 'payment/two_payment/surcharge_type';
     public const XML_PATH_SURCHARGE_DIFFERENTIAL = 'payment/two_payment/surcharge_differential';
     public const XML_PATH_SURCHARGE_LINE_DESCRIPTION = 'payment/two_payment/surcharge_line_description';
-    public const XML_PATH_SURCHARGE_SHOW_TAX_RATE = 'payment/two_payment/surcharge_show_tax_rate';
     public const XML_PATH_SURCHARGE_TAX_RATE = 'payment/two_payment/surcharge_tax_rate';
+    public const XML_PATH_DEFAULT_PRODUCT_TAX_CLASS = 'tax/classes/default_product_tax_class';
     public const XML_PATH_VERSION = 'payment/two_payment/version';
     public const XML_PATH_DEBUG = 'payment/two_payment/debug';
 

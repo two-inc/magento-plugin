@@ -95,7 +95,7 @@ define(['jquery', 'domReady!'], function ($) {
             var surchargeFields = [
                 'surcharge_differential',
                 'surcharge_line_description',
-                'surcharge_show_tax_rate'
+                'surcharge_tax_rate'
             ];
             $.each(surchargeFields, function (_, id) {
                 hasSurcharge ? showField(id) : hideField(id);

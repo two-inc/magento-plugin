@@ -13,6 +13,7 @@ use Magento\Framework\App\State;
 use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\UrlInterface;
 use Magento\Store\Model\ScopeInterface;
+use Magento\Tax\Api\TaxCalculationInterface;
 use Two\Gateway\Api\Config\RepositoryInterface;
 
 /**
@@ -42,24 +43,32 @@ class Repository implements RepositoryInterface
     private $appState;
 
     /**
+     * @var TaxCalculationInterface
+     */
+    private $taxCalculation;
+
+    /**
      * @param ScopeConfigInterface $scopeConfig
      * @param EncryptorInterface $encryptor
      * @param UrlInterface $urlBuilder
      * @param ProductMetadataInterface $productMetadata
      * @param State $appState
+     * @param TaxCalculationInterface $taxCalculation
      */
     public function __construct(
         ScopeConfigInterface $scopeConfig,
         EncryptorInterface $encryptor,
         UrlInterface $urlBuilder,
         ProductMetadataInterface $productMetadata,
-        State $appState
+        State $appState,
+        TaxCalculationInterface $taxCalculation
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->encryptor = $encryptor;
         $this->urlBuilder = $urlBuilder;
         $this->productMetadata = $productMetadata;
         $this->appState = $appState;
+        $this->taxCalculation = $taxCalculation;
     }
 
     /**
@@ -427,10 +436,26 @@ class Repository implements RepositoryInterface
      */
     public function getSurchargeTaxRate(?int $storeId = null): float
     {
-        if (!$this->isSetFlag(self::XML_PATH_SURCHARGE_SHOW_TAX_RATE, $storeId)) {
+        $configured = $this->getConfig(self::XML_PATH_SURCHARGE_TAX_RATE, $storeId);
+        if ($configured !== null && $configured !== '') {
+            return (float)$configured;
+        }
+        return $this->getDefaultTaxRate($storeId);
+    }
+
+    /**
+     * Look up the store's default tax rate from Magento's tax rules.
+     *
+     * @param int|null $storeId
+     * @return float
+     */
+    public function getDefaultTaxRate(?int $storeId = null): float
+    {
+        $productTaxClassId = (int)$this->getConfig(self::XML_PATH_DEFAULT_PRODUCT_TAX_CLASS, $storeId);
+        if ($productTaxClassId <= 0) {
             return 0.0;
         }
-        return (float)$this->getConfig(self::XML_PATH_SURCHARGE_TAX_RATE, $storeId);
+        return (float)$this->taxCalculation->getDefaultCalculatedRate($productTaxClassId, null, $storeId);
     }
 
     /**

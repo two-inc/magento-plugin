@@ -192,21 +192,11 @@
                     <comment>Description shown to the buyer for the surcharge line item.</comment>
                     <config_path>payment/two_payment/surcharge_line_description</config_path>
                 </field>
-                <field id="surcharge_show_tax_rate" translate="label comment" type="select" sortOrder="80" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
-                    <label>Configure Surcharge Tax Rate</label>
-                    <comment>Enable to configure the tax rate applied to surcharges.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/two_payment/surcharge_show_tax_rate</config_path>
-                </field>
-                <field id="surcharge_tax_rate" translate="label comment" type="text" sortOrder="90" showInDefault="1"
+                <field id="surcharge_tax_rate" translate="label" type="text" sortOrder="90" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Surcharge Tax Rate (%)</label>
-                    <comment>Tax rate applied to the surcharge. Payment service fees are generally tax-exempt.</comment>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeTaxRate</frontend_model>
                     <validate>validate-number validate-zero-or-greater</validate>
-                    <depends>
-                        <field id="surcharge_show_tax_rate">1</field>
-                    </depends>
                     <config_path>payment/two_payment/surcharge_tax_rate</config_path>
                 </field>
                 <!-- Per-term surcharge fields: 14 days -->

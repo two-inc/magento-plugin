@@ -8,6 +8,7 @@ use Magento\Framework\App\ProductMetadataInterface;
 use Magento\Framework\App\State;
 use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\UrlInterface;
+use Magento\Tax\Api\TaxCalculationInterface;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Model\Config\Repository;
 
@@ -42,7 +43,8 @@ class RepositoryUrlTest extends TestCase
             $encryptor,
             $urlBuilder,
             $productMetadata,
-            $this->appState
+            $this->appState,
+            $this->createMock(TaxCalculationInterface::class)
         );
     }
 

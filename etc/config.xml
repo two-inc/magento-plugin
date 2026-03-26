@@ -35,8 +35,7 @@
                 <surcharge_type>none</surcharge_type>
                 <surcharge_differential>0</surcharge_differential>
                 <surcharge_line_description>Payment terms fee</surcharge_line_description>
-                <surcharge_show_tax_rate>0</surcharge_show_tax_rate>
-                <surcharge_tax_rate>0</surcharge_tax_rate>
+                <surcharge_tax_rate/>
                 <can_use_internal>0</can_use_internal>
                 <can_use_checkout>1</can_use_checkout>
                 <payment_action>authorize</payment_action>
