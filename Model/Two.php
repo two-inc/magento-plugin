@@ -325,7 +325,7 @@ class Two extends AbstractMethod
                 $reason = __('The buyer and the seller are the same company.');
             }
             if ($isClientError && in_array($errorCode, ['SCHEMA_ERROR', 'SAME_BUYER_SELLER_ERROR', 'ORDER_INVALID'])) {
-                return $reason;
+                return $reason instanceof Phrase ? $reason : __($reason);
             }
 
             // System errors — include trace ID

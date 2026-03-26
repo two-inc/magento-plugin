@@ -14,7 +14,7 @@ TWO_API_BASE_URL     ?= https://api.staging.two.inc
 TWO_CHECKOUT_BASE_URL ?= https://checkout.staging.two.inc
 TWO_STORE_COUNTRY    ?= NO
 
-.PHONY: help install configure compile run stop clean logs archive patch minor major format
+.PHONY: help install configure compile run stop clean logs archive patch minor major format test test-e2e
 
 .DEFAULT_GOAL := help
 
@@ -94,6 +94,26 @@ patch: bumpver-patch
 minor: bumpver-minor
 ## Bump major version
 major: bumpver-major
+PHPUNIT_VERSION := 9.6.34
+PHPUNIT_SHA256  := e7264ae61fe58a487c2bd741905b85940d8fbc2b32cf4a279949b6d9a172a06a
+
+## Run PHPUnit tests
+test:
+	docker run --rm -v $(CURDIR):/app -w /app php:8.1-cli bash -c \
+		"php -r \"copy('https://phar.phpunit.de/phpunit-$(PHPUNIT_VERSION).phar', '/tmp/phpunit.phar');\" \
+		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
+		&& php /tmp/phpunit.phar"
+
+## Run end-to-end API tests (requires TWO_API_KEY)
+test-e2e:
+	docker run --rm -v $(CURDIR):/app -w /app \
+		-e TWO_API_KEY=$(TWO_API_KEY) \
+		-e TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
+		php:8.1-cli bash -c \
+		"php -r \"copy('https://phar.phpunit.de/phpunit-$(PHPUNIT_VERSION).phar', '/tmp/phpunit.phar');\" \
+		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
+		&& php /tmp/phpunit.phar --testsuite E2E"
+
 ## Format frontend assets with Prettier
 format:
 	prettier -w view/frontend/web/js/

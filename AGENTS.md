@@ -98,6 +98,15 @@ bin/magento cache:flush
 # Create pub/opcache-clear.php or restart PHP-FPM
 ```
 
+## Session Artifacts
+
+This is a **public repository**. Do not commit session-specific content such as:
+-   Session summaries or transcripts
+-   Implementation plans or review notes
+-   Any file under `docs/` that contains conversation context
+
+Use agent memory (e.g. `~/.claude/projects/` or equivalent) for session persistence instead. Plans can be saved locally and stashed but must not be committed.
+
 ### Common Issues
 
 1. **Template not found error**: Run `setup:di:compile` and clear opcache
