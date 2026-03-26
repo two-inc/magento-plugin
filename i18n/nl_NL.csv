@@ -159,3 +159,5 @@ Percentage,Percentage
 "Enter the percentage of the fee Two charges you want to charge your customer. E.g.: 25, your customer pays 25% of the fee and you pay the remaining 75%.","Vul hier in welk percentage van de fee die Two in rekening brengt je wilt doorberekenen aan je klant. Bijvoorbeeld: 25, je klant betaalt 25% van de fee, de resterende 75% betaal je zelf."
 "Enter the maximum amount that you want to charge your customer.","Vul hier het maximale bedrag in dat je wilt doorberekenen aan je klant."
 "Enter the amount you want to charge your customer.","Vul hier in welk bedrag je in rekening wilt brengen bij je klant."
+"Payment Term","Betaaltermijn"
+days,dagen

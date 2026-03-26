@@ -159,3 +159,5 @@ Percentage,Procent
 "Enter the percentage of the fee Two charges you want to charge your customer. E.g.: 25, your customer pays 25% of the fee and you pay the remaining 75%.","Ange procentandelen av avgiften som Two debiterar som du vill debitera din kund. T.ex.: 25, din kund betalar 25 % av avgiften och du betalar resterande 75 %."
 "Enter the maximum amount that you want to charge your customer.","Ange det maximala belopp du vill debitera din kund."
 "Enter the amount you want to charge your customer.","Ange beloppet du vill debitera din kund."
+"Payment Term","Betalningsvillkor"
+days,dagar
