@@ -76,7 +76,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('getPaymentTermsType')->willReturn('standard');
         $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
         $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(percentage: 50);
+        $this->stubSurchargeConfig(50);
 
         // Merchant fee is 35.00
         $this->adapter->method('execute')->willReturn(['total_fee' => 35.0]);
@@ -96,7 +96,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('getPaymentTermsType')->willReturn('standard');
         $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
         $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(fixed: 15);
+        $this->stubSurchargeConfig(0, 15);
 
         $this->adapter->method('execute')->willReturn(['total_fee' => 35.0]);
 
@@ -114,7 +114,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('getPaymentTermsType')->willReturn('standard');
         $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
         $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(percentage: 50, fixed: 5);
+        $this->stubSurchargeConfig(50, 5);
 
         $this->adapter->method('execute')->willReturn(['total_fee' => 30.0]);
 
@@ -133,7 +133,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('getPaymentTermsType')->willReturn('standard');
         $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
         $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(percentage: 50, fixed: 25, limit: 30);
+        $this->stubSurchargeConfig(50, 25, 30);
 
         // 50% of 100 = 50 + 25 = 75, capped to 30
         $this->adapter->method('execute')->willReturn(['total_fee' => 100.0]);
@@ -152,7 +152,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('getPaymentTermsType')->willReturn('standard');
         $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
         $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(percentage: 33);
+        $this->stubSurchargeConfig(33);
 
         // 33% of 17.0 = 5.61
         $this->adapter->method('execute')->willReturn(['total_fee' => 17.0]);
@@ -169,7 +169,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('getPaymentTermsType')->willReturn('standard');
         $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
         $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(percentage: 25);
+        $this->stubSurchargeConfig(25);
 
         // 25% of 17.01 = 4.2525, rounds up to 4.26
         $this->adapter->method('execute')->willReturn(['total_fee' => 17.01]);
@@ -189,7 +189,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('getPaymentTermsType')->willReturn('standard');
         $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
         $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(percentage: 50);
+        $this->stubSurchargeConfig(50);
 
         // Buyer selects default term — zero surcharge regardless of config
         $result = $this->calculator->calculate(1000.0, 30, 'NO');
@@ -205,7 +205,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('getPaymentTermsType')->willReturn('standard');
         $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
         $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(percentage: 75);
+        $this->stubSurchargeConfig(75);
 
         // Two API calls: first for selected term (60 days), then for default (30 days)
         $this->adapter->method('execute')
@@ -229,7 +229,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('getPaymentTermsType')->willReturn('end_of_month');
         $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
         $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(percentage: 100);
+        $this->stubSurchargeConfig(100);
 
         $this->adapter->expects($this->once())
             ->method('execute')
@@ -256,7 +256,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('getPaymentTermsType')->willReturn('standard');
         $this->config->method('getSurchargeLineDescription')->willReturn('Extended terms fee');
         $this->config->method('getSurchargeTaxRate')->willReturn(25.0);
-        $this->stubSurchargeConfig(fixed: 10);
+        $this->stubSurchargeConfig(0, 10);
 
         $this->adapter->method('execute')->willReturn(['total_fee' => 30.0]);
 
