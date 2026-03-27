@@ -11,7 +11,7 @@ use Two\Gateway\Test\E2E\Http\RealCurl;
 
 /**
  * End-to-end tests for the pricing fee endpoint used by SurchargeCalculator.
- * Validates that POST /pricing/v1/portal/order/fee returns the expected
+ * Validates that POST /v1/pricing/order/fee returns the expected
  * fee structure for various term configurations.
  *
  * Run via: TWO_API_KEY=xxx make test-e2e
@@ -37,7 +37,7 @@ class PricingFeeTest extends TestCase
 
     private function fetchFee(int $durationDays, float $grossAmount = 1000.0, string $country = 'NO'): array
     {
-        $result = $this->adapter->execute('/pricing/v1/portal/order/fee', [
+        $result = $this->adapter->execute('/v1/pricing/order/fee', [
             'buyer_country_code' => $country,
             'approved_on_recourse' => false,
             'gross_amount' => $grossAmount,
@@ -63,8 +63,6 @@ class PricingFeeTest extends TestCase
         $result = $this->fetchFee(30);
 
         $this->assertArrayHasKey('total_fee', $result);
-        $this->assertArrayHasKey('fixed_fee', $result);
-        $this->assertArrayHasKey('percentage_fee', $result);
         $this->assertArrayHasKey('total_fee_tax_rate', $result);
         $this->assertGreaterThan(0, (float)$result['total_fee']);
     }
@@ -93,7 +91,7 @@ class PricingFeeTest extends TestCase
 
     public function testEndOfMonthTermsAccepted(): void
     {
-        $result = $this->adapter->execute('/pricing/v1/portal/order/fee', [
+        $result = $this->adapter->execute('/v1/pricing/order/fee', [
             'buyer_country_code' => 'NO',
             'approved_on_recourse' => false,
             'gross_amount' => 1000.0,

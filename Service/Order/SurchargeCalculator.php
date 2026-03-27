@@ -16,7 +16,7 @@ use Two\Gateway\Service\Api\Adapter;
  * Calculates buyer surcharge based on merchant config and API fee data.
  *
  * Flow:
- * 1. Fetch merchant fee from POST /pricing/v1/portal/order/fee
+ * 1. Fetch merchant fee from POST /v1/pricing/order/fee
  * 2. If differential mode, also fetch fee for default term and use delta
  * 3. Apply merchant's surcharge config (percentage, fixed, limit)
  * 4. Round up to next cent
@@ -151,7 +151,7 @@ class SurchargeCalculator
             $orderTerms['duration_days_calculated_from'] = 'END_OF_MONTH';
         }
 
-        $response = $this->apiAdapter->execute('/pricing/v1/portal/order/fee', [
+        $response = $this->apiAdapter->execute('/v1/pricing/order/fee', [
             'buyer_country_code' => $buyerCountry,
             'approved_on_recourse' => false,
             'gross_amount' => $grossAmount,

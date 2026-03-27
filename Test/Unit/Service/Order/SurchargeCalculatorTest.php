@@ -234,7 +234,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->adapter->expects($this->once())
             ->method('execute')
             ->with(
-                '/pricing/v1/portal/order/fee',
+                '/v1/pricing/order/fee',
                 $this->callback(function ($payload) {
                     return $payload['order_terms']['duration_days_calculated_from'] === 'END_OF_MONTH'
                         && $payload['order_terms']['duration_days'] === 60;

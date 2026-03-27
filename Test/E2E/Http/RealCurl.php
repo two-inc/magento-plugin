@@ -82,5 +82,7 @@ class RealCurl extends Curl
         $this->responseHeaders = $responseHeaders;
 
         curl_close($ch);
+        $this->headers = [];
+        $this->options = [];
     }
 }
