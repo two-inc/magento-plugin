@@ -10,8 +10,9 @@ TAG        := php82-fpm-magento2.4.6-sample-data
 PORT       := 1234
 URL        := http://localhost:$(PORT)/
 
-TWO_API_BASE_URL     ?= https://api.staging.two.inc
-TWO_CHECKOUT_BASE_URL ?= https://checkout.staging.two.inc
+TWO_ENV              := $(shell gcloud config get-value account 2>/dev/null | grep -q '@two\.inc$$' && echo staging || echo sandbox)
+TWO_API_BASE_URL     ?= https://api.$(TWO_ENV).two.inc
+TWO_CHECKOUT_BASE_URL ?= https://checkout.$(TWO_ENV).two.inc
 TWO_STORE_COUNTRY    ?= NO
 export PORT
 
@@ -28,7 +29,6 @@ install: clean
 	docker run -d \
 		--name=$(CONTAINER) \
 		-p $(PORT):80 \
-		-p 9003:9003 \
 		--add-host=host.docker.internal:host-gateway \
 		-e URL=$(URL) \
 		-e TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
@@ -43,7 +43,7 @@ install: clean
 	docker exec $(CONTAINER) php bin/magento setup:upgrade
 	docker exec $(CONTAINER) php bin/magento deploy:mode:set developer
 	docker exec $(CONTAINER) php bin/magento setup:di:compile
-	$(MAKE) configure TWO_API_KEY=dummy-dev-key
+	$(MAKE) configure TWO_API_KEY=$(or $(TWO_API_KEY),dummy-dev-key)
 	docker exec $(CONTAINER) bash /data/extensions/workdir/dev/install-xdebug
 	@echo ""
 	@echo "========================================="
@@ -87,9 +87,9 @@ run:
 debug:
 	docker start $(CONTAINER)
 	@docker exec $(CONTAINER) bash -c '\
-		INI=$$(find /usr/local/etc/php -name "*xdebug*" 2>/dev/null | head -1); \
-		if [ -n "$$INI" ]; then \
-			sed -i "s/xdebug.mode=off/xdebug.mode=debug/" "$$INI"; \
+		INIS=$$(find /etc/php /usr/local/etc/php -name "*xdebug*" 2>/dev/null); \
+		if [ -n "$$INIS" ]; then \
+			echo "$$INIS" | xargs sed -i "s/xdebug.mode=off/xdebug.mode=debug/"; \
 			echo "Xdebug activated (listening on port 9003)"; \
 		else \
 			echo "Xdebug not installed (run: make install)"; \
@@ -128,7 +128,7 @@ proxy:
 
 ## Tail Two plugin logs
 logs:
-	docker exec $(CONTAINER) tail -f var/log/two/debug.log var/log/two/error.log
+	docker exec $(CONTAINER) bash -c 'mkdir -p var/log/two && touch var/log/two/debug.log var/log/two/error.log && tail -f var/log/two/debug.log var/log/two/error.log'
 
 # ==============================================================================
 # Release

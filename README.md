@@ -69,11 +69,19 @@ After install, Magento is available at http://localhost:1234/ (admin: http://loc
 
 To use a different port: `make install PORT=5678`.
 
+By default, the plugin points at Two's staging environment for `@two.inc` gcloud accounts, or sandbox for everyone else. You can override the API and checkout URLs explicitly:
+
+```bash
+make install TWO_API_BASE_URL=http://localhost:8000 TWO_CHECKOUT_BASE_URL=http://localhost:3000
+```
+
+In production mode these are ignored — the URLs are derived from the `mode` setting in the admin panel (sandbox/staging/production).
+
 Run `make help` to see all available targets.
 
 ### Debugging
 
-Xdebug is installed automatically by `make install` (disabled by default, no performance impact). To activate it:
+Xdebug is installed automatically by `make install` but is disabled by default. To start in debug mode:
 
 ```bash
 make debug
@@ -86,7 +94,7 @@ This activates Xdebug (port 9003) and disables all Magento caches for hot reload
 1. Install the [PHP Debug](https://marketplace.visualstudio.com/items?itemName=xdebug.php-debug) extension
 2. Press **F5** to start listening (uses the included `.vscode/launch.json`)
 3. Click the gutter next to any line in the plugin code to set a breakpoint
-4. Browse to the Magento store with `?XDEBUG_TRIGGER=1` appended to the URL (or install the [Xdebug Helper](https://chrome.google.com/webstore/detail/xdebug-helper/eadndfjplgieldjbigjakmdgkmoaaaoc) browser extension to toggle this automatically)
+4. Browse to the Magento store — every request will trigger the debugger automatically
 
 The debugger will pause at your breakpoint with full access to variables, call stack, and step-through execution.
 

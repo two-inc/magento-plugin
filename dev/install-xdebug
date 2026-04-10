@@ -1,6 +1,6 @@
 #!/bin/bash
 # Install and configure Xdebug inside the Magento container.
-# Called by: make install DEBUG=1
+# Called by: make install
 set -e
 
 PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION . "." . PHP_MINOR_VERSION;')
@@ -17,18 +17,22 @@ if [ -z "$XDEBUG_SO" ]; then
 fi
 
 # Disable the apt-installed ini (it defaults to mode=develop)
-find /etc/php -name '*xdebug.ini' -exec rm -f {} + 2>/dev/null
+find /etc/php -name '*xdebug*' -exec rm -f {} + 2>/dev/null
 
-# Write our config with mode=off (activated by make debug)
-CONF_DIR=$(php -r 'echo PHP_CONFIG_FILE_SCAN_DIR;')
-cat > "${CONF_DIR}/99-xdebug.ini" << EOF
-[xdebug]
+# Write our config to both CLI and FPM conf.d (mode=off, activated by make debug)
+XDEBUG_INI="[xdebug]
 zend_extension=${XDEBUG_SO}
 xdebug.mode=off
-xdebug.start_with_request=trigger
+xdebug.start_with_request=yes
 xdebug.client_host=host.docker.internal
 xdebug.client_port=9003
-xdebug.idekey=VSCODE
-EOF
+xdebug.idekey=VSCODE"
+
+for CONF_DIR in /etc/php/${PHP_VERSION}/cli/conf.d /etc/php/${PHP_VERSION}/fpm/conf.d; do
+    if [ -d "$CONF_DIR" ]; then
+        echo "$XDEBUG_INI" > "${CONF_DIR}/99-xdebug.ini"
+        echo "  wrote ${CONF_DIR}/99-xdebug.ini"
+    fi
+done
 
 php -r 'echo "Xdebug " . phpversion("xdebug") . " installed (mode=off)\n";'
