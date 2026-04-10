@@ -19,6 +19,7 @@ composer.lock
 
 # Local dev config
 .env.local
+.frpc.pid
 
 # Python
 *.venv

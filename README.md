@@ -1,83 +1,146 @@
 <p align="center">
   <img src="view/frontend/web/images/logo.svg" width="128" height="128"/>
 </p>
-<h1 align="center">Two payment plugin for Magento 2.3.3 and higher</h1>
-Sell to your business customers in one click. The Two payment Module simplifies B2B shopping, making it easy and safe for Merchants to offer invoices as payment method.
+<h1 align="center">Two — Magento 2 Payment Plugin</h1>
 
-### Benefits for Merchants
+B2B Buy Now, Pay Later for Magento 2.3.3+. This plugin integrates [Two](https://www.two.inc/) as a payment method, letting merchants offer invoice-based checkout with flexible net terms.
 
-Two allows you to offer a seamless Buy now, Pay later option for your business customers which will enhance the buyer journey and reduce the manual work related to doing business with other Businesses.
+## What it does
 
-Two will:
+**For merchants:**
 
-- Run an instant credit check on your customers
-- Allow you to enable a B2B Guest Checkout - increases conversion by up to 36%
-- Offer customers flexible invoice payment terms from 14 to 90 days
-- Automatically issue an invoice - already integrated with PEPPOL e-invoicing network
-- Handle partial capture and refunds in a click
-- You get paid instantly on fulfilment of an order
+- Instant credit checks on business customers
+- B2B guest checkout (up to 36% conversion uplift)
+- Flexible invoice terms from 14 to 90 days
+- Automatic invoicing via the [PEPPOL](https://peppol.eu/) e-invoicing network
+- Partial capture and refunds
+- Instant payment on fulfilment — Two assumes the credit risk
 
-Completely remove any credit risk - if the customer doesn't repay, it's Two's problem, and not yours.
+**For buyers:**
 
-### Benefit for customers
+- Frictionless checkout with no onboarding
+- Flexible repayment terms
+- PDF and electronic invoicing straight to their ERP
 
-**Two Buy now, Pay later** offers your business customers the option to pay with a frictionless invoice solution that will send the invoice directly to their accountant through electronic invoicing.
+## Installation
 
-- Total flexibility on repayment terms - customers can choose to repay on any timescale they like
-- Instantly checkout without any burdensome onboarding
-- PDF + Electronic invoicing using the [PEPPOL](https://peppol.eu/) framework - invoices flow straight to the ERP
-
-To make the integration process as easy as possible for you, Two.inc offers an easy integration using this Magento® 2 Plugin. Before you start up the installation process, we recommend that you make a backup of your webshop files, as well as the database.
-
-### Installation using Composer
-
-Magento® 2 use the Composer to manage the module package and the library. Composer is a dependency manager for PHP. Composer declare the libraries your project depends on and it will manage (install/update) them for you.
-
-Check if your server has composer installed by running the following command:
+Install via Composer:
 
 ```bash
-composer –v
+composer require two-inc/magento2
+php bin/magento module:enable Two_Gateway
+php bin/magento setup:upgrade
+php bin/magento cache:flush
 ```
 
-If your server doesn’t have composer installed, you can easily install it by using this manual: <https://getcomposer.org/doc/00-intro.md>
+In production mode, also deploy static content:
 
-Step-by-step to install the Magento® 2 extension through Composer:
+```bash
+php bin/magento setup:static-content:deploy
+```
 
-1. Connect to your server running Magento® 2 using SSH or other method (make sure you have access to the command line).
-2. Locate your Magento® 2 project root.
-3. Install the Magento® 2 extension through composer and wait till it's completed:
+Then configure the plugin under **Stores > Configuration > Sales > Payment Methods > Two**.
 
-    ```bash
-    composer require two-inc/magento2
-    ```
+## Development
 
-4. Once completed run the Magento® module enable command:
+The development environment runs Magento in Docker with the plugin bind-mounted, so file changes are reflected immediately.
 
-    ```bash
-    php bin/magento module:enable Two_Gateway
-    ```
+### Prerequisites
 
-5. After that run the Magento® upgrade and clean the caches:
+- Docker
+- Make
+- A Two API key ([request sandbox access](https://www.two.inc/))
 
-    ```bash
-    php bin/magento setup:upgrade
-    php bin/magento cache:flush
-    ```
+### Quick start
 
-6. If Magento® is running in production mode you also need to redeploy the static content:
+```bash
+# Create the Magento container and install the plugin
+make install
 
-    ```bash
-    php bin/magento setup:static-content:deploy
-    ```
+# Configure with your API key
+make configure TWO_API_KEY=<your-key>
 
-7. After the installation: Go to your Magento® admin portal and open ‘Stores’ > ‘Configuration’ > Sales > Payment Method > TWO
+# Start / stop
+make run
+make stop
+```
 
-## Development by Magmodules
+After install, Magento is available at http://localhost:1234/ (admin: http://localhost:1234/admin, credentials: `exampleuser` / `examplepassword123`).
 
-A Dutch Magento® Only Agency dedicated to the development of extensions for Magento and Shopware. All our extensions are coded by our own team and our support team is always there to help you out.
+To use a different port: `make install PORT=5678`.
 
-[Visit Magmodules.eu](https://www.magmodules.eu/)
+Run `make help` to see all available targets.
+
+### Debugging
+
+Xdebug is installed automatically by `make install` (disabled by default, no performance impact). To activate it:
+
+```bash
+make debug
+```
+
+This activates Xdebug (port 9003) and disables all Magento caches for hot reload — PHP changes, templates, layout XML, and config changes are picked up on the next request without manual cache flushing. The only exception is DI wiring changes (new classes, plugins, or preferences in `di.xml`), which still require `make compile`.
+
+**Setting breakpoints in VSCode:**
+
+1. Install the [PHP Debug](https://marketplace.visualstudio.com/items?itemName=xdebug.php-debug) extension
+2. Press **F5** to start listening (uses the included `.vscode/launch.json`)
+3. Click the gutter next to any line in the plugin code to set a breakpoint
+4. Browse to the Magento store with `?XDEBUG_TRIGGER=1` appended to the URL (or install the [Xdebug Helper](https://chrome.google.com/webstore/detail/xdebug-helper/eadndfjplgieldjbigjakmdgkmoaaaoc) browser extension to toggle this automatically)
+
+The debugger will pause at your breakpoint with full access to variables, call stack, and step-through execution.
+
+### HTTPS proxy
+
+For testing integrations that require HTTPS callbacks (e.g. the Two checkout flow), you can expose your local instance via an [FRP](https://github.com/fatedier/frp) reverse proxy.
+
+**Setup (one-time):** install the FRP client (`frpc`):
+
+- macOS: `brew install frpc`
+- Linux: download from [GitHub releases](https://github.com/fatedier/frp/releases) and place `frpc` on your PATH
+
+**Authentication:**
+
+The proxy needs an `FRP_AUTH_TOKEN` to connect to the FRP server. The `start-proxy.sh` script resolves the token in this order:
+
+1. **Command-line argument:** `./start-proxy.sh <token>`
+2. **Environment variable:** `export FRP_AUTH_TOKEN=<token>` (or set it in `.env.local`)
+3. **GCP Secret Manager:** falls back to `gcloud secrets versions access latest --secret=FRP_AUTH_TOKEN --project=two-beta`
+
+Edit `frpc.toml` to point at your FRP server, then provide the token via any of the methods above.
+
+**Usage:**
+
+```bash
+# Proxy starts automatically with make run / make debug.
+# To run the proxy standalone in the foreground:
+make proxy
+```
+
+### Tests
+
+```bash
+# Unit tests
+make test
+
+# End-to-end API tests (requires a valid API key)
+make test-e2e TWO_API_KEY=<your-key>
+```
+
+### Other useful targets
+
+| Target | Description |
+|--------|-------------|
+| `make compile` | Recompile Magento DI (after adding/changing PHP classes, plugins, or preferences) |
+| `make logs` | Tail the Two plugin debug and error logs |
+| `make format` | Run Prettier on frontend JS/CSS/templates |
+| `make clean` | Stop and remove the Magento container |
 
 ## Links
 
-[Setup Guide](https://docs.two.inc/developer-portal/plugins/magento)
+- [Two developer documentation](https://docs.two.inc/)
+- [Magento plugin setup guide](https://docs.two.inc/developer-portal/plugins/magento)
+
+## License
+
+OSL-3.0 / AFL-3.0. See [composer.json](composer.json) for details.
