@@ -171,7 +171,8 @@ class SurchargeGrid extends Field
     {
         $form = $element->getForm();
         if ($form) {
-            $this->scope = (string)$form->getScope();
+            $scope = (string)$form->getScope();
+            $this->scope = ($scope !== '') ? $scope : 'default';
             $this->scopeId = (int)$form->getScopeId();
         }
     }
