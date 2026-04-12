@@ -1,0 +1,129 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * @var \Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeGrid $block
+ */
+
+$terms = $block->getActiveTerms();
+$maxFixed = $block->getMaxFixed();
+$maxPercentage = $block->getMaxPercentage();
+$defaultTerm = $block->getDefaultTerm();
+$isNonDefault = $block->isNonDefaultScope();
+$surchargeType = $block->getSurchargeType();
+$columns = ['fixed', 'percentage', 'limit'];
+$columnLabels = [
+    'fixed' => __('Fixed Amount'),
+    'percentage' => __('Percentage'),
+    'limit' => __('Limit'),
+];
+?>
+
+<div id="surcharge-grid-container"
+     data-terms="<?= $block->escapeHtmlAttr(json_encode($terms)) ?>"
+     data-available-terms="<?= $block->escapeHtmlAttr(json_encode($block->getAvailablePaymentTerms())) ?>"
+     data-default-term="<?= (int)$defaultTerm ?>"
+     data-surcharge-type="<?= $block->escapeHtmlAttr($surchargeType) ?>">
+
+    <?php if (empty($terms)): ?>
+        <p class="note">
+            <span><?= $block->escapeHtml(__('No payment terms selected. Select payment terms above to configure surcharges.')) ?></span>
+        </p>
+    <?php else: ?>
+        <table class="admin__table-secondary surcharge-grid" cellspacing="0">
+            <thead>
+                <tr>
+                    <th class="surcharge-grid__term"><?= $block->escapeHtml(__('Term')) ?></th>
+                    <th class="surcharge-grid__fixed"><?= $block->escapeHtml($columnLabels['fixed']) ?></th>
+                    <th class="surcharge-grid__percentage"><?= $block->escapeHtml($columnLabels['percentage']) ?></th>
+                    <th class="surcharge-grid__limit"><?= $block->escapeHtml($columnLabels['limit']) ?></th>
+                    <?php if ($isNonDefault): ?>
+                        <th class="surcharge-grid__inherit"><?= $block->escapeHtml(__('Use Default')) ?></th>
+                    <?php endif; ?>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($terms as $days): ?>
+                    <?php $isDefault = ($days === $defaultTerm); ?>
+                    <tr class="surcharge-grid__row" data-term="<?= (int)$days ?>">
+                        <td class="surcharge-grid__term">
+                            <strong><?= (int)$days ?> <?= $block->escapeHtml(__('days')) ?></strong>
+                            <?php if ($isDefault): ?>
+                                <span class="surcharge-grid__default-badge">(<?= $block->escapeHtml(__('default')) ?>)</span>
+                            <?php endif; ?>
+                        </td>
+                        <?php foreach ($columns as $col): ?>
+                            <?php
+                            $value = $block->getSavedValue($days, $col);
+                            $name = $block->getFieldName($days, $col);
+                            $inheritName = $block->getInheritName($days, $col);
+                            $inherited = $isNonDefault && $block->isInherited($days, $col);
+                            $max = ($col === 'fixed') ? $maxFixed : (($col === 'percentage') ? $maxPercentage : '');
+                            $validate = 'validate-number validate-zero-or-greater';
+                            if ($max !== '') {
+                                $validate .= ' validate-number-range number-range-0-' . $max;
+                            }
+                            ?>
+                            <td class="surcharge-grid__<?= $col ?>">
+                                <input type="text"
+                                       name="<?= $block->escapeHtmlAttr($name) ?>"
+                                       value="<?= $block->escapeHtmlAttr($value) ?>"
+                                       class="input-text admin__control-text surcharge-grid__input"
+                                       data-column="<?= $col ?>"
+                                       data-term="<?= (int)$days ?>"
+                                       data-validate='{<?= $block->escapeHtmlAttr('"' . str_replace(' ', '":true,"', $validate) . '":true') ?>}'
+                                       <?= $inherited ? 'disabled="disabled"' : '' ?>
+                                />
+                                <?php if ($isNonDefault): ?>
+                                    <input type="hidden"
+                                           name="<?= $block->escapeHtmlAttr($inheritName) ?>"
+                                           value="<?= $inherited ? '1' : '0' ?>"
+                                           class="surcharge-grid__inherit-flag"
+                                           data-column="<?= $col ?>"
+                                           data-term="<?= (int)$days ?>"
+                                    />
+                                <?php endif; ?>
+                            </td>
+                        <?php endforeach; ?>
+                        <?php if ($isNonDefault): ?>
+                            <td class="surcharge-grid__inherit">
+                                <?php foreach ($columns as $col): ?>
+                                    <?php $inherited = $block->isInherited($days, $col); ?>
+                                    <label class="surcharge-grid__inherit-label">
+                                        <input type="checkbox"
+                                               class="surcharge-grid__inherit-checkbox"
+                                               data-column="<?= $col ?>"
+                                               data-term="<?= (int)$days ?>"
+                                               <?= $inherited ? 'checked="checked"' : '' ?>
+                                        />
+                                        <?= $block->escapeHtml($columnLabels[$col]) ?>
+                                    </label>
+                                <?php endforeach; ?>
+                            </td>
+                        <?php endif; ?>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+
+        <style>
+            .surcharge-grid { width: 100%; margin-top: 5px; }
+            .surcharge-grid th { text-align: left; padding: 8px 10px; font-weight: 600; border-bottom: 1px solid #d6d6d6; }
+            .surcharge-grid td { padding: 6px 10px; border-bottom: 1px solid #e8e8e8; vertical-align: middle; }
+            .surcharge-grid__input { width: 100px !important; }
+            .surcharge-grid__default-badge { color: #999; font-size: 0.85em; font-weight: normal; }
+            .surcharge-grid__row[data-differential-disabled="1"] .surcharge-grid__input { opacity: 0.4; }
+            .surcharge-grid__inherit-label { display: block; font-size: 0.85em; white-space: nowrap; }
+            .surcharge-grid__inherit-label input { margin-right: 4px; }
+        </style>
+    <?php endif; ?>
+</div>
+
+<script type="text/x-magento-init">
+{
+    "#surcharge-grid-container": {
+        "Two_Gateway/js/surcharge-grid": {}
+    }
+}
+</script>

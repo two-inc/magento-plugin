@@ -1,8 +1,6 @@
 define(['jquery', 'domReady!'], function ($) {
     'use strict';
 
-    var TERM_DAYS = [14, 30, 60, 90];
-
     function initPaymentTermsConfig() {
         var $terms = $('#two_payment_payment_terms_payment_terms');
         var $customDays = $('#two_payment_payment_terms_payment_terms_duration_days');
@@ -85,53 +83,17 @@ define(['jquery', 'domReady!'], function ($) {
         function updateSurchargeVisibility() {
             var type = getSurchargeType();
             var hasSurcharge = type !== 'none';
-            var hasPercentage = type === 'percentage' || type === 'fixed_and_percentage';
-            var hasFixed = type === 'fixed' || type === 'fixed_and_percentage';
-            var selectedTerms = getSelectedTerms();
-            var differential = isDifferential();
-            var defaultDays = getDefaultTermValue();
 
             // Global surcharge fields
             var surchargeFields = [
                 'surcharge_differential',
                 'surcharge_line_description',
-                'surcharge_tax_rate'
+                'surcharge_tax_rate',
+                'surcharge_grid'
             ];
             $.each(surchargeFields, function (_, id) {
                 hasSurcharge ? showField(id) : hideField(id);
             });
-
-            // Per-term fields
-            $.each(TERM_DAYS, function (_, days) {
-                var termSelected = selectedTerms.indexOf(days) !== -1;
-                var isDefaultTerm = days === defaultDays;
-                var disableForDifferential = differential && isDefaultTerm;
-
-                var pctRow = getFieldRow('surcharge_' + days + '_percentage');
-                var limitRow = getFieldRow('surcharge_' + days + '_limit');
-                var fixedRow = getFieldRow('surcharge_' + days + '_fixed');
-
-                // Show/hide based on term selection and surcharge type
-                var showPct = hasSurcharge && hasPercentage && termSelected;
-                var showLimit = hasSurcharge && hasPercentage && termSelected;
-                var showFixed = hasSurcharge && hasFixed && termSelected;
-
-                showPct ? pctRow.show() : pctRow.hide();
-                showLimit ? limitRow.show() : limitRow.hide();
-                showFixed ? fixedRow.show() : fixedRow.hide();
-
-                // Disable fields for default term in differential mode
-                var pctInput = pctRow.find('input');
-                var limitInput = limitRow.find('input');
-                var fixedInput = fixedRow.find('input');
-
-                pctInput.prop('disabled', disableForDifferential && showPct);
-                limitInput.prop('disabled', disableForDifferential && showLimit);
-                fixedInput.prop('disabled', disableForDifferential && showFixed);
-            });
-
-            // Also handle custom term surcharge fields (if custom day matches a standard term,
-            // it's already covered; otherwise there's no XML field for arbitrary custom values)
         }
 
         // ── Differential label ───────────────────────────────────────────

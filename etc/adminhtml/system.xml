@@ -199,93 +199,12 @@
                     <validate>validate-number validate-zero-or-greater</validate>
                     <config_path>payment/two_payment/surcharge_tax_rate</config_path>
                 </field>
-                <!-- Per-term surcharge fields: 14 days -->
-                <field id="surcharge_14_percentage" translate="label comment" type="text" sortOrder="100" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>14 days - Payment Surcharge percentage</label>
-                    <comment>Enter the percentage of the fee Two charges you want to charge your customer. E.g.: 25, your customer pays 25% of the fee and you pay the remaining 75%.</comment>
-                    <validate>validate-digits validate-zero-or-greater</validate>
-                    <config_path>payment/two_payment/surcharge_14_percentage</config_path>
-                </field>
-                <field id="surcharge_14_limit" translate="label comment" type="text" sortOrder="101" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>14 days - Payment Surcharge limit</label>
-                    <comment>Enter the maximum amount that you want to charge your customer.</comment>
-                    <validate>validate-number validate-zero-or-greater</validate>
-                    <config_path>payment/two_payment/surcharge_14_limit</config_path>
-                </field>
-                <field id="surcharge_14_fixed" translate="label comment" type="text" sortOrder="102" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>14 days - Payment Surcharge fixed amount</label>
-                    <comment>Enter the amount you want to charge your customer.</comment>
-                    <validate>validate-digits validate-zero-or-greater</validate>
-                    <config_path>payment/two_payment/surcharge_14_fixed</config_path>
-                </field>
-                <!-- Per-term surcharge fields: 30 days -->
-                <field id="surcharge_30_percentage" translate="label comment" type="text" sortOrder="110" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>30 days - Payment Surcharge percentage</label>
-                    <comment>Enter the percentage of the fee Two charges you want to charge your customer. E.g.: 25, your customer pays 25% of the fee and you pay the remaining 75%.</comment>
-                    <validate>validate-digits validate-zero-or-greater</validate>
-                    <config_path>payment/two_payment/surcharge_30_percentage</config_path>
-                </field>
-                <field id="surcharge_30_limit" translate="label comment" type="text" sortOrder="111" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>30 days - Payment Surcharge limit</label>
-                    <comment>Enter the maximum amount that you want to charge your customer.</comment>
-                    <validate>validate-number validate-zero-or-greater</validate>
-                    <config_path>payment/two_payment/surcharge_30_limit</config_path>
-                </field>
-                <field id="surcharge_30_fixed" translate="label comment" type="text" sortOrder="112" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>30 days - Payment Surcharge fixed amount</label>
-                    <comment>Enter the amount you want to charge your customer.</comment>
-                    <validate>validate-digits validate-zero-or-greater</validate>
-                    <config_path>payment/two_payment/surcharge_30_fixed</config_path>
-                </field>
-                <!-- Per-term surcharge fields: 60 days -->
-                <field id="surcharge_60_percentage" translate="label comment" type="text" sortOrder="120" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>60 days - Payment Surcharge percentage</label>
-                    <comment>Enter the percentage of the fee Two charges you want to charge your customer. E.g.: 25, your customer pays 25% of the fee and you pay the remaining 75%.</comment>
-                    <validate>validate-digits validate-zero-or-greater</validate>
-                    <config_path>payment/two_payment/surcharge_60_percentage</config_path>
-                </field>
-                <field id="surcharge_60_limit" translate="label comment" type="text" sortOrder="121" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>60 days - Payment Surcharge limit</label>
-                    <comment>Enter the maximum amount that you want to charge your customer.</comment>
-                    <validate>validate-number validate-zero-or-greater</validate>
-                    <config_path>payment/two_payment/surcharge_60_limit</config_path>
-                </field>
-                <field id="surcharge_60_fixed" translate="label comment" type="text" sortOrder="122" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>60 days - Payment Surcharge fixed amount</label>
-                    <comment>Enter the amount you want to charge your customer.</comment>
-                    <validate>validate-digits validate-zero-or-greater</validate>
-                    <config_path>payment/two_payment/surcharge_60_fixed</config_path>
-                </field>
-                <!-- Per-term surcharge fields: 90 days -->
-                <field id="surcharge_90_percentage" translate="label comment" type="text" sortOrder="130" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>90 days - Payment Surcharge percentage</label>
-                    <comment>Enter the percentage of the fee Two charges you want to charge your customer. E.g.: 25, your customer pays 25% of the fee and you pay the remaining 75%.</comment>
-                    <validate>validate-digits validate-zero-or-greater</validate>
-                    <config_path>payment/two_payment/surcharge_90_percentage</config_path>
-                </field>
-                <field id="surcharge_90_limit" translate="label comment" type="text" sortOrder="131" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>90 days - Payment Surcharge limit</label>
-                    <comment>Enter the maximum amount that you want to charge your customer.</comment>
-                    <validate>validate-number validate-zero-or-greater</validate>
-                    <config_path>payment/two_payment/surcharge_90_limit</config_path>
-                </field>
-                <field id="surcharge_90_fixed" translate="label comment" type="text" sortOrder="132" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>90 days - Payment Surcharge fixed amount</label>
-                    <comment>Enter the amount you want to charge your customer.</comment>
-                    <validate>validate-digits validate-zero-or-greater</validate>
-                    <config_path>payment/two_payment/surcharge_90_fixed</config_path>
+                <!-- Per-term surcharge grid (fixed, percentage, limit per term) -->
+                <field id="surcharge_grid" translate="label" type="text" sortOrder="100" showInDefault="1"
+                       showInWebsite="1" showInStore="1">
+                    <label>Per-Term Surcharge Configuration</label>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeGrid</frontend_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\SurchargeGrid</backend_model>
                 </field>
             </group>
             <group id="advanced" translate="label" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"
