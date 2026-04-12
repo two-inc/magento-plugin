@@ -129,7 +129,8 @@ Standard,Standaard
 "Optional. Enter a custom number of days to offer alongside the selected terms above.","Optioneel. Voer een aangepast aantal dagen in om aan te bieden naast de hierboven geselecteerde termijnen."
 "Default Payment Term","Standaard betaaltermijn"
 "Select the payment term that will be automatically selected for your customer.","Kies de betaaltermijn die automatisch wordt geselecteerd voor je klant."
-"Surcharge Payment Method","Kostenverdeling betaalmethode"
+"Surcharge Strategy","Toeslagstrategie"
+"No surcharge applied","Geen toeslag toegepast"
 "Select a method to surcharge your customer.","Kies een methode om kosten door te berekenen aan je klant."
 No,Nee
 Percentage,Percentage

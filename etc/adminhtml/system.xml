@@ -174,7 +174,7 @@
                 </field>
                 <field id="surcharge_type" translate="label comment" type="select" sortOrder="50" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Surcharge Payment Method</label>
+                    <label>Surcharge Strategy</label>
                     <comment>Select a method to surcharge your customer.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\SurchargeType</source_model>
                     <config_path>payment/two_payment/surcharge_type</config_path>

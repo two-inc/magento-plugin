@@ -28,10 +28,6 @@ $columnLabels = [
      data-max-fixed="<?= (int)$maxFixed ?>"
      data-max-percentage="<?= (int)$maxPercentage ?>">
 
-    <h4 class="surcharge-grid__title" style="margin: 10px 0 5px; font-weight: 600;">
-        <?= $block->escapeHtml(__('Per-Term Surcharge Configuration')) ?>
-    </h4>
-
     <p class="surcharge-grid__no-terms note" <?= !empty($terms) ? 'style="display:none"' : '' ?>>
         <span><?= $block->escapeHtml(__('No payment terms selected. Select payment terms above to configure surcharges.')) ?></span>
     </p>

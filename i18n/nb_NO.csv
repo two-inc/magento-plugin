@@ -129,7 +129,8 @@ Standard,Standard
 "Optional. Enter a custom number of days to offer alongside the selected terms above.","Valgfritt. Angi et egendefinert antall dager å tilby sammen med de valgte vilkårene ovenfor."
 "Default Payment Term","Standard betalingsvilkår"
 "Select the payment term that will be automatically selected for your customer.","Velg betalingsvilkåret som automatisk blir valgt for kunden din."
-"Surcharge Payment Method","Kostnadsfordeling betalingsmetode"
+"Surcharge Strategy","Tilleggsstrategi"
+"No surcharge applied","Ingen tillegg"
 "Select a method to surcharge your customer.","Velg en metode for å belaste kunden din."
 No,Nei
 Percentage,Prosent

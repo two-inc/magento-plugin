@@ -162,7 +162,7 @@ define(['jquery', 'domReady!'], function ($) {
         function updateContainerVisibility() {
             var type = getSurchargeType();
             var hasSurcharge = type !== 'none';
-            $container.toggle(hasSurcharge);
+            $container.closest('tr').toggle(hasSurcharge);
         }
 
         // ── Inherit checkboxes ───────────────────────────────────────────

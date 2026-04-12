@@ -25,7 +25,7 @@ class SurchargeType implements OptionSourceInterface
     public function toOptionArray(): array
     {
         return [
-            ['value' => self::NONE, 'label' => __('No')],
+            ['value' => self::NONE, 'label' => __('No surcharge applied')],
             ['value' => self::PERCENTAGE, 'label' => __('Percentage')],
             ['value' => self::FIXED, 'label' => __('Fixed fee')],
             ['value' => self::FIXED_AND_PERCENTAGE, 'label' => __('Fixed fee and percentage')],

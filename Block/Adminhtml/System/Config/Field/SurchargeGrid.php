@@ -49,8 +49,16 @@ class SurchargeGrid extends Field
     public function render(AbstractElement $element): string
     {
         $this->resolveScope($element);
-        $this->setData('element', $element);
-        return $this->toHtml();
+        $element->unsScope()->unsCanUseWebsiteValue()->unsCanUseDefaultValue();
+        return parent::render($element);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    protected function _getElementHtml(AbstractElement $element): string
+    {
+        return $this->_toHtml();
     }
 
     /**
