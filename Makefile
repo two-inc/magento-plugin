@@ -35,6 +35,7 @@ install: clean
 	@echo "Waiting for Magento to start..."
 	@until docker exec $(CONTAINER) php bin/magento --version 2>/dev/null; do sleep 3; done
 	docker exec $(CONTAINER) composer require two-inc/magento2:@dev --no-plugins
+	docker exec $(CONTAINER) rm -rf /data/generated/code
 	docker exec $(CONTAINER) php bin/magento module:disable Magento_AdminAdobeImsTwoFactorAuth Magento_TwoFactorAuth
 	docker exec $(CONTAINER) php bin/magento module:enable Two_Gateway
 	docker exec $(CONTAINER) php bin/magento setup:upgrade
