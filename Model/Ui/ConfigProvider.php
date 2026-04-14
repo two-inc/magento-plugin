@@ -81,13 +81,16 @@ class ConfigProvider implements ConfigProviderInterface
         $tryAgainLater = __('Please try again later.');
         $soleTraderaccountCouldNotBeVerified = __('Your sole trader account could not be verified.');
         $paymentTerms = __("%1 terms and conditions", $this->configRepository::PROVIDER);
-        $paymentTermsLink = $this->configRepository->getCheckoutPageUrl() . '/terms';
+        $brandParams = $this->buildBrandQueryString();
+        $paymentTermsLink = $this->configRepository->getCheckoutPageUrl() . '/terms' . $brandParams;
 
         return [
             'payment' => [
                 ConfigRepository::CODE => [
                     'checkoutApiUrl' => $this->configRepository->getCheckoutApiUrl(),
                     'checkoutPageUrl' => $this->configRepository->getCheckoutPageUrl(),
+                    'brand' => $this->configRepository->getBrand(),
+                    'brandVersion' => $this->configRepository->getBrandVersion(),
                     'redirectUrlCookieCode' => UrlCookie::COOKIE_NAME,
                     'isOrderIntentEnabled' => $this->configRepository->isOrderIntentEnabled(),
                     'isInvoiceEmailsEnabled' => $this->configRepository->isInvoiceEmailsEnabled(),
@@ -129,5 +132,24 @@ class ConfigProvider implements ConfigProviderInterface
                 ],
             ],
         ];
+    }
+
+    /**
+     * Build query string with brand parameters.
+     *
+     * @return string e.g. "?brand=x&brandVersion=qa" or ""
+     */
+    private function buildBrandQueryString(): string
+    {
+        $params = [];
+        $brand = $this->configRepository->getBrand();
+        if ($brand !== '') {
+            $params['brand'] = $brand;
+        }
+        $brandVersion = $this->configRepository->getBrandVersion();
+        if ($brandVersion !== '') {
+            $params['brandVersion'] = $brandVersion;
+        }
+        return $params ? '?' . http_build_query($params) : '';
     }
 }

@@ -14,6 +14,8 @@ TWO_ENV              := $(shell gcloud config get-value account 2>/dev/null | gr
 TWO_API_BASE_URL     ?= https://api.$(TWO_ENV).two.inc
 TWO_CHECKOUT_BASE_URL ?= https://checkout.$(TWO_ENV).two.inc
 TWO_STORE_COUNTRY    ?= NO
+TWO_BRAND            ?=
+TWO_BRAND_VERSION    ?=
 export PORT
 
 .PHONY: help install configure compile run debug stop clean logs proxy archive patch minor major format test test-e2e
@@ -33,11 +35,14 @@ install: clean
 		-e URL=$(URL) \
 		-e TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
 		-e TWO_CHECKOUT_BASE_URL=$(TWO_CHECKOUT_BASE_URL) \
+		$(if $(TWO_BRAND),-e TWO_BRAND=$(TWO_BRAND)) \
+		$(if $(TWO_BRAND_VERSION),-e TWO_BRAND_VERSION=$(TWO_BRAND_VERSION)) \
 		-v $(CURDIR):/data/extensions/workdir \
 		$(IMAGE):$(TAG)
 	@echo "Waiting for Magento to start..."
 	@until docker exec $(CONTAINER) php bin/magento --version 2>/dev/null; do sleep 3; done
 	docker exec $(CONTAINER) composer require two-inc/magento2:@dev --no-plugins
+	docker exec $(CONTAINER) rm -rf /data/generated/code
 	docker exec $(CONTAINER) php bin/magento module:disable Magento_AdminAdobeImsTwoFactorAuth Magento_TwoFactorAuth
 	docker exec $(CONTAINER) php bin/magento module:enable Two_Gateway
 	docker exec $(CONTAINER) php bin/magento setup:upgrade

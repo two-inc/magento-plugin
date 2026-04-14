@@ -248,7 +248,21 @@ class Two extends AbstractMethod
         $payment->setTransactionId($twoOrderId)
             ->setIsTransactionClosed(0)
             ->setIsTransactionPending(true);
-        $this->urlCookie->set($response['payment_url']);
+        $paymentUrl = $response['payment_url'];
+        $brandParams = [];
+        $brand = $this->configRepository->getBrand();
+        if ($brand !== '') {
+            $brandParams['brand'] = $brand;
+        }
+        $brandVersion = $this->configRepository->getBrandVersion();
+        if ($brandVersion !== '') {
+            $brandParams['brandVersion'] = $brandVersion;
+        }
+        if ($brandParams) {
+            $separator = strpos($paymentUrl, '?') !== false ? '&' : '?';
+            $paymentUrl .= $separator . http_build_query($brandParams);
+        }
+        $this->urlCookie->set($paymentUrl);
         return $this;
     }
 
