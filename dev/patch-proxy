@@ -60,6 +60,8 @@ chmod +x /data/custom-entrypoint.sh
 # ── 3. Apply immediately (for current session, before next restart) ───────────
 php bin/magento config:set web/unsecure/base_url "${PROXY_URL}/" 2>&1 | grep -v Xdebug
 php bin/magento config:set web/secure/base_url "${PROXY_URL}/" 2>&1 | grep -v Xdebug
+php bin/magento config:set web/unsecure/base_link_url "${PROXY_URL}/" 2>&1 | grep -v Xdebug
+php bin/magento config:set web/secure/base_link_url "${PROXY_URL}/" 2>&1 | grep -v Xdebug
 php bin/magento config:set web/secure/use_in_frontend 1 2>&1 | grep -v Xdebug
 php bin/magento config:set web/secure/use_in_adminhtml 1 2>&1 | grep -v Xdebug
 php bin/magento cache:flush 2>&1 | grep -v Xdebug > /dev/null

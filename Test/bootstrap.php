@@ -34,6 +34,12 @@ if (!interface_exists(\Magento\Framework\App\Config\ScopeConfigInterface::class)
     require_once __DIR__ . '/Stubs/ScopeConfigInterface.php';
 }
 
+if (!interface_exists(\Magento\Tax\Api\TaxCalculationInterface::class)) {
+    require_once __DIR__ . '/Stubs/TaxCalculationInterface.php';
+}
+if (!interface_exists(\Magento\Framework\App\Config\Storage\WriterInterface::class)) {
+    require_once __DIR__ . '/Stubs/WriterInterface.php';
+}
 if (!class_exists(\Magento\Framework\HTTP\Client\Curl::class)) {
     require_once __DIR__ . '/Stubs/Curl.php';
 }

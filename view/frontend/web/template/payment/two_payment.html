@@ -249,6 +249,23 @@
                         />
                     </div>
                 </div>
+                <!-- ko if: showTermSelector -->
+                <div class="field">
+                    <label class="label" for="two_selected_term">
+                        <span data-bind="i18n: 'Payment Term'"></span>
+                    </label>
+                    <div class="control">
+                        <select
+                            id="two_selected_term"
+                            name="payment[selectedTerm]"
+                            class="select"
+                            data-bind="options: availableBuyerTerms,
+                                       optionsText: function(item) { return item + ' ' + $t('days') },
+                                       value: selectedTerm"
+                        ></select>
+                    </div>
+                </div>
+                <!-- /ko -->
                 <!-- ko if: isPaymentTermsEnabled -->
                 <div class="payment-method-content terms-container">
                     <input

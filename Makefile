@@ -50,13 +50,22 @@ install: clean
 	docker exec $(CONTAINER) php bin/magento setup:di:compile
 	$(MAKE) configure TWO_API_KEY=$(or $(TWO_API_KEY),dummy-dev-key)
 	docker exec $(CONTAINER) bash /data/extensions/workdir/dev/install-xdebug
-	@echo ""
-	@echo "========================================="
-	@echo " Magento store: $(URL)"
-	@echo " Admin panel:   $(URL)admin"
-	@echo " Credentials:   exampleuser / examplepassword123"
-	@echo " Xdebug:        installed (activate with 'make debug')"
-	@echo "========================================="
+	@./start-proxy.sh --background || true
+	@PROXY_URL=$$(./start-proxy.sh url 2>/dev/null); \
+	if [ -n "$$PROXY_URL" ]; then \
+		docker exec $(CONTAINER) bash /data/extensions/workdir/dev/patch-proxy "$$PROXY_URL" 2>&1 | grep -v Xdebug; \
+	fi; \
+	echo ""; \
+	echo "========================================="; \
+	echo " Magento store: $(URL)"; \
+	echo " Admin panel:   $(URL)admin"; \
+	if [ -n "$$PROXY_URL" ]; then \
+		echo " Proxy store:   $$PROXY_URL/"; \
+		echo " Proxy admin:   $$PROXY_URL/admin"; \
+	fi; \
+	echo " Credentials:   exampleuser / examplepassword123"; \
+	echo " Xdebug:        installed (activate with 'make debug')"; \
+	echo "========================================="
 
 ## Update payment config: make configure TWO_API_KEY=xxx
 configure:

@@ -29,7 +29,13 @@
                 <enable_project>1</enable_project>
                 <enable_po_number>0</enable_po_number>
                 <payment_terms_type>standard</payment_terms_type>
-                <payment_terms_duration_days>30</payment_terms_duration_days>
+                <payment_terms_duration_days/>
+                <payment_terms>30</payment_terms>
+                <default_payment_term>30</default_payment_term>
+                <surcharge_type>none</surcharge_type>
+                <surcharge_differential>0</surcharge_differential>
+                <surcharge_line_description>Payment terms fee</surcharge_line_description>
+                <surcharge_tax_rate/>
                 <can_use_internal>0</can_use_internal>
                 <can_use_checkout>1</can_use_checkout>
                 <payment_action>authorize</payment_action>
