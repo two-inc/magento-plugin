@@ -269,6 +269,34 @@ class Repository implements RepositoryInterface
     }
 
     /**
+     * Get brand identifier for checkout page.
+     *
+     * @return string
+     */
+    public function getBrand(): string
+    {
+        $envBrand = getenv('TWO_BRAND');
+        if ($envBrand !== false && $envBrand !== '') {
+            return $envBrand;
+        }
+        return '';
+    }
+
+    /**
+     * Get brand version for checkout page.
+     *
+     * @return string
+     */
+    public function getBrandVersion(): string
+    {
+        $envVersion = getenv('TWO_BRAND_VERSION');
+        if ($envVersion !== false && $envVersion !== '') {
+            return $envVersion;
+        }
+        return '';
+    }
+
+    /**
      * @inheritDoc
      */
     public function getMagentoVersion(): string

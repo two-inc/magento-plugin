@@ -623,7 +623,11 @@ define([
 
         openIframe() {
             const data = this.getAutofillData();
-            const URL = `${config.checkoutPageUrl}/soletrader/signup?businessToken=${this.delegationToken}&autofillToken=${this.autofillToken}&autofillData=${data}`;
+            var brandParams = config.brand ? `&brand=${config.brand}` : '';
+            if (config.brandVersion) {
+                brandParams += `&brandVersion=${config.brandVersion}`;
+            }
+            const URL = `${config.checkoutPageUrl}/soletrader/signup?businessToken=${this.delegationToken}&autofillToken=${this.autofillToken}&autofillData=${data}${brandParams}`;
             const windowFeatures =
                 'location=yes,resizable=yes,scrollbars=yes,status=yes, height=805, width=610';
             window.open(URL, '_blank', windowFeatures);

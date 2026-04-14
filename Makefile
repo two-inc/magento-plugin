@@ -13,6 +13,9 @@ URL        := http://localhost:$(PORT)/
 TWO_API_BASE_URL     ?= https://api.staging.two.inc
 TWO_CHECKOUT_BASE_URL ?= https://checkout.staging.two.inc
 TWO_STORE_COUNTRY    ?= NO
+TWO_BRAND            ?=
+TWO_BRAND_VERSION    ?=
+export PORT
 
 .PHONY: help install configure compile run stop clean logs archive patch minor major format test test-e2e
 
@@ -30,6 +33,8 @@ install: clean
 		-e URL=$(URL) \
 		-e TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
 		-e TWO_CHECKOUT_BASE_URL=$(TWO_CHECKOUT_BASE_URL) \
+		$(if $(TWO_BRAND),-e TWO_BRAND=$(TWO_BRAND)) \
+		$(if $(TWO_BRAND_VERSION),-e TWO_BRAND_VERSION=$(TWO_BRAND_VERSION)) \
 		-v $(CURDIR):/data/extensions/workdir \
 		$(IMAGE):$(TAG)
 	@echo "Waiting for Magento to start..."
