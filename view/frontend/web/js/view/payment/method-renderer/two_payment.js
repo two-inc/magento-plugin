@@ -74,6 +74,9 @@ define([
         department: ko.observable(''),
         orderNote: ko.observable(''),
         poNumber: ko.observable(''),
+        selectedTerm: ko.observable(config.defaultPaymentTerm || ''),
+        availableBuyerTerms: config.availableBuyerTerms || [],
+        showTermSelector: (config.availableBuyerTerms || []).length > 1,
         telephone: ko.observable(''),
         countryCode: ko.observable(''),
         showPopupMessage: ko.observable(false),
@@ -424,7 +427,8 @@ define([
                     department: this.department(),
                     orderNote: this.orderNote(),
                     poNumber: this.poNumber(),
-                    invoiceEmails: this.invoiceEmails()
+                    invoiceEmails: this.invoiceEmails(),
+                    selectedTerm: this.selectedTerm()
                 }
             };
         },

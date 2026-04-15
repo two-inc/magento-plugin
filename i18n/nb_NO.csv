@@ -40,7 +40,6 @@ Branding,Merkevarebygging
 "Credit Note",Kreditnota
 "Debug Mode",Feilsøkingsmodus
 Department,Avdeling
-"Developed by Magmodules.","Utviklet av Magmodules."
 Download,"Last ned"
 "Download as .txt file","Last ned som .txt-fil"
 "Email Address",E-postadresse
@@ -123,3 +122,35 @@ Standard,Standard
 "End of Month","Slutten av måneden"
 "%1 days","%1 dager"
 "Controls the position of this payment method relative to other payment methods at checkout. Lower numbers appear first. Default is empty (no specific order).","Styrer plasseringen av denne betalingsmetoden i forhold til andre betalingsmetoder ved utsjekking. Lavere tall vises først. Standard er tom (ingen spesifikk rekkefølge)."
+"Payment Terms","Betalingsvilkår"
+"Select the payment term(s) you want to offer. If a custom duration is set below, this selection is optional.","Velg betalingsvilkår(ene) du vil tilby. Hvis en egendefinert varighet er angitt nedenfor, er dette valget valgfritt."
+"Custom Payment Term (days)","Egendefinert betalingsvilkår (dager)"
+"Optional. Enter a custom number of days to offer alongside the selected terms above.","Valgfritt. Angi et egendefinert antall dager å tilby sammen med de valgte vilkårene ovenfor."
+"Default Payment Term","Standard betalingsvilkår"
+"Select the payment term that will be automatically selected for your customer.","Velg betalingsvilkåret som automatisk blir valgt for kunden din."
+"Surcharge Strategy","Tilleggsstrategi"
+"No surcharge applied","Ingen tillegg"
+"Select a method to surcharge your customer.","Velg en metode for å belaste kunden din."
+No,Nei
+Percentage,Prosent
+"Fixed fee","Fast beløp"
+"Fixed fee and percentage","Fast beløp og prosent"
+"Surcharge Calculation Basis","Grunnlag for tilleggsberegning"
+"Total fee for selected term","Total avgift for valgt vilkår"
+"Fee difference vs default payment term","Avgiftsforskjell mot standard betalingsvilkår"
+"Surcharge Line Description","Beskrivelse av tilleggsavgift"
+"Description shown to the buyer for the surcharge line item.","Beskrivelse som vises for kjøperen for tilleggsavgiften."
+"Payment terms fee","Gebyr for betalingsvilkår"
+"Surcharge Tax Rate (%)","MVA-sats for tillegg (%)"
+"Leave empty to use your store's default tax rate (%1%%). Enter 0 for tax-exempt.","La stå tom for å bruke butikkens standard MVA-sats (%1%%). Skriv inn 0 for avgiftsfritak."
+"Warning: No tax rules are configured for your store. Configure tax rules in Stores → Tax Rules to ensure correct surcharge tax calculation. Enter a rate manually, or enter 0 for tax-exempt.","Advarsel: Ingen avgiftsregler er konfigurert for butikken din. Konfigurer avgiftsregler under Butikker → Avgiftsregler for å sikre korrekt beregning av tilleggsavgift. Angi en sats manuelt, eller skriv inn 0 for avgiftsfritak."
+"Per-Term Surcharge Configuration","Kostnadsfordeling per termin"
+"Term","Termin"
+"Fixed Amount","Fast beløp"
+"Percentage","Prosent"
+"Limit","Grense"
+"Use Default","Bruk standard"
+"default","standard"
+"No payment terms selected. Select payment terms above to configure surcharges.","Ingen betalingsvilkår valgt. Velg betalingsvilkår ovenfor for å konfigurere tillegg."
+"Payment Term","Betalingsvilkår"
+days,dager

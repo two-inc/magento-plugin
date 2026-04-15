@@ -103,6 +103,8 @@ class ConfigProvider implements ConfigProviderInterface
                     'isProjectFieldEnabled' => $this->configRepository->isProjectEnabled(),
                     'isOrderNoteFieldEnabled' => $this->configRepository->isOrderNoteEnabled(),
                     'isPONumberFieldEnabled' => $this->configRepository->isPONumberEnabled(),
+                    'availableBuyerTerms' => $this->configRepository->getAllBuyerTerms(),
+                    'defaultPaymentTerm' => $this->configRepository->getDefaultPaymentTerm(),
                     'isPaymentTermsEnabled' => true,
                     'redirectMessage' => __(
                         'You will be redirected to %1 when you place order.',
