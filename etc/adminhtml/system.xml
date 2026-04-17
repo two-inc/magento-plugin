@@ -143,12 +143,12 @@
             <group id="payment_terms" translate="label" type="text" sortOrder="25" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>Payment Terms</label>
-                <field id="payment_terms" translate="label comment" type="multiselect" sortOrder="10" showInDefault="1"
+                <field id="payment_terms" translate="label comment" type="text" sortOrder="10" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Payment Terms</label>
                     <comment>Select the payment term(s) you want to offer. If a custom duration is set below, this selection is optional.</comment>
-                    <source_model>Two\Gateway\Model\Config\Source\AvailablePaymentTerms</source_model>
-                    <can_be_empty>1</can_be_empty>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\PaymentTermsCheckboxes</frontend_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\PaymentTermsCheckboxes</backend_model>
                     <config_path>payment/two_payment/payment_terms</config_path>
                 </field>
                 <field id="payment_terms_duration_days" translate="label comment" type="text" sortOrder="20" showInDefault="1"

@@ -16,6 +16,7 @@ use Magento\Framework\Registry;
 use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\Model\ResourceModel\AbstractResource;
 use Magento\Framework\Data\Collection\AbstractDb;
+use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
@@ -32,18 +33,23 @@ class SurchargeGrid extends Value
     /** @var WriterInterface */
     private $configWriter;
 
+    /** @var StoreManagerInterface */
+    private $storeManager;
+
     public function __construct(
         Context $context,
         Registry $registry,
         ScopeConfigInterface $config,
         TypeListInterface $cacheTypeList,
         WriterInterface $configWriter,
+        StoreManagerInterface $storeManager,
         AbstractResource $resource = null,
         AbstractDb $resourceCollection = null,
         array $data = []
     ) {
         parent::__construct($context, $registry, $config, $cacheTypeList, $resource, $resourceCollection, $data);
         $this->configWriter = $configWriter;
+        $this->storeManager = $storeManager;
     }
 
     /**
@@ -116,7 +122,37 @@ class SurchargeGrid extends Value
             }
         }
 
+        // Persist the base currency so fixed amounts remain meaningful
+        // even if the store's default currency changes later
+        $currencyCode = $this->resolveBaseCurrency($scope, $scopeId);
+        $this->configWriter->save(
+            ConfigRepository::XML_PATH_SURCHARGE_FIXED_CURRENCY,
+            $currencyCode,
+            $scope,
+            $scopeId
+        );
+
         return parent::afterSave();
+    }
+
+    /**
+     * Get the base currency for the scope being saved.
+     */
+    private function resolveBaseCurrency(string $scope, int $scopeId): string
+    {
+        try {
+            if ($scope === 'stores' && $scopeId > 0) {
+                return $this->storeManager->getStore($scopeId)->getBaseCurrencyCode();
+            }
+            if ($scope === 'websites' && $scopeId > 0) {
+                return $this->storeManager->getWebsite($scopeId)->getBaseCurrencyCode();
+            }
+        } catch (\Exception $e) {
+            // Fall through to global default
+        }
+        return (string)$this->getFieldsetDataValue('currency/options/base')
+            ?: (string)$this->_config->getValue('currency/options/base')
+            ?: 'USD';
     }
 
     /**

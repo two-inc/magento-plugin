@@ -3,7 +3,7 @@ define(['jquery', 'domReady!'], function ($) {
 
     return function (config, element) {
         var $container = $(element);
-        var $terms = $('#two_payment_payment_terms_payment_terms');
+        var $termsContainer = $('#two_payment_payment_terms_payment_terms_checkboxes');
         var $customDays = $('#two_payment_payment_terms_payment_terms_duration_days');
         var $surchargeType = $('#two_payment_payment_terms_surcharge_type');
         var $differential = $('#two_payment_payment_terms_surcharge_differential');
@@ -16,11 +16,11 @@ define(['jquery', 'domReady!'], function ($) {
         // ── Helpers ──────────────────────────────────────────────────────
 
         function getSelectedTerms() {
-            var selected = $terms.val() || [];
-            if (!Array.isArray(selected)) {
-                selected = [selected];
-            }
-            var terms = selected.map(Number).filter(function (n) { return n > 0; });
+            var terms = [];
+            $termsContainer.find('.two-term-checkboxes__input:checked').each(function () {
+                terms.push(Number($(this).val()));
+            });
+            terms = terms.filter(function (n) { return n > 0; });
             var custom = parseInt($customDays.val(), 10);
             if (custom > 0) {
                 terms.push(custom);
@@ -198,7 +198,7 @@ define(['jquery', 'domReady!'], function ($) {
 
         // ── Event bindings ───────────────────────────────────────────────
 
-        $terms.on('change', update);
+        $termsContainer.on('change', '.two-term-checkboxes__input', update);
         $customDays.on('change keyup', update);
         $surchargeType.on('change', update);
         $differential.on('change', update);

@@ -44,16 +44,26 @@ class SurchargeTaxRate extends Field
         if ($defaultRate > 0) {
             $element->setComment(
                 (string)__(
-                    'Leave empty to use your store\'s default tax rate (%1%%). Enter 0 for tax-exempt.',
+                    'Leave empty to use your store\'s default tax rate (%1%). Enter 0 for tax-exempt.',
                     number_format($defaultRate, 1)
                 )
             );
         } else {
+            $taxRatesUrl = $this->getUrl('tax/rate/index');
+            $taxRulesUrl = $this->getUrl('tax/rule/index');
+            $taxConfigUrl = $this->getUrl('adminhtml/system_config/edit/section/tax');
+            $generalConfigUrl = $this->getUrl('adminhtml/system_config/edit/section/general');
+
             $element->setComment(
                 '<span class="surcharge-tax-warning">'
                 . (string)__('Warning: No tax rules are configured for your store. '
-                    . 'Configure tax rules in Stores → Tax Rules to ensure correct surcharge tax calculation. '
                     . 'Enter a rate manually, or enter 0 for tax-exempt.')
+                . '<br/><br/>'
+                . (string)__('To set up automatic tax resolution:')
+                . ' <a href="' . $taxRatesUrl . '">1. Tax Rates</a>'
+                . ' → <a href="' . $taxRulesUrl . '">2. Tax Rules</a>'
+                . ' → <a href="' . $generalConfigUrl . '#general_country-link">3. Store Country</a>'
+                . ' → <a href="' . $taxConfigUrl . '#tax_defaults-link">4. Default Tax Country</a>'
                 . '</span>'
             );
         }

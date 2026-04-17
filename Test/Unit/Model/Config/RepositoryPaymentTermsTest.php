@@ -8,7 +8,8 @@ use Magento\Framework\App\ProductMetadataInterface;
 use Magento\Framework\App\State;
 use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\UrlInterface;
-use Magento\Tax\Api\TaxCalculationInterface;
+use Magento\Framework\DataObject;
+use Magento\Tax\Model\Calculation as TaxCalculation;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Model\Config\Repository;
 
@@ -17,7 +18,7 @@ class RepositoryPaymentTermsTest extends TestCase
     /** @var ScopeConfigInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $scopeConfig;
 
-    /** @var TaxCalculationInterface|\PHPUnit\Framework\MockObject\MockObject */
+    /** @var TaxCalculation|\PHPUnit\Framework\MockObject\MockObject */
     private $taxCalculation;
 
     /** @var Repository */
@@ -26,7 +27,10 @@ class RepositoryPaymentTermsTest extends TestCase
     protected function setUp(): void
     {
         $this->scopeConfig = $this->createMock(ScopeConfigInterface::class);
-        $this->taxCalculation = $this->createMock(TaxCalculationInterface::class);
+        $this->taxCalculation = $this->getMockBuilder(TaxCalculation::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['getRateRequest', 'getRate'])
+            ->getMock();
 
         $this->repository = new Repository(
             $this->scopeConfig,
@@ -231,8 +235,12 @@ class RepositoryPaymentTermsTest extends TestCase
             'payment/two_payment/surcharge_tax_rate' => null,
             'tax/classes/default_product_tax_class' => '2',
         ]);
-        $this->taxCalculation->method('getDefaultCalculatedRate')
-            ->with(2, null, null)
+        $rateRequest = new DataObject();
+        $this->taxCalculation->method('getRateRequest')
+            ->with(null, null, null, null)
+            ->willReturn($rateRequest);
+        $this->taxCalculation->method('getRate')
+            ->with($rateRequest)
             ->willReturn(25.0);
 
         $this->assertEquals(25.0, $this->repository->getSurchargeTaxRate());

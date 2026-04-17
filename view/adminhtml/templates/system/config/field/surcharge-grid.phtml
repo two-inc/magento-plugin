@@ -12,11 +12,12 @@ $maxPercentage = $block->getMaxPercentage();
 $defaultTerm = $block->getDefaultTerm();
 $isNonDefault = $block->isNonDefaultScope();
 $surchargeType = $block->getSurchargeType();
+$currencyCode = $block->getBaseCurrencyCode();
 $columns = ['fixed', 'percentage', 'limit'];
 $columnLabels = [
-    'fixed' => __('Fixed Amount'),
+    'fixed' => __('Fixed Amount') . " ($currencyCode)",
     'percentage' => __('Percentage'),
-    'limit' => __('Limit'),
+    'limit' => __('Limit') . " ($currencyCode)",
 ];
 ?>
 

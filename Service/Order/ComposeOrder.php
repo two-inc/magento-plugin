@@ -9,15 +9,14 @@ namespace Two\Gateway\Service\Order;
 
 use Magento\Catalog\Helper\Image;
 use Magento\Catalog\Model\ResourceModel\Category\CollectionFactory as CategoryCollection;
+use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Url;
 use Magento\Sales\Api\OrderItemRepositoryInterface;
 use Magento\Sales\Model\Order;
 use Magento\Store\Model\App\Emulation;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Order as OrderService;
-use Two\Gateway\Service\Order\SurchargeCalculator;
 
 /**
  * Compose Order Service
@@ -25,9 +24,9 @@ use Two\Gateway\Service\Order\SurchargeCalculator;
 class ComposeOrder extends OrderService
 {
     /**
-     * @var SurchargeCalculator
+     * @var CheckoutSession
      */
-    private $surchargeCalculator;
+    private $checkoutSession;
 
     public function __construct(
         Image $imageHelper,
@@ -36,10 +35,10 @@ class ComposeOrder extends OrderService
         OrderItemRepositoryInterface $orderItemRepository,
         Emulation $appEmulation,
         Url $url,
-        SurchargeCalculator $surchargeCalculator
+        CheckoutSession $checkoutSession
     ) {
         parent::__construct($imageHelper, $configRepository, $categoryCollectionFactory, $orderItemRepository, $appEmulation, $url);
-        $this->surchargeCalculator = $surchargeCalculator;
+        $this->checkoutSession = $checkoutSession;
     }
 
     /**
@@ -59,48 +58,37 @@ class ComposeOrder extends OrderService
         // Fetch line items from the order
         $lineItems = $this->getLineItemsOrder($order);
 
-        // Calculate and append surcharge line item if applicable
-        $surchargeAmount = 0.0;
-        $surchargeTax = 0.0;
-        if ($this->configRepository->getSurchargeType($storeId) !== SurchargeType::NONE) {
-            $buyerCountry = $order->getBillingAddress()
-                ? $order->getBillingAddress()->getCountryId()
-                : 'NO';
+        // Read surcharge from session (calculated by Total Collector during collectTotals)
+        $surchargeAmount = (float)$this->checkoutSession->getTwoSurchargeAmount();
+        $surchargeTax = (float)$this->checkoutSession->getTwoSurchargeTax();
 
-            $surcharge = $this->surchargeCalculator->calculate(
-                (float)$order->getGrandTotal(),
-                $selectedTermDays,
-                $buyerCountry,
-                $storeId
-            );
+        if ($surchargeAmount > 0) {
+            $description = $this->checkoutSession->getTwoSurchargeDescription() ?: 'Payment terms fee';
+            $taxRatePercent = (float)$this->checkoutSession->getTwoSurchargeTaxRate();
+            $taxRate = $taxRatePercent / 100;
 
-            if ($surcharge['amount'] > 0) {
-                $surchargeAmount = $surcharge['amount'];
-                $taxRate = $surcharge['tax_rate'] / 100;
-                $surchargeTax = round($surchargeAmount * $taxRate, 2);
-
-                $lineItems[] = [
-                    'order_item_id' => 'surcharge',
-                    'name' => $surcharge['description'],
-                    'description' => $surcharge['description'],
-                    'type' => 'SURCHARGE',
-                    'image_url' => '',
-                    'product_page_url' => '',
-                    'gross_amount' => $this->roundAmt($surchargeAmount + $surchargeTax),
-                    'net_amount' => $this->roundAmt($surchargeAmount),
-                    'tax_amount' => $this->roundAmt($surchargeTax),
-                    'discount_amount' => '0.00',
-                    'tax_rate' => $this->roundAmt($taxRate),
-                    'tax_class_name' => 'VAT ' . $this->roundAmt($surcharge['tax_rate']) . '%',
-                    'unit_price' => $this->roundAmt($surchargeAmount, 6),
-                    'quantity' => 1,
-                    'quantity_unit' => 'sc',
-                ];
-            }
+            $lineItems[] = [
+                'order_item_id' => 'surcharge',
+                'name' => $description,
+                'description' => $description,
+                'type' => 'BUYER_FEE',
+                'image_url' => '',
+                'product_page_url' => '',
+                'gross_amount' => $this->roundAmt($surchargeAmount + $surchargeTax),
+                'net_amount' => $this->roundAmt($surchargeAmount),
+                'tax_amount' => $this->roundAmt($surchargeTax),
+                'discount_amount' => '0.00',
+                'tax_rate' => $this->roundAmt($taxRate),
+                'tax_class_name' => 'VAT ' . $this->roundAmt($taxRatePercent) . '%',
+                'unit_price' => $this->roundAmt($surchargeAmount, 6),
+                'quantity' => 1,
+                'quantity_unit' => 'sc',
+            ];
         }
 
-        $grossTotal = (float)$order->getGrandTotal() + $surchargeAmount + $surchargeTax;
-        $taxTotal = (float)$order->getTaxAmount() + $surchargeTax;
+        // Grand total already includes surcharge from Total Collector
+        $grossTotal = (float)$order->getGrandTotal();
+        $taxTotal = (float)$order->getTaxAmount();
         $netTotal = $grossTotal - $taxTotal;
 
         // Compose the final payload for the API call

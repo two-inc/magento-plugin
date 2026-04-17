@@ -13,7 +13,7 @@ use Magento\Framework\App\State;
 use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\UrlInterface;
 use Magento\Store\Model\ScopeInterface;
-use Magento\Tax\Api\TaxCalculationInterface;
+use Magento\Tax\Model\Calculation as TaxCalculation;
 use Two\Gateway\Api\Config\RepositoryInterface;
 
 /**
@@ -43,7 +43,7 @@ class Repository implements RepositoryInterface
     private $appState;
 
     /**
-     * @var TaxCalculationInterface
+     * @var TaxCalculation
      */
     private $taxCalculation;
 
@@ -53,7 +53,7 @@ class Repository implements RepositoryInterface
      * @param UrlInterface $urlBuilder
      * @param ProductMetadataInterface $productMetadata
      * @param State $appState
-     * @param TaxCalculationInterface $taxCalculation
+     * @param TaxCalculation $taxCalculation
      */
     public function __construct(
         ScopeConfigInterface $scopeConfig,
@@ -61,7 +61,7 @@ class Repository implements RepositoryInterface
         UrlInterface $urlBuilder,
         ProductMetadataInterface $productMetadata,
         State $appState,
-        TaxCalculationInterface $taxCalculation
+        TaxCalculation $taxCalculation
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->encryptor = $encryptor;
@@ -483,7 +483,9 @@ class Repository implements RepositoryInterface
         if ($productTaxClassId <= 0) {
             return 0.0;
         }
-        return (float)$this->taxCalculation->getDefaultCalculatedRate($productTaxClassId, null, $storeId);
+        $request = $this->taxCalculation->getRateRequest(null, null, null, $storeId);
+        $request->setProductClassId($productTaxClassId);
+        return (float)$this->taxCalculation->getRate($request);
     }
 
     /**
@@ -492,10 +494,19 @@ class Repository implements RepositoryInterface
     public function getSurchargeConfig(int $days, ?int $storeId = null): array
     {
         $prefix = sprintf('payment/two_payment/surcharge_%d_', $days);
+        $limitValue = $this->getConfig($prefix . 'limit', $storeId);
         return [
-            'percentage' => (int)$this->getConfig($prefix . 'percentage', $storeId),
-            'fixed' => (int)$this->getConfig($prefix . 'fixed', $storeId),
-            'limit' => (float)$this->getConfig($prefix . 'limit', $storeId),
+            'percentage' => (float)$this->getConfig($prefix . 'percentage', $storeId),
+            'fixed' => (float)$this->getConfig($prefix . 'fixed', $storeId),
+            'limit' => $limitValue !== null ? (float)$limitValue : null,
         ];
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getSurchargeFixedCurrency(?int $storeId = null): string
+    {
+        return (string)$this->getConfig(self::XML_PATH_SURCHARGE_FIXED_CURRENCY, $storeId);
     }
 }

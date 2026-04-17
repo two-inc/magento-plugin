@@ -15,6 +15,7 @@ define([
     'Magento_Checkout/js/model/full-screen-loader',
     'Magento_Checkout/js/action/redirect-on-success',
     'mage/url',
+    'Two_Gateway/js/model/surcharge',
     'Magento_Ui/js/lib/view/utils/async',
     'mage/validation',
     'jquery/jquery-storageapi'
@@ -29,7 +30,8 @@ define([
     $t,
     fullScreenLoader,
     redirectOnSuccessAction,
-    url
+    url,
+    surchargeModel
 ) {
     'use strict';
 
@@ -74,9 +76,22 @@ define([
         department: ko.observable(''),
         orderNote: ko.observable(''),
         poNumber: ko.observable(''),
-        selectedTerm: ko.observable(config.defaultPaymentTerm || ''),
+        selectedTerm: surchargeModel.selectedTerm,
         availableBuyerTerms: config.availableBuyerTerms || [],
         showTermSelector: (config.availableBuyerTerms || []).length > 1,
+        termOptions: ko.pureComputed(function () {
+            var terms = config.availableBuyerTerms || [];
+            var surcharges = surchargeModel.termSurcharges();
+            var symbol = surchargeModel.currencySymbol;
+            return terms.map(function (days) {
+                var amount = parseFloat(surcharges[days] || 0).toFixed(2);
+                return {
+                    days: days,
+                    daysLabel: days + ' ' + $t('days'),
+                    surchargeLabel: '+' + symbol + amount
+                };
+            });
+        }),
         telephone: ko.observable(''),
         countryCode: ko.observable(''),
         showPopupMessage: ko.observable(false),
@@ -89,6 +104,9 @@ define([
             this.registeredOrganisationMode();
             this.configureFormValidation();
             this.popupMessageListener();
+        },
+        selectTerm: function (days) {
+            surchargeModel.selectTerm(days);
         },
         showErrorMessage: function (message, duration) {
             messageList.addErrorMessage({ message: message });

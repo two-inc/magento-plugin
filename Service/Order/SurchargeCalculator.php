@@ -7,6 +7,8 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Service\Order;
 
+use Magento\Directory\Model\CurrencyFactory;
+use Magento\Framework\Exception\LocalizedException;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Source\SurchargeType;
@@ -38,14 +40,26 @@ class SurchargeCalculator
      */
     private $logRepository;
 
+    /**
+     * @var CurrencyFactory
+     */
+    private $currencyFactory;
+
+    /**
+     * @var array In-memory cache for pricing API responses, keyed on request params.
+     */
+    private $feeCache = [];
+
     public function __construct(
         ConfigRepository $configRepository,
         Adapter $apiAdapter,
-        LogRepository $logRepository
+        LogRepository $logRepository,
+        CurrencyFactory $currencyFactory
     ) {
         $this->configRepository = $configRepository;
         $this->apiAdapter = $apiAdapter;
         $this->logRepository = $logRepository;
+        $this->currencyFactory = $currencyFactory;
     }
 
     /**
@@ -54,14 +68,17 @@ class SurchargeCalculator
      * @param float $grossAmount Order gross amount
      * @param int $selectedTermDays The term the buyer selected
      * @param string $buyerCountry ISO Alpha-2 country code
+     * @param string $orderCurrency ISO currency code of the order
      * @param int|null $storeId
      *
      * @return array{amount: float, tax_rate: float, description: string}
+     * @throws LocalizedException if fixed fee currency conversion fails
      */
     public function calculate(
         float $grossAmount,
         int $selectedTermDays,
         string $buyerCountry,
+        string $orderCurrency,
         ?int $storeId = null
     ): array {
         $surchargeType = $this->configRepository->getSurchargeType($storeId);
@@ -72,6 +89,7 @@ class SurchargeCalculator
 
         $feeBase = $this->getFeeBase($grossAmount, $selectedTermDays, $buyerCountry, $storeId);
         $config = $this->configRepository->getSurchargeConfig($selectedTermDays, $storeId);
+        $fixedCurrency = $this->configRepository->getSurchargeFixedCurrency($storeId);
 
         $surcharge = 0.0;
 
@@ -82,12 +100,17 @@ class SurchargeCalculator
             $surcharge += $feeBase * ($config['percentage'] / 100);
         }
         if ($hasFixed) {
-            $surcharge += $config['fixed'];
+            $fixedAmount = (float)$config['fixed'];
+            $surcharge += $this->convertAmount($fixedAmount, $fixedCurrency, $orderCurrency);
         }
 
-        // Apply limit cap
-        if ($config['limit'] > 0 && $surcharge > $config['limit']) {
-            $surcharge = $config['limit'];
+        // Apply limit cap (null = not set = no cap; 0 = explicit zero cap)
+        $limit = $config['limit'];
+        if ($limit !== null) {
+            $limit = $this->convertAmount($limit, $fixedCurrency, $orderCurrency);
+            if ($surcharge > $limit) {
+                $surcharge = $limit;
+            }
         }
 
         // Round up to next cent
@@ -98,6 +121,8 @@ class SurchargeCalculator
             'fee_base' => $feeBase,
             'surcharge_type' => $surchargeType,
             'config' => $config,
+            'fixed_currency' => $fixedCurrency,
+            'order_currency' => $orderCurrency,
             'result' => $surcharge,
         ]);
 
@@ -135,6 +160,9 @@ class SurchargeCalculator
 
     /**
      * Call the pricing API to get the merchant's fee for a given term.
+     *
+     * Results are cached in memory for the current request so that
+     * multiple collectTotals() calls don't produce redundant API hits.
      */
     private function fetchMerchantFee(
         float $grossAmount,
@@ -142,6 +170,11 @@ class SurchargeCalculator
         string $buyerCountry,
         ?int $storeId
     ): float {
+        $cacheKey = sprintf('%s|%d|%s|%d', $grossAmount, $durationDays, $buyerCountry, (int)$storeId);
+        if (isset($this->feeCache[$cacheKey])) {
+            return $this->feeCache[$cacheKey];
+        }
+
         $termsType = $this->configRepository->getPaymentTermsType($storeId);
         $orderTerms = [
             'type' => 'NET_TERMS',
@@ -158,6 +191,34 @@ class SurchargeCalculator
             'order_terms' => $orderTerms,
         ]);
 
-        return (float)($response['total_fee'] ?? 0);
+        $fee = (float)($response['total_fee'] ?? 0);
+        $this->feeCache[$cacheKey] = $fee;
+        return $fee;
+    }
+
+    /**
+     * Convert an amount between currencies if needed.
+     *
+     * @throws LocalizedException if Magento has no exchange rate for the pair
+     */
+    private function convertAmount(float $amount, string $fromCurrency, string $toCurrency): float
+    {
+        if ($amount === 0.0 || $fromCurrency === '' || $fromCurrency === $toCurrency) {
+            return $amount;
+        }
+
+        try {
+            $currency = $this->currencyFactory->create()->load($fromCurrency);
+            return (float)$currency->convert($amount, $toCurrency);
+        } catch (\Exception $e) {
+            throw new LocalizedException(
+                __(
+                    'Cannot convert surcharge from %1 to %2. '
+                    . 'Please configure currency exchange rates under Stores > Currency Rates.',
+                    $fromCurrency,
+                    $toCurrency
+                )
+            );
+        }
     }
 }

@@ -13,6 +13,8 @@
                 type="Two\Gateway\Model\Log\Repository"/>
     <preference for="Two\Gateway\Api\Webapi\SoleTraderInterface"
                 type="Two\Gateway\Model\Webapi\SoleTrader"/>
+    <preference for="Two\Gateway\Api\Webapi\TermSelectionInterface"
+                type="Two\Gateway\Model\Webapi\TermSelection"/>
 
     <type name="Two\Gateway\Logger\Handler">
         <arguments>

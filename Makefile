@@ -18,7 +18,7 @@ TWO_BRAND            ?=
 TWO_BRAND_VERSION    ?=
 export PORT
 
-.PHONY: help install configure compile run debug stop clean logs proxy archive patch minor major format test test-e2e
+.PHONY: help install configure compile run debug stop clean flush logs proxy archive patch minor major format test test-e2e
 
 .DEFAULT_GOAL := help
 
@@ -136,6 +136,12 @@ stop:
 	-./start-proxy.sh stop 2>/dev/null
 	-docker exec $(CONTAINER) bash /data/extensions/workdir/dev/patch-proxy --reset 2>/dev/null
 	docker stop $(CONTAINER)
+
+## Clear static content and flush caches (frontend JS/CSS/templates)
+flush:
+	docker exec $(CONTAINER) bash -c \
+		"rm -rf pub/static/frontend/* var/view_preprocessed/pub/static/frontend/* \
+		&& php bin/magento cache:flush"
 
 ## Remove the Magento container and stop proxy
 clean:

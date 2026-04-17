@@ -250,19 +250,20 @@
                     </div>
                 </div>
                 <!-- ko if: showTermSelector -->
-                <div class="field">
-                    <label class="label" for="two_selected_term">
+                <div class="field two-term-chips">
+                    <label class="label">
                         <span data-bind="i18n: 'Payment Term'"></span>
                     </label>
-                    <div class="control">
-                        <select
-                            id="two_selected_term"
-                            name="payment[selectedTerm]"
-                            class="select"
-                            data-bind="options: availableBuyerTerms,
-                                       optionsText: function(item) { return item + ' ' + $t('days') },
-                                       value: selectedTerm"
-                        ></select>
+                    <div class="two-term-chips__container">
+                        <!-- ko foreach: termOptions -->
+                        <button type="button"
+                                class="two-term-chip"
+                                data-bind="click: function() { $parent.selectTerm(days) },
+                                           css: { 'two-term-chip--selected': days === $parent.selectedTerm() }">
+                            <span class="two-term-chip__days" data-bind="text: daysLabel"></span>
+                            <span class="two-term-chip__surcharge" data-bind="text: surchargeLabel"></span>
+                        </button>
+                        <!-- /ko -->
                     </div>
                 </div>
                 <!-- /ko -->

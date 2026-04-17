@@ -46,6 +46,7 @@ interface RepositoryInterface
     public const XML_PATH_SURCHARGE_DIFFERENTIAL = 'payment/two_payment/surcharge_differential';
     public const XML_PATH_SURCHARGE_LINE_DESCRIPTION = 'payment/two_payment/surcharge_line_description';
     public const XML_PATH_SURCHARGE_TAX_RATE = 'payment/two_payment/surcharge_tax_rate';
+    public const XML_PATH_SURCHARGE_FIXED_CURRENCY = 'payment/two_payment/surcharge_fixed_currency';
     public const XML_PATH_DEFAULT_PRODUCT_TAX_CLASS = 'tax/classes/default_product_tax_class';
     public const XML_PATH_VERSION = 'payment/two_payment/version';
     public const XML_PATH_DEBUG = 'payment/two_payment/debug';
@@ -352,7 +353,18 @@ interface RepositoryInterface
      * @param int $days
      * @param int|null $storeId
      *
-     * @return array{percentage: int, fixed: int, limit: float}
+     * @return array{percentage: float, fixed: float, limit: float|null}
      */
     public function getSurchargeConfig(int $days, ?int $storeId = null): array;
+
+    /**
+     * Get the currency code in which surcharge fixed amounts were saved.
+     *
+     * Returns empty string if no currency was recorded (legacy data).
+     *
+     * @param int|null $storeId
+     *
+     * @return string
+     */
+    public function getSurchargeFixedCurrency(?int $storeId = null): string;
 }
