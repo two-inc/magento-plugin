@@ -202,9 +202,12 @@ class Surcharge extends AbstractTotal
             ?: $this->checkoutSession->getTwoSurchargeDescription()
             ?: 'Payment terms fee';
 
+        // Title must be a Phrase (object) — TotalsConverter::process() guards
+        // with is_object($addressTotal->getTitle()) before calling ->render(),
+        // so plain strings silently render as empty in the segment.
         return [
             'code' => $this->getCode(),
-            'title' => $title,
+            'title' => new \Magento\Framework\Phrase((string)$title),
             'value' => $amount,
         ];
     }
