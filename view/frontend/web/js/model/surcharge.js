@@ -21,6 +21,30 @@ define([
     var isUpdating = ko.observable(false);
     var lastKnownGrandTotal = null;
 
+    /**
+     * Sync the selected term's chip value from the authoritative two_surcharge
+     * segment in quote totals. Prevents chip/summary mismatch when the
+     * server-side ConfigProvider computed chip values from stale session data.
+     */
+    function syncSelectedChipFromSegment(totals) {
+        if (!totals || !Array.isArray(totals.total_segments)) {
+            return;
+        }
+        var segment = totals.total_segments.find(function (s) {
+            return s && s.code === 'two_surcharge';
+        });
+        if (!segment) {
+            return;
+        }
+        var value = parseFloat(segment.value);
+        if (isNaN(value)) {
+            return;
+        }
+        var current = Object.assign({}, termSurcharges());
+        current[selectedTerm()] = value;
+        termSurcharges(current);
+    }
+
     // Watch for external totals changes (coupon apply/remove, shipping change).
     // When the grand total changes from a source other than our own AJAX call,
     // re-fire select-term to refresh chip labels and surcharge amounts.
@@ -28,6 +52,9 @@ define([
         if (!totals || isUpdating()) {
             return;
         }
+        // Always keep the selected chip in sync with the authoritative segment
+        syncSelectedChipFromSegment(totals);
+
         var newGrandTotal = parseFloat(totals.grand_total);
         if (lastKnownGrandTotal !== null && lastKnownGrandTotal !== newGrandTotal) {
             // Grand total changed externally — refresh surcharges

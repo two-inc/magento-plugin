@@ -346,7 +346,7 @@ class SurchargeCalculatorTest extends TestCase
 
         $this->assertEquals(10.0, $result['amount']);
         $this->assertEquals(25.0, $result['tax_rate']);
-        $this->assertEquals('Extended terms fee', $result['description']);
+        $this->assertEquals('Extended terms fee - 30 days', $result['description']);
     }
 
     // ── Currency conversion ─────────────────────────────────────────

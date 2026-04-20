@@ -129,7 +129,11 @@ class SurchargeCalculator
         return [
             'amount' => $surcharge,
             'tax_rate' => $this->configRepository->getSurchargeTaxRate($storeId),
-            'description' => $this->configRepository->getSurchargeLineDescription($storeId),
+            'description' => (string)__(
+                '%1 - %2 days',
+                $this->configRepository->getSurchargeLineDescription($storeId),
+                $selectedTermDays
+            ),
         ];
     }
 
