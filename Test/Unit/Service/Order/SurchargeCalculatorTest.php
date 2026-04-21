@@ -48,11 +48,13 @@ class SurchargeCalculatorTest extends TestCase
         $this->calculator = new SurchargeCalculator($this->config, $this->adapter, $log, $this->currencyFactory);
     }
 
-    private function stubFeeResponse(float $totalFee, int $callIndex = 0): void
+    private function stubCommonConfig(string $type, bool $differential = false): void
     {
-        $this->adapter->expects($this->at($callIndex))
-            ->method('execute')
-            ->willReturn(['total_fee' => $totalFee]);
+        $this->config->method('getSurchargeType')->willReturn($type);
+        $this->config->method('isSurchargeDifferential')->willReturn($differential);
+        $this->config->method('getPaymentTermsType')->willReturn('standard');
+        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
+        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
     }
 
     private function stubSurchargeConfig(float $percentage = 0, float $fixed = 0, ?float $limit = null): void
@@ -69,11 +71,27 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('getSurchargeFixedCurrency')->willReturn($currency);
     }
 
-    // ── No surcharge ─────────────────────────────────────────────────
+    private function stubFxRate(string $from, float $multiplier): void
+    {
+        $currency = $this->getMockBuilder(Currency::class)
+            ->disableOriginalConstructor()
+            ->addMethods(['load', 'convert'])
+            ->getMock();
+        $currency->method('load')->with($from)->willReturnSelf();
+        $currency->method('convert')->willReturnCallback(
+            function ($amount) use ($multiplier) {
+                return $amount * $multiplier;
+            }
+        );
+        $this->currencyFactory->method('create')->willReturn($currency);
+    }
+
+    // ── Short-circuits (no API call) ─────────────────────────────────
 
     public function testReturnsZeroWhenSurchargeTypeIsNone(): void
     {
         $this->config->method('getSurchargeType')->willReturn(SurchargeType::NONE);
+        $this->adapter->expects($this->never())->method('execute');
 
         $result = $this->calculator->calculate(1000.0, 30, 'NO', 'NOK');
 
@@ -81,225 +99,231 @@ class SurchargeCalculatorTest extends TestCase
         $this->assertEquals('', $result['description']);
     }
 
-    public function testNoApiCallWhenSurchargeTypeIsNone(): void
+    public function testDifferentialModeDefaultTermShortCircuits(): void
     {
-        $this->config->method('getSurchargeType')->willReturn(SurchargeType::NONE);
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE, true);
+        $this->config->method('getDefaultPaymentTerm')->willReturn(30);
+        $this->stubSurchargeConfig(50);
 
         $this->adapter->expects($this->never())->method('execute');
+
+        $result = $this->calculator->calculate(1000.0, 30, 'NO', 'NOK');
+
+        $this->assertEquals(0.0, $result['amount']);
+    }
+
+    // ── API response is authoritative ────────────────────────────────
+
+    public function testReturnsAuthoritativeFeeFromApi(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+
+        $this->adapter->method('execute')->willReturn(['buyer_fee_share' => 17.50]);
+
+        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+
+        $this->assertEquals(17.50, $result['amount']);
+    }
+
+    public function testReturnsZeroWhenApiOmitsBuyerFeeShare(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+
+        $this->adapter->method('execute')->willReturn([]);
+
+        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+
+        $this->assertEquals(0.0, $result['amount']);
+    }
+
+    // ── Payload mapping ──────────────────────────────────────────────
+
+    public function testPayloadIncludesCurrencyAndOrderTerms(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return $payload['currency'] === 'NOK'
+                        && $payload['gross_amount'] === 1000.0
+                        && $payload['buyer_country_code'] === 'NO'
+                        && $payload['order_terms']['type'] === 'NET_TERMS'
+                        && $payload['order_terms']['duration_days'] === 60;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testPayloadBuyerFeeShareForPercentage(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(75);
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    $share = $payload['buyer_fee_share'];
+                    return $share['surcharge_basis'] === 'buyer_pays'
+                        && $share['percentage'] === 75.0
+                        && $share['surcharge'] === 0.0
+                        && !array_key_exists('cap', $share)
+                        && !array_key_exists('reference_terms', $share);
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testPayloadBuyerFeeShareForFixed(): void
+    {
+        $this->stubCommonConfig(SurchargeType::FIXED);
+        $this->stubSurchargeConfig(0, 15);
+        $this->stubFixedCurrency('NOK');
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    $share = $payload['buyer_fee_share'];
+                    return $share['percentage'] === 0.0 && $share['surcharge'] === 15.0;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testPayloadBuyerFeeShareForFixedAndPercentage(): void
+    {
+        $this->stubCommonConfig(SurchargeType::FIXED_AND_PERCENTAGE);
+        $this->stubSurchargeConfig(50, 5);
+        $this->stubFixedCurrency('NOK');
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    $share = $payload['buyer_fee_share'];
+                    return $share['percentage'] === 50.0 && $share['surcharge'] === 5.0;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testPayloadIncludesCapWhenLimitSet(): void
+    {
+        $this->stubCommonConfig(SurchargeType::FIXED_AND_PERCENTAGE);
+        $this->stubSurchargeConfig(50, 5, 30);
+        $this->stubFixedCurrency('NOK');
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return $payload['buyer_fee_share']['cap'] === 30.0;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testPayloadOmitsCapWhenLimitNull(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50, 0, null);
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return !array_key_exists('cap', $payload['buyer_fee_share']);
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testPayloadIncludesExplicitZeroCap(): void
+    {
+        $this->stubCommonConfig(SurchargeType::FIXED);
+        $this->stubSurchargeConfig(0, 10, 0.0);
+        $this->stubFixedCurrency('NOK');
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return array_key_exists('cap', $payload['buyer_fee_share'])
+                        && $payload['buyer_fee_share']['cap'] === 0.0;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0]);
 
         $this->calculator->calculate(1000.0, 30, 'NO', 'NOK');
     }
 
-    // ── Percentage surcharge ─────────────────────────────────────────
+    // ── Differential mode (reference_terms) ──────────────────────────
 
-    public function testPercentageSurcharge(): void
+    public function testPayloadIncludesReferenceTermsWhenDifferential(): void
     {
-        $this->config->method('getSurchargeType')->willReturn(SurchargeType::PERCENTAGE);
-        $this->config->method('isSurchargeDifferential')->willReturn(false);
-        $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(50);
-
-        // Merchant fee is 35.00
-        $this->adapter->method('execute')->willReturn(['total_fee' => 35.0]);
-
-        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
-
-        // 50% of 35.00 = 17.50
-        $this->assertEquals(17.50, $result['amount']);
-    }
-
-    // ── Fixed fee surcharge ──────────────────────────────────────────
-
-    public function testFixedFeeSurcharge(): void
-    {
-        $this->config->method('getSurchargeType')->willReturn(SurchargeType::FIXED);
-        $this->config->method('isSurchargeDifferential')->willReturn(false);
-        $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(0, 15);
-
-        $this->adapter->method('execute')->willReturn(['total_fee' => 35.0]);
-
-        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
-
-        $this->assertEquals(15.0, $result['amount']);
-    }
-
-    // ── Fixed + percentage combined ──────────────────────────────────
-
-    public function testFixedAndPercentageCombined(): void
-    {
-        $this->config->method('getSurchargeType')->willReturn(SurchargeType::FIXED_AND_PERCENTAGE);
-        $this->config->method('isSurchargeDifferential')->willReturn(false);
-        $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(50, 5);
-
-        $this->adapter->method('execute')->willReturn(['total_fee' => 30.0]);
-
-        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
-
-        // 50% of 30 = 15 + fixed 5 = 20
-        $this->assertEquals(20.0, $result['amount']);
-    }
-
-    // ── Limit cap ────────────────────────────────────────────────────
-
-    public function testLimitCapsTheSurcharge(): void
-    {
-        $this->config->method('getSurchargeType')->willReturn(SurchargeType::FIXED_AND_PERCENTAGE);
-        $this->config->method('isSurchargeDifferential')->willReturn(false);
-        $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(50, 25, 30);
-
-        // 50% of 100 = 50 + 25 = 75, capped to 30
-        $this->adapter->method('execute')->willReturn(['total_fee' => 100.0]);
-
-        $result = $this->calculator->calculate(5000.0, 90, 'NO', 'NOK');
-
-        $this->assertEquals(30.0, $result['amount']);
-    }
-
-    public function testExplicitZeroLimitCapsToZero(): void
-    {
-        $this->config->method('getSurchargeType')->willReturn(SurchargeType::FIXED);
-        $this->config->method('isSurchargeDifferential')->willReturn(false);
-        $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(0, 10, 0.0);
-
-        $this->adapter->method('execute')->willReturn(['total_fee' => 35.0]);
-
-        $result = $this->calculator->calculate(1000.0, 30, 'NO', 'NOK');
-
-        // Limit explicitly 0 → surcharge capped to 0
-        $this->assertEquals(0.0, $result['amount']);
-    }
-
-    // ── Ceiling rounding to cent ─────────────────────────────────────
-
-    public function testRoundsUpToNextCent(): void
-    {
-        $this->config->method('getSurchargeType')->willReturn(SurchargeType::PERCENTAGE);
-        $this->config->method('isSurchargeDifferential')->willReturn(false);
-        $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(33);
-
-        // 33% of 17.0 = 5.61
-        $this->adapter->method('execute')->willReturn(['total_fee' => 17.0]);
-
-        $result = $this->calculator->calculate(1000.0, 30, 'NO', 'NOK');
-
-        $this->assertEquals(5.61, $result['amount']);
-    }
-
-    public function testRoundsUpFractionalCent(): void
-    {
-        $this->config->method('getSurchargeType')->willReturn(SurchargeType::PERCENTAGE);
-        $this->config->method('isSurchargeDifferential')->willReturn(false);
-        $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(25);
-
-        // 25% of 17.01 = 4.2525, rounds up to 4.26
-        $this->adapter->method('execute')->willReturn(['total_fee' => 17.01]);
-
-        $result = $this->calculator->calculate(1000.0, 30, 'NO', 'NOK');
-
-        $this->assertEquals(4.26, $result['amount']);
-    }
-
-    // ── Differential mode ────────────────────────────────────────────
-
-    public function testDifferentialModeDefaultTermReturnsZero(): void
-    {
-        $this->config->method('getSurchargeType')->willReturn(SurchargeType::PERCENTAGE);
-        $this->config->method('isSurchargeDifferential')->willReturn(true);
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE, true);
         $this->config->method('getDefaultPaymentTerm')->willReturn(30);
-        $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(50);
-
-        // Buyer selects default term — zero surcharge regardless of config
-        $result = $this->calculator->calculate(1000.0, 30, 'NO', 'NOK');
-
-        $this->assertEquals(0.0, $result['amount']);
-    }
-
-    public function testDifferentialModeExtendedTermUsesFeeDelta(): void
-    {
-        $this->config->method('getSurchargeType')->willReturn(SurchargeType::PERCENTAGE);
-        $this->config->method('isSurchargeDifferential')->willReturn(true);
-        $this->config->method('getDefaultPaymentTerm')->willReturn(30);
-        $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
         $this->stubSurchargeConfig(75);
 
-        // Two API calls: first for selected term (60 days), then for default (30 days)
-        $this->adapter->method('execute')
-            ->willReturnOnConsecutiveCalls(
-                ['total_fee' => 35.0],  // 60-day fee
-                ['total_fee' => 20.0]   // 30-day fee
-            );
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    $ref = $payload['buyer_fee_share']['reference_terms'] ?? null;
+                    return is_array($ref)
+                        && $ref['type'] === 'NET_TERMS'
+                        && $ref['duration_days'] === 30;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 11.25]);
 
-        // Delta = 35 - 20 = 15. 75% of 15 = 11.25
         $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
 
         $this->assertEquals(11.25, $result['amount']);
     }
 
-    public function testDifferentialModeWithFixedSurcharge(): void
+    public function testPayloadOmitsReferenceTermsWhenNotDifferential(): void
     {
-        $this->config->method('getSurchargeType')->willReturn(SurchargeType::FIXED);
-        $this->config->method('isSurchargeDifferential')->willReturn(true);
-        $this->config->method('getDefaultPaymentTerm')->willReturn(30);
-        $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(0, 10);
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE, false);
+        $this->stubSurchargeConfig(50);
 
-        $this->adapter->method('execute')
-            ->willReturnOnConsecutiveCalls(
-                ['total_fee' => 35.0],
-                ['total_fee' => 20.0]
-            );
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return !array_key_exists('reference_terms', $payload['buyer_fee_share']);
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0]);
 
-        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
-
-        $this->assertEquals(10.0, $result['amount']);
-    }
-
-    public function testDifferentialModeSelectedFeeLowerThanDefaultReturnsZero(): void
-    {
-        $this->config->method('getSurchargeType')->willReturn(SurchargeType::PERCENTAGE);
-        $this->config->method('isSurchargeDifferential')->willReturn(true);
-        $this->config->method('getDefaultPaymentTerm')->willReturn(60);
-        $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        $this->stubSurchargeConfig(100);
-
-        $this->adapter->method('execute')
-            ->willReturnOnConsecutiveCalls(
-                ['total_fee' => 15.0],
-                ['total_fee' => 35.0]
-            );
-
-        $result = $this->calculator->calculate(1000.0, 30, 'NO', 'NOK');
-
-        $this->assertEquals(0.0, $result['amount']);
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
     }
 
     // ── End of month terms ───────────────────────────────────────────
@@ -307,7 +331,8 @@ class SurchargeCalculatorTest extends TestCase
     public function testEndOfMonthTermsPassedToApi(): void
     {
         $this->config->method('getSurchargeType')->willReturn(SurchargeType::PERCENTAGE);
-        $this->config->method('isSurchargeDifferential')->willReturn(false);
+        $this->config->method('isSurchargeDifferential')->willReturn(true);
+        $this->config->method('getDefaultPaymentTerm')->willReturn(30);
         $this->config->method('getPaymentTermsType')->willReturn('end_of_month');
         $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
         $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
@@ -319,10 +344,13 @@ class SurchargeCalculatorTest extends TestCase
                 '/v1/pricing/order/fee',
                 $this->callback(function ($payload) {
                     return $payload['order_terms']['duration_days_calculated_from'] === 'END_OF_MONTH'
-                        && $payload['order_terms']['duration_days'] === 60;
+                        && $payload['order_terms']['duration_days'] === 60
+                        && $payload['buyer_fee_share']['reference_terms']['duration_days_calculated_from']
+                            === 'END_OF_MONTH'
+                        && $payload['buyer_fee_share']['reference_terms']['duration_days'] === 30;
                 })
             )
-            ->willReturn(['total_fee' => 40.0]);
+            ->willReturn(['buyer_fee_share' => 40.0]);
 
         $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
 
@@ -339,8 +367,9 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('getSurchargeLineDescription')->willReturn('Extended terms fee');
         $this->config->method('getSurchargeTaxRate')->willReturn(25.0);
         $this->stubSurchargeConfig(0, 10);
+        $this->stubFixedCurrency('NOK');
 
-        $this->adapter->method('execute')->willReturn(['total_fee' => 30.0]);
+        $this->adapter->method('execute')->willReturn(['buyer_fee_share' => 10.0]);
 
         $result = $this->calculator->calculate(1000.0, 30, 'NO', 'NOK');
 
@@ -349,28 +378,25 @@ class SurchargeCalculatorTest extends TestCase
         $this->assertEquals('Extended terms fee - 30 days', $result['description']);
     }
 
-    // ── Currency conversion ─────────────────────────────────────────
+    // ── Currency conversion (merchant config amounts only) ──────────
 
-    public function testFixedFeeConvertedWhenOrderCurrencyDiffers(): void
+    public function testFixedFeeConvertedInPayloadWhenOrderCurrencyDiffers(): void
     {
-        $this->config->method('getSurchargeType')->willReturn(SurchargeType::FIXED);
-        $this->config->method('isSurchargeDifferential')->willReturn(false);
-        $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
+        $this->stubCommonConfig(SurchargeType::FIXED);
         $this->stubSurchargeConfig(0, 10);
         $this->stubFixedCurrency('NOK');
+        $this->stubFxRate('NOK', 0.088); // 10 NOK → 0.88 EUR
 
-        $this->adapter->method('execute')->willReturn(['total_fee' => 35.0]);
-
-        // Mock currency conversion: 10 NOK → 0.88 EUR
-        $currency = $this->getMockBuilder(Currency::class)
-            ->disableOriginalConstructor()
-            ->addMethods(['load', 'convert'])
-            ->getMock();
-        $currency->method('load')->with('NOK')->willReturnSelf();
-        $currency->method('convert')->with(10.0, 'EUR')->willReturn(0.88);
-        $this->currencyFactory->method('create')->willReturn($currency);
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return abs($payload['buyer_fee_share']['surcharge'] - 0.88) < 0.0001
+                        && $payload['currency'] === 'EUR';
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0.88]);
 
         $result = $this->calculator->calculate(1000.0, 30, 'NO', 'EUR');
 
@@ -379,52 +405,46 @@ class SurchargeCalculatorTest extends TestCase
 
     public function testFixedFeeNotConvertedWhenSameCurrency(): void
     {
-        $this->config->method('getSurchargeType')->willReturn(SurchargeType::FIXED);
-        $this->config->method('isSurchargeDifferential')->willReturn(false);
-        $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
+        $this->stubCommonConfig(SurchargeType::FIXED);
         $this->stubSurchargeConfig(0, 15);
         $this->stubFixedCurrency('NOK');
 
-        $this->adapter->method('execute')->willReturn(['total_fee' => 35.0]);
-
-        // No currency factory call expected
         $this->currencyFactory->expects($this->never())->method('create');
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return $payload['buyer_fee_share']['surcharge'] === 15.0;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 15.0]);
 
         $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
 
         $this->assertEquals(15.0, $result['amount']);
     }
 
-    public function testLimitConvertedWhenOrderCurrencyDiffers(): void
+    public function testCapConvertedInPayloadWhenOrderCurrencyDiffers(): void
     {
-        $this->config->method('getSurchargeType')->willReturn(SurchargeType::FIXED_AND_PERCENTAGE);
-        $this->config->method('isSurchargeDifferential')->willReturn(false);
-        $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
-        // Large percentage to exceed limit, fixed 5, limit 20 (in NOK)
+        $this->stubCommonConfig(SurchargeType::FIXED_AND_PERCENTAGE);
         $this->stubSurchargeConfig(100, 5, 20);
         $this->stubFixedCurrency('NOK');
+        $this->stubFxRate('NOK', 1.1); // 1 NOK = 1.1 SEK
 
-        // Fee = 100, 100% = 100 (in SEK, no conversion for percentage)
-        $this->adapter->method('execute')->willReturn(['total_fee' => 100.0]);
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    $share = $payload['buyer_fee_share'];
+                    return abs($share['surcharge'] - 5.5) < 0.0001
+                        && abs($share['cap'] - 22.0) < 0.0001;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 22.0]);
 
-        // 5 NOK → 5.5 SEK, 20 NOK → 22 SEK
-        $currency = $this->getMockBuilder(Currency::class)
-            ->disableOriginalConstructor()
-            ->addMethods(['load', 'convert'])
-            ->getMock();
-        $currency->method('load')->with('NOK')->willReturnSelf();
-        $currency->method('convert')
-            ->willReturnCallback(function ($amount, $to) {
-                // Rate: 1 NOK = 1.1 SEK
-                return $amount * 1.1;
-            });
-        $this->currencyFactory->method('create')->willReturn($currency);
-
-        // 100% of 100 = 100 + fixed 5.5 = 105.5, capped to limit 22 SEK
         $result = $this->calculator->calculate(5000.0, 90, 'NO', 'SEK');
 
         $this->assertEquals(22.0, $result['amount']);
@@ -432,17 +452,10 @@ class SurchargeCalculatorTest extends TestCase
 
     public function testThrowsWhenCurrencyConversionFails(): void
     {
-        $this->config->method('getSurchargeType')->willReturn(SurchargeType::FIXED);
-        $this->config->method('isSurchargeDifferential')->willReturn(false);
-        $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
+        $this->stubCommonConfig(SurchargeType::FIXED);
         $this->stubSurchargeConfig(0, 10);
         $this->stubFixedCurrency('NOK');
 
-        $this->adapter->method('execute')->willReturn(['total_fee' => 35.0]);
-
-        // Currency conversion throws — no exchange rate configured
         $currency = $this->getMockBuilder(Currency::class)
             ->disableOriginalConstructor()
             ->addMethods(['load', 'convert'])
@@ -459,23 +472,41 @@ class SurchargeCalculatorTest extends TestCase
 
     public function testNoConversionWhenFixedCurrencyEmpty(): void
     {
-        $this->config->method('getSurchargeType')->willReturn(SurchargeType::FIXED);
-        $this->config->method('isSurchargeDifferential')->willReturn(false);
-        $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
+        $this->stubCommonConfig(SurchargeType::FIXED);
         $this->stubSurchargeConfig(0, 10);
-        // Legacy data — no currency saved
         $this->stubFixedCurrency('');
 
-        $this->adapter->method('execute')->willReturn(['total_fee' => 35.0]);
-
-        // No currency factory call expected
         $this->currencyFactory->expects($this->never())->method('create');
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return $payload['buyer_fee_share']['surcharge'] === 10.0;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 10.0]);
 
         $result = $this->calculator->calculate(1000.0, 30, 'NO', 'EUR');
 
-        // Falls through without conversion — backward-compatible
         $this->assertEquals(10.0, $result['amount']);
+    }
+
+    // ── Fee cache ────────────────────────────────────────────────────
+
+    public function testFeeCacheAvoidsRedundantApiCallsForSameInputs(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->willReturn(['buyer_fee_share' => 17.50]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+        $second = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+
+        $this->assertEquals(17.50, $second['amount']);
     }
 }

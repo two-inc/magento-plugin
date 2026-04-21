@@ -15,13 +15,13 @@ use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Api\Adapter;
 
 /**
- * Calculates buyer surcharge based on merchant config and API fee data.
+ * Delegates surcharge calculation to the Two pricing API.
  *
- * Flow:
- * 1. Fetch merchant fee from POST /v1/pricing/order/fee
- * 2. If differential mode, also fetch fee for default term and use delta
- * 3. Apply merchant's surcharge config (percentage, fixed, limit)
- * 4. Round up to next cent
+ * Plugin maps merchant surcharge config to a buyer_fee_share object
+ * on POST /v1/pricing/order/fee. The API applies percentage, fixed,
+ * cap, and differential (via reference_terms) and returns the final
+ * buyer-facing fee. Plugin does no fee arithmetic — it only
+ * FX-converts merchant-config amounts into order currency before send.
  */
 class SurchargeCalculator
 {
@@ -72,7 +72,7 @@ class SurchargeCalculator
      * @param int|null $storeId
      *
      * @return array{amount: float, tax_rate: float, description: string}
-     * @throws LocalizedException if fixed fee currency conversion fails
+     * @throws LocalizedException if fixed-fee currency conversion fails
      */
     public function calculate(
         float $grossAmount,
@@ -87,117 +87,150 @@ class SurchargeCalculator
             return ['amount' => 0.0, 'tax_rate' => 0.0, 'description' => ''];
         }
 
-        $feeBase = $this->getFeeBase($grossAmount, $selectedTermDays, $buyerCountry, $storeId);
+        $isDifferential = $this->configRepository->isSurchargeDifferential($storeId);
+        if ($isDifferential
+            && $selectedTermDays === $this->configRepository->getDefaultPaymentTerm($storeId)
+        ) {
+            // Default term in differential mode — no surcharge, skip API call.
+            return [
+                'amount' => 0.0,
+                'tax_rate' => $this->configRepository->getSurchargeTaxRate($storeId),
+                'description' => $this->buildDescription($selectedTermDays, $storeId),
+            ];
+        }
+
+        $feeShare = $this->buildBuyerFeeShare($surchargeType, $selectedTermDays, $orderCurrency, $storeId);
+        $fee = $this->fetchBuyerFee(
+            $grossAmount,
+            $selectedTermDays,
+            $buyerCountry,
+            $orderCurrency,
+            $feeShare,
+            $storeId
+        );
+
+        $this->logRepository->addDebugLog('Surcharge calculated', [
+            'selected_term' => $selectedTermDays,
+            'surcharge_type' => $surchargeType,
+            'buyer_fee_share' => $feeShare,
+            'order_currency' => $orderCurrency,
+            'result' => $fee,
+        ]);
+
+        return [
+            'amount' => $fee,
+            'tax_rate' => $this->configRepository->getSurchargeTaxRate($storeId),
+            'description' => $this->buildDescription($selectedTermDays, $storeId),
+        ];
+    }
+
+    /**
+     * Build the buyer_fee_share payload from merchant config.
+     *
+     * Fixed and cap amounts are FX-converted from the merchant's configured
+     * fixed_currency into the order currency before send. Percentage is
+     * dimensionless. API applies percentage to its own fee base, adds the
+     * (converted) fixed amount, then caps at the (converted) cap.
+     */
+    private function buildBuyerFeeShare(
+        string $surchargeType,
+        int $selectedTermDays,
+        string $orderCurrency,
+        ?int $storeId
+    ): array {
         $config = $this->configRepository->getSurchargeConfig($selectedTermDays, $storeId);
         $fixedCurrency = $this->configRepository->getSurchargeFixedCurrency($storeId);
-
-        $surcharge = 0.0;
 
         $hasPercentage = in_array($surchargeType, [SurchargeType::PERCENTAGE, SurchargeType::FIXED_AND_PERCENTAGE]);
         $hasFixed = in_array($surchargeType, [SurchargeType::FIXED, SurchargeType::FIXED_AND_PERCENTAGE]);
 
-        if ($hasPercentage) {
-            $surcharge += $feeBase * ($config['percentage'] / 100);
-        }
-        if ($hasFixed) {
-            $fixedAmount = (float)$config['fixed'];
-            $surcharge += $this->convertAmount($fixedAmount, $fixedCurrency, $orderCurrency);
-        }
-
-        // Apply limit cap (null = not set = no cap; 0 = explicit zero cap)
-        $limit = $config['limit'];
-        if ($limit !== null) {
-            $limit = $this->convertAmount($limit, $fixedCurrency, $orderCurrency);
-            if ($surcharge > $limit) {
-                $surcharge = $limit;
-            }
-        }
-
-        // Round up to next cent
-        $surcharge = ceil($surcharge * 100) / 100;
-
-        $this->logRepository->addDebugLog('Surcharge calculated', [
-            'selected_term' => $selectedTermDays,
-            'fee_base' => $feeBase,
-            'surcharge_type' => $surchargeType,
-            'config' => $config,
-            'fixed_currency' => $fixedCurrency,
-            'order_currency' => $orderCurrency,
-            'result' => $surcharge,
-        ]);
-
-        return [
-            'amount' => $surcharge,
-            'tax_rate' => $this->configRepository->getSurchargeTaxRate($storeId),
-            'description' => (string)__(
-                '%1 - %2 days',
-                $this->configRepository->getSurchargeLineDescription($storeId),
-                $selectedTermDays
-            ),
+        $share = [
+            'surcharge_basis' => 'buyer_pays',
+            'percentage' => $hasPercentage ? (float)$config['percentage'] : 0.0,
+            'surcharge' => $hasFixed
+                ? $this->convertAmount((float)$config['fixed'], $fixedCurrency, $orderCurrency)
+                : 0.0,
         ];
+
+        if ($config['limit'] !== null) {
+            $share['cap'] = $this->convertAmount((float)$config['limit'], $fixedCurrency, $orderCurrency);
+        }
+
+        if ($this->configRepository->isSurchargeDifferential($storeId)) {
+            $share['reference_terms'] = $this->buildOrderTerms(
+                $this->configRepository->getDefaultPaymentTerm($storeId),
+                $storeId
+            );
+        }
+
+        return $share;
     }
 
     /**
-     * Get the fee base for surcharge calculation.
-     * In differential mode, this is the delta between selected and default term fees.
+     * Build the order_terms object shared between the top-level payload
+     * and buyer_fee_share.reference_terms.
      */
-    private function getFeeBase(
-        float $grossAmount,
-        int $selectedTermDays,
-        string $buyerCountry,
-        ?int $storeId
-    ): float {
-        $selectedFee = $this->fetchMerchantFee($grossAmount, $selectedTermDays, $buyerCountry, $storeId);
-
-        if (!$this->configRepository->isSurchargeDifferential($storeId)) {
-            return $selectedFee;
-        }
-
-        $defaultDays = $this->configRepository->getDefaultPaymentTerm($storeId);
-        if ($selectedTermDays === $defaultDays) {
-            return 0.0; // No surcharge for default term in differential mode
-        }
-
-        $defaultFee = $this->fetchMerchantFee($grossAmount, $defaultDays, $buyerCountry, $storeId);
-        return max(0.0, $selectedFee - $defaultFee);
-    }
-
-    /**
-     * Call the pricing API to get the merchant's fee for a given term.
-     *
-     * Results are cached in memory for the current request so that
-     * multiple collectTotals() calls don't produce redundant API hits.
-     */
-    private function fetchMerchantFee(
-        float $grossAmount,
-        int $durationDays,
-        string $buyerCountry,
-        ?int $storeId
-    ): float {
-        $cacheKey = sprintf('%s|%d|%s|%d', $grossAmount, $durationDays, $buyerCountry, (int)$storeId);
-        if (isset($this->feeCache[$cacheKey])) {
-            return $this->feeCache[$cacheKey];
-        }
-
-        $termsType = $this->configRepository->getPaymentTermsType($storeId);
-        $orderTerms = [
+    private function buildOrderTerms(int $durationDays, ?int $storeId): array
+    {
+        $terms = [
             'type' => 'NET_TERMS',
             'duration_days' => $durationDays,
         ];
-        if ($termsType === 'end_of_month') {
-            $orderTerms['duration_days_calculated_from'] = 'END_OF_MONTH';
+        if ($this->configRepository->getPaymentTermsType($storeId) === 'end_of_month') {
+            $terms['duration_days_calculated_from'] = 'END_OF_MONTH';
+        }
+        return $terms;
+    }
+
+    /**
+     * Call the pricing API and return the authoritative buyer fee.
+     *
+     * Results are cached in memory for the current request so multiple
+     * collectTotals() runs and chip-precompute loops don't redundantly
+     * hit the API for the same term.
+     */
+    private function fetchBuyerFee(
+        float $grossAmount,
+        int $selectedTermDays,
+        string $buyerCountry,
+        string $orderCurrency,
+        array $feeShare,
+        ?int $storeId
+    ): float {
+        $cacheKey = sprintf(
+            '%s|%d|%s|%s|%d|%s',
+            $grossAmount,
+            $selectedTermDays,
+            $buyerCountry,
+            $orderCurrency,
+            (int)$storeId,
+            md5(json_encode($feeShare) ?: '')
+        );
+        if (isset($this->feeCache[$cacheKey])) {
+            return $this->feeCache[$cacheKey];
         }
 
         $response = $this->apiAdapter->execute('/v1/pricing/order/fee', [
             'buyer_country_code' => $buyerCountry,
             'approved_on_recourse' => false,
             'gross_amount' => $grossAmount,
-            'order_terms' => $orderTerms,
+            'currency' => $orderCurrency,
+            'order_terms' => $this->buildOrderTerms($selectedTermDays, $storeId),
+            'buyer_fee_share' => $feeShare,
         ]);
 
-        $fee = (float)($response['total_fee'] ?? 0);
+        $fee = (float)($response['buyer_fee_share'] ?? 0);
         $this->feeCache[$cacheKey] = $fee;
         return $fee;
+    }
+
+    private function buildDescription(int $selectedTermDays, ?int $storeId): string
+    {
+        return (string)__(
+            '%1 - %2 days',
+            $this->configRepository->getSurchargeLineDescription($storeId),
+            $selectedTermDays
+        );
     }
 
     /**
