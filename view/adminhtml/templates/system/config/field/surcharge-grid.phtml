@@ -15,9 +15,9 @@ $surchargeType = $block->getSurchargeType();
 $currencyCode = $block->getBaseCurrencyCode();
 $columns = ['fixed', 'percentage', 'limit'];
 $columnLabels = [
-    'fixed' => __('Fixed Amount') . " ($currencyCode)",
+    'fixed' => __('Fixed Amount'),
     'percentage' => __('Percentage'),
-    'limit' => __('Limit') . " ($currencyCode)",
+    'limit' => __('Limit'),
 ];
 ?>
 
@@ -27,7 +27,11 @@ $columnLabels = [
      data-default-term="<?= (int)$defaultTerm ?>"
      data-surcharge-type="<?= $block->escapeHtmlAttr($surchargeType) ?>"
      data-max-fixed="<?= (int)$maxFixed ?>"
-     data-max-percentage="<?= (int)$maxPercentage ?>">
+     data-max-percentage="<?= (int)$maxPercentage ?>"
+     data-fees-url="<?= $block->escapeHtmlAttr($block->getFeesUrl()) ?>"
+     data-scope="<?= $block->escapeHtmlAttr($block->getScope()) ?>"
+     data-scope-id="<?= (int)$block->getScopeId() ?>"
+     data-base-currency="<?= $block->escapeHtmlAttr($currencyCode) ?>">
 
     <p class="surcharge-grid__no-terms note" <?= !empty($terms) ? 'style="display:none"' : '' ?>>
         <span><?= $block->escapeHtml(__('No payment terms selected. Select payment terms above to configure surcharges.')) ?></span>
@@ -40,6 +44,7 @@ $columnLabels = [
                 <th class="surcharge-grid__fixed"><?= $block->escapeHtml($columnLabels['fixed']) ?></th>
                 <th class="surcharge-grid__percentage"><?= $block->escapeHtml($columnLabels['percentage']) ?></th>
                 <th class="surcharge-grid__limit"><?= $block->escapeHtml($columnLabels['limit']) ?></th>
+                <th class="surcharge-grid__fee surcharge-grid__fee-header"><?= $block->escapeHtml(__('Fee')) ?></th>
                 <?php if ($isNonDefault): ?>
                     <th class="surcharge-grid__inherit"><?= $block->escapeHtml(__('Use Default')) ?></th>
                 <?php endif; ?>
@@ -91,6 +96,7 @@ $columnLabels = [
                             <?php endif; ?>
                         </td>
                     <?php endforeach; ?>
+                    <td class="surcharge-grid__fee" data-term="<?= (int)$days ?>">&mdash;</td>
                     <?php if ($isNonDefault): ?>
                         <td class="surcharge-grid__inherit">
                             <?php foreach ($columns as $col): ?>
@@ -112,6 +118,12 @@ $columnLabels = [
         </tbody>
     </table>
 
+    <p class="surcharge-grid__currency-note note"
+       data-text-default="<?= $block->escapeHtmlAttr(__('Amounts are shown in %1.', $currencyCode)) ?>"
+       data-text-degraded="<?= $block->escapeHtmlAttr(__('Amounts are shown in %1 unless otherwise stated.', $currencyCode)) ?>"
+       <?= empty($terms) ? 'style="display:none"' : '' ?>>
+        <span><?= $block->escapeHtml(__('Amounts are shown in %1.', $currencyCode)) ?></span>
+    </p>
 
 </div>
 

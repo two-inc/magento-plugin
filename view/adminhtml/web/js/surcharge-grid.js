@@ -10,6 +10,7 @@ define(['jquery', 'domReady!'], function ($) {
         var $defaultTerm = $('#two_payment_payment_terms_default_payment_term');
         var $table = $container.find('.surcharge-grid');
         var $noTermsMsg = $container.find('.surcharge-grid__no-terms');
+        var $currencyNote = $container.find('.surcharge-grid__currency-note');
         var maxFixed = parseInt($container.data('max-fixed'), 10) || 100;
         var maxPercentage = parseInt($container.data('max-percentage'), 10) || 100;
 
@@ -71,6 +72,7 @@ define(['jquery', 'domReady!'], function ($) {
                 html += '/></td>';
             });
 
+            html += '<td class="surcharge-grid__fee" data-term="' + days + '">&mdash;</td>';
             html += '</tr>';
             return $(html);
         }
@@ -121,9 +123,11 @@ define(['jquery', 'domReady!'], function ($) {
             // Show table or "no terms" message
             if (activeTerms.length > 0) {
                 $table.show();
+                $currencyNote.show();
                 $noTermsMsg.hide();
             } else {
                 $table.hide();
+                $currencyNote.hide();
                 $noTermsMsg.show();
             }
         }
@@ -156,6 +160,19 @@ define(['jquery', 'domReady!'], function ($) {
                     var $input = $(this);
                     if (!$input.data('inherit-disabled')) {
                         $input.prop('disabled', disabled);
+                    }
+                    // Differential mode: default term never surcharges. Zero
+                    // the UI values, snapshotting whatever was there so we
+                    // can restore if the merchant toggles differential off
+                    // (or picks a different default term) before saving.
+                    if (disabled) {
+                        if ($input.data('differential-snapshot') === undefined) {
+                            $input.data('differential-snapshot', $input.val());
+                        }
+                        $input.val('0');
+                    } else if ($input.data('differential-snapshot') !== undefined) {
+                        $input.val($input.data('differential-snapshot'));
+                        $input.removeData('differential-snapshot');
                     }
                 });
             });
@@ -207,5 +224,64 @@ define(['jquery', 'domReady!'], function ($) {
 
         initInheritCheckboxes();
         update();
+        loadFees();
+
+        // ── Fee column (read-only, fetched from Two API via admin proxy) ─
+
+        function loadFees() {
+            var url = $container.data('fees-url');
+            if (!url) {
+                return;
+            }
+            var terms = getSelectedTerms();
+            if (!terms.length) {
+                return;
+            }
+            var $formKey = $('input[name="form_key"]').first();
+            $.ajax({
+                url: url,
+                type: 'POST',
+                dataType: 'json',
+                data: {
+                    form_key: $formKey.val() || (window.FORM_KEY || ''),
+                    terms: JSON.stringify(terms),
+                    scope: String($container.data('scope') || 'default'),
+                    scopeId: parseInt($container.data('scope-id'), 10) || 0
+                }
+            }).done(function (response) {
+                if (!response || !response.success || !response.fees) {
+                    return; // leave "—" in cells
+                }
+                var gridCurrency = String($container.data('base-currency') || '').toUpperCase();
+                var feeCurrency = String(response.currency || '').toUpperCase();
+                var degraded = feeCurrency && feeCurrency !== gridCurrency;
+                var currencySuffix = degraded ? ' ' + feeCurrency : '';
+                var noteText = degraded
+                    ? $currencyNote.data('text-degraded')
+                    : $currencyNote.data('text-default');
+                if (noteText) {
+                    $currencyNote.find('span').text(noteText);
+                }
+                $container.find('td.surcharge-grid__fee').each(function () {
+                    var $cell = $(this);
+                    var term = String($cell.data('term'));
+                    var fee = response.fees[term];
+                    if (!fee) {
+                        return;
+                    }
+                    var pct = (fee.percentage !== undefined && fee.percentage !== null)
+                        ? Number(fee.percentage).toFixed(2) + '%'
+                        : null;
+                    var fixed = (fee.fixed !== undefined && fee.fixed !== null)
+                        ? Number(fee.fixed).toFixed(2)
+                        : null;
+                    var parts = [];
+                    if (pct !== null) { parts.push(pct); }
+                    if (fixed !== null) { parts.push(fixed + currencySuffix); }
+                    $cell.text(parts.length ? parts.join(' + ') : '—');
+                });
+            });
+            // .fail intentionally omitted: on error, cells stay "—".
+        }
     };
 });

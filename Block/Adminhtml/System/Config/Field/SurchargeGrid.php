@@ -201,6 +201,28 @@ class SurchargeGrid extends Field
         return ConfigRepository::AVAILABLE_PAYMENT_TERMS;
     }
 
+    /**
+     * Admin URL the grid's JS hits to fetch merchant fees.
+     */
+    public function getFeesUrl(): string
+    {
+        return $this->getUrl('two/config/fees');
+    }
+
+    /**
+     * Current scope for the Fees request, so the controller can resolve
+     * the right API key when the merchant has per-scope credentials.
+     */
+    public function getScope(): string
+    {
+        return $this->scope;
+    }
+
+    public function getScopeId(): int
+    {
+        return $this->scopeId;
+    }
+
     private function resolveScope(AbstractElement $element): void
     {
         $form = $element->getForm();

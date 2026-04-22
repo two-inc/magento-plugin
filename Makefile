@@ -143,10 +143,11 @@ stop:
 	-docker exec $(CONTAINER) bash /data/extensions/workdir/dev/patch-proxy --reset 2>/dev/null
 	docker stop $(CONTAINER)
 
-## Clear static content and flush caches (frontend JS/CSS/templates)
+## Clear static content and flush caches (frontend + adminhtml JS/CSS/templates)
 flush:
 	docker exec $(CONTAINER) bash -c \
 		"rm -rf pub/static/frontend/* var/view_preprocessed/pub/static/frontend/* \
+		pub/static/adminhtml/* var/view_preprocessed/pub/static/adminhtml/* \
 		&& php bin/magento cache:flush"
 
 ## Remove the Magento container and stop proxy
