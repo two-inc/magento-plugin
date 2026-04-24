@@ -18,7 +18,7 @@ TWO_BRAND            ?=
 TWO_BRAND_VERSION    ?=
 export PORT
 
-.PHONY: help install configure compile run debug stop clean logs proxy archive patch minor major format test test-e2e
+.PHONY: help install configure compile run debug stop clean flush logs proxy archive patch minor major format test test-e2e
 
 .DEFAULT_GOAL := help
 
@@ -42,6 +42,12 @@ install: clean
 	@echo "Waiting for Magento to start..."
 	@until docker exec $(CONTAINER) php bin/magento --version 2>/dev/null; do sleep 3; done
 	docker exec $(CONTAINER) composer require two-inc/magento2:@dev --no-plugins
+	docker exec $(CONTAINER) composer require --no-plugins \
+		community-engineering/language-nl_nl \
+		community-engineering/language-nb_no \
+		community-engineering/language-sv_se \
+		community-engineering/language-fi_fi \
+		community-engineering/language-da_dk
 	docker exec $(CONTAINER) rm -rf /data/generated/code
 	docker exec $(CONTAINER) php bin/magento module:disable Magento_AdminAdobeImsTwoFactorAuth Magento_TwoFactorAuth
 	docker exec $(CONTAINER) php bin/magento module:enable Two_Gateway
@@ -136,6 +142,13 @@ stop:
 	-./start-proxy.sh stop 2>/dev/null
 	-docker exec $(CONTAINER) bash /data/extensions/workdir/dev/patch-proxy --reset 2>/dev/null
 	docker stop $(CONTAINER)
+
+## Clear static content and flush caches (frontend + adminhtml JS/CSS/templates)
+flush:
+	docker exec $(CONTAINER) bash -c \
+		"rm -rf pub/static/frontend/* var/view_preprocessed/pub/static/frontend/* \
+		pub/static/adminhtml/* var/view_preprocessed/pub/static/adminhtml/* \
+		&& php bin/magento cache:flush"
 
 ## Remove the Magento container and stop proxy
 clean:

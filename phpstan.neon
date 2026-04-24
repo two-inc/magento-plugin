@@ -4,6 +4,8 @@ parameters:
     ignoreErrors:
         - '#Variable \$block might not be defined.#'
         - '#Undefined variable: \$block#'
+        # Currency model has no service contract replacement for loading by ISO code
+        - '#Use service contracts to persist entities in favour of Magento\\Directory\\Model\\Currency::load\(\) method#'
     fileExtensions:
         - php
         - phtml

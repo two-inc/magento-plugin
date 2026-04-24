@@ -295,6 +295,61 @@
     visibility: visible;
 }
 
+/* Payment term chips */
+.two-term-chips__container {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+}
+
+.two-term-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 16px;
+    border: 1px solid var(--color-gray89);
+    border-radius: 8px;
+    background: var(--color-white);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+    min-width: 80px;
+    font-family: inherit;
+}
+
+.two-term-chip:hover {
+    border-color: var(--color-blue2);
+}
+
+.two-term-chip:focus {
+    outline: none;
+}
+
+.two-term-chip--selected,
+.two-term-chip--selected:hover,
+.two-term-chip--selected:focus,
+.two-term-chip--selected:active {
+    border-color: var(--color-blue2);
+    background-color: var(--color-blue2);
+    color: var(--color-white);
+}
+
+.two-term-chip__days {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.two-term-chip__surcharge {
+    font-size: 12px;
+    line-height: 1.3;
+    opacity: 0.75;
+}
+
+.two-term-chip--selected .two-term-chip__surcharge {
+    opacity: 0.9;
+}
+
 /* Theme specific css for fire checkout on select2 */
 .firecheckout .select2-container {
     width: 100% !important;

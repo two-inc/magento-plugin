@@ -8,10 +8,13 @@ declare(strict_types=1);
 namespace Two\Gateway\Model\Ui;
 
 use Magento\Checkout\Model\ConfigProviderInterface;
+use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\View\Asset\Repository as AssetRepository;
+use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\UrlCookie;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Order\SurchargeCalculator;
 use Two\Gateway\Model\Two;
 
 /**
@@ -40,23 +43,36 @@ class ConfigProvider implements ConfigProviderInterface
     private $assetRepository;
 
     /**
-     * ConfigProvider constructor.
-     *
-     * @param ConfigRepository $configRepository
-     * @param Adapter $adapter
-     * @param Two $two
-     * @param AssetRepository $assetRepository
+     * @var CheckoutSession
      */
+    private $checkoutSession;
+
+    /**
+     * @var SurchargeCalculator
+     */
+    private $surchargeCalculator;
+
+    /**
+     * @var StoreManagerInterface
+     */
+    private $storeManager;
+
     public function __construct(
         ConfigRepository $configRepository,
         Adapter $adapter,
         Two $two,
-        AssetRepository $assetRepository
+        AssetRepository $assetRepository,
+        CheckoutSession $checkoutSession,
+        SurchargeCalculator $surchargeCalculator,
+        StoreManagerInterface $storeManager
     ) {
         $this->configRepository = $configRepository;
         $this->adapter = $adapter;
         $this->two = $two;
         $this->assetRepository = $assetRepository;
+        $this->checkoutSession = $checkoutSession;
+        $this->surchargeCalculator = $surchargeCalculator;
+        $this->storeManager = $storeManager;
     }
 
     /**
@@ -105,6 +121,11 @@ class ConfigProvider implements ConfigProviderInterface
                     'isPONumberFieldEnabled' => $this->configRepository->isPONumberEnabled(),
                     'availableBuyerTerms' => $this->configRepository->getAllBuyerTerms(),
                     'defaultPaymentTerm' => $this->configRepository->getDefaultPaymentTerm(),
+                    'selectedPaymentTerm' => (int)$this->checkoutSession->getTwoSelectedTerm()
+                        ?: $this->configRepository->getDefaultPaymentTerm(),
+                    'termSurcharges' => $this->getTermSurcharges(),
+                    'currencySymbol' => $this->getCurrencySymbol(),
+                    'surchargeDescription' => $this->configRepository->getSurchargeLineDescription(),
                     'isPaymentTermsEnabled' => true,
                     'redirectMessage' => __(
                         'You will be redirected to %1 when you place order.',
@@ -134,6 +155,71 @@ class ConfigProvider implements ConfigProviderInterface
                 ],
             ],
         ];
+    }
+
+    /**
+     * Compute surcharges for each available term using the current quote.
+     *
+     * @return array<int, float> days => surcharge amount
+     */
+    private function getTermSurcharges(): array
+    {
+        $terms = $this->configRepository->getAllBuyerTerms();
+        $surcharges = [];
+
+        try {
+            $quote = $this->checkoutSession->getQuote();
+            // Subtract any existing surcharge to avoid circular base
+            $existingSurcharge = (float)$this->checkoutSession->getTwoSurchargeGross();
+            $grandTotal = (float)$quote->getGrandTotal() - $existingSurcharge;
+            $currency = $quote->getQuoteCurrencyCode()
+                ?: $this->storeManager->getStore()->getBaseCurrencyCode();
+
+            $store = $this->storeManager->getStore();
+            $country = $store->getConfig('general/country/default') ?: 'NO';
+            $billing = $quote->getBillingAddress();
+            $shipping = $quote->getShippingAddress();
+            if ($billing && $billing->getCountryId()) {
+                $country = $billing->getCountryId();
+            } elseif ($shipping && $shipping->getCountryId()) {
+                $country = $shipping->getCountryId();
+            }
+
+            foreach ($terms as $days) {
+                try {
+                    $result = $this->surchargeCalculator->calculate(
+                        $grandTotal,
+                        $days,
+                        $country,
+                        $currency
+                    );
+                    $net = $result['amount'];
+                    $tax = round($net * ($result['tax_rate'] / 100), 2);
+                    $surcharges[$days] = $net;
+                } catch (\Exception $e) {
+                    $surcharges[$days] = 0.0;
+                }
+            }
+        } catch (\Exception $e) {
+            foreach ($terms as $days) {
+                $surcharges[$days] = 0.0;
+            }
+        }
+
+        return $surcharges;
+    }
+
+    /**
+     * Get the currency symbol for the current store's display currency.
+     */
+    private function getCurrencySymbol(): string
+    {
+        try {
+            $store = $this->storeManager->getStore();
+            return $store->getCurrentCurrency()->getCurrencySymbol() ?: $store->getCurrentCurrencyCode();
+        } catch (\Exception $e) {
+            return '';
+        }
     }
 
     /**

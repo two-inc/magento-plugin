@@ -6,5 +6,11 @@
             <resource ref="anonymous"/>
         </resources>
     </route>
+    <route url="/V1/two/select-term" method="POST">
+        <service class="Two\Gateway\Api\Webapi\TermSelectionInterface" method="selectTerm"/>
+        <resources>
+            <resource ref="anonymous"/>
+        </resources>
+    </route>
 </routes>
 

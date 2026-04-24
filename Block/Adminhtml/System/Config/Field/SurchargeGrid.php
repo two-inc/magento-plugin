@@ -11,6 +11,7 @@ use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Data\Form\Element\AbstractElement;
+use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
@@ -28,6 +29,9 @@ class SurchargeGrid extends Field
     /** @var ScopeConfigInterface */
     private $scopeConfig;
 
+    /** @var StoreManagerInterface */
+    private $storeManager;
+
     /** @var string */
     private $scope = 'default';
 
@@ -37,10 +41,12 @@ class SurchargeGrid extends Field
     public function __construct(
         Context $context,
         ScopeConfigInterface $scopeConfig,
+        StoreManagerInterface $storeManager,
         array $data = []
     ) {
         parent::__construct($context, $data);
         $this->scopeConfig = $scopeConfig;
+        $this->storeManager = $storeManager;
     }
 
     /**
@@ -116,6 +122,26 @@ class SurchargeGrid extends Field
     }
 
     /**
+     * Get the base currency code for the current scope.
+     */
+    public function getBaseCurrencyCode(): string
+    {
+        if ($this->scope !== 'default' && $this->scopeId > 0) {
+            try {
+                if ($this->scope === 'stores') {
+                    return $this->storeManager->getStore($this->scopeId)->getBaseCurrencyCode();
+                }
+                if ($this->scope === 'websites') {
+                    return $this->storeManager->getWebsite($this->scopeId)->getBaseCurrencyCode();
+                }
+            } catch (\Exception $e) {
+                // Fall through to default
+            }
+        }
+        return (string)$this->scopeConfig->getValue('currency/options/base') ?: 'USD';
+    }
+
+    /**
      * Get the HTML field name for a surcharge input.
      *
      * Nests under the surcharge_grid field's value so the backend model receives it:
@@ -173,6 +199,28 @@ class SurchargeGrid extends Field
     public function getAvailablePaymentTerms(): array
     {
         return ConfigRepository::AVAILABLE_PAYMENT_TERMS;
+    }
+
+    /**
+     * Admin URL the grid's JS hits to fetch merchant fees.
+     */
+    public function getFeesUrl(): string
+    {
+        return $this->getUrl('two/config/fees');
+    }
+
+    /**
+     * Current scope for the Fees request, so the controller can resolve
+     * the right API key when the merchant has per-scope credentials.
+     */
+    public function getScope(): string
+    {
+        return $this->scope;
+    }
+
+    public function getScopeId(): int
+    {
+        return $this->scopeId;
     }
 
     private function resolveScope(AbstractElement $element): void
