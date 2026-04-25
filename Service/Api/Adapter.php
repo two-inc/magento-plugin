@@ -57,17 +57,23 @@ class Adapter
      * @param string $endpoint
      * @param array $payload
      * @param string $method
+     * @param int|null $storeId Optional store scope for API key resolution (default: default scope)
      * @return array
      */
-    public function execute(string $endpoint, array $payload = [], string $method = 'POST'): array
-    {
+    public function execute(
+        string $endpoint,
+        array $payload = [],
+        string $method = 'POST',
+        ?int $storeId = null
+    ): array {
         try {
             $this->logRepository->addDebugLog(sprintf('API call: %s %s', $method, $endpoint), $payload);
+            $mode = $storeId !== null ? $this->configRepository->getMode($storeId) : null;
             $url = $this->configRepository->addVersionDataInURL(
-                sprintf('%s%s', $this->configRepository->getCheckoutApiUrl(), $endpoint)
+                sprintf('%s%s', $this->configRepository->getCheckoutApiUrl($mode), $endpoint)
             );
             $this->curlClient->addHeader("Content-Type", "application/json");
-            $this->curlClient->addHeader("X-API-Key", $this->configRepository->getApiKey());
+            $this->curlClient->addHeader("X-API-Key", $this->configRepository->getApiKey($storeId));
             $this->curlClient->setOption(CURLOPT_RETURNTRANSFER, true);
             $this->curlClient->setOption(CURLOPT_SSL_VERIFYHOST, 0);
             $this->curlClient->setOption(CURLOPT_SSL_VERIFYPEER, 0);
@@ -105,6 +111,7 @@ class Adapter
             } else {
                 if ($body) {
                     $result = json_decode($body, true) ?: [];
+                    $result['http_status'] = $this->curlClient->getStatus();
                     $this->logRepository->addDebugLog(
                         sprintf('API response %s %s (status: %s)', $method, $endpoint, $this->curlClient->getStatus()),
                         $result

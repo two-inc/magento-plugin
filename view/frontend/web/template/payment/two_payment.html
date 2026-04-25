@@ -55,6 +55,24 @@
     </div>
 
     <div class="payment-method-content">
+        <!-- ko if: showTermSelector -->
+        <div class="field two-term-chips">
+            <label class="label">
+                <span data-bind="i18n: 'Payment Term'"></span>
+            </label>
+            <div class="two-term-chips__container">
+                <!-- ko foreach: termOptions -->
+                <button type="button"
+                        class="two-term-chip"
+                        data-bind="click: function() { $parent.selectTerm(days) },
+                                   css: { 'two-term-chip--selected': days === $parent.selectedTerm() }">
+                    <span class="two-term-chip__days" data-bind="text: daysLabel"></span>
+                    <span class="two-term-chip__surcharge" data-bind="text: surchargeLabel"></span>
+                </button>
+                <!-- /ko -->
+            </div>
+        </div>
+        <!-- /ko -->
         <div class="redirect_message" data-bind="text: redirectMessage"></div>
         <!-- ko if: showModeTab -->
         <!-- ko ifnot: showSoleTrader -->

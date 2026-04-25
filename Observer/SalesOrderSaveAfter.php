@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Observer;
 
 use Exception;
+use Magento\Framework\DB\Transaction;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Exception\LocalizedException;
@@ -15,7 +16,9 @@ use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderStatusHistoryRepositoryInterface;
 use Magento\Sales\Model\Order;
+use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Status\HistoryFactory;
+use Magento\Sales\Model\Service\InvoiceService;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
@@ -47,23 +50,39 @@ class SalesOrderSaveAfter implements ObserverInterface
     private $orderStatusHistoryRepository;
 
     /**
+     * @var InvoiceService
+     */
+    private $invoiceService;
+
+    /**
+     * @var Transaction
+     */
+    private $transaction;
+
+    /**
      * SalesOrderSaveAfter constructor.
      *
      * @param ConfigRepository $configRepository
      * @param Adapter $apiAdapter
      * @param HistoryFactory $historyFactory
      * @param OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository
+     * @param InvoiceService $invoiceService
+     * @param Transaction $transaction
      */
     public function __construct(
         ConfigRepository $configRepository,
         Adapter $apiAdapter,
         HistoryFactory $historyFactory,
-        OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository
+        OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository,
+        InvoiceService $invoiceService,
+        Transaction $transaction
     ) {
         $this->configRepository = $configRepository;
         $this->apiAdapter = $apiAdapter;
         $this->historyFactory = $historyFactory;
         $this->orderStatusHistoryRepository = $orderStatusHistoryRepository;
+        $this->invoiceService = $invoiceService;
+        $this->transaction = $transaction;
     }
 
     /**
@@ -73,29 +92,67 @@ class SalesOrderSaveAfter implements ObserverInterface
     public function execute(Observer $observer)
     {
         $order = $observer->getEvent()->getOrder();
-        if ($order
-            && $order->getPayment()->getMethod() === Two::CODE
-            && $order->getTwoOrderId()
+        if (!$order
+            || $order->getPayment()->getMethod() !== Two::CODE
+            || !$order->getTwoOrderId()
         ) {
-            if (($this->configRepository->getFulfillTrigger() == 'complete')
-                && in_array($order->getStatus(), $this->configRepository->getFulfillOrderStatusList())
-            ) {
-                if (!$this->isWholeOrderShipped($order)) {
-                    $error = __(
-                        "%1 requires whole order to be shipped before it can be fulfilled.",
-                        $this->configRepository::PROVIDER
-                    );
-                    throw new LocalizedException($error);
-                }
-
-                // full fulfilment
-                $response = $this->apiAdapter->execute(
-                    "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
-                );
-
-                $this->parseFulfillResponse($response, $order);
-            }
+            return;
         }
+
+        if ($this->configRepository->getFulfillTrigger() !== 'complete'
+            || !in_array($order->getStatus(), $this->configRepository->getFulfillOrderStatusList())
+        ) {
+            return;
+        }
+
+        // Idempotency gate: once we've created a Magento invoice, the order is
+        // already fulfilled on Two — do not re-post /fulfillments on subsequent
+        // saves of the same order.
+        if ($order->hasInvoices()) {
+            return;
+        }
+
+        if (!$this->isWholeOrderShipped($order)) {
+            $error = __(
+                "%1 requires whole order to be shipped before it can be fulfilled.",
+                $this->configRepository::PROVIDER
+            );
+            throw new LocalizedException($error);
+        }
+
+        $response = $this->apiAdapter->execute(
+            "/v1/order/" . $order->getTwoOrderId() . "/fulfillments"
+        );
+
+        $this->parseFulfillResponse($response, $order);
+
+        $this->createOfflinePaidInvoice($order);
+    }
+
+    /**
+     * Create a Magento invoice for the whole order and mark it paid.
+     *
+     * Two has already been told to fulfil the order via /fulfillments above,
+     * so this invoice records that fact in Magento — CAPTURE_OFFLINE prevents
+     * Two::capture() from re-posting /fulfillments.
+     *
+     * @param Order $order
+     * @throws \Exception
+     */
+    private function createOfflinePaidInvoice(Order $order): void
+    {
+        $invoice = $this->invoiceService->prepareInvoice($order);
+        if ($invoice->getGrandTotal() <= 0) {
+            return;
+        }
+        $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
+        $invoice->register();
+        $invoice->pay();
+        $invoice->setTransactionId($order->getPayment()->getLastTransId());
+        $this->transaction
+            ->addObject($invoice)
+            ->addObject($invoice->getOrder())
+            ->save();
     }
 
     /**

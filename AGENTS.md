@@ -1,5 +1,27 @@
 # Magento Plugin (Two Gateway)
 
+## Project Overview
+
+Two's Magento 2 payment plugin, providing BNPL (Buy Now Pay Later) checkout integration for Magento stores.
+
+-   **Language**: PHP 7.4+
+-   **Framework**: Magento 2 module
+-   **Purpose**: Payment gateway integration for Two BNPL service
+
+## Directory Structure
+
+```
+etc/                  # Module configuration (module.xml, di.xml, system.xml)
+Model/                # Business logic and data models
+Controller/           # Controllers for routes
+Block/                # View layer blocks
+view/                 # Frontend/adminhtml templates and layouts
+Observer/             # Event observers
+Plugin/               # Plugins (interceptors)
+Setup/                # Installation/upgrade scripts
+i18n/                 # Translations
+```
+
 ## Git Workflow
 
 -   Use `SKIP=commit-msg` when committing on `main` branch (no Linear ticket needed)
@@ -75,6 +97,15 @@ bin/magento cache:flush
 # 5. Clear PHP opcache (if opcache.validate_timestamps=0)
 # Create pub/opcache-clear.php or restart PHP-FPM
 ```
+
+## Session Artifacts
+
+This is a **public repository**. Do not commit session-specific content such as:
+-   Session summaries or transcripts
+-   Implementation plans or review notes
+-   Any file under `docs/` that contains conversation context
+
+Use agent memory (e.g. `~/.claude/projects/` or equivalent) for session persistence instead. Plans can be saved locally and stashed but must not be committed.
 
 ### Common Issues
 

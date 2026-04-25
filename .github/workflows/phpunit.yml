@@ -1,0 +1,33 @@
+name: PHPUnit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php-version: ['7.4', '8.1', '8.2']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP ${{ matrix.php-version }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+
+      - name: Download PHPUnit
+        env:
+          PHPUNIT_VERSION: '9.6.34'
+          PHPUNIT_SHA256: 'e7264ae61fe58a487c2bd741905b85940d8fbc2b32cf4a279949b6d9a172a06a'
+        run: |
+          php -r "copy('https://phar.phpunit.de/phpunit-${PHPUNIT_VERSION}.phar', 'phpunit.phar');"
+          echo "${PHPUNIT_SHA256}  phpunit.phar" | sha256sum -c -
+
+      - name: Run tests
+        run: php phpunit.phar

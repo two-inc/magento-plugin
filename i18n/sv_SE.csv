@@ -27,22 +27,22 @@ Branding,Branding
 "By checking this box, I confirm that I have read and agree to %1.","Genom att kryssa i denna ruta bekräftar jag att jag har läst och godkänner %1."
 "Check last 100 debug log records","Kontrollera de senaste 100 felsökningsloggposterna"
 "Check last 100 error log records","Kontrollera de senaste 100 felloggposterna"
-"City is not valid.","Stad är inte giltig."
+"City",Stad
+"%1 is not valid.","%1 är inte giltigt."
+"%1: %2.","%1: %2."
 "Click here to log in or sign up as a Sole Trader.","Klicka här för att logga in eller registrera dig som enskild näringsidkare."
 "Company ID",Organisationsnummer
-"Company ID is not valid.","Företags-ID är inte giltigt."
 "Company Name",Företagsnamn
 "Could not initiate capture with %1","Kunde inte initiera infångning med %1"
 "Could not initiate refund with %1","Kunde inte initiera återbetalning med %1"
 "Could not update %1 order status to cancelled. Please contact support with order ID %2. Error: %3","Kunde inte uppdatera %1 orderstatus till annullerad. Kontakta supporten med beställnings-ID %2. Fel: %3"
-"Country is not valid.","Land är inte giltigt."
+"Country",Land
 "Credit Note",Kreditnota
 "Debug Mode",Felsökningsläge
 Department,Avdelning
-"Developed by Magmodules.","Utvecklad av Magmodules."
 Download,"Ladda ner"
 "Download as .txt file","Ladda ner som .txt-fil"
-"Email Address is not valid.","E-postadress är inte giltig."
+"Email Address",E-postadress
 "Enable Address Search","Aktivera adresssökning"
 "Enable Company Search","Aktivera företagssökning"
 "Enable Order Intent","Aktivera orderavsikt"
@@ -54,7 +54,7 @@ Environment,Miljö
 "Failed to refund order with %1. Reason: %2","Det gick inte att återbetala beställningen med %1. Orsak: %2"
 "Failed to update %1 customer address: %2","Misslyckades med att uppdatera %1 kundadress: %2"
 "Find out more","Ta reda på mer"
-"First Name is not valid.","Förnamn är inte giltigt."
+"First Name",Förnamn
 "Fulfilment Order Status","Uppfyllande orderstatus"
 "Fulfilment Trigger","Uppfyllelse trigger"
 General,Generellt
@@ -63,7 +63,7 @@ Invoice,Faktura
 "Invoice purchase with %1 is not available for this order.","Fakturaköp med %1 är inte tillgängligt för den här beställningen."
 "Last 100 debug log lines","Senaste 100 felsökningsloggraderna"
 "Last 100 error log records","Senaste 100 felloggposter"
-"Last Name is not valid.","Efternamn är inte giltigt."
+"Last Name",Efternamn
 "Log is empty","Loggen är tom"
 OK,OK
 "On Completion","Vid färdigställande"
@@ -75,7 +75,7 @@ OK,OK
 "PO Number",PO-nummer
 Payment,Betalning
 "Payment Method",Betalningsmetod
-"Phone Number is not valid.","Telefonnummer är inte giltigt."
+"Phone Number",Telefonnummer
 "Place Order",Beställa
 "Please try again later.","Försök igen senare."
 Production,Produktion
@@ -88,7 +88,7 @@ Search,Sök
 "Sole Trader","Enskild näringsidkare"
 "Something went wrong with your request to %1. %2","Något gick fel med din begäran till %1. %2"
 "Sort Order",Sorteringsordning
-"Street Address is not valid.","Gatuadress är inte giltig."
+"Street Address",Gatuadress
 "Successfully refunded order with %1 for order ID: %2. Refund reference: %3","Återbetalad beställning med %1 för beställnings-ID: %2. Återbetalningsreferens: %3"
 TWO,TWO
 "The %1 payment plugin for Magento simplifies B2B shopping, making it easy and safe for merchants to offer invoices as a payment method.<br>The payment method lives next to other payment methods in your existing checkout, and offers a variety of configuration options to suit your businesses needs.<br>If you would like to know more about how to configure the plugin, check out our <a href=""%2"" target=""_blank"">step by step guide</a>.","Betalningspluginet %1 för Magento förenklar B2B-shopping, vilket gör det enkelt och säkert för handlare att erbjuda fakturor som betalningsmetod. <br> Betalningsmetoden finns bredvid andra betalningsmetoder i din befintliga kassa, och erbjuder en mängd olika konfigurationsalternativ för att passa ditt företags behov. <br> Om du vill veta mer om hur du konfigurerar plugin-programmet, kolla in vår <a href=""%2"" target=""_blank""> steg-för-steg-guide </a> ."
@@ -108,7 +108,7 @@ Version,Version
 "Your invoice purchase with %1 is likely to be accepted subject to additional checks.","Ditt fakturaköp med %1 kommer sannolikt att accepteras under förutsättning av ytterligare kontroller."
 "Your request to %1 failed. Reason: %2","Din begäran till %1 misslyckades. Orsak: %2"
 "Your sole trader account could not be verified.","Ditt enskild näringsidkarekonto kunde inte verifieras."
-"Zip/Postal Code is not valid.","Postnummer är inte giltigt."
+"Zip/Postal Code",Postnummer
 "Invoice email address","E-postadress för faktura"
 "Please ensure that your invoice email address list only contains valid email addresses separated by commas.","Se till att din e-postadresslista för faktura endast innehåller giltiga e-postadresser separerade med kommatecken."
 "Please enter 3 or more characters","Ange 3 eller fler tecken"
@@ -122,3 +122,36 @@ Standard,Standard
 "End of Month","Månadsskifte"
 "%1 days","%1 dagar"
 "Controls the position of this payment method relative to other payment methods at checkout. Lower numbers appear first. Default is empty (no specific order).","Styr positionen för denna betalningsmetod i förhållande till andra betalningsmetoder vid kassan. Lägre nummer visas först. Standard är tom (ingen specifik ordning)."
+"Payment Terms","Betalningsvillkor"
+"Select the payment term(s) you want to offer. If a custom duration is set below, this selection is optional.","Välj betalningsvillkor du vill erbjuda. Om en anpassad varaktighet anges nedan är detta val valfritt."
+"Custom Payment Term (days)","Anpassat betalningsvillkor (dagar)"
+"Optional. Enter a custom number of days to offer alongside the selected terms above.","Valfritt. Ange ett anpassat antal dagar att erbjuda tillsammans med de valda villkoren ovan."
+"Default Payment Term","Standard betalningsvillkor"
+"Select the payment term that will be automatically selected for your customer.","Välj det betalningsvillkor som automatiskt väljs för din kund."
+"Surcharge Strategy","Tilläggsstrategi"
+"No surcharge applied","Inget tillägg"
+"Select a method to surcharge your customer.","Välj en metod för att debitera din kund."
+No,Nej
+Percentage,Procent
+"Fixed fee","Fast belopp"
+"Fixed fee and percentage","Fast belopp och procent"
+"Surcharge Calculation Basis","Grund för tilläggsberäkning"
+"Total fee for selected term","Total avgift för valt villkor"
+"Fee difference vs default payment term","Avgiftsskillnad mot standard betalningsvillkor"
+"Surcharge Line Description","Beskrivning av tilläggsavgift"
+"Description shown to the buyer for the surcharge line item.","Beskrivning som visas för köparen för tilläggsavgiften."
+"Payment terms fee","Avgift för betalningsvillkor"
+"Surcharge Tax Rate (%)","Momssats för tillägg (%)"
+"Leave empty to use your store's default tax rate (%1%). Enter 0 for tax-exempt.","Lämna tomt för att använda butikens standard momssats (%1%). Ange 0 för momsbefrielse."
+"Warning: No tax rules are configured for your store. Enter a rate manually, or enter 0 for tax-exempt.","Varning: Inga momsregler har konfigurerats för din butik. Ange en momssats manuellt, eller ange 0 för momsbefrielse."
+"To set up automatic tax resolution:","För att ställa in automatisk momsberäkning:"
+"Per-Term Surcharge Configuration","Kostnadsfördelning per termin"
+"Term","Termin"
+"Fixed Amount","Fast belopp"
+"Percentage","Procent"
+"Limit","Gräns"
+"Use Default","Använd standard"
+"default","standard"
+"No payment terms selected. Select payment terms above to configure surcharges.","Inga betalningsvillkor valda. Välj betalningsvillkor ovan för att konfigurera tillägg."
+"Payment Term","Betalningsvillkor"
+days,dagar

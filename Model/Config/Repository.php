@@ -9,9 +9,11 @@ namespace Two\Gateway\Model\Config;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
+use Magento\Framework\App\State;
 use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\UrlInterface;
 use Magento\Store\Model\ScopeInterface;
+use Magento\Tax\Model\Calculation as TaxCalculation;
 use Two\Gateway\Api\Config\RepositoryInterface;
 
 /**
@@ -35,23 +37,38 @@ class Repository implements RepositoryInterface
      * @var ProductMetadataInterface
      */
     private $productMetadata;
+    /**
+     * @var State
+     */
+    private $appState;
+
+    /**
+     * @var TaxCalculation
+     */
+    private $taxCalculation;
 
     /**
      * @param ScopeConfigInterface $scopeConfig
      * @param EncryptorInterface $encryptor
      * @param UrlInterface $urlBuilder
      * @param ProductMetadataInterface $productMetadata
+     * @param State $appState
+     * @param TaxCalculation $taxCalculation
      */
     public function __construct(
         ScopeConfigInterface $scopeConfig,
         EncryptorInterface $encryptor,
         UrlInterface $urlBuilder,
-        ProductMetadataInterface $productMetadata
+        ProductMetadataInterface $productMetadata,
+        State $appState,
+        TaxCalculation $taxCalculation
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->encryptor = $encryptor;
         $this->urlBuilder = $urlBuilder;
         $this->productMetadata = $productMetadata;
+        $this->appState = $appState;
+        $this->taxCalculation = $taxCalculation;
     }
 
     /**
@@ -233,6 +250,12 @@ class Repository implements RepositoryInterface
      */
     public function getCheckoutApiUrl(?string $mode = null): string
     {
+        if ($this->appState->getMode() === State::MODE_DEVELOPER) {
+            $envUrl = getenv('TWO_API_BASE_URL');
+            if ($envUrl !== false && $envUrl !== '') {
+                return $envUrl;
+            }
+        }
         $mode = $mode ?: $this->getMode();
         $prefix = $mode == 'production' ? 'api' : ('api.' . $mode);
         return sprintf(self::URL_TEMPLATE, $prefix);
@@ -243,9 +266,43 @@ class Repository implements RepositoryInterface
      */
     public function getCheckoutPageUrl(?string $mode = null): string
     {
+        if ($this->appState->getMode() === State::MODE_DEVELOPER) {
+            $envUrl = getenv('TWO_CHECKOUT_BASE_URL');
+            if ($envUrl !== false && $envUrl !== '') {
+                return $envUrl;
+            }
+        }
         $mode = $mode ?: $this->getMode();
         $prefix = $mode == 'production' ? 'checkout' : ('checkout.' . $mode);
         return sprintf(self::URL_TEMPLATE, $prefix);
+    }
+
+    /**
+     * Get brand identifier for checkout page.
+     *
+     * @return string
+     */
+    public function getBrand(): string
+    {
+        $envBrand = getenv('TWO_BRAND');
+        if ($envBrand !== false && $envBrand !== '') {
+            return $envBrand;
+        }
+        return '';
+    }
+
+    /**
+     * Get brand version for checkout page.
+     *
+     * @return string
+     */
+    public function getBrandVersion(): string
+    {
+        $envVersion = getenv('TWO_BRAND_VERSION');
+        if ($envVersion !== false && $envVersion !== '') {
+            return $envVersion;
+        }
+        return '';
     }
 
     /**
@@ -334,6 +391,122 @@ class Repository implements RepositoryInterface
      */
     public function getPaymentTermsDurationDays(?int $storeId = null): int
     {
-        return (int)$this->getConfig(self::XML_PATH_PAYMENT_TERMS_DURATION_DAYS, $storeId) ?: 30;
+        return (int)$this->getConfig(self::XML_PATH_PAYMENT_TERMS_DURATION_DAYS, $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getPaymentTerms(?int $storeId = null): array
+    {
+        $value = (string)$this->getConfig(self::XML_PATH_PAYMENT_TERMS, $storeId);
+        if ($value === '') {
+            return [];
+        }
+        return array_map('intval', explode(',', $value));
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getAllBuyerTerms(?int $storeId = null): array
+    {
+        $terms = $this->getPaymentTerms($storeId);
+        $custom = $this->getPaymentTermsDurationDays($storeId);
+        if ($custom > 0) {
+            $terms[] = $custom;
+        }
+        $terms = array_unique($terms);
+        sort($terms);
+        return $terms;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getDefaultPaymentTerm(?int $storeId = null): int
+    {
+        $default = (int)$this->getConfig(self::XML_PATH_DEFAULT_PAYMENT_TERM, $storeId);
+        if ($default > 0) {
+            return $default;
+        }
+        $terms = $this->getAllBuyerTerms($storeId);
+        return $terms ? min($terms) : 30;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getSurchargeType(?int $storeId = null): string
+    {
+        return (string)$this->getConfig(self::XML_PATH_SURCHARGE_TYPE, $storeId) ?: 'none';
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isSurchargeDifferential(?int $storeId = null): bool
+    {
+        return $this->isSetFlag(self::XML_PATH_SURCHARGE_DIFFERENTIAL, $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getSurchargeLineDescription(?int $storeId = null): string
+    {
+        return (string)$this->getConfig(self::XML_PATH_SURCHARGE_LINE_DESCRIPTION, $storeId)
+            ?: 'Payment terms fee';
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getSurchargeTaxRate(?int $storeId = null): float
+    {
+        $configured = $this->getConfig(self::XML_PATH_SURCHARGE_TAX_RATE, $storeId);
+        if ($configured !== null && $configured !== '') {
+            return (float)$configured;
+        }
+        return $this->getDefaultTaxRate($storeId);
+    }
+
+    /**
+     * Look up the store's default tax rate from Magento's tax rules.
+     *
+     * @param int|null $storeId
+     * @return float
+     */
+    public function getDefaultTaxRate(?int $storeId = null): float
+    {
+        $productTaxClassId = (int)$this->getConfig(self::XML_PATH_DEFAULT_PRODUCT_TAX_CLASS, $storeId);
+        if ($productTaxClassId <= 0) {
+            return 0.0;
+        }
+        $request = $this->taxCalculation->getRateRequest(null, null, null, $storeId);
+        $request->setProductClassId($productTaxClassId);
+        return (float)$this->taxCalculation->getRate($request);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getSurchargeConfig(int $days, ?int $storeId = null): array
+    {
+        $prefix = sprintf('payment/two_payment/surcharge_%d_', $days);
+        $limitValue = $this->getConfig($prefix . 'limit', $storeId);
+        return [
+            'percentage' => (float)$this->getConfig($prefix . 'percentage', $storeId),
+            'fixed' => (float)$this->getConfig($prefix . 'fixed', $storeId),
+            'limit' => $limitValue !== null ? (float)$limitValue : null,
+        ];
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getSurchargeFixedCurrency(?int $storeId = null): string
+    {
+        return (string)$this->getConfig(self::XML_PATH_SURCHARGE_FIXED_CURRENCY, $storeId);
     }
 }
