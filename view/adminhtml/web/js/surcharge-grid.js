@@ -13,6 +13,10 @@ define(['jquery', 'domReady!'], function ($) {
         var $currencyNote = $container.find('.surcharge-grid__currency-note');
         var maxFixed = parseInt($container.data('max-fixed'), 10) || 100;
         var maxPercentage = parseInt($container.data('max-percentage'), 10) || 100;
+        // Memoise last terms key to collapse repeat fires from update().
+        // Declared here (before update() is invoked at init) so the source-order
+        // assignment doesn't overwrite a value loadFees set during init.
+        var lastFeesKey = null;
 
         // ── Helpers ──────────────────────────────────────────────────────
 
@@ -211,6 +215,7 @@ define(['jquery', 'domReady!'], function ($) {
             updateTermRows();
             updateColumnVisibility();
             updateDifferentialState();
+            loadFees();
         }
 
         // ── Event bindings ───────────────────────────────────────────────
@@ -224,7 +229,6 @@ define(['jquery', 'domReady!'], function ($) {
 
         initInheritCheckboxes();
         update();
-        loadFees();
 
         // ── Fee column (read-only, fetched from Two API via admin proxy) ─
 
@@ -237,6 +241,11 @@ define(['jquery', 'domReady!'], function ($) {
             if (!terms.length) {
                 return;
             }
+            var key = terms.join(',');
+            if (key === lastFeesKey) {
+                return;
+            }
+            lastFeesKey = key;
             var $formKey = $('input[name="form_key"]').first();
             $.ajax({
                 url: url,
@@ -276,8 +285,12 @@ define(['jquery', 'domReady!'], function ($) {
                     if (fixed > 0) { parts.push(fixed.toFixed(2) + currencySuffix); }
                     $cell.text(parts.length ? parts.join(' + ') : '0.00');
                 });
+            }).fail(function () {
+                // Clear memo so the next term-set change retries; cells keep
+                // whatever they showed before (— on first attempt, or prior
+                // fees on a refresh).
+                lastFeesKey = null;
             });
-            // .fail intentionally omitted: on error, cells stay "—".
         }
     };
 });
