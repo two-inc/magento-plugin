@@ -9,18 +9,15 @@ namespace Two\Gateway\Service\Payment;
 
 use Exception;
 use Magento\Framework\App\RequestInterface;
-use Magento\Framework\DB\Transaction;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Url\DecoderInterface;
 use Magento\Sales\Api\OrderPaymentRepositoryInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
-use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Payment\Transaction\BuilderInterface as TransactionBuilder;
 use Magento\Sales\Model\Order\Payment\Transaction\Repository as PaymentTransactionRepository;
 use Magento\Sales\Model\OrderFactory;
 use Magento\Sales\Model\ResourceModel\Order as OrderResource;
-use Magento\Sales\Model\Service\InvoiceService;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
@@ -57,15 +54,6 @@ class OrderService
      */
     private $urlCookie;
 
-    /**
-     * @var InvoiceService
-     */
-    private $invoiceService;
-
-    /**
-     * @var Transaction
-     */
-    private $transaction;
     /**
      * @var DecoderInterface
      */
@@ -106,8 +94,6 @@ class OrderService
      * @param OrderResource $orderResource
      * @param OrderFactory $orderFactory
      * @param UrlCookie $urlCookie
-     * @param InvoiceService $invoiceService
-     * @param Transaction $transaction
      * @param DecoderInterface $urlDecoder
      * @param ConfigRepository $configRepository
      * @param RequestInterface $request
@@ -123,8 +109,6 @@ class OrderService
         OrderResource $orderResource,
         OrderFactory $orderFactory,
         UrlCookie $urlCookie,
-        InvoiceService $invoiceService,
-        Transaction $transaction,
         DecoderInterface $urlDecoder,
         ConfigRepository $configRepository,
         RequestInterface $request,
@@ -139,8 +123,6 @@ class OrderService
         $this->orderResource = $orderResource;
         $this->orderFactory = $orderFactory;
         $this->urlCookie = $urlCookie;
-        $this->invoiceService = $invoiceService;
-        $this->transaction = $transaction;
         $this->urlDecoder = $urlDecoder;
         $this->configRepository = $configRepository;
         $this->request = $request;
@@ -296,33 +278,17 @@ class OrderService
      */
     public function processOrder(Order $order, string $transactionId)
     {
-        $payment = $order->getPayment();
-        $fulfillTrigger = $this->configRepository->getFulfillTrigger();
-        if ($fulfillTrigger == 'shipment' || $fulfillTrigger == 'complete') {
-            $order->setIsInProcess(true);
-            $order->setState(Order::STATE_PROCESSING);
-            $order->setStatus(Order::STATE_PROCESSING);
-            $invoice = $this->invoiceService->prepareInvoice($order);
-            if ($invoice->getGrandTotal() > 0) {
-                $invoice->setRequestedCaptureCase(Invoice::CAPTURE_ONLINE);
-                $invoice->register();
-                $message = __(
-                    '%1 payment has been verified by the customer.',
-                    $this->configRepository::PROVIDER
-                );
-                $this->addOrderComment($order, $message);
-                $transactionSave = $this->transaction
-                    ->addObject(
-                        $payment
-                    )->addObject(
-                        $invoice
-                    )->addObject(
-                        $invoice->getOrder()
-                    );
-                $transactionSave->save();
-                $this->addAuthorizationTransaction($order, $transactionId);
-            }
-        }
+        $order->setIsInProcess(true);
+        $order->setState(Order::STATE_PROCESSING);
+        $order->setStatus(Order::STATE_PROCESSING);
+        $this->orderRepository->save($order);
+
+        $message = __(
+            '%1 payment has been verified by the customer.',
+            $this->configRepository::PRODUCT_NAME
+        );
+        $this->addOrderComment($order, $message);
+        $this->addAuthorizationTransaction($order, $transactionId);
         return $this;
     }
 

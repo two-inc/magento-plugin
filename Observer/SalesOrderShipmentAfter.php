@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Observer;
 
 use Exception;
+use Magento\Framework\DB\Transaction;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Exception\LocalizedException;
@@ -16,7 +17,9 @@ use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\Data\ShipmentInterface;
 use Magento\Sales\Api\OrderStatusHistoryRepositoryInterface;
 use Magento\Sales\Model\Order;
+use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Status\HistoryFactory;
+use Magento\Sales\Model\Service\InvoiceService;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
@@ -54,6 +57,16 @@ class SalesOrderShipmentAfter implements ObserverInterface
     private $composeShipment;
 
     /**
+     * @var InvoiceService
+     */
+    private $invoiceService;
+
+    /**
+     * @var Transaction
+     */
+    private $transaction;
+
+    /**
      * SalesOrderShipmentAfter constructor.
      *
      * @param ConfigRepository $configRepository
@@ -61,19 +74,25 @@ class SalesOrderShipmentAfter implements ObserverInterface
      * @param HistoryFactory $historyFactory
      * @param OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository
      * @param ComposeShipment $composeShipment
+     * @param InvoiceService $invoiceService
+     * @param Transaction $transaction
      */
     public function __construct(
         ConfigRepository $configRepository,
         Adapter $apiAdapter,
         HistoryFactory $historyFactory,
         OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository,
-        ComposeShipment $composeShipment
+        ComposeShipment $composeShipment,
+        InvoiceService $invoiceService,
+        Transaction $transaction
     ) {
         $this->configRepository = $configRepository;
         $this->apiAdapter = $apiAdapter;
         $this->historyFactory = $historyFactory;
         $this->orderStatusHistoryRepository = $orderStatusHistoryRepository;
         $this->composeShipment = $composeShipment;
+        $this->invoiceService = $invoiceService;
+        $this->transaction = $transaction;
     }
 
     /**
@@ -119,28 +138,36 @@ class SalesOrderShipmentAfter implements ObserverInterface
 
                 $this->parseFulfillResponse($response, $order);
                 if ($isWholeOrderShipped) {
-                    foreach ($order->getInvoiceCollection() as $invoice) {
-                        $invoice->pay();
-                        $invoice->setTransactionId($order->getPayment()->getLastTransId());
-                        $invoice->save();
-                    }
+                    $this->createOfflinePaidInvoice($order);
                 }
-            } elseif ($this->configRepository->getFulfillTrigger() == 'complete') {
-                foreach ($order->getInvoiceCollection() as $invoice) {
-                    $invoice->pay();
-                    $invoice->setTransactionId($order->getPayment()->getLastTransId());
-                    $invoice->save();
-                }
-
-                $additionalInformation = $order->getPayment()->getAdditionalInformation();
-                $additionalInformation['marked_completed'] = true;
-
-                $order->getPayment()->setAdditionalInformation($additionalInformation);
-
-                $comment = __('%1 order invoice has not been issued yet.', $this->configRepository::PROVIDER);
-                $this->addStatusToOrderHistory($order, $comment->render());
             }
         }
+    }
+
+    /**
+     * Create a Magento invoice for the whole order and mark it paid.
+     *
+     * Two has already been told to fulfil the order via /fulfillments above,
+     * so this invoice records that fact in Magento — CAPTURE_OFFLINE prevents
+     * Two::capture() from re-posting /fulfillments.
+     *
+     * @param Order $order
+     * @throws \Exception
+     */
+    private function createOfflinePaidInvoice(Order $order): void
+    {
+        $invoice = $this->invoiceService->prepareInvoice($order);
+        if ($invoice->getGrandTotal() <= 0) {
+            return;
+        }
+        $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
+        $invoice->register();
+        $invoice->pay();
+        $invoice->setTransactionId($order->getPayment()->getLastTransId());
+        $this->transaction
+            ->addObject($invoice)
+            ->addObject($invoice->getOrder())
+            ->save();
     }
 
     /**
