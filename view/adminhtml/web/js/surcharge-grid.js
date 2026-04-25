@@ -269,16 +269,12 @@ define(['jquery', 'domReady!'], function ($) {
                     if (!fee) {
                         return;
                     }
-                    var pct = (fee.percentage !== undefined && fee.percentage !== null)
-                        ? Number(fee.percentage).toFixed(2) + '%'
-                        : null;
-                    var fixed = (fee.fixed !== undefined && fee.fixed !== null)
-                        ? Number(fee.fixed).toFixed(2)
-                        : null;
+                    var pct = Number(fee.percentage) || 0;
+                    var fixed = Number(fee.fixed) || 0;
                     var parts = [];
-                    if (pct !== null) { parts.push(pct); }
-                    if (fixed !== null) { parts.push(fixed + currencySuffix); }
-                    $cell.text(parts.length ? parts.join(' + ') : '—');
+                    if (pct > 0) { parts.push(pct.toFixed(2) + '%'); }
+                    if (fixed > 0) { parts.push(fixed.toFixed(2) + currencySuffix); }
+                    $cell.text(parts.length ? parts.join(' + ') : '0.00');
                 });
             });
             // .fail intentionally omitted: on error, cells stay "—".
