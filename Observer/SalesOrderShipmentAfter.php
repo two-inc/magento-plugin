@@ -137,7 +137,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
                 }
 
                 $this->parseFulfillResponse($response, $order);
-                if ($isWholeOrderShipped) {
+                if ($isWholeOrderShipped && !$order->hasInvoices()) {
                     $this->createOfflinePaidInvoice($order);
                 }
             }

@@ -285,7 +285,7 @@ class OrderService
 
         $message = __(
             '%1 payment has been verified by the customer.',
-            $this->configRepository::PRODUCT_NAME
+            $this->configRepository::PROVIDER
         );
         $this->addOrderComment($order, $message);
         $this->addAuthorizationTransaction($order, $transactionId);

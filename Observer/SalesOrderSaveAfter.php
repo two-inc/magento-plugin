@@ -115,7 +115,7 @@ class SalesOrderSaveAfter implements ObserverInterface
         if (!$this->isWholeOrderShipped($order)) {
             $error = __(
                 "%1 requires whole order to be shipped before it can be fulfilled.",
-                $this->configRepository::PRODUCT_NAME
+                $this->configRepository::PROVIDER
             );
             throw new LocalizedException($error);
         }
