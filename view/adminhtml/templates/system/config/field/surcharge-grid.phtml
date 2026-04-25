@@ -96,7 +96,7 @@ $columnLabels = [
                             <?php endif; ?>
                         </td>
                     <?php endforeach; ?>
-                    <td class="surcharge-grid__fee" data-term="<?= (int)$days ?>">&mdash;</td>
+                    <td class="surcharge-grid__fee" data-term="<?= (int)$days ?>"><span class="surcharge-grid__fee-loading"><span></span><span></span><span></span></span></td>
                     <?php if ($isNonDefault): ?>
                         <td class="surcharge-grid__inherit">
                             <?php foreach ($columns as $col): ?>

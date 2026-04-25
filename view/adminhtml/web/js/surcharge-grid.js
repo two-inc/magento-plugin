@@ -17,6 +17,8 @@ define(['jquery', 'domReady!'], function ($) {
         // Declared here (before update() is invoked at init) so the source-order
         // assignment doesn't overwrite a value loadFees set during init.
         var lastFeesKey = null;
+        var LOADING_DOTS = '<span class="surcharge-grid__fee-loading">'
+            + '<span></span><span></span><span></span></span>';
 
         // ── Helpers ──────────────────────────────────────────────────────
 
@@ -76,7 +78,7 @@ define(['jquery', 'domReady!'], function ($) {
                 html += '/></td>';
             });
 
-            html += '<td class="surcharge-grid__fee" data-term="' + days + '">&mdash;</td>';
+            html += '<td class="surcharge-grid__fee" data-term="' + days + '">' + LOADING_DOTS + '</td>';
             html += '</tr>';
             return $(html);
         }
@@ -276,6 +278,9 @@ define(['jquery', 'domReady!'], function ($) {
                     var term = String($cell.data('term'));
                     var fee = response.fees[term];
                     if (!fee) {
+                        // Server returned no row for this term — stop the
+                        // loading indicator and show an em-dash.
+                        $cell.html('&mdash;');
                         return;
                     }
                     var pct = Number(fee.percentage) || 0;
