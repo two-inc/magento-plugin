@@ -13,6 +13,12 @@ define(['jquery', 'domReady!'], function ($) {
         var $currencyNote = $container.find('.surcharge-grid__currency-note');
         var maxFixed = parseInt($container.data('max-fixed'), 10) || 100;
         var maxPercentage = parseInt($container.data('max-percentage'), 10) || 100;
+        // Memoise last terms key to collapse repeat fires from update().
+        // Declared here (before update() is invoked at init) so the source-order
+        // assignment doesn't overwrite a value loadFees set during init.
+        var lastFeesKey = null;
+        var LOADING_DOTS = '<span class="surcharge-grid__fee-loading">'
+            + '<span></span><span></span><span></span></span>';
 
         // ── Helpers ──────────────────────────────────────────────────────
 
@@ -72,7 +78,7 @@ define(['jquery', 'domReady!'], function ($) {
                 html += '/></td>';
             });
 
-            html += '<td class="surcharge-grid__fee" data-term="' + days + '">&mdash;</td>';
+            html += '<td class="surcharge-grid__fee" data-term="' + days + '">' + LOADING_DOTS + '</td>';
             html += '</tr>';
             return $(html);
         }
@@ -211,6 +217,7 @@ define(['jquery', 'domReady!'], function ($) {
             updateTermRows();
             updateColumnVisibility();
             updateDifferentialState();
+            loadFees();
         }
 
         // ── Event bindings ───────────────────────────────────────────────
@@ -224,7 +231,6 @@ define(['jquery', 'domReady!'], function ($) {
 
         initInheritCheckboxes();
         update();
-        loadFees();
 
         // ── Fee column (read-only, fetched from Two API via admin proxy) ─
 
@@ -237,6 +243,11 @@ define(['jquery', 'domReady!'], function ($) {
             if (!terms.length) {
                 return;
             }
+            var key = terms.join(',');
+            if (key === lastFeesKey) {
+                return;
+            }
+            lastFeesKey = key;
             var $formKey = $('input[name="form_key"]').first();
             $.ajax({
                 url: url,
@@ -267,21 +278,24 @@ define(['jquery', 'domReady!'], function ($) {
                     var term = String($cell.data('term'));
                     var fee = response.fees[term];
                     if (!fee) {
+                        // Server returned no row for this term — stop the
+                        // loading indicator and show an em-dash.
+                        $cell.html('&mdash;');
                         return;
                     }
-                    var pct = (fee.percentage !== undefined && fee.percentage !== null)
-                        ? Number(fee.percentage).toFixed(2) + '%'
-                        : null;
-                    var fixed = (fee.fixed !== undefined && fee.fixed !== null)
-                        ? Number(fee.fixed).toFixed(2)
-                        : null;
+                    var pct = Number(fee.percentage) || 0;
+                    var fixed = Number(fee.fixed) || 0;
                     var parts = [];
-                    if (pct !== null) { parts.push(pct); }
-                    if (fixed !== null) { parts.push(fixed + currencySuffix); }
-                    $cell.text(parts.length ? parts.join(' + ') : '—');
+                    if (pct > 0) { parts.push(pct.toFixed(2) + '%'); }
+                    if (fixed > 0) { parts.push(fixed.toFixed(2) + currencySuffix); }
+                    $cell.text(parts.length ? parts.join(' + ') : '0.00');
                 });
+            }).fail(function () {
+                // Clear memo so the next term-set change retries; cells keep
+                // whatever they showed before (— on first attempt, or prior
+                // fees on a refresh).
+                lastFeesKey = null;
             });
-            // .fail intentionally omitted: on error, cells stay "—".
         }
     };
 });

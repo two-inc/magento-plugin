@@ -169,6 +169,7 @@ class ConfigProvider implements ConfigProviderInterface
 
         try {
             $quote = $this->checkoutSession->getQuote();
+            $storeId = (int)$quote->getStoreId();
             // Subtract any existing surcharge to avoid circular base
             $existingSurcharge = (float)$this->checkoutSession->getTwoSurchargeGross();
             $grandTotal = (float)$quote->getGrandTotal() - $existingSurcharge;
@@ -191,7 +192,8 @@ class ConfigProvider implements ConfigProviderInterface
                         $grandTotal,
                         $days,
                         $country,
-                        $currency
+                        $currency,
+                        $storeId
                     );
                     $net = $result['amount'];
                     $tax = round($net * ($result['tax_rate'] / 100), 2);
