@@ -5,7 +5,7 @@ jobs:
   build:
     runs-on: ${{ vars.RUNNER_STANDARD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Run codesniffer
         run: docker run
