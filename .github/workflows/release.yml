@@ -135,14 +135,14 @@ jobs:
       - name: Bump version (bumpver — files + commit only)
         # bumpver.toml is the single source of truth for which files
         # carry the version (composer.json + etc/config.xml + bumpver.toml
-        # itself). --no-tag --no-push because we tag and push manually
+        # itself). --no-tag-commit --no-push because we tag and push manually
         # after — the manual step lets us send the push under the App
         # token (so downstream workflows fire) and ensures the tag is
         # written explicitly rather than depending on bumpver defaults.
         if: steps.gate.outputs.skip == '0'
         env:
           LEVEL: ${{ steps.bump.outputs.level }}
-        run: bumpver update "--${LEVEL}" --no-tag --no-push
+        run: bumpver update "--${LEVEL}" --no-tag-commit --no-push
 
       - name: Read new version
         if: steps.gate.outputs.skip == '0'
