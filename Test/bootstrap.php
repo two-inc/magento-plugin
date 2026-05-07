@@ -49,6 +49,9 @@ if (!class_exists(\Magento\Framework\HTTP\Client\Curl::class)) {
 if (!class_exists(\Magento\Framework\Exception\LocalizedException::class)) {
     require_once __DIR__ . '/Stubs/LocalizedException.php';
 }
+if (!class_exists(\Magento\Framework\Exception\InputException::class)) {
+    require_once __DIR__ . '/Stubs/InputException.php';
+}
 if (!class_exists(\Magento\Bundle\Model\Product\Price::class)) {
     require_once __DIR__ . '/Stubs/BundlePrice.php';
 }

@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Model\Webapi;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
+use Magento\Framework\Exception\InputException;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\CartTotalRepositoryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
@@ -68,9 +69,33 @@ class TermSelection implements TermSelectionInterface
      */
     public function selectTerm(string $cartId, int $termDays): array
     {
+        // Session is the auth boundary on this anonymous webapi route —
+        // $cartId is unverifiable here (UserContextInterface doesn't
+        // populate when the framework skips auth) and is therefore
+        // ignored.
+        $quote = $this->checkoutSession->getQuote();
+        // (int)null = 0 if the quote has no store assigned yet (transient
+        // quote, anonymous probe). getAllBuyerTerms(0) resolves to the
+        // default scope's terms, which is acceptable: ComposeOrder
+        // resolves the real store later, and any term valid in the
+        // default scope is a reasonable validation subset.
+        $storeId = (int)$quote->getStoreId();
+
+        // Reject termDays the merchant hasn't configured.
+        // Without this guard, an anonymous caller can persist any int
+        // into the session via setTwoSelectedTerm; the persisted value
+        // then flows through collectTotals → quoteRepository->save →
+        // ComposeOrder, so the order placed on Two's API would
+        // reference a term the merchant never offered. Validate
+        // BEFORE any state mutation so an invalid call doesn't poison
+        // the session even on the throw path.
+        $allowedTerms = $this->configRepository->getAllBuyerTerms($storeId);
+        if (!in_array($termDays, $allowedTerms, true)) {
+            throw new InputException(__('Selected payment term is not available.'));
+        }
+
         $this->checkoutSession->setTwoSelectedTerm($termDays);
 
-        $quote = $this->checkoutSession->getQuote();
         $quote->collectTotals();
         $this->quoteRepository->save($quote);
 
