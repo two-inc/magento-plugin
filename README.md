@@ -144,6 +144,28 @@ make test-e2e TWO_API_KEY=<your-key>
 | `make format` | Run Prettier on frontend JS/CSS/templates |
 | `make clean` | Stop and remove the Magento container |
 
+## Releases
+
+Releases are cut automatically once CI passes on `main`.
+
+### Tagging (automatic, gated on CI)
+
+`.github/workflows/release.yml` is triggered by the `CI` workflow completing on `main`. When CI's conclusion is `success`, it:
+
+1. Skips itself if the head commit is already a `chore: Bump version` commit, or if the SHA already carries a numeric tag.
+2. Reads conventional-commit types in `<previous-tag>..HEAD` to pick the bump level:
+   - `BREAKING CHANGE:` / `<type>!:` → **major**
+   - `feat:` → **minor**
+   - everything else → **patch**
+
+   Linear ticket prefixes are supported (e.g. `INF-123/feat:`).
+3. Runs `bumpver update --<level> --no-tag-commit --no-push` to rewrite `composer.json`, `etc/config.xml`, and `bumpver.toml`.
+4. Tags `X.Y.Z` (bare numeric, matching the established tag convention), pushes the bump commit and tag under the org GitHub App identity, and creates a GitHub Release with a bucketed changelog (Breaking / Features / Fixes / Internals / Other) — so reading the Release page reveals at a glance why the bump was a major / minor / patch.
+
+`.github/workflows/merge-back.yml` keeps `develop` fast-forwarded to match `main` after each release. `.github/workflows/auto-pr.yml` keeps a rolling sync PR open from `develop` to `main` with a preview of the next release notes — the same bucketing the actual Release page uses.
+
+To trigger a release, merge the rolling sync PR into `main`. CI runs on the merged commit; once green, `release.yml` fires.
+
 ## Links
 
 - [Two developer documentation](https://docs.two.inc/)

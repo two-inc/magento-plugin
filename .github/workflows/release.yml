@@ -42,28 +42,43 @@ jobs:
 
       - uses: actions/checkout@v5
         with:
-          # Pin to the SHA that just passed CI, not main's tip,
-          # in case another commit landed between CI completion and
-          # this workflow firing.
-          ref: ${{ github.event.workflow_run.head_sha }}
+          # Check out the branch (not the SHA) so HEAD lands on
+          # `main` rather than detached — bumpver's commit then
+          # advances the branch, and the later `git push origin
+          # main` actually pushes the bump.
+          ref: main
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Skip if HEAD already tagged
+      - name: Should we release?
+        # Two reasons to skip:
+        # 1. Branch drift — workflow_run fires after CI completes,
+        #    but another commit could land on main in the small
+        #    window before release runs. If branch HEAD no longer
+        #    matches the SHA CI signed off on, the next CI cycle
+        #    will retry against the new tip.
+        # 2. Already tagged — re-runs on the same commit (or on
+        #    the bumpver commit itself) shouldn't produce a
+        #    duplicate release. Match bare numeric tags
+        #    (1.14.1 etc.) — the repo's established convention.
         id: gate
+        env:
+          PASSED_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          # Match bare numeric tags (1.14.1 etc.) — the repo's
-          # established convention. Reject the legacy `abn-*` prefix
-          # so a stale fork tag pointing at HEAD doesn't suppress a
-          # legitimate release.
+          actual=$(git rev-parse HEAD)
+          if [ "$actual" != "$PASSED_SHA" ]; then
+            echo "::warning::main moved from ${PASSED_SHA} to ${actual} between CI and release. Skipping."
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           existing=$(git tag --points-at HEAD | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
           if [ -n "$existing" ]; then
             echo "HEAD already tagged as $existing — nothing to release."
             echo "skip=1" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=0" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo "skip=0" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
         if: steps.gate.outputs.skip == '0'
