@@ -29,11 +29,22 @@ jobs:
       - name: Ensure open PR develop → main
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           existing=$(gh pr list --base main --head develop --state open --json number --jq '.[0].number // ""')
           if [ -n "$existing" ]; then
             echo "PR #$existing already open — nothing to do."
+            exit 0
+          fi
+          # No-op when develop has nothing ahead of main. Happens
+          # right after a merge-back fast-forwards develop to match
+          # main — there's no diff for `gh pr create`, which would
+          # otherwise fail with "No commits between main and develop"
+          # and leave a red check on the auto-PR workflow.
+          ahead=$(gh api "repos/${REPO}/compare/main...develop" --jq '.ahead_by')
+          if [ "$ahead" = "0" ]; then
+            echo "develop has no commits ahead of main — nothing to sync."
             exit 0
           fi
           gh pr create \
