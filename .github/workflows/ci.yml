@@ -1,0 +1,183 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# Cancel in-progress runs for the same ref when a new push lands.
+# Each PR / branch gets its own group so concurrent unrelated work is
+# unaffected.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Job-name convention: `<Tool> (PHP X.Y[, Magento Z.A.B])`.
+# Tool name first so checks group naturally in the UI; PHP version
+# always present (zero-arg jobs drop the parens entirely).
+
+jobs:
+  lint:
+    name: Lint (PHP ${{ matrix.php }})
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Trimmed to PHP versions the plugin actually runs on:
+        #   7.3 — minimum, exercised by DI compile (Magento 2.3.7)
+        #   7.4 — PHPUnit + DI compile (Magento 2.4.0)
+        #   8.1 — PHPUnit + DI compile + PHPStan (Magento 2.4.4)
+        #   8.2 — PHPUnit + DI compile + PHPStan (Magento 2.4.6)
+        # The original linting.yml lint'd 7.1/7.2/8.0 too, but the plugin's
+        # source uses PHP 7.3+ features (trailing commas in calls), so
+        # those older lints were dead checks that just hadn't run yet.
+        php: ["7.3", "7.4", "8.1", "8.2"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: none
+      - name: Lint PHP files
+        # Test/ is excluded — tests are dev-only and use newer syntax
+        # (arrow functions, etc.) than the merchant runtime. The
+        # phpunit matrix already exercises Test/ on PHP 7.4+.
+        run: |
+          find . -name '*.php' \
+            -not -path './vendor/*' \
+            -not -path './node_modules/*' \
+            -not -path './Test/*' \
+            -print0 | xargs -0 -n1 -P4 php -l > /dev/null
+
+  codesniffer:
+    name: Codesniffer
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run codesniffer
+        run: |
+          docker run \
+            --volume "$(pwd)/:/app/workdir" \
+            michielgerritsen/magento-coding-standard:latest \
+            --severity=6
+
+  phpunit:
+    name: PHPUnit (PHP ${{ matrix.php }})
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["7.4", "8.1", "8.2"]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: pcov
+
+      - name: Download PHPUnit
+        env:
+          PHPUNIT_VERSION: "9.6.34"
+          PHPUNIT_SHA256: "e7264ae61fe58a487c2bd741905b85940d8fbc2b32cf4a279949b6d9a172a06a"
+        run: |
+          php -r "copy('https://phar.phpunit.de/phpunit-${PHPUNIT_VERSION}.phar', 'phpunit.phar');"
+          echo "${PHPUNIT_SHA256}  phpunit.phar" | sha256sum -c -
+
+      - name: Run tests with coverage
+        run: php phpunit.phar --coverage-clover coverage.xml --coverage-text
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-php${{ matrix.php }}
+          path: coverage.xml
+          if-no-files-found: warn
+
+  phpstan:
+    name: PHPStan (PHP ${{ matrix.php }}, Magento ${{ matrix.magento }})
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - php: "8.1"
+            php_image: php81-fpm
+            magento: 2.4.4
+          - php: "8.2"
+            php_image: php82-fpm
+            magento: 2.4.6
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Start Magento docker container
+        run: |
+          docker run --detach --name magento-project-community-edition \
+            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+
+      - name: Create branch for Composer (composer rejects published versions on a feature branch)
+        run: |
+          git checkout -b continuous-integration-test-branch
+          sed -i '/version/d' ./composer.json
+
+      - name: Upload code into container
+        run: docker cp "$(pwd)" magento-project-community-edition:/data/extensions/
+
+      - name: Install extension
+        run: |
+          docker exec magento-project-community-edition \
+            composer require two-inc/magento2:@dev --no-plugins
+
+      - name: Activate extension
+        run: |
+          docker exec magento-project-community-edition ./retry \
+            "php bin/magento module:enable Two_Gateway && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
+
+      - name: Run PHPStan
+        run: |
+          docker exec magento-project-community-edition /bin/bash -c \
+            "./vendor/bin/phpstan analyse --no-progress -c /data/extensions/*/phpstan.neon /data/extensions"
+
+  di-compile:
+    name: DI compile (PHP ${{ matrix.php }}, Magento ${{ matrix.magento }})
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - php: "7.3"
+            php_image: php73-fpm
+            magento: 2.3.7
+          - php: "7.4"
+            php_image: php74-fpm
+            magento: 2.4.0
+          - php: "8.1"
+            php_image: php81-fpm
+            magento: 2.4.4
+          - php: "8.2"
+            php_image: php82-fpm
+            magento: 2.4.6
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Start Magento docker container
+        run: |
+          docker run --detach --name magento-project-community-edition \
+            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+
+      - name: Upload code into container
+        run: docker cp "$(pwd)" magento-project-community-edition:/data/extensions/
+
+      - name: Install extension
+        run: |
+          docker exec magento-project-community-edition \
+            composer require two-inc/magento2:@dev --no-plugins
+
+      - name: Run setup:di:compile
+        run: |
+          docker exec magento-project-community-edition ./retry \
+            "php bin/magento setup:di:compile"
