@@ -64,15 +64,11 @@ jobs:
           git config user.email "${{ vars.TWO_INC_APP_ID }}+two-inc-app[bot]@users.noreply.github.com"
 
       - name: Decide bump level + build release notes
-        # Single pass over `<previous-numeric-tag>..HEAD`:
-        # - Buckets each non-merge commit into Breaking / Features /
-        #   Fixes / Internals / Other based on its conventional-commit
-        #   type, with optional Linear ticket prefix (e.g. CET-123/feat:).
-        # - Writes the bucketed list to release-notes.md so the GitHub
-        #   Release page reflects exactly what triggered the bump level
-        #   (any Breaking entries → major; any Features → minor; else
-        #   patch). Reading the notes makes the bump-level decision
-        #   visible without having to look at the workflow log.
+        # Both the bump level and the markdown notes come out of
+        # .github/scripts/release-notes.py — the same script auto-pr.yml
+        # uses to render the rolling sync PR's preview, so the
+        # GitHub Release page exactly matches what was previewed
+        # before merge.
         if: steps.gate.outputs.skip == '0'
         id: bump
         run: |
@@ -84,52 +80,10 @@ jobs:
             range="HEAD"
           fi
 
-          : > release-notes.md
-          : > /tmp/breaking
-          : > /tmp/features
-          : > /tmp/fixes
-          : > /tmp/internals
-          : > /tmp/other
-
-          while IFS=$'\t' read -r sha subject; do
-            line="- ${subject} (${sha})"
-            if echo "$subject" | grep -qE '^([A-Z]+-[0-9]+/)?[a-z]+(\([^)]+\))?!:|^BREAKING CHANGE:'; then
-              echo "$line" >> /tmp/breaking
-            elif echo "$subject" | grep -qE '^([A-Z]+-[0-9]+/)?feat(\([^)]+\))?:'; then
-              echo "$line" >> /tmp/features
-            elif echo "$subject" | grep -qE '^([A-Z]+-[0-9]+/)?fix(\([^)]+\))?:'; then
-              echo "$line" >> /tmp/fixes
-            elif echo "$subject" | grep -qE '^([A-Z]+-[0-9]+/)?(chore|refactor|ci|docs|test|build|perf|style)(\([^)]+\))?:'; then
-              echo "$line" >> /tmp/internals
-            else
-              echo "$line" >> /tmp/other
-            fi
-          done < <(git log "$range" --no-merges --format='%h%x09%s')
-
-          # Bump level is the highest-severity bucket that's non-empty.
-          if [ -s /tmp/breaking ]; then
-            level=major
-          elif [ -s /tmp/features ]; then
-            level=minor
-          else
-            level=patch
-          fi
+          level=$(.github/scripts/release-notes.py "$range" release-notes.md)
           echo "level=$level" >> "$GITHUB_OUTPUT"
-          echo "Selected bump level: $level (range: $range)"
-
-          # Render notes — only print sections that have entries.
-          {
-            [ -s /tmp/breaking ]  && { echo "## ⚠️ Breaking changes";  cat /tmp/breaking;  echo; }
-            [ -s /tmp/features ]  && { echo "## 🚀 Features";          cat /tmp/features;  echo; }
-            [ -s /tmp/fixes ]     && { echo "## 🐛 Fixes";              cat /tmp/fixes;     echo; }
-            [ -s /tmp/internals ] && { echo "## 🧰 Internals";          cat /tmp/internals; echo; }
-            [ -s /tmp/other ]     && { echo "## Other";                 cat /tmp/other;     echo; }
-          } > release-notes.md
-          # Stash the previous tag so the post-bump step can append a
-          # "Full diff" link with the proper <prev>..<new> range —
-          # the new tag isn't known yet at this point.
           echo "prev=$prev" >> "$GITHUB_OUTPUT"
-
+          echo "Selected bump level: $level (range: $range)"
           echo "--- release-notes.md preview ---"
           cat release-notes.md
 
