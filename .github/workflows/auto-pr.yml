@@ -1,4 +1,4 @@
-name: Auto-PR develop → main
+name: Auto-PR
 
 on:
   push:
@@ -10,7 +10,8 @@ permissions:
   pull-requests: write
 
 jobs:
-  open-or-update:
+  develop-to-main:
+    name: develop → main
     runs-on: ${{ vars.RUNNER_STANDARD }}
     steps:
       - uses: actions/checkout@v4
