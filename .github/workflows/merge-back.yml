@@ -1,4 +1,4 @@
-name: Merge main → develop
+name: Merge back
 
 on:
   push:
@@ -9,7 +9,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  merge-main:
+  main-to-develop:
+    name: main → develop
     runs-on: ${{ vars.RUNNER_STANDARD }}
     if: github.ref_name == 'main'
     steps:
