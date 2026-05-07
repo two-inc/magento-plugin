@@ -124,10 +124,11 @@ jobs:
             [ -s /tmp/fixes ]     && { echo "## 🐛 Fixes";              cat /tmp/fixes;     echo; }
             [ -s /tmp/internals ] && { echo "## 🧰 Internals";          cat /tmp/internals; echo; }
             [ -s /tmp/other ]     && { echo "## Other";                 cat /tmp/other;     echo; }
-            if [ -n "$prev" ]; then
-              echo "**Full diff:** [\`${prev}..\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/${prev}...HEAD)"
-            fi
           } > release-notes.md
+          # Stash the previous tag so the post-bump step can append a
+          # "Full diff" link with the proper <prev>..<new> range —
+          # the new tag isn't known yet at this point.
+          echo "prev=$prev" >> "$GITHUB_OUTPUT"
 
           echo "--- release-notes.md preview ---"
           cat release-notes.md
@@ -151,6 +152,19 @@ jobs:
           new=$(bumpver show --environ | grep '^CURRENT_VERSION=' | cut -d= -f2)
           echo "new=$new" >> "$GITHUB_OUTPUT"
           echo "Released $new"
+
+      - name: Append full-diff link to release notes
+        # Now that the new version is known we can render a proper
+        # <prev>..<new> link instead of leaving the right-hand side
+        # blank (the prior shape rendered as "abn-1.13.2..").
+        if: steps.gate.outputs.skip == '0'
+        env:
+          PREV: ${{ steps.bump.outputs.prev }}
+          NEW: ${{ steps.ver.outputs.new }}
+        run: |
+          if [ -n "$PREV" ]; then
+            echo "**Full diff:** [\`${PREV}..${NEW}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${PREV}...${NEW})" >> release-notes.md
+          fi
 
       - name: Tag + push
         if: steps.gate.outputs.skip == '0'
