@@ -1,16 +1,39 @@
-# Folders to ignore
-.git/ export-ignore
-.github/ export-ignore
-scripts/ export-ignore
+# Anything tagged `export-ignore` is omitted by `git archive` — i.e.
+# left out of any release zip generated from a tag. Keep this list
+# aligned with what the merchant runtime needs (composer.json,
+# registration.php, the main code dirs) and drop everything that's
+# repo-only.
 
-# Files to ignore
-.distignore export-ignore
-.gitignore export-ignore
-.gitattributes export-ignore
-.prettierrc export-ignore
+# Folders
+.git/                   export-ignore
+.github/                export-ignore
+.worktrees/             export-ignore
+dev/                    export-ignore
+scripts/                export-ignore
+Test/                   export-ignore
+
+# Repo metadata
+.distignore             export-ignore
+.gitignore              export-ignore
+.gitattributes          export-ignore
+.prettierrc             export-ignore
+.prettierignore         export-ignore
 .pre-commit-config.yaml export-ignore
-bumpver.toml export-ignore
-docker-compose.yaml export-ignore
-README.md export-ignore
-Makefile export-ignore
-CODEOWNERS export-ignore
+.editorconfig           export-ignore
+CODEOWNERS              export-ignore
+README.md               export-ignore
+AGENTS.md               export-ignore
+CLAUDE.md               export-ignore
+
+# Tooling configs (dev-only — not consumed by the merchant runtime)
+bumpver.toml            export-ignore
+docker-compose.yaml     export-ignore
+Makefile                export-ignore
+phpstan.neon            export-ignore
+phpunit.xml             export-ignore
+
+# Local-dev FRP proxy setup. start-proxy.sh references Two-internal
+# infra (gcloud secrets ... --project=two-beta) which would leak
+# the project name into a published artifact, so explicitly drop it.
+frpc.toml               export-ignore
+start-proxy.sh          export-ignore
