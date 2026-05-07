@@ -34,7 +34,7 @@ jobs:
         # those older lints were dead checks that just hadn't run yet.
         php: ["7.3", "7.4", "8.1", "8.2"]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
@@ -55,7 +55,7 @@ jobs:
     name: Codesniffer
     runs-on: ${{ vars.RUNNER_STANDARD }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Run codesniffer
         run: |
           docker run \
@@ -71,7 +71,7 @@ jobs:
       matrix:
         php: ["7.4", "8.1", "8.2"]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up PHP ${{ matrix.php }}
         uses: shivammathur/setup-php@v2
@@ -92,7 +92,7 @@ jobs:
 
       - name: Upload coverage artifact
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-php${{ matrix.php }}
           path: coverage.xml
@@ -112,7 +112,7 @@ jobs:
             php_image: php82-fpm
             magento: 2.4.6
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Start Magento docker container
         run: |
@@ -162,7 +162,7 @@ jobs:
             php_image: php82-fpm
             magento: 2.4.6
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Start Magento docker container
         run: |
