@@ -5,14 +5,15 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
+namespace ABN\Gateway\Block\Adminhtml\System\Config\Field;
 
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Store\Model\StoreManagerInterface;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Api\CurrencyRatesProviderInterface;
 
 /**
  * Renders a grid of surcharge inputs (fixed, percentage, limit) per payment term.
@@ -24,13 +25,16 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 class SurchargeGrid extends Field
 {
     /** @var string */
-    protected $_template = 'Two_Gateway::system/config/field/surcharge-grid.phtml';
+    protected $_template = 'ABN_Gateway::system/config/field/surcharge-grid.phtml';
 
     /** @var ScopeConfigInterface */
     private $scopeConfig;
 
     /** @var StoreManagerInterface */
     private $storeManager;
+
+    /** @var CurrencyRatesProviderInterface */
+    private $ratesProvider;
 
     /** @var string */
     private $scope = 'default';
@@ -42,11 +46,13 @@ class SurchargeGrid extends Field
         Context $context,
         ScopeConfigInterface $scopeConfig,
         StoreManagerInterface $storeManager,
+        CurrencyRatesProviderInterface $ratesProvider,
         array $data = []
     ) {
         parent::__construct($context, $data);
         $this->scopeConfig = $scopeConfig;
         $this->storeManager = $storeManager;
+        $this->ratesProvider = $ratesProvider;
     }
 
     /**
@@ -90,7 +96,7 @@ class SurchargeGrid extends Field
      */
     public function getSavedValue(int $days, string $field): string
     {
-        $path = sprintf('payment/two_payment/surcharge_%d_%s', $days, $field);
+        $path = sprintf('payment/abn_payment/surcharge_%d_%s', $days, $field);
         $value = $this->getConfigValue($path);
         return $value !== null ? (string)$value : '';
     }
@@ -113,7 +119,16 @@ class SurchargeGrid extends Field
 
     public function getMaxFixed(): int
     {
-        return ConfigRepository::SURCHARGE_FIXED_MAX;
+        $limitAmount = ConfigRepository::SURCHARGE_FIXED_MAX;
+        $limitCurrency = ConfigRepository::SURCHARGE_FIXED_MAX_CURRENCY;
+        $baseCurrency = $this->getBaseCurrencyCode();
+
+        if ($baseCurrency === $limitCurrency) {
+            return $limitAmount;
+        }
+
+        $converted = $this->convertAmount((float)$limitAmount, $limitCurrency, $baseCurrency);
+        return $converted > 0 ? (int)ceil($converted) : $limitAmount;
     }
 
     public function getMaxPercentage(): int
@@ -138,7 +153,120 @@ class SurchargeGrid extends Field
                 // Fall through to default
             }
         }
-        return (string)$this->scopeConfig->getValue('currency/options/base') ?: 'USD';
+        return (string)$this->scopeConfig->getValue('currency/options/base') ?: 'EUR';
+    }
+
+    /**
+     * Get the base currency symbol (e.g. "€", "$") for the current scope.
+     * Falls back to the currency code if the symbol isn't resolvable.
+     */
+    public function getBaseCurrencySymbol(): string
+    {
+        $code = $this->getBaseCurrencyCode();
+        try {
+            $store = ($this->scope === 'stores' && $this->scopeId > 0)
+                ? $this->storeManager->getStore($this->scopeId)
+                : $this->storeManager->getStore();
+            $symbol = (string)$store->getBaseCurrency()->getCurrencySymbol();
+            return $symbol !== '' ? $symbol : $code;
+        } catch (\Exception $e) {
+            return $code;
+        }
+    }
+
+    /**
+     * Get the fixed fee limit label, e.g. "EUR 25" or "USD 28 (EUR 25)".
+     */
+    public function getFixedLimitLabel(): string
+    {
+        $limitAmount = ConfigRepository::SURCHARGE_FIXED_MAX;
+        $limitCurrency = ConfigRepository::SURCHARGE_FIXED_MAX_CURRENCY;
+        $baseCurrency = $this->getBaseCurrencyCode();
+
+        if ($baseCurrency === $limitCurrency) {
+            return $limitCurrency . ' ' . $limitAmount;
+        }
+
+        $converted = $this->convertAmount((float)$limitAmount, $limitCurrency, $baseCurrency);
+        if ($converted > 0) {
+            $precision = $this->getCurrencyPrecision($baseCurrency);
+            $factor = pow(10, $precision);
+            $convertedMax = ceil($converted * $factor) / $factor;
+            $formatted = number_format($convertedMax, $precision, '.', '');
+            return $baseCurrency . ' ' . $formatted . ' (' . $limitCurrency . ' ' . $limitAmount . ')';
+        }
+
+        return $limitCurrency . ' ' . $limitAmount;
+    }
+
+    /**
+     * Get the percentage limit label, e.g. "100%".
+     */
+    public function getPercentageLimitLabel(): string
+    {
+        return ConfigRepository::SURCHARGE_PERCENTAGE_MAX . '%';
+    }
+
+    /**
+     * Get currency warning when exchange rate is unavailable.
+     */
+    public function getCurrencyWarning(): string
+    {
+        $baseCurrency = $this->getBaseCurrencyCode();
+        $limitCurrency = ConfigRepository::SURCHARGE_FIXED_MAX_CURRENCY;
+
+        if ($baseCurrency === $limitCurrency) {
+            return '';
+        }
+
+        if ($this->hasExchangeRate($limitCurrency, $baseCurrency)) {
+            return '';
+        }
+
+        return (string)__(
+            'Warning: The fixed fee limit of %1 %2 cannot be enforced correctly because no exchange rate is '
+            . 'configured from %3 to %4. Configure exchange rates in Stores → Currency → Currency Rates.',
+            $limitCurrency,
+            ConfigRepository::SURCHARGE_FIXED_MAX,
+            $limitCurrency,
+            $baseCurrency
+        );
+    }
+
+    /**
+     * Convert an amount from one currency to another. Rate lookup is routed
+     * through the service contract so all cross-rates resolve via the base
+     * currency's rate table.
+     */
+    private function convertAmount(float $amount, string $from, string $to): float
+    {
+        if ($from === $to) {
+            return $amount;
+        }
+        $rate = $this->ratesProvider->getRate($from, $to, (int)$this->scopeId ?: null);
+        return $rate !== null ? $amount * $rate : 0.0;
+    }
+
+    /**
+     * Check if an exchange rate exists between the limit currency and base currency.
+     */
+    private function hasExchangeRate(string $from, string $to): bool
+    {
+        return $this->convertAmount(1.0, $from, $to) > 0;
+    }
+
+    /**
+     * Get the number of decimal places for a currency (e.g. 2 for USD/EUR, 0 for JPY).
+     */
+    private function getCurrencyPrecision(string $code): int
+    {
+        try {
+            $fmt = new \NumberFormatter('en_US', \NumberFormatter::CURRENCY);
+            $fmt->setTextAttribute(\NumberFormatter::CURRENCY_CODE, $code);
+            return (int)$fmt->getAttribute(\NumberFormatter::FRACTION_DIGITS);
+        } catch (\Exception $e) {
+            return 2;
+        }
     }
 
     /**
@@ -176,12 +304,9 @@ class SurchargeGrid extends Field
         if ($this->scope === 'default') {
             return false;
         }
-        $path = sprintf('payment/two_payment/surcharge_%d_%s', $days, $field);
-        // Check if a value exists at this specific scope
+        $path = sprintf('payment/abn_payment/surcharge_%d_%s', $days, $field);
         $value = $this->scopeConfig->getValue($path, $this->scope, $this->scopeId);
         $defaultValue = $this->scopeConfig->getValue($path);
-        // If the scope-specific value equals the default, it's likely inherited
-        // (Magento doesn't expose "is this overridden" directly for system config)
         return $value === $defaultValue;
     }
 
@@ -206,7 +331,7 @@ class SurchargeGrid extends Field
      */
     public function getFeesUrl(): string
     {
-        return $this->getUrl('two/config/fees');
+        return $this->getUrl('abn/config/fees');
     }
 
     /**

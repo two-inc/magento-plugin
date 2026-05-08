@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Service\Order;
+namespace ABN\Gateway\Service\Order;
 
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Exception\NoSuchEntityException;
@@ -13,7 +13,7 @@ use Magento\Sales\Api\Data\OrderItemInterface;
 use Magento\Sales\Api\Data\ShipmentInterface;
 use Magento\Sales\Api\Data\ShipmentItemInterface;
 use Magento\Sales\Model\Order;
-use Two\Gateway\Service\Order as OrderService;
+use ABN\Gateway\Service\Order as OrderService;
 
 /**
  * Compose Shipment Service
@@ -74,7 +74,7 @@ class ComposeShipment extends OrderService
                 'tax_amount' => $taxAmount,
                 'discount_amount' => $this->roundAmt($this->getDiscountAmountItem($orderItem) * $part),
                 'tax_class_name' => 'VAT ' . $this->roundAmt($orderItem->getTaxPercent()) . '%',
-                'tax_rate' => $this->roundAmt(($orderItem->getTaxPercent() / 100)),
+                'tax_rate' => $this->roundAmt(($orderItem->getTaxPercent() / 100), 6),
                 'unit_price' => $this->roundAmt($this->getUnitPriceItem($orderItem), 6),
                 'quantity' => $item->getQty(),
                 'quantity_unit' => $this->configRepository->getWeightUnit((int)$order->getStoreId()),

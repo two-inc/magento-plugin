@@ -1,13 +1,19 @@
 <?xml version="1.0"?>
 <routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Webapi:etc/webapi.xsd">
-    <route url="/V1/two/get-tokens" method="POST">
-        <service class="Two\Gateway\Api\Webapi\SoleTraderInterface" method="getTokens"/>
+    <route url="/V1/abn/get-tokens" method="POST">
+        <service class="ABN\Gateway\Api\Webapi\SoleTraderInterface" method="getTokens"/>
         <resources>
             <resource ref="anonymous"/>
         </resources>
     </route>
-    <route url="/V1/two/select-term" method="POST">
-        <service class="Two\Gateway\Api\Webapi\TermSelectionInterface" method="selectTerm"/>
+    <route url="/V1/abn/select-term" method="POST">
+        <service class="ABN\Gateway\Api\Webapi\TermSelectionInterface" method="selectTerm"/>
+        <resources>
+            <resource ref="anonymous"/>
+        </resources>
+    </route>
+    <route url="/V1/abn/surcharges/:cartId" method="GET">
+        <service class="ABN\Gateway\Api\Webapi\SurchargesInterface" method="get"/>
         <resources>
             <resource ref="anonymous"/>
         </resources>

@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Service;
+namespace ABN\Gateway\Service;
 
 use Exception;
 use Magento\Bundle\Model\Product\Price;
@@ -24,7 +24,7 @@ use Magento\Sales\Model\Order\Creditmemo\Item as CreditmemoItem;
 use Magento\Sales\Model\Order\Invoice\Item as InvoiceItem;
 use Magento\Sales\Model\Order\Item as OrderItem;
 use Magento\Store\Model\App\Emulation;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
  * Abstract order class
@@ -178,7 +178,7 @@ abstract class Order
                 'net_amount' => $this->roundAmt($this->getNetAmountItem($item)),
                 'tax_amount' => $this->roundAmt($this->getTaxAmountItem($item)),
                 'discount_amount' => $this->roundAmt($this->getDiscountAmountItem($item)),
-                'tax_rate' => $this->roundAmt($this->getTaxRateItem($item)),
+                'tax_rate' => $this->roundAmt($this->getTaxRateItem($item), 6),
                 'tax_class_name' => 'VAT ' . $this->roundAmt($item->getTaxPercent()) . '%',
                 'unit_price' => $this->roundAmt($this->getUnitPriceItem($item), 6),
                 'quantity' => $item->getQtyOrdered(),
@@ -358,7 +358,7 @@ abstract class Order
             'net_amount' => $this->roundAmt($this->getNetAmountShipping($order)),
             'tax_amount' => $this->roundAmt($this->getTaxAmountShipping($order)),
             'discount_amount' => $this->roundAmt($this->getDiscountAmountShipping($order)),
-            'tax_rate' => $this->roundAmt($this->getTaxRateShipping($order)),
+            'tax_rate' => $this->roundAmt($this->getTaxRateShipping($order), 6),
             'unit_price' => $this->roundAmt($this->getUnitPriceShipping($order), 6),
             'tax_class_name' => 'VAT ' . $this->roundAmt($this->getTaxRateShipping($order) * 100) . '%',
             'quantity' => 1,
@@ -509,7 +509,7 @@ abstract class Order
             $summary[] = [
                 'taxable_amount' => $this->roundAmt($taxableAmount),
                 'tax_amount' => $this->roundAmt($taxAmount),
-                'tax_rate' => $this->roundAmt($taxRate)
+                'tax_rate' => $this->roundAmt($taxRate, 6)
             ];
         }
 

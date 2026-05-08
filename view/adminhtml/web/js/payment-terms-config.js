@@ -1,12 +1,12 @@
-define(['jquery', 'domReady!'], function ($) {
+define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
     'use strict';
 
     function initPaymentTermsConfig() {
-        var $termsContainer = $('#two_payment_payment_terms_payment_terms_checkboxes');
-        var $customDays = $('#two_payment_payment_terms_payment_terms_duration_days');
-        var $defaultTerm = $('#two_payment_payment_terms_default_payment_term');
-        var $surchargeType = $('#two_payment_payment_terms_surcharge_type');
-        var $differential = $('#two_payment_payment_terms_surcharge_differential');
+        var $termsContainer = $('#abn_payment_payment_terms_payment_terms_checkboxes');
+        var $customDays = $('#abn_payment_payment_terms_payment_terms_duration_days');
+        var $defaultTerm = $('#abn_payment_payment_terms_default_payment_term');
+        var $surchargeType = $('#abn_payment_payment_terms_surcharge_type');
+        var $differential = $('#abn_payment_payment_terms_surcharge_differential');
 
         if (!$termsContainer.length) {
             return;
@@ -31,7 +31,7 @@ define(['jquery', 'domReady!'], function ($) {
         }
 
         function getSurchargeType() {
-            var $inherit = $('#two_payment_payment_terms_surcharge_type_inherit');
+            var $inherit = $('#abn_payment_payment_terms_surcharge_type_inherit');
             if ($inherit.length && $inherit.is(':checked')) {
                 return 'none';
             }
@@ -55,7 +55,7 @@ define(['jquery', 'domReady!'], function ($) {
             $defaultTerm.empty();
             $.each(terms, function (_, days) {
                 $defaultTerm.append(
-                    $('<option></option>').attr('value', days).text(days + ' days')
+                    $('<option></option>').attr('value', days).text($t('%1 days').replace('%1', days))
                 );
             });
 
@@ -72,7 +72,7 @@ define(['jquery', 'domReady!'], function ($) {
         // ── Surcharge field visibility ───────────────────────────────────
 
         function getFieldRow(fieldId) {
-            return $('#row_two_payment_payment_terms_' + fieldId);
+            return $('#row_abn_payment_payment_terms_' + fieldId);
         }
 
         function showField(fieldId) {
@@ -90,7 +90,6 @@ define(['jquery', 'domReady!'], function ($) {
             // Global surcharge fields
             var surchargeFields = [
                 'surcharge_differential',
-                'surcharge_line_description',
                 'surcharge_tax_rate'
             ];
             $.each(surchargeFields, function (_, id) {
@@ -104,7 +103,10 @@ define(['jquery', 'domReady!'], function ($) {
             var defaultDays = parseInt($defaultTerm.val(), 10) || 0;
             var $option = $differential.find('option[value="1"]');
             if ($option.length && defaultDays > 0) {
-                $option.text('Fee difference vs default payment term (' + defaultDays + ' days)');
+                $option.text(
+                    $t('Fee difference vs default payment term') +
+                    ' (' + $t('%1 days').replace('%1', defaultDays) + ')'
+                );
             }
         }
 
@@ -129,12 +131,12 @@ define(['jquery', 'domReady!'], function ($) {
         $surchargeType.on('change', onSurchargeChanged);
         $differential.on('change', onSurchargeChanged);
         $defaultTerm.on('change', onDefaultTermChanged);
-        $('#two_payment_payment_terms_surcharge_type_inherit').on('change', onSurchargeChanged);
+        $('#abn_payment_payment_terms_surcharge_type_inherit').on('change', onSurchargeChanged);
 
         // ── "Use System Value" reset ────────────────────────────────────
 
         function initInheritResetBehavior() {
-            var prefix = 'two_payment_payment_terms_';
+            var prefix = 'abn_payment_payment_terms_';
             $('input[id^="' + prefix + '"][id$="_inherit"]').each(function () {
                 var $inherit = $(this);
                 var fieldId = $inherit.attr('id').replace(/_inherit$/, '');
@@ -168,7 +170,7 @@ define(['jquery', 'domReady!'], function ($) {
         // ── "Use System Value" for term checkboxes ────────────────────────
 
         function initTermCheckboxInherit() {
-            var $inherit = $('#two_payment_payment_terms_payment_terms_inherit');
+            var $inherit = $('#abn_payment_payment_terms_payment_terms_inherit');
             if (!$inherit.length) {
                 return;
             }

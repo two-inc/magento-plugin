@@ -12,45 +12,11 @@
                 checked: isChecked, click: selectPaymentMethod,
                 visible: isRadioButtonVisible()"
             />
-            <span class="title-with-tooltip">
-                <span data-bind="text: getTitle()"></span>
-                <div class="two-tooltip-container">
-                    <svg
-                        class="tooltip-svg"
-                        width="20"
-                        height="21"
-                        viewBox="0 0 20 21"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                    >
-                        <path
-                            d="M8.33317 9.14058V8.72392C8.33317 7.80344 9.07936 7.05725 9.99984 7.05725C10.9203 7.05725 11.6665 7.80344 11.6665 8.72392V8.82502C11.6665 9.29386 11.4803 9.7435 11.1487 10.075L9.99984 11.2239M10.4165 13.7239C10.4165 13.954 10.23 14.1406 9.99984 14.1406C9.76972 14.1406 9.58317 13.954 9.58317 13.7239M10.4165 13.7239C10.4165 13.4938 10.23 13.3073 9.99984 13.3073C9.76972 13.3073 9.58317 13.4938 9.58317 13.7239M10.4165 13.7239H9.58317M18.3332 10.3906C18.3332 14.993 14.6022 18.7239 9.99984 18.7239C5.39746 18.7239 1.6665 14.993 1.6665 10.3906C1.6665 5.78821 5.39746 2.05725 9.99984 2.05725C14.6022 2.05725 18.3332 5.78821 18.3332 10.3906Z"
-                            stroke="#616161"
-                            stroke-width="1.5"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                        />
-                    </svg>
-                    <span class="two-tooltip-text">
-                        <p>
-                            <!-- ko i18n: 'Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple.' --><!-- /ko -->
-                        </p>
-                        <br />
-                        <p>
-                            <b
-                                ><!-- ko i18n: 'Buy now, receive your goods, pay your invoice later.' --><!-- /ko --></b
-                            >
-                        </p>
-                        <br />
-                        <p>
-                            <a href="https://www.two.inc/what-is-two" target="_blank"
-                                ><!-- ko i18n: 'Find out more' --><!-- /ko --></a
-                            >
-                        </p>
-                    </span>
-                </div>
-            </span>
-            <div class="payment-option-logo two-payment-option-logo"></div>
+            <div class="abn-title-block">
+                <span class="abn-payment-title" data-bind="text: getTitle()"></span>
+                <div class="abn-payment-subtitle" data-bind="html: abnSubtitleHtml"></div>
+            </div>
+            <div class="abn-payment-shield"></div>
         </div>
     </div>
 
@@ -58,7 +24,7 @@
         <!-- ko if: showTermSelector -->
         <div class="field two-term-chips">
             <label class="label">
-                <span data-bind="i18n: 'Payment Term'"></span>
+                <span data-bind="i18n: 'Selected payment terms'"></span>
             </label>
             <div class="two-term-chips__container">
                 <!-- ko foreach: termOptions -->
@@ -67,13 +33,32 @@
                         data-bind="click: function() { $parent.selectTerm(days) },
                                    css: { 'two-term-chip--selected': days === $parent.selectedTerm() }">
                     <span class="two-term-chip__days" data-bind="text: daysLabel"></span>
+                    <!-- ko if: isLoading -->
+                    <span class="two-term-chip__loading" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
+                    <!-- /ko -->
+                    <!-- ko if: !isLoading && surchargeLabel -->
                     <span class="two-term-chip__surcharge" data-bind="text: surchargeLabel"></span>
+                    <!-- /ko -->
                 </button>
                 <!-- /ko -->
             </div>
         </div>
         <!-- /ko -->
-        <div class="redirect_message" data-bind="text: redirectMessage"></div>
+        <!-- ko if: showSingleTerm -->
+        <div class="field two-term-chips">
+            <div class="two-term-chips__container">
+                <span class="two-term-chip two-term-chip--single">
+                    <span class="two-term-chip__days" data-bind="text: singleTermLabel"></span>
+                    <!-- ko if: singleTermSurchargeLabel() === null -->
+                    <span class="two-term-chip__loading" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
+                    <!-- /ko -->
+                    <!-- ko if: singleTermSurchargeLabel() -->
+                    <span class="two-term-chip__surcharge" data-bind="text: singleTermSurchargeLabel"></span>
+                    <!-- /ko -->
+                </span>
+            </div>
+        </div>
+        <!-- /ko -->
         <!-- ko if: showModeTab -->
         <!-- ko ifnot: showSoleTrader -->
         <div class="mode_selector" data-element="popup-message">
@@ -173,7 +158,7 @@
                 </div>
                 <div class="field field-text required">
                     <label for="company_id" class="label">
-                        <span><!-- ko i18n: 'Company ID'--><!-- /ko --></span>
+                        <span><!-- ko i18n: 'KVK number'--><!-- /ko --></span>
                     </label>
                     <div class="control">
                         <input
@@ -183,7 +168,7 @@
                             required="true"
                             data-bind='
                             attr: {
-                                title: $t("Company ID")
+                                title: $t("KVK number")
                             },
                             value: companyId'
                             class="input-text"

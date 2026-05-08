@@ -15,7 +15,7 @@ define([
     'Magento_Checkout/js/model/full-screen-loader',
     'Magento_Checkout/js/action/redirect-on-success',
     'mage/url',
-    'Two_Gateway/js/model/surcharge',
+    'ABN_Gateway/js/model/surcharge',
     'Magento_Ui/js/lib/view/utils/async',
     'mage/validation',
     'jquery/jquery-storageapi'
@@ -35,15 +35,21 @@ define([
 ) {
     'use strict';
 
-    let config = window.checkoutConfig.payment.two_payment;
+    let config = (window.checkoutConfig.payment || {}).abn_payment || {};
     window.quote = quote;
 
     return Component.extend({
         defaults: {
-            template: 'Two_Gateway/payment/two_payment'
+            template: 'ABN_Gateway/payment/abn_payment'
         },
         redirectAfterPlaceOrder: false,
-        redirectMessage: config.redirectMessage,
+        abnSubtitleHtml: $t('For all companies, %1.').replace(
+            '%1',
+            '<a href="https://doorpakken.abnamro.nl/hulpmiddelen-en-diensten/achteraf-betalen-buyer/faq/"'
+            + ' target="_blank" rel="noopener">'
+            + $t('read more')
+            + '</a>'
+        ),
         paymentTermsMessage: config.paymentTermsMessage,
         termsNotAcceptedMessage: config.termsNotAcceptedMessage,
         isPaymentTermsEnabled: config.isPaymentTermsEnabled,
@@ -79,16 +85,43 @@ define([
         selectedTerm: surchargeModel.selectedTerm,
         availableBuyerTerms: config.availableBuyerTerms || [],
         showTermSelector: (config.availableBuyerTerms || []).length > 1,
+        showSingleTerm: (config.availableBuyerTerms || []).length === 1,
+        singleTermLabel: (config.availableBuyerTerms || []).length === 1
+            ? $t('Payment Terms %1 days').replace('%1', config.availableBuyerTerms[0])
+            : '',
+        // Empty-object termSurcharges → loading state (template shows the
+         // three-dot loader). Once populated, label becomes '+€n.nn' or '' if
+         // every term resolves to ~0 (ABN-358 suppression).
+        singleTermSurchargeLabel: ko.pureComputed(function () {
+            var terms = config.availableBuyerTerms || [];
+            if (terms.length !== 1) {
+                return '';
+            }
+            var surcharges = surchargeModel.termSurcharges();
+            if (!surcharges || !Object.keys(surcharges).length) {
+                return null;
+            }
+            var amount = parseFloat(surcharges[terms[0]] || 0);
+            if (amount < 0.005) {
+                return '';
+            }
+            return '+' + surchargeModel.currencySymbol + amount.toFixed(2);
+        }),
         termOptions: ko.pureComputed(function () {
             var terms = config.availableBuyerTerms || [];
             var surcharges = surchargeModel.termSurcharges();
             var symbol = surchargeModel.currencySymbol;
-            return terms.map(function (days) {
-                var amount = parseFloat(surcharges[days] || 0).toFixed(2);
+            var isLoading = !surcharges || !Object.keys(surcharges).length;
+            var amounts = terms.map(function (days) {
+                return parseFloat(surcharges[days] || 0);
+            });
+            var allZero = !isLoading && amounts.every(function (a) { return a < 0.005; });
+            return terms.map(function (days, i) {
                 return {
                     days: days,
                     daysLabel: days + ' ' + $t('days'),
-                    surchargeLabel: '+' + symbol + amount
+                    isLoading: isLoading,
+                    surchargeLabel: (isLoading || allZero) ? '' : '+' + symbol + amounts[i].toFixed(2)
                 };
             });
         }),
@@ -98,6 +131,8 @@ define([
         showSoleTrader: ko.observable(false),
         showWhatIsTwo: ko.observable(false),
         showModeTab: ko.observable(false),
+        termsAccepted: ko.observable(false), // Observable for terms accepted state
+        BVCompanyRegex: /(?:^|\s)B(?:\.)?V(?:\.)?$/i,
 
         initialize: function () {
             this._super();
@@ -301,8 +336,6 @@ define([
                 } else {
                     this.showErrorMessage(this.orderIntentDeclinedMessage);
                 }
-            } else {
-                this.showErrorMessage(this.generalErrorMessage);
             }
         },
         processOrderIntentErrorResponse: function (response) {
@@ -351,6 +384,20 @@ define([
             let totals = quote.getTotals()(),
                 billingAddress = quote.billingAddress(),
                 lineItems = [];
+
+            // Do not fire order intent for BV companies in NL
+            if (billingAddress.countryId.toLowerCase() == 'nl') {
+                const isBVCompany = this.BVCompanyRegex.test(this.companyName());
+                console.debug({
+                    logger: 'twoPayment.placeOrderIntent',
+                    countryId: billingAddress.countryId,
+                    isBVCompany
+                });
+                if (!isBVCompany) {
+                    return $.Deferred().resolve(null);
+                }
+            }
+
             _.each(quote.getItems(), function (item) {
                 lineItems.push({
                     name: item['name'],
@@ -433,7 +480,7 @@ define([
             return $(this.formSelector).valid();
         },
         getCode: function () {
-            return 'two_payment';
+            return 'abn_payment';
         },
         getData: function () {
             return {
@@ -452,7 +499,7 @@ define([
         },
         enableCompanySearch: function () {
             let self = this;
-            require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
+            require(['ABN_Gateway/select2-4.1.0/js/select2.min'], function () {
                 $.async(self.companyIdSelector, function (companyIdField) {
                     $(companyIdField).prop('disabled', true);
                 });
@@ -590,7 +637,7 @@ define([
             }
         },
         getTokens() {
-            const URL = url.build('rest/V1/two/get-tokens');
+            const URL = url.build('rest/V1/abn/get-tokens');
             const OPTIONS = {
                 method: 'POST',
                 headers: {

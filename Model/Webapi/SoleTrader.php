@@ -5,10 +5,10 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Model\Webapi;
+namespace ABN\Gateway\Model\Webapi;
 
-use Two\Gateway\Api\Webapi\SoleTraderInterface;
-use Two\Gateway\Service\Api\Adapter;
+use ABN\Gateway\Api\Webapi\SoleTraderInterface;
+use ABN\Gateway\Service\Api\Adapter;
 
 class SoleTrader implements SoleTraderInterface
 {

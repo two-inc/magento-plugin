@@ -5,16 +5,15 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Model\Config;
+namespace ABN\Gateway\Model\Config;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
-use Magento\Framework\App\State;
 use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\UrlInterface;
 use Magento\Store\Model\ScopeInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
-use Two\Gateway\Api\Config\RepositoryInterface;
+use ABN\Gateway\Api\Config\RepositoryInterface;
 
 /**
  * Config Repository
@@ -37,10 +36,6 @@ class Repository implements RepositoryInterface
      * @var ProductMetadataInterface
      */
     private $productMetadata;
-    /**
-     * @var State
-     */
-    private $appState;
 
     /**
      * @var TaxCalculation
@@ -52,7 +47,6 @@ class Repository implements RepositoryInterface
      * @param EncryptorInterface $encryptor
      * @param UrlInterface $urlBuilder
      * @param ProductMetadataInterface $productMetadata
-     * @param State $appState
      * @param TaxCalculation $taxCalculation
      */
     public function __construct(
@@ -60,14 +54,12 @@ class Repository implements RepositoryInterface
         EncryptorInterface $encryptor,
         UrlInterface $urlBuilder,
         ProductMetadataInterface $productMetadata,
-        State $appState,
         TaxCalculation $taxCalculation
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->encryptor = $encryptor;
         $this->urlBuilder = $urlBuilder;
         $this->productMetadata = $productMetadata;
-        $this->appState = $appState;
         $this->taxCalculation = $taxCalculation;
     }
 
@@ -250,7 +242,7 @@ class Repository implements RepositoryInterface
      */
     public function getCheckoutApiUrl(?string $mode = null): string
     {
-        if ($this->appState->getMode() === State::MODE_DEVELOPER) {
+        if ($this->isDeveloperMode()) {
             $envUrl = getenv('TWO_API_BASE_URL');
             if ($envUrl !== false && $envUrl !== '') {
                 return $envUrl;
@@ -266,7 +258,7 @@ class Repository implements RepositoryInterface
      */
     public function getCheckoutPageUrl(?string $mode = null): string
     {
-        if ($this->appState->getMode() === State::MODE_DEVELOPER) {
+        if ($this->isDeveloperMode()) {
             $envUrl = getenv('TWO_CHECKOUT_BASE_URL');
             if ($envUrl !== false && $envUrl !== '') {
                 return $envUrl;
@@ -278,26 +270,60 @@ class Repository implements RepositoryInterface
     }
 
     /**
-     * Get brand identifier for checkout page.
+     * Check if Magento is in developer mode.
+     *
+     * Reads from app/etc/env.php directly to avoid State DI injection
+     * (removed in ABN-287). Equivalent to State::getMode() === MODE_DEVELOPER.
+     *
+     * @return bool
+     */
+    private function isDeveloperMode(): bool
+    {
+        if (defined('BP')) {
+            $envFile = BP . '/app/etc/env.php';
+            if (file_exists($envFile)) {
+                $env = include $envFile;
+                return ($env['MAGE_MODE'] ?? '') === 'developer';
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Get brand identifier for checkout page URL decoration.
+     *
+     * Returns empty in production so URLs stay clean — the checkout
+     * domain itself conveys the brand there. Only emitted in non-prod
+     * modes where domains are shared across brands.
      *
      * @return string
      */
     public function getBrand(): string
     {
+        if ($this->getMode() === 'production') {
+            return '';
+        }
         $envBrand = getenv('TWO_BRAND');
         if ($envBrand !== false && $envBrand !== '') {
             return $envBrand;
         }
-        return '';
+        return 'achterafbetalen';
     }
 
     /**
-     * Get brand version for checkout page.
+     * Get brand version for checkout page URL decoration.
+     *
+     * Resolved by Makefile: 'qa' for @two.inc gcloud users, empty otherwise.
+     * Overridable via TWO_BRAND_VERSION in .env.local. Returns empty in
+     * production — see getBrand().
      *
      * @return string
      */
     public function getBrandVersion(): string
     {
+        if ($this->getMode() === 'production') {
+            return '';
+        }
         $envVersion = getenv('TWO_BRAND_VERSION');
         if ($envVersion !== false && $envVersion !== '') {
             return $envVersion;
@@ -456,7 +482,7 @@ class Repository implements RepositoryInterface
     public function getSurchargeLineDescription(?int $storeId = null): string
     {
         return (string)$this->getConfig(self::XML_PATH_SURCHARGE_LINE_DESCRIPTION, $storeId)
-            ?: 'Payment terms fee';
+            ?: 'Zakelijk op Rekening - %1 days';
     }
 
     /**
@@ -493,7 +519,7 @@ class Repository implements RepositoryInterface
      */
     public function getSurchargeConfig(int $days, ?int $storeId = null): array
     {
-        $prefix = sprintf('payment/two_payment/surcharge_%d_', $days);
+        $prefix = sprintf('payment/abn_payment/surcharge_%d_', $days);
         $limitValue = $this->getConfig($prefix . 'limit', $storeId);
         return [
             'percentage' => (float)$this->getConfig($prefix . 'percentage', $storeId),

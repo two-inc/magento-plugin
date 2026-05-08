@@ -5,22 +5,22 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
+namespace ABN\Gateway\Block\Adminhtml\System\Config\Field;
 
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
  * Renders payment terms as individual checkboxes instead of a multiselect.
  *
  * Stores the selected terms as a comma-separated string in the existing
- * config path (payment/two_payment/payment_terms).
+ * config path (payment/abn_payment/payment_terms).
  */
 class PaymentTermsCheckboxes extends Field
 {
     /** @var string */
-    protected $_template = 'Two_Gateway::system/config/field/payment-terms-checkboxes.phtml';
+    protected $_template = 'ABN_Gateway::system/config/field/payment-terms-checkboxes.phtml';
 
     /**
      * @inheritDoc

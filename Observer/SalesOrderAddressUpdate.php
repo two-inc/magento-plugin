@@ -5,16 +5,16 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Observer;
+namespace ABN\Gateway\Observer;
 
 use Exception;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
-use Two\Gateway\Model\Two;
-use Two\Gateway\Service\Api\Adapter;
-use Two\Gateway\Service\Order\ComposeOrder;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Model\Two;
+use ABN\Gateway\Service\Api\Adapter;
+use ABN\Gateway\Service\Order\ComposeOrder;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
  * Order Address Update Observer
@@ -99,7 +99,7 @@ class SalesOrderAddressUpdate implements ObserverInterface
                         $error
                     );
                 } else {
-                    $comment = __('Order edit request was accepted by %1', $this->configRepository::PROVIDER);
+                    $comment = __('Order edit request was accepted by %1', $this->configRepository::PRODUCT_NAME);
                     $order->addStatusToHistory($order->getStatus(), $comment->render());
                 }
             } catch (Exception $e) {

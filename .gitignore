@@ -24,3 +24,7 @@ composer.lock
 # Python
 *.venv
 .phpunit.result.cache
+.fork-compare/
+.serena/
+agent-notes/
+upstream-backport-brief.md

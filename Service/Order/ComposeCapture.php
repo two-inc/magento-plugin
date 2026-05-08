@@ -5,11 +5,11 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Service\Order;
+namespace ABN\Gateway\Service\Order;
 
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Sales\Model\Order;
-use Two\Gateway\Service\Order as OrderService;
+use ABN\Gateway\Service\Order as OrderService;
 
 /**
  * Compose Capture Service
@@ -66,7 +66,7 @@ class ComposeCapture extends OrderService
                     'discount_amount' => $this->roundAmt($this->getDiscountAmountItem($item)),
                     'tax_amount' => $this->roundAmt($this->getTaxAmountItem($item)),
                     'tax_class_name' => 'VAT ' . $this->roundAmt($orderItem->getTaxPercent()) . '%',
-                    'tax_rate' => $this->roundAmt(($orderItem->getTaxPercent() / 100)),
+                    'tax_rate' => $this->roundAmt(($orderItem->getTaxPercent() / 100), 6),
                     'unit_price' => $this->roundAmt($this->getUnitPriceItem($item), 6),
                     'quantity' => $item->getQty(),
                     'quantity_unit' => $this->configRepository->getWeightUnit((int)$order->getStoreId()),
@@ -99,7 +99,7 @@ class ComposeCapture extends OrderService
                 'net_amount' => $this->roundAmt($this->getNetAmountShipping($order)),
                 'tax_amount' => $this->roundAmt((float)$order->getShippingTaxAmount()),
                 'discount_amount' => $this->roundAmt($this->getDiscountAmountShipping($order)),
-                'tax_rate' => $this->roundAmt((1.0 * $order->getShippingTaxAmount() / $order->getShippingAmount())),
+                'tax_rate' => $this->roundAmt((1.0 * $order->getShippingTaxAmount() / $order->getShippingAmount()), 6),
                 'unit_price' => $this->roundAmt($this->getUnitPriceShipping($order), 6),
                 'tax_class_name' => 'VAT ' . $this->roundAmt($taxRate * 100) . '%',
                 'quantity' => 1,

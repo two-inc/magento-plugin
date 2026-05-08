@@ -7,21 +7,20 @@
 define([
     'Magento_Checkout/js/view/summary/abstract-total',
     'Magento_Checkout/js/model/quote',
-    'Magento_Checkout/js/model/totals',
-    'mage/translate'
-], function (Component, quote, totals, $t) {
+    'Magento_Checkout/js/model/totals'
+], function (Component, quote, totals) {
     'use strict';
 
     return Component.extend({
         defaults: {
-            template: 'Two_Gateway/checkout/summary/surcharge'
+            template: 'ABN_Gateway/checkout/summary/surcharge'
         },
 
         isDisplayed: function () {
             var segment = totals.getSegment('two_surcharge');
             var method = quote.paymentMethod();
             return segment && parseFloat(segment.value) > 0
-                && method && method.method === 'two_payment';
+                && method && method.method === 'abn_payment';
         },
 
         getValue: function () {
@@ -32,7 +31,7 @@ define([
 
         getTitle: function () {
             var segment = totals.getSegment('two_surcharge');
-            return (segment && segment.title) || $t('Payment terms fee');
+            return (segment && segment.title) || 'Zakelijk op Rekening';
         }
     });
 });

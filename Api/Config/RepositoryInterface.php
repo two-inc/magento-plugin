@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Api\Config;
+namespace ABN\Gateway\Api\Config;
 
 /**
  * Config Repository Interface
@@ -13,47 +13,47 @@ namespace Two\Gateway\Api\Config;
 interface RepositoryInterface
 {
     /** Provider specific config */
-    public const CODE = 'two_payment';
-    public const PROVIDER = 'Two';
-    public const PROVIDER_FULL_NAME = 'Two';
-    public const PRODUCT_NAME = 'Two';
-    public const PAYMENT_TERMS_LINK = 'https://www.two.inc/terms-privacy';
-    public const PAYMENT_TERMS_EMAIL = 'invoice@two.inc';
-    public const URL_TEMPLATE = 'https://%s.two.inc';
+    public const CODE = 'abn_payment';
+    public const PROVIDER = 'ABN AMRO';
+    public const PROVIDER_FULL_NAME = 'ABN AMRO Asset Based Finance N.V.';
+    public const PRODUCT_NAME = 'ABN AMRO Zakelijk op Rekening';
+    public const PAYMENT_TERMS_EMAIL = 'achterafbetalen@nl.abnamro.com';
+    public const URL_TEMPLATE = 'https://%s.achterafbetalen.abnamro.nl';
 
     /** Payment Group */
-    public const XML_PATH_ENABLED = 'payment/two_payment/active';
-    public const XML_PATH_TITLE = 'payment/two_payment/title';
-    public const XML_PATH_MODE = 'payment/two_payment/mode';
-    public const XML_PATH_API_KEY = 'payment/two_payment/api_key';
-    public const XML_PATH_DAYS_ON_INVOICE = 'payment/two_payment/days_on_invoice';
-    public const XML_PATH_FULFILL_TRIGGER = 'payment/two_payment/fulfill_trigger';
-    public const XML_PATH_FULFILL_ORDER_STATUS = 'payment/two_payment/fulfill_order_status';
-    public const XML_PATH_ENABLE_COMPANY_SEARCH = 'payment/two_payment/enable_company_search';
-    public const XML_PATH_ENABLE_ADDRESS_SEARCH = 'payment/two_payment/enable_address_search';
-    public const XML_PATH_ENABLE_TAX_SUBTOTALS = 'payment/two_payment/enable_tax_subtotals';
-    public const XML_PATH_ENABLE_ORDER_INTENT = 'payment/two_payment/enable_order_intent';
-    public const XML_PATH_ENABLE_INVOICE_EMAILS = 'payment/two_payment/enable_invoice_emails';
-    public const XML_PATH_ENABLE_DEPARTMENT_NAME = 'payment/two_payment/enable_department';
-    public const XML_PATH_ENABLE_PROJECT_NAME = 'payment/two_payment/enable_project';
-    public const XML_PATH_ENABLE_ORDER_NOTE = 'payment/two_payment/enable_order_note';
-    public const XML_PATH_ENABLE_PO_NUMBER = 'payment/two_payment/enable_po_number';
-    public const XML_PATH_PAYMENT_TERMS_TYPE = 'payment/two_payment/payment_terms_type';
-    public const XML_PATH_PAYMENT_TERMS_DURATION_DAYS = 'payment/two_payment/payment_terms_duration_days';
-    public const XML_PATH_PAYMENT_TERMS = 'payment/two_payment/payment_terms';
-    public const XML_PATH_DEFAULT_PAYMENT_TERM = 'payment/two_payment/default_payment_term';
-    public const XML_PATH_SURCHARGE_TYPE = 'payment/two_payment/surcharge_type';
-    public const XML_PATH_SURCHARGE_DIFFERENTIAL = 'payment/two_payment/surcharge_differential';
-    public const XML_PATH_SURCHARGE_LINE_DESCRIPTION = 'payment/two_payment/surcharge_line_description';
-    public const XML_PATH_SURCHARGE_TAX_RATE = 'payment/two_payment/surcharge_tax_rate';
-    public const XML_PATH_SURCHARGE_FIXED_CURRENCY = 'payment/two_payment/surcharge_fixed_currency';
+    public const XML_PATH_ENABLED = 'payment/abn_payment/active';
+    public const XML_PATH_TITLE = 'payment/abn_payment/title';
+    public const XML_PATH_MODE = 'payment/abn_payment/mode';
+    public const XML_PATH_API_KEY = 'payment/abn_payment/api_key';
+    public const XML_PATH_DAYS_ON_INVOICE = 'payment/abn_payment/days_on_invoice';
+    public const XML_PATH_FULFILL_TRIGGER = 'payment/abn_payment/fulfill_trigger';
+    public const XML_PATH_FULFILL_ORDER_STATUS = 'payment/abn_payment/fulfill_order_status';
+    public const XML_PATH_ENABLE_COMPANY_SEARCH = 'payment/abn_payment/enable_company_search';
+    public const XML_PATH_ENABLE_ADDRESS_SEARCH = 'payment/abn_payment/enable_address_search';
+    public const XML_PATH_ENABLE_TAX_SUBTOTALS = 'payment/abn_payment/enable_tax_subtotals';
+    public const XML_PATH_ENABLE_ORDER_INTENT = 'payment/abn_payment/enable_order_intent';
+    public const XML_PATH_ENABLE_INVOICE_EMAILS = 'payment/abn_payment/enable_invoice_emails';
+    public const XML_PATH_ENABLE_DEPARTMENT_NAME = 'payment/abn_payment/enable_department';
+    public const XML_PATH_ENABLE_PROJECT_NAME = 'payment/abn_payment/enable_project';
+    public const XML_PATH_ENABLE_ORDER_NOTE = 'payment/abn_payment/enable_order_note';
+    public const XML_PATH_ENABLE_PO_NUMBER = 'payment/abn_payment/enable_po_number';
+    public const XML_PATH_PAYMENT_TERMS_TYPE = 'payment/abn_payment/payment_terms_type';
+    public const XML_PATH_PAYMENT_TERMS_DURATION_DAYS = 'payment/abn_payment/payment_terms_duration_days';
+    public const XML_PATH_PAYMENT_TERMS = 'payment/abn_payment/payment_terms';
+    public const XML_PATH_DEFAULT_PAYMENT_TERM = 'payment/abn_payment/default_payment_term';
+    public const XML_PATH_SURCHARGE_TYPE = 'payment/abn_payment/surcharge_type';
+    public const XML_PATH_SURCHARGE_DIFFERENTIAL = 'payment/abn_payment/surcharge_differential';
+    public const XML_PATH_SURCHARGE_LINE_DESCRIPTION = 'payment/abn_payment/surcharge_line_description';
+    public const XML_PATH_SURCHARGE_TAX_RATE = 'payment/abn_payment/surcharge_tax_rate';
+    public const XML_PATH_SURCHARGE_FIXED_CURRENCY = 'payment/abn_payment/surcharge_fixed_currency';
     public const XML_PATH_DEFAULT_PRODUCT_TAX_CLASS = 'tax/classes/default_product_tax_class';
-    public const XML_PATH_VERSION = 'payment/two_payment/version';
-    public const XML_PATH_DEBUG = 'payment/two_payment/debug';
+    public const XML_PATH_VERSION = 'payment/abn_payment/version';
+    public const XML_PATH_DEBUG = 'payment/abn_payment/debug';
 
     /** Configurable limits — override in fork */
-    public const AVAILABLE_PAYMENT_TERMS = [14, 30, 60, 90];
-    public const SURCHARGE_FIXED_MAX = 100;
+    public const AVAILABLE_PAYMENT_TERMS = [30, 60, 90];
+    public const SURCHARGE_FIXED_MAX = 25;
+    public const SURCHARGE_FIXED_MAX_CURRENCY = 'EUR';
     public const SURCHARGE_PERCENTAGE_MAX = 100;
 
     /** Weight unit */

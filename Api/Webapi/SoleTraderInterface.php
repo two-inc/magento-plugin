@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Api\Webapi;
+namespace ABN\Gateway\Api\Webapi;
 
 interface SoleTraderInterface
 {
@@ -16,7 +16,7 @@ interface SoleTraderInterface
      * @api
      *
      * @param string $cartId
-     * @return mixed
+     * @return array
      */
     public function getTokens(string $cartId): array;
 }

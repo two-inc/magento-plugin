@@ -1,24 +1,18 @@
-define(['jquery', 'domReady!'], function ($) {
+define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
     'use strict';
 
     return function (config, element) {
         var $container = $(element);
-        var $termsContainer = $('#two_payment_payment_terms_payment_terms_checkboxes');
-        var $customDays = $('#two_payment_payment_terms_payment_terms_duration_days');
-        var $surchargeType = $('#two_payment_payment_terms_surcharge_type');
-        var $differential = $('#two_payment_payment_terms_surcharge_differential');
-        var $defaultTerm = $('#two_payment_payment_terms_default_payment_term');
+        var $termsContainer = $('#abn_payment_payment_terms_payment_terms_checkboxes');
+        var $customDays = $('#abn_payment_payment_terms_payment_terms_duration_days');
+        var $surchargeType = $('#abn_payment_payment_terms_surcharge_type');
+        var $differential = $('#abn_payment_payment_terms_surcharge_differential');
+        var $defaultTerm = $('#abn_payment_payment_terms_default_payment_term');
         var $table = $container.find('.surcharge-grid');
         var $noTermsMsg = $container.find('.surcharge-grid__no-terms');
         var $currencyNote = $container.find('.surcharge-grid__currency-note');
         var maxFixed = parseInt($container.data('max-fixed'), 10) || 100;
         var maxPercentage = parseInt($container.data('max-percentage'), 10) || 100;
-        // Memoise last terms key to collapse repeat fires from update().
-        // Declared here (before update() is invoked at init) so the source-order
-        // assignment doesn't overwrite a value loadFees set during init.
-        var lastFeesKey = null;
-        var LOADING_DOTS = '<span class="surcharge-grid__fee-loading">'
-            + '<span></span><span></span><span></span></span>';
 
         // ── Helpers ──────────────────────────────────────────────────────
 
@@ -38,7 +32,7 @@ define(['jquery', 'domReady!'], function ($) {
         }
 
         function getSurchargeType() {
-            var $inherit = $('#two_payment_payment_terms_surcharge_type_inherit');
+            var $inherit = $('#abn_payment_payment_terms_surcharge_type_inherit');
             if ($inherit.length && $inherit.is(':checked')) {
                 return 'none';
             }
@@ -58,7 +52,7 @@ define(['jquery', 'domReady!'], function ($) {
         function createRow(days) {
             var columns = ['fixed', 'percentage', 'limit'];
             var html = '<tr class="surcharge-grid__row" data-term="' + days + '">';
-            html += '<td class="surcharge-grid__term"><strong>' + days + ' days</strong></td>';
+            html += '<td class="surcharge-grid__term"><strong>' + $t('%1 days').replace('%1', days) + '</strong></td>';
 
             $.each(columns, function (_, col) {
                 var name = 'groups[payment_terms][fields][surcharge_grid][value][' + days + '][' + col + ']';
@@ -78,7 +72,9 @@ define(['jquery', 'domReady!'], function ($) {
                 html += '/></td>';
             });
 
-            html += '<td class="surcharge-grid__fee" data-term="' + days + '">' + LOADING_DOTS + '</td>';
+            html += '<td class="surcharge-grid__fee" data-term="' + days + '">'
+                  + '<span class="surcharge-grid__loading"><span>.</span><span>.</span><span>.</span></span>'
+                  + '</td>';
             html += '</tr>';
             return $(html);
         }
@@ -184,6 +180,14 @@ define(['jquery', 'domReady!'], function ($) {
             });
         }
 
+        // ── Helper text ──────────────────────────────────────────────────
+
+        function updateHelperText() {
+            var type = getSurchargeType();
+            $container.find('.surcharge-grid__helper-text').hide();
+            $container.find('.surcharge-grid__helper-text--' + type).show();
+        }
+
         // ── Container visibility ─────────────────────────────────────────
 
         function updateContainerVisibility() {
@@ -217,6 +221,7 @@ define(['jquery', 'domReady!'], function ($) {
             updateTermRows();
             updateColumnVisibility();
             updateDifferentialState();
+            updateHelperText();
             loadFees();
         }
 
@@ -227,12 +232,19 @@ define(['jquery', 'domReady!'], function ($) {
         $surchargeType.on('change', update);
         $differential.on('change', update);
         $defaultTerm.on('change', update);
-        $('#two_payment_payment_terms_surcharge_type_inherit').on('change', update);
+        $('#abn_payment_payment_terms_surcharge_type_inherit').on('change', update);
+
+        // ── Fee column (read-only, fetched from Two API via admin proxy) ─
+
+        // Memoise the term-set we last fetched so rapid re-fires (keystrokes
+        // in the custom-days input, unrelated update() calls) collapse into
+        // one network round-trip per genuine change. Declared before the
+        // init update() call below so the assignment doesn't shadow what
+        // loadFees() writes during init.
+        var lastFeesKey = null;
 
         initInheritCheckboxes();
         update();
-
-        // ── Fee column (read-only, fetched from Two API via admin proxy) ─
 
         function loadFees() {
             var url = $container.data('fees-url');
@@ -264,37 +276,50 @@ define(['jquery', 'domReady!'], function ($) {
                     return; // leave "—" in cells
                 }
                 var gridCurrency = String($container.data('base-currency') || '').toUpperCase();
-                var feeCurrency = String(response.currency || '').toUpperCase();
-                var degraded = feeCurrency && feeCurrency !== gridCurrency;
-                var currencySuffix = degraded ? ' ' + feeCurrency : '';
-                var noteText = degraded
-                    ? $currencyNote.data('text-degraded')
-                    : $currencyNote.data('text-default');
-                if (noteText) {
-                    $currencyNote.find('span').text(noteText);
-                }
+                var responseCurrency = String(response.currency || '').toUpperCase();
+                var degraded = responseCurrency !== '' && responseCurrency !== gridCurrency;
+                var suffix = degraded ? ' ' + responseCurrency : '';
                 $container.find('td.surcharge-grid__fee').each(function () {
                     var $cell = $(this);
                     var term = String($cell.data('term'));
                     var fee = response.fees[term];
                     if (!fee) {
-                        // Server returned no row for this term — stop the
-                        // loading indicator and show an em-dash.
-                        $cell.html('&mdash;');
                         return;
                     }
-                    var pct = Number(fee.percentage) || 0;
-                    var fixed = Number(fee.fixed) || 0;
-                    var parts = [];
-                    if (pct > 0) { parts.push(pct.toFixed(2) + '%'); }
-                    if (fixed > 0) { parts.push(fixed.toFixed(2) + currencySuffix); }
-                    $cell.text(parts.length ? parts.join(' + ') : '0.00');
+                    var pctStr = Number(fee.percentage || 0).toFixed(2);
+                    var fixedStr = Number(fee.fixed || 0).toFixed(2);
+                    var pctZero = pctStr === '0.00';
+                    var fixedZero = fixedStr === '0.00';
+                    var text;
+                    if (pctZero && fixedZero) {
+                        text = '0.00' + suffix;
+                    } else if (pctZero) {
+                        text = fixedStr + suffix;
+                    } else if (fixedZero) {
+                        text = pctStr + '%';
+                    } else {
+                        text = pctStr + '% + ' + fixedStr + suffix;
+                    }
+                    $cell.text(text);
                 });
+                var $note = $currencyNote.find('span');
+                var noteText = degraded
+                    ? $currencyNote.attr('data-text-degraded')
+                    : $currencyNote.attr('data-text-default');
+                if (noteText) {
+                    $note.text(noteText);
+                }
             }).fail(function () {
-                // Clear memo so the next term-set change retries; cells keep
-                // whatever they showed before (— on first attempt, or prior
-                // fees on a refresh).
+                // Allow a retry on the same term-set after a transient error,
+                // and fall back to "—" on any cell still showing the loading
+                // animation so the user isn't watching dots forever.
                 lastFeesKey = null;
+                $container.find('td.surcharge-grid__fee').each(function () {
+                    var $cell = $(this);
+                    if ($cell.find('.surcharge-grid__loading').length) {
+                        $cell.text('—');
+                    }
+                });
             });
         }
     };

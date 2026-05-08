@@ -5,10 +5,9 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Observer;
+namespace ABN\Gateway\Observer;
 
 use Exception;
-use Magento\Framework\DB\Transaction;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Exception\LocalizedException;
@@ -20,10 +19,11 @@ use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Magento\Sales\Model\Service\InvoiceService;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Model\Two;
-use Two\Gateway\Service\Api\Adapter;
-use Two\Gateway\Service\Order\ComposeShipment;
+use Magento\Framework\DB\TransactionFactory;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Model\Two;
+use ABN\Gateway\Service\Api\Adapter;
+use ABN\Gateway\Service\Order\ComposeShipment;
 
 /**
  * After Order Shipment Save Observer
@@ -62,9 +62,9 @@ class SalesOrderShipmentAfter implements ObserverInterface
     private $invoiceService;
 
     /**
-     * @var Transaction
+     * @var TransactionFactory
      */
-    private $transaction;
+    private $transactionFactory;
 
     /**
      * SalesOrderShipmentAfter constructor.
@@ -75,7 +75,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
      * @param OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository
      * @param ComposeShipment $composeShipment
      * @param InvoiceService $invoiceService
-     * @param Transaction $transaction
+     * @param TransactionFactory $transactionFactory
      */
     public function __construct(
         ConfigRepository $configRepository,
@@ -84,7 +84,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
         OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository,
         ComposeShipment $composeShipment,
         InvoiceService $invoiceService,
-        Transaction $transaction
+        TransactionFactory $transactionFactory
     ) {
         $this->configRepository = $configRepository;
         $this->apiAdapter = $apiAdapter;
@@ -92,7 +92,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
         $this->orderStatusHistoryRepository = $orderStatusHistoryRepository;
         $this->composeShipment = $composeShipment;
         $this->invoiceService = $invoiceService;
-        $this->transaction = $transaction;
+        $this->transactionFactory = $transactionFactory;
     }
 
     /**
@@ -104,70 +104,68 @@ class SalesOrderShipmentAfter implements ObserverInterface
         /** @var Order\Shipment $shipment */
         $shipment = $observer->getEvent()->getShipment();
         $order = $shipment->getOrder();
-        if ($order
-            && $order->getPayment()->getMethod() === Two::CODE
-            && $order->getTwoOrderId()
+        if (!$order
+            || $order->getPayment()->getMethod() !== Two::CODE
+            || !$order->getTwoOrderId()
         ) {
-            if ($this->configRepository->getFulfillTrigger() == 'shipment') {
-                $payload = [];
-                $isWholeOrderShipped = $this->isWholeOrderShipped($order);
-                $isPartialOrder = !$isWholeOrderShipped;
-                while (true) {
-                    if ($isPartialOrder) {
-                        // partial fulfilment
-                        $payload = [
-                            'partial' => $this->composeShipment->execute($shipment, $order),
-                        ];
-                    }
-                    $response = $this->apiAdapter->execute(
-                        "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
-                        $payload
-                    );
-
-                    $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
-
-                    if ($error) {
-                        if ($response['error_code'] == 'PARTIAL_ORDER_MISSING_DATA') {
-                            $isPartialOrder = true;
-                            continue;
-                        }
-                        throw new LocalizedException($error);
-                    }
-                    break;
-                }
-
-                $this->parseFulfillResponse($response, $order);
-                if ($isWholeOrderShipped && !$order->hasInvoices()) {
-                    $this->createOfflinePaidInvoice($order);
-                }
-            }
-        }
-    }
-
-    /**
-     * Create a Magento invoice for the whole order and mark it paid.
-     *
-     * Two has already been told to fulfil the order via /fulfillments above,
-     * so this invoice records that fact in Magento — CAPTURE_OFFLINE prevents
-     * Two::capture() from re-posting /fulfillments.
-     *
-     * @param Order $order
-     * @throws \Exception
-     */
-    private function createOfflinePaidInvoice(Order $order): void
-    {
-        $invoice = $this->invoiceService->prepareInvoice($order);
-        if ($invoice->getGrandTotal() <= 0) {
             return;
         }
-        $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
-        $invoice->register();
-        $invoice->pay();
-        $invoice->setTransactionId($order->getPayment()->getLastTransId());
-        $this->transaction
-            ->addObject($invoice)
-            ->addObject($invoice->getOrder())
-            ->save();
+        if ($this->configRepository->getFulfillTrigger() !== 'shipment') {
+            // 'complete' trigger handles fulfilment in SalesOrderSaveAfter;
+            // 'invoice' trigger goes through Two::capture(). Nothing to do
+            // here for those.
+            return;
+        }
+
+        $payload = [];
+        $isWholeOrderShipped = $this->isWholeOrderShipped($order);
+        $isPartialOrder = !$isWholeOrderShipped;
+        while (true) {
+            if ($isPartialOrder) {
+                $payload = [
+                    'partial' => $this->composeShipment->execute($shipment, $order),
+                ];
+            }
+            $response = $this->apiAdapter->execute(
+                "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
+                $payload
+            );
+
+            $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
+
+            if ($error) {
+                if ($response['error_code'] == 'PARTIAL_ORDER_MISSING_DATA') {
+                    $isPartialOrder = true;
+                    continue;
+                }
+                throw new LocalizedException($error);
+            }
+            break;
+        }
+
+        $this->parseFulfillResponse($response, $order);
+
+        // Two has now invoiced the buyer. Create + pay the Magento invoice
+        // to mirror that, but only on whole-order shipment. Partial Magento
+        // invoicing is not in scope: we let the Two-side partial fulfilment
+        // stand and create the Magento invoice on the final shipment.
+        // CAPTURE_OFFLINE is critical — CAPTURE_ONLINE would route through
+        // Two::capture() and post /fulfillments a second time.
+        if ($isWholeOrderShipped && !$order->hasInvoices()) {
+            $invoice = $this->invoiceService->prepareInvoice($order);
+            if ($invoice->getGrandTotal() > 0) {
+                $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
+                $invoice->register();
+                $invoice->pay();
+                $invoice->setTransactionId(
+                    $response['fulfilled_order']['id'] ?? $order->getPayment()->getLastTransId()
+                );
+                $this->transactionFactory->create()
+                    ->addObject($invoice)
+                    ->addObject($order)
+                    ->save();
+            }
+        }
     }
 
     /**
@@ -206,12 +204,12 @@ class SalesOrderShipmentAfter implements ObserverInterface
         if (empty($response['remained_order'])) {
             $comment = __(
                 '%1 order marked as completed.',
-                $this->configRepository::PROVIDER,
+                $this->configRepository::PRODUCT_NAME,
             );
         } else {
             $comment = __(
                 '%1 order marked as partially completed.',
-                $this->configRepository::PROVIDER,
+                $this->configRepository::PRODUCT_NAME,
             );
         }
 

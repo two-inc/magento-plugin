@@ -5,14 +5,14 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Service\Payment;
+namespace ABN\Gateway\Service\Payment;
 
 use Magento\Catalog\Model\Indexer\Product\Price\Processor as ProductPriceProcessor;
 use Magento\CatalogInventory\Api\StockManagementInterface;
 use Magento\CatalogInventory\Model\Indexer\Stock\Processor as StockIndexerProcessor;
 use Magento\CatalogInventory\Observer\ProductQty;
 use Magento\Checkout\Model\Session;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
  * Restore Quote Service

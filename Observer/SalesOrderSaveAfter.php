@@ -5,10 +5,9 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Observer;
+namespace ABN\Gateway\Observer;
 
 use Exception;
-use Magento\Framework\DB\Transaction;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Exception\LocalizedException;
@@ -19,9 +18,10 @@ use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Magento\Sales\Model\Service\InvoiceService;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Model\Two;
-use Two\Gateway\Service\Api\Adapter;
+use Magento\Framework\DB\TransactionFactory;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Model\Two;
+use ABN\Gateway\Service\Api\Adapter;
 
 /**
  * After Order Save Observer
@@ -55,9 +55,9 @@ class SalesOrderSaveAfter implements ObserverInterface
     private $invoiceService;
 
     /**
-     * @var Transaction
+     * @var TransactionFactory
      */
-    private $transaction;
+    private $transactionFactory;
 
     /**
      * SalesOrderSaveAfter constructor.
@@ -67,7 +67,7 @@ class SalesOrderSaveAfter implements ObserverInterface
      * @param HistoryFactory $historyFactory
      * @param OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository
      * @param InvoiceService $invoiceService
-     * @param Transaction $transaction
+     * @param TransactionFactory $transactionFactory
      */
     public function __construct(
         ConfigRepository $configRepository,
@@ -75,14 +75,14 @@ class SalesOrderSaveAfter implements ObserverInterface
         HistoryFactory $historyFactory,
         OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository,
         InvoiceService $invoiceService,
-        Transaction $transaction
+        TransactionFactory $transactionFactory
     ) {
         $this->configRepository = $configRepository;
         $this->apiAdapter = $apiAdapter;
         $this->historyFactory = $historyFactory;
         $this->orderStatusHistoryRepository = $orderStatusHistoryRepository;
         $this->invoiceService = $invoiceService;
-        $this->transaction = $transaction;
+        $this->transactionFactory = $transactionFactory;
     }
 
     /**
@@ -98,16 +98,15 @@ class SalesOrderSaveAfter implements ObserverInterface
         ) {
             return;
         }
-
         if ($this->configRepository->getFulfillTrigger() !== 'complete'
             || !in_array($order->getStatus(), $this->configRepository->getFulfillOrderStatusList())
         ) {
             return;
         }
 
-        // Idempotency gate: once we've created a Magento invoice, the order is
-        // already fulfilled on Two — do not re-post /fulfillments on subsequent
-        // saves of the same order.
+        // Idempotency: once we've created the Magento invoice, we've already
+        // fulfilled with Two. Subsequent saves of the same order should be
+        // no-ops here.
         if ($order->hasInvoices()) {
             return;
         }
@@ -115,44 +114,34 @@ class SalesOrderSaveAfter implements ObserverInterface
         if (!$this->isWholeOrderShipped($order)) {
             $error = __(
                 "%1 requires whole order to be shipped before it can be fulfilled.",
-                $this->configRepository::PROVIDER
+                $this->configRepository::PRODUCT_NAME
             );
             throw new LocalizedException($error);
         }
 
         $response = $this->apiAdapter->execute(
-            "/v1/order/" . $order->getTwoOrderId() . "/fulfillments"
+            "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
         );
 
         $this->parseFulfillResponse($response, $order);
 
-        $this->createOfflinePaidInvoice($order);
-    }
-
-    /**
-     * Create a Magento invoice for the whole order and mark it paid.
-     *
-     * Two has already been told to fulfil the order via /fulfillments above,
-     * so this invoice records that fact in Magento — CAPTURE_OFFLINE prevents
-     * Two::capture() from re-posting /fulfillments.
-     *
-     * @param Order $order
-     * @throws \Exception
-     */
-    private function createOfflinePaidInvoice(Order $order): void
-    {
+        // Two has invoiced the buyer; mirror with a Magento invoice. Use
+        // CAPTURE_OFFLINE so we do not route back through Two::capture()
+        // and re-post /fulfillments. Persist only the invoice — we are
+        // already inside sales_order_save_after, so the order object will
+        // continue through Magento's existing save lifecycle.
         $invoice = $this->invoiceService->prepareInvoice($order);
-        if ($invoice->getGrandTotal() <= 0) {
-            return;
+        if ($invoice->getGrandTotal() > 0) {
+            $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
+            $invoice->register();
+            $invoice->pay();
+            $invoice->setTransactionId(
+                $response['fulfilled_order']['id'] ?? $order->getPayment()->getLastTransId()
+            );
+            $this->transactionFactory->create()
+                ->addObject($invoice)
+                ->save();
         }
-        $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
-        $invoice->register();
-        $invoice->pay();
-        $invoice->setTransactionId($order->getPayment()->getLastTransId());
-        $this->transaction
-            ->addObject($invoice)
-            ->addObject($invoice->getOrder())
-            ->save();
     }
 
     /**
@@ -197,12 +186,12 @@ class SalesOrderSaveAfter implements ObserverInterface
         if (empty($response['remained_order'])) {
             $comment = __(
                 '%1 order marked as completed.',
-                $this->configRepository::PROVIDER,
+                $this->configRepository::PRODUCT_NAME,
             );
         } else {
             $comment = __(
                 '%1 order marked as partially completed.',
-                $this->configRepository::PROVIDER,
+                $this->configRepository::PRODUCT_NAME,
             );
         }
 

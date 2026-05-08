@@ -7,7 +7,53 @@
 -->
 <schema xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:Setup/Declaration/Schema/etc/schema.xsd">
     <table name="sales_order">
-        <column xsi:type="varchar" name="two_order_reference" nullable="true" length="255" comment="Two Order Reference"/>
-        <column xsi:type="varchar" name="two_order_id" nullable="true" length="255" comment="Two Order Id"/>
+        <column xsi:type="varchar" name="two_order_reference" nullable="true" length="255" comment="ABN AMRO Zakelijk op Rekening Order Reference"/>
+        <column xsi:type="varchar" name="two_order_id" nullable="true" length="255" comment="ABN AMRO Zakelijk op Rekening Order Id"/>
+        <column xsi:type="decimal" name="two_surcharge_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Amount (order currency, net)"/>
+        <column xsi:type="decimal" name="base_two_surcharge_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Amount (base currency, net)"/>
+        <column xsi:type="decimal" name="two_surcharge_tax_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Tax Amount (order currency)"/>
+        <column xsi:type="decimal" name="base_two_surcharge_tax_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Tax Amount (base currency)"/>
+        <column xsi:type="varchar" name="two_surcharge_description" nullable="true" length="255" comment="Two Surcharge Description"/>
+        <column xsi:type="decimal" name="two_surcharge_tax_rate" scale="6" precision="12" nullable="true" comment="Two Surcharge Tax Rate (percent)"/>
+        <column xsi:type="decimal" name="two_surcharge_invoiced" scale="6" precision="20" nullable="true" comment="Two Surcharge Invoiced (order currency)"/>
+        <column xsi:type="decimal" name="base_two_surcharge_invoiced" scale="6" precision="20" nullable="true" comment="Two Surcharge Invoiced (base currency)"/>
+        <column xsi:type="decimal" name="two_surcharge_refunded" scale="6" precision="20" nullable="true" comment="Two Surcharge Refunded (order currency)"/>
+        <column xsi:type="decimal" name="base_two_surcharge_refunded" scale="6" precision="20" nullable="true" comment="Two Surcharge Refunded (base currency)"/>
+    </table>
+    <table name="quote">
+        <column xsi:type="decimal" name="two_surcharge_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Amount (quote currency, net)"/>
+        <column xsi:type="decimal" name="base_two_surcharge_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Amount (base currency, net)"/>
+        <column xsi:type="decimal" name="two_surcharge_tax_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Tax Amount (quote currency)"/>
+        <column xsi:type="decimal" name="base_two_surcharge_tax_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Tax Amount (base currency)"/>
+        <column xsi:type="varchar" name="two_surcharge_description" nullable="true" length="255" comment="Two Surcharge Description"/>
+        <column xsi:type="decimal" name="two_surcharge_tax_rate" scale="6" precision="12" nullable="true" comment="Two Surcharge Tax Rate (percent)"/>
+    </table>
+    <table name="quote_address">
+        <column xsi:type="decimal" name="two_surcharge_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Amount (quote currency, net)"/>
+        <column xsi:type="decimal" name="base_two_surcharge_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Amount (base currency, net)"/>
+        <column xsi:type="decimal" name="two_surcharge_tax_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Tax Amount (quote currency)"/>
+        <column xsi:type="decimal" name="base_two_surcharge_tax_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Tax Amount (base currency)"/>
+        <column xsi:type="varchar" name="two_surcharge_description" nullable="true" length="255" comment="Two Surcharge Description"/>
+        <column xsi:type="decimal" name="two_surcharge_tax_rate" scale="6" precision="12" nullable="true" comment="Two Surcharge Tax Rate (percent)"/>
+    </table>
+    <table name="sales_invoice">
+        <column xsi:type="decimal" name="two_surcharge_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Amount (order currency, net)"/>
+        <column xsi:type="decimal" name="base_two_surcharge_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Amount (base currency, net)"/>
+        <column xsi:type="decimal" name="two_surcharge_tax_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Tax Amount (order currency)"/>
+        <column xsi:type="decimal" name="base_two_surcharge_tax_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Tax Amount (base currency)"/>
+        <column xsi:type="varchar" name="two_surcharge_description" nullable="true" length="255" comment="Two Surcharge Description"/>
+        <column xsi:type="decimal" name="two_surcharge_tax_rate" scale="6" precision="12" nullable="true" comment="Two Surcharge Tax Rate (percent)"/>
+    </table>
+    <table name="sales_creditmemo">
+        <column xsi:type="decimal" name="two_surcharge_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Amount (order currency, net)"/>
+        <column xsi:type="decimal" name="base_two_surcharge_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Amount (base currency, net)"/>
+        <column xsi:type="decimal" name="two_surcharge_tax_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Tax Amount (order currency)"/>
+        <column xsi:type="decimal" name="base_two_surcharge_tax_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Tax Amount (base currency)"/>
+        <column xsi:type="varchar" name="two_surcharge_description" nullable="true" length="255" comment="Two Surcharge Description"/>
+        <column xsi:type="decimal" name="two_surcharge_tax_rate" scale="6" precision="12" nullable="true" comment="Two Surcharge Tax Rate (percent)"/>
+    </table>
+    <table name="sales_order_grid">
+        <column xsi:type="decimal" name="two_surcharge_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Amount (order currency, net)"/>
+        <column xsi:type="decimal" name="base_two_surcharge_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Amount (base currency, net)"/>
     </table>
 </schema>

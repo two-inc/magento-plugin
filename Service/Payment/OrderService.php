@@ -5,24 +5,27 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Service\Payment;
+namespace ABN\Gateway\Service\Payment;
 
 use Exception;
 use Magento\Framework\App\RequestInterface;
+use Magento\Framework\DB\Transaction;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Url\DecoderInterface;
 use Magento\Sales\Api\OrderPaymentRepositoryInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
+use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Payment\Transaction\BuilderInterface as TransactionBuilder;
 use Magento\Sales\Model\Order\Payment\Transaction\Repository as PaymentTransactionRepository;
 use Magento\Sales\Model\OrderFactory;
 use Magento\Sales\Model\ResourceModel\Order as OrderResource;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Model\Two;
-use Two\Gateway\Service\Api\Adapter;
-use Two\Gateway\Service\UrlCookie;
-use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Magento\Sales\Model\Service\InvoiceService;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Model\Two;
+use ABN\Gateway\Service\Api\Adapter;
+use ABN\Gateway\Service\UrlCookie;
+use ABN\Gateway\Api\Log\RepositoryInterface as LogRepository;
 
 /**
  * Payment Order Service
@@ -54,6 +57,15 @@ class OrderService
      */
     private $urlCookie;
 
+    /**
+     * @var InvoiceService
+     */
+    private $invoiceService;
+
+    /**
+     * @var Transaction
+     */
+    private $transaction;
     /**
      * @var DecoderInterface
      */
@@ -94,6 +106,8 @@ class OrderService
      * @param OrderResource $orderResource
      * @param OrderFactory $orderFactory
      * @param UrlCookie $urlCookie
+     * @param InvoiceService $invoiceService
+     * @param Transaction $transaction
      * @param DecoderInterface $urlDecoder
      * @param ConfigRepository $configRepository
      * @param RequestInterface $request
@@ -109,6 +123,8 @@ class OrderService
         OrderResource $orderResource,
         OrderFactory $orderFactory,
         UrlCookie $urlCookie,
+        InvoiceService $invoiceService,
+        Transaction $transaction,
         DecoderInterface $urlDecoder,
         ConfigRepository $configRepository,
         RequestInterface $request,
@@ -123,6 +139,8 @@ class OrderService
         $this->orderResource = $orderResource;
         $this->orderFactory = $orderFactory;
         $this->urlCookie = $urlCookie;
+        $this->invoiceService = $invoiceService;
+        $this->transaction = $transaction;
         $this->urlDecoder = $urlDecoder;
         $this->configRepository = $configRepository;
         $this->request = $request;
@@ -140,7 +158,7 @@ class OrderService
      */
     public function getOrderByReference()
     {
-        $generalErrorMessage = __('Unable to find the requested %1 order', $this->configRepository::PROVIDER);
+        $generalErrorMessage = __('Unable to find the requested %1 order', $this->configRepository::PRODUCT_NAME);
         $this->urlCookie->delete();
         if (!$this->getOrderReference()) {
             throw new LocalizedException($generalErrorMessage);
@@ -272,6 +290,14 @@ class OrderService
     /**
      * Process Order
      *
+     * Promotes the order to Processing and records the authorisation
+     * transaction. Magento invoice creation is intentionally deferred to the
+     * fulfilment trigger: SalesOrderShipmentAfter when the trigger is
+     * `shipment`, SalesOrderSaveAfter when `complete`, or admin-driven
+     * Magento invoice action when `invoice` (which routes through
+     * Two::capture()). This keeps the order cancellable until Two has
+     * actually invoiced the buyer.
+     *
      * @param Order $order
      * @return $this
      * @throws LocalizedException
@@ -281,13 +307,13 @@ class OrderService
         $order->setIsInProcess(true);
         $order->setState(Order::STATE_PROCESSING);
         $order->setStatus(Order::STATE_PROCESSING);
-        $this->orderRepository->save($order);
 
         $message = __(
             '%1 payment has been verified by the customer.',
-            $this->configRepository::PROVIDER
+            $this->configRepository::PRODUCT_NAME
         );
         $this->addOrderComment($order, $message);
+        // addAuthorizationTransaction persists the order and payment.
         $this->addAuthorizationTransaction($order, $transactionId);
         return $this;
     }

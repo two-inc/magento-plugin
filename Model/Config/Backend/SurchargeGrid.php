@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Model\Config\Backend;
+namespace ABN\Gateway\Model\Config\Backend;
 
 use Magento\Framework\App\Config\Value;
 use Magento\Framework\App\Config\Storage\WriterInterface;
@@ -17,7 +17,8 @@ use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\Model\ResourceModel\AbstractResource;
 use Magento\Framework\Data\Collection\AbstractDb;
 use Magento\Store\Model\StoreManagerInterface;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Api\CurrencyRatesProviderInterface;
 
 /**
  * Backend model for the surcharge grid.
@@ -36,6 +37,9 @@ class SurchargeGrid extends Value
     /** @var StoreManagerInterface */
     private $storeManager;
 
+    /** @var CurrencyRatesProviderInterface */
+    private $ratesProvider;
+
     public function __construct(
         Context $context,
         Registry $registry,
@@ -43,6 +47,7 @@ class SurchargeGrid extends Value
         TypeListInterface $cacheTypeList,
         WriterInterface $configWriter,
         StoreManagerInterface $storeManager,
+        CurrencyRatesProviderInterface $ratesProvider,
         AbstractResource $resource = null,
         AbstractDb $resourceCollection = null,
         array $data = []
@@ -50,6 +55,7 @@ class SurchargeGrid extends Value
         parent::__construct($context, $registry, $config, $cacheTypeList, $resource, $resourceCollection, $data);
         $this->configWriter = $configWriter;
         $this->storeManager = $storeManager;
+        $this->ratesProvider = $ratesProvider;
     }
 
     /**
@@ -66,8 +72,6 @@ class SurchargeGrid extends Value
      */
     public function afterSave()
     {
-        // Read grid values from the groups POST data (not getValue(), which
-        // was cleared by beforeSave() to prevent Magento storing the array)
         $groups = $this->getData('groups');
         if (!is_array($groups)
             || !isset($groups['payment_terms']['fields']['surcharge_grid']['value'])
@@ -87,7 +91,7 @@ class SurchargeGrid extends Value
 
         $scope = $this->getScope();
         $scopeId = (int)$this->getScopeId();
-        $maxFixed = ConfigRepository::SURCHARGE_FIXED_MAX;
+        $maxFixed = $this->getConvertedFixedMax($scope, $scopeId);
         $maxPercentage = ConfigRepository::SURCHARGE_PERCENTAGE_MAX;
 
         foreach ($gridValues as $days => $fields) {
@@ -101,9 +105,8 @@ class SurchargeGrid extends Value
                     continue;
                 }
 
-                $path = sprintf('payment/two_payment/surcharge_%d_%s', $days, $type);
+                $path = sprintf('payment/abn_payment/surcharge_%d_%s', $days, $type);
 
-                // Handle scope inheritance
                 if (isset($inheritData[$days][$type]) && $inheritData[$days][$type]) {
                     $this->configWriter->delete($path, $scope, $scopeId);
                     continue;
@@ -123,7 +126,6 @@ class SurchargeGrid extends Value
         }
 
         // Persist the base currency so fixed amounts remain meaningful
-        // even if the store's default currency changes later
         $currencyCode = $this->resolveBaseCurrency($scope, $scopeId);
         $this->configWriter->save(
             ConfigRepository::XML_PATH_SURCHARGE_FIXED_CURRENCY,
@@ -152,7 +154,29 @@ class SurchargeGrid extends Value
         }
         return (string)$this->getFieldsetDataValue('currency/options/base')
             ?: (string)$this->_config->getValue('currency/options/base')
-            ?: 'USD';
+            ?: 'EUR';
+    }
+
+    /**
+     * Get the fixed max converted to the store's base currency.
+     */
+    private function getConvertedFixedMax(string $scope, int $scopeId): int
+    {
+        $limitAmount = ConfigRepository::SURCHARGE_FIXED_MAX;
+        $limitCurrency = ConfigRepository::SURCHARGE_FIXED_MAX_CURRENCY;
+        $baseCurrency = $this->resolveBaseCurrency($scope, $scopeId);
+
+        if ($baseCurrency === $limitCurrency) {
+            return $limitAmount;
+        }
+
+        $storeId = ($scope === 'stores' && $scopeId > 0) ? $scopeId : null;
+        $rate = $this->ratesProvider->getRate($limitCurrency, $baseCurrency, $storeId);
+        if ($rate !== null && $rate > 0) {
+            return (int)ceil($limitAmount * $rate);
+        }
+
+        return $limitAmount;
     }
 
     /**

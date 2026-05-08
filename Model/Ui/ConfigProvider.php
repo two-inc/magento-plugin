@@ -5,17 +5,16 @@
  */
 declare(strict_types=1);
 
-namespace Two\Gateway\Model\Ui;
+namespace ABN\Gateway\Model\Ui;
 
 use Magento\Checkout\Model\ConfigProviderInterface;
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\View\Asset\Repository as AssetRepository;
 use Magento\Store\Model\StoreManagerInterface;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Service\UrlCookie;
-use Two\Gateway\Service\Api\Adapter;
-use Two\Gateway\Service\Order\SurchargeCalculator;
-use Two\Gateway\Model\Two;
+use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use ABN\Gateway\Service\UrlCookie;
+use ABN\Gateway\Service\Api\Adapter;
+use ABN\Gateway\Model\Two;
 
 /**
  * Ui Config Provider
@@ -48,11 +47,6 @@ class ConfigProvider implements ConfigProviderInterface
     private $checkoutSession;
 
     /**
-     * @var SurchargeCalculator
-     */
-    private $surchargeCalculator;
-
-    /**
      * @var StoreManagerInterface
      */
     private $storeManager;
@@ -63,7 +57,6 @@ class ConfigProvider implements ConfigProviderInterface
         Two $two,
         AssetRepository $assetRepository,
         CheckoutSession $checkoutSession,
-        SurchargeCalculator $surchargeCalculator,
         StoreManagerInterface $storeManager
     ) {
         $this->configRepository = $configRepository;
@@ -71,7 +64,6 @@ class ConfigProvider implements ConfigProviderInterface
         $this->two = $two;
         $this->assetRepository = $assetRepository;
         $this->checkoutSession = $checkoutSession;
-        $this->surchargeCalculator = $surchargeCalculator;
         $this->storeManager = $storeManager;
     }
 
@@ -93,10 +85,9 @@ class ConfigProvider implements ConfigProviderInterface
             'merchant' => $merchant,
         ];
 
-        $provider = $this->configRepository::PROVIDER;
         $tryAgainLater = __('Please try again later.');
         $soleTraderaccountCouldNotBeVerified = __('Your sole trader account could not be verified.');
-        $paymentTerms = __("%1 terms and conditions", $this->configRepository::PROVIDER);
+        $paymentTerms = __("payment terms");
         $brandParams = $this->buildBrandQueryString();
         $paymentTermsLink = $this->configRepository->getCheckoutPageUrl() . '/terms' . $brandParams;
 
@@ -123,92 +114,37 @@ class ConfigProvider implements ConfigProviderInterface
                     'defaultPaymentTerm' => $this->configRepository->getDefaultPaymentTerm(),
                     'selectedPaymentTerm' => (int)$this->checkoutSession->getTwoSelectedTerm()
                         ?: $this->configRepository->getDefaultPaymentTerm(),
-                    'termSurcharges' => $this->getTermSurcharges(),
                     'currencySymbol' => $this->getCurrencySymbol(),
                     'surchargeDescription' => $this->configRepository->getSurchargeLineDescription(),
                     'isPaymentTermsEnabled' => true,
-                    'redirectMessage' => __(
-                        'You will be redirected to %1 when you place order.',
-                        $provider
-                    ),
                     'orderIntentApprovedMessage' => __(
                         'Your invoice purchase with %1 is likely to be accepted subject to additional checks.',
-                        $provider
+                        $this->configRepository::PRODUCT_NAME
                     ),
-                    'orderIntentDeclinedMessage' => __('Your invoice purchase with %1 has been declined.', $provider),
+                    'orderIntentDeclinedMessage' => __(
+                        'Your invoice purchase with %1 has been declined.',
+                        $this->configRepository::PRODUCT_NAME
+                    ),
                     'generalErrorMessage' => __(
                         'Something went wrong with your request to %1. %2',
-                        $provider,
+                        $this->configRepository::PRODUCT_NAME,
                         $tryAgainLater
                     ),
                     'invalidEmailListMessage' => __('Please ensure that your invoice email address list only contains valid email addresses separated by commas.'),
                     'paymentTermsMessage' => __(
-                        'By checking this box, I confirm that I have read and agree to %1.',
-                        sprintf('<a href="%s" target="_blank">%s</a>', $paymentTermsLink, $paymentTerms)
+                        'I accept the %1 and authorize %2 to process my data automatically.',
+                        sprintf('<a href="%s" target="_blank">%s</a>', $paymentTermsLink, $paymentTerms),
+                        $this->configRepository::PROVIDER_FULL_NAME
                     ),
                     'termsNotAcceptedMessage' => __('You must accept %1 to place order.', $paymentTerms),
                     'soleTraderErrorMessage' => __(
                         'Something went wrong with your request to %1. %2',
-                        $provider,
+                        $this->configRepository::PRODUCT_NAME,
                         $soleTraderaccountCouldNotBeVerified
                     ),
                 ],
             ],
         ];
-    }
-
-    /**
-     * Compute surcharges for each available term using the current quote.
-     *
-     * @return array<int, float> days => surcharge amount
-     */
-    private function getTermSurcharges(): array
-    {
-        $terms = $this->configRepository->getAllBuyerTerms();
-        $surcharges = [];
-
-        try {
-            $quote = $this->checkoutSession->getQuote();
-            $storeId = (int)$quote->getStoreId();
-            // Subtract any existing surcharge to avoid circular base
-            $existingSurcharge = (float)$this->checkoutSession->getTwoSurchargeGross();
-            $grandTotal = (float)$quote->getGrandTotal() - $existingSurcharge;
-            $currency = $quote->getQuoteCurrencyCode()
-                ?: $this->storeManager->getStore()->getBaseCurrencyCode();
-
-            $store = $this->storeManager->getStore();
-            $country = $store->getConfig('general/country/default') ?: 'NO';
-            $billing = $quote->getBillingAddress();
-            $shipping = $quote->getShippingAddress();
-            if ($billing && $billing->getCountryId()) {
-                $country = $billing->getCountryId();
-            } elseif ($shipping && $shipping->getCountryId()) {
-                $country = $shipping->getCountryId();
-            }
-
-            foreach ($terms as $days) {
-                try {
-                    $result = $this->surchargeCalculator->calculate(
-                        $grandTotal,
-                        $days,
-                        $country,
-                        $currency,
-                        $storeId
-                    );
-                    $net = $result['amount'];
-                    $tax = round($net * ($result['tax_rate'] / 100), 2);
-                    $surcharges[$days] = $net;
-                } catch (\Exception $e) {
-                    $surcharges[$days] = 0.0;
-                }
-            }
-        } catch (\Exception $e) {
-            foreach ($terms as $days) {
-                $surcharges[$days] = 0.0;
-            }
-        }
-
-        return $surcharges;
     }
 
     /**
@@ -227,7 +163,7 @@ class ConfigProvider implements ConfigProviderInterface
     /**
      * Build query string with brand parameters.
      *
-     * @return string e.g. "?brand=x&brandVersion=qa" or ""
+     * @return string e.g. "?brand=achterafbetalen&brandVersion=qa" or ""
      */
     private function buildBrandQueryString(): string
     {

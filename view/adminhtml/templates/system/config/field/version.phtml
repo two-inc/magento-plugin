@@ -4,10 +4,12 @@
  * See COPYING.txt for license details.
  */
 
-use Two\Gateway\Block\Adminhtml\System\Config\Field\Version;
+use ABN\Gateway\Block\Adminhtml\System\Config\Field\Version;
 
 /**
  * @var Version $block
  */
 ?>
-<span><?= $block->escapeHtml($block->getVersion()); ?></span>
+<div>
+    <span><?= $block->escapeHtml($block->getVersion()); ?></span>
+</div>

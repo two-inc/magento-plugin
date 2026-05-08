@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright Â© Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+-->
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <referenceBlock name="creditmemo_totals">
+            <block class="ABN\Gateway\Block\Sales\Total\Surcharge" name="creditmemo_totals.two_surcharge"/>
+            <block class="ABN\Gateway\Block\Adminhtml\Creditmemo\SurchargeOverride"
+                   name="creditmemo_totals.two_surcharge_override"
+                   as="two_surcharge_override"
+                   template="ABN_Gateway::sales/order/creditmemo/two_surcharge_input.phtml"/>
+        </referenceBlock>
+    </body>
+</page>
