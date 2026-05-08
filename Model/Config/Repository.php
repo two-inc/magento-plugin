@@ -493,7 +493,7 @@ class Repository implements RepositoryInterface
     public function getSurchargeLineDescription(?int $storeId = null): string
     {
         return (string)$this->getConfig(self::XML_PATH_SURCHARGE_LINE_DESCRIPTION, $storeId)
-            ?: 'Zakelijk op Rekening - %1 days';
+            ?: 'Payment terms fee - %1 days';
     }
 
     /**

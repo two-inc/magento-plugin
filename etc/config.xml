@@ -3,6 +3,13 @@
 /**
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
+ *
+ * Canonical (Two_Gateway) defaults. Brand-flavoured overrides — most
+ * notably <title>, <surcharge_line_description>, <payment_terms>, and
+ * <default_payment_term> — live in ABN_Gateway/etc/config.xml. Magento
+ * merges per-module config additively; the ABN module loads after
+ * Two_Gateway via its sequence declaration so its values win on ABN
+ * installs.
  */
 -->
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -12,7 +19,7 @@
             <two_payment>
                 <active>1</active>
                 <version>1.14.1</version>
-                <title>Zakelijk op Rekening</title>
+                <title>Two</title>
                 <sort_order>-10</sort_order>
                 <mode>sandbox</mode>
                 <invoice_type>FUNDED_INVOICE</invoice_type>
@@ -29,14 +36,13 @@
                 <enable_order_note>0</enable_order_note>
                 <enable_project>1</enable_project>
                 <enable_po_number>0</enable_po_number>
-                <!-- ABN only supports 30-day standard payment terms -->
                 <payment_terms_type>standard</payment_terms_type>
                 <payment_terms_duration_days/>
-                <payment_terms>30</payment_terms>
+                <payment_terms>14,30,60,90</payment_terms>
                 <default_payment_term>30</default_payment_term>
                 <surcharge_type>none</surcharge_type>
                 <surcharge_differential>0</surcharge_differential>
-                <surcharge_line_description>Zakelijk op Rekening - %1 days</surcharge_line_description>
+                <surcharge_line_description>Payment terms fee - %1 days</surcharge_line_description>
                 <surcharge_tax_rate/>
                 <can_use_internal>0</can_use_internal>
                 <can_use_checkout>1</can_use_checkout>

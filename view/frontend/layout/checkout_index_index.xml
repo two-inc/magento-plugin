@@ -71,7 +71,7 @@
                                                             <item name="component" xsi:type="string">Two_Gateway/js/view/checkout/summary/surcharge</item>
                                                             <item name="sortOrder" xsi:type="string">39</item>
                                                             <item name="config" xsi:type="array">
-                                                                <item name="title" xsi:type="string">Zakelijk op Rekening</item>
+                                                                <item name="title" xsi:type="string">Payment terms fee</item>
                                                             </item>
                                                         </item>
                                                     </item>

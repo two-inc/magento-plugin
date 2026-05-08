@@ -31,7 +31,7 @@ define([
 
         getTitle: function () {
             var segment = totals.getSegment('two_surcharge');
-            return (segment && segment.title) || 'Zakelijk op Rekening';
+            return (segment && segment.title) || '';
         }
     });
 });

@@ -26,11 +26,13 @@ use Magento\Framework\Setup\Patch\DataPatchInterface;
  *    runs once and is skipped on subsequent setup:upgrade invocations.
  *  - Two-install safe: the WHERE clause matches no rows on Two-only
  *    installs, so the migration is a no-op.
- *  - Collision-safe: pre-deletes any pre-existing `payment/two_payment/*`
- *    row at the same scope before renaming, so the UNIQUE INDEX on
- *    (scope, scope_id, path) cannot be violated by a partial earlier
- *    deploy or a hand-rolled config import that left both namespaces
- *    populated.
+ *  - Collision-safe: when both namespaces are populated at the same
+ *    scope (rare — seen on partial re-deploys or hand-rolled imports),
+ *    the canonical `payment/two_payment/*` row is preferred and the
+ *    legacy `payment/abn_payment/*` sibling is dropped before the
+ *    rename. This protects merchant-set canonical values from being
+ *    clobbered by stale legacy rows, and avoids violating the UNIQUE
+ *    INDEX on (scope, scope_id, path).
  *  - Encryption safe (stock Magento): the encrypted value column is
  *    untouched. Magento's stock Encryptor keys on the install-wide crypt
  *    key, not on path. Custom encryptor modules that derive a per-path
@@ -60,19 +62,21 @@ class MigrateAbnConfigPaths implements DataPatchInterface
 
         $connection->beginTransaction();
         try {
-            // Defensive: drop any pre-existing canonical-namespace rows
-            // that share a (scope, scope_id) tuple with the legacy rows
-            // we are about to rename. Without this, a merchant whose DB
-            // has BOTH namespaces populated (rare, but seen on partial
-            // re-deploys and hand-rolled imports) would hit the UNIQUE
-            // INDEX (scope, scope_id, path) and the UPDATE would fail.
+            // Defensive: drop any legacy `payment/abn_payment/*` rows
+            // whose canonical sibling already exists at the same scope.
+            // A merchant whose DB has BOTH namespaces populated (rare —
+            // seen on partial re-deploys and hand-rolled imports) would
+            // otherwise hit the UNIQUE INDEX (scope, scope_id, path) on
+            // the rename. Prefer the canonical row: it represents the
+            // merchant's current intent under the unified plugin, while
+            // the legacy row is residue from the pre-ABN-392 namespace.
             $connection->query(
-                "DELETE dst FROM {$table} dst"
-                . " INNER JOIN {$table} src"
-                . "   ON src.scope = dst.scope"
-                . "  AND src.scope_id = dst.scope_id"
-                . "  AND REPLACE(src.path, 'payment/abn_payment/', 'payment/two_payment/') = dst.path"
-                . " WHERE src.path LIKE 'payment/abn_payment/%'"
+                "DELETE legacy FROM {$table} legacy"
+                . " INNER JOIN {$table} canonical"
+                . "   ON canonical.scope = legacy.scope"
+                . "  AND canonical.scope_id = legacy.scope_id"
+                . "  AND canonical.path = REPLACE(legacy.path, 'payment/abn_payment/', 'payment/two_payment/')"
+                . " WHERE legacy.path LIKE 'payment/abn_payment/%'"
             );
 
             $connection->update(

@@ -7,8 +7,8 @@
 -->
 <schema xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:Setup/Declaration/Schema/etc/schema.xsd">
     <table name="sales_order">
-        <column xsi:type="varchar" name="two_order_reference" nullable="true" length="255" comment="ABN AMRO Zakelijk op Rekening Order Reference"/>
-        <column xsi:type="varchar" name="two_order_id" nullable="true" length="255" comment="ABN AMRO Zakelijk op Rekening Order Id"/>
+        <column xsi:type="varchar" name="two_order_reference" nullable="true" length="255" comment="Two payment order reference"/>
+        <column xsi:type="varchar" name="two_order_id" nullable="true" length="255" comment="Two payment order id"/>
         <column xsi:type="decimal" name="two_surcharge_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Amount (order currency, net)"/>
         <column xsi:type="decimal" name="base_two_surcharge_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Amount (base currency, net)"/>
         <column xsi:type="decimal" name="two_surcharge_tax_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Tax Amount (order currency)"/>

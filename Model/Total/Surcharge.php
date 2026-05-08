@@ -239,7 +239,7 @@ class Surcharge extends AbstractTotal
             return [];
         }
 
-        $title = $this->checkoutSession->getTwoSurchargeDescription() ?: 'Zakelijk op Rekening';
+        $title = $this->checkoutSession->getTwoSurchargeDescription() ?: 'Payment terms fee';
 
         return [
             'code' => $this->getCode(),

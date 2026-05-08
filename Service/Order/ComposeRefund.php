@@ -117,7 +117,7 @@ class ComposeRefund extends OrderService
             $taxAmount = $this->roundAmt($taxAmountRaw);
             $grossAmount = $this->roundAmt($netAmountRaw + $taxAmountRaw);
             $taxRatePercent = (float)$creditmemo->getTwoSurchargeTaxRate();
-            $description = (string)$creditmemo->getTwoSurchargeDescription() ?: 'Zakelijk op Rekening';
+            $description = (string)$creditmemo->getTwoSurchargeDescription() ?: 'Payment terms fee';
 
             // order_item_id 'surcharge' must match ComposeOrder so Two's API
             // allocates the refund to the BUYER_FEE line on the original order.

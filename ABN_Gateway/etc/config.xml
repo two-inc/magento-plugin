@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * ABN brand override of the default payment-method config declared in
+ * Two_Gateway/etc/config.xml. Loaded after Two_Gateway via the module
+ * sequence so these values win on ABN installs.
+ *
+ * Carries the ABN-specific commercial constraints (30-day-only
+ * payment-terms agreement) and the buyer-facing product naming
+ * ("Zakelijk op Rekening").
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Store:etc/config.xsd">
+    <default>
+        <payment>
+            <two_payment>
+                <title>Zakelijk op Rekening</title>
+                <payment_terms>30</payment_terms>
+                <default_payment_term>30</default_payment_term>
+                <surcharge_line_description>Zakelijk op Rekening - %1 days</surcharge_line_description>
+            </two_payment>
+        </payment>
+    </default>
+</config>

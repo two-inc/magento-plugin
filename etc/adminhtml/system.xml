@@ -188,7 +188,7 @@
                 <field id="surcharge_line_description" translate="label comment" type="text" sortOrder="70" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Surcharge Line Description</label>
-                    <comment><![CDATA[Description shown to the buyer for the surcharge line item. Use <strong>%1</strong> to insert the selected number of days (e.g. "Zakelijk op Rekening - %1 days"). If you leave the default, the word <em>days</em> is translated per locale.]]></comment>
+                    <comment><![CDATA[Description shown to the buyer for the surcharge line item. Use <strong>%1</strong> to insert the selected number of days (e.g. "Payment terms fee - %1 days"). If you leave the default, the word <em>days</em> is translated per locale.]]></comment>
                     <config_path>payment/two_payment/surcharge_line_description</config_path>
                 </field>
                 -->
