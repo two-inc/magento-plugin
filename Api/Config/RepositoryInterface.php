@@ -50,7 +50,7 @@ interface RepositoryInterface
     public const XML_PATH_VERSION = 'payment/two_payment/version';
     public const XML_PATH_DEBUG = 'payment/two_payment/debug';
 
-    /** Brand-independent surcharge ceiling (applies to both Two and ABN). */
+    /** Brand-independent surcharge ceiling (percent). */
     public const SURCHARGE_PERCENTAGE_MAX = 100;
 
     /** Weight unit */
