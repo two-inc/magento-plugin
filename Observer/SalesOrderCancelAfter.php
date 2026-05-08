@@ -78,7 +78,7 @@ class SalesOrderCancelAfter implements ObserverInterface
             // the API's reason. The Magento cancel will not be persisted.
             $this->logger->error(
                 sprintf(
-                    'ABN cancel-sync failed for order %s: %s',
+                    'Two cancel-sync failed for order %s: %s',
                     $order->getIncrementId(),
                     $e->getMessage()
                 )
@@ -89,7 +89,7 @@ class SalesOrderCancelAfter implements ObserverInterface
             // message clean while preserving the original for debugging.
             $this->logger->error(
                 sprintf(
-                    'ABN cancel-sync errored unexpectedly for order %s: %s',
+                    'Two cancel-sync errored unexpectedly for order %s: %s',
                     $order->getIncrementId(),
                     $e->getMessage()
                 ),

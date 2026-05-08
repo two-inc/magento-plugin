@@ -128,7 +128,7 @@ define([
             try {
                 data = typeof raw === 'string' ? JSON.parse(raw) : raw;
             } catch (e) {
-                console.warn('ABN: surcharges response not parseable', e);
+                console.warn('Two_Gateway: surcharges response not parseable', e);
                 return;
             }
             if (data && Array.isArray(data.term_surcharges) && data.term_surcharges.length) {
@@ -139,7 +139,7 @@ define([
                 termSurcharges(updated);
             }
         }).fail(function (xhr, status, err) {
-            console.warn('ABN: surcharges fetch failed', status, err);
+            console.warn('Two_Gateway: surcharges fetch failed', status, err);
         });
     }
 

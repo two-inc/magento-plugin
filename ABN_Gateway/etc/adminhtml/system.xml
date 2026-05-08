@@ -4,9 +4,16 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN brand override of the admin tab label declared in
- * Two_Gateway/etc/adminhtml/system.xml. Loaded after Two_Gateway
- * via the module sequence so this label wins.
+ * ABN brand override of admin form elements declared in
+ * Two_Gateway/etc/adminhtml/system.xml. Loaded after Two_Gateway via
+ * the module sequence so these overrides win on ABN installs.
+ *
+ * 1. Tab label — overrides "Two" → "ABN AMRO Zakelijk op Rekening".
+ * 2. Hidden fields — ABN AMRO's commercial agreement only permits
+ *    30-day standard terms with the default surcharge line description.
+ *    These admin fields are hidden via showIn* = 0 rather than removed,
+ *    so the underlying config paths still resolve and the locked
+ *    defaults supplied by ABN_Gateway/etc/config.xml take effect.
  */
 -->
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -15,5 +22,13 @@
         <tab id="two_gateway" translate="label" class="two-extension" sortOrder="500">
             <label>ABN AMRO Zakelijk op Rekening</label>
         </tab>
+        <section id="two_payment">
+            <group id="payment_terms">
+                <field id="payment_terms_duration_days" showInDefault="0" showInWebsite="0" showInStore="0"/>
+                <field id="payment_terms_type" showInDefault="0" showInWebsite="0" showInStore="0"/>
+                <field id="surcharge_differential" showInDefault="0" showInWebsite="0" showInStore="0"/>
+                <field id="surcharge_line_description" showInDefault="0" showInWebsite="0" showInStore="0"/>
+            </group>
+        </section>
     </system>
 </config>

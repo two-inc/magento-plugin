@@ -7,7 +7,7 @@
 -->
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:framework:Module/etc/module.xsd">
-    <module name="ABN_Gateway" setup_version="1.0.0">
+    <module name="ABN_Gateway" setup_version="1.4.0">
         <sequence>
             <!--
                 Load order: ABN_Gateway must run AFTER Two_Gateway so

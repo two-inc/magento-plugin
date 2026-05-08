@@ -71,7 +71,7 @@ Environment,Omgeving
 "Failed to update %1 customer address: %2","Kon het adres van klant %1 niet bijwerken: %2"
 "Fee difference vs default payment term","Verschil ten opzichte van standaard betaaltermijn"
 "First Name is not valid.","Voornaam is niet geldig."
-"For all companies, %1.","Voor alle bedrijven, %1."
+"For all companies.","Voor alle bedrijven, <a href=""https://doorpakken.abnamro.nl/hulpmiddelen-en-diensten/achteraf-betalen-buyer/faq/"" target=""_blank"" rel=""noopener"">lees meer</a>."
 "Fixed Amount","Vast bedrag"
 "Fixed fee","Vast bedrag"
 "Fixed fee and percentage","Vast bedrag en percentage"
@@ -177,7 +177,6 @@ Yes,Ja
 days,dagen
 default,standaard
 "payment terms","betaalvoorwaarden"
-"read more","lees meer"
 "Two Surcharge","Toeslag Zakelijk op Rekening"
 "Refund Two Surcharge","Toeslag terugbetalen"
 "Max refundable: %1","Maximaal terugbetaalbaar: %1"

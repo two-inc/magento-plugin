@@ -77,7 +77,7 @@ First Name is not valid.,Fornavn er ikke gyldig.
 Fixed Amount,Fast beløp
 Fixed fee,Fast beløp
 Fixed fee and percentage,Fast beløp og prosent
-"For all companies, %1.","For alle bedrifter, %1."
+"For all companies.","For alle bedrifter, <a href=""https://doorpakken.abnamro.nl/hulpmiddelen-en-diensten/achteraf-betalen-buyer/faq/"" target=""_blank"" rel=""noopener"">les mer</a>."
 Fulfilment Order Status,Oppfyllelse av ordrestatus
 Fulfilment Trigger,Oppfyllelse utløser
 Fulfilment can be triggered by either initializing shipping or creating an invoice in the Magento admin,Fulfillment kan utløses enten ved å starte forsendelse eller ved å opprette en faktura i Magento-admin
@@ -177,4 +177,3 @@ Zip/Postal Code is not valid.,Postnummer er ikke gyldig.
 days,dager
 default,standard
 payment terms,betalingsvilkår
-read more,les mer

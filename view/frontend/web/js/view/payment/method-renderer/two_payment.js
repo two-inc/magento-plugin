@@ -43,13 +43,7 @@ define([
             template: 'Two_Gateway/payment/two_payment'
         },
         redirectAfterPlaceOrder: false,
-        twoSubtitleHtml: $t('For all companies, %1.').replace(
-            '%1',
-            '<a href="https://doorpakken.abnamro.nl/hulpmiddelen-en-diensten/achteraf-betalen-buyer/faq/"'
-            + ' target="_blank" rel="noopener">'
-            + $t('read more')
-            + '</a>'
-        ),
+        twoSubtitleHtml: $t('For all companies.'),
         paymentTermsMessage: config.paymentTermsMessage,
         termsNotAcceptedMessage: config.termsNotAcceptedMessage,
         isPaymentTermsEnabled: config.isPaymentTermsEnabled,
