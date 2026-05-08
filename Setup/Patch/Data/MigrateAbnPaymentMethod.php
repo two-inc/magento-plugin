@@ -53,14 +53,20 @@ class MigrateAbnPaymentMethod implements DataPatchInterface
     public function apply(): self
     {
         $connection = $this->moduleDataSetup->getConnection();
-
-        foreach (self::PAYMENT_TABLES as $table) {
-            $resolvedTable = $this->moduleDataSetup->getTable($table);
-            $connection->update(
-                $resolvedTable,
-                ['method' => self::NEW_METHOD_CODE],
-                ['method = ?' => self::OLD_METHOD_CODE]
-            );
+        $connection->beginTransaction();
+        try {
+            foreach (self::PAYMENT_TABLES as $table) {
+                $resolvedTable = $this->moduleDataSetup->getTable($table);
+                $connection->update(
+                    $resolvedTable,
+                    ['method' => self::NEW_METHOD_CODE],
+                    ['method = ?' => self::OLD_METHOD_CODE]
+                );
+            }
+            $connection->commit();
+        } catch (\Throwable $e) {
+            $connection->rollBack();
+            throw $e;
         }
 
         return $this;

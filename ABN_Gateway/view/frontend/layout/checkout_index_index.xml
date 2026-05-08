@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * Loads the ABN brand override stylesheet on top of Two_Gateway's
+ * canonical checkout CSS. Magento merges layout XML additively across
+ * modules, and the module sequence ensures this fragment loads after
+ * Two_Gateway's checkout_index_index.xml — so the override rules in
+ * ABN_Gateway/view/frontend/web/css/style.css (the abn-shield image)
+ * apply on top.
+ *
+ * Required because Magento's frontend asset pipeline does NOT
+ * cross-module-cascade view/frontend/web/css/*.css by logical filename.
+ * Each module's CSS is only loaded when explicitly referenced by a
+ * &lt;css src="Module::path"/&gt; layout entry.
+ */
+-->
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <head>
+        <css src="ABN_Gateway::css/style.css"/>
+    </head>
+</page>

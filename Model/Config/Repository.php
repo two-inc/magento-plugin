@@ -309,8 +309,13 @@ class Repository implements RepositoryInterface
         if ($this->getMode() === 'production') {
             return '';
         }
-        $envBrand = getenv('TWO_BRAND');
-        if ($envBrand !== false && $envBrand !== '') {
+        // Dev-loop override: developers can route a non-prod build to a
+        // specific brand sub-stack via TWO_BRAND. Sanitise — the value
+        // goes straight into a query string emitted to the buyer
+        // browser, so a typo like "TWO_BRAND=foo bar" must not slip
+        // through.
+        $envBrand = getenv("TWO_BRAND");
+        if ($envBrand !== false && $envBrand !== "" && preg_match("/^[a-z0-9-]+$/i", $envBrand)) {
             return $envBrand;
         }
         return $this->brandRegistry->getBrandTag();

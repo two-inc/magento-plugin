@@ -2,13 +2,20 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN AMRO brand admin overrides. Adds the abn-shield background
- * image to the .two-extension .title:before pseudo-element that
- * Two_Gateway's canonical _module.less leaves intentionally bare.
+ * ABN AMRO brand admin overrides. Replaces Two_Gateway's logo glyph
+ * on the admin config tab with the ABN shield. Magento concatenates
+ * every module's view/adminhtml/web/css/source/_module.less, so this
+ * block redeclares the .two-extension .title:before pseudo-element
+ * declared in Two_Gateway and — being loaded later via module sequence
+ * — wins.
  *
- * Loaded after Two_Gateway/view/adminhtml/web/css/source/_module.less
- * via the module sequence in ABN_Gateway/etc/module.xml.
+ * Image: shield (square 24×24), not the Two logo (wide 65×35), so
+ * width/height are also overridden.
  */
 .two-extension .title:before {
     background-image: url('@{baseDir}ABN_Gateway/images/abn-shield.svg');
+    background-size: contain;
+    width: 24px;
+    height: 24px;
+    margin-right: 0.75rem;
 }

@@ -114,7 +114,15 @@ class OrderStatuses implements DataPatchInterface
      */
     public static function getDependencies(): array
     {
-        return [];
+        // Run AFTER MigrateAbnOrderStatuses so that, on an ABN merchant
+        // upgrading from the legacy abn_payment fork, the migration
+        // patch renames any existing `abn_*` rows in sales_order_status
+        // to the canonical `two_*` codes BEFORE this patch's
+        // isStatusAdded() guard checks. Without this dependency, on
+        // patch-iteration ordering luck this patch could insert a
+        // canonical row while a legacy row also exists, then the
+        // migration's UPDATE would hit a PRIMARY KEY violation.
+        return [MigrateAbnOrderStatuses::class];
     }
 
     /**

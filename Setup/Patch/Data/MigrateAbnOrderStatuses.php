@@ -34,9 +34,12 @@ use Magento\Framework\Setup\Patch\DataPatchInterface;
  *    never carried abn_* status codes.
  *  - Order-data safe: only renames, never deletes. Existing orders
  *    keep their state and history; only the status string changes.
- *  - Atomic per table: each UPDATE is a single statement.
+ *  - Transactional: all 5 tables × 3 mappings run inside a single
+ *    transaction so any single-statement failure rolls back the
+ *    entire migration. setup:upgrade can then be re-run cleanly.
  *
- * Runs BEFORE Two\Gateway\Setup\Patch\Data\OrderStatuses so that, on
+ * Runs BEFORE Two\Gateway\Setup\Patch\Data\OrderStatuses (which
+ * declares this class in its own getDependencies()) so that, on
  * ABN merchants, the status registry rows (sales_order_status) carry
  * the canonical codes by the time OrderStatuses' insert-or-skip guard
  * runs. OrderStatuses then sees the rows already present and does
@@ -72,18 +75,24 @@ class MigrateAbnOrderStatuses implements DataPatchInterface
     public function apply(): self
     {
         $connection = $this->moduleDataSetup->getConnection();
-
-        foreach (self::STATUS_TABLES as $table => $columns) {
-            $resolvedTable = $this->moduleDataSetup->getTable($table);
-            foreach ($columns as $column) {
-                foreach (self::STATUS_MAPPINGS as $oldCode => $newCode) {
-                    $connection->update(
-                        $resolvedTable,
-                        [$column => $newCode],
-                        [$column . ' = ?' => $oldCode]
-                    );
+        $connection->beginTransaction();
+        try {
+            foreach (self::STATUS_TABLES as $table => $columns) {
+                $resolvedTable = $this->moduleDataSetup->getTable($table);
+                foreach ($columns as $column) {
+                    foreach (self::STATUS_MAPPINGS as $oldCode => $newCode) {
+                        $connection->update(
+                            $resolvedTable,
+                            [$column => $newCode],
+                            [$column . ' = ?' => $oldCode]
+                        );
+                    }
                 }
             }
+            $connection->commit();
+        } catch (\Throwable $e) {
+            $connection->rollBack();
+            throw $e;
         }
 
         return $this;

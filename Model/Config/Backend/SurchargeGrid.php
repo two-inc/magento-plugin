@@ -17,6 +17,7 @@ use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\Model\ResourceModel\AbstractResource;
 use Magento\Framework\Data\Collection\AbstractDb;
 use Magento\Store\Model\StoreManagerInterface;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
 
@@ -40,6 +41,9 @@ class SurchargeGrid extends Value
     /** @var CurrencyRatesProviderInterface */
     private $ratesProvider;
 
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
+
     public function __construct(
         Context $context,
         Registry $registry,
@@ -48,6 +52,7 @@ class SurchargeGrid extends Value
         WriterInterface $configWriter,
         StoreManagerInterface $storeManager,
         CurrencyRatesProviderInterface $ratesProvider,
+        BrandRegistryInterface $brandRegistry,
         AbstractResource $resource = null,
         AbstractDb $resourceCollection = null,
         array $data = []
@@ -56,6 +61,7 @@ class SurchargeGrid extends Value
         $this->configWriter = $configWriter;
         $this->storeManager = $storeManager;
         $this->ratesProvider = $ratesProvider;
+        $this->brandRegistry = $brandRegistry;
     }
 
     /**

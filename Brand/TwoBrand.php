@@ -45,6 +45,13 @@ class TwoBrand implements BrandRegistryInterface
 
     public function getBrandTag(): string
     {
-        return 'two';
+        // Empty: the canonical Two checkout host (*.two.inc) already
+        // identifies the brand at the URL level, and the Two checkout
+        // page has not historically been called with a `?brand=two`
+        // query parameter — emitting one risks the receiving renderer
+        // hitting an "unknown brand" branch. Brands whose checkout
+        // shares a host with siblings (e.g. ABN's *.achterafbetalen
+        // .abnamro.nl) override this to return their disambiguator tag.
+        return '';
     }
 }

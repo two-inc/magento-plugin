@@ -81,7 +81,10 @@ class PendingPaymentStatus implements DataPatchInterface
      */
     public static function getDependencies(): array
     {
-        return [];
+        // Same rationale as OrderStatuses::getDependencies() — wait for
+        // the ABN→canonical status rename before this patch's idempotent
+        // insert checks fire.
+        return [MigrateAbnOrderStatuses::class];
     }
 
     /**
