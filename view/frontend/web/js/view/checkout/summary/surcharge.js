@@ -13,14 +13,14 @@ define([
 
     return Component.extend({
         defaults: {
-            template: 'ABN_Gateway/checkout/summary/surcharge'
+            template: 'Two_Gateway/checkout/summary/surcharge'
         },
 
         isDisplayed: function () {
             var segment = totals.getSegment('two_surcharge');
             var method = quote.paymentMethod();
             return segment && parseFloat(segment.value) > 0
-                && method && method.method === 'abn_payment';
+                && method && method.method === 'two_payment';
         },
 
         getValue: function () {

@@ -2,11 +2,11 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
     'use strict';
 
     function initPaymentTermsConfig() {
-        var $termsContainer = $('#abn_payment_payment_terms_payment_terms_checkboxes');
-        var $customDays = $('#abn_payment_payment_terms_payment_terms_duration_days');
-        var $defaultTerm = $('#abn_payment_payment_terms_default_payment_term');
-        var $surchargeType = $('#abn_payment_payment_terms_surcharge_type');
-        var $differential = $('#abn_payment_payment_terms_surcharge_differential');
+        var $termsContainer = $('#two_payment_payment_terms_payment_terms_checkboxes');
+        var $customDays = $('#two_payment_payment_terms_payment_terms_duration_days');
+        var $defaultTerm = $('#two_payment_payment_terms_default_payment_term');
+        var $surchargeType = $('#two_payment_payment_terms_surcharge_type');
+        var $differential = $('#two_payment_payment_terms_surcharge_differential');
 
         if (!$termsContainer.length) {
             return;
@@ -31,7 +31,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         }
 
         function getSurchargeType() {
-            var $inherit = $('#abn_payment_payment_terms_surcharge_type_inherit');
+            var $inherit = $('#two_payment_payment_terms_surcharge_type_inherit');
             if ($inherit.length && $inherit.is(':checked')) {
                 return 'none';
             }
@@ -72,7 +72,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // ── Surcharge field visibility ───────────────────────────────────
 
         function getFieldRow(fieldId) {
-            return $('#row_abn_payment_payment_terms_' + fieldId);
+            return $('#row_two_payment_payment_terms_' + fieldId);
         }
 
         function showField(fieldId) {
@@ -131,12 +131,12 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         $surchargeType.on('change', onSurchargeChanged);
         $differential.on('change', onSurchargeChanged);
         $defaultTerm.on('change', onDefaultTermChanged);
-        $('#abn_payment_payment_terms_surcharge_type_inherit').on('change', onSurchargeChanged);
+        $('#two_payment_payment_terms_surcharge_type_inherit').on('change', onSurchargeChanged);
 
         // ── "Use System Value" reset ────────────────────────────────────
 
         function initInheritResetBehavior() {
-            var prefix = 'abn_payment_payment_terms_';
+            var prefix = 'two_payment_payment_terms_';
             $('input[id^="' + prefix + '"][id$="_inherit"]').each(function () {
                 var $inherit = $(this);
                 var fieldId = $inherit.attr('id').replace(/_inherit$/, '');
@@ -170,7 +170,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // ── "Use System Value" for term checkboxes ────────────────────────
 
         function initTermCheckboxInherit() {
-            var $inherit = $('#abn_payment_payment_terms_payment_terms_inherit');
+            var $inherit = $('#two_payment_payment_terms_payment_terms_inherit');
             if (!$inherit.length) {
                 return;
             }

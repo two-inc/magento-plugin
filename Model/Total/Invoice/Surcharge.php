@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Model\Total\Invoice;
+namespace Two\Gateway\Model\Total\Invoice;
 
 use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Invoice\Total\AbstractTotal;

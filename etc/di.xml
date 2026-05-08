@@ -7,55 +7,63 @@
 -->
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
-    <preference for="ABN\Gateway\Api\Config\RepositoryInterface"
-                type="ABN\Gateway\Model\Config\Repository"/>
-    <preference for="ABN\Gateway\Api\Log\RepositoryInterface"
-                type="ABN\Gateway\Model\Log\Repository"/>
-    <preference for="ABN\Gateway\Api\Webapi\SoleTraderInterface"
-                type="ABN\Gateway\Model\Webapi\SoleTrader"/>
-    <preference for="ABN\Gateway\Api\Webapi\TermSelectionInterface"
-                type="ABN\Gateway\Model\Webapi\TermSelection"/>
-    <preference for="ABN\Gateway\Api\Webapi\SurchargesInterface"
-                type="ABN\Gateway\Model\Webapi\Surcharges"/>
-    <preference for="ABN\Gateway\Api\CurrencyRatesProviderInterface"
-                type="ABN\Gateway\Model\CurrencyRatesProvider"/>
+    <preference for="Two\Gateway\Api\Config\RepositoryInterface"
+                type="Two\Gateway\Model\Config\Repository"/>
+    <preference for="Two\Gateway\Api\Log\RepositoryInterface"
+                type="Two\Gateway\Model\Log\Repository"/>
+    <preference for="Two\Gateway\Api\Webapi\SoleTraderInterface"
+                type="Two\Gateway\Model\Webapi\SoleTrader"/>
+    <preference for="Two\Gateway\Api\Webapi\TermSelectionInterface"
+                type="Two\Gateway\Model\Webapi\TermSelection"/>
+    <preference for="Two\Gateway\Api\Webapi\SurchargesInterface"
+                type="Two\Gateway\Model\Webapi\Surcharges"/>
+    <preference for="Two\Gateway\Api\CurrencyRatesProviderInterface"
+                type="Two\Gateway\Model\CurrencyRatesProvider"/>
+    <!--
+        Brand registry: canonical default is Two. The ABN distributable
+        package overrides this preference in its own etc/di.xml (shipped
+        in the magento-abn-plugin Composer package only) to bind the
+        interface to Two\Gateway\Brand\AbnBrand instead.
+    -->
+    <preference for="Two\Gateway\Api\BrandRegistryInterface"
+                type="Two\Gateway\Brand\TwoBrand"/>
 
-    <type name="ABN\Gateway\Logger\Handler">
+    <type name="Two\Gateway\Logger\Handler">
         <arguments>
             <argument name="filesystem" xsi:type="object">Magento\Framework\Filesystem\Driver\File</argument>
         </arguments>
     </type>
-    <type name="ABN\Gateway\Logger\ErrorLogger">
+    <type name="Two\Gateway\Logger\ErrorLogger">
         <arguments>
             <argument name="name" xsi:type="string">TwoError</argument>
             <argument name="handlers" xsi:type="array">
-                <item name="system" xsi:type="object">ABN\Gateway\Logger\Handler\Error</item>
+                <item name="system" xsi:type="object">Two\Gateway\Logger\Handler\Error</item>
             </argument>
         </arguments>
     </type>
-    <type name="ABN\Gateway\Logger\DebugLogger">
+    <type name="Two\Gateway\Logger\DebugLogger">
         <arguments>
             <argument name="name" xsi:type="string">TwoDebug</argument>
             <argument name="handlers" xsi:type="array">
-                <item name="system" xsi:type="object">ABN\Gateway\Logger\Handler\Debug</item>
+                <item name="system" xsi:type="object">Two\Gateway\Logger\Handler\Debug</item>
             </argument>
         </arguments>
     </type>
     <type name="Magento\Sales\Model\Order">
-        <plugin name="abn-after-place-order"
-                type="ABN\Gateway\Plugin\Model\Sales\AfterPlaceOrder" sortOrder="10"/>
+        <plugin name="two-after-place-order"
+                type="Two\Gateway\Plugin\Model\Sales\AfterPlaceOrder" sortOrder="10"/>
     </type>
     <type name="Magento\Sales\Api\OrderRepositoryInterface">
-        <plugin name="abn-order-surcharge-ext-attrs"
-                type="ABN\Gateway\Plugin\Api\SurchargeExtensionAttributes" sortOrder="10"/>
+        <plugin name="two-order-surcharge-ext-attrs"
+                type="Two\Gateway\Plugin\Api\SurchargeExtensionAttributes" sortOrder="10"/>
     </type>
     <type name="Magento\Sales\Api\InvoiceRepositoryInterface">
-        <plugin name="abn-invoice-surcharge-ext-attrs"
-                type="ABN\Gateway\Plugin\Api\SurchargeExtensionAttributes" sortOrder="10"/>
+        <plugin name="two-invoice-surcharge-ext-attrs"
+                type="Two\Gateway\Plugin\Api\SurchargeExtensionAttributes" sortOrder="10"/>
     </type>
     <type name="Magento\Sales\Api\CreditmemoRepositoryInterface">
-        <plugin name="abn-creditmemo-surcharge-ext-attrs"
-                type="ABN\Gateway\Plugin\Api\SurchargeExtensionAttributes" sortOrder="10"/>
+        <plugin name="two-creditmemo-surcharge-ext-attrs"
+                type="Two\Gateway\Plugin\Api\SurchargeExtensionAttributes" sortOrder="10"/>
     </type>
     <virtualType name="Magento\Sales\Model\ResourceModel\Order\Grid">
         <arguments>
@@ -71,12 +79,12 @@
                 <item name="renderers" xsi:type="array">
                     <item name="invoice" xsi:type="array">
                         <item name="two_surcharge" xsi:type="array">
-                            <item name="class" xsi:type="string">ABN\Gateway\Model\Pdf\Total\Surcharge</item>
+                            <item name="class" xsi:type="string">Two\Gateway\Model\Pdf\Total\Surcharge</item>
                         </item>
                     </item>
                     <item name="creditmemo" xsi:type="array">
                         <item name="two_surcharge" xsi:type="array">
-                            <item name="class" xsi:type="string">ABN\Gateway\Model\Pdf\Total\Surcharge</item>
+                            <item name="class" xsi:type="string">Two\Gateway\Model\Pdf\Total\Surcharge</item>
                         </item>
                     </item>
                 </item>
@@ -86,8 +94,8 @@
     <type name="Magento\Config\Model\Config\TypePool">
         <arguments>
             <argument name="environment" xsi:type="array">
-                <item name="payment/abn_payment/mode" xsi:type="string">1</item>
-                <item name="payment/abn_payment/debug" xsi:type="boolean">1</item>
+                <item name="payment/two_payment/mode" xsi:type="string">1</item>
+                <item name="payment/two_payment/debug" xsi:type="boolean">1</item>
             </argument>
         </arguments>
     </type>

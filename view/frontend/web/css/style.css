@@ -17,14 +17,14 @@
     display: none;
 }
 
-.abn-title-block {
+.two-title-block {
     display: flex;
     flex-direction: column;
     gap: 2px;
     padding-right: 40px;
 }
 
-.abn-payment-shield {
+.two-payment-shield {
     /* relative to payment-option-title-container; offset compensates for the
        title's line-box leading so the shield top sits on the cap-line. */
     position: absolute;
@@ -32,24 +32,27 @@
     top: 6px;
     width: 24px;
     height: 24px;
-    background-image: url('../images/abn-shield.svg');
+    /* background-image is added by the brand override module (e.g.
+       ABN_Gateway/view/frontend/web/css/style.css). Two_Gateway
+       intentionally ships no default shield image — the canonical
+       Two release renders the title block without a shield. */
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;
     display: inline-block;
 }
 
-.abn-payment-title {
+.two-payment-title {
     font-weight: 700;
 }
 
-.abn-payment-subtitle {
+.two-payment-subtitle {
     font-size: 0.85em;
     font-weight: 700;
     color: var(--color-brownie-vanilla);
 }
 
-.abn-payment-subtitle a {
+.two-payment-subtitle a {
     color: #0066cc;
     text-decoration: underline;
 }

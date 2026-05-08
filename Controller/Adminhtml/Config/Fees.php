@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Controller\Adminhtml\Config;
+namespace Two\Gateway\Controller\Adminhtml\Config;
 
 use Magento\Backend\App\Action;
 use Magento\Framework\App\Config\ScopeConfigInterface;
@@ -15,8 +15,8 @@ use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\Controller\ResultInterface;
 use Magento\Store\Model\ScopeInterface;
 use Magento\Store\Model\StoreManagerInterface;
-use ABN\Gateway\Api\CurrencyRatesProviderInterface;
-use ABN\Gateway\Service\Api\Adapter;
+use Two\Gateway\Api\CurrencyRatesProviderInterface;
+use Two\Gateway\Service\Api\Adapter;
 
 /**
  * AJAX endpoint for the surcharge grid's "Fee" column.

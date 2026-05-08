@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Block\Sales\Total;
+namespace Two\Gateway\Block\Sales\Total;
 
 use Magento\Framework\DataObject;
 use Magento\Framework\View\Element\Template;

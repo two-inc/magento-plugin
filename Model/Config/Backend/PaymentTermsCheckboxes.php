@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Model\Config\Backend;
+namespace Two\Gateway\Model\Config\Backend;
 
 use Magento\Framework\App\Config\Value;
 

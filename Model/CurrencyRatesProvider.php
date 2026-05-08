@@ -5,11 +5,11 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Model;
+namespace Two\Gateway\Model;
 
 use Magento\Directory\Model\CurrencyFactory;
 use Magento\Store\Model\StoreManagerInterface;
-use ABN\Gateway\Api\CurrencyRatesProviderInterface;
+use Two\Gateway\Api\CurrencyRatesProviderInterface;
 
 /**
  * Reads currency exchange rates via the store's base-currency rate table.

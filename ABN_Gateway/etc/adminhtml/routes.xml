@@ -1,0 +1,24 @@
+<?xml version="1.0" ?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * Backward-compatibility route for ABN merchants. Existing checkout
+ * sessions and merchant bookmarks reference URLs under /abn/...; this
+ * route keeps those URLs resolving to Two_Gateway controllers after
+ * the unification rename.
+ *
+ * New URLs constructed by Two_Gateway code use the canonical /two/...
+ * frontName declared in Two_Gateway/etc/adminhtml/routes.xml. The
+ * /abn/... path is retained only for in-flight URLs at upgrade time.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:App/etc/routes.xsd">
+    <router id="admin">
+        <route id="abn" frontName="abn">
+            <module before="Magento_Backend" name="Two_Gateway"/>
+        </route>
+    </router>
+</config>

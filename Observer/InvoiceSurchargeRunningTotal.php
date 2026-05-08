@@ -5,9 +5,9 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Observer;
+namespace Two\Gateway\Observer;
 
-use ABN\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Magento\Framework\DB\Sql\Expression;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;

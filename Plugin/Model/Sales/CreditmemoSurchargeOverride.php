@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Plugin\Model\Sales;
+namespace Two\Gateway\Plugin\Model\Sales;
 
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Locale\FormatInterface;
@@ -18,7 +18,7 @@ use Magento\Sales\Model\Order\Creditmemo;
  * The field is rendered by view/adminhtml/.../two_surcharge_input.phtml as
  * `creditmemo[two_surcharge_amount]`. The admin Creditmemo Save controller
  * builds the creditmemo via CreditmemoFactory which calls collectTotals;
- * collectTotals invokes ABN\Gateway\Model\Total\Creditmemo\Surcharge which
+ * collectTotals invokes Two\Gateway\Model\Total\Creditmemo\Surcharge which
  * picks up the stamped value.
  *
  * Without this plugin the form input would be silently discarded (Magento

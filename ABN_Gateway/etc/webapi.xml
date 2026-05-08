@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * Backward-compatibility REST endpoints for ABN merchants. Existing
+ * headless frontends, mobile apps, and third-party integrations may
+ * call /V1/abn/... URLs directly. Magento merges webapi.xml across
+ * modules additively, so these routes coexist with Two_Gateway's
+ * canonical /V1/two/... endpoints — both resolve to the same service
+ * methods.
+ *
+ * New integrations should use /V1/two/... — the /V1/abn/... routes
+ * here exist only to keep deployed clients working through the
+ * upgrade window.
+ */
+-->
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Webapi:etc/webapi.xsd">
+    <route url="/V1/abn/get-tokens" method="POST">
+        <service class="Two\Gateway\Api\Webapi\SoleTraderInterface" method="getTokens"/>
+        <resources>
+            <resource ref="anonymous"/>
+        </resources>
+    </route>
+    <route url="/V1/abn/select-term" method="POST">
+        <service class="Two\Gateway\Api\Webapi\TermSelectionInterface" method="selectTerm"/>
+        <resources>
+            <resource ref="anonymous"/>
+        </resources>
+    </route>
+    <route url="/V1/abn/surcharges/:cartId" method="GET">
+        <service class="Two\Gateway\Api\Webapi\SurchargesInterface" method="get"/>
+        <resources>
+            <resource ref="anonymous"/>
+        </resources>
+    </route>
+</routes>

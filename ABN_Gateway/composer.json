@@ -1,0 +1,31 @@
+{
+    "name": "two-inc/magento-abn-plugin",
+    "description": "ABN AMRO Zakelijk op Rekening B2B BNPL payments extension for Magento — ABN brand overrides on top of two-inc/magento2",
+    "type": "magento2-module",
+    "version": "2.0.0-dev",
+    "license": [
+        "OSL-3.0",
+        "AFL-3.0"
+    ],
+    "require": {
+        "php": ">=7.3",
+        "magento/framework": ">=102.0.0",
+        "two-inc/magento2": "^2.0"
+    },
+    "autoload": {
+        "files": [
+            "registration.php"
+        ]
+    },
+    "repositories": [
+        {
+            "type": "composer",
+            "url": "https://repo.magento.com/"
+        }
+    ],
+    "config": {
+        "allow-plugins": {
+            "magento/composer-dependency-version-audit-plugin": true
+        }
+    }
+}

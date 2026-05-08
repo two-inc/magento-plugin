@@ -63,7 +63,7 @@
 .two-extension .title:before {
     content: '';
     display: inline-block;
-    background-image: url('@{baseDir}ABN_Gateway/images/logo.svg');
+    background-image: url('@{baseDir}Two_Gateway/images/logo.svg');
     background-size: 58px;
     background-repeat: no-repeat;
     width: 65px;
@@ -72,10 +72,12 @@
     margin-top: -5px;
 }
 
-.abn-extension .title:before {
+.two-extension .title:before {
     content: '';
     display: inline-block;
-    background-image: url('@{baseDir}ABN_Gateway/images/abn-shield.svg');
+    /* background-image is added by the brand override module (e.g.
+       ABN_Gateway/view/adminhtml/web/css/source/_module.less).
+       Two_Gateway intentionally ships no default shield image. */
     background-size: contain;
     background-position: center;
     background-repeat: no-repeat;

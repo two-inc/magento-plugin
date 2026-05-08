@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * Brand-binding override for the ABN package. Loaded AFTER
+ * Two_Gateway/etc/di.xml (per the sequence in etc/module.xml),
+ * so this preference wins.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <preference for="Two\Gateway\Api\BrandRegistryInterface"
+                type="Two\Gateway\Brand\AbnBrand"/>
+</config>

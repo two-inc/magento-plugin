@@ -5,13 +5,14 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Block\Adminhtml\System\Config\Field;
+namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Backend\Block\Template\Context;
 
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
  * Render module information html element in Stores Configuration
@@ -28,10 +29,13 @@ class Header extends Field
      */
     public $configRepository;
 
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
+
     /**
      * @var string
      */
-    protected $_template = 'ABN_Gateway::system/config/field/header.phtml';
+    protected $_template = 'Two_Gateway::system/config/field/header.phtml';
 
     /**
      * @param Context $context
@@ -40,10 +44,12 @@ class Header extends Field
      */
     public function __construct(
         ConfigRepository $configRepository,
+        BrandRegistryInterface $brandRegistry,
         Context $context,
         array $data = []
     ) {
         $this->configRepository = $configRepository;
+        $this->brandRegistry = $brandRegistry;
         parent::__construct($context, $data);
     }
 
@@ -75,5 +81,13 @@ class Header extends Field
     public function getDocumentationUrl(): string
     {
         return self::DOCUMENTATION_URL;
+    }
+
+    /**
+     * Brand-bound product name for use in templates ($block->getProductName()).
+     */
+    public function getProductName(): string
+    {
+        return $this->brandRegistry->getProductName();
     }
 }

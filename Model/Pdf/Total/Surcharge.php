@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Model\Pdf\Total;
+namespace Two\Gateway\Model\Pdf\Total;
 
 use Magento\Sales\Model\Order\Pdf\Total\DefaultTotal;
 

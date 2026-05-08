@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Model\Config;
+namespace Two\Gateway\Model\Config;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
@@ -13,7 +13,8 @@ use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\UrlInterface;
 use Magento\Store\Model\ScopeInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
-use ABN\Gateway\Api\Config\RepositoryInterface;
+use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\Config\RepositoryInterface;
 
 /**
  * Config Repository
@@ -42,6 +43,9 @@ class Repository implements RepositoryInterface
      */
     private $taxCalculation;
 
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
+
     /**
      * @param ScopeConfigInterface $scopeConfig
      * @param EncryptorInterface $encryptor
@@ -54,13 +58,15 @@ class Repository implements RepositoryInterface
         EncryptorInterface $encryptor,
         UrlInterface $urlBuilder,
         ProductMetadataInterface $productMetadata,
-        TaxCalculation $taxCalculation
+        TaxCalculation $taxCalculation,
+        BrandRegistryInterface $brandRegistry
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->encryptor = $encryptor;
         $this->urlBuilder = $urlBuilder;
         $this->productMetadata = $productMetadata;
         $this->taxCalculation = $taxCalculation;
+        $this->brandRegistry = $brandRegistry;
     }
 
     /**
@@ -250,7 +256,7 @@ class Repository implements RepositoryInterface
         }
         $mode = $mode ?: $this->getMode();
         $prefix = $mode == 'production' ? 'api' : ('api.' . $mode);
-        return sprintf(self::URL_TEMPLATE, $prefix);
+        return sprintf($this->brandRegistry->getCheckoutUrlTemplate(), $prefix);
     }
 
     /**
@@ -266,7 +272,7 @@ class Repository implements RepositoryInterface
         }
         $mode = $mode ?: $this->getMode();
         $prefix = $mode == 'production' ? 'checkout' : ('checkout.' . $mode);
-        return sprintf(self::URL_TEMPLATE, $prefix);
+        return sprintf($this->brandRegistry->getCheckoutUrlTemplate(), $prefix);
     }
 
     /**
@@ -307,7 +313,7 @@ class Repository implements RepositoryInterface
         if ($envBrand !== false && $envBrand !== '') {
             return $envBrand;
         }
-        return 'achterafbetalen';
+        return $this->brandRegistry->getBrandTag();
     }
 
     /**
@@ -519,7 +525,7 @@ class Repository implements RepositoryInterface
      */
     public function getSurchargeConfig(int $days, ?int $storeId = null): array
     {
-        $prefix = sprintf('payment/abn_payment/surcharge_%d_', $days);
+        $prefix = sprintf('payment/two_payment/surcharge_%d_', $days);
         $limitValue = $this->getConfig($prefix . 'limit', $storeId);
         return [
             'percentage' => (float)$this->getConfig($prefix . 'percentage', $storeId),

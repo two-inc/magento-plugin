@@ -22,7 +22,7 @@ define([
 ], function (ko, $, quote, url) {
     'use strict';
 
-    var config = (window.checkoutConfig.payment || {}).abn_payment || {};
+    var config = (window.checkoutConfig.payment || {}).two_payment || {};
 
     var selectedTerm = ko.observable(config.selectedPaymentTerm || config.defaultPaymentTerm || 0);
     // Empty by default — template renders loader until the latest loadFees() resolves.
@@ -113,7 +113,7 @@ define([
         // the next persisted collectTotals runs.
         var mySeq = ++fetchSeq;
         termSurcharges({});
-        var restUrl = url.build('rest/V1/abn/surcharges/' + encodeURIComponent(cartId));
+        var restUrl = url.build('rest/V1/two/surcharges/' + encodeURIComponent(cartId));
         $.ajax({
             url: restUrl,
             type: 'GET',
@@ -190,7 +190,7 @@ define([
          * Call /select-term to update totals with the new surcharge.
          */
         recalculateTotals: function (days) {
-            var restUrl = url.build('rest/V1/abn/select-term');
+            var restUrl = url.build('rest/V1/two/select-term');
 
             isUpdating(true);
             // Do NOT clear termSurcharges here. A chip click only changes

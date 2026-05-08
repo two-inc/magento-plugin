@@ -107,6 +107,102 @@ This is a **public repository**. Do not commit session-specific content such as:
 
 Use agent memory (e.g. `~/.claude/projects/` or equivalent) for session persistence instead. Plans can be saved locally and stashed but must not be committed.
 
+## Per-package release process (ABN-392)
+
+This source tree produces **two distributable Composer packages** from
+a single codebase:
+
+| Package | Magento module(s) | Brand binding |
+|---|---|---|
+| `two-inc/magento2` | `Two_Gateway` only | `Two\Gateway\Brand\TwoBrand` (default in `etc/di.xml`) |
+| `two-inc/magento-abn-plugin` | `Two_Gateway` + `ABN_Gateway` (the second is a skinny override module) | `Two\Gateway\Brand\AbnBrand` (`ABN_Gateway/etc/di.xml` overrides the preference) |
+
+The brand seam is `Two\Gateway\Api\BrandRegistryInterface`.
+
+### Source-tree layout
+
+- Top-level (`Api/`, `Block/`, `Controller/`, `Model/`, … `composer.json`,
+  `etc/di.xml`, etc.) is the **`Two_Gateway`** module: all runtime PHP,
+  default DI binding (`BrandRegistryInterface → TwoBrand`), Two-flavoured
+  i18n, Two CSP allowlist, neutral CSS that does not reference brand
+  shields.
+- `ABN_Gateway/` is a **skinny override module** containing no PHP code:
+  - `etc/di.xml` — re-binds `BrandRegistryInterface → AbnBrand`
+  - `etc/csp_whitelist.xml` — adds `*.achterafbetalen.abnamro.nl` hosts
+    (additive — Magento merges all modules' CSP files)
+  - `etc/module.xml` — declares dependency on `Two_Gateway` so it loads
+    after, ensuring its DI preference and view-layer overrides win
+  - `i18n/{nb_NO,nl_NL,sv_SE}.csv` — ABN-flavoured translation overrides
+    (e.g. "ABN AMRO Zakelijk op Rekening")
+  - `view/{frontend,adminhtml}/web/images/abn-shield.svg` — ABN
+    brand asset (referenced by ABN_Gateway's CSS overrides)
+  - `view/{frontend,adminhtml}/web/css/...` — adds the abn-shield image
+    to the `.two-payment-shield` and `.two-extension .title:before`
+    selectors that `Two_Gateway` ships intentionally bare
+
+### Building each package
+
+The release pipeline produces each package by **directory inclusion**
+rather than file substitution:
+
+- **`two-inc/magento2`** zip: includes the top-level tree, **excludes**
+  `ABN_Gateway/`. Top-level `composer.json` declares
+  `name: two-inc/magento2`.
+- **`two-inc/magento-abn-plugin`** zip: includes only `ABN_Gateway/`
+  contents at the package root. `ABN_Gateway/composer.json` declares
+  `name: two-inc/magento-abn-plugin` and `require: two-inc/magento2`.
+
+ABN merchants install both packages via Composer; the dependency
+graph ensures Two_Gateway is present, and ABN_Gateway's overrides
+take effect via Magento's module load order.
+
+### Migrations on upgrade
+
+Existing ABN merchants upgrading from the legacy abn_* namespace pick
+up three Setup/Patch/Data classes on the next `bin/magento setup:upgrade`:
+
+- `MigrateAbnConfigPaths` — rewrites `payment/abn_payment/*` paths in
+  `core_config_data` to `payment/two_payment/*`.
+- `MigrateAbnOrderStatuses` — renames status codes `abn_new` →
+  `two_new`, `abn_failed` → `two_failed`, `pending_abn_payment` →
+  `pending_two_payment` across `sales_order_status`,
+  `sales_order_status_state`, `sales_order`, `sales_order_grid`, and
+  `sales_order_status_history`.
+- `MigrateAbnPaymentMethod` — renames the payment method code
+  `abn_payment` → `two_payment` in `sales_order_payment` and
+  `quote_payment`.
+
+All three are idempotent (Magento tracks applied patches by class
+name) and Two-install safe (no-op on installs that were never on
+the abn_* namespace).
+
+### Open follow-ups
+
+- **CI release pipeline**: `.github/workflows/release.yml` still
+  references the legacy abn-* tag-prefix logic. Needs reworking to
+  produce both packages from the same source tree (likely two parallel
+  jobs: one zips Two_Gateway only, the other zips ABN_Gateway only).
+- **PHPUnit suite**: existing tests under `Test/` predate ABN-392 and
+  were authored against upstream's SurchargeCalculator + Repository
+  shapes. Multiple breaks:
+    1. `Test/Unit/Service/Order/SurchargeCalculatorTest.php` constructs
+       `SurchargeCalculator` with `CurrencyFactory`; the imported ABN
+       implementation takes `CurrencyRatesProviderInterface` instead.
+       Wholesale rewrite needed.
+    2. `Test/Unit/Model/Config/RepositoryPaymentTermsTest.php` and
+       `Test/Unit/Model/Config/RepositoryUrlTest.php` construct
+       `Repository` without the new `BrandRegistryInterface` arg.
+    3. `Test/Unit/Model/TwoErrorHandlingTest.php` and others may
+       reference `::PRODUCT_NAME` etc. on the old static const path.
+  Suite needs review against the ABN-imported runtime before CI can
+  go green. Cannot be done blind — needs PHP local + a sandboxed
+  iteration cycle. Logged as a follow-up under ABN-392 (or a
+  dedicated subtask).
+- **GDPR consent paragraph**: lives in `ABN_Gateway/i18n/nl_NL.csv`
+  as part of the wholesale ABN translation override. Already brand-
+  conditional via the dual-module structure — Two_Gateway ships the
+  generic copy, ABN_Gateway overrides it.
+
 ### Common Issues
 
 1. **Template not found error**: Run `setup:di:compile` and clear opcache

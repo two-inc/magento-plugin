@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Service;
+namespace Two\Gateway\Service;
 
 use Exception;
 use Magento\Bundle\Model\Product\Price;
@@ -24,7 +24,7 @@ use Magento\Sales\Model\Order\Creditmemo\Item as CreditmemoItem;
 use Magento\Sales\Model\Order\Invoice\Item as InvoiceItem;
 use Magento\Sales\Model\Order\Item as OrderItem;
 use Magento\Store\Model\App\Emulation;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
  * Abstract order class

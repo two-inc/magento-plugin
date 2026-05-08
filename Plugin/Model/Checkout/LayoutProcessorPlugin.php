@@ -4,10 +4,10 @@
  * See COPYING.txt for license details.
  */
 
-namespace ABN\Gateway\Plugin\Model\Checkout;
+namespace Two\Gateway\Plugin\Model\Checkout;
 
 use Magento\Checkout\Block\Checkout\LayoutProcessor;
-use ABN\Gateway\Model\Config\Repository;
+use Two\Gateway\Model\Config\Repository;
 
 class LayoutProcessorPlugin
 {

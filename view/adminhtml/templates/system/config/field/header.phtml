@@ -3,7 +3,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * @var $block ABN\Gateway\Block\Adminhtml\System\Config\Field\Header
+ * @var $block Two\Gateway\Block\Adminhtml\System\Config\Field\Header
  */
 ?>
 <div class="two-header">
@@ -23,7 +23,7 @@
                         'and offers a variety of configuration options to suit your businesses needs.<br>' .
                         'If you would like to know more about how to configure the plugin, ' .
                         'check out our <a href="%2" target="_blank">step by step guide</a>.',
-                $block->configRepository::PRODUCT_NAME,
+                $block->getProductName(),
                 $block->escapeUrl($block->getDocumentationUrl())
             ), ['br', 'a']); ?>
         </p>

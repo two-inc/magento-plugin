@@ -5,15 +5,16 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Block\Adminhtml\System\Config\Field;
+namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Store\Model\StoreManagerInterface;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use ABN\Gateway\Api\CurrencyRatesProviderInterface;
+use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\CurrencyRatesProviderInterface;
 
 /**
  * Renders a grid of surcharge inputs (fixed, percentage, limit) per payment term.
@@ -25,7 +26,7 @@ use ABN\Gateway\Api\CurrencyRatesProviderInterface;
 class SurchargeGrid extends Field
 {
     /** @var string */
-    protected $_template = 'ABN_Gateway::system/config/field/surcharge-grid.phtml';
+    protected $_template = 'Two_Gateway::system/config/field/surcharge-grid.phtml';
 
     /** @var ScopeConfigInterface */
     private $scopeConfig;
@@ -35,6 +36,9 @@ class SurchargeGrid extends Field
 
     /** @var CurrencyRatesProviderInterface */
     private $ratesProvider;
+
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
 
     /** @var string */
     private $scope = 'default';
@@ -47,12 +51,14 @@ class SurchargeGrid extends Field
         ScopeConfigInterface $scopeConfig,
         StoreManagerInterface $storeManager,
         CurrencyRatesProviderInterface $ratesProvider,
+        BrandRegistryInterface $brandRegistry,
         array $data = []
     ) {
         parent::__construct($context, $data);
         $this->scopeConfig = $scopeConfig;
         $this->storeManager = $storeManager;
         $this->ratesProvider = $ratesProvider;
+        $this->brandRegistry = $brandRegistry;
     }
 
     /**
@@ -96,7 +102,7 @@ class SurchargeGrid extends Field
      */
     public function getSavedValue(int $days, string $field): string
     {
-        $path = sprintf('payment/abn_payment/surcharge_%d_%s', $days, $field);
+        $path = sprintf('payment/two_payment/surcharge_%d_%s', $days, $field);
         $value = $this->getConfigValue($path);
         return $value !== null ? (string)$value : '';
     }
@@ -117,10 +123,19 @@ class SurchargeGrid extends Field
         return (string)$this->getConfigValue(ConfigRepository::XML_PATH_SURCHARGE_TYPE);
     }
 
-    public function getMaxFixed(): int
+    /**
+     * Maximum fixed-amount surcharge in the merchant's base currency,
+     * or null when the brand imposes no upper bound. The template and
+     * JS treat null as "no max" and skip the range validation.
+     */
+    public function getMaxFixed(): ?int
     {
-        $limitAmount = ConfigRepository::SURCHARGE_FIXED_MAX;
-        $limitCurrency = ConfigRepository::SURCHARGE_FIXED_MAX_CURRENCY;
+        $limit = $this->brandRegistry->getSurchargeFixedMax();
+        if ($limit === null) {
+            return null;
+        }
+        $limitAmount = (int)$limit['amount'];
+        $limitCurrency = $limit['currency'];
         $baseCurrency = $this->getBaseCurrencyCode();
 
         if ($baseCurrency === $limitCurrency) {
@@ -175,12 +190,18 @@ class SurchargeGrid extends Field
     }
 
     /**
-     * Get the fixed fee limit label, e.g. "EUR 25" or "USD 28 (EUR 25)".
+     * Fixed-fee limit label (e.g. "EUR 25" or "USD 28 (EUR 25)").
+     * Empty when the brand imposes no upper bound — there is nothing
+     * meaningful to display.
      */
     public function getFixedLimitLabel(): string
     {
-        $limitAmount = ConfigRepository::SURCHARGE_FIXED_MAX;
-        $limitCurrency = ConfigRepository::SURCHARGE_FIXED_MAX_CURRENCY;
+        $limit = $this->brandRegistry->getSurchargeFixedMax();
+        if ($limit === null) {
+            return '';
+        }
+        $limitAmount = $limit['amount'];
+        $limitCurrency = $limit['currency'];
         $baseCurrency = $this->getBaseCurrencyCode();
 
         if ($baseCurrency === $limitCurrency) {
@@ -208,12 +229,19 @@ class SurchargeGrid extends Field
     }
 
     /**
-     * Get currency warning when exchange rate is unavailable.
+     * Warning shown when the brand's fixed-fee limit currency differs
+     * from the merchant's base currency and no FX rate is configured.
+     * Empty when the brand has no limit at all (nothing to enforce).
      */
     public function getCurrencyWarning(): string
     {
+        $limit = $this->brandRegistry->getSurchargeFixedMax();
+        if ($limit === null) {
+            return '';
+        }
+        $limitAmount = $limit['amount'];
+        $limitCurrency = $limit['currency'];
         $baseCurrency = $this->getBaseCurrencyCode();
-        $limitCurrency = ConfigRepository::SURCHARGE_FIXED_MAX_CURRENCY;
 
         if ($baseCurrency === $limitCurrency) {
             return '';
@@ -227,7 +255,7 @@ class SurchargeGrid extends Field
             'Warning: The fixed fee limit of %1 %2 cannot be enforced correctly because no exchange rate is '
             . 'configured from %3 to %4. Configure exchange rates in Stores → Currency → Currency Rates.',
             $limitCurrency,
-            ConfigRepository::SURCHARGE_FIXED_MAX,
+            $limitAmount,
             $limitCurrency,
             $baseCurrency
         );
@@ -304,7 +332,7 @@ class SurchargeGrid extends Field
         if ($this->scope === 'default') {
             return false;
         }
-        $path = sprintf('payment/abn_payment/surcharge_%d_%s', $days, $field);
+        $path = sprintf('payment/two_payment/surcharge_%d_%s', $days, $field);
         $value = $this->scopeConfig->getValue($path, $this->scope, $this->scopeId);
         $defaultValue = $this->scopeConfig->getValue($path);
         return $value === $defaultValue;
@@ -323,7 +351,7 @@ class SurchargeGrid extends Field
      */
     public function getAvailablePaymentTerms(): array
     {
-        return ConfigRepository::AVAILABLE_PAYMENT_TERMS;
+        return $this->brandRegistry->getAvailablePaymentTerms();
     }
 
     /**
@@ -331,7 +359,7 @@ class SurchargeGrid extends Field
      */
     public function getFeesUrl(): string
     {
-        return $this->getUrl('abn/config/fees');
+        return $this->getUrl('two/config/fees');
     }
 
     /**

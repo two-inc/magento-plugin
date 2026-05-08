@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Module/etc/module.xsd">
+    <module name="ABN_Gateway" setup_version="1.0.0">
+        <sequence>
+            <!--
+                Load order: ABN_Gateway must run AFTER Two_Gateway so
+                that its DI preference for BrandRegistryInterface wins
+                (Magento honours the last-loaded preference) and its
+                view-layer overrides (i18n, CSS, images) take precedence
+                over the Two_Gateway defaults.
+            -->
+            <module name="Two_Gateway"/>
+        </sequence>
+    </module>
+</config>

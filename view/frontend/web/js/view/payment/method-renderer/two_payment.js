@@ -15,7 +15,7 @@ define([
     'Magento_Checkout/js/model/full-screen-loader',
     'Magento_Checkout/js/action/redirect-on-success',
     'mage/url',
-    'ABN_Gateway/js/model/surcharge',
+    'Two_Gateway/js/model/surcharge',
     'Magento_Ui/js/lib/view/utils/async',
     'mage/validation',
     'jquery/jquery-storageapi'
@@ -35,15 +35,15 @@ define([
 ) {
     'use strict';
 
-    let config = (window.checkoutConfig.payment || {}).abn_payment || {};
+    let config = (window.checkoutConfig.payment || {}).two_payment || {};
     window.quote = quote;
 
     return Component.extend({
         defaults: {
-            template: 'ABN_Gateway/payment/abn_payment'
+            template: 'Two_Gateway/payment/two_payment'
         },
         redirectAfterPlaceOrder: false,
-        abnSubtitleHtml: $t('For all companies, %1.').replace(
+        twoSubtitleHtml: $t('For all companies, %1.').replace(
             '%1',
             '<a href="https://doorpakken.abnamro.nl/hulpmiddelen-en-diensten/achteraf-betalen-buyer/faq/"'
             + ' target="_blank" rel="noopener">'
@@ -480,7 +480,7 @@ define([
             return $(this.formSelector).valid();
         },
         getCode: function () {
-            return 'abn_payment';
+            return 'two_payment';
         },
         getData: function () {
             return {
@@ -499,7 +499,7 @@ define([
         },
         enableCompanySearch: function () {
             let self = this;
-            require(['ABN_Gateway/select2-4.1.0/js/select2.min'], function () {
+            require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
                 $.async(self.companyIdSelector, function (companyIdField) {
                     $(companyIdField).prop('disabled', true);
                 });
@@ -637,7 +637,7 @@ define([
             }
         },
         getTokens() {
-            const URL = url.build('rest/V1/abn/get-tokens');
+            const URL = url.build('rest/V1/two/get-tokens');
             const OPTIONS = {
                 method: 'POST',
                 headers: {

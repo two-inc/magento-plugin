@@ -5,12 +5,12 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Block\Adminhtml\System\Config\Field;
+namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
  * Surcharge Tax Rate field with dynamic comment.

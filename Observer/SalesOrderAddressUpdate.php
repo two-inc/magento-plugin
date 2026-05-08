@@ -5,16 +5,17 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Observer;
+namespace Two\Gateway\Observer;
 
 use Exception;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
-use ABN\Gateway\Model\Two;
-use ABN\Gateway\Service\Api\Adapter;
-use ABN\Gateway\Service\Order\ComposeOrder;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Model\Two;
+use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Order\ComposeOrder;
+use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
  * Order Address Update Observer
@@ -26,6 +27,9 @@ class SalesOrderAddressUpdate implements ObserverInterface
      * @var ConfigRepository
      */
     private $configRepository;
+
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
 
     /**
      * @var OrderRepositoryInterface
@@ -51,11 +55,13 @@ class SalesOrderAddressUpdate implements ObserverInterface
      */
     public function __construct(
         ConfigRepository $configRepository,
+        BrandRegistryInterface $brandRegistry,
         OrderRepositoryInterface $orderRepository,
         ComposeOrder $compositeOrder,
         Adapter $apiAdapter
     ) {
         $this->configRepository = $configRepository;
+        $this->brandRegistry = $brandRegistry;
         $this->orderRepository = $orderRepository;
         $this->compositeOrder = $compositeOrder;
         $this->apiAdapter = $apiAdapter;
@@ -99,7 +105,7 @@ class SalesOrderAddressUpdate implements ObserverInterface
                         $error
                     );
                 } else {
-                    $comment = __('Order edit request was accepted by %1', $this->configRepository::PRODUCT_NAME);
+                    $comment = __('Order edit request was accepted by %1', $this->brandRegistry->getProductName());
                     $order->addStatusToHistory($order->getStatus(), $comment->render());
                 }
             } catch (Exception $e) {

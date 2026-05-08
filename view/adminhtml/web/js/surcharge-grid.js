@@ -3,15 +3,25 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
 
     return function (config, element) {
         var $container = $(element);
-        var $termsContainer = $('#abn_payment_payment_terms_payment_terms_checkboxes');
-        var $customDays = $('#abn_payment_payment_terms_payment_terms_duration_days');
-        var $surchargeType = $('#abn_payment_payment_terms_surcharge_type');
-        var $differential = $('#abn_payment_payment_terms_surcharge_differential');
-        var $defaultTerm = $('#abn_payment_payment_terms_default_payment_term');
+        var $termsContainer = $('#two_payment_payment_terms_payment_terms_checkboxes');
+        var $customDays = $('#two_payment_payment_terms_payment_terms_duration_days');
+        var $surchargeType = $('#two_payment_payment_terms_surcharge_type');
+        var $differential = $('#two_payment_payment_terms_surcharge_differential');
+        var $defaultTerm = $('#two_payment_payment_terms_default_payment_term');
         var $table = $container.find('.surcharge-grid');
         var $noTermsMsg = $container.find('.surcharge-grid__no-terms');
         var $currencyNote = $container.find('.surcharge-grid__currency-note');
-        var maxFixed = parseInt($container.data('max-fixed'), 10) || 100;
+        // maxFixed === null when the brand has no upper bound on fixed-fee
+        // surcharges. Template emits `data-max-fixed=""` in that case;
+        // parseInt('', 10) is NaN, so we explicitly track "no bound" and
+        // skip the validate-number-range rule below.
+        var rawMaxFixed = $container.data('max-fixed');
+        var maxFixed = (rawMaxFixed === '' || rawMaxFixed === null || rawMaxFixed === undefined)
+            ? null
+            : parseInt(rawMaxFixed, 10);
+        if (maxFixed !== null && (isNaN(maxFixed) || maxFixed <= 0)) {
+            maxFixed = null;
+        }
         var maxPercentage = parseInt($container.data('max-percentage'), 10) || 100;
 
         // ── Helpers ──────────────────────────────────────────────────────
@@ -32,7 +42,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         }
 
         function getSurchargeType() {
-            var $inherit = $('#abn_payment_payment_terms_surcharge_type_inherit');
+            var $inherit = $('#two_payment_payment_terms_surcharge_type_inherit');
             if ($inherit.length && $inherit.is(':checked')) {
                 return 'none';
             }
@@ -57,7 +67,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             $.each(columns, function (_, col) {
                 var name = 'groups[payment_terms][fields][surcharge_grid][value][' + days + '][' + col + ']';
                 var validateRules = ['"validate-number":true', '"validate-zero-or-greater":true'];
-                if (col === 'fixed') {
+                if (col === 'fixed' && maxFixed !== null) {
                     validateRules.push('"validate-number-range":"0-' + maxFixed + '"');
                 } else if (col === 'percentage') {
                     validateRules.push('"validate-number-range":"0-' + maxPercentage + '"');
@@ -232,7 +242,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         $surchargeType.on('change', update);
         $differential.on('change', update);
         $defaultTerm.on('change', update);
-        $('#abn_payment_payment_terms_surcharge_type_inherit').on('change', update);
+        $('#two_payment_payment_terms_surcharge_type_inherit').on('change', update);
 
         // ── Fee column (read-only, fetched from Two API via admin proxy) ─
 

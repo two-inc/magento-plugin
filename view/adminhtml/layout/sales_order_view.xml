@@ -9,12 +9,12 @@
       xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
     <body>
         <referenceBlock name="order_additional_info">
-            <block class="ABN\Gateway\Block\Adminhtml\Order\View"
-                   name="abn_custom_view"
-                   template="ABN_Gateway::order/view/view.phtml"/>
+            <block class="Two\Gateway\Block\Adminhtml\Order\View"
+                   name="two_custom_view"
+                   template="Two_Gateway::order/view/view.phtml"/>
         </referenceBlock>
         <referenceBlock name="order_totals">
-            <block class="ABN\Gateway\Block\Sales\Total\Surcharge" name="order_totals.two_surcharge"/>
+            <block class="Two\Gateway\Block\Sales\Total\Surcharge" name="order_totals.two_surcharge"/>
         </referenceBlock>
     </body>
 </page>

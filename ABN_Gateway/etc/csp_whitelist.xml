@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * ABN AMRO checkout host allowlist. Magento merges every module's
+ * csp_whitelist.xml additively, so this is loaded alongside (not
+ * replacing) Two_Gateway/etc/csp_whitelist.xml.
+ *
+ * In practice the ABN package only redirects to *.achterafbetalen.
+ * abnamro.nl — having Two_Gateway's *.two.inc allowlist also present
+ * is harmless (CSP is permissive, not exclusive).
+ */
+-->
+<csp_whitelist xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Csp:etc/csp_whitelist.xsd">
+        <policies>
+            <policy id="form-action">
+                <values>
+                    <value id="abn-production" type="host">*.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-sandbox" type="host">*.sandbox.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-demo" type="host">*.demo.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-staging" type="host">*.staging.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-release" type="host">*.release.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-experimental" type="host">*.experimental.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-perf" type="host">*.perf.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-cyber" type="host">*.cyber.achterafbetalen.abnamro.nl</value>
+                </values>
+            </policy>
+            <policy id="base-uri">
+                <values>
+                    <value id="abn-production" type="host">*.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-sandbox" type="host">*.sandbox.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-demo" type="host">*.demo.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-staging" type="host">*.staging.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-release" type="host">*.release.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-experimental" type="host">*.experimental.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-perf" type="host">*.perf.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-cyber" type="host">*.cyber.achterafbetalen.abnamro.nl</value>
+                </values>
+            </policy>
+            <policy id="connect-src">
+                <values>
+                    <value id="abn-production" type="host">*.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-sandbox" type="host">*.sandbox.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-demo" type="host">*.demo.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-staging" type="host">*.staging.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-release" type="host">*.release.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-experimental" type="host">*.experimental.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-perf" type="host">*.perf.achterafbetalen.abnamro.nl</value>
+                    <value id="abn-cyber" type="host">*.cyber.achterafbetalen.abnamro.nl</value>
+                </values>
+            </policy>
+        </policies>
+</csp_whitelist>

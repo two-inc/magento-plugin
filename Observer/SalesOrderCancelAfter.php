@@ -5,15 +5,16 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Observer;
+namespace Two\Gateway\Observer;
 
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Exception\LocalizedException;
 use Psr\Log\LoggerInterface;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use ABN\Gateway\Model\Two;
-use ABN\Gateway\Service\Payment\OrderService;
+use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Model\Two;
+use Two\Gateway\Service\Payment\OrderService;
 
 /**
  * After Order Cancel Observer
@@ -39,16 +40,21 @@ class SalesOrderCancelAfter implements ObserverInterface
      */
     private $logger;
 
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
+
     /**
      * @param OrderService $orderService
      * @param LoggerInterface $logger
      */
     public function __construct(
         OrderService $orderService,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        BrandRegistryInterface $brandRegistry
     ) {
         $this->orderService = $orderService;
         $this->logger = $logger;
+        $this->brandRegistry = $brandRegistry;
     }
 
     /**
@@ -92,7 +98,7 @@ class SalesOrderCancelAfter implements ObserverInterface
             throw new LocalizedException(
                 __(
                     'Could not synchronise the cancellation with %1. The order has not been cancelled. Please try again, or contact support if this persists.',
-                    ConfigRepository::PRODUCT_NAME
+                    $this->brandRegistry->getProductName()
                 ),
                 $e
             );

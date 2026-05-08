@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Observer;
+namespace Two\Gateway\Observer;
 
 use Exception;
 use Magento\Framework\Event\Observer;
@@ -20,10 +20,11 @@ use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Magento\Sales\Model\Service\InvoiceService;
 use Magento\Framework\DB\TransactionFactory;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use ABN\Gateway\Model\Two;
-use ABN\Gateway\Service\Api\Adapter;
-use ABN\Gateway\Service\Order\ComposeShipment;
+use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Model\Two;
+use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Order\ComposeShipment;
 
 /**
  * After Order Shipment Save Observer
@@ -35,6 +36,9 @@ class SalesOrderShipmentAfter implements ObserverInterface
      * @var ConfigRepository
      */
     private $configRepository;
+
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
 
     /**
      * @var Adapter
@@ -79,6 +83,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
      */
     public function __construct(
         ConfigRepository $configRepository,
+        BrandRegistryInterface $brandRegistry,
         Adapter $apiAdapter,
         HistoryFactory $historyFactory,
         OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository,
@@ -87,6 +92,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
         TransactionFactory $transactionFactory
     ) {
         $this->configRepository = $configRepository;
+        $this->brandRegistry = $brandRegistry;
         $this->apiAdapter = $apiAdapter;
         $this->historyFactory = $historyFactory;
         $this->orderStatusHistoryRepository = $orderStatusHistoryRepository;
@@ -204,12 +210,12 @@ class SalesOrderShipmentAfter implements ObserverInterface
         if (empty($response['remained_order'])) {
             $comment = __(
                 '%1 order marked as completed.',
-                $this->configRepository::PRODUCT_NAME,
+                $this->brandRegistry->getProductName(),
             );
         } else {
             $comment = __(
                 '%1 order marked as partially completed.',
-                $this->configRepository::PRODUCT_NAME,
+                $this->brandRegistry->getProductName(),
             );
         }
 

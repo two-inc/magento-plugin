@@ -5,16 +5,17 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Model\Ui;
+namespace Two\Gateway\Model\Ui;
 
 use Magento\Checkout\Model\ConfigProviderInterface;
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\View\Asset\Repository as AssetRepository;
 use Magento\Store\Model\StoreManagerInterface;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use ABN\Gateway\Service\UrlCookie;
-use ABN\Gateway\Service\Api\Adapter;
-use ABN\Gateway\Model\Two;
+use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Service\UrlCookie;
+use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Model\Two;
 
 /**
  * Ui Config Provider
@@ -25,6 +26,9 @@ class ConfigProvider implements ConfigProviderInterface
      * @var ConfigRepository
      */
     private $configRepository;
+
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
 
     /**
      * @var Two
@@ -53,6 +57,7 @@ class ConfigProvider implements ConfigProviderInterface
 
     public function __construct(
         ConfigRepository $configRepository,
+        BrandRegistryInterface $brandRegistry,
         Adapter $adapter,
         Two $two,
         AssetRepository $assetRepository,
@@ -60,6 +65,7 @@ class ConfigProvider implements ConfigProviderInterface
         StoreManagerInterface $storeManager
     ) {
         $this->configRepository = $configRepository;
+        $this->brandRegistry = $brandRegistry;
         $this->adapter = $adapter;
         $this->two = $two;
         $this->assetRepository = $assetRepository;
@@ -119,27 +125,27 @@ class ConfigProvider implements ConfigProviderInterface
                     'isPaymentTermsEnabled' => true,
                     'orderIntentApprovedMessage' => __(
                         'Your invoice purchase with %1 is likely to be accepted subject to additional checks.',
-                        $this->configRepository::PRODUCT_NAME
+                        $this->brandRegistry->getProductName()
                     ),
                     'orderIntentDeclinedMessage' => __(
                         'Your invoice purchase with %1 has been declined.',
-                        $this->configRepository::PRODUCT_NAME
+                        $this->brandRegistry->getProductName()
                     ),
                     'generalErrorMessage' => __(
                         'Something went wrong with your request to %1. %2',
-                        $this->configRepository::PRODUCT_NAME,
+                        $this->brandRegistry->getProductName(),
                         $tryAgainLater
                     ),
                     'invalidEmailListMessage' => __('Please ensure that your invoice email address list only contains valid email addresses separated by commas.'),
                     'paymentTermsMessage' => __(
                         'I accept the %1 and authorize %2 to process my data automatically.',
                         sprintf('<a href="%s" target="_blank">%s</a>', $paymentTermsLink, $paymentTerms),
-                        $this->configRepository::PROVIDER_FULL_NAME
+                        $this->brandRegistry->getProviderFullName()
                     ),
                     'termsNotAcceptedMessage' => __('You must accept %1 to place order.', $paymentTerms),
                     'soleTraderErrorMessage' => __(
                         'Something went wrong with your request to %1. %2',
-                        $this->configRepository::PRODUCT_NAME,
+                        $this->brandRegistry->getProductName(),
                         $soleTraderaccountCouldNotBeVerified
                     ),
                 ],
@@ -163,7 +169,8 @@ class ConfigProvider implements ConfigProviderInterface
     /**
      * Build query string with brand parameters.
      *
-     * @return string e.g. "?brand=achterafbetalen&brandVersion=qa" or ""
+     * @return string e.g. "?brand=<tag>&brandVersion=qa" or ""
+     *                where <tag> comes from BrandRegistryInterface::getBrandTag().
      */
     private function buildBrandQueryString(): string
     {

@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Plugin\Api;
+namespace Two\Gateway\Plugin\Api;
 
 use Magento\Framework\Api\ExtensibleDataInterface;
 use Magento\Framework\Api\SearchResults;

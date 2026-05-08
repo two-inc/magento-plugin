@@ -1,0 +1,14 @@
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * ABN AMRO brand admin overrides. Adds the abn-shield background
+ * image to the .two-extension .title:before pseudo-element that
+ * Two_Gateway's canonical _module.less leaves intentionally bare.
+ *
+ * Loaded after Two_Gateway/view/adminhtml/web/css/source/_module.less
+ * via the module sequence in ABN_Gateway/etc/module.xml.
+ */
+.two-extension .title:before {
+    background-image: url('@{baseDir}ABN_Gateway/images/abn-shield.svg');
+}

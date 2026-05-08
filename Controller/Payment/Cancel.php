@@ -5,15 +5,16 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Controller\Payment;
+namespace Two\Gateway\Controller\Payment;
 
 use Exception;
 use Magento\Framework\App\Action\Action;
 use Magento\Framework\App\Action\Context;
 use Magento\Framework\App\ResponseInterface;
 use Magento\Framework\Exception\LocalizedException;
-use ABN\Gateway\Service\Payment\OrderService;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Service\Payment\OrderService;
+use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
  * Cancel Payment Controller
@@ -24,6 +25,9 @@ class Cancel extends Action
      * @var ConfigRepository
      */
     private $configRepository;
+
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
 
     /**
      * @var OrderService
@@ -38,10 +42,12 @@ class Cancel extends Action
      */
     public function __construct(
         ConfigRepository $configRepository,
+        BrandRegistryInterface $brandRegistry,
         OrderService $orderService,
         Context $context
     ) {
         $this->configRepository = $configRepository;
+        $this->brandRegistry = $brandRegistry;
         $this->orderService = $orderService;
         parent::__construct($context);
     }
@@ -58,7 +64,7 @@ class Cancel extends Action
             $this->orderService->cancelTwoOrder($order);
             $message = __(
                 'Your invoice purchase with %1 has been cancelled. The cart will be restored.',
-                $this->configRepository::PRODUCT_NAME
+                $this->brandRegistry->getProductName()
             );
             throw new LocalizedException($message);
         } catch (Exception $exception) {

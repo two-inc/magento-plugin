@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Service\Order;
+namespace Two\Gateway\Service\Order;
 
 use Magento\Catalog\Helper\Image;
 use Magento\Catalog\Model\ResourceModel\Category\CollectionFactory as CategoryCollection;
@@ -15,8 +15,8 @@ use Magento\Framework\Url;
 use Magento\Sales\Api\OrderItemRepositoryInterface;
 use Magento\Sales\Model\Order;
 use Magento\Store\Model\App\Emulation;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use ABN\Gateway\Service\Order as OrderService;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Service\Order as OrderService;
 
 /**
  * Compose Order Service
@@ -129,16 +129,16 @@ class ComposeOrder extends OrderService
             'merchant_order_id' => (string)($order->getIncrementId()),
             'merchant_urls' => [
                 'merchant_confirmation_url' => $this->url->getUrl(
-                    'abn/payment/confirm',
+                    'two/payment/confirm',
                     ['_two_order_reference' => base64_encode($orderReference)]
                 ),
                 'merchant_cancel_order_url' => $this->url->getUrl(
-                    'abn/payment/cancel',
+                    'two/payment/cancel',
                     ['_two_order_reference' => base64_encode($orderReference)]
                 ),
                 'merchant_edit_order_url' => '',
                 'merchant_order_verification_failed_url' => $this->url->getUrl(
-                    'abn/payment/verificationfailed',
+                    'two/payment/verificationfailed',
                     ['_two_order_reference' => base64_encode($orderReference)]
                 ),
             ],

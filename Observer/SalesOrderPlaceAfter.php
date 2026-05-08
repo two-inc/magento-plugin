@@ -5,12 +5,12 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Observer;
+namespace Two\Gateway\Observer;
 
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Sales\Model\Order;
-use ABN\Gateway\Model\Two;
+use Two\Gateway\Model\Two;
 
 /**
  * Observer to disable order confirmation email

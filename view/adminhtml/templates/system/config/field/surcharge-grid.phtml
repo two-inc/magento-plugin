@@ -3,7 +3,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * @var \ABN\Gateway\Block\Adminhtml\System\Config\Field\SurchargeGrid $block
+ * @var \Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeGrid $block
  */
 
 $terms = $block->getActiveTerms();
@@ -26,7 +26,7 @@ $columnLabels = [
      data-available-terms="<?= $block->escapeHtmlAttr(json_encode($block->getAvailablePaymentTerms())) ?>"
      data-default-term="<?= (int)$defaultTerm ?>"
      data-surcharge-type="<?= $block->escapeHtmlAttr($surchargeType) ?>"
-     data-max-fixed="<?= (int)$maxFixed ?>"
+     data-max-fixed="<?= $maxFixed === null ? '' : (int)$maxFixed ?>"
      data-max-percentage="<?= (int)$maxPercentage ?>"
      data-fees-url="<?= $block->escapeHtmlAttr($block->getFeesUrl()) ?>"
      data-scope="<?= $block->escapeHtmlAttr($block->getScope()) ?>"
@@ -66,12 +66,15 @@ $columnLabels = [
                         $name = $block->getFieldName($days, $col);
                         $inheritName = $block->getInheritName($days, $col);
                         $inherited = $isNonDefault && $block->isInherited($days, $col);
-                        $max = ($col === 'fixed') ? $maxFixed : (($col === 'percentage') ? $maxPercentage : '');
+                        $max = ($col === 'fixed') ? $maxFixed : (($col === 'percentage') ? $maxPercentage : null);
                         $validateRules = [
                             '"validate-number":true',
                             '"validate-zero-or-greater":true',
                         ];
-                        if ($max !== '') {
+                        // null = no upper bound (e.g. brand has no fixed-fee
+                        // max). Skip the range rule entirely; the field then
+                        // accepts any positive value.
+                        if ($max !== null && $max !== '') {
                             $validateRules[] = '"validate-number-range":"0-' . (int)$max . '"';
                         }
                         ?>
@@ -162,7 +165,7 @@ $columnLabels = [
 <script type="text/x-magento-init">
 {
     "#surcharge-grid-container": {
-        "ABN_Gateway/js/surcharge-grid": {}
+        "Two_Gateway/js/surcharge-grid": {}
     }
 }
 </script>

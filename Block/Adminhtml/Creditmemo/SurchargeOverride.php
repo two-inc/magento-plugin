@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Block\Adminhtml\Creditmemo;
+namespace Two\Gateway\Block\Adminhtml\Creditmemo;
 
 use Magento\Backend\Block\Template;
 use Magento\Backend\Block\Template\Context;

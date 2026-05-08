@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Api\Webapi;
+namespace Two\Gateway\Api\Webapi;
 
 interface TermSelectionInterface
 {

@@ -4,9 +4,9 @@
  * See COPYING.txt for license details.
  */
 ?>
-<?php /* @var \ABN\Gateway\Block\Adminhtml\Order\View $block */ ?>
-<?php if ($block->getMethod() == \ABN\Gateway\Model\Two::CODE): ?>
-    <?php $productName = $block->configRepository::PRODUCT_NAME; ?>
+<?php /* @var \Two\Gateway\Block\Adminhtml\Order\View $block */ ?>
+<?php if ($block->getMethod() == \Two\Gateway\Model\Two::CODE): ?>
+    <?php $productName = $block->getProductName(); ?>
     <section class="admin__page-section order-view-account-information">
         <div class="admin__page-section-title">
             <span class="title"><?= $block->escapeHtml(__('%1 Details', $productName)) ?></span>

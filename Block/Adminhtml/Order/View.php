@@ -5,11 +5,12 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Block\Adminhtml\Order;
+namespace Two\Gateway\Block\Adminhtml\Order;
 
 use Magento\Sales\Block\Adminhtml\Order\View as OrderView;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use ABN\Gateway\Service\Api\Adapter as Adapter;
+use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Service\Api\Adapter as Adapter;
 
 /**
  * Order View Block
@@ -20,6 +21,9 @@ class View extends OrderView
     * @var ConfigRepository
      */
     public $configRepository;
+
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
 
     /**
      * @var Adapter
@@ -39,6 +43,7 @@ class View extends OrderView
      */
     public function __construct(
         ConfigRepository $configRepository,
+        BrandRegistryInterface $brandRegistry,
         Adapter $apiAdapter,
         \Magento\Backend\Block\Widget\Context $context,
         \Magento\Framework\Registry $registry,
@@ -47,6 +52,7 @@ class View extends OrderView
         array $data = []
     ) {
         $this->configRepository = $configRepository;
+        $this->brandRegistry = $brandRegistry;
         $this->apiAdapter = $apiAdapter;
         parent::__construct($context, $registry, $salesConfig, $reorderHelper, $data);
     }
@@ -94,5 +100,13 @@ class View extends OrderView
     public function getMethod(): string
     {
         return $this->getOrder()->getPayment()->getMethod();
+    }
+
+    /**
+     * Brand-bound product name for use in templates ($block->getProductName()).
+     */
+    public function getProductName(): string
+    {
+        return $this->brandRegistry->getProductName();
     }
 }

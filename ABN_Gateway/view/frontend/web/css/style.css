@@ -1,0 +1,17 @@
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * ABN AMRO brand frontend overrides. Adds the abn-shield background
+ * image to the .two-payment-shield element that Two_Gateway's
+ * canonical CSS leaves intentionally bare.
+ *
+ * Loaded via the layout XML reference in
+ *   ABN_Gateway/view/frontend/layout/checkout_index_index.xml
+ * (or merged into Two_Gateway's CSS bundle via Magento's per-module
+ * static-deploy aggregation; the module sequence guarantees this CSS
+ * loads AFTER Two_Gateway's so the background-image rule wins).
+ */
+.two-payment-shield {
+    background-image: url('../images/abn-shield.svg');
+}

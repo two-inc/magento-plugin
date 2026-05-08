@@ -234,7 +234,11 @@ class SurchargeGridTestable
             $inheritData = $this->groups['payment_terms']['fields']['surcharge_grid']['inherit'];
         }
 
-        $maxFixed = ConfigRepository::SURCHARGE_FIXED_MAX;
+        // Hard-coded to ABN's bound (the brand under which this test fixture
+        // was authored). Production code resolves this via the brand
+        // registry; the testable subclass duplicates the validation logic
+        // in-place rather than depending on DI, so we inline the value.
+        $maxFixed = 25;
         $maxPercentage = ConfigRepository::SURCHARGE_PERCENTAGE_MAX;
 
         foreach ($this->value as $days => $fields) {

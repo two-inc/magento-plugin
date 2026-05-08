@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Api;
+namespace Two\Gateway\Api;
 
 /**
  * Service contract for currency exchange rate lookups.

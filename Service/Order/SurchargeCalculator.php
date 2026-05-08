@@ -5,14 +5,14 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Service\Order;
+namespace Two\Gateway\Service\Order;
 
 use Magento\Framework\Exception\LocalizedException;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use ABN\Gateway\Api\CurrencyRatesProviderInterface;
-use ABN\Gateway\Api\Log\RepositoryInterface as LogRepository;
-use ABN\Gateway\Model\Config\Source\SurchargeType;
-use ABN\Gateway\Service\Api\Adapter;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\CurrencyRatesProviderInterface;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Model\Config\Source\SurchargeType;
+use Two\Gateway\Service\Api\Adapter;
 
 /**
  * Resolves the buyer surcharge for a given order and selected term by

@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Observer;
+namespace Two\Gateway\Observer;
 
 use Exception;
 use Magento\Framework\Event\Observer;
@@ -19,9 +19,10 @@ use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Magento\Sales\Model\Service\InvoiceService;
 use Magento\Framework\DB\TransactionFactory;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use ABN\Gateway\Model\Two;
-use ABN\Gateway\Service\Api\Adapter;
+use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Model\Two;
+use Two\Gateway\Service\Api\Adapter;
 
 /**
  * After Order Save Observer
@@ -33,6 +34,9 @@ class SalesOrderSaveAfter implements ObserverInterface
      * @var ConfigRepository
      */
     private $configRepository;
+
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
 
     /**
      * @var Adapter
@@ -71,6 +75,7 @@ class SalesOrderSaveAfter implements ObserverInterface
      */
     public function __construct(
         ConfigRepository $configRepository,
+        BrandRegistryInterface $brandRegistry,
         Adapter $apiAdapter,
         HistoryFactory $historyFactory,
         OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository,
@@ -78,6 +83,7 @@ class SalesOrderSaveAfter implements ObserverInterface
         TransactionFactory $transactionFactory
     ) {
         $this->configRepository = $configRepository;
+        $this->brandRegistry = $brandRegistry;
         $this->apiAdapter = $apiAdapter;
         $this->historyFactory = $historyFactory;
         $this->orderStatusHistoryRepository = $orderStatusHistoryRepository;
@@ -114,7 +120,7 @@ class SalesOrderSaveAfter implements ObserverInterface
         if (!$this->isWholeOrderShipped($order)) {
             $error = __(
                 "%1 requires whole order to be shipped before it can be fulfilled.",
-                $this->configRepository::PRODUCT_NAME
+                $this->brandRegistry->getProductName()
             );
             throw new LocalizedException($error);
         }
@@ -186,12 +192,12 @@ class SalesOrderSaveAfter implements ObserverInterface
         if (empty($response['remained_order'])) {
             $comment = __(
                 '%1 order marked as completed.',
-                $this->configRepository::PRODUCT_NAME,
+                $this->brandRegistry->getProductName(),
             );
         } else {
             $comment = __(
                 '%1 order marked as partially completed.',
-                $this->configRepository::PRODUCT_NAME,
+                $this->brandRegistry->getProductName(),
             );
         }
 

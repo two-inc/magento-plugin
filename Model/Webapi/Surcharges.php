@@ -5,13 +5,13 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Model\Webapi;
+namespace Two\Gateway\Model\Webapi;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use ABN\Gateway\Api\Log\RepositoryInterface as LogRepository;
-use ABN\Gateway\Api\Webapi\SurchargesInterface;
-use ABN\Gateway\Service\Order\SurchargeCalculator;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Api\Webapi\SurchargesInterface;
+use Two\Gateway\Service\Order\SurchargeCalculator;
 
 /**
  * Read-only endpoint that returns per-term surcharges for the current quote.

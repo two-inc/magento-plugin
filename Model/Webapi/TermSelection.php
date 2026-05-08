@@ -5,15 +5,15 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Model\Webapi;
+namespace Two\Gateway\Model\Webapi;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\Exception\InputException;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\CartTotalRepositoryInterface;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use ABN\Gateway\Api\Webapi\TermSelectionInterface;
-use ABN\Gateway\Service\Order\SurchargeCalculator;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Webapi\TermSelectionInterface;
+use Two\Gateway\Service\Order\SurchargeCalculator;
 
 /**
  * Sets the buyer's selected payment term and returns recalculated totals.

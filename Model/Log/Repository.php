@@ -5,12 +5,12 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Model\Log;
+namespace Two\Gateway\Model\Log;
 
-use ABN\Gateway\Api\Config\RepositoryInterface as Config;
-use ABN\Gateway\Api\Log\RepositoryInterface as LogRepositoryInterface;
-use ABN\Gateway\Logger\DebugLogger;
-use ABN\Gateway\Logger\ErrorLogger;
+use Two\Gateway\Api\Config\RepositoryInterface as Config;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepositoryInterface;
+use Two\Gateway\Logger\DebugLogger;
+use Two\Gateway\Logger\ErrorLogger;
 
 /**
  * Logs repository class

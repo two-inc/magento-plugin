@@ -5,12 +5,13 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Setup\Patch\Data;
+namespace Two\Gateway\Setup\Patch\Data;
 
 use Magento\Framework\Setup\ModuleDataSetupInterface;
 use Magento\Framework\Setup\Patch\DataPatchInterface;
-use ABN\Gateway\Model\Two;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Model\Two;
+use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
  * OrderStatuses Data Patch
@@ -21,6 +22,9 @@ class OrderStatuses implements DataPatchInterface
      * @var ConfigRepository
      */
     private $configRepository;
+
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
 
     /**
      * @var ModuleDataSetupInterface
@@ -33,9 +37,11 @@ class OrderStatuses implements DataPatchInterface
      */
     public function __construct(
         ConfigRepository $configRepository,
+        BrandRegistryInterface $brandRegistry,
         ModuleDataSetupInterface $moduleDataSetup
     ) {
         $this->configRepository = $configRepository;
+        $this->brandRegistry = $brandRegistry;
         $this->moduleDataSetup = $moduleDataSetup;
     }
 
@@ -48,8 +54,8 @@ class OrderStatuses implements DataPatchInterface
 
         $data = [];
         $statuses = [
-            Two::STATUS_NEW => sprintf('%s New Order', $this->configRepository::PROVIDER),
-            Two::STATUS_FAILED => sprintf('%s Failed', $this->configRepository::PROVIDER),
+            Two::STATUS_NEW => sprintf('%s New Order', $this->brandRegistry->getProvider()),
+            Two::STATUS_FAILED => sprintf('%s Failed', $this->brandRegistry->getProvider()),
         ];
 
         foreach ($statuses as $code => $info) {

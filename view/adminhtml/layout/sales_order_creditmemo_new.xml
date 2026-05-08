@@ -9,11 +9,11 @@
       xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
     <body>
         <referenceBlock name="creditmemo_totals">
-            <block class="ABN\Gateway\Block\Sales\Total\Surcharge" name="creditmemo_totals.two_surcharge"/>
-            <block class="ABN\Gateway\Block\Adminhtml\Creditmemo\SurchargeOverride"
+            <block class="Two\Gateway\Block\Sales\Total\Surcharge" name="creditmemo_totals.two_surcharge"/>
+            <block class="Two\Gateway\Block\Adminhtml\Creditmemo\SurchargeOverride"
                    name="creditmemo_totals.two_surcharge_override"
                    as="two_surcharge_override"
-                   template="ABN_Gateway::sales/order/creditmemo/two_surcharge_input.phtml"/>
+                   template="Two_Gateway::sales/order/creditmemo/two_surcharge_input.phtml"/>
         </referenceBlock>
     </body>
 </page>

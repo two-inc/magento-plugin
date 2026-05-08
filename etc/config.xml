@@ -9,7 +9,7 @@
         xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Store:etc/config.xsd">
     <default>
         <payment>
-            <abn_payment>
+            <two_payment>
                 <active>1</active>
                 <version>1.14.1</version>
                 <title>Zakelijk op Rekening</title>
@@ -41,8 +41,8 @@
                 <can_use_internal>0</can_use_internal>
                 <can_use_checkout>1</can_use_checkout>
                 <payment_action>authorize</payment_action>
-                <model>ABN\Gateway\Model\Two</model>
-            </abn_payment>
+                <model>Two\Gateway\Model\Two</model>
+            </two_payment>
         </payment>
     </default>
 </config>

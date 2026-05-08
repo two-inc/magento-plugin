@@ -5,17 +5,17 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Model\Total;
+namespace Two\Gateway\Model\Total;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Quote\Api\Data\ShippingAssignmentInterface;
 use Magento\Quote\Model\Quote;
 use Magento\Quote\Model\Quote\Address\Total;
 use Magento\Quote\Model\Quote\Address\Total\AbstractTotal;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use ABN\Gateway\Api\Log\RepositoryInterface as LogRepository;
-use ABN\Gateway\Model\Config\Source\SurchargeType;
-use ABN\Gateway\Service\Order\SurchargeCalculator;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Model\Config\Source\SurchargeType;
+use Two\Gateway\Service\Order\SurchargeCalculator;
 
 /**
  * Quote total collector for the Two payment terms surcharge.
@@ -80,7 +80,7 @@ class Surcharge extends AbstractTotal
         }
 
         $paymentMethod = $quote->getPayment()->getMethod();
-        if ($paymentMethod && $paymentMethod !== 'abn_payment') {
+        if ($paymentMethod && $paymentMethod !== 'two_payment') {
             $this->logRepository->addDebugLog('TotalCollector: skipped (payment method: ' . $paymentMethod . ')', []);
             $this->clearSessionSurcharge();
             $this->clearTotalSurcharge($total, $quote);
@@ -187,7 +187,7 @@ class Surcharge extends AbstractTotal
         // fieldset copies the values onto the order at conversion time.
         // We deliberately do NOT mirror onto the quote itself — the quote
         // collector runs on every shipping/address change, and a clobber on
-        // a speculative pass (no items, no abn_payment, etc.) would zero a
+        // a speculative pass (no items, no two_payment, etc.) would zero a
         // valid value set by an earlier pass for the placement address.
         $baseNetAmount = round($netAmount / $baseToQuoteRate, 6);
         $total->setData('two_surcharge_amount', $netAmount);

@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Model\Config\Backend;
+namespace Two\Gateway\Model\Config\Backend;
 
 use Magento\Framework\App\Config\Value;
 use Magento\Framework\App\Config\Storage\WriterInterface;
@@ -17,8 +17,8 @@ use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\Model\ResourceModel\AbstractResource;
 use Magento\Framework\Data\Collection\AbstractDb;
 use Magento\Store\Model\StoreManagerInterface;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use ABN\Gateway\Api\CurrencyRatesProviderInterface;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\CurrencyRatesProviderInterface;
 
 /**
  * Backend model for the surcharge grid.
@@ -105,7 +105,7 @@ class SurchargeGrid extends Value
                     continue;
                 }
 
-                $path = sprintf('payment/abn_payment/surcharge_%d_%s', $days, $type);
+                $path = sprintf('payment/two_payment/surcharge_%d_%s', $days, $type);
 
                 if (isset($inheritData[$days][$type]) && $inheritData[$days][$type]) {
                     $this->configWriter->delete($path, $scope, $scopeId);
@@ -160,10 +160,19 @@ class SurchargeGrid extends Value
     /**
      * Get the fixed max converted to the store's base currency.
      */
-    private function getConvertedFixedMax(string $scope, int $scopeId): int
+    /**
+     * Brand-defined fixed-fee max, converted into the merchant's base
+     * currency. Returns null when the brand imposes no upper bound;
+     * validateValue() must skip the upper-bound check in that case.
+     */
+    private function getConvertedFixedMax(string $scope, int $scopeId): ?int
     {
-        $limitAmount = ConfigRepository::SURCHARGE_FIXED_MAX;
-        $limitCurrency = ConfigRepository::SURCHARGE_FIXED_MAX_CURRENCY;
+        $limit = $this->brandRegistry->getSurchargeFixedMax();
+        if ($limit === null) {
+            return null;
+        }
+        $limitAmount = (int)$limit['amount'];
+        $limitCurrency = $limit['currency'];
         $baseCurrency = $this->resolveBaseCurrency($scope, $scopeId);
 
         if ($baseCurrency === $limitCurrency) {
@@ -188,7 +197,7 @@ class SurchargeGrid extends Value
         string $type,
         float $value,
         int $days,
-        int $maxFixed,
+        ?int $maxFixed,
         int $maxPercentage
     ): void {
         if ($value < 0) {
@@ -196,7 +205,7 @@ class SurchargeGrid extends Value
                 __('%1 days - %2: value cannot be negative.', $days, $type)
             );
         }
-        if ($type === 'fixed' && $value > $maxFixed) {
+        if ($type === 'fixed' && $maxFixed !== null && $value > $maxFixed) {
             throw new LocalizedException(
                 __('%1 days - fixed amount: maximum is %2.', $days, $maxFixed)
             );

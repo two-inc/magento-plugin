@@ -5,7 +5,7 @@
  */
 declare(strict_types=1);
 
-namespace ABN\Gateway\Service\Payment;
+namespace Two\Gateway\Service\Payment;
 
 use Exception;
 use Magento\Framework\App\RequestInterface;
@@ -21,11 +21,12 @@ use Magento\Sales\Model\Order\Payment\Transaction\Repository as PaymentTransacti
 use Magento\Sales\Model\OrderFactory;
 use Magento\Sales\Model\ResourceModel\Order as OrderResource;
 use Magento\Sales\Model\Service\InvoiceService;
-use ABN\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use ABN\Gateway\Model\Two;
-use ABN\Gateway\Service\Api\Adapter;
-use ABN\Gateway\Service\UrlCookie;
-use ABN\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Model\Two;
+use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\UrlCookie;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 
 /**
  * Payment Order Service
@@ -74,6 +75,9 @@ class OrderService
      * @var ConfigRepository
      */
     private $configRepository;
+
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
     /**
      * @var RequestInterface
      */
@@ -127,6 +131,7 @@ class OrderService
         Transaction $transaction,
         DecoderInterface $urlDecoder,
         ConfigRepository $configRepository,
+        BrandRegistryInterface $brandRegistry,
         RequestInterface $request,
         TransactionBuilder $transactionBuilder,
         PaymentTransactionRepository $paymentTransactionRepository,
@@ -143,6 +148,7 @@ class OrderService
         $this->transaction = $transaction;
         $this->urlDecoder = $urlDecoder;
         $this->configRepository = $configRepository;
+        $this->brandRegistry = $brandRegistry;
         $this->request = $request;
         $this->transactionBuilder = $transactionBuilder;
         $this->paymentTransactionRepository = $paymentTransactionRepository;
@@ -158,7 +164,7 @@ class OrderService
      */
     public function getOrderByReference()
     {
-        $generalErrorMessage = __('Unable to find the requested %1 order', $this->configRepository::PRODUCT_NAME);
+        $generalErrorMessage = __('Unable to find the requested %1 order', $this->brandRegistry->getProductName());
         $this->urlCookie->delete();
         if (!$this->getOrderReference()) {
             throw new LocalizedException($generalErrorMessage);
@@ -310,7 +316,7 @@ class OrderService
 
         $message = __(
             '%1 payment has been verified by the customer.',
-            $this->configRepository::PRODUCT_NAME
+            $this->brandRegistry->getProductName()
         );
         $this->addOrderComment($order, $message);
         // addAuthorizationTransaction persists the order and payment.
