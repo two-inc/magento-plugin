@@ -12,6 +12,7 @@ use Magento\Framework\App\Action\Action;
 use Magento\Framework\App\Action\Context;
 use Magento\Framework\Exception\LocalizedException;
 use Two\Gateway\Service\Payment\OrderService;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
@@ -23,6 +24,9 @@ class Verificationfailed extends Action
      * @var ConfigRepository
      */
     private $configRepository;
+
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
 
     /**
      * @var OrderService
@@ -37,10 +41,12 @@ class Verificationfailed extends Action
      */
     public function __construct(
         ConfigRepository $configRepository,
+        BrandRegistryInterface $brandRegistry,
         OrderService $orderService,
         Context $context
     ) {
         $this->configRepository = $configRepository;
+        $this->brandRegistry = $brandRegistry;
         $this->orderService = $orderService;
         parent::__construct($context);
     }
@@ -55,7 +61,7 @@ class Verificationfailed extends Action
             $order = $this->orderService->getOrderByReference();
             $message = __(
                 'Your invoice purchase with %1 failed verification. The cart will be restored.',
-                $this->configRepository::PROVIDER
+                $this->brandRegistry->getProductName()
             );
             throw new LocalizedException($message);
         } catch (Exception $exception) {

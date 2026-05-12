@@ -7,8 +7,10 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 
+use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
@@ -21,6 +23,18 @@ class PaymentTermsCheckboxes extends Field
 {
     /** @var string */
     protected $_template = 'Two_Gateway::system/config/field/payment-terms-checkboxes.phtml';
+
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
+
+    public function __construct(
+        Context $context,
+        BrandRegistryInterface $brandRegistry,
+        array $data = []
+    ) {
+        parent::__construct($context, $data);
+        $this->brandRegistry = $brandRegistry;
+    }
 
     /**
      * @inheritDoc
@@ -36,7 +50,7 @@ class PaymentTermsCheckboxes extends Field
      */
     public function getAvailableTerms(): array
     {
-        return ConfigRepository::AVAILABLE_PAYMENT_TERMS;
+        return $this->brandRegistry->getAvailablePaymentTerms();
     }
 
     /**

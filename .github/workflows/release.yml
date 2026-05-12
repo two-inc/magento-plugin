@@ -1,13 +1,7 @@
 name: Release
 
-# Triggered after CI completes on main, not on the raw push.
-# Release only fires when CI's conclusion is 'success' (gated below),
-# so a broken commit landing on main can't produce a tagged
-# Release page.
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  push:
     branches: [main]
 
 permissions:
@@ -20,18 +14,9 @@ concurrency:
 jobs:
   release:
     runs-on: ${{ vars.RUNNER_STANDARD }}
-    # Two gates:
-    # 1. CI must have succeeded on the same SHA. workflow_run fires
-    #    on every CI completion (success/failure/cancelled); this
-    #    `if:` filters to the green case.
-    # 2. Skip ourselves: bumpver's commit lands on main and triggers
-    #    another CI run; once that CI finishes, the release.yml
-    #    workflow_run fires again. Skip when the head commit message
-    #    is already a `chore: Bump version` commit.
-    #    (HEAD-already-tagged check below is the second guard.)
-    if: |
-      github.event.workflow_run.conclusion == 'success' &&
-      !startsWith(github.event.workflow_run.head_commit.message, 'chore: Bump version')
+    # Skip ourselves: bumpver's commit lands on main and re-fires
+    # this workflow. Without this guard we'd loop forever.
+    if: "!startsWith(github.event.head_commit.message, 'chore: Bump version')"
     steps:
       - name: Mint GitHub App token
         id: app-token
@@ -42,43 +27,25 @@ jobs:
 
       - uses: actions/checkout@v5
         with:
-          # Check out the branch (not the SHA) so HEAD lands on
-          # `main` rather than detached — bumpver's commit then
-          # advances the branch, and the later `git push origin
-          # main` actually pushes the bump.
           ref: main
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Should we release?
-        # Two reasons to skip:
-        # 1. Branch drift — workflow_run fires after CI completes,
-        #    but another commit could land on main in the small
-        #    window before release runs. If branch HEAD no longer
-        #    matches the SHA CI signed off on, the next CI cycle
-        #    will retry against the new tip.
-        # 2. Already tagged — re-runs on the same commit (or on
-        #    the bumpver commit itself) shouldn't produce a
-        #    duplicate release. Match bare numeric tags
-        #    (1.14.1 etc.) — the repo's established convention.
+      - name: Skip if HEAD already tagged
         id: gate
-        env:
-          PASSED_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          actual=$(git rev-parse HEAD)
-          if [ "$actual" != "$PASSED_SHA" ]; then
-            echo "::warning::main moved from ${PASSED_SHA} to ${actual} between CI and release. Skipping."
-            echo "skip=1" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          # Match bare numeric tags (1.14.1 etc.) — the repo's
+          # established convention. Reject any non-numeric tag prefix
+          # so a stale fork tag pointing at HEAD doesn't suppress a
+          # legitimate release.
           existing=$(git tag --points-at HEAD | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
           if [ -n "$existing" ]; then
             echo "HEAD already tagged as $existing — nothing to release."
             echo "skip=1" >> "$GITHUB_OUTPUT"
-            exit 0
+          else
+            echo "skip=0" >> "$GITHUB_OUTPUT"
           fi
-          echo "skip=0" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
         if: steps.gate.outputs.skip == '0'
@@ -97,11 +64,15 @@ jobs:
           git config user.email "${{ vars.TWO_INC_APP_ID }}+two-inc-app[bot]@users.noreply.github.com"
 
       - name: Decide bump level + build release notes
-        # Both the bump level and the markdown notes come out of
-        # .github/scripts/release-notes.py — the same script auto-pr.yml
-        # uses to render the rolling sync PR's preview, so the
-        # GitHub Release page exactly matches what was previewed
-        # before merge.
+        # Single pass over `<previous-numeric-tag>..HEAD`:
+        # - Buckets each non-merge commit into Breaking / Features /
+        #   Fixes / Internals / Other based on its conventional-commit
+        #   type, with optional Linear ticket prefix (e.g. CET-123/feat:).
+        # - Writes the bucketed list to release-notes.md so the GitHub
+        #   Release page reflects exactly what triggered the bump level
+        #   (any Breaking entries → major; any Features → minor; else
+        #   patch). Reading the notes makes the bump-level decision
+        #   visible without having to look at the workflow log.
         if: steps.gate.outputs.skip == '0'
         id: bump
         run: |
@@ -113,10 +84,52 @@ jobs:
             range="HEAD"
           fi
 
-          level=$(.github/scripts/release-notes.py "$range" release-notes.md)
+          : > release-notes.md
+          : > /tmp/breaking
+          : > /tmp/features
+          : > /tmp/fixes
+          : > /tmp/internals
+          : > /tmp/other
+
+          while IFS=$'\t' read -r sha subject; do
+            line="- ${subject} (${sha})"
+            if echo "$subject" | grep -qE '^([A-Z]+-[0-9]+/)?[a-z]+(\([^)]+\))?!:|^BREAKING CHANGE:'; then
+              echo "$line" >> /tmp/breaking
+            elif echo "$subject" | grep -qE '^([A-Z]+-[0-9]+/)?feat(\([^)]+\))?:'; then
+              echo "$line" >> /tmp/features
+            elif echo "$subject" | grep -qE '^([A-Z]+-[0-9]+/)?fix(\([^)]+\))?:'; then
+              echo "$line" >> /tmp/fixes
+            elif echo "$subject" | grep -qE '^([A-Z]+-[0-9]+/)?(chore|refactor|ci|docs|test|build|perf|style)(\([^)]+\))?:'; then
+              echo "$line" >> /tmp/internals
+            else
+              echo "$line" >> /tmp/other
+            fi
+          done < <(git log "$range" --no-merges --format='%h%x09%s')
+
+          # Bump level is the highest-severity bucket that's non-empty.
+          if [ -s /tmp/breaking ]; then
+            level=major
+          elif [ -s /tmp/features ]; then
+            level=minor
+          else
+            level=patch
+          fi
           echo "level=$level" >> "$GITHUB_OUTPUT"
-          echo "prev=$prev" >> "$GITHUB_OUTPUT"
           echo "Selected bump level: $level (range: $range)"
+
+          # Render notes — only print sections that have entries.
+          {
+            [ -s /tmp/breaking ]  && { echo "## ⚠️ Breaking changes";  cat /tmp/breaking;  echo; }
+            [ -s /tmp/features ]  && { echo "## 🚀 Features";          cat /tmp/features;  echo; }
+            [ -s /tmp/fixes ]     && { echo "## 🐛 Fixes";              cat /tmp/fixes;     echo; }
+            [ -s /tmp/internals ] && { echo "## 🧰 Internals";          cat /tmp/internals; echo; }
+            [ -s /tmp/other ]     && { echo "## Other";                 cat /tmp/other;     echo; }
+          } > release-notes.md
+          # Stash the previous tag so the post-bump step can append a
+          # "Full diff" link with the proper <prev>..<new> range —
+          # the new tag isn't known yet at this point.
+          echo "prev=$prev" >> "$GITHUB_OUTPUT"
+
           echo "--- release-notes.md preview ---"
           cat release-notes.md
 
@@ -143,7 +156,7 @@ jobs:
       - name: Append full-diff link to release notes
         # Now that the new version is known we can render a proper
         # <prev>..<new> link instead of leaving the right-hand side
-        # blank (the prior shape rendered as "abn-1.13.2..").
+        # blank (the prior shape rendered as "<prefix>-1.13.2..").
         if: steps.gate.outputs.skip == '0'
         env:
           PREV: ${{ steps.bump.outputs.prev }}

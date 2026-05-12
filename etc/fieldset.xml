@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:DataObject/etc/fieldset.xsd">
+    <scope id="global">
+        <fieldset id="sales_convert_quote_address">
+            <field name="two_surcharge_amount"><aspect name="to_order"/></field>
+            <field name="base_two_surcharge_amount"><aspect name="to_order"/></field>
+            <field name="two_surcharge_tax_amount"><aspect name="to_order"/></field>
+            <field name="base_two_surcharge_tax_amount"><aspect name="to_order"/></field>
+            <field name="two_surcharge_description"><aspect name="to_order"/></field>
+            <field name="two_surcharge_tax_rate"><aspect name="to_order"/></field>
+        </fieldset>
+        <fieldset id="sales_convert_quote">
+            <field name="two_surcharge_amount"><aspect name="to_order"/></field>
+            <field name="base_two_surcharge_amount"><aspect name="to_order"/></field>
+            <field name="two_surcharge_tax_amount"><aspect name="to_order"/></field>
+            <field name="base_two_surcharge_tax_amount"><aspect name="to_order"/></field>
+            <field name="two_surcharge_description"><aspect name="to_order"/></field>
+            <field name="two_surcharge_tax_rate"><aspect name="to_order"/></field>
+        </fieldset>
+        <fieldset id="sales_convert_order_invoice">
+            <field name="two_surcharge_description"><aspect name="to_invoice"/></field>
+            <field name="two_surcharge_tax_rate"><aspect name="to_invoice"/></field>
+        </fieldset>
+        <fieldset id="sales_convert_order_creditmemo">
+            <field name="two_surcharge_description"><aspect name="to_creditmemo"/></field>
+            <field name="two_surcharge_tax_rate"><aspect name="to_creditmemo"/></field>
+        </fieldset>
+    </scope>
+</config>

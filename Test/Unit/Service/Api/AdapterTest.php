@@ -90,7 +90,7 @@ class AdapterTest extends TestCase
         $this->assertEquals('abc123', $result['x-delegation-token']);
     }
 
-    // ── Non-2xx responses (ABN-287 critical) ────────────────────────────
+    // ── Non-2xx responses ───────────────────────────────────────────────
 
     public function testNon2xxWithBodyReturnsJsonPlusHttpStatus(): void
     {

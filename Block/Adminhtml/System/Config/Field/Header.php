@@ -11,6 +11,7 @@ use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Backend\Block\Template\Context;
 
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
@@ -28,6 +29,9 @@ class Header extends Field
      */
     public $configRepository;
 
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
+
     /**
      * @var string
      */
@@ -40,10 +44,12 @@ class Header extends Field
      */
     public function __construct(
         ConfigRepository $configRepository,
+        BrandRegistryInterface $brandRegistry,
         Context $context,
         array $data = []
     ) {
         $this->configRepository = $configRepository;
+        $this->brandRegistry = $brandRegistry;
         parent::__construct($context, $data);
     }
 
@@ -75,5 +81,13 @@ class Header extends Field
     public function getDocumentationUrl(): string
     {
         return self::DOCUMENTATION_URL;
+    }
+
+    /**
+     * Brand-bound product name for use in templates ($block->getProductName()).
+     */
+    public function getProductName(): string
+    {
+        return $this->brandRegistry->getProductName();
     }
 }

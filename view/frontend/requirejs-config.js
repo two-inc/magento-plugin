@@ -8,6 +8,9 @@ var config = {
             },
             'Magento_Checkout/js/model/new-customer-address': {
                 'Two_Gateway/js/model/new-customer-address-mixin': true
+            },
+            'Magento_Ui/js/view/messages': {
+                'Two_Gateway/js/view/messages-sticky-errors-mixin': true
             }
         }
     }

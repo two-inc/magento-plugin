@@ -26,7 +26,7 @@ $columnLabels = [
      data-available-terms="<?= $block->escapeHtmlAttr(json_encode($block->getAvailablePaymentTerms())) ?>"
      data-default-term="<?= (int)$defaultTerm ?>"
      data-surcharge-type="<?= $block->escapeHtmlAttr($surchargeType) ?>"
-     data-max-fixed="<?= (int)$maxFixed ?>"
+     data-max-fixed="<?= $maxFixed === null ? '' : (int)$maxFixed ?>"
      data-max-percentage="<?= (int)$maxPercentage ?>"
      data-fees-url="<?= $block->escapeHtmlAttr($block->getFeesUrl()) ?>"
      data-scope="<?= $block->escapeHtmlAttr($block->getScope()) ?>"
@@ -66,12 +66,15 @@ $columnLabels = [
                         $name = $block->getFieldName($days, $col);
                         $inheritName = $block->getInheritName($days, $col);
                         $inherited = $isNonDefault && $block->isInherited($days, $col);
-                        $max = ($col === 'fixed') ? $maxFixed : (($col === 'percentage') ? $maxPercentage : '');
+                        $max = ($col === 'fixed') ? $maxFixed : (($col === 'percentage') ? $maxPercentage : null);
                         $validateRules = [
                             '"validate-number":true',
                             '"validate-zero-or-greater":true',
                         ];
-                        if ($max !== '') {
+                        // null = no upper bound (e.g. brand has no fixed-fee
+                        // max). Skip the range rule entirely; the field then
+                        // accepts any positive value.
+                        if ($max !== null && $max !== '') {
                             $validateRules[] = '"validate-number-range":"0-' . (int)$max . '"';
                         }
                         ?>
@@ -96,7 +99,7 @@ $columnLabels = [
                             <?php endif; ?>
                         </td>
                     <?php endforeach; ?>
-                    <td class="surcharge-grid__fee" data-term="<?= (int)$days ?>"><span class="surcharge-grid__fee-loading"><span></span><span></span><span></span></span></td>
+                    <td class="surcharge-grid__fee" data-term="<?= (int)$days ?>"><span class="surcharge-grid__loading"><span>.</span><span>.</span><span>.</span></span></td>
                     <?php if ($isNonDefault): ?>
                         <td class="surcharge-grid__inherit">
                             <?php foreach ($columns as $col): ?>
@@ -118,12 +121,44 @@ $columnLabels = [
         </tbody>
     </table>
 
-    <p class="surcharge-grid__currency-note note"
+    <p class="surcharge-grid__currency-note note" <?= empty($terms) ? 'style="display:none"' : '' ?>
        data-text-default="<?= $block->escapeHtmlAttr(__('Amounts are shown in %1.', $currencyCode)) ?>"
-       data-text-degraded="<?= $block->escapeHtmlAttr(__('Amounts are shown in %1 unless otherwise stated.', $currencyCode)) ?>"
-       <?= empty($terms) ? 'style="display:none"' : '' ?>>
+       data-text-degraded="<?= $block->escapeHtmlAttr(__('Amounts are shown in %1 unless otherwise stated.', $currencyCode)) ?>">
         <span><?= $block->escapeHtml(__('Amounts are shown in %1.', $currencyCode)) ?></span>
     </p>
+
+    <?php
+    $fl = $block->getFixedLimitLabel();
+    $pl = $block->getPercentageLimitLabel();
+    $limitSentence = __(
+        'Enter a limit amount (in %1) if you do not want to charge your customer more than a specific amount.',
+        $block->getBaseCurrencySymbol()
+    );
+    ?>
+    <p class="note surcharge-grid__helper-text surcharge-grid__helper-text--fixed" style="display:none">
+        <span>
+            <?= $block->escapeHtml(__('Enter the amount you want to charge your customer. Max %1.', $fl)) ?>
+        </span>
+    </p>
+    <p class="note surcharge-grid__helper-text surcharge-grid__helper-text--percentage" style="display:none">
+        <span>
+            <?= $block->escapeHtml(__('Enter the percentage of the fee you want to charge your customer. Max: %1.', $pl)) ?>
+            <?= $block->escapeHtml($limitSentence) ?>
+        </span>
+    </p>
+    <p class="note surcharge-grid__helper-text surcharge-grid__helper-text--fixed_and_percentage" style="display:none">
+        <span>
+            <?= $block->escapeHtml(__('Enter the amount and percentage of the fee you want to charge your customer. Max %1 / %2.', $fl, $pl)) ?>
+            <?= $block->escapeHtml($limitSentence) ?>
+        </span>
+    </p>
+
+    <?php $currencyWarning = $block->getCurrencyWarning(); ?>
+    <?php if ($currencyWarning): ?>
+        <p class="note surcharge-grid__currency-warning">
+            <span class="surcharge-tax-warning"><?= $block->escapeHtml($currencyWarning) ?></span>
+        </p>
+    <?php endif; ?>
 
 </div>
 

@@ -58,13 +58,30 @@ class ComposeOrder extends OrderService
         // Fetch line items from the order
         $lineItems = $this->getLineItemsOrder($order);
 
-        // Read surcharge from session (calculated by Total Collector during collectTotals)
-        $surchargeAmount = (float)$this->checkoutSession->getTwoSurchargeAmount();
-        $surchargeTax = (float)$this->checkoutSession->getTwoSurchargeTax();
+        // Prefer the persisted order columns (populated by the conversion
+        // fieldset) over the session. Session is the source of truth for the
+        // chip-render flow before placement, but by the time ComposeOrder
+        // runs the order has been converted from the quote and the columns
+        // are authoritative. Session can drift if multi-tab logout / GC /
+        // a custom plugin clears it between collectTotals and place().
+        $surchargeAmount = (float)$order->getTwoSurchargeAmount();
+        $surchargeTax = (float)$order->getTwoSurchargeTaxAmount();
+        $description = (string)$order->getTwoSurchargeDescription();
+        $taxRatePercent = (float)$order->getTwoSurchargeTaxRate();
+
+        if ($surchargeAmount <= 0) {
+            // Fallback to session for orders placed in the brief window where
+            // a buyer's order conversion runs without the columns populated
+            // (e.g. mid-deploy before the data patch lands). Remove this
+            // fallback once we're confident every placement persists.
+            $surchargeAmount = (float)$this->checkoutSession->getTwoSurchargeAmount();
+            $surchargeTax = (float)$this->checkoutSession->getTwoSurchargeTax();
+            $description = $this->checkoutSession->getTwoSurchargeDescription() ?: '';
+            $taxRatePercent = (float)$this->checkoutSession->getTwoSurchargeTaxRate();
+        }
 
         if ($surchargeAmount > 0) {
-            $description = $this->checkoutSession->getTwoSurchargeDescription() ?: 'Payment terms fee';
-            $taxRatePercent = (float)$this->checkoutSession->getTwoSurchargeTaxRate();
+            $description = $description ?: 'Payment terms fee';
             $taxRate = $taxRatePercent / 100;
 
             $lineItems[] = [
@@ -78,7 +95,7 @@ class ComposeOrder extends OrderService
                 'net_amount' => $this->roundAmt($surchargeAmount),
                 'tax_amount' => $this->roundAmt($surchargeTax),
                 'discount_amount' => '0.00',
-                'tax_rate' => $this->roundAmt($taxRate),
+                'tax_rate' => $this->roundAmt($taxRate, 6),
                 'tax_class_name' => 'VAT ' . $this->roundAmt($taxRatePercent) . '%',
                 'unit_price' => $this->roundAmt($surchargeAmount, 6),
                 'quantity' => 1,

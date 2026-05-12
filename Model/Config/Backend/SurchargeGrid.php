@@ -17,7 +17,9 @@ use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\Model\ResourceModel\AbstractResource;
 use Magento\Framework\Data\Collection\AbstractDb;
 use Magento\Store\Model\StoreManagerInterface;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\CurrencyRatesProviderInterface;
 
 /**
  * Backend model for the surcharge grid.
@@ -36,6 +38,12 @@ class SurchargeGrid extends Value
     /** @var StoreManagerInterface */
     private $storeManager;
 
+    /** @var CurrencyRatesProviderInterface */
+    private $ratesProvider;
+
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
+
     public function __construct(
         Context $context,
         Registry $registry,
@@ -43,6 +51,8 @@ class SurchargeGrid extends Value
         TypeListInterface $cacheTypeList,
         WriterInterface $configWriter,
         StoreManagerInterface $storeManager,
+        CurrencyRatesProviderInterface $ratesProvider,
+        BrandRegistryInterface $brandRegistry,
         AbstractResource $resource = null,
         AbstractDb $resourceCollection = null,
         array $data = []
@@ -50,6 +60,8 @@ class SurchargeGrid extends Value
         parent::__construct($context, $registry, $config, $cacheTypeList, $resource, $resourceCollection, $data);
         $this->configWriter = $configWriter;
         $this->storeManager = $storeManager;
+        $this->ratesProvider = $ratesProvider;
+        $this->brandRegistry = $brandRegistry;
     }
 
     /**
@@ -66,8 +78,6 @@ class SurchargeGrid extends Value
      */
     public function afterSave()
     {
-        // Read grid values from the groups POST data (not getValue(), which
-        // was cleared by beforeSave() to prevent Magento storing the array)
         $groups = $this->getData('groups');
         if (!is_array($groups)
             || !isset($groups['payment_terms']['fields']['surcharge_grid']['value'])
@@ -87,7 +97,7 @@ class SurchargeGrid extends Value
 
         $scope = $this->getScope();
         $scopeId = (int)$this->getScopeId();
-        $maxFixed = ConfigRepository::SURCHARGE_FIXED_MAX;
+        $maxFixed = $this->getConvertedFixedMax($scope, $scopeId);
         $maxPercentage = ConfigRepository::SURCHARGE_PERCENTAGE_MAX;
 
         foreach ($gridValues as $days => $fields) {
@@ -103,7 +113,6 @@ class SurchargeGrid extends Value
 
                 $path = sprintf('payment/two_payment/surcharge_%d_%s', $days, $type);
 
-                // Handle scope inheritance
                 if (isset($inheritData[$days][$type]) && $inheritData[$days][$type]) {
                     $this->configWriter->delete($path, $scope, $scopeId);
                     continue;
@@ -123,7 +132,6 @@ class SurchargeGrid extends Value
         }
 
         // Persist the base currency so fixed amounts remain meaningful
-        // even if the store's default currency changes later
         $currencyCode = $this->resolveBaseCurrency($scope, $scopeId);
         $this->configWriter->save(
             ConfigRepository::XML_PATH_SURCHARGE_FIXED_CURRENCY,
@@ -152,7 +160,38 @@ class SurchargeGrid extends Value
         }
         return (string)$this->getFieldsetDataValue('currency/options/base')
             ?: (string)$this->_config->getValue('currency/options/base')
-            ?: 'USD';
+            ?: 'EUR';
+    }
+
+    /**
+     * Get the fixed max converted to the store's base currency.
+     */
+    /**
+     * Brand-defined fixed-fee max, converted into the merchant's base
+     * currency. Returns null when the brand imposes no upper bound;
+     * validateValue() must skip the upper-bound check in that case.
+     */
+    private function getConvertedFixedMax(string $scope, int $scopeId): ?int
+    {
+        $limit = $this->brandRegistry->getSurchargeFixedMax();
+        if ($limit === null) {
+            return null;
+        }
+        $limitAmount = (int)$limit['amount'];
+        $limitCurrency = $limit['currency'];
+        $baseCurrency = $this->resolveBaseCurrency($scope, $scopeId);
+
+        if ($baseCurrency === $limitCurrency) {
+            return $limitAmount;
+        }
+
+        $storeId = ($scope === 'stores' && $scopeId > 0) ? $scopeId : null;
+        $rate = $this->ratesProvider->getRate($limitCurrency, $baseCurrency, $storeId);
+        if ($rate !== null && $rate > 0) {
+            return (int)ceil($limitAmount * $rate);
+        }
+
+        return $limitAmount;
     }
 
     /**
@@ -164,7 +203,7 @@ class SurchargeGrid extends Value
         string $type,
         float $value,
         int $days,
-        int $maxFixed,
+        ?int $maxFixed,
         int $maxPercentage
     ): void {
         if ($value < 0) {
@@ -172,7 +211,7 @@ class SurchargeGrid extends Value
                 __('%1 days - %2: value cannot be negative.', $days, $type)
             );
         }
-        if ($type === 'fixed' && $value > $maxFixed) {
+        if ($type === 'fixed' && $maxFixed !== null && $value > $maxFixed) {
             throw new LocalizedException(
                 __('%1 days - fixed amount: maximum is %2.', $days, $maxFixed)
             );

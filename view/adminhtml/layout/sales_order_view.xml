@@ -13,5 +13,8 @@
                    name="two_custom_view"
                    template="Two_Gateway::order/view/view.phtml"/>
         </referenceBlock>
+        <referenceBlock name="order_totals">
+            <block class="Two\Gateway\Block\Sales\Total\Surcharge" name="order_totals.two_surcharge"/>
+        </referenceBlock>
     </body>
 </page>

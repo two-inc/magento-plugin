@@ -1,0 +1,64 @@
+{
+    "sales_order": {
+        "column": {
+            "two_order_reference": true,
+            "two_order_id": true,
+            "two_surcharge_amount": true,
+            "base_two_surcharge_amount": true,
+            "two_surcharge_tax_amount": true,
+            "base_two_surcharge_tax_amount": true,
+            "two_surcharge_description": true,
+            "two_surcharge_tax_rate": true,
+            "two_surcharge_invoiced": true,
+            "base_two_surcharge_invoiced": true,
+            "two_surcharge_refunded": true,
+            "base_two_surcharge_refunded": true
+        }
+    },
+    "quote": {
+        "column": {
+            "two_surcharge_amount": true,
+            "base_two_surcharge_amount": true,
+            "two_surcharge_tax_amount": true,
+            "base_two_surcharge_tax_amount": true,
+            "two_surcharge_description": true,
+            "two_surcharge_tax_rate": true
+        }
+    },
+    "quote_address": {
+        "column": {
+            "two_surcharge_amount": true,
+            "base_two_surcharge_amount": true,
+            "two_surcharge_tax_amount": true,
+            "base_two_surcharge_tax_amount": true,
+            "two_surcharge_description": true,
+            "two_surcharge_tax_rate": true
+        }
+    },
+    "sales_invoice": {
+        "column": {
+            "two_surcharge_amount": true,
+            "base_two_surcharge_amount": true,
+            "two_surcharge_tax_amount": true,
+            "base_two_surcharge_tax_amount": true,
+            "two_surcharge_description": true,
+            "two_surcharge_tax_rate": true
+        }
+    },
+    "sales_creditmemo": {
+        "column": {
+            "two_surcharge_amount": true,
+            "base_two_surcharge_amount": true,
+            "two_surcharge_tax_amount": true,
+            "base_two_surcharge_tax_amount": true,
+            "two_surcharge_description": true,
+            "two_surcharge_tax_rate": true
+        }
+    },
+    "sales_order_grid": {
+        "column": {
+            "two_surcharge_amount": true,
+            "base_two_surcharge_amount": true
+        }
+    }
+}

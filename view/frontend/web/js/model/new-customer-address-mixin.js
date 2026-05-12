@@ -1,3 +1,7 @@
+/**
+ * Copyright Â© Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
 define(['underscore'], function (_) {
     'use strict';
 

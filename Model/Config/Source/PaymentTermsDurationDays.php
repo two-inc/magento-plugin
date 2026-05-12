@@ -11,6 +11,9 @@ use Magento\Framework\Data\OptionSourceInterface;
 
 /**
  * Payment Terms Duration Days Source Model
+ *
+ * Supported payment terms (in days) depend on the brand's commercial
+ * agreement — see BrandRegistryInterface::getAvailablePaymentTerms().
  */
 class PaymentTermsDurationDays implements OptionSourceInterface
 {
@@ -25,10 +28,9 @@ class PaymentTermsDurationDays implements OptionSourceInterface
      */
     public function toOptionArray(): array
     {
-        $options = [];
-        foreach (self::STANDARD_OPTIONS as $days) {
-            $options[] = ['value' => $days, 'label' => __('%1 days', $days)];
-        }
-        return $options;
+        // Filter to the brand's supported payment terms via BrandRegistryInterface.
+        return [
+            ['value' => 30, 'label' => __('30 days')]
+        ];
     }
 }

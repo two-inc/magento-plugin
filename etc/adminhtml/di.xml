@@ -9,4 +9,8 @@
     <type name="Magento\Backend\Block\Widget\Button\Toolbar">
         <plugin name="orderFormToolbarButtons" type="Two\Gateway\Plugin\Block\Widget\Button\Toolbar" />
     </type>
+    <type name="Magento\Sales\Model\Order\Creditmemo">
+        <plugin name="two-creditmemo-surcharge-override"
+                type="Two\Gateway\Plugin\Model\Sales\CreditmemoSurchargeOverride" sortOrder="10"/>
+    </type>
 </config>
