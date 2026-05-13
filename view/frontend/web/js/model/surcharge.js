@@ -146,20 +146,26 @@ define([
     // Refresh on every totals change. Skip while a /select-term call is in
     // flight — that endpoint returns the new term_surcharges itself.
     //
-    // We deliberately do NOT fire on module load. The server-rendered totals
-    // (window.checkoutConfig.totalsData) reflect the quote at HTML render
-    // time, which is BEFORE Magento's /totals-information has added shipping.
-    // Firing now would hit the API with the same partial-basis problem the
-    // server-side compute used to suffer from. Wait for the first subscribe
-    // event instead — Magento's checkout flow fires /totals-information
-    // shortly after page load, which calls quote.setTotals() and triggers
-    // this subscriber. Until then the loader stays visible.
+    // KO subscribables do not replay. If this module mounts after Magento's
+    // /totals-information has already fired (slow stack, deferred renderer,
+    // returning customer with persisted address), the subscriber misses the
+    // emit and the loader hangs. So we also fire once on init if totals are
+    // already present. Trade-off: on a fast stack where /totals-information
+    // has NOT yet fired, the init call uses the server-rendered
+    // window.checkoutConfig.totalsData basis (pre-shipping), then the
+    // subscriber catches the post-shipping emit and refetches via the
+    // snapshot dedup. Two round-trips and a brief chip flicker beats the
+    // loader hanging forever. Values are server-authoritative either way,
+    // so no stale-display drift.
     quote.getTotals().subscribe(function (totals) {
         if (!totals || isUpdating()) {
             return;
         }
         loadFees();
     });
+    if (quote.getTotals()() && !isUpdating()) {
+        loadFees();
+    }
 
     var surchargeModel = {
         selectedTerm: selectedTerm,
