@@ -1,0 +1,51 @@
+#!/bin/bash
+# Hide the admin data-grid loading mask via a tiny custom module.
+#
+# Magento dev mode has a long-standing requirejs/mixins-plugin race that keeps
+# the admin grid loading spinner visible for ~100+ seconds after page load,
+# even though grid data renders correctly underneath the overlay. The bug is
+# in vendor (Magento_RequireJs) and has no clean local fix; hiding the mask is
+# purely cosmetic.
+#
+# Called by: make install
+set -e
+
+MOD_DIR=/data/app/code/Local/AdminLoaderHide
+mkdir -p "${MOD_DIR}/etc" "${MOD_DIR}/view/adminhtml/layout" "${MOD_DIR}/view/adminhtml/web/css"
+
+cat > "${MOD_DIR}/registration.php" <<'EOF'
+<?php
+\Magento\Framework\Component\ComponentRegistrar::register(
+    \Magento\Framework\Component\ComponentRegistrar::MODULE,
+    'Local_AdminLoaderHide',
+    __DIR__
+);
+EOF
+
+cat > "${MOD_DIR}/etc/module.xml" <<'EOF'
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Module/etc/module.xsd">
+    <module name="Local_AdminLoaderHide"/>
+</config>
+EOF
+
+cat > "${MOD_DIR}/view/adminhtml/layout/default.xml" <<'EOF'
+<?xml version="1.0"?>
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <head>
+        <css src="Local_AdminLoaderHide::css/hide-loader.css"/>
+    </head>
+</page>
+EOF
+
+cat > "${MOD_DIR}/view/adminhtml/web/css/hide-loader.css" <<'EOF'
+.admin__data-grid-loading-mask { display: none !important; }
+EOF
+
+php bin/magento module:enable Local_AdminLoaderHide >/dev/null
+php bin/magento setup:upgrade >/dev/null
+php bin/magento cache:flush >/dev/null
+
+echo "Admin grid loading mask hidden (Local_AdminLoaderHide enabled)"
