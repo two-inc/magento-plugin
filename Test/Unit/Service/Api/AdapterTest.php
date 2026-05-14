@@ -33,6 +33,7 @@ class AdapterTest extends TestCase
         $this->curl = $this->createMock(Curl::class);
         $this->logRepository = $this->createMock(LogRepository::class);
         $this->brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $this->brandRegistry->method('getProductName')->willReturn('Two');
 
         $this->configRepository->method('getCheckoutApiUrl')->willReturn('https://api.two.inc');
         $this->configRepository->method('addVersionDataInURL')->willReturnArgument(0);

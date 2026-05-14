@@ -89,13 +89,17 @@ class SurchargeCalculatorTest extends TestCase
         $this->assertEquals('', $result['description']);
     }
 
-    public function testDifferentialModeDefaultTermShortCircuits(): void
+    public function testDifferentialModeDefaultTermDelegatesToApi(): void
     {
         $this->stubCommonConfig(SurchargeType::PERCENTAGE, true);
         $this->config->method('getDefaultPaymentTerm')->willReturn(30);
         $this->stubSurchargeConfig(50);
 
-        $this->adapter->expects($this->never())->method('execute');
+        // Differential math is the API's job; the plugin sends the request
+        // and trusts the response (which will be 0 at the default term).
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->willReturn(['buyer_fee_share' => 0.0]);
 
         $result = $this->calculator->calculate(1000.0, 30, 'NO', 'NOK');
 
@@ -116,16 +120,17 @@ class SurchargeCalculatorTest extends TestCase
         $this->assertEquals(17.50, $result['amount']);
     }
 
-    public function testReturnsZeroWhenApiOmitsBuyerFeeShare(): void
+    public function testThrowsWhenApiOmitsBuyerFeeShare(): void
     {
         $this->stubCommonConfig(SurchargeType::PERCENTAGE);
         $this->stubSurchargeConfig(50);
 
         $this->adapter->method('execute')->willReturn([]);
 
-        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+        $this->expectExceptionMessage('Pricing API response missing required field: buyer_fee_share');
 
-        $this->assertEquals(0.0, $result['amount']);
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
     }
 
     // ── Payload mapping ──────────────────────────────────────────────
@@ -165,7 +170,7 @@ class SurchargeCalculatorTest extends TestCase
                     $share = $payload['buyer_fee_share'];
                     return $share['surcharge_basis'] === 'buyer_pays'
                         && $share['percentage'] === 75.0
-                        && $share['surcharge'] === 0.0
+                        && !array_key_exists('surcharge', $share)
                         && !array_key_exists('cap', $share)
                         && !array_key_exists('reference_terms', $share);
                 })
@@ -354,7 +359,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('getSurchargeType')->willReturn(SurchargeType::FIXED);
         $this->config->method('isSurchargeDifferential')->willReturn(false);
         $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Extended terms fee');
+        $this->config->method('getSurchargeLineDescription')->willReturn('Extended terms fee - %1 days');
         $this->config->method('getSurchargeTaxRate')->willReturn(25.0);
         $this->stubSurchargeConfig(0, 10);
         $this->stubFixedCurrency('NOK');
