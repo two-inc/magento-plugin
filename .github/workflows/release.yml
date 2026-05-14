@@ -1,7 +1,13 @@
 name: Release
 
+# Triggered after CI completes on main, not on the raw push.
+# Release only fires when CI's conclusion is 'success' (gated below),
+# so a broken commit landing on main can't produce a tagged
+# Release page.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
 
 permissions:
@@ -14,9 +20,18 @@ concurrency:
 jobs:
   release:
     runs-on: ${{ vars.RUNNER_STANDARD }}
-    # Skip ourselves: bumpver's commit lands on main and re-fires
-    # this workflow. Without this guard we'd loop forever.
-    if: "!startsWith(github.event.head_commit.message, 'chore: Bump version')"
+    # Two gates:
+    # 1. CI must have succeeded on the same SHA. workflow_run fires
+    #    on every CI completion (success/failure/cancelled); this
+    #    `if:` filters to the green case.
+    # 2. Skip ourselves: bumpver's commit lands on main and triggers
+    #    another CI run; once that CI finishes, the release.yml
+    #    workflow_run fires again. Skip when the head commit message
+    #    is already a `chore: Bump version` commit.
+    #    (HEAD-already-tagged check below is the second guard.)
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      !startsWith(github.event.workflow_run.head_commit.message, 'chore: Bump version')
     steps:
       - name: Mint GitHub App token
         id: app-token
@@ -27,25 +42,43 @@ jobs:
 
       - uses: actions/checkout@v5
         with:
+          # Check out the branch (not the SHA) so HEAD lands on
+          # `main` rather than detached — bumpver's commit then
+          # advances the branch, and the later `git push origin
+          # main` actually pushes the bump.
           ref: main
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Skip if HEAD already tagged
+      - name: Should we release?
+        # Two reasons to skip:
+        # 1. Branch drift — workflow_run fires after CI completes,
+        #    but another commit could land on main in the small
+        #    window before release runs. If branch HEAD no longer
+        #    matches the SHA CI signed off on, the next CI cycle
+        #    will retry against the new tip.
+        # 2. Already tagged — re-runs on the same commit (or on
+        #    the bumpver commit itself) shouldn't produce a
+        #    duplicate release. Match bare numeric tags
+        #    (1.14.1 etc.) — the repo's established convention.
         id: gate
+        env:
+          PASSED_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          # Match bare numeric tags (1.14.1 etc.) — the repo's
-          # established convention. Reject the legacy `abn-*` prefix
-          # so a stale fork tag pointing at HEAD doesn't suppress a
-          # legitimate release.
+          actual=$(git rev-parse HEAD)
+          if [ "$actual" != "$PASSED_SHA" ]; then
+            echo "::warning::main moved from ${PASSED_SHA} to ${actual} between CI and release. Skipping."
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           existing=$(git tag --points-at HEAD | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
           if [ -n "$existing" ]; then
             echo "HEAD already tagged as $existing — nothing to release."
             echo "skip=1" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=0" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo "skip=0" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
         if: steps.gate.outputs.skip == '0'
@@ -156,7 +189,7 @@ jobs:
       - name: Append full-diff link to release notes
         # Now that the new version is known we can render a proper
         # <prev>..<new> link instead of leaving the right-hand side
-        # blank (the prior shape rendered as "abn-1.13.2..").
+        # blank (the prior shape rendered as "<prefix>-1.13.2..").
         if: steps.gate.outputs.skip == '0'
         env:
           PREV: ${{ steps.bump.outputs.prev }}

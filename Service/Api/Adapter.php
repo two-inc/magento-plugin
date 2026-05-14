@@ -10,6 +10,7 @@ namespace Two\Gateway\Service\Api;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\HTTP\Client\Curl;
 use Throwable;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\SoleTraderInterface;
@@ -23,6 +24,9 @@ class Adapter
      * @var ConfigRepository
      */
     private $configRepository;
+
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
 
     /**
      * @var Curl
@@ -43,10 +47,12 @@ class Adapter
      */
     public function __construct(
         ConfigRepository $configRepository,
+        BrandRegistryInterface $brandRegistry,
         Curl $curlClient,
         LogRepository $logRepository
     ) {
         $this->configRepository = $configRepository;
+        $this->brandRegistry = $brandRegistry;
         $this->curlClient = $curlClient;
         $this->logRepository = $logRepository;
     }
@@ -123,7 +129,7 @@ class Adapter
                         'Invalid API response.'
                     );
                     throw new LocalizedException(
-                        __('Invalid API response from %1.', $this->configRepository::PROVIDER)
+                        __('Invalid API response from %1.', $this->brandRegistry->getProductName())
                     );
                 }
             }

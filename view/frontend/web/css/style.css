@@ -6,25 +6,55 @@
 }
 
 #two_gateway_form {
-    margin-top: 40px;
+    margin-top: 0;
 }
 
-.payment-option-logo {
-    /* relative to payment-option-title-container */
+.two-payment-method .payment-method-billing-address {
+    margin-bottom: 0;
+}
+
+.two-payment-method .checkout-agreements-block:empty {
+    display: none;
+}
+
+.two-title-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-right: 40px;
+}
+
+.two-payment-shield {
+    /* relative to payment-option-title-container; offset compensates for the
+       title's line-box leading so the shield top sits on the cap-line. */
     position: absolute;
     right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 32px;
-    height: 32px;
+    top: 6px;
+    width: 24px;
+    height: 24px;
+    /* background-image is added by overlay packages that ship their
+       own CSS additions. Two_Gateway intentionally ships no default
+       shield image — the canonical Two release renders the title
+       block without a shield. */
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;
     display: inline-block;
 }
 
-.two-payment-option-logo {
-    background-image: url('../images/logo.svg');
+.two-payment-title {
+    font-weight: 700;
+}
+
+.two-payment-subtitle {
+    font-size: 0.85em;
+    font-weight: 700;
+    color: var(--color-brownie-vanilla);
+}
+
+.two-payment-subtitle a {
+    color: #0066cc;
+    text-decoration: underline;
 }
 
 .payment-option-title-container {
@@ -40,76 +70,6 @@
 
 .payment-option-title-container span {
     color: inherit;
-}
-
-.tooltip-svg {
-    cursor: pointer;
-    width: 20px;
-    height: auto;
-    margin-left: 5px;
-    align-self: center;
-    /* Center the SVG vertically with the text */
-}
-
-.title-with-tooltip {
-    display: inline-flex;
-    align-items: center;
-    /* Keeps the text and the tooltip icon inline */
-    gap: 5px;
-    /* Optional: space between the title text and the icon */
-}
-
-.two-tooltip-container {
-    position: relative;
-    display: inline-block;
-    cursor: pointer;
-    /* Indicate the icon is interactive */
-}
-
-.two-tooltip-container svg {
-    margin-left: 5px;
-    /* Space between the title and the icon */
-    vertical-align: middle;
-    /* Ensures alignment with text */
-}
-
-.two-tooltip-text {
-    visibility: hidden;
-    width: 190px;
-    height: auto;
-    background-color: rgb(34, 34, 34);
-    color: #fff !important;
-    text-align: center;
-    padding: 10px;
-    border-radius: 5px;
-    /* Position the tooltip text */
-    position: absolute;
-    z-index: 1;
-    bottom: 120%;
-    /* Adjust this to move the tooltip above the question mark */
-    left: 50%;
-    transform: translateX(-50%);
-    opacity: 0;
-    transition: opacity 0.3s;
-    font-size: 12px;
-    white-space: normal;
-    line-height: 1.5;
-}
-
-.two-tooltip-text a {
-    text-decoration: none;
-    text-underline-offset: 2px;
-    cursor: pointer;
-    padding: 5px 10px;
-    border-radius: 5px;
-    border: 1px solid var(--color-gray89);
-    color: var(--color-white);
-    background-color: var(--color-blue2);
-}
-
-.two-tooltip-container:hover .two-tooltip-text {
-    visibility: visible;
-    opacity: 1;
 }
 
 .payment-terms-and-conditions-container {
@@ -159,15 +119,6 @@
     padding-top: 5px;
     color: var(--color-blue2);
     right: 4px;
-}
-
-.redirect_message {
-    font-size: 12px;
-    text-align: center;
-    margin-top: 40px;
-    margin-bottom: 20px;
-    padding: 12px 6px;
-    border-bottom: 1px solid var(--color-gray89);
 }
 
 .two-payment-method {
@@ -296,6 +247,10 @@
 }
 
 /* Payment term chips */
+.two-term-chips {
+    margin-bottom: 1.5em;
+}
+
 .two-term-chips__container {
     display: flex;
     gap: 8px;
@@ -308,17 +263,18 @@
     flex-direction: column;
     align-items: center;
     padding: 8px 16px;
-    border: 1px solid var(--color-gray89);
+    border: 2px solid var(--color-gray89);
     border-radius: 8px;
     background: var(--color-white);
     cursor: pointer;
-    transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+    transition: border-color 0.15s ease;
     min-width: 80px;
     font-family: inherit;
+    position: relative;
 }
 
 .two-term-chip:hover {
-    border-color: var(--color-blue2);
+    border-color: #699797;
 }
 
 .two-term-chip:focus {
@@ -329,15 +285,25 @@
 .two-term-chip--selected:hover,
 .two-term-chip--selected:focus,
 .two-term-chip--selected:active {
-    border-color: var(--color-blue2);
-    background-color: var(--color-blue2);
-    color: var(--color-white);
+    border-color: #699797;
+    background: var(--color-white);
+    color: inherit;
 }
 
 .two-term-chip__days {
     font-size: 14px;
     font-weight: 500;
     line-height: 1.4;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.two-term-chip--selected .two-term-chip__days::before {
+    content: '\2713';
+    color: #699797;
+    font-size: 14px;
+    font-weight: 700;
 }
 
 .two-term-chip__surcharge {
@@ -346,8 +312,46 @@
     opacity: 0.75;
 }
 
-.two-term-chip--selected .two-term-chip__surcharge {
-    opacity: 0.9;
+.two-term-chip__loading {
+    display: inline-block;
+    letter-spacing: 2px;
+    color: #999;
+    font-size: 12px;
+    line-height: 1.3;
+    font-weight: 700;
+}
+
+.two-term-chip__loading > span {
+    display: inline-block;
+    animation: two-term-chip-dot 1.4s infinite ease-in-out both;
+}
+
+.two-term-chip__loading > span:nth-child(2) { animation-delay: 0.2s; }
+.two-term-chip__loading > span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes two-term-chip-dot {
+    0%, 80%, 100% { opacity: 0.2; }
+    40%          { opacity: 1; }
+}
+
+.two-term-chip--single {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    border-color: #699797;
+    cursor: default;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.two-term-chip--single:hover {
+    border-color: #699797;
+}
+
+.two-term-chip--single .two-term-chip__surcharge {
+    font-size: 14px;
+    font-weight: 500;
+    opacity: 1;
 }
 
 /* Theme specific css for fire checkout on select2 */

@@ -8,7 +8,6 @@ declare(strict_types=1);
 namespace Two\Gateway\Controller\Adminhtml\Config;
 
 use Magento\Backend\App\Action;
-use Magento\Directory\Model\CurrencyFactory;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ResponseInterface;
 use Magento\Framework\Controller\Result\Json;
@@ -16,6 +15,7 @@ use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\Controller\ResultInterface;
 use Magento\Store\Model\ScopeInterface;
 use Magento\Store\Model\StoreManagerInterface;
+use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Service\Api\Adapter;
 
 /**
@@ -54,9 +54,9 @@ class Fees extends Action
     private $scopeConfig;
 
     /**
-     * @var CurrencyFactory
+     * @var CurrencyRatesProviderInterface
      */
-    private $currencyFactory;
+    private $currencyRates;
 
     public function __construct(
         Action\Context $context,
@@ -64,14 +64,14 @@ class Fees extends Action
         Adapter $apiAdapter,
         StoreManagerInterface $storeManager,
         ScopeConfigInterface $scopeConfig,
-        CurrencyFactory $currencyFactory
+        CurrencyRatesProviderInterface $currencyRates
     ) {
         parent::__construct($context);
         $this->resultJsonFactory = $resultJsonFactory;
         $this->apiAdapter = $apiAdapter;
         $this->storeManager = $storeManager;
         $this->scopeConfig = $scopeConfig;
-        $this->currencyFactory = $currencyFactory;
+        $this->currencyRates = $currencyRates;
     }
 
     /**
@@ -93,8 +93,7 @@ class Fees extends Action
             '/pricing/v1/merchant/rates',
             [
                 'buyer_country_code' => $this->resolveBuyerCountry($storeId),
-                // TODO: no admin recourse-pricing config exists yet. Matches
-                // SurchargeCalculator::fetchBuyerFee hardcode.
+                // TODO: no admin recourse-pricing config exists yet.
                 'recourse_pricing' => false,
                 // payout_schedule intentionally omitted — server infers from
                 // the merchant's payee accounts. Only set if/when we expose
@@ -110,7 +109,7 @@ class Fees extends Action
             return $result->setData($normalised);
         }
 
-        return $result->setData($this->convertFees($normalised, $targetCurrency));
+        return $result->setData($this->convertFees($normalised, $targetCurrency, $storeId));
     }
 
     /**
@@ -184,19 +183,21 @@ class Fees extends Action
                 // fall through
             }
         }
-        return (string)$this->scopeConfig->getValue('currency/options/base') ?: 'USD';
+        return (string)$this->scopeConfig->getValue('currency/options/base') ?: 'EUR';
     }
 
     /**
-     * FX-convert each fee's fixed amount from the API's source currency into
-     * the grid's display currency. Percentage is dimensionless.
+     * FX-convert each fee's fixed amount from the API's source currency
+     * into the grid's display currency. Percentage is dimensionless.
      *
-     * Graceful degrade: on FX failure (typically no rate configured under
-     * Stores > Currency Rates) the fees pass through in the source currency.
-     * JS shows the currency code inline on the cell so merchants see real
-     * numbers instead of "—".
+     * FX failure (no rate in either direction under Stores > Currency Rates)
+     * falls through: fees stay in the source currency and the JS renders them
+     * with the code inline (e.g. "2.51% + 0.10 GBP"). Merchant fees are
+     * billed in the merchant's payout currency regardless, so source-currency
+     * display is semantically honest and unblocks admins without FX
+     * configured.
      */
-    private function convertFees(array $raw, string $targetCurrency): array
+    private function convertFees(array $raw, string $targetCurrency, ?int $storeId): array
     {
         if (empty($raw['success']) || empty($raw['fees'])) {
             return $raw;
@@ -207,10 +208,9 @@ class Fees extends Action
             return $raw;
         }
 
-        $rate = $this->resolveFxRate($sourceCurrency, $targetCurrency);
+        $rate = $this->currencyRates->getRate($sourceCurrency, $targetCurrency, $storeId);
         if ($rate === null) {
-            // Leave fees in source currency — JS will label the cell.
-            return $raw;
+            return $raw; // leave fees in source currency
         }
 
         foreach ($raw['fees'] as $days => $fee) {
@@ -219,37 +219,7 @@ class Fees extends Action
             }
         }
         $raw['currency'] = $targetCurrency;
-
         return $raw;
-    }
-
-    /**
-     * Look up a direct FX rate; if absent, try the inverse and invert it.
-     *
-     * Magento's admin only captures rates in one direction (typically from
-     * the store's base currency outward), and Currency::convert() does no
-     * inversion. Checking both directions avoids forcing the merchant to
-     * duplicate every rate row just to display our fee column.
-     */
-    private function resolveFxRate(string $source, string $target): ?float
-    {
-        try {
-            $direct = (float)$this->currencyFactory->create()->load($source)->getRate($target);
-            if ($direct > 0) {
-                return $direct;
-            }
-        } catch (\Exception $e) {
-            // fall through to inverse attempt
-        }
-        try {
-            $reverse = (float)$this->currencyFactory->create()->load($target)->getRate($source);
-            if ($reverse > 0) {
-                return 1 / $reverse;
-            }
-        } catch (\Exception $e) {
-            // fall through to null
-        }
-        return null;
     }
 
     /**
@@ -261,7 +231,7 @@ class Fees extends Action
     {
         $scope = $storeId !== null ? ScopeInterface::SCOPE_STORES : 'default';
         $country = (string)$this->scopeConfig->getValue('general/country/default', $scope, $storeId);
-        return $country !== '' ? strtoupper($country) : 'NO';
+        return $country !== '' ? strtoupper($country) : 'NL';
     }
 
     /**

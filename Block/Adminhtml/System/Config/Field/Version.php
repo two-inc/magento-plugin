@@ -31,8 +31,8 @@ class Version extends Field
     /**
      * Version constructor.
      *
-     * @param ConfigRepository $configRepository
      * @param Context $context
+     * @param ConfigRepository $configRepository
      * @param array $data
      */
     public function __construct(

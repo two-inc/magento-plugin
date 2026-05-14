@@ -56,6 +56,7 @@ install: clean
 	docker exec $(CONTAINER) php bin/magento setup:di:compile
 	$(MAKE) configure TWO_API_KEY=$(or $(TWO_API_KEY),dummy-dev-key)
 	docker exec $(CONTAINER) bash /data/extensions/workdir/dev/install-xdebug
+	docker exec $(CONTAINER) bash /data/extensions/workdir/dev/hide-admin-loader
 	@./start-proxy.sh --background || true
 	@PROXY_URL=$$(./start-proxy.sh url 2>/dev/null); \
 	if [ -n "$$PROXY_URL" ]; then \

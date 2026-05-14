@@ -74,7 +74,7 @@ class ComposeShipment extends OrderService
                 'tax_amount' => $taxAmount,
                 'discount_amount' => $this->roundAmt($this->getDiscountAmountItem($orderItem) * $part),
                 'tax_class_name' => 'VAT ' . $this->roundAmt($orderItem->getTaxPercent()) . '%',
-                'tax_rate' => $this->roundAmt(($orderItem->getTaxPercent() / 100)),
+                'tax_rate' => $this->roundAmt(($orderItem->getTaxPercent() / 100), 6),
                 'unit_price' => $this->roundAmt($this->getUnitPriceItem($orderItem), 6),
                 'quantity' => $item->getQty(),
                 'quantity_unit' => $this->configRepository->getWeightUnit((int)$order->getStoreId()),

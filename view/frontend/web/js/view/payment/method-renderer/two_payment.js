@@ -35,7 +35,7 @@ define([
 ) {
     'use strict';
 
-    let config = window.checkoutConfig.payment.two_payment;
+    let config = (window.checkoutConfig.payment || {}).two_payment || {};
     window.quote = quote;
 
     return Component.extend({
@@ -43,7 +43,7 @@ define([
             template: 'Two_Gateway/payment/two_payment'
         },
         redirectAfterPlaceOrder: false,
-        redirectMessage: config.redirectMessage,
+        twoSubtitleHtml: $t('For all companies.'),
         paymentTermsMessage: config.paymentTermsMessage,
         termsNotAcceptedMessage: config.termsNotAcceptedMessage,
         isPaymentTermsEnabled: config.isPaymentTermsEnabled,
@@ -79,16 +79,43 @@ define([
         selectedTerm: surchargeModel.selectedTerm,
         availableBuyerTerms: config.availableBuyerTerms || [],
         showTermSelector: (config.availableBuyerTerms || []).length > 1,
+        showSingleTerm: (config.availableBuyerTerms || []).length === 1,
+        singleTermLabel: (config.availableBuyerTerms || []).length === 1
+            ? $t('Payment Terms %1 days').replace('%1', config.availableBuyerTerms[0])
+            : '',
+        // Empty-object termSurcharges → loading state (template shows the
+         // three-dot loader). Once populated, label becomes '+€n.nn' or '' if
+         // every term resolves to ~0.
+        singleTermSurchargeLabel: ko.pureComputed(function () {
+            var terms = config.availableBuyerTerms || [];
+            if (terms.length !== 1) {
+                return '';
+            }
+            var surcharges = surchargeModel.termSurcharges();
+            if (!surcharges || !Object.keys(surcharges).length) {
+                return null;
+            }
+            var amount = parseFloat(surcharges[terms[0]] || 0);
+            if (amount < 0.005) {
+                return '';
+            }
+            return '+' + surchargeModel.currencySymbol + amount.toFixed(2);
+        }),
         termOptions: ko.pureComputed(function () {
             var terms = config.availableBuyerTerms || [];
             var surcharges = surchargeModel.termSurcharges();
             var symbol = surchargeModel.currencySymbol;
-            return terms.map(function (days) {
-                var amount = parseFloat(surcharges[days] || 0).toFixed(2);
+            var isLoading = !surcharges || !Object.keys(surcharges).length;
+            var amounts = terms.map(function (days) {
+                return parseFloat(surcharges[days] || 0);
+            });
+            var allZero = !isLoading && amounts.every(function (a) { return a < 0.005; });
+            return terms.map(function (days, i) {
                 return {
                     days: days,
                     daysLabel: days + ' ' + $t('days'),
-                    surchargeLabel: '+' + symbol + amount
+                    isLoading: isLoading,
+                    surchargeLabel: (isLoading || allZero) ? '' : '+' + symbol + amounts[i].toFixed(2)
                 };
             });
         }),
@@ -98,6 +125,8 @@ define([
         showSoleTrader: ko.observable(false),
         showWhatIsTwo: ko.observable(false),
         showModeTab: ko.observable(false),
+        termsAccepted: ko.observable(false), // Observable for terms accepted state
+        BVCompanyRegex: /(?:^|\s)B(?:\.)?V(?:\.)?$/i,
 
         initialize: function () {
             this._super();
@@ -301,8 +330,6 @@ define([
                 } else {
                     this.showErrorMessage(this.orderIntentDeclinedMessage);
                 }
-            } else {
-                this.showErrorMessage(this.generalErrorMessage);
             }
         },
         processOrderIntentErrorResponse: function (response) {
@@ -351,6 +378,20 @@ define([
             let totals = quote.getTotals()(),
                 billingAddress = quote.billingAddress(),
                 lineItems = [];
+
+            // Do not fire order intent for BV companies in NL
+            if (billingAddress.countryId.toLowerCase() == 'nl') {
+                const isBVCompany = this.BVCompanyRegex.test(this.companyName());
+                console.debug({
+                    logger: 'twoPayment.placeOrderIntent',
+                    countryId: billingAddress.countryId,
+                    isBVCompany
+                });
+                if (!isBVCompany) {
+                    return $.Deferred().resolve(null);
+                }
+            }
+
             _.each(quote.getItems(), function (item) {
                 lineItems.push({
                     name: item['name'],

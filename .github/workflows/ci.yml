@@ -119,18 +119,23 @@ jobs:
           docker run --detach --name magento-project-community-edition \
             michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
-      - name: Create branch for Composer (composer rejects published versions on a feature branch)
+      - name: Upload tracked source into container
+        # Ship only tracked files — avoids leaking .git/, dotfiles,
+        # or any untracked working-tree state into the CI container.
+        # `git ls-files | tar` is preferred over `git archive` here
+        # because the latter honours .gitattributes export-ignore
+        # and would strip phpstan.neon / phpunit.xml / Test/ which CI
+        # needs but the release zip does not.
         run: |
-          git checkout -b continuous-integration-test-branch
-          sed -i '/version/d' ./composer.json
+          docker exec magento-project-community-edition mkdir -p /data/extensions/magento-plugin
+          git ls-files -z | tar --null -cf - -T - | docker exec -i magento-project-community-edition tar -x -C /data/extensions/magento-plugin
 
-      - name: Upload code into container
-        run: docker cp "$(pwd)" magento-project-community-edition:/data/extensions/
-
-      - name: Install extension
+      - name: Install extension from uploaded source
         run: |
           docker exec magento-project-community-edition \
-            composer require two-inc/magento2:@dev --no-plugins
+            composer config repositories.local path '/data/extensions/*'
+          docker exec magento-project-community-edition \
+            composer require 'two-inc/magento2:*@dev' --no-plugins
 
       - name: Activate extension
         run: |
@@ -169,13 +174,23 @@ jobs:
           docker run --detach --name magento-project-community-edition \
             michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
-      - name: Upload code into container
-        run: docker cp "$(pwd)" magento-project-community-edition:/data/extensions/
+      - name: Upload tracked source into container
+        # Ship only tracked files — avoids leaking .git/, dotfiles,
+        # or any untracked working-tree state into the CI container.
+        # `git ls-files | tar` is preferred over `git archive` here
+        # because the latter honours .gitattributes export-ignore
+        # and would strip phpstan.neon / phpunit.xml / Test/ which CI
+        # needs but the release zip does not.
+        run: |
+          docker exec magento-project-community-edition mkdir -p /data/extensions/magento-plugin
+          git ls-files -z | tar --null -cf - -T - | docker exec -i magento-project-community-edition tar -x -C /data/extensions/magento-plugin
 
-      - name: Install extension
+      - name: Install extension from uploaded source
         run: |
           docker exec magento-project-community-edition \
-            composer require two-inc/magento2:@dev --no-plugins
+            composer config repositories.local path '/data/extensions/*'
+          docker exec magento-project-community-edition \
+            composer require 'two-inc/magento2:*@dev' --no-plugins
 
       - name: Run setup:di:compile
         run: |

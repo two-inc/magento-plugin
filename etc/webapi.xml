@@ -12,5 +12,11 @@
             <resource ref="anonymous"/>
         </resources>
     </route>
+    <route url="/V1/two/surcharges/:cartId" method="GET">
+        <service class="Two\Gateway\Api\Webapi\SurchargesInterface" method="get"/>
+        <resources>
+            <resource ref="anonymous"/>
+        </resources>
+    </route>
 </routes>
 

@@ -5,6 +5,7 @@ namespace Two\Gateway\Test\Unit\Model;
 
 use Magento\Framework\Phrase;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Model\Two;
 
@@ -30,6 +31,13 @@ class TwoErrorHandlingTest extends TestCase
         $prop = $ref->getProperty('configRepository');
         $prop->setAccessible(true);
         $prop->setValue($this->model, $configRepo);
+
+        // Inject a brandRegistry so error messages can reference the brand name.
+        $brand = $this->createMock(BrandRegistryInterface::class);
+        $brand->method('getProductName')->willReturn('Two');
+        $brandProp = $ref->getProperty('brandRegistry');
+        $brandProp->setAccessible(true);
+        $brandProp->setValue($this->model, $brand);
     }
 
     // ── getErrorFromResponse ────────────────────────────────────────────

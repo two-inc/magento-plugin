@@ -12,14 +12,13 @@ namespace Two\Gateway\Api\Config;
  */
 interface RepositoryInterface
 {
-    /** Provider specific config */
+    /** Magento payment-method code (canonical, brand-independent). */
     public const CODE = 'two_payment';
-    public const PROVIDER = 'Two';
-    public const PROVIDER_FULL_NAME = 'Two';
-    public const PRODUCT_NAME = 'Two';
-    public const PAYMENT_TERMS_LINK = 'https://www.two.inc/terms-privacy';
-    public const PAYMENT_TERMS_EMAIL = 'invoice@two.inc';
-    public const URL_TEMPLATE = 'https://%s.two.inc';
+
+    // Brand-bound values (PROVIDER, PROVIDER_FULL_NAME, PRODUCT_NAME,
+    // URL_TEMPLATE, AVAILABLE_PAYMENT_TERMS, SURCHARGE_FIXED_MAX[_CURRENCY])
+    // moved to Two\Gateway\Api\BrandRegistryInterface — inject the registry
+    // and call its methods rather than re-introducing constants here.
 
     /** Payment Group */
     public const XML_PATH_ENABLED = 'payment/two_payment/active';
@@ -51,9 +50,7 @@ interface RepositoryInterface
     public const XML_PATH_VERSION = 'payment/two_payment/version';
     public const XML_PATH_DEBUG = 'payment/two_payment/debug';
 
-    /** Configurable limits — override in fork */
-    public const AVAILABLE_PAYMENT_TERMS = [14, 30, 60, 90];
-    public const SURCHARGE_FIXED_MAX = 100;
+    /** Brand-independent surcharge ceiling (percent). */
     public const SURCHARGE_PERCENTAGE_MAX = 100;
 
     /** Weight unit */

@@ -234,7 +234,9 @@ class SurchargeGridTestable
             $inheritData = $this->groups['payment_terms']['fields']['surcharge_grid']['inherit'];
         }
 
-        $maxFixed = ConfigRepository::SURCHARGE_FIXED_MAX;
+        // Hard-coded to the test brand's surcharge bound — see
+        // BrandRegistryInterface::getSurchargeFixedMax().
+        $maxFixed = 25;
         $maxPercentage = ConfigRepository::SURCHARGE_PERCENTAGE_MAX;
 
         foreach ($this->value as $days => $fields) {

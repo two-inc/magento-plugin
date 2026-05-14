@@ -15,6 +15,13 @@
                 type="Two\Gateway\Model\Webapi\SoleTrader"/>
     <preference for="Two\Gateway\Api\Webapi\TermSelectionInterface"
                 type="Two\Gateway\Model\Webapi\TermSelection"/>
+    <preference for="Two\Gateway\Api\Webapi\SurchargesInterface"
+                type="Two\Gateway\Model\Webapi\Surcharges"/>
+    <preference for="Two\Gateway\Api\CurrencyRatesProviderInterface"
+                type="Two\Gateway\Model\CurrencyRatesProvider"/>
+    <!-- Default brand binding. Overlay packages may rebind via their own DI preference. -->
+    <preference for="Two\Gateway\Api\BrandRegistryInterface"
+                type="Two\Gateway\Brand\TwoBrand"/>
 
     <type name="Two\Gateway\Logger\Handler">
         <arguments>
@@ -40,6 +47,44 @@
     <type name="Magento\Sales\Model\Order">
         <plugin name="two-after-place-order"
                 type="Two\Gateway\Plugin\Model\Sales\AfterPlaceOrder" sortOrder="10"/>
+    </type>
+    <type name="Magento\Sales\Api\OrderRepositoryInterface">
+        <plugin name="two-order-surcharge-ext-attrs"
+                type="Two\Gateway\Plugin\Api\SurchargeExtensionAttributes" sortOrder="10"/>
+    </type>
+    <type name="Magento\Sales\Api\InvoiceRepositoryInterface">
+        <plugin name="two-invoice-surcharge-ext-attrs"
+                type="Two\Gateway\Plugin\Api\SurchargeExtensionAttributes" sortOrder="10"/>
+    </type>
+    <type name="Magento\Sales\Api\CreditmemoRepositoryInterface">
+        <plugin name="two-creditmemo-surcharge-ext-attrs"
+                type="Two\Gateway\Plugin\Api\SurchargeExtensionAttributes" sortOrder="10"/>
+    </type>
+    <virtualType name="Magento\Sales\Model\ResourceModel\Order\Grid">
+        <arguments>
+            <argument name="columns" xsi:type="array">
+                <item name="two_surcharge_amount" xsi:type="string">sales_order.two_surcharge_amount</item>
+                <item name="base_two_surcharge_amount" xsi:type="string">sales_order.base_two_surcharge_amount</item>
+            </argument>
+        </arguments>
+    </virtualType>
+    <type name="Magento\Sales\Model\Order\Pdf\Config">
+        <arguments>
+            <argument name="data" xsi:type="array">
+                <item name="renderers" xsi:type="array">
+                    <item name="invoice" xsi:type="array">
+                        <item name="two_surcharge" xsi:type="array">
+                            <item name="class" xsi:type="string">Two\Gateway\Model\Pdf\Total\Surcharge</item>
+                        </item>
+                    </item>
+                    <item name="creditmemo" xsi:type="array">
+                        <item name="two_surcharge" xsi:type="array">
+                            <item name="class" xsi:type="string">Two\Gateway\Model\Pdf\Total\Surcharge</item>
+                        </item>
+                    </item>
+                </item>
+            </argument>
+        </arguments>
     </type>
     <type name="Magento\Config\Model\Config\TypePool">
         <arguments>

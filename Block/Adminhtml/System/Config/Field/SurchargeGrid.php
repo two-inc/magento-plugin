@@ -12,7 +12,9 @@ use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Store\Model\StoreManagerInterface;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\CurrencyRatesProviderInterface;
 
 /**
  * Renders a grid of surcharge inputs (fixed, percentage, limit) per payment term.
@@ -32,6 +34,12 @@ class SurchargeGrid extends Field
     /** @var StoreManagerInterface */
     private $storeManager;
 
+    /** @var CurrencyRatesProviderInterface */
+    private $ratesProvider;
+
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
+
     /** @var string */
     private $scope = 'default';
 
@@ -42,11 +50,15 @@ class SurchargeGrid extends Field
         Context $context,
         ScopeConfigInterface $scopeConfig,
         StoreManagerInterface $storeManager,
+        CurrencyRatesProviderInterface $ratesProvider,
+        BrandRegistryInterface $brandRegistry,
         array $data = []
     ) {
         parent::__construct($context, $data);
         $this->scopeConfig = $scopeConfig;
         $this->storeManager = $storeManager;
+        $this->ratesProvider = $ratesProvider;
+        $this->brandRegistry = $brandRegistry;
     }
 
     /**
@@ -111,9 +123,27 @@ class SurchargeGrid extends Field
         return (string)$this->getConfigValue(ConfigRepository::XML_PATH_SURCHARGE_TYPE);
     }
 
-    public function getMaxFixed(): int
+    /**
+     * Maximum fixed-amount surcharge in the merchant's base currency,
+     * or null when the brand imposes no upper bound. The template and
+     * JS treat null as "no max" and skip the range validation.
+     */
+    public function getMaxFixed(): ?int
     {
-        return ConfigRepository::SURCHARGE_FIXED_MAX;
+        $limit = $this->brandRegistry->getSurchargeFixedMax();
+        if ($limit === null) {
+            return null;
+        }
+        $limitAmount = (int)$limit['amount'];
+        $limitCurrency = $limit['currency'];
+        $baseCurrency = $this->getBaseCurrencyCode();
+
+        if ($baseCurrency === $limitCurrency) {
+            return $limitAmount;
+        }
+
+        $converted = $this->convertAmount((float)$limitAmount, $limitCurrency, $baseCurrency);
+        return $converted > 0 ? (int)ceil($converted) : $limitAmount;
     }
 
     public function getMaxPercentage(): int
@@ -138,7 +168,133 @@ class SurchargeGrid extends Field
                 // Fall through to default
             }
         }
-        return (string)$this->scopeConfig->getValue('currency/options/base') ?: 'USD';
+        return (string)$this->scopeConfig->getValue('currency/options/base') ?: 'EUR';
+    }
+
+    /**
+     * Get the base currency symbol (e.g. "€", "$") for the current scope.
+     * Falls back to the currency code if the symbol isn't resolvable.
+     */
+    public function getBaseCurrencySymbol(): string
+    {
+        $code = $this->getBaseCurrencyCode();
+        try {
+            $store = ($this->scope === 'stores' && $this->scopeId > 0)
+                ? $this->storeManager->getStore($this->scopeId)
+                : $this->storeManager->getStore();
+            $symbol = (string)$store->getBaseCurrency()->getCurrencySymbol();
+            return $symbol !== '' ? $symbol : $code;
+        } catch (\Exception $e) {
+            return $code;
+        }
+    }
+
+    /**
+     * Fixed-fee limit label (e.g. "EUR 25" or "USD 28 (EUR 25)").
+     * Empty when the brand imposes no upper bound — there is nothing
+     * meaningful to display.
+     */
+    public function getFixedLimitLabel(): string
+    {
+        $limit = $this->brandRegistry->getSurchargeFixedMax();
+        if ($limit === null) {
+            return '';
+        }
+        $limitAmount = $limit['amount'];
+        $limitCurrency = $limit['currency'];
+        $baseCurrency = $this->getBaseCurrencyCode();
+
+        if ($baseCurrency === $limitCurrency) {
+            return $limitCurrency . ' ' . $limitAmount;
+        }
+
+        $converted = $this->convertAmount((float)$limitAmount, $limitCurrency, $baseCurrency);
+        if ($converted > 0) {
+            $precision = $this->getCurrencyPrecision($baseCurrency);
+            $factor = pow(10, $precision);
+            $convertedMax = ceil($converted * $factor) / $factor;
+            $formatted = number_format($convertedMax, $precision, '.', '');
+            return $baseCurrency . ' ' . $formatted . ' (' . $limitCurrency . ' ' . $limitAmount . ')';
+        }
+
+        return $limitCurrency . ' ' . $limitAmount;
+    }
+
+    /**
+     * Get the percentage limit label, e.g. "100%".
+     */
+    public function getPercentageLimitLabel(): string
+    {
+        return ConfigRepository::SURCHARGE_PERCENTAGE_MAX . '%';
+    }
+
+    /**
+     * Warning shown when the brand's fixed-fee limit currency differs
+     * from the merchant's base currency and no FX rate is configured.
+     * Empty when the brand has no limit at all (nothing to enforce).
+     */
+    public function getCurrencyWarning(): string
+    {
+        $limit = $this->brandRegistry->getSurchargeFixedMax();
+        if ($limit === null) {
+            return '';
+        }
+        $limitAmount = $limit['amount'];
+        $limitCurrency = $limit['currency'];
+        $baseCurrency = $this->getBaseCurrencyCode();
+
+        if ($baseCurrency === $limitCurrency) {
+            return '';
+        }
+
+        if ($this->hasExchangeRate($limitCurrency, $baseCurrency)) {
+            return '';
+        }
+
+        return (string)__(
+            'Warning: The fixed fee limit of %1 %2 cannot be enforced correctly because no exchange rate is '
+            . 'configured from %3 to %4. Configure exchange rates in Stores → Currency → Currency Rates.',
+            $limitCurrency,
+            $limitAmount,
+            $limitCurrency,
+            $baseCurrency
+        );
+    }
+
+    /**
+     * Convert an amount from one currency to another. Rate lookup is routed
+     * through the service contract so all cross-rates resolve via the base
+     * currency's rate table.
+     */
+    private function convertAmount(float $amount, string $from, string $to): float
+    {
+        if ($from === $to) {
+            return $amount;
+        }
+        $rate = $this->ratesProvider->getRate($from, $to, (int)$this->scopeId ?: null);
+        return $rate !== null ? $amount * $rate : 0.0;
+    }
+
+    /**
+     * Check if an exchange rate exists between the limit currency and base currency.
+     */
+    private function hasExchangeRate(string $from, string $to): bool
+    {
+        return $this->convertAmount(1.0, $from, $to) > 0;
+    }
+
+    /**
+     * Get the number of decimal places for a currency (e.g. 2 for USD/EUR, 0 for JPY).
+     */
+    private function getCurrencyPrecision(string $code): int
+    {
+        try {
+            $fmt = new \NumberFormatter('en_US', \NumberFormatter::CURRENCY);
+            $fmt->setTextAttribute(\NumberFormatter::CURRENCY_CODE, $code);
+            return (int)$fmt->getAttribute(\NumberFormatter::FRACTION_DIGITS);
+        } catch (\Exception $e) {
+            return 2;
+        }
     }
 
     /**
@@ -177,11 +333,8 @@ class SurchargeGrid extends Field
             return false;
         }
         $path = sprintf('payment/two_payment/surcharge_%d_%s', $days, $field);
-        // Check if a value exists at this specific scope
         $value = $this->scopeConfig->getValue($path, $this->scope, $this->scopeId);
         $defaultValue = $this->scopeConfig->getValue($path);
-        // If the scope-specific value equals the default, it's likely inherited
-        // (Magento doesn't expose "is this overridden" directly for system config)
         return $value === $defaultValue;
     }
 
@@ -198,7 +351,7 @@ class SurchargeGrid extends Field
      */
     public function getAvailablePaymentTerms(): array
     {
-        return ConfigRepository::AVAILABLE_PAYMENT_TERMS;
+        return $this->brandRegistry->getAvailablePaymentTerms();
     }
 
     /**
