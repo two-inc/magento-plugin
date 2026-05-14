@@ -120,12 +120,15 @@ jobs:
             michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
       - name: Upload tracked source into container
-        # git archive honours .gitattributes export-ignore and ships
-        # only tracked files — avoids leaking .git/, dotfiles, or any
-        # untracked working-tree state into the CI container.
+        # Ship only tracked files — avoids leaking .git/, dotfiles,
+        # or any untracked working-tree state into the CI container.
+        # `git ls-files | tar` is preferred over `git archive` here
+        # because the latter honours .gitattributes export-ignore
+        # and would strip phpstan.neon / phpunit.xml / Test/ which CI
+        # needs but the release zip does not.
         run: |
           docker exec magento-project-community-edition mkdir -p /data/extensions/magento-plugin
-          git archive HEAD | docker exec -i magento-project-community-edition tar -x -C /data/extensions/magento-plugin
+          git ls-files -z | tar --null -cf - -T - | docker exec -i magento-project-community-edition tar -x -C /data/extensions/magento-plugin
 
       - name: Install extension from uploaded source
         run: |
@@ -172,12 +175,15 @@ jobs:
             michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
       - name: Upload tracked source into container
-        # git archive honours .gitattributes export-ignore and ships
-        # only tracked files — avoids leaking .git/, dotfiles, or any
-        # untracked working-tree state into the CI container.
+        # Ship only tracked files — avoids leaking .git/, dotfiles,
+        # or any untracked working-tree state into the CI container.
+        # `git ls-files | tar` is preferred over `git archive` here
+        # because the latter honours .gitattributes export-ignore
+        # and would strip phpstan.neon / phpunit.xml / Test/ which CI
+        # needs but the release zip does not.
         run: |
           docker exec magento-project-community-edition mkdir -p /data/extensions/magento-plugin
-          git archive HEAD | docker exec -i magento-project-community-edition tar -x -C /data/extensions/magento-plugin
+          git ls-files -z | tar --null -cf - -T - | docker exec -i magento-project-community-edition tar -x -C /data/extensions/magento-plugin
 
       - name: Install extension from uploaded source
         run: |
