@@ -7,9 +7,12 @@
  * Hosts are listed for the canonical `*.two.inc` checkout origins
  * and are static XML; the BrandRegistryInterface seam cannot rewrite
  * them at runtime. Brand-overlay packages whose checkout lives on a
- * non-`two.inc` host MUST ship their own etc/csp_whitelist.xml in
- * the overlay module — Magento merges csp_whitelist files additively
- * so the overlay's hosts add to (not replace) this list.
+ * non-`two.inc` host MUST ship their own etc/csp_whitelist.xml.
+ * Magento collects csp_whitelist entries across all enabled modules:
+ * `<value>` entries with a new `id` are added to the policy, while
+ * entries reusing an existing `id` (e.g. `production`) override the
+ * value declared here. Overlays can therefore extend or rebind any
+ * named host but cannot remove entries this file declares.
  */
 -->
 <csp_whitelist xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"

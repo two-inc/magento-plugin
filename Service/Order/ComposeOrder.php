@@ -81,7 +81,7 @@ class ComposeOrder extends OrderService
         }
 
         if ($surchargeAmount > 0) {
-            $description = $description ?: 'Payment terms fee';
+            $description = $description ?: (string)__('Payment terms fee');
             $taxRate = $taxRatePercent / 100;
 
             $lineItems[] = [
