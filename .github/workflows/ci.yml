@@ -119,18 +119,15 @@ jobs:
           docker run --detach --name magento-project-community-edition \
             michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
-      - name: Create branch for Composer (composer rejects published versions on a feature branch)
-        run: |
-          git checkout -b continuous-integration-test-branch
-          sed -i '/version/d' ./composer.json
-
       - name: Upload code into container
         run: docker cp "$(pwd)" magento-project-community-edition:/data/extensions/
 
-      - name: Install extension
+      - name: Install extension from uploaded source
         run: |
           docker exec magento-project-community-edition \
-            composer require two-inc/magento2:@dev --no-plugins
+            composer config repositories.local path '/data/extensions/*'
+          docker exec magento-project-community-edition \
+            composer require 'two-inc/magento2:*@dev' --no-plugins
 
       - name: Activate extension
         run: |
@@ -172,10 +169,12 @@ jobs:
       - name: Upload code into container
         run: docker cp "$(pwd)" magento-project-community-edition:/data/extensions/
 
-      - name: Install extension
+      - name: Install extension from uploaded source
         run: |
           docker exec magento-project-community-edition \
-            composer require two-inc/magento2:@dev --no-plugins
+            composer config repositories.local path '/data/extensions/*'
+          docker exec magento-project-community-edition \
+            composer require 'two-inc/magento2:*@dev' --no-plugins
 
       - name: Run setup:di:compile
         run: |
