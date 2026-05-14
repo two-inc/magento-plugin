@@ -206,7 +206,7 @@ class RepositoryPaymentTermsTest extends TestCase
     public function testGetSurchargeLineDescriptionDefault(): void
     {
         $this->stubConfig([]);
-        $this->assertEquals('Payment terms fee', $this->repository->getSurchargeLineDescription());
+        $this->assertEquals('Payment terms fee - %1 days', $this->repository->getSurchargeLineDescription());
     }
 
     public function testGetSurchargeLineDescriptionCustom(): void

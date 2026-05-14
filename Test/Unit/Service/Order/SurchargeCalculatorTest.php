@@ -3,11 +3,11 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Service\Order;
 
-use Magento\Directory\Model\Currency;
-use Magento\Directory\Model\CurrencyFactory;
 use Magento\Framework\HTTP\Client\Curl;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Api\Adapter;
@@ -21,8 +21,8 @@ class SurchargeCalculatorTest extends TestCase
     /** @var Adapter|\PHPUnit\Framework\MockObject\MockObject */
     private $adapter;
 
-    /** @var CurrencyFactory|\PHPUnit\Framework\MockObject\MockObject */
-    private $currencyFactory;
+    /** @var CurrencyRatesProviderInterface|\PHPUnit\Framework\MockObject\MockObject */
+    private $ratesProvider;
 
     /** @var SurchargeCalculator */
     private $calculator;
@@ -33,6 +33,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->adapter = $this->getMockBuilder(Adapter::class)
             ->setConstructorArgs([
                 $this->config,
+                $this->createMock(BrandRegistryInterface::class),
                 $this->createMock(Curl::class),
                 $this->createMock(LogRepository::class),
             ])
@@ -40,12 +41,9 @@ class SurchargeCalculatorTest extends TestCase
             ->getMock();
 
         $log = $this->createMock(LogRepository::class);
-        $this->currencyFactory = $this->getMockBuilder(CurrencyFactory::class)
-            ->disableOriginalConstructor()
-            ->addMethods(['create'])
-            ->getMock();
+        $this->ratesProvider = $this->createMock(CurrencyRatesProviderInterface::class);
 
-        $this->calculator = new SurchargeCalculator($this->config, $this->adapter, $log, $this->currencyFactory);
+        $this->calculator = new SurchargeCalculator($this->config, $this->adapter, $log, $this->ratesProvider);
     }
 
     private function stubCommonConfig(string $type, bool $differential = false): void
@@ -73,17 +71,9 @@ class SurchargeCalculatorTest extends TestCase
 
     private function stubFxRate(string $from, float $multiplier): void
     {
-        $currency = $this->getMockBuilder(Currency::class)
-            ->disableOriginalConstructor()
-            ->addMethods(['load', 'convert'])
-            ->getMock();
-        $currency->method('load')->with($from)->willReturnSelf();
-        $currency->method('convert')->willReturnCallback(
-            function ($amount) use ($multiplier) {
-                return $amount * $multiplier;
-            }
-        );
-        $this->currencyFactory->method('create')->willReturn($currency);
+        $this->ratesProvider->method('getRate')
+            ->with($from, $this->anything())
+            ->willReturn($multiplier);
     }
 
     // ── Short-circuits (no API call) ─────────────────────────────────
@@ -409,7 +399,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->stubSurchargeConfig(0, 15);
         $this->stubFixedCurrency('NOK');
 
-        $this->currencyFactory->expects($this->never())->method('create');
+        $this->ratesProvider->expects($this->never())->method('getRate');
 
         $this->adapter->expects($this->once())
             ->method('execute')
@@ -456,13 +446,9 @@ class SurchargeCalculatorTest extends TestCase
         $this->stubSurchargeConfig(0, 10);
         $this->stubFixedCurrency('NOK');
 
-        $currency = $this->getMockBuilder(Currency::class)
-            ->disableOriginalConstructor()
-            ->addMethods(['load', 'convert'])
-            ->getMock();
-        $currency->method('load')->with('NOK')->willReturnSelf();
-        $currency->method('convert')->willThrowException(new \Exception('Undefined rate from "NOK" to "GBP".'));
-        $this->currencyFactory->method('create')->willReturn($currency);
+        $this->ratesProvider->method('getRate')
+            ->with('NOK', 'GBP')
+            ->willReturn(null);
 
         $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
         $this->expectExceptionMessage('Cannot convert surcharge from NOK to GBP');
@@ -476,7 +462,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->stubSurchargeConfig(0, 10);
         $this->stubFixedCurrency('');
 
-        $this->currencyFactory->expects($this->never())->method('create');
+        $this->ratesProvider->expects($this->never())->method('getRate');
 
         $this->adapter->expects($this->once())
             ->method('execute')
