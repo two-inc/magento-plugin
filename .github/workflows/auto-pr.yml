@@ -14,7 +14,7 @@ jobs:
     name: develop → main
     runs-on: ${{ vars.RUNNER_STANDARD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Use the org GitHub App token — PRs opened with the default
       # GITHUB_TOKEN do not trigger downstream workflows, so the
