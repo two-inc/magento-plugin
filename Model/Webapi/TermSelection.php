@@ -12,6 +12,7 @@ use Magento\Framework\Exception\InputException;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\CartTotalRepositoryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\TermSelectionInterface;
 use Two\Gateway\Service\Order\SurchargeCalculator;
 
@@ -50,18 +51,25 @@ class TermSelection implements TermSelectionInterface
      */
     private $surchargeCalculator;
 
+    /**
+     * @var LogRepository
+     */
+    private $logRepository;
+
     public function __construct(
         CheckoutSession $checkoutSession,
         CartRepositoryInterface $cartRepository,
         CartTotalRepositoryInterface $cartTotalRepository,
         ConfigRepository $configRepository,
-        SurchargeCalculator $surchargeCalculator
+        SurchargeCalculator $surchargeCalculator,
+        LogRepository $logRepository
     ) {
         $this->checkoutSession = $checkoutSession;
         $this->cartRepository = $cartRepository;
         $this->cartTotalRepository = $cartTotalRepository;
         $this->configRepository = $configRepository;
         $this->surchargeCalculator = $surchargeCalculator;
+        $this->logRepository = $logRepository;
     }
 
     /**
@@ -158,6 +166,14 @@ class TermSelection implements TermSelectionInterface
                 );
                 $surcharges[] = ['days' => $days, 'net' => (float)$result['amount']];
             } catch (\Exception $e) {
+                // Per-term failure: keep the other terms responsive, but
+                // log loudly so the silent zero doesn't mask a broken
+                // pricing path that will later detonate at checkout when
+                // the buyer actually picks this term.
+                $this->logRepository->addErrorLog(
+                    sprintf('TermSelection webapi: term %d failed', $days),
+                    $e->getMessage()
+                );
                 $surcharges[] = ['days' => $days, 'net' => 0.0];
             }
         }

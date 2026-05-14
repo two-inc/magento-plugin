@@ -19,11 +19,6 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
  */
 class Header extends Field
 {
-
-    private const SIGN_UP_URL = 'https://portal.two.inc/auth/merchant/signup';
-
-    private const DOCUMENTATION_URL = 'https://docs.two.inc/developer-portal/plugins/magento';
-
     /**
     * @var ConfigRepository
      */
@@ -70,7 +65,7 @@ class Header extends Field
      */
     public function getSignUpUrl(): string
     {
-        return self::SIGN_UP_URL;
+        return $this->brandRegistry->getSignUpUrl();
     }
 
     /**
@@ -80,7 +75,7 @@ class Header extends Field
      */
     public function getDocumentationUrl(): string
     {
-        return self::DOCUMENTATION_URL;
+        return $this->brandRegistry->getDocumentationUrl();
     }
 
     /**

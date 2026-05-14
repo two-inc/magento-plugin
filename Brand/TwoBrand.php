@@ -43,6 +43,16 @@ class TwoBrand implements BrandRegistryInterface
         return null;
     }
 
+    public function getSignUpUrl(): string
+    {
+        return 'https://portal.two.inc/auth/merchant/signup';
+    }
+
+    public function getDocumentationUrl(): string
+    {
+        return 'https://docs.two.inc/developer-portal/plugins/magento';
+    }
+
     public function getBrandTag(): string
     {
         // Empty: the canonical Two checkout host (*.two.inc) already

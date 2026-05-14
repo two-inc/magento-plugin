@@ -68,4 +68,14 @@ interface BrandRegistryInterface
      * route correctly.
      */
     public function getBrandTag(): string;
+
+    /**
+     * Merchant sign-up URL shown on the admin config header block.
+     */
+    public function getSignUpUrl(): string;
+
+    /**
+     * Plugin documentation URL shown on the admin config header block.
+     */
+    public function getDocumentationUrl(): string;
 }

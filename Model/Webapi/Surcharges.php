@@ -127,6 +127,14 @@ class Surcharges implements SurchargesInterface
                     );
                     $surcharges[] = ['days' => (int)$days, 'net' => (float)$result['amount']];
                 } catch (\Exception $e) {
+                    // Per-term failure: keep the other terms responsive, but
+                    // log loudly so the silent zero doesn't mask a broken
+                    // pricing path that will later detonate at checkout when
+                    // the buyer actually picks this term.
+                    $this->logRepository->addErrorLog(
+                        sprintf('Surcharges webapi: term %d failed', $days),
+                        $e->getMessage()
+                    );
                     $surcharges[] = ['days' => (int)$days, 'net' => 0.0];
                 }
             }
