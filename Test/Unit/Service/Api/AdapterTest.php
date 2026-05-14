@@ -5,6 +5,7 @@ namespace Two\Gateway\Test\Unit\Service\Api;
 
 use Magento\Framework\HTTP\Client\Curl;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Api\Adapter;
@@ -20,6 +21,9 @@ class AdapterTest extends TestCase
     /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
     private $logRepository;
 
+    /** @var BrandRegistryInterface|\PHPUnit\Framework\MockObject\MockObject */
+    private $brandRegistry;
+
     /** @var Adapter */
     private $adapter;
 
@@ -28,6 +32,8 @@ class AdapterTest extends TestCase
         $this->configRepository = $this->createMock(ConfigRepository::class);
         $this->curl = $this->createMock(Curl::class);
         $this->logRepository = $this->createMock(LogRepository::class);
+        $this->brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $this->brandRegistry->method('getProductName')->willReturn('Two');
 
         $this->configRepository->method('getCheckoutApiUrl')->willReturn('https://api.two.inc');
         $this->configRepository->method('addVersionDataInURL')->willReturnArgument(0);
@@ -35,6 +41,7 @@ class AdapterTest extends TestCase
 
         $this->adapter = new Adapter(
             $this->configRepository,
+            $this->brandRegistry,
             $this->curl,
             $this->logRepository
         );
@@ -90,7 +97,7 @@ class AdapterTest extends TestCase
         $this->assertEquals('abc123', $result['x-delegation-token']);
     }
 
-    // ── Non-2xx responses (ABN-287 critical) ────────────────────────────
+    // ── Non-2xx responses ───────────────────────────────────────────────
 
     public function testNon2xxWithBodyReturnsJsonPlusHttpStatus(): void
     {
@@ -160,6 +167,7 @@ class AdapterTest extends TestCase
 
         $adapter = new Adapter(
             $this->configRepository,
+            $this->brandRegistry,
             $this->curl,
             $this->logRepository
         );

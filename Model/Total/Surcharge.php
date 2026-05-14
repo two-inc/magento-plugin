@@ -83,6 +83,7 @@ class Surcharge extends AbstractTotal
         if ($paymentMethod && $paymentMethod !== 'two_payment') {
             $this->logRepository->addDebugLog('TotalCollector: skipped (payment method: ' . $paymentMethod . ')', []);
             $this->clearSessionSurcharge();
+            $this->clearTotalSurcharge($total, $quote);
             return $this;
         }
 
@@ -92,6 +93,7 @@ class Surcharge extends AbstractTotal
         if ($surchargeType === SurchargeType::NONE) {
             $this->logRepository->addDebugLog('TotalCollector: skipped (type=none)', []);
             $this->clearSessionSurcharge();
+            $this->clearTotalSurcharge($total, $quote);
             return $this;
         }
 
@@ -99,6 +101,7 @@ class Surcharge extends AbstractTotal
         if ($selectedDays <= 0) {
             $this->logRepository->addDebugLog('TotalCollector: skipped (no term selected)', []);
             $this->clearSessionSurcharge();
+            $this->clearTotalSurcharge($total, $quote);
             return $this;
         }
 
@@ -129,37 +132,76 @@ class Surcharge extends AbstractTotal
             // Surface to checkout so buyer sees the error (e.g. missing FX rate)
             throw $e;
         } catch (\Exception $e) {
-            $this->logRepository->addDebugLog('TotalCollector: calculation failed', [
+            // Never silently zero the surcharge on unexpected failures (API down,
+            // malformed response, etc). Merchant loses revenue if we do; buyer
+            // would pay without the surcharge line ever appearing. Surface a
+            // user-facing error and let checkout halt until the API recovers.
+            $this->logRepository->addErrorLog('TotalCollector: calculation failed', [
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
             $this->clearSessionSurcharge();
-            return $this;
+            throw new \Magento\Framework\Exception\LocalizedException(
+                __('Unable to calculate payment terms surcharge. Please try again in a moment.'),
+                $e
+            );
         }
 
-        $netAmount = $result['amount'];
+        $netAmount = round((float)$result['amount'], 6);
         if ($netAmount <= 0) {
             $this->logRepository->addDebugLog('TotalCollector: zero surcharge', ['result' => $result]);
             $this->clearSessionSurcharge();
+            $this->clearTotalSurcharge($total, $quote);
             return $this;
         }
 
+        // Keep 6dp internally; the API outbound boundary distinguishes
+        // Money fields (gross/net/tax/discount, 2dp), UnitPrice (6dp),
+        // and Rate (tax_rate, 6dp). 6dp is the upper precision the API
+        // accepts for any field, so there's no point being more precise
+        // internally than the wire can carry — and being LESS precise
+        // (the earlier 2dp truncation, or the interim 4dp) loses
+        // sub-cent in tax computations and base-currency conversions
+        // that accumulates into grand_total and produces visible 1-cent
+        // display drift when the running sum crosses a rounding
+        // boundary. See internal ticket for the original 2dp→4dp diagnosis;
+        // the 4dp→6dp bump aligns with the formalised API precision
+        // contract (Money 2dp / UnitPrice 6dp / Rate 6dp / Quantity 8dp).
+        // ComposeOrder / ComposeRefund / ComposeCapture / ComposeShipment
+        // do the per-field outbound rounding via roundAmt().
         $taxRate = $result['tax_rate'] / 100;
-        $taxAmount = round($netAmount * $taxRate, 2);
-        $grossAmount = $netAmount + $taxAmount;
+        $taxAmount = round($netAmount * $taxRate, 6);
+        $grossAmount = round($netAmount + $taxAmount, 6);
 
         // Convert to base currency for base_* fields (order totals/tax reports)
         $baseToQuoteRate = (float)$quote->getBaseToQuoteRate() ?: 1.0;
-        $baseGrossAmount = round($grossAmount / $baseToQuoteRate, 4);
-        $baseTaxAmount = round($taxAmount / $baseToQuoteRate, 4);
+        $baseGrossAmount = round($grossAmount / $baseToQuoteRate, 6);
+        $baseTaxAmount = round($taxAmount / $baseToQuoteRate, 6);
 
         $total->setGrandTotal($grandTotal + $grossAmount);
         $total->setBaseGrandTotal((float)$total->getBaseGrandTotal() + $baseGrossAmount);
         $total->setTaxAmount((float)$total->getTaxAmount() + $taxAmount);
         $total->setBaseTaxAmount((float)$total->getBaseTaxAmount() + $baseTaxAmount);
 
-        // Store net on total object for fetch() — tax flows via setTaxAmount above
-        $total->setData('two_surcharge_net', $netAmount);
+        // Persist on the quote-address total so sales_convert_quote_address
+        // fieldset copies the values onto the order at conversion time.
+        // We deliberately do NOT mirror onto the quote itself — the quote
+        // collector runs on every shipping/address change, and a clobber on
+        // a speculative pass (no items, no two_payment, etc.) would zero a
+        // valid value set by an earlier pass for the placement address.
+        $baseNetAmount = round($netAmount / $baseToQuoteRate, 6);
+        $total->setData('two_surcharge_amount', $netAmount);
+        $total->setData('base_two_surcharge_amount', $baseNetAmount);
+        $total->setData('two_surcharge_tax_amount', $taxAmount);
+        $total->setData('base_two_surcharge_tax_amount', $baseTaxAmount);
         $total->setData('two_surcharge_description', $result['description']);
+        $total->setData('two_surcharge_tax_rate', $result['tax_rate']);
+
+        // Note: setData/setTitle/setValue on $total here doesn't propagate to
+        // segment building. Magento's TotalsReader::fetch() builds fresh Total
+        // instances from each collector's fetch() return value via setData().
+        // Title/value must therefore be emitted by fetch(), not set here.
+        // Session is the only reliable cross-phase channel.
 
         // Store in session for ComposeOrder and cross-request persistence
         $this->checkoutSession->setTwoSurchargeAmount($netAmount);
@@ -183,14 +225,13 @@ class Surcharge extends AbstractTotal
      */
     public function fetch(Quote $quote, Total $total): array
     {
-        // Prefer the total object (same request as collect), fall back to session.
+        // Read from session: Magento's TotalsReader::fetch() builds fresh Total
+        // instances from each collector's fetch() return value, so anything
+        // set on $total in collect() is lost by the time we get here.
         // Returns net amount — surcharge tax is included in the Tax line via setTaxAmount.
-        $amount = (float)$total->getData('two_surcharge_net')
-            ?: (float)$this->checkoutSession->getTwoSurchargeAmount();
+        $amount = (float)$this->checkoutSession->getTwoSurchargeAmount();
 
         $this->logRepository->addDebugLog('TotalCollector fetch()', [
-            'totalNet' => (float)$total->getData('two_surcharge_net'),
-            'sessionNet' => (float)$this->checkoutSession->getTwoSurchargeAmount(),
             'amount' => $amount,
         ]);
 
@@ -198,15 +239,13 @@ class Surcharge extends AbstractTotal
             return [];
         }
 
-        $title = $total->getData('two_surcharge_description')
-            ?: $this->checkoutSession->getTwoSurchargeDescription()
-            ?: 'Payment terms fee';
+        $title = $this->checkoutSession->getTwoSurchargeDescription() ?: __('Payment terms fee');
 
-        // Title must be a Phrase (object) — TotalsConverter::process() guards
-        // with is_object($addressTotal->getTitle()) before calling ->render(),
-        // so plain strings silently render as empty in the segment.
         return [
             'code' => $this->getCode(),
+            // TotalsConverter::process() requires title to be a Phrase object
+            // (checks is_object() then calls ->render()); plain strings are
+            // dropped and the client-side segment gets an empty title.
             'title' => new \Magento\Framework\Phrase((string)$title),
             'value' => $amount,
         ];
@@ -241,5 +280,21 @@ class Surcharge extends AbstractTotal
         $this->checkoutSession->setTwoSurchargeGross(0);
         $this->checkoutSession->setTwoSurchargeDescription('');
         $this->checkoutSession->setTwoSurchargeTaxRate(0);
+    }
+
+    /**
+     * Reset the quote-address total fields so a stale surcharge from an
+     * earlier collect() pass doesn't survive once conditions change.
+     * Only operates on the in-memory $total (i.e. the quote address row);
+     * does NOT touch the quote itself — see the comment in collect() above.
+     */
+    private function clearTotalSurcharge(Total $total, Quote $quote): void
+    {
+        $total->setData('two_surcharge_amount', 0);
+        $total->setData('base_two_surcharge_amount', 0);
+        $total->setData('two_surcharge_tax_amount', 0);
+        $total->setData('base_two_surcharge_tax_amount', 0);
+        $total->setData('two_surcharge_description', '');
+        $total->setData('two_surcharge_tax_rate', 0);
     }
 }

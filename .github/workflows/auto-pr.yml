@@ -15,11 +15,6 @@ jobs:
     runs-on: ${{ vars.RUNNER_STANDARD }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          # Need full history so `.github/scripts/release-notes.py` can walk
-          # every commit not yet on main when building the preview
-          # release notes.
-          fetch-depth: 0
 
       # Use the org GitHub App token — PRs opened with the default
       # GITHUB_TOKEN do not trigger downstream workflows, so the
@@ -31,55 +26,34 @@ jobs:
           client-id: ${{ vars.TWO_INC_APP_CLIENT_ID }}
           private-key: ${{ secrets.TWO_INC_APP_PRIVATE_KEY }}
 
-      - name: Build preview of next release notes
-        id: preview
+      - name: Ensure open PR develop → main
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          existing=$(gh pr list --base main --head develop --state open --json number --jq '.[0].number // ""')
+          if [ -n "$existing" ]; then
+            echo "PR #$existing already open — nothing to do."
+            exit 0
+          fi
+          # No-op when develop has nothing ahead of main. Happens
+          # right after a merge-back fast-forwards develop to match
+          # main — there's no diff for `gh pr create`, which would
+          # otherwise fail with "No commits between main and develop"
+          # and leave a red check on the auto-PR workflow.
           ahead=$(gh api "repos/${REPO}/compare/main...develop" --jq '.ahead_by')
-          echo "ahead=$ahead" >> "$GITHUB_OUTPUT"
           if [ "$ahead" = "0" ]; then
             echo "develop has no commits ahead of main — nothing to sync."
             exit 0
           fi
+          gh pr create \
+            --base main \
+            --head develop \
+            --title "chore: sync develop → main" \
+            --body "$(cat <<'EOF'
+          Automated rolling sync PR opened by `.github/workflows/auto-pr-develop-to-main.yml`.
 
-          # release-notes.py is the same script release.yml uses to
-          # render the GitHub Release page, so this preview matches
-          # what will actually ship when the sync PR merges.
-          # Use origin/main since actions/checkout only creates the
-          # workflow's own ref as a local branch — `main` alone
-          # wouldn't resolve here.
-          level=$(.github/scripts/release-notes.py "origin/main..HEAD" notes.md)
-
-          {
-            echo "Rolling sync PR opened by \`.github/workflows/auto-pr.yml\`. Merging this PR fires \`release.yml\` on \`main\` (auto bump + tag + GitHub Release) and \`merge-back.yml\` (fast-forwards \`develop\` to match)."
-            echo
-            echo "Predicted bump: **${level}** — based on the commits below."
-            echo
-            cat notes.md
-            echo
-            echo "_Close this PR manually if you need to skip a sync window._"
-          } > body.md
-
-          echo "--- body.md preview ---"
-          cat body.md
-
-      - name: Ensure open PR with current preview body
-        if: steps.preview.outputs.ahead != '0'
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          set -euo pipefail
-          existing=$(gh pr list --base main --head develop --state open --json number --jq '.[0].number // ""')
-          if [ -n "$existing" ]; then
-            echo "Updating PR #$existing body with refreshed preview..."
-            gh pr edit "$existing" --body-file body.md
-          else
-            gh pr create \
-              --base main \
-              --head develop \
-              --title "chore: sync develop → main" \
-              --body-file body.md
-          fi
+          Merges everything currently on `develop` into `main`. Auto-updates as new commits land on `develop`. Close manually if you need to skip a sync window.
+          EOF
+          )"

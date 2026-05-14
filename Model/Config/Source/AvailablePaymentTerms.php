@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Model\Config\Source;
 
 use Magento\Framework\Data\OptionSourceInterface;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface;
 
 /**
@@ -15,13 +16,21 @@ use Two\Gateway\Api\Config\RepositoryInterface;
  */
 class AvailablePaymentTerms implements OptionSourceInterface
 {
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
+
+    public function __construct(BrandRegistryInterface $brandRegistry)
+    {
+        $this->brandRegistry = $brandRegistry;
+    }
+
     /**
      * @inheritDoc
      */
     public function toOptionArray(): array
     {
         $options = [];
-        foreach (RepositoryInterface::AVAILABLE_PAYMENT_TERMS as $days) {
+        foreach ($this->brandRegistry->getAvailablePaymentTerms() as $days) {
             $options[] = ['value' => $days, 'label' => __('%1 days', $days)];
         }
         return $options;

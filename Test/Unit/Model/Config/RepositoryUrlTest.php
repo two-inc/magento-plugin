@@ -5,11 +5,11 @@ namespace Two\Gateway\Test\Unit\Model\Config;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
-use Magento\Framework\App\State;
 use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\UrlInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Config\Repository;
 
 /**
@@ -21,10 +21,7 @@ class RepositoryUrlTest extends TestCase
     /** @var ScopeConfigInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $scopeConfig;
 
-    /** @var State|\PHPUnit\Framework\MockObject\MockObject */
-    private $appState;
-
-    /** @var Repository */
+    /** @var RepositoryUrlTestable */
     private $repository;
 
     /** @var string[] env vars to clean up */
@@ -36,16 +33,22 @@ class RepositoryUrlTest extends TestCase
         $encryptor = $this->createMock(EncryptorInterface::class);
         $urlBuilder = $this->createMock(UrlInterface::class);
         $productMetadata = $this->createMock(ProductMetadataInterface::class);
-        $this->appState = $this->createMock(State::class);
+        $brand = $this->createMock(BrandRegistryInterface::class);
+        $brand->method('getCheckoutUrlTemplate')->willReturn('https://%s.two.inc');
 
-        $this->repository = new Repository(
+        $this->repository = new RepositoryUrlTestable(
             $this->scopeConfig,
             $encryptor,
             $urlBuilder,
             $productMetadata,
-            $this->appState,
-            $this->createMock(TaxCalculation::class)
+            $this->createMock(TaxCalculation::class),
+            $brand
         );
+    }
+
+    private function setDeveloperMode(bool $dev): void
+    {
+        $this->repository->developerMode = $dev;
     }
 
     protected function tearDown(): void
@@ -73,7 +76,7 @@ class RepositoryUrlTest extends TestCase
 
     public function testApiUrlProductionMode(): void
     {
-        $this->appState->method('getMode')->willReturn(State::MODE_PRODUCTION);
+        $this->setDeveloperMode(false);
         $this->configureMode('production');
 
         $this->assertEquals('https://api.two.inc', $this->repository->getCheckoutApiUrl());
@@ -81,7 +84,7 @@ class RepositoryUrlTest extends TestCase
 
     public function testApiUrlSandboxMode(): void
     {
-        $this->appState->method('getMode')->willReturn(State::MODE_PRODUCTION);
+        $this->setDeveloperMode(false);
         $this->configureMode('sandbox');
 
         $this->assertEquals('https://api.sandbox.two.inc', $this->repository->getCheckoutApiUrl());
@@ -89,7 +92,7 @@ class RepositoryUrlTest extends TestCase
 
     public function testApiUrlDeveloperModeWithEnvVar(): void
     {
-        $this->appState->method('getMode')->willReturn(State::MODE_DEVELOPER);
+        $this->setDeveloperMode(true);
         $this->setEnv('TWO_API_BASE_URL', 'http://localhost:8000');
 
         $this->assertEquals('http://localhost:8000', $this->repository->getCheckoutApiUrl());
@@ -97,7 +100,7 @@ class RepositoryUrlTest extends TestCase
 
     public function testApiUrlDeveloperModeEmptyEnvVar(): void
     {
-        $this->appState->method('getMode')->willReturn(State::MODE_DEVELOPER);
+        $this->setDeveloperMode(true);
         $this->setEnv('TWO_API_BASE_URL', '');
         $this->configureMode('sandbox');
 
@@ -106,7 +109,7 @@ class RepositoryUrlTest extends TestCase
 
     public function testApiUrlNonDeveloperModeIgnoresEnvVar(): void
     {
-        $this->appState->method('getMode')->willReturn(State::MODE_PRODUCTION);
+        $this->setDeveloperMode(false);
         $this->setEnv('TWO_API_BASE_URL', 'http://localhost:8000');
         $this->configureMode('production');
 
@@ -115,7 +118,7 @@ class RepositoryUrlTest extends TestCase
 
     public function testApiUrlExplicitModeParameter(): void
     {
-        $this->appState->method('getMode')->willReturn(State::MODE_PRODUCTION);
+        $this->setDeveloperMode(false);
 
         $this->assertEquals(
             'https://api.staging.two.inc',
@@ -125,7 +128,7 @@ class RepositoryUrlTest extends TestCase
 
     public function testApiUrlDeveloperModeEnvVarOverridesExplicitMode(): void
     {
-        $this->appState->method('getMode')->willReturn(State::MODE_DEVELOPER);
+        $this->setDeveloperMode(true);
         $this->setEnv('TWO_API_BASE_URL', 'http://localhost:8000');
 
         // Env var takes precedence over explicit $mode in developer mode
@@ -136,7 +139,7 @@ class RepositoryUrlTest extends TestCase
 
     public function testPageUrlProductionMode(): void
     {
-        $this->appState->method('getMode')->willReturn(State::MODE_PRODUCTION);
+        $this->setDeveloperMode(false);
         $this->configureMode('production');
 
         $this->assertEquals('https://checkout.two.inc', $this->repository->getCheckoutPageUrl());
@@ -144,7 +147,7 @@ class RepositoryUrlTest extends TestCase
 
     public function testPageUrlSandboxMode(): void
     {
-        $this->appState->method('getMode')->willReturn(State::MODE_PRODUCTION);
+        $this->setDeveloperMode(false);
         $this->configureMode('sandbox');
 
         $this->assertEquals('https://checkout.sandbox.two.inc', $this->repository->getCheckoutPageUrl());
@@ -152,7 +155,7 @@ class RepositoryUrlTest extends TestCase
 
     public function testPageUrlDeveloperModeWithEnvVar(): void
     {
-        $this->appState->method('getMode')->willReturn(State::MODE_DEVELOPER);
+        $this->setDeveloperMode(true);
         $this->setEnv('TWO_CHECKOUT_BASE_URL', 'http://localhost:3000');
 
         $this->assertEquals('http://localhost:3000', $this->repository->getCheckoutPageUrl());
@@ -160,7 +163,7 @@ class RepositoryUrlTest extends TestCase
 
     public function testPageUrlDeveloperModeEmptyEnvVar(): void
     {
-        $this->appState->method('getMode')->willReturn(State::MODE_DEVELOPER);
+        $this->setDeveloperMode(true);
         $this->setEnv('TWO_CHECKOUT_BASE_URL', '');
         $this->configureMode('sandbox');
 
@@ -169,7 +172,7 @@ class RepositoryUrlTest extends TestCase
 
     public function testPageUrlNonDeveloperModeIgnoresEnvVar(): void
     {
-        $this->appState->method('getMode')->willReturn(State::MODE_PRODUCTION);
+        $this->setDeveloperMode(false);
         $this->setEnv('TWO_CHECKOUT_BASE_URL', 'http://localhost:3000');
         $this->configureMode('production');
 
@@ -178,7 +181,7 @@ class RepositoryUrlTest extends TestCase
 
     public function testPageUrlExplicitModeParameter(): void
     {
-        $this->appState->method('getMode')->willReturn(State::MODE_PRODUCTION);
+        $this->setDeveloperMode(false);
 
         $this->assertEquals(
             'https://checkout.staging.two.inc',
@@ -188,7 +191,7 @@ class RepositoryUrlTest extends TestCase
 
     public function testPageUrlDeveloperModeEnvVarOverridesExplicitMode(): void
     {
-        $this->appState->method('getMode')->willReturn(State::MODE_DEVELOPER);
+        $this->setDeveloperMode(true);
         $this->setEnv('TWO_CHECKOUT_BASE_URL', 'http://localhost:3000');
 
         // Env var takes precedence over explicit $mode in developer mode
@@ -228,5 +231,21 @@ class RepositoryUrlTest extends TestCase
         $this->assertStringContainsString('client=Magento', $result);
         // http_build_query omits null values entirely
         $this->assertStringNotContainsString('client_v', $result);
+    }
+}
+
+/**
+ * Test double exposing developer-mode detection. The production
+ * implementation reads BP . '/app/etc/env.php' directly, which is
+ * not present in unit tests; override the check with a public flag.
+ */
+class RepositoryUrlTestable extends Repository
+{
+    /** @var bool */
+    public $developerMode = false;
+
+    protected function isDeveloperMode(): bool
+    {
+        return $this->developerMode;
     }
 }

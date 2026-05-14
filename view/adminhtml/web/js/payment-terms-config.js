@@ -1,4 +1,4 @@
-define(['jquery', 'domReady!'], function ($) {
+define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
     'use strict';
 
     function initPaymentTermsConfig() {
@@ -55,7 +55,7 @@ define(['jquery', 'domReady!'], function ($) {
             $defaultTerm.empty();
             $.each(terms, function (_, days) {
                 $defaultTerm.append(
-                    $('<option></option>').attr('value', days).text(days + ' days')
+                    $('<option></option>').attr('value', days).text($t('%1 days').replace('%1', days))
                 );
             });
 
@@ -90,7 +90,6 @@ define(['jquery', 'domReady!'], function ($) {
             // Global surcharge fields
             var surchargeFields = [
                 'surcharge_differential',
-                'surcharge_line_description',
                 'surcharge_tax_rate'
             ];
             $.each(surchargeFields, function (_, id) {
@@ -104,7 +103,10 @@ define(['jquery', 'domReady!'], function ($) {
             var defaultDays = parseInt($defaultTerm.val(), 10) || 0;
             var $option = $differential.find('option[value="1"]');
             if ($option.length && defaultDays > 0) {
-                $option.text('Fee difference vs default payment term (' + defaultDays + ' days)');
+                $option.text(
+                    $t('Fee difference vs default payment term') +
+                    ' (' + $t('%1 days').replace('%1', defaultDays) + ')'
+                );
             }
         }
 

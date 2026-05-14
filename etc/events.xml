@@ -12,10 +12,22 @@
     <event name="sales_order_save_after">
         <observer name="two_admin_sales_order_save_after" instance="Two\Gateway\Observer\SalesOrderSaveAfter"/>
     </event>
+    <event name="order_cancel_after">
+        <observer name="two_order_cancel_after" instance="Two\Gateway\Observer\SalesOrderCancelAfter"/>
+    </event>
     <event name="payment_method_assign_data_two_payment">
         <observer name="two_payment_data_assign" instance="Two\Gateway\Observer\DataAssignObserver"/>
     </event>
     <event name="sales_order_place_after">
         <observer name="two_sales_order_place_after" instance="Two\Gateway\Observer\SalesOrderPlaceAfter" />
+    </event>
+    <event name="sales_model_service_quote_submit_before">
+        <observer name="two_quote_to_order_surcharge" instance="Two\Gateway\Observer\QuoteToOrderSurcharge"/>
+    </event>
+    <event name="sales_order_invoice_save_after">
+        <observer name="two_invoice_surcharge_running_total" instance="Two\Gateway\Observer\InvoiceSurchargeRunningTotal"/>
+    </event>
+    <event name="sales_order_creditmemo_save_after">
+        <observer name="two_creditmemo_surcharge_running_total" instance="Two\Gateway\Observer\CreditmemoSurchargeRunningTotal"/>
     </event>
 </config>

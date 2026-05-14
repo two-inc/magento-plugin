@@ -6,10 +6,10 @@
 ?>
 <?php /* @var \Two\Gateway\Block\Adminhtml\Order\View $block */ ?>
 <?php if ($block->getMethod() == \Two\Gateway\Model\Two::CODE): ?>
-    <?php $provider = $block->configRepository::PROVIDER; ?>
+    <?php $productName = $block->getProductName(); ?>
     <section class="admin__page-section order-view-account-information">
         <div class="admin__page-section-title">
-            <span class="title"><?= $block->escapeHtml(__('%1 Details', $provider)) ?></span>
+            <span class="title"><?= $block->escapeHtml(__('%1 Details', $productName)) ?></span>
         </div>
         <div class="admin__page-section-content">
             <div>

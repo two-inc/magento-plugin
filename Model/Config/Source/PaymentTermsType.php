@@ -11,6 +11,9 @@ use Magento\Framework\Data\OptionSourceInterface;
 
 /**
  * Payment Terms Type Source Model
+ *
+ * Supported payment term types depend on the brand's commercial
+ * agreement — see BrandRegistryInterface.
  */
 class PaymentTermsType implements OptionSourceInterface
 {
@@ -22,9 +25,9 @@ class PaymentTermsType implements OptionSourceInterface
      */
     public function toOptionArray(): array
     {
+        // Filter to the brand's supported payment term types via BrandRegistryInterface.
         return [
-            ['value' => self::STANDARD, 'label' => __('Standard')],
-            ['value' => self::END_OF_MONTH, 'label' => __('End of Month')]
+            ['value' => self::STANDARD, 'label' => __('Standard')]
         ];
     }
 }
