@@ -283,7 +283,7 @@ class Repository implements RepositoryInterface
      *
      * @return bool
      */
-    private function isDeveloperMode(): bool
+    protected function isDeveloperMode(): bool
     {
         if (defined('BP')) {
             $envFile = BP . '/app/etc/env.php';
