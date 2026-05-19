@@ -79,6 +79,28 @@ In production mode these are ignored — the URLs are derived from the `mode` se
 
 Run `make help` to see all available targets.
 
+### Local-dev perf — disabled modules and what breaks
+
+`make install` runs `module:disable` on a fixed list of modules that aren't needed for plugin development but add significant load to `setup:di:compile` (every module's DI is re-generated) and to the storefront's RequireJS dependency graph (every enabled module's JS gets pulled into the boot, even on pages that don't use it). Disabling them cuts `setup:di:compile` time and drops storefront button-enable latency from ~10s to under a second on the sample-data catalog.
+
+| Module(s) | Why it's disabled in dev |
+|---|---|
+| `Magento_AdminAdobeImsTwoFactorAuth`, `Magento_TwoFactorAuth` | TOTP setup required on every admin login — friction for local dev |
+| `Magento_NewRelicReporting` | Phones home on every request; unlicensed = silent overhead |
+| `Magento_Analytics`, `Magento_AdminAnalytics`, `Magento_CatalogAnalytics`, `Magento_QuoteAnalytics`, `Magento_ReviewAnalytics`, `Magento_GoogleAnalytics` | Adds JS/tracking hooks that fire on every storefront load |
+| `Magento_PageBuilder`, `Magento_PageBuilderAnalytics`, `Magento_CatalogPageBuilderAnalytics`, `Magento_CmsPageBuilderAnalytics`, `Magento_PageBuilderAdminAnalytics`, `Magento_AwsS3PageBuilder` | Loads the full PageBuilder ContentTypes JS tree on **every** storefront page — biggest single contributor to client-side boot time |
+
+**Consequence:** PageBuilder-driven CMS content (banners, slides, promo blocks edited via the visual editor) **will not render** in a `make install` environment. If you're testing brand content that relies on PageBuilder blocks, re-enable them manually inside the container:
+
+```bash
+docker exec magento php bin/magento module:enable Magento_PageBuilder Magento_PageBuilderAnalytics Magento_CatalogPageBuilderAnalytics Magento_CmsPageBuilderAnalytics Magento_PageBuilderAdminAnalytics Magento_AwsS3PageBuilder
+docker exec magento php bin/magento setup:upgrade
+docker exec magento php bin/magento setup:di:compile
+docker exec magento php bin/magento cache:flush
+```
+
+Install also runs `config:set` on `dev/js/merge_files=1`, `dev/js/minify_files=1`, `dev/css/merge_css_files=1`. These flatten the RequireJS dependency graph into a small number of merged bundles even in developer mode.
+
 ### Brand overlays
 
 The plugin supports brand-specific overlay packages that customise checkout copy, SVG assets, and DI bindings while reusing the same `Two_Gateway` core. Overlays live in a separate Composer package (one per brand) and are opt-in.
