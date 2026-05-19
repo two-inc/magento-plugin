@@ -10,15 +10,27 @@ TAG        := php82-fpm-magento2.4.6-sample-data
 PORT       := 1234
 URL        := http://localhost:$(PORT)/
 
-TWO_ENV              := $(shell gcloud config get-value account 2>/dev/null | grep -q '@two\.inc$$' && echo staging || echo sandbox)
+TWO_ACCOUNT_DOMAIN   := $(shell gcloud config get-value account 2>/dev/null | sed -n 's/.*@//p')
+TWO_ENV              := $(if $(filter two.inc,$(TWO_ACCOUNT_DOMAIN)),staging,sandbox)
 TWO_API_BASE_URL     ?= https://api.$(TWO_ENV).two.inc
 TWO_CHECKOUT_BASE_URL ?= https://checkout.$(TWO_ENV).two.inc
 TWO_STORE_COUNTRY    ?= NO
 TWO_BRAND            ?=
 TWO_BRAND_VERSION    ?=
+
+# Brand overlay (opt-in). magento-plugin is public, so the canonical
+# branding monorepo is only defaulted when the user's gcloud context
+# proves they're a Two employee. External users get vanilla-only and
+# must explicitly set BRAND_REPO if they have their own overlay.
+BRAND_NAME    ?=
+BRAND_REPO    ?= $(if $(filter two.inc,$(TWO_ACCOUNT_DOMAIN)),two-inc/magento-plugin-branding,)
+BRAND_BRANCH  ?= main
+BRAND_DIR     := $(CURDIR)/.brand-repo
+BRAND_REGEX   := ^[a-z][a-z0-9-]*$$
+
 export PORT
 
-.PHONY: help install configure compile run debug stop clean flush logs proxy archive patch minor major format test test-e2e
+.PHONY: help install configure compile run debug stop clean flush logs proxy archive patch minor major format test test-e2e brand _install-brand
 
 .DEFAULT_GOAL := help
 
@@ -28,6 +40,12 @@ help:
 
 ## Create Magento container, install plugin and Xdebug
 install: clean
+	@if [ -n "$(BRAND_NAME)" ]; then \
+		[ -n "$(BRAND_REPO)" ] || { echo "ERROR: BRAND_NAME=$(BRAND_NAME) but BRAND_REPO unset (set explicitly or use a gcloud context that defaults it)."; exit 1; }; \
+		echo "$(BRAND_NAME)" | grep -qE '$(BRAND_REGEX)' || { echo "ERROR: BRAND_NAME='$(BRAND_NAME)' must match regex $(BRAND_REGEX)"; exit 1; }; \
+		$(MAKE) brand; \
+		[ -f "$(BRAND_DIR)/brands/$(BRAND_NAME)/brand.json" ] || { echo "ERROR: brand '$(BRAND_NAME)' not in $(BRAND_REPO)@$(BRAND_BRANCH) (no brands/$(BRAND_NAME)/brand.json)"; exit 1; }; \
+	fi
 	docker run -d \
 		--name=$(CONTAINER) \
 		-p $(PORT):80 \
@@ -38,6 +56,7 @@ install: clean
 		$(if $(TWO_BRAND),-e TWO_BRAND=$(TWO_BRAND)) \
 		$(if $(TWO_BRAND_VERSION),-e TWO_BRAND_VERSION=$(TWO_BRAND_VERSION)) \
 		-v $(CURDIR):/data/extensions/workdir \
+		$(if $(BRAND_NAME),-v $(BRAND_DIR):/data/extensions/branding) \
 		$(IMAGE):$(TAG)
 	@echo "Waiting for Magento to start..."
 	@until docker exec $(CONTAINER) php bin/magento --version 2>/dev/null; do sleep 3; done
@@ -51,6 +70,14 @@ install: clean
 	docker exec $(CONTAINER) rm -rf /data/generated/code
 	docker exec $(CONTAINER) php bin/magento module:disable Magento_AdminAdobeImsTwoFactorAuth Magento_TwoFactorAuth
 	docker exec $(CONTAINER) php bin/magento module:enable Two_Gateway
+	@if [ -n "$(BRAND_NAME)" ]; then \
+		BRAND_PKG=$$(docker exec $(CONTAINER) php -r 'echo json_decode(file_get_contents($$argv[1]),true)["composer_package"];' /data/extensions/branding/brands/$(BRAND_NAME)/brand.json); \
+		BRAND_MOD=$$(docker exec $(CONTAINER) php -r 'echo json_decode(file_get_contents($$argv[1]),true)["module_name"];' /data/extensions/branding/brands/$(BRAND_NAME)/brand.json); \
+		echo "Installing brand overlay: $$BRAND_PKG ($$BRAND_MOD)"; \
+		docker exec $(CONTAINER) composer config repositories.branding-overlay path /data/extensions/branding/brands/$(BRAND_NAME); \
+		docker exec $(CONTAINER) composer require "$$BRAND_PKG:@dev" --no-plugins; \
+		docker exec $(CONTAINER) php bin/magento module:enable $$BRAND_MOD; \
+	fi
 	docker exec $(CONTAINER) php bin/magento setup:upgrade
 	docker exec $(CONTAINER) php bin/magento deploy:mode:set developer
 	docker exec $(CONTAINER) php bin/magento setup:di:compile
@@ -73,6 +100,21 @@ install: clean
 	echo " Credentials:   exampleuser / examplepassword123"; \
 	echo " Xdebug:        installed (activate with 'make debug')"; \
 	echo "========================================="
+
+## Clone or refresh the brand-overlay repo at .brand-repo/ (no-op if BRAND_REPO unset)
+brand:
+	@if [ -z "$(BRAND_REPO)" ]; then \
+		echo "BRAND_REPO unset — nothing to fetch. Set BRAND_REPO=<org/repo> or use a two.inc gcloud context."; \
+		exit 0; \
+	fi
+	@if [ -d "$(BRAND_DIR)/.git" ]; then \
+		echo "Refreshing $(BRAND_REPO) @ $(BRAND_BRANCH) in $(BRAND_DIR)..."; \
+		git -C $(BRAND_DIR) fetch --depth=1 origin $(BRAND_BRANCH); \
+		git -C $(BRAND_DIR) checkout -B $(BRAND_BRANCH) FETCH_HEAD; \
+	else \
+		echo "Cloning git@github.com:$(BRAND_REPO).git @ $(BRAND_BRANCH) into $(BRAND_DIR)..."; \
+		git clone --depth=1 --branch $(BRAND_BRANCH) git@github.com:$(BRAND_REPO).git $(BRAND_DIR); \
+	fi
 
 ## Update payment config: make configure TWO_API_KEY=xxx
 configure:

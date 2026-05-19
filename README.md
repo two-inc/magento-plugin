@@ -79,6 +79,52 @@ In production mode these are ignored — the URLs are derived from the `mode` se
 
 Run `make help` to see all available targets.
 
+### Brand overlays
+
+The plugin supports brand-specific overlay packages that customise checkout copy, SVG assets, and DI bindings while reusing the same `Two_Gateway` core. Overlays live in a separate Composer package (one per brand) and are opt-in.
+
+```bash
+# Install vanilla + a brand overlay
+make install BRAND_NAME=abn
+```
+
+When `BRAND_NAME` is set, `make install`:
+
+1. Clones (or refreshes) the brand-overlay repo into `.brand-repo/` at the repo root.
+2. Mounts `.brand-repo/` into the Magento container alongside the vanilla bind-mount.
+3. Wires the brand's Composer package as a path repository, requires it, and enables the brand module after `Two_Gateway`.
+
+#### Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `BRAND_NAME` | _(unset)_ | Brand identifier matching `^[a-z][a-z0-9-]*$`. Must correspond to a `brands/<BRAND_NAME>/` directory in the overlay repo. |
+| `BRAND_REPO` | `two-inc/magento-plugin-branding` for `@two.inc` gcloud contexts; otherwise unset | GitHub `org/repo` of the overlay monorepo. External users with their own overlay should set this explicitly. |
+| `BRAND_BRANCH` | `main` | Branch of the overlay repo to check out. Use `develop` for unreleased overlay changes, or a feature branch for local testing. |
+
+The default for `BRAND_REPO` is computed at runtime from your gcloud account — `magento-plugin` is public and must not bake brand-repo names into source.
+
+#### Examples
+
+```bash
+# Vanilla only (default — no brand variables set):
+make install
+
+# ABN overlay on the main branch (default for @two.inc users):
+make install BRAND_NAME=abn
+
+# ABN overlay on a feature branch:
+make install BRAND_NAME=abn BRAND_BRANCH=feature/new-checkout-copy
+
+# Custom overlay repo:
+make install BRAND_NAME=myco BRAND_REPO=myorg/magento-plugin-overlay-myco
+
+# Manually refresh the overlay checkout without reinstalling:
+make brand BRAND_BRANCH=develop
+```
+
+The clone uses SSH (`git@github.com:<BRAND_REPO>.git`), so you need an SSH key registered with your GitHub account that has read access to the overlay repo.
+
 ### Debugging
 
 Xdebug is installed automatically by `make install` but is disabled by default. To start in debug mode:
