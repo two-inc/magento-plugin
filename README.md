@@ -100,7 +100,10 @@ docker exec magento php bin/magento setup:di:compile
 docker exec magento php bin/magento cache:flush
 ```
 
-Install also runs `config:set` on `dev/js/merge_files=1`, `dev/js/minify_files=1`, `dev/css/merge_css_files=1`. These flatten the RequireJS dependency graph into a small number of merged bundles even in developer mode.
+Install also runs:
+
+- `config:set dev/js/merge_files=1`, `dev/js/minify_files=1`, `dev/css/merge_css_files=1` — flatten the inline RequireJS bootstrap into a single merged bundle in the HTML.
+- `setup:static-content:deploy --area frontend --theme Magento/luma --no-html-minify -f --jobs 4 en_US` — pre-bake the Luma theme so RequireJS's ~hundreds of runtime XHRs hit plain file IO instead of falling through Magento's `pub/static.php` router (a full Magento bootstrap per asset). Without this, on the sample catalog the storefront's "Add to Cart" button-enable latency is ~10s; with it, ~1s warm.
 
 ### Brand overlays
 

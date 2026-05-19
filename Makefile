@@ -102,6 +102,12 @@ install: clean
 	docker exec $(CONTAINER) php bin/magento config:set dev/js/merge_files 1
 	docker exec $(CONTAINER) php bin/magento config:set dev/js/minify_files 1
 	docker exec $(CONTAINER) php bin/magento config:set dev/css/merge_css_files 1
+	# Pre-bake all theme JS/CSS so RequireJS XHRs hit plain file IO instead
+	# of falling through Magento's pub/static.php router (a full bootstrap
+	# per asset). Without this, RequireJS's ~hundreds of runtime-loaded
+	# files each trigger a serialised Magento boot, taking the storefront
+	# button-enable latency from sub-second to ~10s on the sample catalog.
+	docker exec $(CONTAINER) php bin/magento setup:static-content:deploy --area frontend --theme Magento/luma --no-html-minify -f --jobs 4 en_US
 	$(MAKE) configure TWO_API_KEY=$(or $(TWO_API_KEY),dummy-dev-key)
 	docker exec $(CONTAINER) bash /data/extensions/workdir/dev/install-xdebug
 	docker exec $(CONTAINER) bash /data/extensions/workdir/dev/hide-admin-loader
