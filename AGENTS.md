@@ -13,9 +13,9 @@ content such as plans, transcripts, or implementation notes.
 
 ## Local-dev modules disabled by `make install`
 
-`make install` disables PageBuilder, NewRelic, and all the Analytics
-modules in the local Docker container so that `setup:di:compile` and
-the storefront's RequireJS bootstrap stay fast. See README's
+`make install` disables PageBuilder and the Analytics module family
+in the local Docker container so that `setup:di:compile` and the
+storefront's RequireJS bootstrap stay fast. See README's
 "Local-dev perf" section for the full list, the rationale, and the
 re-enable recipe.
 

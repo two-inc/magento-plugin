@@ -70,13 +70,17 @@ install: clean
 	docker exec $(CONTAINER) rm -rf /data/generated/code
 	docker exec $(CONTAINER) php bin/magento module:disable \
 		Magento_AdminAdobeImsTwoFactorAuth Magento_TwoFactorAuth \
-		Magento_NewRelicReporting \
 		Magento_Analytics Magento_AdminAnalytics \
-		Magento_CatalogAnalytics Magento_QuoteAnalytics Magento_ReviewAnalytics \
-		Magento_GoogleAnalytics \
+		Magento_CatalogAnalytics Magento_CustomerAnalytics \
+		Magento_QuoteAnalytics Magento_ReviewAnalytics \
+		Magento_SalesAnalytics Magento_WishlistAnalytics \
+		Magento_GoogleAnalytics Magento_GoogleOptimizer \
 		Magento_PageBuilder Magento_PageBuilderAnalytics \
 		Magento_CatalogPageBuilderAnalytics Magento_CmsPageBuilderAnalytics \
 		Magento_PageBuilderAdminAnalytics Magento_AwsS3PageBuilder
+	# NB: Magento_NewRelicReporting NOT disabled — Magento_GraphQl declares
+	# a hard dependency on it (every *GraphQl module transitively requires
+	# it). Even un-licensed it should be quiet at runtime in dev.
 	docker exec $(CONTAINER) php bin/magento module:enable Two_Gateway
 	@if [ -n "$(BRAND_NAME)" ]; then \
 		BRAND_PKG=$$(docker exec $(CONTAINER) php -r 'echo json_decode(file_get_contents($$argv[1]),true)["composer_package"];' /data/extensions/branding/brands/$(BRAND_NAME)/brand.json); \
@@ -89,15 +93,16 @@ install: clean
 	docker exec $(CONTAINER) php bin/magento setup:upgrade
 	docker exec $(CONTAINER) php bin/magento deploy:mode:set developer
 	docker exec $(CONTAINER) php bin/magento setup:di:compile
-	$(MAKE) configure TWO_API_KEY=$(or $(TWO_API_KEY),dummy-dev-key)
 	# Local-dev perf: merge + minify JS/CSS so RequireJS doesn't fan out into
 	# ~200 individual file fetches. Stays in developer mode (no static deploy
 	# step), but the request count drops to ~20 and the storefront's KO
 	# bootstrap returns in well under a second. See README "Local-dev perf".
+	# Must run before `configure` — `configure` restarts the container, and
+	# `config:set` requires a running Magento.
 	docker exec $(CONTAINER) php bin/magento config:set dev/js/merge_files 1
 	docker exec $(CONTAINER) php bin/magento config:set dev/js/minify_files 1
 	docker exec $(CONTAINER) php bin/magento config:set dev/css/merge_css_files 1
-	docker exec $(CONTAINER) php bin/magento cache:flush
+	$(MAKE) configure TWO_API_KEY=$(or $(TWO_API_KEY),dummy-dev-key)
 	docker exec $(CONTAINER) bash /data/extensions/workdir/dev/install-xdebug
 	docker exec $(CONTAINER) bash /data/extensions/workdir/dev/hide-admin-loader
 	@./start-proxy.sh --background || true
