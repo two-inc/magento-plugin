@@ -29,5 +29,11 @@
         "allow-plugins": {
             "magento/composer-dependency-version-audit-plugin": true
         }
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-develop": "2.0.x-dev",
+            "dev-main": "2.0.x-dev"
+        }
     }
 }
