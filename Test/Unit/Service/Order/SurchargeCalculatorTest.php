@@ -133,6 +133,61 @@ class SurchargeCalculatorTest extends TestCase
         $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
     }
 
+    public function testThrowsWithUpstreamErrorWhenApiReturnsNon2xx(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+
+        // Adapter merges the upstream error body with http_status. The
+        // calculator must surface that — not mask it as a schema bug.
+        $this->adapter->method('execute')->willReturn([
+            'http_status' => 401,
+            'error_code' => 'AUTHENTICATION_INVALID',
+            'error_message' => 'X-API-Key is incorrect or has expired',
+            'error_trace_id' => 'abc123',
+        ]);
+
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+        // User-facing message intentionally omits HTTP status / upstream reason
+        // (those are logged for ops). Trace ID is included for support lookup.
+        $this->expectExceptionMessage('Two payment is temporarily unavailable. Please try another payment method or contact support (ref: abc123).');
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testUpstreamErrorWithoutTraceIdOmitsTraceSegment(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+
+        $this->adapter->method('execute')->willReturn([
+            'error_code' => 400,
+            'error_message' => 'Transport error: timeout',
+        ]);
+
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+        $this->expectExceptionMessage('Two payment is temporarily unavailable. Please try another payment method or contact support.');
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testHttpStatus2xxDoesNotTriggerErrorPathEvenIfFieldPresent(): void
+    {
+        // Regression: previously the guard fired on any `http_status` key,
+        // including 200. Adapters that always include status in their return
+        // (observability practice) must not break the success path.
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+
+        $this->adapter->method('execute')->willReturn([
+            'http_status'     => 200,
+            'buyer_fee_share' => 17.50,
+        ]);
+
+        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+        $this->assertEquals(17.50, $result['amount']);
+    }
+
     // ── Payload mapping ──────────────────────────────────────────────
 
     public function testPayloadIncludesCurrencyAndOrderTerms(): void

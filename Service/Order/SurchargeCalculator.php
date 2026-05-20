@@ -108,6 +108,27 @@ class SurchargeCalculator
             'buyer_fee_share' => $buyerFeeShare,
         ]);
 
+        // `http_status` may be set on success too (observability convenience);
+        // gate on the actual 4xx/5xx range plus presence of `error_code`.
+        $httpStatus = $response['http_status'] ?? null;
+        if (($httpStatus !== null && $httpStatus >= 400) || isset($response['error_code'])) {
+            $reason = $response['error_message'] ?? $response['error_details'] ?? 'Unknown error';
+            $traceId = $response['error_trace_id'] ?? null;
+            // Log full diagnostic details for ops; do NOT leak HTTP status or
+            // upstream error reasons (e.g. "X-API-Key expired") to end users.
+            $this->logRepository->addDebugLog('Pricing API upstream error', [
+                'http_status' => $httpStatus,
+                'error_code'  => $response['error_code'] ?? null,
+                'reason'      => $reason,
+                'trace_id'    => $traceId,
+            ]);
+            throw new LocalizedException(
+                $traceId
+                    ? __('Two payment is temporarily unavailable. Please try another payment method or contact support (ref: %1).', $traceId)
+                    : __('Two payment is temporarily unavailable. Please try another payment method or contact support.')
+            );
+        }
+
         if (!isset($response['buyer_fee_share'])) {
             throw new LocalizedException(
                 __('Pricing API response missing required field: buyer_fee_share')
