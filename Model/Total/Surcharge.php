@@ -79,9 +79,16 @@ class Surcharge extends AbstractTotal
             return $this;
         }
 
+        // Only engage once Two is the selected payment method. Magento
+        // recollects totals on payment-method change, so the surcharge
+        // appears the moment the buyer picks Two at checkout. Computing
+        // earlier would put our pricing API in the add-to-cart hot path.
         $paymentMethod = $quote->getPayment()->getMethod();
-        if ($paymentMethod && $paymentMethod !== 'two_payment') {
-            $this->logRepository->addDebugLog('TotalCollector: skipped (payment method: ' . $paymentMethod . ')', []);
+        if ($paymentMethod !== 'two_payment') {
+            $this->logRepository->addDebugLog(
+                'TotalCollector: skipped (payment method: ' . ($paymentMethod ?: 'none') . ')',
+                []
+            );
             $this->clearSessionSurcharge();
             $this->clearTotalSurcharge($total, $quote);
             return $this;
