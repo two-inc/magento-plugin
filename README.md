@@ -79,6 +79,78 @@ In production mode these are ignored — the URLs are derived from the `mode` se
 
 Run `make help` to see all available targets.
 
+### Local-dev perf — disabled modules and what breaks
+
+`make install` runs `module:disable` on a fixed list of modules that aren't needed for plugin development but add significant load to `setup:di:compile` (every module's DI is re-generated) and to the storefront's RequireJS dependency graph (every enabled module's JS gets pulled into the boot, even on pages that don't use it). Disabling them cuts `setup:di:compile` time and drops storefront button-enable latency from ~10s to under a second on the sample-data catalog.
+
+| Module(s) | Why it's disabled in dev |
+|---|---|
+| `Magento_AdminAdobeImsTwoFactorAuth`, `Magento_TwoFactorAuth` | TOTP setup required on every admin login — friction for local dev |
+| `Magento_Analytics`, `Magento_AdminAnalytics`, `Magento_CatalogAnalytics`, `Magento_CustomerAnalytics`, `Magento_QuoteAnalytics`, `Magento_ReviewAnalytics`, `Magento_SalesAnalytics`, `Magento_WishlistAnalytics`, `Magento_GoogleAnalytics`, `Magento_GoogleOptimizer` | JS/tracking hooks that fire on every storefront load |
+| `Magento_PageBuilder`, `Magento_PageBuilderAnalytics`, `Magento_CatalogPageBuilderAnalytics`, `Magento_CmsPageBuilderAnalytics`, `Magento_PageBuilderAdminAnalytics`, `Magento_AwsS3PageBuilder` | Loads the full PageBuilder ContentTypes JS tree on **every** storefront page — biggest single contributor to client-side boot time |
+
+`Magento_NewRelicReporting` is **not** disabled — `Magento_GraphQl` declares a hard dependency on it, and disabling it cascades through every GraphQL module. It stays quiet at runtime when un-licensed.
+
+**Consequence:** PageBuilder-driven CMS content (banners, slides, promo blocks edited via the visual editor) **will not render** in a `make install` environment. If you're testing brand content that relies on PageBuilder blocks, re-enable them manually inside the container:
+
+```bash
+docker exec magento php bin/magento module:enable Magento_PageBuilder Magento_PageBuilderAnalytics Magento_CatalogPageBuilderAnalytics Magento_CmsPageBuilderAnalytics Magento_PageBuilderAdminAnalytics Magento_AwsS3PageBuilder
+docker exec magento php bin/magento setup:upgrade
+docker exec magento php bin/magento setup:di:compile
+docker exec magento php bin/magento cache:flush
+```
+
+Install also runs:
+
+- `config:set dev/js/merge_files=1`, `dev/js/minify_files=1`, `dev/css/merge_css_files=1` — flatten the inline RequireJS bootstrap into a single merged bundle in the HTML.
+- `setup:static-content:deploy --area frontend --theme Magento/luma --no-html-minify -f --jobs 4 en_US` — pre-bake the Luma theme so RequireJS's ~hundreds of runtime XHRs hit plain file IO instead of falling through Magento's `pub/static.php` router (a full Magento bootstrap per asset). Without this, on the sample catalog the storefront's "Add to Cart" button-enable latency is ~10s; with it, ~1s warm.
+
+### Brand overlays
+
+The plugin supports brand-specific overlay packages that customise checkout copy, SVG assets, and DI bindings while reusing the same `Two_Gateway` core. Overlays live in a separate Composer package (one per brand) and are opt-in.
+
+```bash
+# Install vanilla + a brand overlay
+make install BRAND_NAME=abn
+```
+
+When `BRAND_NAME` is set, `make install`:
+
+1. Clones (or refreshes) the brand-overlay repo into `.brand-repo/` at the repo root.
+2. Mounts `.brand-repo/` into the Magento container alongside the vanilla bind-mount.
+3. Wires the brand's Composer package as a path repository, requires it, and enables the brand module after `Two_Gateway`.
+
+#### Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `BRAND_NAME` | _(unset)_ | Brand identifier matching `^[a-z][a-z0-9-]*$`. Must correspond to a `brands/<BRAND_NAME>/` directory in the overlay repo. |
+| `BRAND_REPO` | `two-inc/magento-plugin-branding` for `@two.inc` gcloud contexts; otherwise unset | GitHub `org/repo` of the overlay monorepo. External users with their own overlay should set this explicitly. |
+| `BRAND_BRANCH` | `main` | Branch of the overlay repo to check out. Use `develop` for unreleased overlay changes, or a feature branch for local testing. |
+
+The default for `BRAND_REPO` is computed at runtime from your gcloud account — `magento-plugin` is public and must not bake brand-repo names into source.
+
+#### Examples
+
+```bash
+# Vanilla only (default — no brand variables set):
+make install
+
+# ABN overlay on the main branch (default for @two.inc users):
+make install BRAND_NAME=abn
+
+# ABN overlay on a feature branch:
+make install BRAND_NAME=abn BRAND_BRANCH=feature/new-checkout-copy
+
+# Custom overlay repo:
+make install BRAND_NAME=myco BRAND_REPO=myorg/magento-plugin-overlay-myco
+
+# Manually refresh the overlay checkout without reinstalling:
+make brand BRAND_BRANCH=develop
+```
+
+The clone uses SSH (`git@github.com:<BRAND_REPO>.git`), so you need an SSH key registered with your GitHub account that has read access to the overlay repo.
+
 ### Debugging
 
 Xdebug is installed automatically by `make install` but is disabled by default. To start in debug mode:
