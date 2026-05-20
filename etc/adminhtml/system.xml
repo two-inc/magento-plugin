@@ -8,7 +8,7 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Config:etc/system_file.xsd">
     <system>
-        <tab id="two_gateway" translate="label" class="two-extension" sortOrder="500">
+        <tab id="two_gateway" translate="label" class="two-extension two-extension--no-caption" sortOrder="500">
             <label>Two</label>
         </tab>
         <section id="two_general" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"

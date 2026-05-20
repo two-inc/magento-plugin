@@ -72,14 +72,14 @@
     margin-top: -5px;
 }
 
-
-#system_config_tabs .two-extension._hide > div > strong {
-    opacity: 0;
+// Opt-in for brands whose admin glyph is a wordmark logo (e.g. the
+// default Two brand): hide the redundant text caption next to the
+// icon. Brands that ship a glyph-only icon (e.g. ABN's shield) must
+// omit this modifier so the caption renders.
+.two-extension--no-caption .admin__page-nav-title > strong {
+    display: none;
 }
 
-#system_config_tabs .two-extension._show > div > strong {
-    opacity: 0;
-}
 
 .api-key-status-icon::before {
     display: inline-block;
