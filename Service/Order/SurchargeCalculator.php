@@ -108,6 +108,17 @@ class SurchargeCalculator
             'buyer_fee_share' => $buyerFeeShare,
         ]);
 
+        if (isset($response['http_status']) || isset($response['error_code'])) {
+            $status = $response['http_status'] ?? $response['error_code'] ?? 'unknown';
+            $reason = $response['error_message'] ?? $response['error_details'] ?? 'Unknown error';
+            $traceId = $response['error_trace_id'] ?? null;
+            throw new LocalizedException(
+                $traceId
+                    ? __('Pricing API call failed (status %1): %2 [Trace ID: %3]', $status, $reason, $traceId)
+                    : __('Pricing API call failed (status %1): %2', $status, $reason)
+            );
+        }
+
         if (!isset($response['buyer_fee_share'])) {
             throw new LocalizedException(
                 __('Pricing API response missing required field: buyer_fee_share')

@@ -133,6 +133,42 @@ class SurchargeCalculatorTest extends TestCase
         $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
     }
 
+    public function testThrowsWithUpstreamErrorWhenApiReturnsNon2xx(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+
+        // Adapter merges the upstream error body with http_status. The
+        // calculator must surface that — not mask it as a schema bug.
+        $this->adapter->method('execute')->willReturn([
+            'http_status' => 401,
+            'error_code' => 'AUTHENTICATION_INVALID',
+            'error_message' => 'X-API-Key is incorrect or has expired',
+            'error_trace_id' => 'abc123',
+        ]);
+
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+        $this->expectExceptionMessage('Pricing API call failed (status 401): X-API-Key is incorrect or has expired [Trace ID: abc123]');
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testUpstreamErrorWithoutTraceIdOmitsTraceSegment(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+
+        $this->adapter->method('execute')->willReturn([
+            'error_code' => 400,
+            'error_message' => 'Transport error: timeout',
+        ]);
+
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+        $this->expectExceptionMessage('Pricing API call failed (status 400): Transport error: timeout');
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
     // ── Payload mapping ──────────────────────────────────────────────
 
     public function testPayloadIncludesCurrencyAndOrderTerms(): void
