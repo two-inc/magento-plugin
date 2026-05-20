@@ -148,7 +148,9 @@ class SurchargeCalculatorTest extends TestCase
         ]);
 
         $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
-        $this->expectExceptionMessage('Pricing API call failed (status 401): X-API-Key is incorrect or has expired [Trace ID: abc123]');
+        // User-facing message intentionally omits HTTP status / upstream reason
+        // (those are logged for ops). Trace ID is included for support lookup.
+        $this->expectExceptionMessage('Two payment is temporarily unavailable. Please try another payment method or contact support (ref: abc123).');
 
         $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
     }
@@ -164,9 +166,26 @@ class SurchargeCalculatorTest extends TestCase
         ]);
 
         $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
-        $this->expectExceptionMessage('Pricing API call failed (status 400): Transport error: timeout');
+        $this->expectExceptionMessage('Two payment is temporarily unavailable. Please try another payment method or contact support.');
 
         $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testHttpStatus2xxDoesNotTriggerErrorPathEvenIfFieldPresent(): void
+    {
+        // Regression: previously the guard fired on any `http_status` key,
+        // including 200. Adapters that always include status in their return
+        // (observability practice) must not break the success path.
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+
+        $this->adapter->method('execute')->willReturn([
+            'http_status'     => 200,
+            'buyer_fee_share' => 17.50,
+        ]);
+
+        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+        $this->assertEquals(17.50, $result['amount']);
     }
 
     // ── Payload mapping ──────────────────────────────────────────────

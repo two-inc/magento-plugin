@@ -108,14 +108,24 @@ class SurchargeCalculator
             'buyer_fee_share' => $buyerFeeShare,
         ]);
 
-        if (isset($response['http_status']) || isset($response['error_code'])) {
-            $status = $response['http_status'] ?? $response['error_code'] ?? 'unknown';
+        // `http_status` may be set on success too (observability convenience);
+        // gate on the actual 4xx/5xx range plus presence of `error_code`.
+        $httpStatus = $response['http_status'] ?? null;
+        if (($httpStatus !== null && $httpStatus >= 400) || isset($response['error_code'])) {
             $reason = $response['error_message'] ?? $response['error_details'] ?? 'Unknown error';
             $traceId = $response['error_trace_id'] ?? null;
+            // Log full diagnostic details for ops; do NOT leak HTTP status or
+            // upstream error reasons (e.g. "X-API-Key expired") to end users.
+            $this->logRepository->addDebugLog('Pricing API upstream error', [
+                'http_status' => $httpStatus,
+                'error_code'  => $response['error_code'] ?? null,
+                'reason'      => $reason,
+                'trace_id'    => $traceId,
+            ]);
             throw new LocalizedException(
                 $traceId
-                    ? __('Pricing API call failed (status %1): %2 [Trace ID: %3]', $status, $reason, $traceId)
-                    : __('Pricing API call failed (status %1): %2', $status, $reason)
+                    ? __('Two payment is temporarily unavailable. Please try another payment method or contact support (ref: %1).', $traceId)
+                    : __('Two payment is temporarily unavailable. Please try another payment method or contact support.')
             );
         }
 
