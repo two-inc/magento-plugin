@@ -67,6 +67,13 @@
                     <label/>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Button\ErrorCheck</frontend_model>
                 </field>
+                <field id="hide_when_overlay_installed" translate="label comment" type="select" sortOrder="90"
+                       showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Hide Payment section when a brand overlay is installed</label>
+                    <comment><![CDATA[Only relevant when a brand-overlay package such as ABN_Gateway is installed alongside Two_Gateway. When enabled (default), the parent-brand <strong>Payment</strong> admin config section is hidden so the overlay merchant manages their own brand only. Disable to surface both brands side-by-side and configure them independently. Has no effect on standalone Two_Gateway installs.]]></comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/two_payment/hide_when_overlay_installed</config_path>
+                </field>
             </group>
         </section>
         <section id="two_payment" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
