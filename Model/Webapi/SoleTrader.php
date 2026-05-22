@@ -51,10 +51,6 @@ class SoleTrader implements SoleTraderInterface
         return $this->extractToken($delegateResponse);
     }
 
-    /**
-     * @return string
-     */
-
     private function getAutofillToken(): string
     {
         $autofillResponse = $this->adapter->execute(

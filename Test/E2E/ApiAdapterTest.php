@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\E2E\Service\Api;
 
-use Magento\Framework\App\State;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use PHPUnit\Framework\TestCase;
@@ -27,6 +26,10 @@ class ApiAdapterTest extends TestCase
 
     protected function setUp(): void
     {
+        if (!class_exists(Psr17Factory::class)) {
+            $this->markTestSkipped('nyholm/psr7 not installed (run composer install)');
+        }
+
         $apiKey = (string)getenv('TWO_API_KEY');
         $baseUrl = getenv('TWO_API_BASE_URL') ?: 'https://api.staging.two.inc';
 
@@ -38,9 +41,6 @@ class ApiAdapterTest extends TestCase
         $log = $this->createMock(LogRepository::class);
         $brand = $this->createMock(BrandRegistryInterface::class);
         $brand->method('getProductName')->willReturn('Two');
-        $state = $this->createMock(State::class);
-        $state->method('getMode')->willReturn('production');
-
         $factory = $this->createMock(CurlFactory::class);
         $factory->method('create')->willReturnCallback(fn() => new RealCurl());
 
@@ -53,8 +53,7 @@ class ApiAdapterTest extends TestCase
             new NullTranslator(),
             $psr17,
             $psr17,
-            $psr17,
-            $state
+            $psr17
         );
     }
 
@@ -78,9 +77,6 @@ class ApiAdapterTest extends TestCase
         $log = $this->createMock(LogRepository::class);
         $brand = $this->createMock(BrandRegistryInterface::class);
         $brand->method('getProductName')->willReturn('Two');
-        $state = $this->createMock(State::class);
-        $state->method('getMode')->willReturn('production');
-
         $factory = $this->createMock(CurlFactory::class);
         $factory->method('create')->willReturnCallback(fn() => new RealCurl());
 
@@ -93,8 +89,7 @@ class ApiAdapterTest extends TestCase
             new NullTranslator(),
             $psr17,
             $psr17,
-            $psr17,
-            $state
+            $psr17
         );
         $result = $adapter->execute('/v1/merchant/verify_api_key', [], 'GET', null, Operation::VERIFY_API_KEY);
 

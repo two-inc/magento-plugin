@@ -7,7 +7,6 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Service\Api;
 
-use Magento\Framework\App\State;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Framework\HTTP\Client\CurlFactory;
@@ -52,9 +51,6 @@ class Adapter
     /** @var ResponseFactoryInterface */
     private $responseFactory;
 
-    /** @var State */
-    private $appState;
-
     /** @var int translator-CPU WARN threshold in ms */
     private $translatorWarnMs;
 
@@ -67,7 +63,6 @@ class Adapter
         RequestFactoryInterface $requestFactory,
         StreamFactoryInterface $streamFactory,
         ResponseFactoryInterface $responseFactory,
-        State $appState,
         int $translatorWarnMs = 100
     ) {
         $this->configRepository = $configRepository;
@@ -78,7 +73,6 @@ class Adapter
         $this->requestFactory = $requestFactory;
         $this->streamFactory = $streamFactory;
         $this->responseFactory = $responseFactory;
-        $this->appState = $appState;
         $this->translatorWarnMs = $translatorWarnMs;
     }
 
@@ -469,13 +463,22 @@ class Adapter
         if ($phase === 'request') {
             $translateReqMs = (int)round((microtime(true) - $phaseStart) * 1000);
         }
+        // JSON_INVALID_UTF8_SUBSTITUTE: curl errors can embed raw socket bytes;
+        // without it json_encode returns false and the message becomes literally
+        // "false" in the log, hiding the real failure during incident triage.
+        $msgEncoded = json_encode($e->getMessage(), JSON_INVALID_UTF8_SUBSTITUTE);
+        if ($msgEncoded === false) {
+            $msgEncoded = '"<unencodable>"';
+        }
         $this->logRepository->addDebugLog(
             sprintf(
-                '[translator-failure] phase=%s class=%s op=%s message=%s',
+                '[translator-failure] phase=%s class=%s exception=%s op=%s native_url=%s message=%s',
                 $phase,
                 get_class($this->translator),
+                get_class($e),
                 $operation,
-                json_encode($e->getMessage())
+                $nativeUrl,
+                $msgEncoded
             ),
             null
         );
@@ -555,12 +558,4 @@ class Adapter
 
     }
 
-    private function isDeveloperMode(): bool
-    {
-        try {
-            return $this->appState->getMode() === State::MODE_DEVELOPER;
-        } catch (Throwable $e) {
-            return false;
-        }
-    }
 }

@@ -55,6 +55,12 @@ interface TranslatorInterface
      *   - SHOULD NOT rewrite OP_HEADER value; Adapter strips OP_HEADER post-translation.
      *   - SHOULD rewrite status via withStatus() rather than throwing for control flow.
      *   - Thrown \Throwable → Adapter returns 502 envelope with error_source='translator'.
+     *
+     * Security: the merchant API key arrives on the pre-translation Request as the
+     * X-API-Key header. Translators MUST NOT log, persist, or otherwise exfiltrate
+     * the value. The Adapter sets it pre-translation only so brand proxies can
+     * rewrite the header NAME (e.g. to Authorization: Bearer); a faithful translator
+     * preserves or renames, never extracts and stores.
      */
     public function translateRequest(RequestInterface $request): RequestInterface;
 
