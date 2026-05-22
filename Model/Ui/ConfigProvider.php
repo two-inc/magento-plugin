@@ -83,12 +83,6 @@ class ConfigProvider implements ConfigProviderInterface
         $merchant = null;
         if ($this->configRepository->getApiKey()) {
             $merchant = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
-            // Adapter failure envelopes (error_code present) end up in the public
-            // JS checkout config blob otherwise — translator-failure messages or
-            // upstream-error messages would be visible in shopper devtools.
-            if (is_array($merchant) && isset($merchant['error_code'])) {
-                $merchant = null;
-            }
         }
         $orderIntentConfig = [
             'extensionPlatformName' => $this->configRepository->getExtensionPlatformName(),

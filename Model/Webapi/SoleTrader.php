@@ -44,30 +44,23 @@ class SoleTrader implements SoleTraderInterface
             self::DELEGATION_TOKEN_ENDPOINT,
             ['create_proposal' => true, 'read_current_business' => true]
         );
-        return $this->extractToken($delegateResponse);
+        if (isset($delegateResponse['two-delegated-authority-token'])) {
+            return $delegateResponse['two-delegated-authority-token'];
+        } else {
+            return '';
+        }
     }
 
-    private function getAutofillToken(): string
+    private function getAutofillToken()
     {
         $autofillResponse = $this->adapter->execute(
             self::AUTOFILL_TOKEN_ENDPOINT,
             ['read_current_buyer' => true, 'write_current_buyer' => true]
         );
-        return $this->extractToken($autofillResponse);
-    }
-
-    /**
-     * The token-endpoint Adapter contract returns a lowercase-keyed headers array on
-     * success. Discriminate on positive presence of the token (success) rather than
-     * presence of `error_code` — the latter could collide with a real lowercase
-     * response header literally named `error_code` from a misbehaving upstream.
-     */
-    private function extractToken(array $response): string
-    {
-        $token = $response['two-delegated-authority-token'] ?? null;
-        if (!is_string($token) || $token === '') {
+        if (isset($autofillResponse['two-delegated-authority-token'])) {
+            return $autofillResponse['two-delegated-authority-token'];
+        } else {
             return '';
         }
-        return $token;
     }
 }
