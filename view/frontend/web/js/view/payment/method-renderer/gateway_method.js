@@ -407,6 +407,10 @@ define([
                 }
             }
 
+            // Capture brand config before the iteration so the callback
+            // closure has access to it — arrow-fn would also work but
+            // keeping the existing `function` shape minimises diff.
+            var brandConfig = this._brandConfig;
             _.each(quote.getItems(), function (item) {
                 lineItems.push({
                     name: item['name'],
@@ -419,7 +423,7 @@ define([
                     tax_amount: parseFloat(item['tax_amount']).toFixed(2),
                     tax_rate: (parseFloat(item['tax_percent']) / 100).toFixed(6),
                     tax_class_name: '',
-                    quantity_unit: this._brandConfig.orderIntentConfig.weightUnit,
+                    quantity_unit: brandConfig.orderIntentConfig.weightUnit,
                     image_url: item['thumbnail'],
                     type: item['is_virtual'] === '0' ? 'PHYSICAL' : 'DIGITAL'
                 });
