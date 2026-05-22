@@ -278,8 +278,9 @@ class Two extends AbstractMethod
      * Returns "Business Invoice" optionally suffixed with the buyer's
      * selected term in days (e.g. "Business Invoice - 60 days").
      * DataAssignObserver stores the chosen term under the `selectedTerm`
-     * key as a scalar. The whole phrase is translated as a single unit
-     * so locales can reorder the duration relative to the noun.
+     * key as a scalar. The noun and the duration are translated as two
+     * separate __() lookups so each half can use the existing "%1 days"
+     * translation alongside the locale-specific "Business Invoice".
      */
     public function getTitle()
     {
@@ -289,10 +290,11 @@ class Two extends AbstractMethod
         } catch (\Exception $e) {
             $days = 0;
         }
+        $noun = __('Business Invoice');
         if ($days > 0) {
-            return (string)__('Business Invoice - %1 days', $days);
+            return sprintf('%s - %s', $noun, __('%1 days', $days));
         }
-        return (string)__('Business Invoice');
+        return (string)$noun;
     }
 
     /**
