@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Observer;
 
 use Exception;
+use Two\Gateway\Api\Operation;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Exception\LocalizedException;
@@ -134,7 +135,10 @@ class SalesOrderShipmentAfter implements ObserverInterface
             }
             $response = $this->apiAdapter->execute(
                 "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
-                $payload
+                $payload,
+                'POST',
+                null,
+                Operation::FULFILL_ORDER
             );
 
             $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);

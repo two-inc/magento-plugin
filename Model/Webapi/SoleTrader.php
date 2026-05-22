@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Webapi;
 
+use Two\Gateway\Api\Operation;
 use Two\Gateway\Api\Webapi\SoleTraderInterface;
 use Two\Gateway\Service\Api\Adapter;
 
@@ -42,7 +43,10 @@ class SoleTrader implements SoleTraderInterface
     {
         $delegateResponse = $this->adapter->execute(
             self::DELEGATION_TOKEN_ENDPOINT,
-            ['create_proposal' => true, 'read_current_business' => true]
+            ['create_proposal' => true, 'read_current_business' => true],
+            'POST',
+            null,
+            Operation::DELEGATION_TOKEN
         );
         if (isset($delegateResponse['two-delegated-authority-token'])) {
             return $delegateResponse['two-delegated-authority-token'];
@@ -55,7 +59,10 @@ class SoleTrader implements SoleTraderInterface
     {
         $autofillResponse = $this->adapter->execute(
             self::AUTOFILL_TOKEN_ENDPOINT,
-            ['read_current_buyer' => true, 'write_current_buyer' => true]
+            ['read_current_buyer' => true, 'write_current_buyer' => true],
+            'POST',
+            null,
+            Operation::AUTOFILL_TOKEN
         );
         if (isset($autofillResponse['two-delegated-authority-token'])) {
             return $autofillResponse['two-delegated-authority-token'];

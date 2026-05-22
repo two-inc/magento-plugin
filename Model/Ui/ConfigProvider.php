@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Ui;
 
+use Two\Gateway\Api\Operation;
 use Magento\Checkout\Model\ConfigProviderInterface;
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\View\Asset\Repository as AssetRepository;
@@ -82,7 +83,7 @@ class ConfigProvider implements ConfigProviderInterface
     {
         $merchant = null;
         if ($this->configRepository->getApiKey()) {
-            $merchant = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
+            $merchant = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET', null, Operation::VERIFY_API_KEY);
         }
         $orderIntentConfig = [
             'extensionPlatformName' => $this->configRepository->getExtensionPlatformName(),

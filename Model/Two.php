@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Model;
 
 use Exception;
+use Two\Gateway\Api\Operation;
 use Magento\Framework\Api\AttributeValueFactory;
 use Magento\Framework\Api\ExtensionAttributesFactory;
 use Magento\Framework\App\Config\ScopeConfigInterface;
@@ -220,7 +221,7 @@ class Two extends AbstractMethod
         );
 
         // Create order
-        $response = $this->apiAdapter->execute('/v1/order', $payload);
+        $response = $this->apiAdapter->execute('/v1/order', $payload, 'POST', null, Operation::CREATE_ORDER);
         $error = $this->getErrorFromResponse($response);
         if ($error) {
             throw new LocalizedException($error);
@@ -418,7 +419,7 @@ class Two extends AbstractMethod
         $order = $payment->getOrder();
         try {
             $twoOrderId = $order->getTwoOrderId();
-            $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId() . '/cancel');
+            $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId() . '/cancel', [], 'POST', null, Operation::CANCEL_ORDER);
             if ($response) {
                 $error = $this->getErrorFromResponse($response);
                 $comment = __(
@@ -490,7 +491,7 @@ class Two extends AbstractMethod
                         'partial' => $this->composeCapture->execute($createdInvoice),
                     ];
                 }
-                $response = $this->apiAdapter->execute('/v1/order/' . $twoOrderId . '/fulfillments', $payload);
+                $response = $this->apiAdapter->execute('/v1/order/' . $twoOrderId . '/fulfillments', $payload, 'POST', null, Operation::FULFILL_ORDER);
                 $error = $this->getErrorFromResponse($response);
 
                 if ($error) {
@@ -598,7 +599,10 @@ class Two extends AbstractMethod
         );
         $response = $this->apiAdapter->execute(
             "/v1/order/" . $twoOrderId . "/refund",
-            $payload
+            $payload,
+            'POST',
+            null,
+            Operation::REFUND_ORDER
         );
 
         $error = $this->getErrorFromResponse($response);

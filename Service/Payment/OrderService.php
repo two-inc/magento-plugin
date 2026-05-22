@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Service\Payment;
 
 use Exception;
+use Two\Gateway\Api\Operation;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\DB\Transaction;
 use Magento\Framework\Exception\LocalizedException;
@@ -204,7 +205,7 @@ class OrderService
      */
     public function getTwoOrderFromApi(Order $order): array
     {
-        $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId(), [], 'GET');
+        $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId(), [], 'GET', null, Operation::GET_ORDER);
         $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
         if ($error) {
             throw new LocalizedException($error);
@@ -222,7 +223,7 @@ class OrderService
      */
     public function confirmOrder(Order $order)
     {
-        $response = $this->apiAdapter->execute("/v1/order/" . $order->getTwoOrderId() . "/confirm");
+        $response = $this->apiAdapter->execute("/v1/order/" . $order->getTwoOrderId() . "/confirm", [], 'POST', null, Operation::CONFIRM_ORDER);
         $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
         if ($error) {
             throw new LocalizedException($error);
@@ -240,7 +241,7 @@ class OrderService
      */
     public function cancelTwoOrder(Order $order): bool
     {
-        $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId() . '/cancel');
+        $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId() . '/cancel', [], 'POST', null, Operation::CANCEL_ORDER);
         if ($response) {
             $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
             if ($error) {
