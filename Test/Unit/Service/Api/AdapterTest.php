@@ -209,7 +209,7 @@ class AdapterTest extends TestCase
         $this->adapter($translator)
             ->execute('/v1/order', ['x' => 1], 'POST', null, Operation::CREATE_ORDER);
 
-        $this->assertSame((string)5000, $captured['len']);
+        $this->assertSame('5000', $captured['len']);
     }
 
     /** §11.7 — body readable by translator AND by Adapter (rewind). */

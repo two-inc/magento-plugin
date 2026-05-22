@@ -51,6 +51,10 @@ class SoleTrader implements SoleTraderInterface
         return $this->extractToken($delegateResponse);
     }
 
+    /**
+     * @return string
+     */
+
     private function getAutofillToken(): string
     {
         $autofillResponse = $this->adapter->execute(
@@ -65,15 +69,16 @@ class SoleTrader implements SoleTraderInterface
 
     /**
      * The token-endpoint Adapter contract returns a lowercase-keyed headers array on
-     * success. A missing header is either (a) an upstream regression we should not
-     * paper over with an empty token, or (b) a translator failure that the Adapter
-     * has already escalated to error_code=502; both surface to the caller as failure.
+     * success. Discriminate on positive presence of the token (success) rather than
+     * presence of `error_code` — the latter could collide with a real lowercase
+     * response header literally named `error_code` from a misbehaving upstream.
      */
     private function extractToken(array $response): string
     {
-        if (isset($response['error_code'])) {
+        $token = $response['two-delegated-authority-token'] ?? null;
+        if (!is_string($token) || $token === '') {
             return '';
         }
-        return (string)($response['two-delegated-authority-token'] ?? '');
+        return $token;
     }
 }

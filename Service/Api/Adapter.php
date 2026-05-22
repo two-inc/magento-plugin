@@ -105,7 +105,12 @@ class Adapter
             sprintf('%s%s', $this->configRepository->getCheckoutApiUrl($mode), $endpoint)
         );
 
-        $hasBody = in_array($method, ['POST', 'PUT', 'PATCH'], true);
+        // Methods that carry a body in this codebase. PATCH/DELETE/HEAD have no current
+        // callers; admitting them here without a matching dispatch branch would silently
+        // send them as POST via Magento Curl::post(). PUT dispatches via Curl::post()
+        // too — pre-existing behaviour preserved verbatim, see Observer/SalesOrderAddressUpdate
+        // for the only PUT caller.
+        $hasBody = in_array($method, ['POST', 'PUT'], true);
 
         // Encode payload up front; surface a fatal encoding error explicitly rather
         // than silently shipping an empty body. NaN/INF/non-UTF-8 → json_encode = false.
@@ -165,8 +170,13 @@ class Adapter
             $curl->addHeader($name, $request->getHeaderLine($name));
         }
 
-        // §5.1 step 11 — Content-Length only for body methods.
-        $postBody = (string)$request->getBody();
+        // §5.1 step 11 — Content-Length only for body methods. Defensive rewind in
+        // case translator's translateRequest read but did not rewind the body stream.
+        $reqBody = $request->getBody();
+        if ($reqBody->isSeekable()) {
+            $reqBody->rewind();
+        }
+        $postBody = (string)$reqBody;
         if ($hasBody) {
             $curl->addHeader('Content-Length', (string)strlen($postBody));
         }
@@ -210,7 +220,10 @@ class Adapter
             ->withBody($this->streamFactory->createStream($preTranslationBody));
         $responseHeadersPre = $curl->getHeaders() ?: [];
         foreach ($responseHeadersPre as $name => $value) {
-            $response = $response->withHeader($name, (string)$value);
+            // Magento Curl historically returns scalar string values (duplicates
+            // overwrite), but newer minors may surface array-valued headers like
+            // multi-Set-Cookie; PSR-7 withHeader accepts string|string[].
+            $response = $response->withHeader($name, is_array($value) ? $value : (string)$value);
         }
 
         // §5.1 step 15 — translateResponse.
@@ -299,7 +312,10 @@ class Adapter
     }
 
     /**
-     * @param ResponseInterface $response
+     * Shape the Adapter's array return value from a (translated) PSR-7 Response.
+     * Throwable thrown inside is caught and converted to a 400 envelope at the
+     * boundary so callers see a consistent failure shape. The outer execute()
+     * still emits a correlationLog line after this returns regardless of branch.
      */
     private function buildResult(
         int $status,
@@ -310,17 +326,17 @@ class Adapter
         string $endpoint
     ): array {
         try {
-            if (in_array($status, [200, 201, 202], true)) {
+            // 204 No Content is a legitimate success; the empty-body guard already
+            // exempts it. Include here so callers do not see a fabricated 400.
+            if (in_array($status, [200, 201, 202, 204], true)) {
                 $result = [];
                 if ($bodyAfter === '' || $bodyAfter === '""') {
                     if ($this->isHeaderReadingOp($operation)) {
                         $result = $this->responseHeadersAsLowercaseArray($response);
                     }
                 } else {
-                    $result = json_decode($bodyAfter, true);
-                    if (!is_array($result)) {
-                        $result = [];
-                    }
+                    $decoded = json_decode($bodyAfter, true);
+                    $result = is_array($decoded) ? $decoded : [];
                 }
                 $this->logRepository->addDebugLog(
                     sprintf('API response %s %s (status: %s)', $method, $endpoint, $status),
@@ -330,7 +346,11 @@ class Adapter
             }
 
             if ($bodyAfter !== '') {
-                $result = json_decode($bodyAfter, true) ?: [];
+                // Defensive: bare-scalar JSON responses (e.g. body == "0", "false",
+                // "\"err\"") decode to non-array values. The legacy `?: []` pattern
+                // would have kept them and then fatal on offset assignment below.
+                $decoded = json_decode($bodyAfter, true);
+                $result = is_array($decoded) ? $decoded : [];
                 $result['http_status'] = $status;
                 $this->logRepository->addDebugLog(
                     sprintf('API response %s %s (status: %s)', $method, $endpoint, $status),
@@ -357,7 +377,8 @@ class Adapter
 
     /**
      * Visible for unit-testing the restoration path without faking the whole
-     * execute() pipeline.
+     * execute() pipeline. Kept protected (not private) for that reason; do not
+     * downgrade visibility without also rewriting the §11.8 unit test.
      */
     protected function restorePreservedHeaders(
         RequestInterface $request,
@@ -427,6 +448,11 @@ class Adapter
         return $missing;
     }
 
+    /**
+     * FIXME: split into translatorRequestFailure + translatorResponseFailure once
+     * the API stabilises. The shared body multiplexes two distinct call shapes via
+     * the `$phase` discriminator; works correctly today but is fragile to refactor.
+     */
     private function translatorFailure(
         string $phase,
         Throwable $e,
@@ -465,6 +491,7 @@ class Adapter
         );
         return [
             'error_code' => 502,
+            'http_status' => 502,
             'error_source' => 'translator',
             'error_message' => 'Translator failure',
         ];
@@ -490,6 +517,7 @@ class Adapter
         );
         return [
             'error_code' => 400,
+            'error_source' => 'two',
             'error_message' => $e->getMessage(),
         ];
     }
@@ -525,12 +553,6 @@ class Adapter
             $this->logRepository->addDebugLog($line, null);
         }
 
-        if ($this->isDeveloperMode()) {
-            $this->logRepository->addDebugLog(
-                sprintf('[two.api.debug] op=%s translator=%s', $op, get_class($this->translator)),
-                null
-            );
-        }
     }
 
     private function isDeveloperMode(): bool
