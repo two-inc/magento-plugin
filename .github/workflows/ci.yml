@@ -194,3 +194,15 @@ jobs:
         run: |
           docker exec magento-project-community-edition ./retry \
             "php bin/magento setup:di:compile"
+
+  jest:
+    name: Jest (Node 20)
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --no-audit --no-fund
+      - run: npm run test:js

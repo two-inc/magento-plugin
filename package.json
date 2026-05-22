@@ -1,0 +1,12 @@
+{
+  "name": "two-inc/magento2",
+  "description": "Two payment gateway for Magento 2 — JS dev-only manifest. The PHP module's runtime metadata lives in composer.json; this file exists so the npm-based Jest test runner has somewhere to declare devDeps without polluting Composer or Packagist.",
+  "private": true,
+  "scripts": {
+    "test:js": "jest --config Test/Js/jest.config.js"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
+  }
+}

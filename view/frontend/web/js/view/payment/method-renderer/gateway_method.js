@@ -16,6 +16,7 @@ define([
     'Magento_Checkout/js/action/redirect-on-success',
     'mage/url',
     'Two_Gateway/js/model/surcharge',
+    'Two_Gateway/js/model/brand-config',
     'Magento_Ui/js/lib/view/utils/async',
     'mage/validation',
     'jquery/jquery-storageapi'
@@ -31,19 +32,10 @@ define([
     fullScreenLoader,
     redirectOnSuccessAction,
     url,
-    surchargeModel
+    surchargeModel,
+    getBrandConfig
 ) {
     'use strict';
-
-    /**
-     * Brand-overlay-aware config lookup. Reads from
-     * `window.checkoutConfig.payment[<methodCode>]` so each brand-overlay
-     * payment method (two_payment, abn_payment, …) gets its own config
-     * subtree without forking this renderer per brand.
-     */
-    function getBrandConfig(code) {
-        return (window.checkoutConfig.payment || {})[code] || {};
-    }
 
     window.quote = quote;
 
