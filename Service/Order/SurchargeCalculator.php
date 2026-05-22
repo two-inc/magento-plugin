@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Service\Order;
 
 use Magento\Framework\Exception\LocalizedException;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Operation;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
@@ -56,16 +57,21 @@ class SurchargeCalculator
      */
     private $responseCache = [];
 
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
+
     public function __construct(
         ConfigRepository $configRepository,
         Adapter $apiAdapter,
         LogRepository $logRepository,
-        CurrencyRatesProviderInterface $ratesProvider
+        CurrencyRatesProviderInterface $ratesProvider,
+        BrandRegistryInterface $brandRegistry
     ) {
         $this->configRepository = $configRepository;
         $this->apiAdapter = $apiAdapter;
         $this->logRepository = $logRepository;
         $this->ratesProvider = $ratesProvider;
+        $this->brandRegistry = $brandRegistry;
     }
 
     /**
@@ -123,7 +129,10 @@ class SurchargeCalculator
                 'error_code' => $response['error_code'] ?? null,
             ]);
             throw new LocalizedException(
-                __('Two payment is temporarily unavailable due to a configuration issue. Please contact support.')
+                __(
+                    '%1 payment is temporarily unavailable due to a configuration issue. Please contact support.',
+                    $this->brandRegistry->getProductName()
+                )
             );
         }
 

@@ -470,7 +470,9 @@ class Adapter
         if ($msgEncoded === false) {
             $msgEncoded = '"<unencodable>"';
         }
-        $this->logRepository->addDebugLog(
+        // Translator failures are operator-actionable: route to the error channel,
+        // not the debug channel, so on-call alerts watching TwoError fire.
+        $this->logRepository->addErrorLog(
             sprintf(
                 '[translator-failure] phase=%s class=%s exception=%s op=%s native_url=%s message=%s',
                 $phase,
@@ -551,7 +553,8 @@ class Adapter
         $warnTranslator = ($translateReqMs > $this->translatorWarnMs)
             || ($translateRespMs > $this->translatorWarnMs);
         if ($warnTranslator) {
-            $this->logRepository->addDebugLog('[WARN] ' . $line, null);
+            // Slow translator → error channel so threshold-based alerts can fire.
+            $this->logRepository->addErrorLog('[WARN] ' . $line, null);
         } else {
             $this->logRepository->addDebugLog($line, null);
         }
