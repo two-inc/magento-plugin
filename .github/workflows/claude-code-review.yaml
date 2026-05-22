@@ -19,9 +19,17 @@ permissions:
 jobs:
   code-review:
     runs-on: ${{ vars.RUNNER_STANDARD }}
+    # Long-lived sync PRs (develop → main) are bot-opened and accumulate
+    # every change from develop — the cumulative diff exceeds the
+    # reviewer's `gh pr diff` 20000-line ceiling, so the prefetch step
+    # hard-fails on every sync. Skip code-review for any PR whose head
+    # ref is a long-lived branch; reviewing happens on the topic PRs
+    # into develop instead.
     if: |
       (
         github.event_name == 'pull_request' &&
+        github.head_ref != 'develop' &&
+        github.head_ref != 'abn-develop' &&
         vars.CLAUDE_REVIEW_CONFIG != '' &&
         fromJSON(vars.CLAUDE_REVIEW_CONFIG)[format('{0}:{1}', github.base_ref, github.event.action)] == true
       ) ||
