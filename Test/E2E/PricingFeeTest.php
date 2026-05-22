@@ -31,8 +31,26 @@ class PricingFeeTest extends TestCase
         $config->method('getApiKey')->willReturn($apiKey);
 
         $log = $this->createMock(LogRepository::class);
+        $brand = $this->createMock(BrandRegistryInterface::class);
+        $brand->method('getProductName')->willReturn('Two');
+        $state = $this->createMock(State::class);
+        $state->method('getMode')->willReturn('production');
 
-        $this->adapter = new Adapter($config, new RealCurl(), $log);
+        $factory = $this->createMock(CurlFactory::class);
+        $factory->method('create')->willReturnCallback(fn() => new RealCurl());
+
+        $psr17 = new Psr17Factory();
+        $this->adapter = new Adapter(
+            $config,
+            $brand,
+            $factory,
+            $log,
+            new NullTranslator(),
+            $psr17,
+            $psr17,
+            $psr17,
+            $state
+        );
     }
 
     private function fetchFee(int $durationDays, float $grossAmount = 1000.0, string $country = 'NO'): array

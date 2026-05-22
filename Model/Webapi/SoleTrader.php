@@ -48,14 +48,10 @@ class SoleTrader implements SoleTraderInterface
             null,
             Operation::DELEGATION_TOKEN
         );
-        if (isset($delegateResponse['two-delegated-authority-token'])) {
-            return $delegateResponse['two-delegated-authority-token'];
-        } else {
-            return '';
-        }
+        return $this->extractToken($delegateResponse);
     }
 
-    private function getAutofillToken()
+    private function getAutofillToken(): string
     {
         $autofillResponse = $this->adapter->execute(
             self::AUTOFILL_TOKEN_ENDPOINT,
@@ -64,10 +60,20 @@ class SoleTrader implements SoleTraderInterface
             null,
             Operation::AUTOFILL_TOKEN
         );
-        if (isset($autofillResponse['two-delegated-authority-token'])) {
-            return $autofillResponse['two-delegated-authority-token'];
-        } else {
+        return $this->extractToken($autofillResponse);
+    }
+
+    /**
+     * The token-endpoint Adapter contract returns a lowercase-keyed headers array on
+     * success. A missing header is either (a) an upstream regression we should not
+     * paper over with an empty token, or (b) a translator failure that the Adapter
+     * has already escalated to error_code=502; both surface to the caller as failure.
+     */
+    private function extractToken(array $response): string
+    {
+        if (isset($response['error_code'])) {
             return '';
         }
+        return (string)($response['two-delegated-authority-token'] ?? '');
     }
 }
