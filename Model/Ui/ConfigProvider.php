@@ -18,10 +18,25 @@ use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Model\Two;
 
 /**
- * Ui Config Provider
+ * Ui Config Provider.
+ *
+ * Populates `window.checkoutConfig.payment[<code>]` with the runtime
+ * config the gateway_method renderer needs. The `$code` constructor
+ * argument decides which subtree of `payment` gets populated, so
+ * brand-overlay packages (magento-abn-plugin) can declare a
+ * virtualType of this class with `code='abn_payment'` and a
+ * brand-bound BrandRegistryInterface to expose their own subtree
+ * without re-implementing the body of getConfig().
+ *
+ * The Two-branded binding defaults to ConfigRepository::CODE
+ * ('two_payment') so existing installs keep their current behaviour
+ * without an etc/di.xml change.
  */
 class ConfigProvider implements ConfigProviderInterface
 {
+    /** @var string */
+    private $code;
+
     /**
      * @var ConfigRepository
      */
@@ -55,6 +70,11 @@ class ConfigProvider implements ConfigProviderInterface
      */
     private $storeManager;
 
+    /**
+     * @param string $code Payment-method code (overlay-specific). Defaults
+     *                     to the Two-branded value for backward
+     *                     compatibility with installs that don't override.
+     */
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -62,7 +82,8 @@ class ConfigProvider implements ConfigProviderInterface
         Two $two,
         AssetRepository $assetRepository,
         CheckoutSession $checkoutSession,
-        StoreManagerInterface $storeManager
+        StoreManagerInterface $storeManager,
+        string $code = ConfigRepository::CODE
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -71,6 +92,7 @@ class ConfigProvider implements ConfigProviderInterface
         $this->assetRepository = $assetRepository;
         $this->checkoutSession = $checkoutSession;
         $this->storeManager = $storeManager;
+        $this->code = $code;
     }
 
     /**
@@ -99,7 +121,7 @@ class ConfigProvider implements ConfigProviderInterface
 
         return [
             'payment' => [
-                ConfigRepository::CODE => [
+                $this->code => [
                     'checkoutApiUrl' => $this->configRepository->getCheckoutApiUrl(),
                     'checkoutPageUrl' => $this->configRepository->getCheckoutPageUrl(),
                     'brand' => $this->configRepository->getBrand(),
