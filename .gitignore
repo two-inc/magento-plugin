@@ -20,7 +20,6 @@ composer.lock
 # Local dev config
 .env.local
 .frpc.pid
-/.brand-repo/
 
 # Python
 *.venv
