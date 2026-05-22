@@ -34,7 +34,6 @@
             <argument name="requestFactory" xsi:type="object">Nyholm\Psr7\Factory\Psr17Factory</argument>
             <argument name="streamFactory" xsi:type="object">Nyholm\Psr7\Factory\Psr17Factory</argument>
             <argument name="responseFactory" xsi:type="object">Nyholm\Psr7\Factory\Psr17Factory</argument>
-            <argument name="translatorWarnMs" xsi:type="number">100</argument>
         </arguments>
     </type>
 

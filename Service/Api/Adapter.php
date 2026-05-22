@@ -16,32 +16,38 @@ use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Throwable;
+use Two\Gateway\Api\ApiTranslatorInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
-use Two\Gateway\Api\ApiApiTranslatorInterface;
 use Two\Gateway\Api\Webapi\SoleTraderInterface;
 
 /**
- * Outbound HTTP chokepoint. See docs/proxy-translator-design.md §5.
+ * Api Adapter
  *
- * Brand translators receive a PSR-7 Request with the wire URL, method, and
- * headers; they discriminate on endpoint path the same way any HTTP middleware
- * does. The Adapter does not surface an Operation enum to the translator —
- * the URL is the contract.
+ * Outbound HTTP chokepoint. The brand-overlay translator hook is wrapped around
+ * the existing Curl-based dispatch — see {@see ApiTranslatorInterface} — so the
+ * default install (NullApiTranslator) behaves identically to the pre-translator
+ * implementation.
  */
 class Adapter
 {
-    /** @var ConfigRepository */
+    /**
+     * @var ConfigRepository
+     */
     private $configRepository;
 
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
-    /** @var CurlFactory */
+    /**
+     * @var CurlFactory
+     */
     private $curlFactory;
 
-    /** @var LogRepository */
+    /**
+     * @var LogRepository
+     */
     private $logRepository;
 
     /** @var ApiTranslatorInterface */
@@ -56,9 +62,6 @@ class Adapter
     /** @var ResponseFactoryInterface */
     private $responseFactory;
 
-    /** @var int translator-CPU WARN threshold in ms */
-    private $translatorWarnMs;
-
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -67,8 +70,7 @@ class Adapter
         ApiTranslatorInterface $apiTranslator,
         RequestFactoryInterface $requestFactory,
         StreamFactoryInterface $streamFactory,
-        ResponseFactoryInterface $responseFactory,
-        int $translatorWarnMs = 100
+        ResponseFactoryInterface $responseFactory
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -78,16 +80,16 @@ class Adapter
         $this->requestFactory = $requestFactory;
         $this->streamFactory = $streamFactory;
         $this->responseFactory = $responseFactory;
-        $this->apiTranslatorWarnMs = $translatorWarnMs;
     }
 
     /**
-     * Send request to API.
+     * Send request to api
      *
-     * @param string   $endpoint path segment, e.g. '/v1/order'
-     * @param array    $payload  JSON-serialisable
-     * @param string   $method   HTTP method (POST/PUT/GET)
-     * @param int|null $storeId  optional store scope for API-key resolution
+     * @param string $endpoint
+     * @param array $payload
+     * @param string $method
+     * @param int|null $storeId Optional store scope for API key resolution (default: default scope)
+     * @return array
      */
     public function execute(
         string $endpoint,
@@ -95,478 +97,156 @@ class Adapter
         string $method = 'POST',
         ?int $storeId = null
     ): array {
-        $this->logRepository->addDebugLog(sprintf('API call: %s %s', $method, $endpoint), $payload);
-
-        $mode = $storeId !== null ? $this->configRepository->getMode($storeId) : null;
-        $nativeUrl = $this->configRepository->addVersionDataInURL(
-            sprintf('%s%s', $this->configRepository->getCheckoutApiUrl($mode), $endpoint)
-        );
-
-        // Methods that carry a body in this codebase. PATCH/DELETE/HEAD have no current
-        // callers; admitting them here without a matching dispatch branch would silently
-        // send them as POST via Magento Curl::post(). PUT dispatches via Curl::post()
-        // too — pre-existing behaviour preserved verbatim.
-        $hasBody = in_array($method, ['POST', 'PUT'], true);
-
-        // Encode payload up front; surface a fatal encoding error explicitly rather
-        // than silently shipping an empty body. NaN/INF/non-UTF-8 → json_encode = false.
-        $bodyString = '';
-        if ($hasBody && !empty($payload)) {
-            $encoded = json_encode($payload);
-            if ($encoded === false) {
-                $this->logRepository->addDebugLog(
-                    sprintf('[two.api] endpoint=%s json_encode failed: %s', $endpoint, json_last_error_msg()),
-                    null
-                );
-                return [
-                    'error_code' => 400,
-                    'error_source' => 'two',
-                    'error_message' => 'Outbound payload could not be encoded as JSON',
-                ];
-            }
-            $bodyString = $encoded;
-        }
-
-        // Build PSR-7 Request with headers set BEFORE translation so brand proxies
-        // can rewrite the auth-header NAME (e.g. X-API-Key → Authorization: Bearer).
-        $request = $this->requestFactory->createRequest($method, $nativeUrl)
-            ->withHeader('Content-Type', 'application/json')
-            ->withHeader('X-API-Key', $this->configRepository->getApiKey($storeId));
-        if ($hasBody) {
-            $request = $request->withBody($this->streamFactory->createStream($bodyString));
-        }
-        $preTranslationRequest = $request;
-
-        $translateReqStart = microtime(true);
         try {
-            $request = $this->apiTranslator->translateRequest($request);
-        } catch (Throwable $e) {
-            return $this->apiTranslatorFailure('request', $e, $endpoint, $method, $nativeUrl, $translateReqStart);
-        }
-        $translateReqMs = (int)round((microtime(true) - $translateReqStart) * 1000);
+            $this->logRepository->addDebugLog(sprintf('API call: %s %s', $method, $endpoint), $payload);
+            $mode = $storeId !== null ? $this->configRepository->getMode($storeId) : null;
+            $url = $this->configRepository->addVersionDataInURL(
+                sprintf('%s%s', $this->configRepository->getCheckoutApiUrl($mode), $endpoint)
+            );
 
-        $request = $this->restorePreservedHeaders($request, $preTranslationRequest, $endpoint);
+            $request = $this->prepareOutboundRequest($url, $method, $payload, $storeId);
+            $curl = $this->unpackToCurl($request, $method);
 
-        // Strip Content-Length AND Host; recomputed/derived by Curl. PSR-7 mandates
-        // Host; if translator did withUri() the explicit Host would diverge.
-        $request = $request->withoutHeader('Content-Length')->withoutHeader('Host');
-
-        // Fresh Curl per call — no state leakage between requests.
-        $curl = $this->curlFactory->create();
-
-        // Magento Curl::addHeader keys by name (single value); use getHeaderLine()
-        // to honour RFC-7230 multi-value joining.
-        foreach ($request->getHeaders() as $name => $_) {
-            $curl->addHeader($name, $request->getHeaderLine($name));
-        }
-
-        // Content-Length only for body methods. Defensive rewind in case translator's
-        // translateRequest read but did not rewind the body stream.
-        $reqBody = $request->getBody();
-        if ($reqBody->isSeekable()) {
-            $reqBody->rewind();
-        }
-        $postBody = (string)$reqBody;
-        if ($hasBody) {
-            $curl->addHeader('Content-Length', (string)strlen($postBody));
-        }
-
-        // NOT CURLOPT_HEADER (Magento Curl uses its own CURLOPT_HEADERFUNCTION
-        // callback; setting CURLOPT_HEADER would corrupt body).
-        $curl->setOption(CURLOPT_RETURNTRANSFER, true);
-        $curl->setOption(CURLOPT_SSL_VERIFYHOST, 0);
-        $curl->setOption(CURLOPT_SSL_VERIFYPEER, 0);
-        $curl->setOption(CURLOPT_TIMEOUT, 60);
-
-        $dispatchedUrl = (string)$request->getUri();
-        $dispatchStart = microtime(true);
-        try {
-            if ($hasBody) {
-                $curl->post($dispatchedUrl, $postBody);
+            if ($method == "POST" || $method == "PUT") {
+                $curl->post((string)$request->getUri(), (string)$request->getBody());
             } else {
                 $curl->setOption(CURLOPT_FOLLOWLOCATION, true);
-                $curl->get($dispatchedUrl);
+                $curl->get((string)$request->getUri());
             }
-        } catch (Throwable $e) {
-            return $this->upstreamFailure(
-                $e,
-                $endpoint,
-                $method,
-                $nativeUrl,
-                $dispatchedUrl,
-                $translateReqMs,
-                (int)round((microtime(true) - $dispatchStart) * 1000)
-            );
-        }
-        $dispatchMs = (int)round((microtime(true) - $dispatchStart) * 1000);
 
-        // Assemble PSR-7 Response. Magento Curl::getHeaders() returns $_responseHeaders
-        // (verified against upstream lib/internal source). Header values are scalar
-        // strings (Magento overwrites on duplicate name); multi-value response headers
-        // like Set-Cookie are flattened by the transport, not by us.
-        $status = (int)$curl->getStatus();
-        $preTranslationBody = (string)$curl->getBody();
-        $response = $this->responseFactory->createResponse($status)
-            ->withBody($this->streamFactory->createStream($preTranslationBody));
-        $responseHeadersPre = $curl->getHeaders() ?: [];
-        foreach ($responseHeadersPre as $name => $value) {
-            $response = $response->withHeader($name, is_array($value) ? $value : (string)$value);
-        }
+            $response = $this->prepareInboundResponse($curl);
 
-        $translateRespStart = microtime(true);
-        try {
-            $response = $this->apiTranslator->translateResponse($response);
-        } catch (Throwable $e) {
-            return $this->apiTranslatorFailure(
-                'response',
-                $e,
-                $endpoint,
-                $method,
-                $nativeUrl,
-                $translateRespStart,
-                $dispatchedUrl,
-                $translateReqMs,
-                $dispatchMs
-            );
-        }
-        $translateRespMs = (int)round((microtime(true) - $translateRespStart) * 1000);
-
-        // Materialise body ONCE. Stream cast-to-string is destructive; do it here
-        // and operate on the string from this point forward.
-        $body = $response->getBody();
-        if ($body->isSeekable()) {
-            $body->rewind();
-        }
-        $bodyAfter = (string)$body;
-        $bodyTrim = trim($bodyAfter);
-
-        // Empty-body guard: translator emptied a non-empty wire body on a
-        // body-reading endpoint. Status 204 exempt; wire-empty pre-translation is OK.
-        $isTokenEndpoint = $this->isHeaderReadingEndpoint($endpoint);
-        if ($status !== 204
-            && !$isTokenEndpoint
-            && trim($preTranslationBody) !== ''
-            && $bodyTrim === ''
-        ) {
-            $e = new \RuntimeException('translator returned empty body for body-reading endpoint');
-            return $this->apiTranslatorFailure(
-                'response',
-                $e,
-                $endpoint,
-                $method,
-                $nativeUrl,
-                $translateRespStart,
-                $dispatchedUrl,
-                $translateReqMs,
-                $dispatchMs
-            );
-        }
-
-        // Token-header guard for header-reading endpoints.
-        if ($isTokenEndpoint) {
-            $missing = $this->missingTokenHeaders($response, $responseHeadersPre);
-            if ($missing !== []) {
-                $e = new \RuntimeException(
-                    'translator stripped required token response header(s): ' . implode(',', $missing)
-                );
-                return $this->apiTranslatorFailure(
-                    'response',
-                    $e,
-                    $endpoint,
-                    $method,
-                    $nativeUrl,
-                    $translateRespStart,
-                    $dispatchedUrl,
-                    $translateReqMs,
-                    $dispatchMs
-                );
-            }
-        }
-
-        $finalStatus = (int)$response->getStatusCode();
-        $result = $this->buildResult($finalStatus, $bodyTrim, $response, $isTokenEndpoint, $method, $endpoint);
-
-        $this->correlationLog(
-            $endpoint,
-            $method,
-            $nativeUrl,
-            $dispatchedUrl,
-            $finalStatus,
-            $finalStatus >= 200 && $finalStatus < 300 ? 'ok' : 'two',
-            $translateReqMs,
-            $dispatchMs,
-            $translateRespMs
-        );
-
-        return $result;
-    }
-
-    /**
-     * Shape the Adapter's array return value from a (translated) PSR-7 Response.
-     * Throwable thrown inside is caught and converted to a 400 envelope at the
-     * boundary so callers see a consistent failure shape. The outer execute()
-     * still emits a correlationLog line after this returns regardless of branch.
-     */
-    private function buildResult(
-        int $status,
-        string $bodyAfter,
-        ResponseInterface $response,
-        bool $isTokenEndpoint,
-        string $method,
-        string $endpoint
-    ): array {
-        try {
-            // 204 No Content is a legitimate success; the empty-body guard already
-            // exempts it. Include here so callers do not see a fabricated 400.
-            if (in_array($status, [200, 201, 202, 204], true)) {
+            $body = trim((string)$response->getBody());
+            $status = (int)$response->getStatusCode();
+            if (in_array($status, [200, 201, 202])) {
                 $result = [];
-                if ($bodyAfter === '' || $bodyAfter === '""') {
-                    if ($isTokenEndpoint) {
-                        $result = $this->responseHeadersAsLowercaseArray($response);
+                if ((!$body || $body === '""')) {
+                    if (in_array($endpoint, [
+                            SoleTraderInterface::DELEGATION_TOKEN_ENDPOINT,
+                            SoleTraderInterface::AUTOFILL_TOKEN_ENDPOINT])) {
+                        foreach ($response->getHeaders() as $key => $_) {
+                            $line = $response->getHeaderLine($key);
+                            $result[$key] = $line;
+                            $result[strtolower($key)] = $line;
+                        }
                     }
                 } else {
-                    $decoded = json_decode($bodyAfter, true);
-                    $result = is_array($decoded) ? $decoded : [];
+                    $result = json_decode($body, true);
                 }
                 $this->logRepository->addDebugLog(
                     sprintf('API response %s %s (status: %s)', $method, $endpoint, $status),
                     $result
                 );
                 return $result;
+            } else {
+                if ($body) {
+                    $result = json_decode($body, true) ?: [];
+                    $result['http_status'] = $status;
+                    $this->logRepository->addDebugLog(
+                        sprintf('API response %s %s (status: %s)', $method, $endpoint, $status),
+                        $result
+                    );
+                    return $result;
+                } else {
+                    $this->logRepository->addDebugLog(
+                        sprintf('API response %s %s (status: %s)', $method, $endpoint, $status),
+                        'Invalid API response.'
+                    );
+                    throw new LocalizedException(
+                        __('Invalid API response from %1.', $this->brandRegistry->getProductName())
+                    );
+                }
             }
-
-            if ($bodyAfter !== '') {
-                // Defensive: bare-scalar JSON responses (e.g. body == "0", "false",
-                // "\"err\"") decode to non-array values. The legacy `?: []` pattern
-                // would have kept them and then fatal on offset assignment below.
-                $decoded = json_decode($bodyAfter, true);
-                $result = is_array($decoded) ? $decoded : [];
-                $result['http_status'] = $status;
-                $this->logRepository->addDebugLog(
-                    sprintf('API response %s %s (status: %s)', $method, $endpoint, $status),
-                    $result
-                );
-                return $result;
-            }
-
-            $this->logRepository->addDebugLog(
-                sprintf('API response %s %s (status: %s)', $method, $endpoint, $status),
-                'Invalid API response.'
+        } catch (TranslatorFailureException $e) {
+            $this->logRepository->addErrorLog(
+                '[api-translator-failure]',
+                ['endpoint' => $endpoint, 'method' => $method, 'message' => $e->getMessage()]
             );
-            throw new LocalizedException(
-                __('Invalid API response from %1.', $this->brandRegistry->getProductName())
-            );
+            return [
+                'error_code' => 502,
+                'http_status' => 502,
+                'error_source' => 'api_translator',
+                'error_message' => 'Translator failure',
+            ];
         } catch (Throwable $exception) {
             return [
                 'error_code' => 400,
-                'error_source' => 'two',
                 'error_message' => $exception->getMessage(),
             ];
         }
     }
 
     /**
-     * Visible for unit-testing the restoration path without faking the whole
-     * execute() pipeline. Kept protected (not private) for that reason; do not
-     * downgrade visibility without also rewriting the §11.8 unit test.
+     * Build a PSR-7 Request with auth + content headers, hand it to the brand
+     * api-translator, and return the (possibly rewritten) Request.
+     *
+     * @throws TranslatorFailureException
      */
-    protected function restorePreservedHeaders(
-        RequestInterface $request,
-        RequestInterface $preTranslation,
-        string $endpoint
+    private function prepareOutboundRequest(
+        string $url,
+        string $method,
+        array $payload,
+        ?int $storeId
     ): RequestInterface {
-        foreach (ApiTranslatorInterface::PRESERVE_HEADERS as $name) {
-            if ($preTranslation->hasHeader($name) && !$request->hasHeader($name)) {
-                $request = $request->withHeader($name, $preTranslation->getHeaderLine($name));
-                $this->logRepository->addDebugLog(
-                    sprintf('[api-translator] restored stripped header endpoint=%s header=%s', $endpoint, $name),
-                    null
-                );
-            }
+        $body = ($method === 'POST' || $method === 'PUT')
+            ? (empty($payload) ? '' : (string)json_encode($payload))
+            : '';
+        $request = $this->requestFactory->createRequest($method, $url)
+            ->withHeader('Content-Type', 'application/json')
+            ->withHeader('X-API-Key', $this->configRepository->getApiKey($storeId))
+            ->withBody($this->streamFactory->createStream($body));
+        try {
+            return $this->apiTranslator->translateRequest($request);
+        } catch (Throwable $e) {
+            throw new TranslatorFailureException('translateRequest', $e);
         }
-        foreach ($preTranslation->getHeaders() as $name => $_) {
-            foreach (ApiTranslatorInterface::PRESERVE_HEADER_PREFIXES as $prefix) {
-                if (stripos($name, $prefix) === 0 && !$request->hasHeader($name)) {
-                    $request = $request->withHeader($name, $preTranslation->getHeaderLine($name));
-                    $this->logRepository->addDebugLog(
-                        sprintf('[api-translator] restored stripped header endpoint=%s header=%s', $endpoint, $name),
-                        null
-                    );
-                }
-            }
-        }
-        return $request;
-    }
-
-    private function isHeaderReadingEndpoint(string $endpoint): bool
-    {
-        return in_array(
-            $endpoint,
-            [
-                SoleTraderInterface::DELEGATION_TOKEN_ENDPOINT,
-                SoleTraderInterface::AUTOFILL_TOKEN_ENDPOINT,
-            ],
-            true
-        );
     }
 
     /**
-     * Token-endpoint legacy shape: callers index by lowercase header name.
+     * Unpack a (translated) PSR-7 Request onto a fresh Curl client.
      */
-    private function responseHeadersAsLowercaseArray(ResponseInterface $response): array
+    private function unpackToCurl(RequestInterface $request, string $method): Curl
     {
-        $out = [];
-        foreach ($response->getHeaders() as $name => $_) {
-            $out[strtolower((string)$name)] = $response->getHeaderLine($name);
+        $curl = $this->curlFactory->create();
+        // Host is auto-populated by nyholm from the URI and would diverge from
+        // the dispatched URL if the translator did withUri(); let libcurl derive.
+        foreach ($request->getHeaders() as $name => $_) {
+            if (strcasecmp($name, 'Host') === 0) {
+                continue;
+            }
+            $curl->addHeader($name, $request->getHeaderLine($name));
         }
-        return $out;
+        $curl->setOption(CURLOPT_RETURNTRANSFER, true);
+        $curl->setOption(CURLOPT_SSL_VERIFYHOST, 0);
+        $curl->setOption(CURLOPT_SSL_VERIFYPEER, 0);
+        $curl->setOption(CURLOPT_TIMEOUT, 60);
+        if ($method === 'POST' || $method === 'PUT') {
+            $reqBody = $request->getBody();
+            if ($reqBody->isSeekable()) {
+                $reqBody->rewind();
+            }
+            $curl->addHeader('Content-Length', (string)strlen((string)$reqBody));
+        }
+        return $curl;
     }
 
     /**
-     * Names from TOKEN_RESPONSE_HEADERS present in pre-translation Curl headers
-     * but absent from post-translation PSR-7 Response.
+     * Wrap the dispatched Curl response in PSR-7 and hand it to the brand
+     * api-translator. Returns the (possibly rewritten) Response.
+     *
+     * @throws TranslatorFailureException
      */
-    private function missingTokenHeaders(ResponseInterface $response, array $preHeaders): array
+    private function prepareInboundResponse(Curl $curl): ResponseInterface
     {
-        $preLower = [];
-        foreach ($preHeaders as $name => $_) {
-            $preLower[strtolower((string)$name)] = true;
+        $response = $this->responseFactory->createResponse((int)$curl->getStatus())
+            ->withBody($this->streamFactory->createStream((string)$curl->getBody()));
+        foreach (($curl->getHeaders() ?: []) as $name => $value) {
+            $response = $response->withHeader($name, is_array($value) ? $value : (string)$value);
         }
-        $missing = [];
-        foreach (ApiTranslatorInterface::TOKEN_RESPONSE_HEADERS as $required) {
-            $needle = strtolower($required);
-            if (!isset($preLower[$needle])) {
-                continue; // upstream didn't send it; not the translator's fault
-            }
-            if (!$response->hasHeader($required)) {
-                $missing[] = $required;
-            }
-        }
-        return $missing;
-    }
-
-    /**
-     * FIXME: split into translatorRequestFailure + translatorResponseFailure once
-     * the API stabilises. The shared body multiplexes two distinct call shapes via
-     * the `$phase` discriminator; works correctly today but is fragile to refactor.
-     */
-    private function translatorFailure(
-        string $phase,
-        Throwable $e,
-        string $endpoint,
-        string $method,
-        string $nativeUrl,
-        float $phaseStart,
-        string $dispatchedUrl = '',
-        int $translateReqMs = 0,
-        int $dispatchMs = 0
-    ): array {
-        $translateRespMs = $phase === 'response'
-            ? (int)round((microtime(true) - $phaseStart) * 1000)
-            : 0;
-        if ($phase === 'request') {
-            $translateReqMs = (int)round((microtime(true) - $phaseStart) * 1000);
-        }
-        // JSON_INVALID_UTF8_SUBSTITUTE: curl errors can embed raw socket bytes;
-        // without it json_encode returns false and the message becomes literally
-        // "false" in the log, hiding the real failure during incident triage.
-        $msgEncoded = json_encode($e->getMessage(), JSON_INVALID_UTF8_SUBSTITUTE);
-        if ($msgEncoded === false) {
-            $msgEncoded = '"<unencodable>"';
-        }
-        // Translator failures are operator-actionable: route to the error channel,
-        // not the debug channel, so on-call alerts watching TwoError fire.
-        $this->logRepository->addErrorLog(
-            sprintf(
-                '[api-translator-failure] phase=%s class=%s exception=%s method=%s endpoint=%s native_url=%s message=%s',
-                $phase,
-                get_class($this->apiTranslator),
-                get_class($e),
-                $method,
-                $endpoint,
-                $nativeUrl,
-                $msgEncoded
-            ),
-            null
-        );
-        $this->correlationLog(
-            $endpoint,
-            $method,
-            $nativeUrl,
-            $dispatchedUrl,
-            0,
-            'translator',
-            $translateReqMs,
-            $dispatchMs,
-            $translateRespMs
-        );
-        return [
-            'error_code' => 502,
-            'http_status' => 502,
-            'error_source' => 'api_translator',
-            'error_message' => 'Translator failure',
-        ];
-    }
-
-    private function upstreamFailure(
-        Throwable $e,
-        string $endpoint,
-        string $method,
-        string $nativeUrl,
-        string $dispatchedUrl,
-        int $translateReqMs,
-        int $dispatchMs
-    ): array {
-        $this->correlationLog(
-            $endpoint,
-            $method,
-            $nativeUrl,
-            $dispatchedUrl,
-            0,
-            'two',
-            $translateReqMs,
-            $dispatchMs,
-            0
-        );
-        return [
-            'error_code' => 400,
-            'error_source' => 'two',
-            'error_message' => $e->getMessage(),
-        ];
-    }
-
-    private function correlationLog(
-        string $endpoint,
-        string $method,
-        string $nativeUrl,
-        string $dispatchedUrl,
-        int $status,
-        string $errorSource,
-        int $translateReqMs,
-        int $dispatchMs,
-        int $translateRespMs
-    ): void {
-        $line = sprintf(
-            '[two.api] method=%s endpoint=%s native_url=%s dispatched_url=%s api_translator=%s status=%d '
-            . 'error_source=%s translate_req_ms=%d dispatch_ms=%d translate_resp_ms=%d',
-            $method,
-            $endpoint,
-            $nativeUrl,
-            $dispatchedUrl,
-            get_class($this->apiTranslator),
-            $status,
-            $errorSource,
-            $translateReqMs,
-            $dispatchMs,
-            $translateRespMs
-        );
-        $warnTranslator = ($translateReqMs > $this->apiTranslatorWarnMs)
-            || ($translateRespMs > $this->apiTranslatorWarnMs);
-        if ($warnTranslator) {
-            // Slow translator → error channel so threshold-based alerts can fire.
-            $this->logRepository->addErrorLog('[WARN] ' . $line, null);
-        } else {
-            $this->logRepository->addDebugLog($line, null);
+        try {
+            return $this->apiTranslator->translateResponse($response);
+        } catch (Throwable $e) {
+            throw new TranslatorFailureException('translateResponse', $e);
         }
     }
 }

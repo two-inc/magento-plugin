@@ -110,8 +110,6 @@ class SurchargeCalculator
 
         // `http_status` may be set on success too (observability convenience);
         // gate on the actual 4xx/5xx range plus presence of `error_code`.
-        // Translator-failure envelopes have error_code=502 and fall in here too —
-        // the existing path's LocalizedException is the right surface for both.
         $httpStatus = $response['http_status'] ?? null;
         if (($httpStatus !== null && $httpStatus >= 400) || isset($response['error_code'])) {
             $reason = $response['error_message'] ?? $response['error_details'] ?? 'Unknown error';
