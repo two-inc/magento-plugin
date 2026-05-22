@@ -281,9 +281,11 @@ class Two extends AbstractMethod
      * instance carries the persisted term, strip any trailing "- N days"
      * suffix from the configured title and append the real selected term.
      *
-     * Falls through to the parent (merchant-configured) title when no info
-     * instance is bound (admin grid, emails outside an order context) or
-     * when the order pre-dates the terms-in-additional_information payload.
+     * DataAssignObserver stores the buyer's chosen term under the
+     * `selectedTerm` key as a scalar (days). Falls through to the parent
+     * (merchant-configured) title when no info instance is bound (admin
+     * grid, emails outside an order context) or when the order pre-dates
+     * the selectedTerm payload.
      */
     public function getTitle()
     {
@@ -293,11 +295,10 @@ class Two extends AbstractMethod
         } catch (\Exception $e) {
             return $title;
         }
-        $terms = $info->getAdditionalInformation('terms');
-        if (!is_array($terms) || empty($terms['duration_days'])) {
+        $days = (int)$info->getAdditionalInformation('selectedTerm');
+        if ($days <= 0) {
             return $title;
         }
-        $days = (int)$terms['duration_days'];
         $base = preg_replace('/\s*-\s*\d+\s*days?\s*$/i', '', (string)$title);
         return sprintf('%s - %d days', $base, $days);
     }

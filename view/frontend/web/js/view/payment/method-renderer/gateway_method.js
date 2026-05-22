@@ -149,12 +149,18 @@ define([
             surchargeModel.selectTerm(days);
         },
         showErrorMessage: function (message, duration) {
-            messageList.addErrorMessage({ message: message });
+            // Route through the payment block's own messageContainer (same
+            // surface as the addSuccessMessage calls elsewhere in this file)
+            // rather than a bare `messageList` symbol — that symbol was never
+            // imported, so showErrorMessage threw ReferenceError on every
+            // invocation and the terms-not-accepted error never rendered.
+            const container = this.messageContainer;
+            container.addErrorMessage({ message: message });
 
             if (duration) {
                 setTimeout(function () {
-                    messageList.messages.remove(function (item) {
-                        return item.message === message;
+                    container.errorMessages.remove(function (item) {
+                        return item === message;
                     });
                 }, duration);
             }
