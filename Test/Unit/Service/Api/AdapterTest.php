@@ -4,10 +4,16 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Service\Api;
 
 use Magento\Framework\HTTP\Client\Curl;
+use Magento\Framework\HTTP\Client\CurlFactory;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\ApiCall;
+use Two\Gateway\Api\ApiResult;
+use Two\Gateway\Api\ApiTranslatorInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Model\ApiTranslator\NullApiTranslator;
+use Two\Gateway\Model\ApiTranslator\PassthroughTrait;
 use Two\Gateway\Service\Api\Adapter;
 
 class AdapterTest extends TestCase
@@ -39,11 +45,15 @@ class AdapterTest extends TestCase
         $this->configRepository->method('addVersionDataInURL')->willReturnArgument(0);
         $this->configRepository->method('getApiKey')->willReturn('test-key');
 
+        $curlFactory = $this->createMock(CurlFactory::class);
+        $curlFactory->method('create')->willReturn($this->curl);
+
         $this->adapter = new Adapter(
             $this->configRepository,
             $this->brandRegistry,
-            $this->curl,
-            $this->logRepository
+            $curlFactory,
+            $this->logRepository,
+            new NullApiTranslator()
         );
     }
 
@@ -165,16 +175,83 @@ class AdapterTest extends TestCase
         $this->configRepository->method('getCheckoutApiUrl')
             ->willThrowException(new \RuntimeException('Connection failed'));
 
+        $curlFactory = $this->createMock(CurlFactory::class);
+        $curlFactory->method('create')->willReturn($this->curl);
+
         $adapter = new Adapter(
             $this->configRepository,
             $this->brandRegistry,
-            $this->curl,
-            $this->logRepository
+            $curlFactory,
+            $this->logRepository,
+            new NullApiTranslator()
         );
 
         $result = $adapter->execute('/v1/order');
 
         $this->assertEquals(400, $result['error_code']);
         $this->assertEquals('Connection failed', $result['error_message']);
+    }
+
+    // ── ApiTranslator hook ──────────────────────────────────────────────
+
+    public function testTranslatorRewritesUrl(): void
+    {
+        $this->curl->method('getStatus')->willReturn(200);
+        $this->curl->method('getBody')->willReturn('{"ok":true}');
+
+        $capturedUrl = null;
+        $this->curl->method('post')->willReturnCallback(function ($u) use (&$capturedUrl) {
+            $capturedUrl = $u;
+        });
+
+        $translator = new class implements ApiTranslatorInterface {
+            use PassthroughTrait;
+            public function translateRequest(ApiCall $call): ApiCall
+            {
+                $call->url = str_replace('/v1/', '/brand-proxy/v1/', $call->url);
+                return $call;
+            }
+        };
+
+        $curlFactory = $this->createMock(CurlFactory::class);
+        $curlFactory->method('create')->willReturn($this->curl);
+
+        $adapter = new Adapter(
+            $this->configRepository,
+            $this->brandRegistry,
+            $curlFactory,
+            $this->logRepository,
+            $translator
+        );
+        $adapter->execute('/v1/order', ['x' => 1]);
+
+        $this->assertSame('https://api.two.inc/brand-proxy/v1/order', $capturedUrl);
+    }
+
+    public function testTranslatorThrowReturns502Envelope(): void
+    {
+        $translator = new class implements ApiTranslatorInterface {
+            use PassthroughTrait;
+            public function translateRequest(ApiCall $call): ApiCall
+            {
+                throw new \RuntimeException('boom');
+            }
+        };
+
+        $curlFactory = $this->createMock(CurlFactory::class);
+        $curlFactory->method('create')->willReturn($this->curl);
+
+        $adapter = new Adapter(
+            $this->configRepository,
+            $this->brandRegistry,
+            $curlFactory,
+            $this->logRepository,
+            $translator
+        );
+        $result = $adapter->execute('/v1/order');
+
+        $this->assertSame(502, $result['error_code']);
+        $this->assertSame('api_translator', $result['error_source']);
+        $this->assertSame('Translator failure', $result['error_message']);
     }
 }
