@@ -9,7 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
-use Two\Gateway\Model\Translator\NullTranslator;
+use Two\Gateway\Model\ApiTranslator\NullApiTranslator;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Test\E2E\Http\RealCurl;
 
@@ -49,7 +49,7 @@ class ApiAdapterTest extends TestCase
             $brand,
             $factory,
             $log,
-            new NullTranslator(),
+            new NullApiTranslator(),
             $psr17,
             $psr17,
             $psr17
@@ -85,7 +85,7 @@ class ApiAdapterTest extends TestCase
             $brand,
             $factory,
             $log,
-            new NullTranslator(),
+            new NullApiTranslator(),
             $psr17,
             $psr17,
             $psr17

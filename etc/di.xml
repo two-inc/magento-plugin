@@ -23,8 +23,8 @@
     <preference for="Two\Gateway\Api\BrandRegistryInterface"
                 type="Two\Gateway\Brand\TwoBrand"/>
     <!-- Default outbound-API translator: passthrough. Brand overlays rebind. -->
-    <preference for="Two\Gateway\Api\TranslatorInterface"
-                type="Two\Gateway\Model\Translator\NullTranslator"/>
+    <preference for="Two\Gateway\Api\ApiTranslatorInterface"
+                type="Two\Gateway\Model\ApiTranslator\NullApiTranslator"/>
 
     <!-- PSR-17 factories: injected per-type to Adapter rather than via global
          <preference>. Magento <preference> is process-global and last-loaded-wins;

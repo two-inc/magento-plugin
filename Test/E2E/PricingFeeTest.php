@@ -3,9 +3,13 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\E2E\Pricing;
 
+use Magento\Framework\HTTP\Client\CurlFactory;
+use Nyholm\Psr7\Factory\Psr17Factory;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Model\ApiTranslator\NullApiTranslator;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Test\E2E\Http\RealCurl;
 
@@ -46,7 +50,7 @@ class PricingFeeTest extends TestCase
             $brand,
             $factory,
             $log,
-            new NullTranslator(),
+            new NullApiTranslator(),
             $psr17,
             $psr17,
             $psr17

@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Service\Order;
 
 use PHPUnit\Framework\TestCase;
-use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -36,10 +35,8 @@ class SurchargeCalculatorTest extends TestCase
 
         $log = $this->createMock(LogRepository::class);
         $this->ratesProvider = $this->createMock(CurrencyRatesProviderInterface::class);
-        $brand = $this->createMock(BrandRegistryInterface::class);
-        $brand->method('getProductName')->willReturn('Two');
 
-        $this->calculator = new SurchargeCalculator($this->config, $this->adapter, $log, $this->ratesProvider, $brand);
+        $this->calculator = new SurchargeCalculator($this->config, $this->adapter, $log, $this->ratesProvider);
     }
 
     private function stubCommonConfig(string $type, bool $differential = false): void

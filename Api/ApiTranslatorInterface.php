@@ -13,15 +13,19 @@ use Psr\Http\Message\ResponseInterface;
 /**
  * Outbound HTTP translator between Two-native protocol and a brand-proxy protocol.
  *
- * Default binding is {@see \Two\Gateway\Model\Translator\NullTranslator} (passthrough).
- * A brand overlay module swaps the binding via di.xml <preference>. See docs/proxy-translator-design.md.
+ * Named `ApiTranslator` (not bare `Translator`) to avoid confusion with
+ * Magento's i18n translator infrastructure.
+ *
+ * Default binding is {@see \Two\Gateway\Model\ApiTranslator\NullApiTranslator}
+ * (passthrough). A brand overlay module swaps the binding via di.xml <preference>.
+ * See docs/proxy-translator-design.md.
  *
  * Implementations SHOULD `use PassthroughTrait` to remain forward-compatible with
- * minor-version additions to this interface. Direct `implements TranslatorInterface`
+ * minor-version additions to this interface. Direct `implements ApiTranslatorInterface`
  * without the trait is unsupported: new methods added in minor versions will cause
  * a fatal "Class contains abstract method" error at class-load.
  */
-interface TranslatorInterface
+interface ApiTranslatorInterface
 {
     /** Headers whose name MUST survive translation (value MAY be rewritten). */
     public const PRESERVE_HEADERS = ['X-Request-ID', 'X-Idempotency-Key'];
@@ -50,7 +54,7 @@ interface TranslatorInterface
      *     the pre-translation Request and logs at WARN.
      *   - MUST NOT set Content-Length. Adapter strips and recomputes it.
      *   - SHOULD rewrite status via withStatus() rather than throwing for control flow.
-     *   - Thrown \Throwable → Adapter returns 502 envelope with error_source='translator'.
+     *   - Thrown \Throwable → Adapter returns 502 envelope with error_source='api_translator'.
      *
      * Security: the merchant API key arrives on the pre-translation Request as the
      * X-API-Key header. Translators MUST NOT log, persist, or otherwise exfiltrate
@@ -65,14 +69,14 @@ interface TranslatorInterface
      *
      * Contract:
      *   - MUST return a non-null Response.
-     *   - For header-reading operations, MUST preserve every entry in
+     *   - For header-reading endpoints, MUST preserve every entry in
      *     TOKEN_RESPONSE_HEADERS by name. Missing any → translator failure (502).
-     *   - MUST NOT return an empty body for body-reading operations except status 204
+     *   - MUST NOT return an empty body for body-reading endpoints except status 204
      *     (empty := trim((string)$body) === '').
-     *   - MUST normalise body shape back to Two-native JSON for body-reading operations.
+     *   - MUST normalise body shape back to Two-native JSON for body-reading endpoints.
      *   - Response body, if rewritten via withBody(), MUST be a seekable stream
      *     (Adapter rewinds and casts to string for downstream parsing).
-     *   - Thrown \Throwable → Adapter returns 502 envelope with error_source='translator'.
+     *   - Thrown \Throwable → Adapter returns 502 envelope with error_source='api_translator'.
      */
     public function translateResponse(ResponseInterface $response): ResponseInterface;
 }

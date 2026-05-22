@@ -12,10 +12,10 @@ use Psr\Http\Message\ResponseInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
-use Two\Gateway\Api\TranslatorInterface;
+use Two\Gateway\Api\ApiTranslatorInterface;
 use Two\Gateway\Api\Webapi\SoleTraderInterface;
-use Two\Gateway\Model\Translator\NullTranslator;
-use Two\Gateway\Model\Translator\PassthroughTrait;
+use Two\Gateway\Model\ApiTranslator\NullApiTranslator;
+use Two\Gateway\Model\ApiTranslator\PassthroughTrait;
 use Two\Gateway\Service\Api\Adapter;
 
 class AdapterTest extends TestCase
@@ -61,7 +61,7 @@ class AdapterTest extends TestCase
         $this->psr17 = new Psr17Factory();
     }
 
-    private function adapter(TranslatorInterface $translator): Adapter
+    private function adapter(ApiTranslatorInterface $translator): Adapter
     {
         return new Adapter(
             $this->configRepository,
@@ -75,7 +75,7 @@ class AdapterTest extends TestCase
         );
     }
 
-    public function testNullTranslatorPassthroughBaseline(): void
+    public function testNullApiTranslatorPassthroughBaseline(): void
     {
         $this->curl->method('getStatus')->willReturn(200);
         $this->curl->method('getBody')->willReturn('{"id":"abc"}');
@@ -90,7 +90,7 @@ class AdapterTest extends TestCase
             $captured['body'] = $b;
         });
 
-        $result = $this->adapter(new NullTranslator())
+        $result = $this->adapter(new NullApiTranslator())
             ->execute('/v1/order', ['amount' => 100]);
 
         $this->assertSame(['id' => 'abc'], $result);
@@ -112,7 +112,7 @@ class AdapterTest extends TestCase
             $captured['url'] = $u;
         });
 
-        $translator = new class implements TranslatorInterface {
+        $translator = new class implements ApiTranslatorInterface {
             use PassthroughTrait;
             public function translateRequest(RequestInterface $r): RequestInterface
             {
@@ -134,7 +134,7 @@ class AdapterTest extends TestCase
 
     public function testTranslatorRequestRuntimeExceptionReturns502(): void
     {
-        $translator = new class implements TranslatorInterface {
+        $translator = new class implements ApiTranslatorInterface {
             use PassthroughTrait;
             public function translateRequest(RequestInterface $r): RequestInterface
             {
@@ -145,13 +145,13 @@ class AdapterTest extends TestCase
         $result = $this->adapter($translator)->execute('/v1/order');
 
         $this->assertSame(502, $result['error_code']);
-        $this->assertSame('translator', $result['error_source']);
+        $this->assertSame('api_translator', $result['error_source']);
         $this->assertSame('Translator failure', $result['error_message']);
     }
 
     public function testTranslatorRequestTypeErrorReturns502(): void
     {
-        $translator = new class implements TranslatorInterface {
+        $translator = new class implements ApiTranslatorInterface {
             use PassthroughTrait;
             public function translateRequest(RequestInterface $r): RequestInterface
             {
@@ -163,7 +163,7 @@ class AdapterTest extends TestCase
         $result = $this->adapter($translator)->execute('/v1/order');
 
         $this->assertSame(502, $result['error_code']);
-        $this->assertSame('translator', $result['error_source']);
+        $this->assertSame('api_translator', $result['error_source']);
     }
 
     public function testContentLengthRecomputedAfterBodyRewrite(): void
@@ -180,7 +180,7 @@ class AdapterTest extends TestCase
         });
 
         $longBody = str_repeat('a', 5000);
-        $translator = new class($longBody) implements TranslatorInterface {
+        $translator = new class($longBody) implements ApiTranslatorInterface {
             use PassthroughTrait;
             private $body;
             public function __construct(string $body) { $this->body = $body; }
@@ -202,7 +202,7 @@ class AdapterTest extends TestCase
         $this->curl->method('getHeaders')->willReturn([]);
 
         $sawInTranslator = null;
-        $translator = new class($sawInTranslator) implements TranslatorInterface {
+        $translator = new class($sawInTranslator) implements ApiTranslatorInterface {
             use PassthroughTrait;
             public $saw;
             public function __construct(&$saw) { $this->saw = &$saw; }
@@ -237,7 +237,7 @@ class AdapterTest extends TestCase
             $this->brandRegistry,
             $this->curlFactory,
             $this->logRepository,
-            new NullTranslator(),
+            new NullApiTranslator(),
             $this->psr17,
             $this->psr17,
             $this->psr17
@@ -267,7 +267,7 @@ class AdapterTest extends TestCase
             'two-delegated-authority-token' => 'TKN',
         ]);
 
-        $translator = new class implements TranslatorInterface {
+        $translator = new class implements ApiTranslatorInterface {
             use PassthroughTrait;
             public function translateResponse(ResponseInterface $r): ResponseInterface
             {
@@ -279,7 +279,7 @@ class AdapterTest extends TestCase
             ->execute(SoleTraderInterface::DELEGATION_TOKEN_ENDPOINT);
 
         $this->assertSame(502, $result['error_code']);
-        $this->assertSame('translator', $result['error_source']);
+        $this->assertSame('api_translator', $result['error_source']);
     }
 
     public function testTranslatorEmptyBodyReturns502(): void
@@ -288,7 +288,7 @@ class AdapterTest extends TestCase
         $this->curl->method('getBody')->willReturn('{"native":true}');
         $this->curl->method('getHeaders')->willReturn([]);
 
-        $emptier = new class implements TranslatorInterface {
+        $emptier = new class implements ApiTranslatorInterface {
             use PassthroughTrait;
             public function translateResponse(ResponseInterface $r): ResponseInterface
             {
@@ -299,7 +299,7 @@ class AdapterTest extends TestCase
         $result = $this->adapter($emptier)->execute('/v1/order');
 
         $this->assertSame(502, $result['error_code']);
-        $this->assertSame('translator', $result['error_source']);
+        $this->assertSame('api_translator', $result['error_source']);
     }
 
     public function testTranslatorEmptyObjectBodyIsSuccess(): void
@@ -308,7 +308,7 @@ class AdapterTest extends TestCase
         $this->curl->method('getBody')->willReturn('{"native":true}');
         $this->curl->method('getHeaders')->willReturn([]);
 
-        $remap = new class implements TranslatorInterface {
+        $remap = new class implements ApiTranslatorInterface {
             use PassthroughTrait;
             public function translateResponse(ResponseInterface $r): ResponseInterface
             {

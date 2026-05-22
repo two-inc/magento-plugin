@@ -8,7 +8,6 @@ declare(strict_types=1);
 namespace Two\Gateway\Service\Order;
 
 use Magento\Framework\Exception\LocalizedException;
-use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -56,21 +55,16 @@ class SurchargeCalculator
      */
     private $responseCache = [];
 
-    /** @var BrandRegistryInterface */
-    private $brandRegistry;
-
     public function __construct(
         ConfigRepository $configRepository,
         Adapter $apiAdapter,
         LogRepository $logRepository,
-        CurrencyRatesProviderInterface $ratesProvider,
-        BrandRegistryInterface $brandRegistry
+        CurrencyRatesProviderInterface $ratesProvider
     ) {
         $this->configRepository = $configRepository;
         $this->apiAdapter = $apiAdapter;
         $this->logRepository = $logRepository;
         $this->ratesProvider = $ratesProvider;
-        $this->brandRegistry = $brandRegistry;
     }
 
     /**
@@ -105,37 +99,19 @@ class SurchargeCalculator
 
         $buyerFeeShare = $this->buildBuyerFeeShare($surchargeType, $selectedTermDays, $orderCurrency, $storeId);
 
-        $response = $this->apiAdapter->execute(
-            '/v1/pricing/order/fee',
-            [
-                'buyer_country_code' => $buyerCountry,
-                'approved_on_recourse' => false,
-                'currency' => $orderCurrency,
-                'gross_amount' => $grossAmount,
-                'order_terms' => $this->buildOrderTerms($selectedTermDays, $storeId),
-                'buyer_fee_share' => $buyerFeeShare,
-            ],
-            'POST',
-            $storeId
-        );
-
-        // Translator-failure path is a glue bug we own; do NOT silently zero the
-        // surcharge or it will quietly undercharge merchants until someone reads
-        // the log. Hard-fail at the admin/UI seam so the failure is visible.
-        if (($response['error_source'] ?? null) === 'translator') {
-            $this->logRepository->addDebugLog('Pricing API translator failure', [
-                'error_code' => $response['error_code'] ?? null,
-            ]);
-            throw new LocalizedException(
-                __(
-                    '%1 payment is temporarily unavailable due to a configuration issue. Please contact support.',
-                    $this->brandRegistry->getProductName()
-                )
-            );
-        }
+        $response = $this->apiAdapter->execute('/v1/pricing/order/fee', [
+            'buyer_country_code' => $buyerCountry,
+            'approved_on_recourse' => false,
+            'currency' => $orderCurrency,
+            'gross_amount' => $grossAmount,
+            'order_terms' => $this->buildOrderTerms($selectedTermDays, $storeId),
+            'buyer_fee_share' => $buyerFeeShare,
+        ]);
 
         // `http_status` may be set on success too (observability convenience);
         // gate on the actual 4xx/5xx range plus presence of `error_code`.
+        // Translator-failure envelopes have error_code=502 and fall in here too —
+        // the existing path's LocalizedException is the right surface for both.
         $httpStatus = $response['http_status'] ?? null;
         if (($httpStatus !== null && $httpStatus >= 400) || isset($response['error_code'])) {
             $reason = $response['error_message'] ?? $response['error_details'] ?? 'Unknown error';
