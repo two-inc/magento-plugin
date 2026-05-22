@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Service\Order;
 
 use Magento\Framework\Exception\LocalizedException;
+use Two\Gateway\Api\Operation;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -99,14 +100,33 @@ class SurchargeCalculator
 
         $buyerFeeShare = $this->buildBuyerFeeShare($surchargeType, $selectedTermDays, $orderCurrency, $storeId);
 
-        $response = $this->apiAdapter->execute('/v1/pricing/order/fee', [
-            'buyer_country_code' => $buyerCountry,
-            'approved_on_recourse' => false,
-            'currency' => $orderCurrency,
-            'gross_amount' => $grossAmount,
-            'order_terms' => $this->buildOrderTerms($selectedTermDays, $storeId),
-            'buyer_fee_share' => $buyerFeeShare,
-        ]);
+        $response = $this->apiAdapter->execute(
+            '/v1/pricing/order/fee',
+            [
+                'buyer_country_code' => $buyerCountry,
+                'approved_on_recourse' => false,
+                'currency' => $orderCurrency,
+                'gross_amount' => $grossAmount,
+                'order_terms' => $this->buildOrderTerms($selectedTermDays, $storeId),
+                'buyer_fee_share' => $buyerFeeShare,
+            ],
+            'POST',
+            $storeId,
+            Operation::PRICE_ORDER_FEE
+        );
+
+        // Translator-failure path is a glue bug we own; do NOT silently zero the
+        // surcharge or it will quietly undercharge merchants until someone reads
+        // the log. Hard-fail at the admin/UI seam so the failure is visible.
+        if (($response['error_source'] ?? null) === 'translator') {
+            $this->logRepository->addDebugLog('Pricing API translator failure', [
+                'translator_class' => 'translator',
+                'error_code' => $response['error_code'] ?? null,
+            ]);
+            throw new LocalizedException(
+                __('Two payment is temporarily unavailable due to a configuration issue. Please contact support.')
+            );
+        }
 
         // `http_status` may be set on success too (observability convenience);
         // gate on the actual 4xx/5xx range plus presence of `error_code`.

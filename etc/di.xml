@@ -22,6 +22,9 @@
     <!-- Default brand binding. Overlay packages may rebind via their own DI preference. -->
     <preference for="Two\Gateway\Api\BrandRegistryInterface"
                 type="Two\Gateway\Brand\TwoBrand"/>
+    <!-- Default outbound-API translator: passthrough. Brand overlays rebind. -->
+    <preference for="Two\Gateway\Api\TranslatorInterface"
+                type="Two\Gateway\Model\Translator\NullTranslator"/>
 
     <type name="Two\Gateway\Logger\Handler">
         <arguments>

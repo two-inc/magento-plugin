@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Controller\Adminhtml\Config;
 
+use Two\Gateway\Api\Operation;
 use Magento\Backend\App\Action;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ResponseInterface;
@@ -101,7 +102,8 @@ class Fees extends Action
                 'net_terms' => array_values($terms),
             ],
             'POST',
-            $storeId
+            $storeId,
+            Operation::MERCHANT_RATES
         );
 
         $normalised = $this->normaliseRatesResponse($response);

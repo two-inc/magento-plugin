@@ -37,15 +37,21 @@ class PricingFeeTest extends TestCase
 
     private function fetchFee(int $durationDays, float $grossAmount = 1000.0, string $country = 'NO'): array
     {
-        $result = $this->adapter->execute('/v1/pricing/order/fee', [
-            'buyer_country_code' => $country,
-            'approved_on_recourse' => false,
-            'gross_amount' => $grossAmount,
-            'order_terms' => [
-                'type' => 'NET_TERMS',
-                'duration_days' => $durationDays,
+        $result = $this->adapter->execute(
+            '/v1/pricing/order/fee',
+            [
+                'buyer_country_code' => $country,
+                'approved_on_recourse' => false,
+                'gross_amount' => $grossAmount,
+                'order_terms' => [
+                    'type' => 'NET_TERMS',
+                    'duration_days' => $durationDays,
+                ],
             ],
-        ]);
+            'POST',
+            null,
+            Operation::PRICE_ORDER_FEE
+        );
 
         // The pricing endpoint may require elevated permissions not available
         // with a standard test API key. Skip rather than fail.
@@ -91,16 +97,22 @@ class PricingFeeTest extends TestCase
 
     public function testEndOfMonthTermsAccepted(): void
     {
-        $result = $this->adapter->execute('/v1/pricing/order/fee', [
-            'buyer_country_code' => 'NO',
-            'approved_on_recourse' => false,
-            'gross_amount' => 1000.0,
-            'order_terms' => [
-                'type' => 'NET_TERMS',
-                'duration_days' => 60,
-                'duration_days_calculated_from' => 'END_OF_MONTH',
+        $result = $this->adapter->execute(
+            '/v1/pricing/order/fee',
+            [
+                'buyer_country_code' => 'NO',
+                'approved_on_recourse' => false,
+                'gross_amount' => 1000.0,
+                'order_terms' => [
+                    'type' => 'NET_TERMS',
+                    'duration_days' => 60,
+                    'duration_days_calculated_from' => 'END_OF_MONTH',
+                ],
             ],
-        ]);
+            'POST',
+            null,
+            Operation::PRICE_ORDER_FEE
+        );
 
         if (($result['http_status'] ?? 0) === 401) {
             $this->markTestSkipped('API key does not have access to the pricing endpoint');

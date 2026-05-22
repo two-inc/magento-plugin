@@ -3,9 +3,15 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\E2E\Service\Api;
 
+use Magento\Framework\App\State;
+use Magento\Framework\HTTP\Client\CurlFactory;
+use Nyholm\Psr7\Factory\Psr17Factory;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Api\Operation;
+use Two\Gateway\Model\Translator\NullTranslator;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Test\E2E\Http\RealCurl;
 
@@ -30,13 +36,28 @@ class ApiAdapterTest extends TestCase
         $config->method('getApiKey')->willReturn($apiKey);
 
         $log = $this->createMock(LogRepository::class);
+        $brand = $this->createMock(BrandRegistryInterface::class);
+        $brand->method('getProductName')->willReturn('Two');
+        $state = $this->createMock(State::class);
+        $state->method('getMode')->willReturn('production');
 
-        $this->adapter = new Adapter($config, new RealCurl(), $log);
+        $factory = $this->createMock(CurlFactory::class);
+        $factory->method('create')->willReturnCallback(fn() => new RealCurl());
+
+        $this->adapter = new Adapter(
+            $config,
+            $brand,
+            $factory,
+            $log,
+            new NullTranslator(),
+            new Psr17Factory(),
+            $state
+        );
     }
 
     public function testApiKeyIsValid(): void
     {
-        $result = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
+        $result = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET', null, Operation::VERIFY_API_KEY);
 
         $this->assertIsArray($result);
         $this->assertArrayNotHasKey('error_code', $result);
@@ -52,16 +73,31 @@ class ApiAdapterTest extends TestCase
         $config->method('getApiKey')->willReturn('invalid-key');
 
         $log = $this->createMock(LogRepository::class);
+        $brand = $this->createMock(BrandRegistryInterface::class);
+        $brand->method('getProductName')->willReturn('Two');
+        $state = $this->createMock(State::class);
+        $state->method('getMode')->willReturn('production');
 
-        $adapter = new Adapter($config, new RealCurl(), $log);
-        $result = $adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
+        $factory = $this->createMock(CurlFactory::class);
+        $factory->method('create')->willReturnCallback(fn() => new RealCurl());
+
+        $adapter = new Adapter(
+            $config,
+            $brand,
+            $factory,
+            $log,
+            new NullTranslator(),
+            new Psr17Factory(),
+            $state
+        );
+        $result = $adapter->execute('/v1/merchant/verify_api_key', [], 'GET', null, Operation::VERIFY_API_KEY);
 
         $this->assertEquals(401, $result['http_status']);
     }
 
     public function testBadOrderPayloadReturnsStructuredError(): void
     {
-        $result = $this->adapter->execute('/v1/order', []);
+        $result = $this->adapter->execute('/v1/order', [], 'POST', null, Operation::CREATE_ORDER);
 
         $this->assertArrayHasKey('http_status', $result);
         $this->assertGreaterThanOrEqual(400, $result['http_status']);

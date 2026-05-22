@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Block\Adminhtml\Order;
 
+use Two\Gateway\Api\Operation;
 use Magento\Sales\Block\Adminhtml\Order\View as OrderView;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
@@ -70,7 +71,9 @@ class View extends OrderView
         $response = $this->apiAdapter->execute(
             "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
             [],
-            'GET'
+            'GET',
+            null,
+            Operation::GET_FULFILLMENTS
         );
         $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
         if ($error) {
