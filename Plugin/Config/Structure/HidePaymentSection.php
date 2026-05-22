@@ -13,14 +13,14 @@ use Magento\Framework\App\Config\ScopeConfigInterface;
 use Two\Gateway\Api\BrandOverlayRegistryInterface;
 
 /**
- * Hide the `two_payment` admin config section when:
+ * Hide every Two_Gateway admin config section (`two_general` and
+ * `two_payment`) when:
  *   - At least one brand overlay (e.g. ABN_Gateway) is registered, AND
  *   - `payment/two_payment/hide_when_overlay_installed` resolves to truthy.
  *
  * Both conditions default to true on overlay-installed merchants
  * (registry populated by overlay DI, config default = 1). Merchants
- * who want both parent-brand and overlay-brand payment methods
- * configurable in admin can opt out with:
+ * who want the parent-brand admin surfaces back can opt out with:
  *
  *     bin/magento config:set payment/two_payment/hide_when_overlay_installed 0
  *     bin/magento cache:flush
@@ -31,11 +31,17 @@ use Two\Gateway\Api\BrandOverlayRegistryInterface;
  * is the authoritative element source. Returning null does not
  * delete any persisted CCD value; the overlay's `etc/config.xml`
  * still defaults `payment/two_payment/active = 0` as belt-and-braces.
+ *
+ * `two_general` is hidden because it carries Two-only fields
+ * (API key, environment, debug toggle) that point at
+ * `payment/two_payment/*` config paths — irrelevant to an overlay
+ * merchant who configures their own brand under a separate admin
+ * section.
  */
 class HidePaymentSection
 {
     private const HIDE_FLAG_PATH = 'payment/two_payment/hide_when_overlay_installed';
-    private const TARGET_SECTION = 'two_payment';
+    private const TARGET_SECTIONS = ['two_general', 'two_payment'];
 
     public function __construct(
         private readonly BrandOverlayRegistryInterface $overlayRegistry,
@@ -62,8 +68,12 @@ class HidePaymentSection
 
     private function matchesTarget(string $path): bool
     {
-        return $path === self::TARGET_SECTION
-            || str_starts_with($path, self::TARGET_SECTION . '/');
+        foreach (self::TARGET_SECTIONS as $section) {
+            if ($path === $section || str_starts_with($path, $section . '/')) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function shouldHide(): bool

@@ -54,7 +54,7 @@ class HidePaymentSectionTest extends TestCase
         );
     }
 
-    public function testHidesSectionWhenOverlayAndFlagBothSet(): void
+    public function testHidesTwoPaymentSectionWhenOverlayAndFlagBothSet(): void
     {
         $plugin = $this->plugin(true, true);
         $this->assertNull(
@@ -62,7 +62,15 @@ class HidePaymentSectionTest extends TestCase
         );
     }
 
-    public function testHidesNestedGroupUnderTargetSection(): void
+    public function testHidesTwoGeneralSectionWhenOverlayAndFlagBothSet(): void
+    {
+        $plugin = $this->plugin(true, true);
+        $this->assertNull(
+            $plugin->afterGetElement($this->createMock(Structure::class), new \stdClass(), 'two_general')
+        );
+    }
+
+    public function testHidesNestedGroupUnderTwoPayment(): void
     {
         $plugin = $this->plugin(true, true);
         $this->assertNull(
@@ -70,6 +78,18 @@ class HidePaymentSectionTest extends TestCase
                 $this->createMock(Structure::class),
                 new \stdClass(),
                 'two_payment/payment_method'
+            )
+        );
+    }
+
+    public function testHidesNestedGroupUnderTwoGeneral(): void
+    {
+        $plugin = $this->plugin(true, true);
+        $this->assertNull(
+            $plugin->afterGetElement(
+                $this->createMock(Structure::class),
+                new \stdClass(),
+                'two_general/general'
             )
         );
     }
