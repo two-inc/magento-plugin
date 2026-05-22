@@ -121,7 +121,7 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
-    public function isDebugMode(int $storeId = null, ?string $scope = null): bool
+    public function isDebugMode(?int $storeId = null, ?string $scope = null): bool
     {
         $scope = $scope ?? ScopeInterface::SCOPE_STORE;
         return $this->isSetFlag(
