@@ -3,9 +3,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Service\Order;
 
-use Magento\Framework\HTTP\Client\Curl;
 use PHPUnit\Framework\TestCase;
-use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -31,12 +29,7 @@ class SurchargeCalculatorTest extends TestCase
     {
         $this->config = $this->createMock(ConfigRepository::class);
         $this->adapter = $this->getMockBuilder(Adapter::class)
-            ->setConstructorArgs([
-                $this->config,
-                $this->createMock(BrandRegistryInterface::class),
-                $this->createMock(Curl::class),
-                $this->createMock(LogRepository::class),
-            ])
+            ->disableOriginalConstructor()
             ->onlyMethods(['execute'])
             ->getMock();
 

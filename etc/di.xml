@@ -22,6 +22,20 @@
     <!-- Default brand binding. Overlay packages may rebind via their own DI preference. -->
     <preference for="Two\Gateway\Api\BrandRegistryInterface"
                 type="Two\Gateway\Brand\TwoBrand"/>
+    <!-- Default outbound-API translator: passthrough. Brand overlays rebind. -->
+    <preference for="Two\Gateway\Api\ApiTranslatorInterface"
+                type="Two\Gateway\Model\ApiTranslator\NullApiTranslator"/>
+
+    <!-- PSR-17 factories: injected per-type to Adapter rather than via global
+         <preference>. Magento <preference> is process-global and last-loaded-wins;
+         shared third-party interface bindings collide silently with other modules. -->
+    <type name="Two\Gateway\Service\Api\Adapter">
+        <arguments>
+            <argument name="requestFactory" xsi:type="object">Nyholm\Psr7\Factory\Psr17Factory</argument>
+            <argument name="streamFactory" xsi:type="object">Nyholm\Psr7\Factory\Psr17Factory</argument>
+            <argument name="responseFactory" xsi:type="object">Nyholm\Psr7\Factory\Psr17Factory</argument>
+        </arguments>
+    </type>
 
     <type name="Two\Gateway\Logger\Handler">
         <arguments>

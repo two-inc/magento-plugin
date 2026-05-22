@@ -3,11 +3,12 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\E2E\Service\Api;
 
+use Nyholm\Psr7\Factory\Psr17Factory;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Api\Adapter;
-use Two\Gateway\Test\E2E\Http\RealCurl;
+use Two\Gateway\Test\E2E\Http\RealAdapterFactoryTrait;
 
 /**
  * End-to-end tests for Service\Api\Adapter against the real Two API.
@@ -17,10 +18,16 @@ use Two\Gateway\Test\E2E\Http\RealCurl;
  */
 class ApiAdapterTest extends TestCase
 {
+    use RealAdapterFactoryTrait;
+
     private Adapter $adapter;
 
     protected function setUp(): void
     {
+        if (!class_exists(Psr17Factory::class)) {
+            $this->markTestSkipped('nyholm/psr7 not installed (run composer install)');
+        }
+
         $apiKey = (string)getenv('TWO_API_KEY');
         $baseUrl = getenv('TWO_API_BASE_URL') ?: 'https://api.staging.two.inc';
 
@@ -29,9 +36,7 @@ class ApiAdapterTest extends TestCase
         $config->method('addVersionDataInURL')->willReturnArgument(0);
         $config->method('getApiKey')->willReturn($apiKey);
 
-        $log = $this->createMock(LogRepository::class);
-
-        $this->adapter = new Adapter($config, new RealCurl(), $log);
+        $this->adapter = $this->buildRealAdapter($config, $this->createMock(LogRepository::class));
     }
 
     public function testApiKeyIsValid(): void
@@ -51,9 +56,7 @@ class ApiAdapterTest extends TestCase
         $config->method('addVersionDataInURL')->willReturnArgument(0);
         $config->method('getApiKey')->willReturn('invalid-key');
 
-        $log = $this->createMock(LogRepository::class);
-
-        $adapter = new Adapter($config, new RealCurl(), $log);
+        $adapter = $this->buildRealAdapter($config, $this->createMock(LogRepository::class));
         $result = $adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
 
         $this->assertEquals(401, $result['http_status']);
