@@ -19,7 +19,7 @@ use Throwable;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
-use Two\Gateway\Api\TranslatorInterface;
+use Two\Gateway\Api\ApiApiTranslatorInterface;
 use Two\Gateway\Api\Webapi\SoleTraderInterface;
 
 /**
@@ -44,8 +44,8 @@ class Adapter
     /** @var LogRepository */
     private $logRepository;
 
-    /** @var TranslatorInterface */
-    private $translator;
+    /** @var ApiTranslatorInterface */
+    private $apiTranslator;
 
     /** @var RequestFactoryInterface */
     private $requestFactory;
@@ -64,7 +64,7 @@ class Adapter
         BrandRegistryInterface $brandRegistry,
         CurlFactory $curlFactory,
         LogRepository $logRepository,
-        TranslatorInterface $translator,
+        ApiTranslatorInterface $apiTranslator,
         RequestFactoryInterface $requestFactory,
         StreamFactoryInterface $streamFactory,
         ResponseFactoryInterface $responseFactory,
@@ -74,11 +74,11 @@ class Adapter
         $this->brandRegistry = $brandRegistry;
         $this->curlFactory = $curlFactory;
         $this->logRepository = $logRepository;
-        $this->translator = $translator;
+        $this->apiTranslator = $apiTranslator;
         $this->requestFactory = $requestFactory;
         $this->streamFactory = $streamFactory;
         $this->responseFactory = $responseFactory;
-        $this->translatorWarnMs = $translatorWarnMs;
+        $this->apiTranslatorWarnMs = $translatorWarnMs;
     }
 
     /**
@@ -139,9 +139,9 @@ class Adapter
 
         $translateReqStart = microtime(true);
         try {
-            $request = $this->translator->translateRequest($request);
+            $request = $this->apiTranslator->translateRequest($request);
         } catch (Throwable $e) {
-            return $this->translatorFailure('request', $e, $endpoint, $method, $nativeUrl, $translateReqStart);
+            return $this->apiTranslatorFailure('request', $e, $endpoint, $method, $nativeUrl, $translateReqStart);
         }
         $translateReqMs = (int)round((microtime(true) - $translateReqStart) * 1000);
 
@@ -215,9 +215,9 @@ class Adapter
 
         $translateRespStart = microtime(true);
         try {
-            $response = $this->translator->translateResponse($response);
+            $response = $this->apiTranslator->translateResponse($response);
         } catch (Throwable $e) {
-            return $this->translatorFailure(
+            return $this->apiTranslatorFailure(
                 'response',
                 $e,
                 $endpoint,
@@ -249,7 +249,7 @@ class Adapter
             && $bodyTrim === ''
         ) {
             $e = new \RuntimeException('translator returned empty body for body-reading endpoint');
-            return $this->translatorFailure(
+            return $this->apiTranslatorFailure(
                 'response',
                 $e,
                 $endpoint,
@@ -269,7 +269,7 @@ class Adapter
                 $e = new \RuntimeException(
                     'translator stripped required token response header(s): ' . implode(',', $missing)
                 );
-                return $this->translatorFailure(
+                return $this->apiTranslatorFailure(
                     'response',
                     $e,
                     $endpoint,
@@ -375,21 +375,21 @@ class Adapter
         RequestInterface $preTranslation,
         string $endpoint
     ): RequestInterface {
-        foreach (TranslatorInterface::PRESERVE_HEADERS as $name) {
+        foreach (ApiTranslatorInterface::PRESERVE_HEADERS as $name) {
             if ($preTranslation->hasHeader($name) && !$request->hasHeader($name)) {
                 $request = $request->withHeader($name, $preTranslation->getHeaderLine($name));
                 $this->logRepository->addDebugLog(
-                    sprintf('[translator] restored stripped header endpoint=%s header=%s', $endpoint, $name),
+                    sprintf('[api-translator] restored stripped header endpoint=%s header=%s', $endpoint, $name),
                     null
                 );
             }
         }
         foreach ($preTranslation->getHeaders() as $name => $_) {
-            foreach (TranslatorInterface::PRESERVE_HEADER_PREFIXES as $prefix) {
+            foreach (ApiTranslatorInterface::PRESERVE_HEADER_PREFIXES as $prefix) {
                 if (stripos($name, $prefix) === 0 && !$request->hasHeader($name)) {
                     $request = $request->withHeader($name, $preTranslation->getHeaderLine($name));
                     $this->logRepository->addDebugLog(
-                        sprintf('[translator] restored stripped header endpoint=%s header=%s', $endpoint, $name),
+                        sprintf('[api-translator] restored stripped header endpoint=%s header=%s', $endpoint, $name),
                         null
                     );
                 }
@@ -433,7 +433,7 @@ class Adapter
             $preLower[strtolower((string)$name)] = true;
         }
         $missing = [];
-        foreach (TranslatorInterface::TOKEN_RESPONSE_HEADERS as $required) {
+        foreach (ApiTranslatorInterface::TOKEN_RESPONSE_HEADERS as $required) {
             $needle = strtolower($required);
             if (!isset($preLower[$needle])) {
                 continue; // upstream didn't send it; not the translator's fault
@@ -478,9 +478,9 @@ class Adapter
         // not the debug channel, so on-call alerts watching TwoError fire.
         $this->logRepository->addErrorLog(
             sprintf(
-                '[translator-failure] phase=%s class=%s exception=%s method=%s endpoint=%s native_url=%s message=%s',
+                '[api-translator-failure] phase=%s class=%s exception=%s method=%s endpoint=%s native_url=%s message=%s',
                 $phase,
-                get_class($this->translator),
+                get_class($this->apiTranslator),
                 get_class($e),
                 $method,
                 $endpoint,
@@ -503,7 +503,7 @@ class Adapter
         return [
             'error_code' => 502,
             'http_status' => 502,
-            'error_source' => 'translator',
+            'error_source' => 'api_translator',
             'error_message' => 'Translator failure',
         ];
     }
@@ -547,21 +547,21 @@ class Adapter
         int $translateRespMs
     ): void {
         $line = sprintf(
-            '[two.api] method=%s endpoint=%s native_url=%s dispatched_url=%s translator=%s status=%d '
+            '[two.api] method=%s endpoint=%s native_url=%s dispatched_url=%s api_translator=%s status=%d '
             . 'error_source=%s translate_req_ms=%d dispatch_ms=%d translate_resp_ms=%d',
             $method,
             $endpoint,
             $nativeUrl,
             $dispatchedUrl,
-            get_class($this->translator),
+            get_class($this->apiTranslator),
             $status,
             $errorSource,
             $translateReqMs,
             $dispatchMs,
             $translateRespMs
         );
-        $warnTranslator = ($translateReqMs > $this->translatorWarnMs)
-            || ($translateRespMs > $this->translatorWarnMs);
+        $warnTranslator = ($translateReqMs > $this->apiTranslatorWarnMs)
+            || ($translateRespMs > $this->apiTranslatorWarnMs);
         if ($warnTranslator) {
             // Slow translator → error channel so threshold-based alerts can fire.
             $this->logRepository->addErrorLog('[WARN] ' . $line, null);
