@@ -8,12 +8,6 @@
  */
 declare(strict_types=1);
 
-// Vendor autoload (PSR-7 + nyholm/psr7) if present.
-$vendorAutoload = __DIR__ . '/../vendor/autoload.php';
-if (file_exists($vendorAutoload)) {
-    require_once $vendorAutoload;
-}
-
 // PSR-4 autoloader for Two\Gateway\ → project root
 spl_autoload_register(function ($class) {
     $prefix = 'Two\\Gateway\\';
@@ -51,9 +45,6 @@ if (!interface_exists(\Magento\Framework\App\Config\Storage\WriterInterface::cla
 }
 if (!class_exists(\Magento\Framework\HTTP\Client\Curl::class)) {
     require_once __DIR__ . '/Stubs/Curl.php';
-}
-if (!class_exists(\Magento\Framework\HTTP\Client\CurlFactory::class)) {
-    require_once __DIR__ . '/Stubs/CurlFactory.php';
 }
 if (!class_exists(\Magento\Framework\Exception\LocalizedException::class)) {
     require_once __DIR__ . '/Stubs/LocalizedException.php';
