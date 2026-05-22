@@ -7,7 +7,6 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Ui;
 
-use Two\Gateway\Api\Operation;
 use Magento\Checkout\Model\ConfigProviderInterface;
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\View\Asset\Repository as AssetRepository;
@@ -83,7 +82,7 @@ class ConfigProvider implements ConfigProviderInterface
     {
         $merchant = null;
         if ($this->configRepository->getApiKey()) {
-            $merchant = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET', null, Operation::VERIFY_API_KEY);
+            $merchant = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
             // Adapter failure envelopes (error_code present) end up in the public
             // JS checkout config blob otherwise — translator-failure messages or
             // upstream-error messages would be visible in shopper devtools.

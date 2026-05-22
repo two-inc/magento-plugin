@@ -23,9 +23,6 @@ use Psr\Http\Message\ResponseInterface;
  */
 interface TranslatorInterface
 {
-    /** Internal header carrying the {@see Operation}::* tag. Adapter strips it post-translation. */
-    public const OP_HEADER = 'X-Two-Operation';
-
     /** Headers whose name MUST survive translation (value MAY be rewritten). */
     public const PRESERVE_HEADERS = ['X-Request-ID', 'X-Idempotency-Key'];
 
@@ -33,8 +30,8 @@ interface TranslatorInterface
     public const PRESERVE_HEADER_PREFIXES = ['X-Trace-'];
 
     /**
-     * Response headers required intact for header-reading operations
-     * ({@see Operation::DELEGATION_TOKEN}, {@see Operation::AUTOFILL_TOKEN}).
+     * Response headers required intact for header-reading endpoints
+     * (the SoleTrader delegation + autofill token endpoints).
      * Names match what Adapter currently consumes via the token-endpoint branch.
      */
     public const TOKEN_RESPONSE_HEADERS = [
@@ -52,7 +49,6 @@ interface TranslatorInterface
      *     in the post-translation Request. Adapter restores any missing entry from
      *     the pre-translation Request and logs at WARN.
      *   - MUST NOT set Content-Length. Adapter strips and recomputes it.
-     *   - SHOULD NOT rewrite OP_HEADER value; Adapter strips OP_HEADER post-translation.
      *   - SHOULD rewrite status via withStatus() rather than throwing for control flow.
      *   - Thrown \Throwable → Adapter returns 502 envelope with error_source='translator'.
      *

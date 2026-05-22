@@ -9,7 +9,6 @@ namespace Two\Gateway\Service\Order;
 
 use Magento\Framework\Exception\LocalizedException;
 use Two\Gateway\Api\BrandRegistryInterface;
-use Two\Gateway\Api\Operation;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -117,8 +116,7 @@ class SurchargeCalculator
                 'buyer_fee_share' => $buyerFeeShare,
             ],
             'POST',
-            $storeId,
-            Operation::PRICE_ORDER_FEE
+            $storeId
         );
 
         // Translator-failure path is a glue bug we own; do NOT silently zero the

@@ -8,7 +8,6 @@ declare(strict_types=1);
 namespace Two\Gateway\Observer;
 
 use Exception;
-use Two\Gateway\Api\Operation;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Exception\LocalizedException;
@@ -127,11 +126,7 @@ class SalesOrderSaveAfter implements ObserverInterface
         }
 
         $response = $this->apiAdapter->execute(
-            "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
-            [],
-            'POST',
-            null,
-            Operation::FULFILL_ORDER
+            "/v1/order/" . $order->getTwoOrderId() . "/fulfillments"
         );
 
         $this->parseFulfillResponse($response, $order);
