@@ -275,32 +275,24 @@ class Two extends AbstractMethod
     /**
      * Title for admin order display.
      *
-     * The merchant-configured title (e.g. "Business Invoice - 30 days") is
-     * static and may include a hand-typed duration suffix that does not
-     * reflect the buyer's actual term selection. When the payment info
-     * instance carries the persisted term, strip any trailing "- N days"
-     * suffix from the configured title and append the real selected term.
-     *
-     * DataAssignObserver stores the buyer's chosen term under the
-     * `selectedTerm` key as a scalar (days). Falls through to the parent
-     * (merchant-configured) title when no info instance is bound (admin
-     * grid, emails outside an order context) or when the order pre-dates
-     * the selectedTerm payload.
+     * Returns "Business Invoice" optionally suffixed with the buyer's
+     * selected term in days (e.g. "Business Invoice - 60 days").
+     * DataAssignObserver stores the chosen term under the `selectedTerm`
+     * key as a scalar. The whole phrase is translated as a single unit
+     * so locales can reorder the duration relative to the noun.
      */
     public function getTitle()
     {
-        $title = parent::getTitle();
         try {
             $info = $this->getInfoInstance();
+            $days = (int)$info->getAdditionalInformation('selectedTerm');
         } catch (\Exception $e) {
-            return $title;
+            $days = 0;
         }
-        $days = (int)$info->getAdditionalInformation('selectedTerm');
-        if ($days <= 0) {
-            return $title;
+        if ($days > 0) {
+            return (string)__('Business Invoice - %1 days', $days);
         }
-        $base = preg_replace('/\s*-\s*\d+\s*days?\s*$/i', '', (string)$title);
-        return sprintf('%s - %d days', $base, $days);
+        return (string)__('Business Invoice');
     }
 
     /**
