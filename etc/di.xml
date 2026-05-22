@@ -25,13 +25,18 @@
     <!-- Default outbound-API translator: passthrough. Brand overlays rebind. -->
     <preference for="Two\Gateway\Api\TranslatorInterface"
                 type="Two\Gateway\Model\Translator\NullTranslator"/>
-    <!-- PSR-17 factory bindings — nyholm/psr7's Psr17Factory implements all three. -->
-    <preference for="Psr\Http\Message\RequestFactoryInterface"
-                type="Nyholm\Psr7\Factory\Psr17Factory"/>
-    <preference for="Psr\Http\Message\StreamFactoryInterface"
-                type="Nyholm\Psr7\Factory\Psr17Factory"/>
-    <preference for="Psr\Http\Message\ResponseFactoryInterface"
-                type="Nyholm\Psr7\Factory\Psr17Factory"/>
+
+    <!-- PSR-17 factories: injected per-type to Adapter rather than via global
+         <preference>. Magento <preference> is process-global and last-loaded-wins;
+         shared third-party interface bindings collide silently with other modules. -->
+    <type name="Two\Gateway\Service\Api\Adapter">
+        <arguments>
+            <argument name="requestFactory" xsi:type="object">Nyholm\Psr7\Factory\Psr17Factory</argument>
+            <argument name="streamFactory" xsi:type="object">Nyholm\Psr7\Factory\Psr17Factory</argument>
+            <argument name="responseFactory" xsi:type="object">Nyholm\Psr7\Factory\Psr17Factory</argument>
+            <argument name="translatorWarnMs" xsi:type="number">100</argument>
+        </arguments>
+    </type>
 
     <type name="Two\Gateway\Logger\Handler">
         <arguments>

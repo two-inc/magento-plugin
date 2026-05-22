@@ -68,6 +68,8 @@ interface TranslatorInterface
      *   - MUST NOT return an empty body for body-reading operations except status 204
      *     (empty := trim((string)$body) === '').
      *   - MUST normalise body shape back to Two-native JSON for body-reading operations.
+     *   - Response body, if rewritten via withBody(), MUST be a seekable stream
+     *     (Adapter rewinds and casts to string for downstream parsing).
      *   - Thrown \Throwable → Adapter returns 502 envelope with error_source='translator'.
      */
     public function translateResponse(ResponseInterface $response): ResponseInterface;
