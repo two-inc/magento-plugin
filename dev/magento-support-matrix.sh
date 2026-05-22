@@ -32,13 +32,23 @@ set -euo pipefail
 # policy is "current + previous 2" → 3 total.
 SUPPORT_WINDOW=${SUPPORT_WINDOW:-3}
 
-# Versions Magento has published upstream but we cannot test yet
-# (e.g. michielgerritsen/magento-project-community-edition image not
-# built for that combination). Format: `<version>:<reason>`. Each entry
-# documents WHY a version is excluded so future maintainers know when
-# the exclusion can drop.
+# Versions / combinations Magento has published upstream but we cannot
+# test yet (e.g. michielgerritsen/magento-project-community-edition image
+# not built for that combination). Two entry forms:
+#
+#   "<magento>:<reason>"               whole-minor exclusion. Slot is NOT
+#                                      replaced — the support window shrinks
+#                                      by one.
+#
+#   "<magento>:php=<X.Y>:<reason>"     combo exclusion. The Magento minor
+#                                      itself stays in the window; only the
+#                                      named PHP pairing is dropped.
+#
+# Each entry documents WHY the exclusion exists so future maintainers
+# know when it can drop.
 intentionally_excluded=(
     "2.4.9:michielgerritsen/magento-project-community-edition image not yet published for php83-fpm-magento2.4.9"
+    "2.4.8:php=8.2:michielgerritsen/magento-project-community-edition publishes php83/php84 tags only for magento2.4.8 (Adobe's composer.json accepts 8.2 but no image exists)"
 )
 
 mode=report
@@ -78,18 +88,44 @@ if [ -z "$all_minors" ]; then
     exit 2
 fi
 
-supported=$(echo "$all_minors" | head -n "$SUPPORT_WINDOW")
-log "Magento support window ($SUPPORT_WINDOW most-recent minors):"
-log "$supported" | sed 's/^/  /'
-
-# Build excluded map.
-declare -A excluded_map=()
+# Build excluded maps. Two scopes:
+#   excluded_minor_map[<magento>]      = reason     (whole-minor exclusion)
+#   excluded_combo_map[<magento>|<php>] = reason    (combo-level exclusion)
+declare -A excluded_minor_map=()
+declare -A excluded_combo_map=()
 for entry in "${intentionally_excluded[@]:-}"; do
     [ -z "$entry" ] && continue
     ver="${entry%%:*}"
-    reason="${entry#*:}"
-    excluded_map["$ver"]="$reason"
+    rest="${entry#*:}"
+    if [[ "$rest" == php=*:* ]]; then
+        php_clause="${rest%%:*}"            # php=8.2
+        reason="${rest#*:}"
+        php_ver="${php_clause#php=}"        # 8.2
+        excluded_combo_map["$ver|$php_ver"]="$reason"
+    else
+        excluded_minor_map["$ver"]="$rest"
+    fi
 done
+
+# Drop whole-minor exclusions BEFORE taking the top-N so an excluded
+# minor doesn't burn a window slot (otherwise the next minor down falls
+# off the bottom of the window). Combo exclusions don't affect slot count.
+filtered_minors=()
+for m in $all_minors; do
+    [ -n "${excluded_minor_map[$m]:-}" ] && continue
+    filtered_minors+=("$m")
+done
+supported=$(printf '%s\n' "${filtered_minors[@]}" | head -n "$SUPPORT_WINDOW")
+log "Magento support window ($SUPPORT_WINDOW most-recent eligible minors):"
+log "$supported" | sed 's/^/  /'
+
+# Surface whole-minor exclusions so the report is self-documenting.
+if [ ${#excluded_minor_map[@]} -gt 0 ]; then
+    log "Whole-minor exclusions in force:"
+    for v in "${!excluded_minor_map[@]}"; do
+        log "  $v — ${excluded_minor_map[$v]}"
+    done
+fi
 
 # ---------------------------------------------------------------------------
 # Step 2: discover currently-supported PHP minors from php.net.
@@ -120,7 +156,6 @@ log "$supported_php_minors" | sed 's/^/  /'
 # ---------------------------------------------------------------------------
 declare -A magento_php_minors=()  # magento_minor → space-separated PHP minors
 for minor in $supported; do
-    [ -n "${excluded_map[$minor]:-}" ] && continue
     composer_json=$(curl -sH 'Cache-Control: no-cache' "${gh_headers[@]}" \
         "https://raw.githubusercontent.com/magento/magento2/$minor/composer.json")
     php_constraint=$(echo "$composer_json" | jq -r '.require.php // empty')
@@ -149,22 +184,24 @@ excluded_warnings=()
 declare -A php_lint_minors=()  # union of PHP minors actually emitted
 
 for minor in $supported; do
-    if [ -n "${excluded_map[$minor]:-}" ]; then
-        excluded_warnings+=("$minor — ${excluded_map[$minor]}")
-        continue
-    fi
     accepted="${magento_php_minors[$minor]:-}"
     [ -z "$accepted" ] && continue
 
-    # Intersect Magento's accepted PHP with php.net-supported PHP.
+    # Intersect Magento's accepted PHP with php.net-supported PHP, then
+    # drop any combo flagged on `excluded_combo_map`.
     matched=()
     for php in $accepted; do
-        if echo "$supported_php_minors" | grep -qxF "$php"; then
-            matched+=("$php")
+        if ! echo "$supported_php_minors" | grep -qxF "$php"; then
+            continue
         fi
+        if [ -n "${excluded_combo_map[$minor|$php]:-}" ]; then
+            excluded_warnings+=("$minor × PHP $php — ${excluded_combo_map[$minor|$php]}")
+            continue
+        fi
+        matched+=("$php")
     done
     if [ ${#matched[@]} -eq 0 ]; then
-        excluded_warnings+=("$minor — every PHP in '$accepted' is past upstream PHP support")
+        excluded_warnings+=("$minor — every accepted PHP in '$accepted' is past upstream PHP support or combo-excluded")
         continue
     fi
 
