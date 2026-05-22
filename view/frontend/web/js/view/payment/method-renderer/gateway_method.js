@@ -536,13 +536,13 @@ define([
                                 url: function (params) {
                                     const queryParams = new URLSearchParams({
                                         country: self.countryCode()?.toUpperCase(),
-                                        limit: this._brandConfig.companySearchLimit,
+                                        limit: self._brandConfig.companySearchLimit,
                                         offset:
-                                            ((params.page || 1) - 1) * this._brandConfig.companySearchLimit,
+                                            ((params.page || 1) - 1) * self._brandConfig.companySearchLimit,
                                         q: unescape(params.term)
                                     });
                                     return `${
-                                        this._brandConfig.checkoutApiUrl
+                                        self._brandConfig.checkoutApiUrl
                                     }/companies/v2/company?${queryParams.toString()}`;
                                 },
                                 processResults: function (response, params) {
