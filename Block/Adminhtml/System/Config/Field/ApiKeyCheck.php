@@ -7,7 +7,6 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 
-use Two\Gateway\Api\Operation;
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
@@ -76,7 +75,7 @@ class ApiKeyCheck extends Field
             ];
         }
 
-        $result = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET', null, Operation::VERIFY_API_KEY);
+        $result = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
         $error = $this->two->getErrorFromResponse($result);
         if ($error) {
             return [

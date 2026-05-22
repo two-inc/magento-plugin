@@ -12,8 +12,8 @@ use Psr\Http\Message\ResponseInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
-use Two\Gateway\Api\Operation;
 use Two\Gateway\Api\TranslatorInterface;
+use Two\Gateway\Api\Webapi\SoleTraderInterface;
 use Two\Gateway\Model\Translator\NullTranslator;
 use Two\Gateway\Model\Translator\PassthroughTrait;
 use Two\Gateway\Service\Api\Adapter;
@@ -75,7 +75,6 @@ class AdapterTest extends TestCase
         );
     }
 
-    /** §11.1 — NullTranslator passthrough produces baseline request. */
     public function testNullTranslatorPassthroughBaseline(): void
     {
         $this->curl->method('getStatus')->willReturn(200);
@@ -92,19 +91,16 @@ class AdapterTest extends TestCase
         });
 
         $result = $this->adapter(new NullTranslator())
-            ->execute('/v1/order', ['amount' => 100], 'POST', null, Operation::CREATE_ORDER);
+            ->execute('/v1/order', ['amount' => 100]);
 
         $this->assertSame(['id' => 'abc'], $result);
         $this->assertSame('https://api.two.inc/v1/order', $captured['url']);
         $this->assertSame('{"amount":100}', $captured['body']);
         $this->assertSame('application/json', $captured['headers']['Content-Type']);
         $this->assertSame('test-key', $captured['headers']['X-API-Key']);
-        // OP_HEADER stripped before dispatch.
-        $this->assertArrayNotHasKey(TranslatorInterface::OP_HEADER, $captured['headers']);
         $this->assertSame((string)strlen('{"amount":100}'), $captured['headers']['Content-Length']);
     }
 
-    /** §11.2 — Translator rewrites URL/status/headers; caller observes post-translation. */
     public function testTranslatorRewritesUrlStatusHeaders(): void
     {
         $this->curl->method('getStatus')->willReturn(200);
@@ -130,13 +126,12 @@ class AdapterTest extends TestCase
         };
 
         $result = $this->adapter($translator)
-            ->execute('/v1/order', ['x' => 1], 'POST', null, Operation::CREATE_ORDER);
+            ->execute('/v1/order', ['x' => 1]);
 
         $this->assertSame(['id' => 'x'], $result);
         $this->assertSame('https://api.two.inc/brand-proxy/v1/order', $captured['url']);
     }
 
-    /** §11.3 — translateRequest throws RuntimeException → 502 envelope. */
     public function testTranslatorRequestRuntimeExceptionReturns502(): void
     {
         $translator = new class implements TranslatorInterface {
@@ -147,15 +142,13 @@ class AdapterTest extends TestCase
             }
         };
 
-        $result = $this->adapter($translator)
-            ->execute('/v1/order', [], 'POST', null, Operation::CREATE_ORDER);
+        $result = $this->adapter($translator)->execute('/v1/order');
 
         $this->assertSame(502, $result['error_code']);
         $this->assertSame('translator', $result['error_source']);
         $this->assertSame('Translator failure', $result['error_message']);
     }
 
-    /** §11.4 — translateRequest throws TypeError (returns wrong type) → 502. */
     public function testTranslatorRequestTypeErrorReturns502(): void
     {
         $translator = new class implements TranslatorInterface {
@@ -167,14 +160,12 @@ class AdapterTest extends TestCase
             }
         };
 
-        $result = $this->adapter($translator)
-            ->execute('/v1/order', [], 'POST', null, Operation::CREATE_ORDER);
+        $result = $this->adapter($translator)->execute('/v1/order');
 
         $this->assertSame(502, $result['error_code']);
         $this->assertSame('translator', $result['error_source']);
     }
 
-    /** §11.6 — translator rewrites body length; Content-Length recomputed. */
     public function testContentLengthRecomputedAfterBodyRewrite(): void
     {
         $this->curl->method('getStatus')->willReturn(200);
@@ -199,13 +190,11 @@ class AdapterTest extends TestCase
             }
         };
 
-        $this->adapter($translator)
-            ->execute('/v1/order', ['x' => 1], 'POST', null, Operation::CREATE_ORDER);
+        $this->adapter($translator)->execute('/v1/order', ['x' => 1]);
 
         $this->assertSame('5000', $captured['len']);
     }
 
-    /** §11.7 — body readable by translator AND by Adapter (rewind). */
     public function testResponseBodyReadableTwice(): void
     {
         $this->curl->method('getStatus')->willReturn(200);
@@ -224,19 +213,16 @@ class AdapterTest extends TestCase
             }
         };
 
-        $result = $this->adapter($translator)
-            ->execute('/v1/order', [], 'POST', null, Operation::CREATE_ORDER);
+        $result = $this->adapter($translator)->execute('/v1/order');
 
         $this->assertSame('{"a":1}', $translator->saw);
         $this->assertSame(['a' => 1], $result);
     }
 
     /**
-     * §11.8 — preserve-list restoration is unit-tested directly against the
-     * `restorePreservedHeaders` helper (protected). Exercising via execute() is
-     * awkward because the Adapter owns the pre-translation request shape and
-     * doesn't accept user-supplied PRESERVE_HEADERS at the seam; testing the
-     * helper directly avoids contorting the surface for a single assertion.
+     * Preserve-list restoration is unit-tested directly against the
+     * `restorePreservedHeaders` helper (protected). Exercising via execute()
+     * is awkward because the Adapter owns pre-translation request shape.
      */
     public function testPreservedHeaderRestoredAfterStrip(): void
     {
@@ -256,15 +242,15 @@ class AdapterTest extends TestCase
             $this->psr17,
             $this->psr17
         ) extends Adapter {
-            public function exposeRestore(RequestInterface $r, RequestInterface $pre, string $op): RequestInterface
+            public function exposeRestore(RequestInterface $r, RequestInterface $pre, string $endpoint): RequestInterface
             {
-                return $this->restorePreservedHeaders($r, $pre, $op);
+                return $this->restorePreservedHeaders($r, $pre, $endpoint);
             }
         };
 
         $this->logRepository->expects($this->atLeastOnce())->method('addDebugLog');
 
-        $restored = $adapter->exposeRestore($stripped, $pre, Operation::CREATE_ORDER);
+        $restored = $adapter->exposeRestore($stripped, $pre, '/v1/order');
 
         $this->assertTrue($restored->hasHeader('X-Idempotency-Key'));
         $this->assertSame('idem-1', $restored->getHeaderLine('X-Idempotency-Key'));
@@ -273,7 +259,6 @@ class AdapterTest extends TestCase
         $this->assertTrue($restored->hasHeader('X-Request-ID'));
     }
 
-    /** §11.9 — token-op translator stripping required header → 502, no silent recovery. */
     public function testTokenHeaderStripReturns502(): void
     {
         $this->curl->method('getStatus')->willReturn(200);
@@ -291,13 +276,12 @@ class AdapterTest extends TestCase
         };
 
         $result = $this->adapter($translator)
-            ->execute('/registry/v1/delegation', [], 'POST', null, Operation::DELEGATION_TOKEN);
+            ->execute(SoleTraderInterface::DELEGATION_TOKEN_ENDPOINT);
 
         $this->assertSame(502, $result['error_code']);
         $this->assertSame('translator', $result['error_source']);
     }
 
-    /** §11.10 — empty body on body-reading op → 502; '{}' → success. */
     public function testTranslatorEmptyBodyReturns502(): void
     {
         $this->curl->method('getStatus')->willReturn(200);
@@ -312,8 +296,7 @@ class AdapterTest extends TestCase
             }
         };
 
-        $result = $this->adapter($emptier)
-            ->execute('/v1/order', [], 'POST', null, Operation::CREATE_ORDER);
+        $result = $this->adapter($emptier)->execute('/v1/order');
 
         $this->assertSame(502, $result['error_code']);
         $this->assertSame('translator', $result['error_source']);
@@ -333,23 +316,8 @@ class AdapterTest extends TestCase
             }
         };
 
-        $result = $this->adapter($remap)
-            ->execute('/v1/order', [], 'POST', null, Operation::CREATE_ORDER);
+        $result = $this->adapter($remap)->execute('/v1/order');
 
-        $this->assertSame([], $result); // {} decodes to empty array
-    }
-
-    /** §11.11 — reflection: execute()'s $operation parameter is required, non-nullable string. */
-    public function testExecuteOperationParameterIsRequiredNonNullableString(): void
-    {
-        $rm = new \ReflectionMethod(Adapter::class, 'execute');
-        $params = $rm->getParameters();
-        $this->assertSame('operation', $params[4]->getName());
-        $this->assertFalse($params[4]->isOptional());
-        $this->assertTrue($params[4]->hasType());
-        $type = $params[4]->getType();
-        $this->assertInstanceOf(\ReflectionNamedType::class, $type);
-        $this->assertSame('string', $type->getName());
-        $this->assertFalse($type->allowsNull());
+        $this->assertSame([], $result);
     }
 }

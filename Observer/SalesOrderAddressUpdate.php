@@ -8,7 +8,6 @@ declare(strict_types=1);
 namespace Two\Gateway\Observer;
 
 use Exception;
-use Two\Gateway\Api\Operation;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
@@ -98,7 +97,7 @@ class SalesOrderAddressUpdate implements ObserverInterface
                     'tracking_number' => '',
                 ];
 
-                $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId(), $payload, 'PUT', null, Operation::EDIT_ORDER);
+                $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId(), $payload, 'PUT');
                 $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
                 if ($response && $error) {
                     $order->addStatusToHistory(

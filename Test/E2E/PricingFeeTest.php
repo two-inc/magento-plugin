@@ -66,9 +66,7 @@ class PricingFeeTest extends TestCase
                     'duration_days' => $durationDays,
                 ],
             ],
-            'POST',
-            null,
-            Operation::PRICE_ORDER_FEE
+            'POST'
         );
 
         // The pricing endpoint may require elevated permissions not available
@@ -127,9 +125,7 @@ class PricingFeeTest extends TestCase
                     'duration_days_calculated_from' => 'END_OF_MONTH',
                 ],
             ],
-            'POST',
-            null,
-            Operation::PRICE_ORDER_FEE
+            'POST'
         );
 
         if (($result['http_status'] ?? 0) === 401) {

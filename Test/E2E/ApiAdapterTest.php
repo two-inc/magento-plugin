@@ -9,7 +9,6 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
-use Two\Gateway\Api\Operation;
 use Two\Gateway\Model\Translator\NullTranslator;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Test\E2E\Http\RealCurl;
@@ -59,7 +58,7 @@ class ApiAdapterTest extends TestCase
 
     public function testApiKeyIsValid(): void
     {
-        $result = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET', null, Operation::VERIFY_API_KEY);
+        $result = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
 
         $this->assertIsArray($result);
         $this->assertArrayNotHasKey('error_code', $result);
@@ -91,14 +90,14 @@ class ApiAdapterTest extends TestCase
             $psr17,
             $psr17
         );
-        $result = $adapter->execute('/v1/merchant/verify_api_key', [], 'GET', null, Operation::VERIFY_API_KEY);
+        $result = $adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
 
         $this->assertEquals(401, $result['http_status']);
     }
 
     public function testBadOrderPayloadReturnsStructuredError(): void
     {
-        $result = $this->adapter->execute('/v1/order', [], 'POST', null, Operation::CREATE_ORDER);
+        $result = $this->adapter->execute('/v1/order', []);
 
         $this->assertArrayHasKey('http_status', $result);
         $this->assertGreaterThanOrEqual(400, $result['http_status']);

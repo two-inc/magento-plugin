@@ -7,7 +7,6 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Webapi;
 
-use Two\Gateway\Api\Operation;
 use Two\Gateway\Api\Webapi\SoleTraderInterface;
 use Two\Gateway\Service\Api\Adapter;
 
@@ -43,10 +42,7 @@ class SoleTrader implements SoleTraderInterface
     {
         $delegateResponse = $this->adapter->execute(
             self::DELEGATION_TOKEN_ENDPOINT,
-            ['create_proposal' => true, 'read_current_business' => true],
-            'POST',
-            null,
-            Operation::DELEGATION_TOKEN
+            ['create_proposal' => true, 'read_current_business' => true]
         );
         return $this->extractToken($delegateResponse);
     }
@@ -55,10 +51,7 @@ class SoleTrader implements SoleTraderInterface
     {
         $autofillResponse = $this->adapter->execute(
             self::AUTOFILL_TOKEN_ENDPOINT,
-            ['read_current_buyer' => true, 'write_current_buyer' => true],
-            'POST',
-            null,
-            Operation::AUTOFILL_TOKEN
+            ['read_current_buyer' => true, 'write_current_buyer' => true]
         );
         return $this->extractToken($autofillResponse);
     }
