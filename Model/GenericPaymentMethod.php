@@ -80,8 +80,8 @@ class GenericPaymentMethod extends Two
         OrderRepositoryInterface $orderRepository,
         Adapter $apiAdapter,
         LogRepository $logRepository,
-        AbstractResource $resource = null,
-        AbstractDb $resourceCollection = null,
+        ?AbstractResource $resource = null,
+        ?AbstractDb $resourceCollection = null,
         array $data = []
     ) {
         parent::__construct(

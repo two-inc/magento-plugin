@@ -165,8 +165,8 @@ class Two extends AbstractMethod
         OrderRepositoryInterface $orderRepository,
         Adapter $apiAdapter,
         LogRepository $logRepository,
-        AbstractResource $resource = null,
-        AbstractDb $resourceCollection = null,
+        ?AbstractResource $resource = null,
+        ?AbstractDb $resourceCollection = null,
         array $data = []
     ) {
         $this->request = $request;
@@ -642,7 +642,7 @@ class Two extends AbstractMethod
     /**
      * @inheritDoc
      */
-    public function isAvailable(CartInterface $quote = null)
+    public function isAvailable(?CartInterface $quote = null)
     {
         if (!$this->configRepository->isActive()
             || $this->configRepository->getApiKey() == '') {
