@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Service\Order;
 
-use Magento\Framework\HTTP\Client\Curl;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
@@ -31,19 +30,16 @@ class SurchargeCalculatorTest extends TestCase
     {
         $this->config = $this->createMock(ConfigRepository::class);
         $this->adapter = $this->getMockBuilder(Adapter::class)
-            ->setConstructorArgs([
-                $this->config,
-                $this->createMock(BrandRegistryInterface::class),
-                $this->createMock(Curl::class),
-                $this->createMock(LogRepository::class),
-            ])
+            ->disableOriginalConstructor()
             ->onlyMethods(['execute'])
             ->getMock();
 
         $log = $this->createMock(LogRepository::class);
         $this->ratesProvider = $this->createMock(CurrencyRatesProviderInterface::class);
+        $brand = $this->createMock(BrandRegistryInterface::class);
+        $brand->method('getProductName')->willReturn('Two');
 
-        $this->calculator = new SurchargeCalculator($this->config, $this->adapter, $log, $this->ratesProvider);
+        $this->calculator = new SurchargeCalculator($this->config, $this->adapter, $log, $this->ratesProvider, $brand);
     }
 
     private function stubCommonConfig(string $type, bool $differential = false): void
