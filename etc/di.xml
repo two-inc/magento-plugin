@@ -22,6 +22,14 @@
     <!-- Default brand binding. Overlay packages may rebind via their own DI preference. -->
     <preference for="Two\Gateway\Api\BrandRegistryInterface"
                 type="Two\Gateway\Brand\TwoBrand"/>
+    <!--
+        Brand overlay registry. The default implementation reads its
+        `overlays` constructor argument; overlay packages append entries
+        via <type name="...BrandOverlayRegistry"> in their own etc/di.xml.
+        Empty by default = standalone Two_Gateway install.
+    -->
+    <preference for="Two\Gateway\Api\BrandOverlayRegistryInterface"
+                type="Two\Gateway\Model\BrandOverlayRegistry"/>
     <!-- Default outbound-API translator: passthrough. Brand overlays rebind. -->
     <preference for="Two\Gateway\Api\ApiTranslatorInterface"
                 type="Two\Gateway\Model\ApiTranslator\NullApiTranslator"/>

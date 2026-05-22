@@ -13,4 +13,14 @@
         <plugin name="two-creditmemo-surcharge-override"
                 type="Two\Gateway\Plugin\Model\Sales\CreditmemoSurchargeOverride" sortOrder="10"/>
     </type>
+    <!--
+        Hide the parent-brand `two_payment` config section in admin when a
+        brand overlay is installed and the merchant hasn't opted in to
+        seeing both. See Two\Gateway\Plugin\Config\Structure\HidePaymentSection.
+    -->
+    <type name="Magento\Config\Model\Config\Structure">
+        <plugin name="two-hide-payment-section-when-overlay-installed"
+                type="Two\Gateway\Plugin\Config\Structure\HidePaymentSection"
+                sortOrder="10"/>
+    </type>
 </config>
