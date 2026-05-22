@@ -22,6 +22,10 @@ class PricingFeeTest extends TestCase
 
     protected function setUp(): void
     {
+        if (!class_exists(Psr17Factory::class)) {
+            $this->markTestSkipped('nyholm/psr7 not installed (run composer install)');
+        }
+
         $apiKey = (string)getenv('TWO_API_KEY');
         $baseUrl = getenv('TWO_API_BASE_URL') ?: 'https://api.staging.two.inc';
 
@@ -33,9 +37,6 @@ class PricingFeeTest extends TestCase
         $log = $this->createMock(LogRepository::class);
         $brand = $this->createMock(BrandRegistryInterface::class);
         $brand->method('getProductName')->willReturn('Two');
-        $state = $this->createMock(State::class);
-        $state->method('getMode')->willReturn('production');
-
         $factory = $this->createMock(CurlFactory::class);
         $factory->method('create')->willReturnCallback(fn() => new RealCurl());
 
@@ -48,8 +49,7 @@ class PricingFeeTest extends TestCase
             new NullTranslator(),
             $psr17,
             $psr17,
-            $psr17,
-            $state
+            $psr17
         );
     }
 

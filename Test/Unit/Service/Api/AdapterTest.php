@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Service\Api;
 
-use Magento\Framework\App\State;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use Nyholm\Psr7\Factory\Psr17Factory;
@@ -36,9 +35,6 @@ class AdapterTest extends TestCase
     /** @var LogRepository&\PHPUnit\Framework\MockObject\MockObject */
     private $logRepository;
 
-    /** @var State&\PHPUnit\Framework\MockObject\MockObject */
-    private $appState;
-
     /** @var Psr17Factory */
     private $psr17;
 
@@ -61,8 +57,6 @@ class AdapterTest extends TestCase
         $this->curlFactory->method('create')->willReturn($this->curl);
 
         $this->logRepository = $this->createMock(LogRepository::class);
-        $this->appState = $this->createMock(State::class);
-        $this->appState->method('getMode')->willReturn('production');
 
         $this->psr17 = new Psr17Factory();
     }
@@ -77,8 +71,7 @@ class AdapterTest extends TestCase
             $translator,
             $this->psr17,
             $this->psr17,
-            $this->psr17,
-            $this->appState
+            $this->psr17
         );
     }
 
@@ -261,8 +254,7 @@ class AdapterTest extends TestCase
             new NullTranslator(),
             $this->psr17,
             $this->psr17,
-            $this->psr17,
-            $this->appState
+            $this->psr17
         ) extends Adapter {
             public function exposeRestore(RequestInterface $r, RequestInterface $pre, string $op): RequestInterface
             {
