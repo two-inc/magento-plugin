@@ -35,30 +35,25 @@ define([
 ) {
     'use strict';
 
-    let config = (window.checkoutConfig.payment || {}).two_payment || {};
+    /**
+     * Brand-overlay-aware config lookup. Reads from
+     * `window.checkoutConfig.payment[<methodCode>]` so each brand-overlay
+     * payment method (two_payment, abn_payment, …) gets its own config
+     * subtree without forking this renderer per brand.
+     */
+    function getBrandConfig(code) {
+        return (window.checkoutConfig.payment || {})[code] || {};
+    }
+
     window.quote = quote;
 
     return Component.extend({
         defaults: {
-            template: 'Two_Gateway/payment/two_payment'
+            template: 'Two_Gateway/payment/gateway_method'
         },
         redirectAfterPlaceOrder: false,
         twoSubtitleHtml: $t('For all companies.'),
-        paymentTermsMessage: config.paymentTermsMessage,
-        termsNotAcceptedMessage: config.termsNotAcceptedMessage,
-        isPaymentTermsEnabled: config.isPaymentTermsEnabled,
         isPaymentTermsAccepted: ko.observable(false),
-        orderIntentApprovedMessage: config.orderIntentApprovedMessage,
-        orderIntentDeclinedMessage: config.orderIntentDeclinedMessage,
-        generalErrorMessage: config.generalErrorMessage,
-        invalidEmailListMessage: config.invalidEmailListMessage,
-        soleTraderErrorMessage: config.soleTraderErrorMessage,
-        isOrderIntentEnabled: config.isOrderIntentEnabled,
-        isInvoiceEmailsEnabled: config.isInvoiceEmailsEnabled,
-        isDepartmentFieldEnabled: config.isDepartmentFieldEnabled,
-        isProjectFieldEnabled: config.isProjectFieldEnabled,
-        isOrderNoteFieldEnabled: config.isOrderNoteFieldEnabled,
-        isPONumberFieldEnabled: config.isPONumberFieldEnabled,
         soleTraderCountryCodes: ['gb'],
         formSelector: 'form#two_gateway_form',
         companyNameSelector: 'input#company_name',
@@ -77,48 +72,6 @@ define([
         orderNote: ko.observable(''),
         poNumber: ko.observable(''),
         selectedTerm: surchargeModel.selectedTerm,
-        availableBuyerTerms: config.availableBuyerTerms || [],
-        showTermSelector: (config.availableBuyerTerms || []).length > 1,
-        showSingleTerm: (config.availableBuyerTerms || []).length === 1,
-        singleTermLabel: (config.availableBuyerTerms || []).length === 1
-            ? $t('Payment Terms %1 days').replace('%1', config.availableBuyerTerms[0])
-            : '',
-        // Empty-object termSurcharges → loading state (template shows the
-         // three-dot loader). Once populated, label becomes '+€n.nn' or '' if
-         // every term resolves to ~0.
-        singleTermSurchargeLabel: ko.pureComputed(function () {
-            var terms = config.availableBuyerTerms || [];
-            if (terms.length !== 1) {
-                return '';
-            }
-            var surcharges = surchargeModel.termSurcharges();
-            if (!surcharges || !Object.keys(surcharges).length) {
-                return null;
-            }
-            var amount = parseFloat(surcharges[terms[0]] || 0);
-            if (amount < 0.005) {
-                return '';
-            }
-            return '+' + surchargeModel.currencySymbol + amount.toFixed(2);
-        }),
-        termOptions: ko.pureComputed(function () {
-            var terms = config.availableBuyerTerms || [];
-            var surcharges = surchargeModel.termSurcharges();
-            var symbol = surchargeModel.currencySymbol;
-            var isLoading = !surcharges || !Object.keys(surcharges).length;
-            var amounts = terms.map(function (days) {
-                return parseFloat(surcharges[days] || 0);
-            });
-            var allZero = !isLoading && amounts.every(function (a) { return a < 0.005; });
-            return terms.map(function (days, i) {
-                return {
-                    days: days,
-                    daysLabel: days + ' ' + $t('days'),
-                    isLoading: isLoading,
-                    surchargeLabel: (isLoading || allZero) ? '' : '+' + symbol + amounts[i].toFixed(2)
-                };
-            });
-        }),
         telephone: ko.observable(''),
         countryCode: ko.observable(''),
         showPopupMessage: ko.observable(false),
@@ -130,9 +83,75 @@ define([
 
         initialize: function () {
             this._super();
+
+            // Brand-overlay config: read once at initialize time, keyed on
+            // this.getCode() so abn_payment, two_payment, etc each pull
+            // their own subtree from window.checkoutConfig.payment.
+            this._brandConfig = getBrandConfig(this.getCode());
+            var config = this._brandConfig;
+
+            this.paymentTermsMessage = config.paymentTermsMessage;
+            this.termsNotAcceptedMessage = config.termsNotAcceptedMessage;
+            this.isPaymentTermsEnabled = config.isPaymentTermsEnabled;
+            this.orderIntentApprovedMessage = config.orderIntentApprovedMessage;
+            this.orderIntentDeclinedMessage = config.orderIntentDeclinedMessage;
+            this.generalErrorMessage = config.generalErrorMessage;
+            this.invalidEmailListMessage = config.invalidEmailListMessage;
+            this.soleTraderErrorMessage = config.soleTraderErrorMessage;
+            this.isOrderIntentEnabled = config.isOrderIntentEnabled;
+            this.isInvoiceEmailsEnabled = config.isInvoiceEmailsEnabled;
+            this.isDepartmentFieldEnabled = config.isDepartmentFieldEnabled;
+            this.isProjectFieldEnabled = config.isProjectFieldEnabled;
+            this.isOrderNoteFieldEnabled = config.isOrderNoteFieldEnabled;
+            this.isPONumberFieldEnabled = config.isPONumberFieldEnabled;
+
+            var terms = config.availableBuyerTerms || [];
+            this.availableBuyerTerms = terms;
+            this.showTermSelector = terms.length > 1;
+            this.showSingleTerm = terms.length === 1;
+            this.singleTermLabel = terms.length === 1
+                ? $t('Payment Terms %1 days').replace('%1', terms[0])
+                : '';
+
+            // Empty-object termSurcharges → loading state (template shows the
+            // three-dot loader). Once populated, label becomes '+€n.nn' or ''
+            // if every term resolves to ~0.
+            this.singleTermSurchargeLabel = ko.pureComputed(function () {
+                if (terms.length !== 1) {
+                    return '';
+                }
+                var surcharges = surchargeModel.termSurcharges();
+                if (!surcharges || !Object.keys(surcharges).length) {
+                    return null;
+                }
+                var amount = parseFloat(surcharges[terms[0]] || 0);
+                if (amount < 0.005) {
+                    return '';
+                }
+                return '+' + surchargeModel.currencySymbol + amount.toFixed(2);
+            });
+            this.termOptions = ko.pureComputed(function () {
+                var surcharges = surchargeModel.termSurcharges();
+                var symbol = surchargeModel.currencySymbol;
+                var isLoading = !surcharges || !Object.keys(surcharges).length;
+                var amounts = terms.map(function (days) {
+                    return parseFloat(surcharges[days] || 0);
+                });
+                var allZero = !isLoading && amounts.every(function (a) { return a < 0.005; });
+                return terms.map(function (days, i) {
+                    return {
+                        days: days,
+                        daysLabel: days + ' ' + $t('days'),
+                        isLoading: isLoading,
+                        surchargeLabel: (isLoading || allZero) ? '' : '+' + symbol + amounts[i].toFixed(2)
+                    };
+                });
+            });
+
             this.registeredOrganisationMode();
             this.configureFormValidation();
             this.popupMessageListener();
+            return this;
         },
         selectTerm: function (days) {
             surchargeModel.selectTerm(days);
@@ -276,7 +295,7 @@ define([
             this.updateBillingAddress(quote.billingAddress());
         },
         afterPlaceOrder: function () {
-            const url = $.mage.cookies.get(config.redirectUrlCookieCode);
+            const url = $.mage.cookies.get(this._brandConfig.redirectUrlCookieCode);
             if (url) {
                 $.mage.redirect(url);
             }
@@ -404,7 +423,7 @@ define([
                     tax_amount: parseFloat(item['tax_amount']).toFixed(2),
                     tax_rate: (parseFloat(item['tax_percent']) / 100).toFixed(6),
                     tax_class_name: '',
-                    quantity_unit: config.orderIntentConfig.weightUnit,
+                    quantity_unit: this._brandConfig.orderIntentConfig.weightUnit,
                     image_url: item['thumbnail'],
                     type: item['is_virtual'] === '0' ? 'PHYSICAL' : 'DIGITAL'
                 });
@@ -450,19 +469,19 @@ define([
                         phone_number: this.getTelephone()
                     }
                 },
-                merchant_id: config.orderIntentConfig.merchant?.id,
-                merchant_short_name: config.orderIntentConfig.merchant?.short_name
+                merchant_id: this._brandConfig.orderIntentConfig.merchant?.id,
+                merchant_short_name: this._brandConfig.orderIntentConfig.merchant?.short_name
             };
 
             console.debug({ logger: 'twoPayment.placeOrderIntent', orderIntentRequestBody });
 
             const queryParams = new URLSearchParams({
-                client: config.orderIntentConfig.extensionPlatformName,
-                client_v: config.orderIntentConfig.extensionDBVersion
+                client: this._brandConfig.orderIntentConfig.extensionPlatformName,
+                client_v: this._brandConfig.orderIntentConfig.extensionDBVersion
             });
 
             return $.ajax({
-                url: `${config.checkoutApiUrl}/v1/order_intent?${queryParams.toString()}`,
+                url: `${this._brandConfig.checkoutApiUrl}/v1/order_intent?${queryParams.toString()}`,
                 type: 'POST',
                 global: true,
                 contentType: 'application/json',
@@ -473,9 +492,9 @@ define([
         validate: function () {
             return $(this.formSelector).valid();
         },
-        getCode: function () {
-            return 'two_payment';
-        },
+        // getCode() is inherited from Magento_Checkout/js/view/payment/default
+        // and returns this.item.method — the type pushed via rendererList,
+        // which the brand-specific wrapper file decides per overlay.
         getData: function () {
             return {
                 method: this.getCode(),
@@ -517,13 +536,13 @@ define([
                                 url: function (params) {
                                     const queryParams = new URLSearchParams({
                                         country: self.countryCode()?.toUpperCase(),
-                                        limit: config.companySearchLimit,
+                                        limit: this._brandConfig.companySearchLimit,
                                         offset:
-                                            ((params.page || 1) - 1) * config.companySearchLimit,
+                                            ((params.page || 1) - 1) * this._brandConfig.companySearchLimit,
                                         q: unescape(params.term)
                                     });
                                     return `${
-                                        config.checkoutApiUrl
+                                        this._brandConfig.checkoutApiUrl
                                     }/companies/v2/company?${queryParams.toString()}`;
                                 },
                                 processResults: function (response, params) {
@@ -686,11 +705,11 @@ define([
 
         openIframe() {
             const data = this.getAutofillData();
-            var brandParams = config.brand ? `&brand=${config.brand}` : '';
-            if (config.brandVersion) {
-                brandParams += `&brandVersion=${config.brandVersion}`;
+            var brandParams = this._brandConfig.brand ? `&brand=${this._brandConfig.brand}` : '';
+            if (this._brandConfig.brandVersion) {
+                brandParams += `&brandVersion=${this._brandConfig.brandVersion}`;
             }
-            const URL = `${config.checkoutPageUrl}/soletrader/signup?businessToken=${this.delegationToken}&autofillToken=${this.autofillToken}&autofillData=${data}${brandParams}`;
+            const URL = `${this._brandConfig.checkoutPageUrl}/soletrader/signup?businessToken=${this.delegationToken}&autofillToken=${this.autofillToken}&autofillData=${data}${brandParams}`;
             const windowFeatures =
                 'location=yes,resizable=yes,scrollbars=yes,status=yes, height=805, width=610';
             window.open(URL, '_blank', windowFeatures);
@@ -721,7 +740,7 @@ define([
         },
 
         getCurrentBuyer() {
-            const URL = `${config.checkoutApiUrl}/autofill/v1/buyer/current`;
+            const URL = `${this._brandConfig.checkoutApiUrl}/autofill/v1/buyer/current`;
             const OPTIONS = {
                 credentials: 'include',
                 headers: {
@@ -761,7 +780,7 @@ define([
 
         popupMessageListener() {
             window.addEventListener('message', (event) => {
-                if (this.showSoleTrader() && event.origin == config.checkoutPageUrl) {
+                if (this.showSoleTrader() && event.origin == this._brandConfig.checkoutPageUrl) {
                     if (event.data == 'ACCEPTED') {
                         this.getCurrentBuyer();
                     } else {
