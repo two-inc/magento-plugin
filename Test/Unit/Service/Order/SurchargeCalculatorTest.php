@@ -3,12 +3,13 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Service\Order;
 
-use Magento\Framework\HTTP\Client\Curl;
+use Magento\Framework\HTTP\Client\CurlFactory;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Model\ApiTranslator\NullApiTranslator;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Order\SurchargeCalculator;
@@ -34,8 +35,9 @@ class SurchargeCalculatorTest extends TestCase
             ->setConstructorArgs([
                 $this->config,
                 $this->createMock(BrandRegistryInterface::class),
-                $this->createMock(Curl::class),
+                $this->createMock(CurlFactory::class),
                 $this->createMock(LogRepository::class),
+                new NullApiTranslator(),
             ])
             ->onlyMethods(['execute'])
             ->getMock();
