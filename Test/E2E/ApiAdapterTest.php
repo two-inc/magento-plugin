@@ -44,13 +44,16 @@ class ApiAdapterTest extends TestCase
         $factory = $this->createMock(CurlFactory::class);
         $factory->method('create')->willReturnCallback(fn() => new RealCurl());
 
+        $psr17 = new Psr17Factory();
         $this->adapter = new Adapter(
             $config,
             $brand,
             $factory,
             $log,
             new NullTranslator(),
-            new Psr17Factory(),
+            $psr17,
+            $psr17,
+            $psr17,
             $state
         );
     }
@@ -81,13 +84,16 @@ class ApiAdapterTest extends TestCase
         $factory = $this->createMock(CurlFactory::class);
         $factory->method('create')->willReturnCallback(fn() => new RealCurl());
 
+        $psr17 = new Psr17Factory();
         $adapter = new Adapter(
             $config,
             $brand,
             $factory,
             $log,
             new NullTranslator(),
-            new Psr17Factory(),
+            $psr17,
+            $psr17,
+            $psr17,
             $state
         );
         $result = $adapter->execute('/v1/merchant/verify_api_key', [], 'GET', null, Operation::VERIFY_API_KEY);

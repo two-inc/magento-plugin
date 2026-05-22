@@ -120,7 +120,6 @@ class SurchargeCalculator
         // the log. Hard-fail at the admin/UI seam so the failure is visible.
         if (($response['error_source'] ?? null) === 'translator') {
             $this->logRepository->addDebugLog('Pricing API translator failure', [
-                'translator_class' => 'translator',
                 'error_code' => $response['error_code'] ?? null,
             ]);
             throw new LocalizedException(

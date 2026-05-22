@@ -76,6 +76,8 @@ class AdapterTest extends TestCase
             $this->logRepository,
             $translator,
             $this->psr17,
+            $this->psr17,
+            $this->psr17,
             $this->appState
         );
     }
@@ -236,49 +238,47 @@ class AdapterTest extends TestCase
         $this->assertSame(['a' => 1], $result);
     }
 
-    /** §11.8 — translator strips X-Idempotency-Key; restored, WARN logged. */
+    /**
+     * §11.8 — preserve-list restoration is unit-tested directly against the
+     * `restorePreservedHeaders` helper (protected). Exercising via execute() is
+     * awkward because the Adapter owns the pre-translation request shape and
+     * doesn't accept user-supplied PRESERVE_HEADERS at the seam; testing the
+     * helper directly avoids contorting the surface for a single assertion.
+     */
     public function testPreservedHeaderRestoredAfterStrip(): void
     {
-        $this->curl->method('getStatus')->willReturn(200);
-        $this->curl->method('getBody')->willReturn('{}');
-        $this->curl->method('getHeaders')->willReturn([]);
+        $pre = $this->psr17->createRequest('POST', 'https://api.two.inc/x')
+            ->withHeader('X-Request-ID', 'req-1')
+            ->withHeader('X-Idempotency-Key', 'idem-1')
+            ->withHeader('X-Trace-Span', 'span-1');
+        $stripped = $pre->withoutHeader('X-Idempotency-Key')->withoutHeader('X-Trace-Span');
 
-        $captured = ['headers' => []];
-        $this->curl->method('addHeader')->willReturnCallback(function ($n, $v) use (&$captured) {
-            $captured['headers'][$n] = $v;
-        });
-
-        $translator = new class implements TranslatorInterface {
-            use PassthroughTrait;
-            public function translateRequest(RequestInterface $r): RequestInterface
+        $adapter = new class(
+            $this->configRepository,
+            $this->brandRegistry,
+            $this->curlFactory,
+            $this->logRepository,
+            new NullTranslator(),
+            $this->psr17,
+            $this->psr17,
+            $this->psr17,
+            $this->appState
+        ) extends Adapter {
+            public function exposeRestore(RequestInterface $r, RequestInterface $pre, string $op): RequestInterface
             {
-                return $r->withoutHeader('X-Idempotency-Key');
-            }
-        };
-
-        // Need pre-translation request to carry the header. Inject by wrapping in
-        // a second translator that adds it before the stripping one runs. Simpler:
-        // chain translators by using a composing wrapper. For the unit, just add
-        // via another nested translator that sets first then strips.
-        $chained = new class($translator) implements TranslatorInterface {
-            use PassthroughTrait;
-            private $inner;
-            public function __construct(TranslatorInterface $inner) { $this->inner = $inner; }
-            public function translateRequest(RequestInterface $r): RequestInterface
-            {
-                $r = $r->withHeader('X-Idempotency-Key', 'idem-1');
-                return $r;
+                return $this->restorePreservedHeaders($r, $pre, $op);
             }
         };
 
         $this->logRepository->expects($this->atLeastOnce())->method('addDebugLog');
-        $this->adapter($chained)
-            ->execute('/v1/order', [], 'POST', null, Operation::CREATE_ORDER);
 
-        // Adding header by the translator means the post-translation request DOES
-        // contain the header — no restoration. This test only proves the
-        // restoration code path doesn't fail when the header is present.
-        $this->assertSame('idem-1', $captured['headers']['X-Idempotency-Key'] ?? null);
+        $restored = $adapter->exposeRestore($stripped, $pre, Operation::CREATE_ORDER);
+
+        $this->assertTrue($restored->hasHeader('X-Idempotency-Key'));
+        $this->assertSame('idem-1', $restored->getHeaderLine('X-Idempotency-Key'));
+        $this->assertTrue($restored->hasHeader('X-Trace-Span'));
+        $this->assertSame('span-1', $restored->getHeaderLine('X-Trace-Span'));
+        $this->assertTrue($restored->hasHeader('X-Request-ID'));
     }
 
     /** §11.9 — token-op translator stripping required header → 502, no silent recovery. */
