@@ -3,15 +3,12 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\E2E\Service\Api;
 
-use Magento\Framework\HTTP\Client\CurlFactory;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use PHPUnit\Framework\TestCase;
-use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
-use Two\Gateway\Model\ApiTranslator\NullApiTranslator;
 use Two\Gateway\Service\Api\Adapter;
-use Two\Gateway\Test\E2E\Http\RealCurl;
+use Two\Gateway\Test\E2E\Http\RealAdapterFactoryTrait;
 
 /**
  * End-to-end tests for Service\Api\Adapter against the real Two API.
@@ -21,6 +18,8 @@ use Two\Gateway\Test\E2E\Http\RealCurl;
  */
 class ApiAdapterTest extends TestCase
 {
+    use RealAdapterFactoryTrait;
+
     private Adapter $adapter;
 
     protected function setUp(): void
@@ -37,23 +36,7 @@ class ApiAdapterTest extends TestCase
         $config->method('addVersionDataInURL')->willReturnArgument(0);
         $config->method('getApiKey')->willReturn($apiKey);
 
-        $log = $this->createMock(LogRepository::class);
-        $brand = $this->createMock(BrandRegistryInterface::class);
-        $brand->method('getProductName')->willReturn('Two');
-        $factory = $this->createMock(CurlFactory::class);
-        $factory->method('create')->willReturnCallback(fn() => new RealCurl());
-
-        $psr17 = new Psr17Factory();
-        $this->adapter = new Adapter(
-            $config,
-            $brand,
-            $factory,
-            $log,
-            new NullApiTranslator(),
-            $psr17,
-            $psr17,
-            $psr17
-        );
+        $this->adapter = $this->buildRealAdapter($config, $this->createMock(LogRepository::class));
     }
 
     public function testApiKeyIsValid(): void
@@ -73,23 +56,7 @@ class ApiAdapterTest extends TestCase
         $config->method('addVersionDataInURL')->willReturnArgument(0);
         $config->method('getApiKey')->willReturn('invalid-key');
 
-        $log = $this->createMock(LogRepository::class);
-        $brand = $this->createMock(BrandRegistryInterface::class);
-        $brand->method('getProductName')->willReturn('Two');
-        $factory = $this->createMock(CurlFactory::class);
-        $factory->method('create')->willReturnCallback(fn() => new RealCurl());
-
-        $psr17 = new Psr17Factory();
-        $adapter = new Adapter(
-            $config,
-            $brand,
-            $factory,
-            $log,
-            new NullApiTranslator(),
-            $psr17,
-            $psr17,
-            $psr17
-        );
+        $adapter = $this->buildRealAdapter($config, $this->createMock(LogRepository::class));
         $result = $adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
 
         $this->assertEquals(401, $result['http_status']);
