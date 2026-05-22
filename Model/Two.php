@@ -273,6 +273,36 @@ class Two extends AbstractMethod
     }
 
     /**
+     * Title for admin order display.
+     *
+     * The merchant-configured title (e.g. "Business Invoice - 30 days") is
+     * static and may include a hand-typed duration suffix that does not
+     * reflect the buyer's actual term selection. When the payment info
+     * instance carries the persisted term, strip any trailing "- N days"
+     * suffix from the configured title and append the real selected term.
+     *
+     * Falls through to the parent (merchant-configured) title when no info
+     * instance is bound (admin grid, emails outside an order context) or
+     * when the order pre-dates the terms-in-additional_information payload.
+     */
+    public function getTitle()
+    {
+        $title = parent::getTitle();
+        try {
+            $info = $this->getInfoInstance();
+        } catch (\Exception $e) {
+            return $title;
+        }
+        $terms = $info->getAdditionalInformation('terms');
+        if (!is_array($terms) || empty($terms['duration_days'])) {
+            return $title;
+        }
+        $days = (int)$terms['duration_days'];
+        $base = preg_replace('/\s*-\s*\d+\s*days?\s*$/i', '', (string)$title);
+        return sprintf('%s - %d days', $base, $days);
+    }
+
+    /**
      *
      *
      * @param Phrase $message

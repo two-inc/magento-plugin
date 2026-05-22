@@ -299,6 +299,10 @@ define([
                 isPaymentTermsAccepted: this.isPaymentTermsAccepted()
             });
             if (event) event.preventDefault();
+            // Clear stale validation errors from a prior placeOrder attempt so
+            // resubmits don't render outdated messages (e.g. terms-not-accepted
+            // lingering after the box has been ticked).
+            this.messageContainer.clear();
             if (this.isPaymentTermsEnabled && !this.isPaymentTermsAccepted()) {
                 this.processTermsNotAcceptedErrorResponse();
                 return;
