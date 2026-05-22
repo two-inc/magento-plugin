@@ -79,6 +79,38 @@ In production mode these are ignored — the URLs are derived from the `mode` se
 
 Run `make help` to see all available targets.
 
+### Local-dev perf — disabled modules and what breaks
+
+`make install` runs `module:disable` on a fixed list of modules that aren't needed for plugin development but add significant load to `setup:di:compile` (every module's DI is re-generated) and to the storefront's RequireJS dependency graph (every enabled module's JS gets pulled into the boot, even on pages that don't use it). Disabling them cuts `setup:di:compile` time and drops storefront button-enable latency from ~10s to under a second on the sample-data catalog.
+
+| Module(s) | Why it's disabled in dev |
+|---|---|
+| `Magento_AdminAdobeImsTwoFactorAuth`, `Magento_TwoFactorAuth` | TOTP setup required on every admin login — friction for local dev |
+| `Magento_Analytics`, `Magento_AdminAnalytics`, `Magento_CatalogAnalytics`, `Magento_CustomerAnalytics`, `Magento_QuoteAnalytics`, `Magento_ReviewAnalytics`, `Magento_SalesAnalytics`, `Magento_WishlistAnalytics`, `Magento_GoogleAnalytics`, `Magento_GoogleOptimizer` | JS/tracking hooks that fire on every storefront load |
+| `Magento_PageBuilder`, `Magento_PageBuilderAnalytics`, `Magento_CatalogPageBuilderAnalytics`, `Magento_CmsPageBuilderAnalytics`, `Magento_PageBuilderAdminAnalytics`, `Magento_AwsS3PageBuilder` | Loads the full PageBuilder ContentTypes JS tree on **every** storefront page — biggest single contributor to client-side boot time |
+
+`Magento_NewRelicReporting` is **not** disabled — `Magento_GraphQl` declares a hard dependency on it, and disabling it cascades through every GraphQL module. It stays quiet at runtime when un-licensed.
+
+**Consequence:** PageBuilder-driven CMS content (banners, slides, promo blocks edited via the visual editor) **will not render** in a `make install` environment. If you're testing brand content that relies on PageBuilder blocks, re-enable them manually inside the container:
+
+```bash
+docker exec magento php bin/magento module:enable Magento_PageBuilder Magento_PageBuilderAnalytics Magento_CatalogPageBuilderAnalytics Magento_CmsPageBuilderAnalytics Magento_PageBuilderAdminAnalytics Magento_AwsS3PageBuilder
+docker exec magento php bin/magento setup:upgrade
+docker exec magento php bin/magento setup:di:compile
+docker exec magento php bin/magento cache:flush
+```
+
+Install also runs:
+
+- `config:set dev/js/merge_files=1`, `dev/js/minify_files=1`, `dev/css/merge_css_files=1` — flatten the inline RequireJS bootstrap into a single merged bundle in the HTML.
+- `setup:static-content:deploy --area frontend --theme Magento/luma --no-html-minify -f --jobs 4 en_US` — pre-bake the Luma theme so RequireJS's ~hundreds of runtime XHRs hit plain file IO instead of falling through Magento's `pub/static.php` router (a full Magento bootstrap per asset). Without this, on the sample catalog the storefront's "Add to Cart" button-enable latency is ~10s; with it, ~1s warm.
+
+### Brand overlays
+
+Brand-specific overlay packages (e.g. ABN AMRO's Zakelijk op Rekening) live in
+their own Composer packages and are installed separately from this plugin, not
+through `make install`. See `two-inc/magento-abn-plugin` for the ABN overlay.
+
 ### Debugging
 
 Xdebug is installed automatically by `make install` but is disabled by default. To start in debug mode:
@@ -143,6 +175,28 @@ make test-e2e TWO_API_KEY=<your-key>
 | `make logs` | Tail the Two plugin debug and error logs |
 | `make format` | Run Prettier on frontend JS/CSS/templates |
 | `make clean` | Stop and remove the Magento container |
+
+## Releases
+
+Releases are cut automatically once CI passes on `main`.
+
+### Tagging (automatic, gated on CI)
+
+`.github/workflows/release.yml` is triggered by the `CI` workflow completing on `main`. When CI's conclusion is `success`, it:
+
+1. Skips itself if the head commit is already a `chore: Bump version` commit, or if the SHA already carries a numeric tag.
+2. Reads conventional-commit types in `<previous-tag>..HEAD` to pick the bump level:
+   - `BREAKING CHANGE:` / `<type>!:` → **major**
+   - `feat:` → **minor**
+   - everything else → **patch**
+
+   Linear ticket prefixes are supported (e.g. `INF-123/feat:`).
+3. Runs `bumpver update --<level> --no-tag-commit --no-push` to rewrite `composer.json`, `etc/config.xml`, and `bumpver.toml`.
+4. Tags `X.Y.Z` (bare numeric, matching the established tag convention), pushes the bump commit and tag under the org GitHub App identity, and creates a GitHub Release with a bucketed changelog (Breaking / Features / Fixes / Internals / Other) — so reading the Release page reveals at a glance why the bump was a major / minor / patch.
+
+`.github/workflows/merge-back.yml` keeps `develop` fast-forwarded to match `main` after each release. `.github/workflows/auto-pr.yml` keeps a rolling sync PR open from `develop` to `main` with a preview of the next release notes — the same bucketing the actual Release page uses.
+
+To trigger a release, merge the rolling sync PR into `main`. CI runs on the merged commit; once green, `release.yml` fires.
 
 ## Links
 

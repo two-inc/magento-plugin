@@ -7,21 +7,21 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Service\Order;
 
-use Magento\Directory\Model\CurrencyFactory;
 use Magento\Framework\Exception\LocalizedException;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Api\Adapter;
 
 /**
- * Delegates surcharge calculation to the Two pricing API.
+ * Resolves the buyer surcharge for a given order and selected term by
+ * delegating all arithmetic to POST /v1/pricing/order/fee. The plugin
+ * maps merchant config onto the request's buyer_fee_share block and
+ * uses the response's buyer_fee_share field as the final surcharge.
  *
- * Plugin maps merchant surcharge config to a buyer_fee_share object
- * on POST /v1/pricing/order/fee. The API applies percentage, fixed,
- * cap, and differential (via reference_terms) and returns the final
- * buyer-facing fee. Plugin does no fee arithmetic — it only
- * FX-converts merchant-config amounts into order currency before send.
+ * Differential pricing is expressed to the API via reference_terms;
+ * the plugin never makes a second call to compute a delta.
  */
 class SurchargeCalculator
 {
@@ -41,38 +41,43 @@ class SurchargeCalculator
     private $logRepository;
 
     /**
-     * @var CurrencyFactory
+     * @var CurrencyRatesProviderInterface
      */
-    private $currencyFactory;
+    private $ratesProvider;
 
     /**
-     * @var array In-memory cache for pricing API responses, keyed on request params.
+     * Request-scoped cache of resolved surcharges, keyed on the public
+     * calculate() inputs. The pricing endpoint is side-effect-free and
+     * callers (total collector, ConfigProvider, TermSelection) repeat
+     * identical calls within a single request; the cache dedupes those.
+     *
+     * @var array<string, array{amount: float, tax_rate: float, description: string}>
      */
-    private $feeCache = [];
+    private $responseCache = [];
 
     public function __construct(
         ConfigRepository $configRepository,
         Adapter $apiAdapter,
         LogRepository $logRepository,
-        CurrencyFactory $currencyFactory
+        CurrencyRatesProviderInterface $ratesProvider
     ) {
         $this->configRepository = $configRepository;
         $this->apiAdapter = $apiAdapter;
         $this->logRepository = $logRepository;
-        $this->currencyFactory = $currencyFactory;
+        $this->ratesProvider = $ratesProvider;
     }
 
     /**
-     * Calculate the buyer's surcharge for a given order and selected term.
+     * Resolve the buyer surcharge for a given order and selected term.
      *
-     * @param float $grossAmount Order gross amount
-     * @param int $selectedTermDays The term the buyer selected
+     * @param float $grossAmount Order gross amount, in $orderCurrency
+     * @param int $selectedTermDays Term the buyer selected
      * @param string $buyerCountry ISO Alpha-2 country code
-     * @param string $orderCurrency ISO currency code of the order
+     * @param string $orderCurrency ISO 4217 currency code of the order
      * @param int|null $storeId
      *
      * @return array{amount: float, tax_rate: float, description: string}
-     * @throws LocalizedException if fixed-fee currency conversion fails
+     * @throws LocalizedException when FX rate is missing or API response is malformed
      */
     public function calculate(
         float $grossAmount,
@@ -81,56 +86,101 @@ class SurchargeCalculator
         string $orderCurrency,
         ?int $storeId = null
     ): array {
+        $cacheKey = md5(serialize([$grossAmount, $selectedTermDays, $buyerCountry, $orderCurrency, $storeId]));
+        if (isset($this->responseCache[$cacheKey])) {
+            return $this->responseCache[$cacheKey];
+        }
+
         $surchargeType = $this->configRepository->getSurchargeType($storeId);
 
         if ($surchargeType === SurchargeType::NONE) {
-            return ['amount' => 0.0, 'tax_rate' => 0.0, 'description' => ''];
+            return $this->responseCache[$cacheKey] = ['amount' => 0.0, 'tax_rate' => 0.0, 'description' => ''];
         }
 
-        $isDifferential = $this->configRepository->isSurchargeDifferential($storeId);
-        if ($isDifferential
-            && $selectedTermDays === $this->configRepository->getDefaultPaymentTerm($storeId)
-        ) {
-            // Default term in differential mode — no surcharge, skip API call.
-            return [
-                'amount' => 0.0,
-                'tax_rate' => $this->configRepository->getSurchargeTaxRate($storeId),
-                'description' => $this->buildDescription($selectedTermDays, $storeId),
-            ];
-        }
+        $buyerFeeShare = $this->buildBuyerFeeShare($surchargeType, $selectedTermDays, $orderCurrency, $storeId);
 
-        $feeShare = $this->buildBuyerFeeShare($surchargeType, $selectedTermDays, $orderCurrency, $storeId);
-        $fee = $this->fetchBuyerFee(
-            $grossAmount,
-            $selectedTermDays,
-            $buyerCountry,
-            $orderCurrency,
-            $feeShare,
-            $storeId
-        );
-
-        $this->logRepository->addDebugLog('Surcharge calculated', [
-            'selected_term' => $selectedTermDays,
-            'surcharge_type' => $surchargeType,
-            'buyer_fee_share' => $feeShare,
-            'order_currency' => $orderCurrency,
-            'result' => $fee,
+        $response = $this->apiAdapter->execute('/v1/pricing/order/fee', [
+            'buyer_country_code' => $buyerCountry,
+            'approved_on_recourse' => false,
+            'currency' => $orderCurrency,
+            'gross_amount' => $grossAmount,
+            'order_terms' => $this->buildOrderTerms($selectedTermDays, $storeId),
+            'buyer_fee_share' => $buyerFeeShare,
         ]);
 
-        return [
-            'amount' => $fee,
+        // `http_status` may be set on success too (observability convenience);
+        // gate on the actual 4xx/5xx range plus presence of `error_code`.
+        $httpStatus = $response['http_status'] ?? null;
+        if (($httpStatus !== null && $httpStatus >= 400) || isset($response['error_code'])) {
+            $reason = $response['error_message'] ?? $response['error_details'] ?? 'Unknown error';
+            $traceId = $response['error_trace_id'] ?? null;
+            // Log full diagnostic details for ops; do NOT leak HTTP status or
+            // upstream error reasons (e.g. "X-API-Key expired") to end users.
+            $this->logRepository->addDebugLog('Pricing API upstream error', [
+                'http_status' => $httpStatus,
+                'error_code'  => $response['error_code'] ?? null,
+                'reason'      => $reason,
+                'trace_id'    => $traceId,
+            ]);
+            throw new LocalizedException(
+                $traceId
+                    ? __('Two payment is temporarily unavailable. Please try another payment method or contact support (ref: %1).', $traceId)
+                    : __('Two payment is temporarily unavailable. Please try another payment method or contact support.')
+            );
+        }
+
+        if (!isset($response['buyer_fee_share'])) {
+            throw new LocalizedException(
+                __('Pricing API response missing required field: buyer_fee_share')
+            );
+        }
+
+        $surcharge = (float)$response['buyer_fee_share'];
+
+        // Guard against the API echoing a currency that doesn't match what we
+        // sent — means our request was reinterpreted and the figure can't be
+        // applied to the order without FX, which is the API's job not ours.
+        $respCurrency = isset($response['currency']) ? (string)$response['currency'] : $orderCurrency;
+        if ($respCurrency !== $orderCurrency) {
+            throw new LocalizedException(
+                __(
+                    'Pricing API returned currency %1 but order currency is %2.',
+                    $respCurrency,
+                    $orderCurrency
+                )
+            );
+        }
+
+        $this->logRepository->addDebugLog('Surcharge resolved from API', [
+            'selected_term' => $selectedTermDays,
+            'surcharge_type' => $surchargeType,
+            'buyer_fee_share_request' => $buyerFeeShare,
+            'buyer_fee_share_response' => $surcharge,
+            'order_currency' => $orderCurrency,
+        ]);
+
+        $descriptionTemplate = $this->configRepository->getSurchargeLineDescription($storeId);
+
+        return $this->responseCache[$cacheKey] = [
+            'amount' => $surcharge,
             'tax_rate' => $this->configRepository->getSurchargeTaxRate($storeId),
-            'description' => $this->buildDescription($selectedTermDays, $storeId),
+            'description' => (string)__($descriptionTemplate, $selectedTermDays),
         ];
     }
 
     /**
-     * Build the buyer_fee_share payload from merchant config.
+     * Build the buyer_fee_share block for the pricing request.
      *
-     * Fixed and cap amounts are FX-converted from the merchant's configured
-     * fixed_currency into the order currency before send. Percentage is
-     * dimensionless. API applies percentage to its own fee base, adds the
-     * (converted) fixed amount, then caps at the (converted) cap.
+     * Maps merchant config to the API schema:
+     *  - percentage types supply `percentage`
+     *  - fixed types supply `surcharge` (FX-converted to order currency)
+     *  - limit > 0 supplies `cap` (FX-converted to order currency)
+     *  - differential mode supplies `reference_terms` so the API computes
+     *    the threshold itself — no delta math in the plugin
+     *  - `surcharge_basis` is sent explicitly for clarity
+     *
+     * @return array<string, mixed>
+     * @throws LocalizedException when FX rate is missing
      */
     private function buildBuyerFeeShare(
         string $surchargeType,
@@ -144,31 +194,33 @@ class SurchargeCalculator
         $hasPercentage = in_array($surchargeType, [SurchargeType::PERCENTAGE, SurchargeType::FIXED_AND_PERCENTAGE]);
         $hasFixed = in_array($surchargeType, [SurchargeType::FIXED, SurchargeType::FIXED_AND_PERCENTAGE]);
 
-        $share = [
-            'surcharge_basis' => 'buyer_pays',
+        // API default is 100%; send 0 when the merchant hasn't opted into a percentage
+        // so the fixed-only path doesn't accidentally pass the whole fee on.
+        $payload = [
             'percentage' => $hasPercentage ? (float)$config['percentage'] : 0.0,
-            'surcharge' => $hasFixed
-                ? $this->convertAmount((float)$config['fixed'], $fixedCurrency, $orderCurrency)
-                : 0.0,
+            'surcharge_basis' => 'buyer_pays',
         ];
 
+        if ($hasFixed) {
+            $payload['surcharge'] = $this->convertAmount((float)$config['fixed'], $fixedCurrency, $orderCurrency);
+        }
+
         if ($config['limit'] !== null) {
-            $share['cap'] = $this->convertAmount((float)$config['limit'], $fixedCurrency, $orderCurrency);
+            $payload['cap'] = $this->convertAmount((float)$config['limit'], $fixedCurrency, $orderCurrency);
         }
 
         if ($this->configRepository->isSurchargeDifferential($storeId)) {
-            $share['reference_terms'] = $this->buildOrderTerms(
-                $this->configRepository->getDefaultPaymentTerm($storeId),
-                $storeId
-            );
+            $defaultDays = $this->configRepository->getDefaultPaymentTerm($storeId);
+            $payload['reference_terms'] = $this->buildOrderTerms($defaultDays, $storeId);
         }
 
-        return $share;
+        return $payload;
     }
 
     /**
-     * Build the order_terms object shared between the top-level payload
-     * and buyer_fee_share.reference_terms.
+     * Build an order_terms block matching the merchant's payment-terms type.
+     *
+     * @return array<string, mixed>
      */
     private function buildOrderTerms(int $durationDays, ?int $storeId): array
     {
@@ -183,57 +235,6 @@ class SurchargeCalculator
     }
 
     /**
-     * Call the pricing API and return the authoritative buyer fee.
-     *
-     * Results are cached in memory for the current request so multiple
-     * collectTotals() runs and chip-precompute loops don't redundantly
-     * hit the API for the same term.
-     */
-    private function fetchBuyerFee(
-        float $grossAmount,
-        int $selectedTermDays,
-        string $buyerCountry,
-        string $orderCurrency,
-        array $feeShare,
-        ?int $storeId
-    ): float {
-        $cacheKey = sprintf(
-            '%s|%d|%s|%s|%d|%s',
-            $grossAmount,
-            $selectedTermDays,
-            $buyerCountry,
-            $orderCurrency,
-            (int)$storeId,
-            md5(json_encode($feeShare) ?: '')
-        );
-        if (isset($this->feeCache[$cacheKey])) {
-            return $this->feeCache[$cacheKey];
-        }
-
-        $response = $this->apiAdapter->execute('/v1/pricing/order/fee', [
-            'buyer_country_code' => $buyerCountry,
-            'approved_on_recourse' => false,
-            'gross_amount' => $grossAmount,
-            'currency' => $orderCurrency,
-            'order_terms' => $this->buildOrderTerms($selectedTermDays, $storeId),
-            'buyer_fee_share' => $feeShare,
-        ]);
-
-        $fee = (float)($response['buyer_fee_share'] ?? 0);
-        $this->feeCache[$cacheKey] = $fee;
-        return $fee;
-    }
-
-    private function buildDescription(int $selectedTermDays, ?int $storeId): string
-    {
-        return (string)__(
-            '%1 - %2 days',
-            $this->configRepository->getSurchargeLineDescription($storeId),
-            $selectedTermDays
-        );
-    }
-
-    /**
      * Convert an amount between currencies if needed.
      *
      * @throws LocalizedException if Magento has no exchange rate for the pair
@@ -244,10 +245,8 @@ class SurchargeCalculator
             return $amount;
         }
 
-        try {
-            $currency = $this->currencyFactory->create()->load($fromCurrency);
-            return (float)$currency->convert($amount, $toCurrency);
-        } catch (\Exception $e) {
+        $rate = $this->ratesProvider->getRate($fromCurrency, $toCurrency);
+        if ($rate === null) {
             throw new LocalizedException(
                 __(
                     'Cannot convert surcharge from %1 to %2. '
@@ -257,5 +256,7 @@ class SurchargeCalculator
                 )
             );
         }
+
+        return $amount * $rate;
     }
 }

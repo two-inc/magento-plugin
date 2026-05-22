@@ -5,12 +5,12 @@ namespace Two\Gateway\Test\Unit\Model\Config;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
-use Magento\Framework\App\State;
 use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\UrlInterface;
 use Magento\Framework\DataObject;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Config\Repository;
 
 class RepositoryPaymentTermsTest extends TestCase
@@ -37,8 +37,8 @@ class RepositoryPaymentTermsTest extends TestCase
             $this->createMock(EncryptorInterface::class),
             $this->createMock(UrlInterface::class),
             $this->createMock(ProductMetadataInterface::class),
-            $this->createMock(State::class),
-            $this->taxCalculation
+            $this->taxCalculation,
+            $this->createMock(BrandRegistryInterface::class)
         );
     }
 
@@ -206,7 +206,7 @@ class RepositoryPaymentTermsTest extends TestCase
     public function testGetSurchargeLineDescriptionDefault(): void
     {
         $this->stubConfig([]);
-        $this->assertEquals('Payment terms fee', $this->repository->getSurchargeLineDescription());
+        $this->assertEquals('Payment terms fee - %1 days', $this->repository->getSurchargeLineDescription());
     }
 
     public function testGetSurchargeLineDescriptionCustom(): void

@@ -1,0 +1,24 @@
+<?php
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * @var \Two\Gateway\Block\Adminhtml\Creditmemo\SurchargeOverride $block
+ */
+?>
+<?php if (!$block->shouldDisplay()): ?>
+<?php return; ?>
+<?php endif; ?>
+<tr>
+    <td class="label">
+        <?= $block->escapeHtml($block->getLabel()) ?>
+    </td>
+    <td>
+        <input type="text"
+               name="creditmemo[two_surcharge_amount]"
+               value="<?= $block->escapeHtmlAttr($block->getDefaultRefund()) ?>"
+               title="<?= $block->escapeHtmlAttr(__('Max refundable: %1', $block->formatPrice($block->getMaxRefundable()))) ?>"
+               class="input-text admin__control-text not-negative-amount"
+               id="two_surcharge_refund" />
+    </td>
+</tr>

@@ -15,6 +15,7 @@ use Magento\Framework\App\Action\Context;
 use Magento\Framework\App\ResponseInterface;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Sales\Model\Order\Email\Sender\OrderSender;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\Payment\OrderService;
 
@@ -27,6 +28,9 @@ class Confirm extends Action
      * @var ConfigRepository
      */
     private $configRepository;
+
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
 
     /**
     * @var AddressRepositoryInterface
@@ -54,13 +58,15 @@ class Confirm extends Action
         SearchCriteriaBuilder $searchCriteriaBuilder,
         OrderService $orderService,
         OrderSender $orderSender,
-        ConfigRepository $configRepository
+        ConfigRepository $configRepository,
+        BrandRegistryInterface $brandRegistry
     ) {
         $this->addressRepository = $addressRepository;
         $this->searchCriteriaBuilder = $searchCriteriaBuilder;
         $this->orderService = $orderService;
         $this->orderSender = $orderSender;
         $this->configRepository = $configRepository;
+        $this->brandRegistry = $brandRegistry;
         parent::__construct($context);
     }
 
@@ -84,7 +90,7 @@ class Confirm extends Action
                 } catch (Exception $exception) {
                     $message = __(
                         "Failed to update %1 customer address: %2",
-                        $this->configRepository::PROVIDER,
+                        $this->brandRegistry->getProductName(),
                         $exception->getMessage()
                     );
                     $this->orderService->addOrderComment($order, $message);
@@ -94,13 +100,13 @@ class Confirm extends Action
             } else {
                 $comment = __(
                     'Unable to confirm %1 order with %2 state.',
-                    $this->configRepository::PROVIDER,
+                    $this->brandRegistry->getProductName(),
                     $twoOrder['state'] ?? 'undefined'
                 );
                 $this->orderService->addOrderComment($order, $comment);
                 $message = __(
                     'Your invoice purchase with %1 could not be processed. The cart will be restored.',
-                    $this->configRepository::PROVIDER
+                    $this->brandRegistry->getProductName()
                 );
                 throw new LocalizedException($message);
             }
@@ -179,7 +185,7 @@ class Confirm extends Action
             $this->addressRepository->save($customerAddress);
             $message = __(
                 "%1 customer address updated.",
-                $this->configRepository::PROVIDER,
+                $this->brandRegistry->getProductName(),
             );
             $this->orderService->addOrderComment($order, $message);
         }

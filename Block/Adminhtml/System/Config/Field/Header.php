@@ -11,6 +11,7 @@ use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Backend\Block\Template\Context;
 
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
@@ -18,15 +19,13 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
  */
 class Header extends Field
 {
-
-    private const SIGN_UP_URL = 'https://portal.two.inc/auth/merchant/signup';
-
-    private const DOCUMENTATION_URL = 'https://docs.two.inc/developer-portal/plugins/magento';
-
     /**
     * @var ConfigRepository
      */
     public $configRepository;
+
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
 
     /**
      * @var string
@@ -40,10 +39,12 @@ class Header extends Field
      */
     public function __construct(
         ConfigRepository $configRepository,
+        BrandRegistryInterface $brandRegistry,
         Context $context,
         array $data = []
     ) {
         $this->configRepository = $configRepository;
+        $this->brandRegistry = $brandRegistry;
         parent::__construct($context, $data);
     }
 
@@ -64,7 +65,7 @@ class Header extends Field
      */
     public function getSignUpUrl(): string
     {
-        return self::SIGN_UP_URL;
+        return $this->brandRegistry->getSignUpUrl();
     }
 
     /**
@@ -74,6 +75,14 @@ class Header extends Field
      */
     public function getDocumentationUrl(): string
     {
-        return self::DOCUMENTATION_URL;
+        return $this->brandRegistry->getDocumentationUrl();
+    }
+
+    /**
+     * Brand-bound product name for use in templates ($block->getProductName()).
+     */
+    public function getProductName(): string
+    {
+        return $this->brandRegistry->getProductName();
     }
 }

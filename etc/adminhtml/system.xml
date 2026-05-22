@@ -8,8 +8,8 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Config:etc/system_file.xsd">
     <system>
-        <tab id="two_gateway" translate="label" class="two-extension" sortOrder="500">
-            <label>TWO</label>
+        <tab id="two_gateway" translate="label" class="two-extension two-extension--no-caption" sortOrder="500">
+            <label>Two</label>
         </tab>
         <section id="two_general" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                  showInStore="1">
@@ -17,11 +17,6 @@
             <label>General</label>
             <tab>two_gateway</tab>
             <resource>Magento_Sales::config_sales</resource>
-            <group id="branding" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
-                   showInStore="1">
-                <label>Branding</label>
-                <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\Header</frontend_model>
-            </group>
             <group id="general" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>General</label>
@@ -42,7 +37,7 @@
                 </field>
                 <field id="api_key" translate="label" type="obscure" sortOrder="50" showInDefault="1" showInWebsite="1"
                        showInStore="1">
-                    <label>API Key</label>
+                    <label>API key</label>
                     <comment>API key for sandbox environment is available on your merchant portal (however please reach out to integration@two.inc for access to production keys).</comment>
                     <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>
                     <validate>required-entry</validate>
@@ -57,7 +52,7 @@
                 </field>
                 <field id="debug" translate="label" type="select" sortOrder="60" showInDefault="1" showInWebsite="1"
                        showInStore="1">
-                    <label>Debug Mode</label>
+                    <label>Debug mode</label>
                     <comment>The debug mode enables writing to the error logs below. Debug mode should only be enabled when the sandbox enviroment is active</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/debug</config_path>
@@ -93,7 +88,7 @@
                 <field id="title" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                        showInStore="1" canRestore="1">
                     <label>Title</label>
-                    <comment>Descriptive title which gives the buyer a better understanding of this payment method e.g. Business invoice - 30 days</comment>
+                    <comment>Descriptive title which gives the buyer a better understanding of this payment method</comment>
                     <validate>required-entry</validate>
                     <depends>
                         <field id="active">1</field>
@@ -146,7 +141,7 @@
                 <field id="payment_terms" translate="label comment" type="text" sortOrder="10" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Payment Terms</label>
-                    <comment>Select the payment term(s) you want to offer. If a custom duration is set below, this selection is optional.</comment>
+                    <comment>Select the payment term(s) you want to offer.</comment>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\PaymentTermsCheckboxes</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\PaymentTermsCheckboxes</backend_model>
                     <config_path>payment/two_payment/payment_terms</config_path>
@@ -174,7 +169,7 @@
                 </field>
                 <field id="surcharge_type" translate="label comment" type="select" sortOrder="50" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Surcharge Strategy</label>
+                    <label>Surcharge Method</label>
                     <comment>Select a method to surcharge your customer.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\SurchargeType</source_model>
                     <config_path>payment/two_payment/surcharge_type</config_path>
@@ -188,9 +183,10 @@
                 <field id="surcharge_line_description" translate="label comment" type="text" sortOrder="70" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Surcharge Line Description</label>
-                    <comment>Description shown to the buyer for the surcharge line item.</comment>
+                    <comment><![CDATA[Description shown to the buyer for the surcharge line item. Use <strong>%1</strong> to insert the selected number of days (e.g. "Payment terms fee - %1 days"). If you leave the default, the word <em>days</em> is translated per locale.]]></comment>
                     <config_path>payment/two_payment/surcharge_line_description</config_path>
                 </field>
+
                 <field id="surcharge_tax_rate" translate="label" type="text" sortOrder="90" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Surcharge Tax Rate (%)</label>
@@ -201,7 +197,7 @@
                 <!-- Per-term surcharge grid (fixed, percentage, limit per term) -->
                 <field id="surcharge_grid" translate="label" type="text" sortOrder="100" showInDefault="1"
                        showInWebsite="1" showInStore="1">
-                    <label>Per-Term Surcharge Configuration</label>
+                    <label>Payment Surcharge Configuration</label>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeGrid</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\SurchargeGrid</backend_model>
                 </field>

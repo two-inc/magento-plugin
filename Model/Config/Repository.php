@@ -9,11 +9,11 @@ namespace Two\Gateway\Model\Config;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
-use Magento\Framework\App\State;
 use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\UrlInterface;
 use Magento\Store\Model\ScopeInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface;
 
 /**
@@ -37,22 +37,20 @@ class Repository implements RepositoryInterface
      * @var ProductMetadataInterface
      */
     private $productMetadata;
-    /**
-     * @var State
-     */
-    private $appState;
 
     /**
      * @var TaxCalculation
      */
     private $taxCalculation;
 
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
+
     /**
      * @param ScopeConfigInterface $scopeConfig
      * @param EncryptorInterface $encryptor
      * @param UrlInterface $urlBuilder
      * @param ProductMetadataInterface $productMetadata
-     * @param State $appState
      * @param TaxCalculation $taxCalculation
      */
     public function __construct(
@@ -60,15 +58,15 @@ class Repository implements RepositoryInterface
         EncryptorInterface $encryptor,
         UrlInterface $urlBuilder,
         ProductMetadataInterface $productMetadata,
-        State $appState,
-        TaxCalculation $taxCalculation
+        TaxCalculation $taxCalculation,
+        BrandRegistryInterface $brandRegistry
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->encryptor = $encryptor;
         $this->urlBuilder = $urlBuilder;
         $this->productMetadata = $productMetadata;
-        $this->appState = $appState;
         $this->taxCalculation = $taxCalculation;
+        $this->brandRegistry = $brandRegistry;
     }
 
     /**
@@ -250,7 +248,7 @@ class Repository implements RepositoryInterface
      */
     public function getCheckoutApiUrl(?string $mode = null): string
     {
-        if ($this->appState->getMode() === State::MODE_DEVELOPER) {
+        if ($this->isDeveloperMode()) {
             $envUrl = getenv('TWO_API_BASE_URL');
             if ($envUrl !== false && $envUrl !== '') {
                 return $envUrl;
@@ -258,7 +256,7 @@ class Repository implements RepositoryInterface
         }
         $mode = $mode ?: $this->getMode();
         $prefix = $mode == 'production' ? 'api' : ('api.' . $mode);
-        return sprintf(self::URL_TEMPLATE, $prefix);
+        return sprintf($this->brandRegistry->getCheckoutUrlTemplate(), $prefix);
     }
 
     /**
@@ -266,7 +264,7 @@ class Repository implements RepositoryInterface
      */
     public function getCheckoutPageUrl(?string $mode = null): string
     {
-        if ($this->appState->getMode() === State::MODE_DEVELOPER) {
+        if ($this->isDeveloperMode()) {
             $envUrl = getenv('TWO_CHECKOUT_BASE_URL');
             if ($envUrl !== false && $envUrl !== '') {
                 return $envUrl;
@@ -274,30 +272,69 @@ class Repository implements RepositoryInterface
         }
         $mode = $mode ?: $this->getMode();
         $prefix = $mode == 'production' ? 'checkout' : ('checkout.' . $mode);
-        return sprintf(self::URL_TEMPLATE, $prefix);
+        return sprintf($this->brandRegistry->getCheckoutUrlTemplate(), $prefix);
     }
 
     /**
-     * Get brand identifier for checkout page.
+     * Check if Magento is in developer mode.
+     *
+     * Reads from app/etc/env.php directly to avoid State DI injection
+     *. Equivalent to State::getMode() === MODE_DEVELOPER.
+     *
+     * @return bool
+     */
+    protected function isDeveloperMode(): bool
+    {
+        if (defined('BP')) {
+            $envFile = BP . '/app/etc/env.php';
+            if (file_exists($envFile)) {
+                $env = include $envFile;
+                return ($env['MAGE_MODE'] ?? '') === 'developer';
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Get brand identifier for checkout page URL decoration.
+     *
+     * Returns empty in production so URLs stay clean — the checkout
+     * domain itself conveys the brand there. Only emitted in non-prod
+     * modes where domains are shared across brands.
      *
      * @return string
      */
     public function getBrand(): string
     {
-        $envBrand = getenv('TWO_BRAND');
-        if ($envBrand !== false && $envBrand !== '') {
+        if ($this->getMode() === 'production') {
+            return '';
+        }
+        // Dev-loop override: developers can route a non-prod build to a
+        // specific brand sub-stack via TWO_BRAND. Sanitise — the value
+        // goes straight into a query string emitted to the buyer
+        // browser, so a typo like "TWO_BRAND=foo bar" must not slip
+        // through.
+        $envBrand = getenv("TWO_BRAND");
+        if ($envBrand !== false && $envBrand !== "" && preg_match("/^[a-z0-9-]+$/i", $envBrand)) {
             return $envBrand;
         }
-        return '';
+        return $this->brandRegistry->getBrandTag();
     }
 
     /**
-     * Get brand version for checkout page.
+     * Get brand version for checkout page URL decoration.
+     *
+     * Resolved by Makefile: 'qa' for @two.inc gcloud users, empty otherwise.
+     * Overridable via TWO_BRAND_VERSION in .env.local. Returns empty in
+     * production — see getBrand().
      *
      * @return string
      */
     public function getBrandVersion(): string
     {
+        if ($this->getMode() === 'production') {
+            return '';
+        }
         $envVersion = getenv('TWO_BRAND_VERSION');
         if ($envVersion !== false && $envVersion !== '') {
             return $envVersion;
@@ -456,7 +493,7 @@ class Repository implements RepositoryInterface
     public function getSurchargeLineDescription(?int $storeId = null): string
     {
         return (string)$this->getConfig(self::XML_PATH_SURCHARGE_LINE_DESCRIPTION, $storeId)
-            ?: 'Payment terms fee';
+            ?: 'Payment terms fee - %1 days';
     }
 
     /**

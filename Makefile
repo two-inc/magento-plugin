@@ -14,8 +14,6 @@ TWO_ENV              := $(shell gcloud config get-value account 2>/dev/null | gr
 TWO_API_BASE_URL     ?= https://api.$(TWO_ENV).two.inc
 TWO_CHECKOUT_BASE_URL ?= https://checkout.$(TWO_ENV).two.inc
 TWO_STORE_COUNTRY    ?= NO
-TWO_BRAND            ?=
-TWO_BRAND_VERSION    ?=
 export PORT
 
 .PHONY: help install configure compile run debug stop clean flush logs proxy archive patch minor major format test test-e2e
@@ -35,8 +33,6 @@ install: clean
 		-e URL=$(URL) \
 		-e TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
 		-e TWO_CHECKOUT_BASE_URL=$(TWO_CHECKOUT_BASE_URL) \
-		$(if $(TWO_BRAND),-e TWO_BRAND=$(TWO_BRAND)) \
-		$(if $(TWO_BRAND_VERSION),-e TWO_BRAND_VERSION=$(TWO_BRAND_VERSION)) \
 		-v $(CURDIR):/data/extensions/workdir \
 		$(IMAGE):$(TAG)
 	@echo "Waiting for Magento to start..."
@@ -49,13 +45,41 @@ install: clean
 		community-engineering/language-fi_fi \
 		community-engineering/language-da_dk
 	docker exec $(CONTAINER) rm -rf /data/generated/code
-	docker exec $(CONTAINER) php bin/magento module:disable Magento_AdminAdobeImsTwoFactorAuth Magento_TwoFactorAuth
+	docker exec $(CONTAINER) php bin/magento module:disable \
+		Magento_AdminAdobeImsTwoFactorAuth Magento_TwoFactorAuth \
+		Magento_Analytics Magento_AdminAnalytics \
+		Magento_CatalogAnalytics Magento_CustomerAnalytics \
+		Magento_QuoteAnalytics Magento_ReviewAnalytics \
+		Magento_SalesAnalytics Magento_WishlistAnalytics \
+		Magento_GoogleAnalytics Magento_GoogleOptimizer \
+		Magento_PageBuilder Magento_PageBuilderAnalytics \
+		Magento_CatalogPageBuilderAnalytics Magento_CmsPageBuilderAnalytics \
+		Magento_PageBuilderAdminAnalytics Magento_AwsS3PageBuilder
+	# NB: Magento_NewRelicReporting NOT disabled — Magento_GraphQl declares
+	# a hard dependency on it (every *GraphQl module transitively requires
+	# it). Even un-licensed it should be quiet at runtime in dev.
 	docker exec $(CONTAINER) php bin/magento module:enable Two_Gateway
 	docker exec $(CONTAINER) php bin/magento setup:upgrade
 	docker exec $(CONTAINER) php bin/magento deploy:mode:set developer
 	docker exec $(CONTAINER) php bin/magento setup:di:compile
+	# Local-dev perf: merge + minify JS/CSS so RequireJS doesn't fan out into
+	# ~200 individual file fetches. Stays in developer mode (no static deploy
+	# step), but the request count drops to ~20 and the storefront's KO
+	# bootstrap returns in well under a second. See README "Local-dev perf".
+	# Must run before `configure` — `configure` restarts the container, and
+	# `config:set` requires a running Magento.
+	docker exec $(CONTAINER) php bin/magento config:set dev/js/merge_files 1
+	docker exec $(CONTAINER) php bin/magento config:set dev/js/minify_files 1
+	docker exec $(CONTAINER) php bin/magento config:set dev/css/merge_css_files 1
+	# Pre-bake all theme JS/CSS so RequireJS XHRs hit plain file IO instead
+	# of falling through Magento's pub/static.php router (a full bootstrap
+	# per asset). Without this, RequireJS's ~hundreds of runtime-loaded
+	# files each trigger a serialised Magento boot, taking the storefront
+	# button-enable latency from sub-second to ~10s on the sample catalog.
+	docker exec $(CONTAINER) php bin/magento setup:static-content:deploy --area frontend --theme Magento/luma --no-html-minify -f --jobs 4 en_US
 	$(MAKE) configure TWO_API_KEY=$(or $(TWO_API_KEY),dummy-dev-key)
 	docker exec $(CONTAINER) bash /data/extensions/workdir/dev/install-xdebug
+	docker exec $(CONTAINER) bash /data/extensions/workdir/dev/hide-admin-loader
 	@./start-proxy.sh --background || true
 	@PROXY_URL=$$(./start-proxy.sh url 2>/dev/null); \
 	if [ -n "$$PROXY_URL" ]; then \

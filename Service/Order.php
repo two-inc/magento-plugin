@@ -178,7 +178,7 @@ abstract class Order
                 'net_amount' => $this->roundAmt($this->getNetAmountItem($item)),
                 'tax_amount' => $this->roundAmt($this->getTaxAmountItem($item)),
                 'discount_amount' => $this->roundAmt($this->getDiscountAmountItem($item)),
-                'tax_rate' => $this->roundAmt($this->getTaxRateItem($item)),
+                'tax_rate' => $this->roundAmt($this->getTaxRateItem($item), 6),
                 'tax_class_name' => 'VAT ' . $this->roundAmt($item->getTaxPercent()) . '%',
                 'unit_price' => $this->roundAmt($this->getUnitPriceItem($item), 6),
                 'quantity' => $item->getQtyOrdered(),
@@ -358,7 +358,7 @@ abstract class Order
             'net_amount' => $this->roundAmt($this->getNetAmountShipping($order)),
             'tax_amount' => $this->roundAmt($this->getTaxAmountShipping($order)),
             'discount_amount' => $this->roundAmt($this->getDiscountAmountShipping($order)),
-            'tax_rate' => $this->roundAmt($this->getTaxRateShipping($order)),
+            'tax_rate' => $this->roundAmt($this->getTaxRateShipping($order), 6),
             'unit_price' => $this->roundAmt($this->getUnitPriceShipping($order), 6),
             'tax_class_name' => 'VAT ' . $this->roundAmt($this->getTaxRateShipping($order) * 100) . '%',
             'quantity' => 1,
@@ -509,7 +509,7 @@ abstract class Order
             $summary[] = [
                 'taxable_amount' => $this->roundAmt($taxableAmount),
                 'tax_amount' => $this->roundAmt($taxAmount),
-                'tax_rate' => $this->roundAmt($taxRate)
+                'tax_rate' => $this->roundAmt($taxRate, 6)
             ];
         }
 

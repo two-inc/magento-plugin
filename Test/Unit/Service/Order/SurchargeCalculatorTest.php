@@ -3,11 +3,11 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Service\Order;
 
-use Magento\Directory\Model\Currency;
-use Magento\Directory\Model\CurrencyFactory;
 use Magento\Framework\HTTP\Client\Curl;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Api\Adapter;
@@ -21,8 +21,8 @@ class SurchargeCalculatorTest extends TestCase
     /** @var Adapter|\PHPUnit\Framework\MockObject\MockObject */
     private $adapter;
 
-    /** @var CurrencyFactory|\PHPUnit\Framework\MockObject\MockObject */
-    private $currencyFactory;
+    /** @var CurrencyRatesProviderInterface|\PHPUnit\Framework\MockObject\MockObject */
+    private $ratesProvider;
 
     /** @var SurchargeCalculator */
     private $calculator;
@@ -33,6 +33,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->adapter = $this->getMockBuilder(Adapter::class)
             ->setConstructorArgs([
                 $this->config,
+                $this->createMock(BrandRegistryInterface::class),
                 $this->createMock(Curl::class),
                 $this->createMock(LogRepository::class),
             ])
@@ -40,12 +41,9 @@ class SurchargeCalculatorTest extends TestCase
             ->getMock();
 
         $log = $this->createMock(LogRepository::class);
-        $this->currencyFactory = $this->getMockBuilder(CurrencyFactory::class)
-            ->disableOriginalConstructor()
-            ->addMethods(['create'])
-            ->getMock();
+        $this->ratesProvider = $this->createMock(CurrencyRatesProviderInterface::class);
 
-        $this->calculator = new SurchargeCalculator($this->config, $this->adapter, $log, $this->currencyFactory);
+        $this->calculator = new SurchargeCalculator($this->config, $this->adapter, $log, $this->ratesProvider);
     }
 
     private function stubCommonConfig(string $type, bool $differential = false): void
@@ -73,17 +71,9 @@ class SurchargeCalculatorTest extends TestCase
 
     private function stubFxRate(string $from, float $multiplier): void
     {
-        $currency = $this->getMockBuilder(Currency::class)
-            ->disableOriginalConstructor()
-            ->addMethods(['load', 'convert'])
-            ->getMock();
-        $currency->method('load')->with($from)->willReturnSelf();
-        $currency->method('convert')->willReturnCallback(
-            function ($amount) use ($multiplier) {
-                return $amount * $multiplier;
-            }
-        );
-        $this->currencyFactory->method('create')->willReturn($currency);
+        $this->ratesProvider->method('getRate')
+            ->with($from, $this->anything())
+            ->willReturn($multiplier);
     }
 
     // ── Short-circuits (no API call) ─────────────────────────────────
@@ -99,13 +89,17 @@ class SurchargeCalculatorTest extends TestCase
         $this->assertEquals('', $result['description']);
     }
 
-    public function testDifferentialModeDefaultTermShortCircuits(): void
+    public function testDifferentialModeDefaultTermDelegatesToApi(): void
     {
         $this->stubCommonConfig(SurchargeType::PERCENTAGE, true);
         $this->config->method('getDefaultPaymentTerm')->willReturn(30);
         $this->stubSurchargeConfig(50);
 
-        $this->adapter->expects($this->never())->method('execute');
+        // Differential math is the API's job; the plugin sends the request
+        // and trusts the response (which will be 0 at the default term).
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->willReturn(['buyer_fee_share' => 0.0]);
 
         $result = $this->calculator->calculate(1000.0, 30, 'NO', 'NOK');
 
@@ -126,16 +120,72 @@ class SurchargeCalculatorTest extends TestCase
         $this->assertEquals(17.50, $result['amount']);
     }
 
-    public function testReturnsZeroWhenApiOmitsBuyerFeeShare(): void
+    public function testThrowsWhenApiOmitsBuyerFeeShare(): void
     {
         $this->stubCommonConfig(SurchargeType::PERCENTAGE);
         $this->stubSurchargeConfig(50);
 
         $this->adapter->method('execute')->willReturn([]);
 
-        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+        $this->expectExceptionMessage('Pricing API response missing required field: buyer_fee_share');
 
-        $this->assertEquals(0.0, $result['amount']);
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testThrowsWithUpstreamErrorWhenApiReturnsNon2xx(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+
+        // Adapter merges the upstream error body with http_status. The
+        // calculator must surface that — not mask it as a schema bug.
+        $this->adapter->method('execute')->willReturn([
+            'http_status' => 401,
+            'error_code' => 'AUTHENTICATION_INVALID',
+            'error_message' => 'X-API-Key is incorrect or has expired',
+            'error_trace_id' => 'abc123',
+        ]);
+
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+        // User-facing message intentionally omits HTTP status / upstream reason
+        // (those are logged for ops). Trace ID is included for support lookup.
+        $this->expectExceptionMessage('Two payment is temporarily unavailable. Please try another payment method or contact support (ref: abc123).');
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testUpstreamErrorWithoutTraceIdOmitsTraceSegment(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+
+        $this->adapter->method('execute')->willReturn([
+            'error_code' => 400,
+            'error_message' => 'Transport error: timeout',
+        ]);
+
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+        $this->expectExceptionMessage('Two payment is temporarily unavailable. Please try another payment method or contact support.');
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testHttpStatus2xxDoesNotTriggerErrorPathEvenIfFieldPresent(): void
+    {
+        // Regression: previously the guard fired on any `http_status` key,
+        // including 200. Adapters that always include status in their return
+        // (observability practice) must not break the success path.
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+
+        $this->adapter->method('execute')->willReturn([
+            'http_status'     => 200,
+            'buyer_fee_share' => 17.50,
+        ]);
+
+        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+        $this->assertEquals(17.50, $result['amount']);
     }
 
     // ── Payload mapping ──────────────────────────────────────────────
@@ -175,7 +225,7 @@ class SurchargeCalculatorTest extends TestCase
                     $share = $payload['buyer_fee_share'];
                     return $share['surcharge_basis'] === 'buyer_pays'
                         && $share['percentage'] === 75.0
-                        && $share['surcharge'] === 0.0
+                        && !array_key_exists('surcharge', $share)
                         && !array_key_exists('cap', $share)
                         && !array_key_exists('reference_terms', $share);
                 })
@@ -364,7 +414,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('getSurchargeType')->willReturn(SurchargeType::FIXED);
         $this->config->method('isSurchargeDifferential')->willReturn(false);
         $this->config->method('getPaymentTermsType')->willReturn('standard');
-        $this->config->method('getSurchargeLineDescription')->willReturn('Extended terms fee');
+        $this->config->method('getSurchargeLineDescription')->willReturn('Extended terms fee - %1 days');
         $this->config->method('getSurchargeTaxRate')->willReturn(25.0);
         $this->stubSurchargeConfig(0, 10);
         $this->stubFixedCurrency('NOK');
@@ -409,7 +459,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->stubSurchargeConfig(0, 15);
         $this->stubFixedCurrency('NOK');
 
-        $this->currencyFactory->expects($this->never())->method('create');
+        $this->ratesProvider->expects($this->never())->method('getRate');
 
         $this->adapter->expects($this->once())
             ->method('execute')
@@ -456,13 +506,9 @@ class SurchargeCalculatorTest extends TestCase
         $this->stubSurchargeConfig(0, 10);
         $this->stubFixedCurrency('NOK');
 
-        $currency = $this->getMockBuilder(Currency::class)
-            ->disableOriginalConstructor()
-            ->addMethods(['load', 'convert'])
-            ->getMock();
-        $currency->method('load')->with('NOK')->willReturnSelf();
-        $currency->method('convert')->willThrowException(new \Exception('Undefined rate from "NOK" to "GBP".'));
-        $this->currencyFactory->method('create')->willReturn($currency);
+        $this->ratesProvider->method('getRate')
+            ->with('NOK', 'GBP')
+            ->willReturn(null);
 
         $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
         $this->expectExceptionMessage('Cannot convert surcharge from NOK to GBP');
@@ -476,7 +522,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->stubSurchargeConfig(0, 10);
         $this->stubFixedCurrency('');
 
-        $this->currencyFactory->expects($this->never())->method('create');
+        $this->ratesProvider->expects($this->never())->method('getRate');
 
         $this->adapter->expects($this->once())
             ->method('execute')

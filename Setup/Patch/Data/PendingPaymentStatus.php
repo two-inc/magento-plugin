@@ -10,6 +10,7 @@ namespace Two\Gateway\Setup\Patch\Data;
 use Magento\Framework\Setup\ModuleDataSetupInterface;
 use Magento\Framework\Setup\Patch\DataPatchInterface;
 use Two\Gateway\Model\Two;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
@@ -22,6 +23,9 @@ class PendingPaymentStatus implements DataPatchInterface
      */
     private $configRepository;
 
+    /** @var BrandRegistryInterface */
+    private $brandRegistry;
+
     /**
      * @var ModuleDataSetupInterface
      */
@@ -33,9 +37,11 @@ class PendingPaymentStatus implements DataPatchInterface
      */
     public function __construct(
         ConfigRepository $configRepository,
+        BrandRegistryInterface $brandRegistry,
         ModuleDataSetupInterface $moduleDataSetup
     ) {
         $this->configRepository = $configRepository;
+        $this->brandRegistry = $brandRegistry;
         $this->moduleDataSetup = $moduleDataSetup;
     }
 
@@ -53,7 +59,7 @@ class PendingPaymentStatus implements DataPatchInterface
 
         $this->moduleDataSetup->getConnection()->insert(
             $this->moduleDataSetup->getTable('sales_order_status'),
-            ['status' => Two::STATUS_PENDING, 'label' => sprintf('%s Pending', $this->configRepository::PROVIDER)]
+            ['status' => Two::STATUS_PENDING, 'label' => sprintf('%s Pending', $this->brandRegistry->getProvider())]
         );
 
         $this->moduleDataSetup->getConnection()->insert(
