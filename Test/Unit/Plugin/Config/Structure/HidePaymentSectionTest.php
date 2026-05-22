@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Plugin\Config\Structure;
 
-use Magento\Config\Model\Config\Structure;
+use Magento\Config\Model\Config\Structure\Element\Section;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandOverlayRegistryInterface;
@@ -24,73 +24,71 @@ class HidePaymentSectionTest extends TestCase
         return new HidePaymentSection($registry, $scope);
     }
 
+    /**
+     * Build an anonymous subclass of Section that overrides getId(). We can't
+     * use createMock(Section::class) because getId comes from
+     * Magento\Framework\Data\Structure\Element's __call magic in the CI test
+     * stub (no declared method, PHPUnit throws MethodCannotBeConfiguredException),
+     * and we can't use ReflectionClass::newInstanceWithoutConstructor + setData
+     * because the test-bundled Section stub doesn't extend DataObject and so
+     * has no setData. Skipping the parent constructor keeps us independent of
+     * its required arguments.
+     */
+    private function section(string $id): Section
+    {
+        return new class($id) extends Section {
+            // phpcs:disable
+            public function __construct(private string $sectionId)
+            {
+                // skip parent constructor — only getId() is exercised by the plugin
+            }
+            public function getId()
+            {
+                return $this->sectionId;
+            }
+            // phpcs:enable
+        };
+    }
+
+    public function testPassThroughWhenSectionAlreadyHidden(): void
+    {
+        $plugin = $this->plugin(true, true);
+        $this->assertFalse($plugin->afterIsVisible($this->section('two_payment'), false));
+    }
+
     public function testPassThroughForUnrelatedSection(): void
     {
         $plugin = $this->plugin(true, true);
-        $sentinel = new \stdClass();
-        $this->assertSame(
-            $sentinel,
-            $plugin->afterGetElement($this->createMock(Structure::class), $sentinel, 'payment')
-        );
+        $this->assertTrue($plugin->afterIsVisible($this->section('catalog'), true));
     }
 
     public function testPassThroughWhenNoOverlayInstalled(): void
     {
         $plugin = $this->plugin(false, true);
-        $sentinel = new \stdClass();
-        $this->assertSame(
-            $sentinel,
-            $plugin->afterGetElement($this->createMock(Structure::class), $sentinel, 'two_payment')
-        );
+        $this->assertTrue($plugin->afterIsVisible($this->section('two_payment'), true));
     }
 
     public function testPassThroughWhenHideFlagDisabled(): void
     {
         $plugin = $this->plugin(true, false);
-        $sentinel = new \stdClass();
-        $this->assertSame(
-            $sentinel,
-            $plugin->afterGetElement($this->createMock(Structure::class), $sentinel, 'two_payment')
-        );
+        $this->assertTrue($plugin->afterIsVisible($this->section('two_payment'), true));
     }
 
-    public function testHidesTwoPaymentSectionWhenOverlayAndFlagBothSet(): void
+    public function testHidesTwoPaymentSection(): void
     {
         $plugin = $this->plugin(true, true);
-        $this->assertNull(
-            $plugin->afterGetElement($this->createMock(Structure::class), new \stdClass(), 'two_payment')
-        );
+        $this->assertFalse($plugin->afterIsVisible($this->section('two_payment'), true));
     }
 
-    public function testHidesTwoGeneralSectionWhenOverlayAndFlagBothSet(): void
+    public function testHidesTwoGeneralSection(): void
     {
         $plugin = $this->plugin(true, true);
-        $this->assertNull(
-            $plugin->afterGetElement($this->createMock(Structure::class), new \stdClass(), 'two_general')
-        );
+        $this->assertFalse($plugin->afterIsVisible($this->section('two_general'), true));
     }
 
-    public function testHidesNestedGroupUnderTwoPayment(): void
+    public function testHidesTwoSearchSection(): void
     {
         $plugin = $this->plugin(true, true);
-        $this->assertNull(
-            $plugin->afterGetElement(
-                $this->createMock(Structure::class),
-                new \stdClass(),
-                'two_payment/payment_method'
-            )
-        );
-    }
-
-    public function testHidesNestedGroupUnderTwoGeneral(): void
-    {
-        $plugin = $this->plugin(true, true);
-        $this->assertNull(
-            $plugin->afterGetElement(
-                $this->createMock(Structure::class),
-                new \stdClass(),
-                'two_general/general'
-            )
-        );
+        $this->assertFalse($plugin->afterIsVisible($this->section('two_search'), true));
     }
 }

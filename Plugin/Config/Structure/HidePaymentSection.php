@@ -8,13 +8,13 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Plugin\Config\Structure;
 
-use Magento\Config\Model\Config\Structure;
+use Magento\Config\Model\Config\Structure\Element\Section;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Two\Gateway\Api\BrandOverlayRegistryInterface;
 
 /**
- * Hide every Two_Gateway admin config section (`two_general` and
- * `two_payment`) when:
+ * Hide every Two_Gateway admin config section (`two_general`,
+ * `two_payment`, `two_search`) when:
  *   - At least one brand overlay (e.g. ABN_Gateway) is registered, AND
  *   - `payment/two_payment/hide_when_overlay_installed` resolves to truthy.
  *
@@ -25,23 +25,27 @@ use Two\Gateway\Api\BrandOverlayRegistryInterface;
  *     bin/magento config:set payment/two_payment/hide_when_overlay_installed 0
  *     bin/magento cache:flush
  *
- * Returning null from afterGetElement makes the section invisible to
- * the admin config UI: the left-nav stops listing it, and direct
- * URL access (?section=two_payment) renders empty since `Structure`
- * is the authoritative element source. Returning null does not
- * delete any persisted CCD value; the overlay's `etc/config.xml`
- * still defaults `payment/two_payment/active = 0` as belt-and-braces.
+ * Plugs into `Section::isVisible()` rather than `Structure::getElement()`.
+ * The sidebar render path iterates `Structure::getTabs()` and per-tab
+ * children, then calls `isVisible()` on each section to decide whether
+ * to render it. The Edit controller (`Magento\Config\Controller\Adminhtml\System\Config\Edit`)
+ * also calls `isVisible()` after `getElement()` for direct URL access,
+ * and the previous `afterGetElement` hook returning null broke that
+ * code path with `Call to a member function isVisible() on null`.
  *
- * `two_general` is hidden because it carries Two-only fields
- * (API key, environment, debug toggle) that point at
- * `payment/two_payment/*` config paths — irrelevant to an overlay
- * merchant who configures their own brand under a separate admin
- * section.
+ * Returning false from `isVisible()` is the canonical "hide me" signal:
+ * the sidebar skips the section and the Edit controller treats it as
+ * unauthorised, redirecting away cleanly.
+ *
+ * `two_general` carries Two-only fields (API key, environment, debug
+ * toggle). `two_search` is the Two-side company-search admin. Both
+ * are irrelevant to an overlay merchant who configures their own
+ * brand under a separate admin section.
  */
 class HidePaymentSection
 {
     private const HIDE_FLAG_PATH = 'payment/two_payment/hide_when_overlay_installed';
-    private const TARGET_SECTIONS = ['two_general', 'two_payment'];
+    private const TARGET_SECTIONS = ['two_general', 'two_payment', 'two_search'];
 
     public function __construct(
         private readonly BrandOverlayRegistryInterface $overlayRegistry,
@@ -50,28 +54,20 @@ class HidePaymentSection
     }
 
     /**
-     * @param Structure $subject
-     * @param mixed     $result Whatever Structure::getElement returned.
-     * @param string    $path   Section/group path being resolved.
-     * @return mixed Null if the section should be hidden, original $result otherwise.
+     * @param Section $subject
+     * @param bool    $result Whatever Section::isVisible computed natively.
+     * @return bool false if the section should be hidden by overlay, $result otherwise.
      */
-    public function afterGetElement(Structure $subject, $result, $path)
+    public function afterIsVisible(Section $subject, $result)
     {
-        if (!$this->matchesTarget($path)) {
+        if (!$result) {
+            return $result;
+        }
+        if (!in_array($subject->getId(), self::TARGET_SECTIONS, true)) {
             return $result;
         }
         if (!$this->shouldHide()) {
             return $result;
-        }
-        return null;
-    }
-
-    private function matchesTarget(string $path): bool
-    {
-        foreach (self::TARGET_SECTIONS as $section) {
-            if ($path === $section || str_starts_with($path, $section . '/')) {
-                return true;
-            }
         }
         return false;
     }
