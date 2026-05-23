@@ -50,8 +50,11 @@ class Surcharge extends AbstractTotal
     private $logRepository;
 
     /**
-     * @var string[] payment-method codes that engage the surcharge collector.
-     *               Populated via DI; brand overlays append their own code.
+     * @var array<string, true> set of payment-method codes (as keys) that
+     *                          engage the surcharge collector. Populated via
+     *                          DI; brand overlays append their own code.
+     *                          Keyed set so collect() uses O(1) isset() on
+     *                          the hot collectTotals path.
      */
     private $allowedMethods;
 
@@ -66,7 +69,7 @@ class Surcharge extends AbstractTotal
         $this->configRepository = $configRepository;
         $this->surchargeCalculator = $surchargeCalculator;
         $this->logRepository = $logRepository;
-        $this->allowedMethods = array_values($allowedMethods);
+        $this->allowedMethods = array_fill_keys(array_values($allowedMethods), true);
         $this->setCode('two_surcharge');
     }
 
@@ -97,7 +100,7 @@ class Surcharge extends AbstractTotal
         // entire checkout flow.
         $payment = $quote->getPayment();
         $paymentMethod = $payment ? $payment->getMethod() : null;
-        if (!$paymentMethod || !in_array($paymentMethod, $this->allowedMethods, true)) {
+        if (!isset($this->allowedMethods[$paymentMethod])) {
             $this->logRepository->addDebugLog(
                 'TotalCollector: skipped (payment method: ' . ($paymentMethod ?: 'none') . ')',
                 []
