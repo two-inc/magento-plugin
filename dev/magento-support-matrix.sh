@@ -71,12 +71,50 @@ gh_headers=()
 
 # ---------------------------------------------------------------------------
 # Step 1: discover Magento support window from upstream tags.
+#
+# Fetches with one retry on transient failure. Validates HTTP status and
+# JSON shape before piping to jq — previously a rate-limited / 502 / HTML
+# response would surface as a cryptic jq error like "Cannot index string
+# with string \"name\"" instead of the actual upstream problem.
 # ---------------------------------------------------------------------------
-tags_json=$(curl -sH 'Cache-Control: no-cache' "${gh_headers[@]}" \
-    'https://api.github.com/repos/magento/magento2/tags?per_page=100' \
-    || { echo "::error::Could not reach github.com/magento/magento2 tags" >&2; exit 2; })
+fetch_magento_tags() {
+    local url='https://api.github.com/repos/magento/magento2/tags?per_page=100'
+    local attempt response http_code body
+    for attempt in 1 2; do
+        if ! response=$(curl -sS --max-time 30 -w '\n%{http_code}' \
+                -H 'Cache-Control: no-cache' "${gh_headers[@]}" "$url" 2>&1); then
+            echo "::warning::GitHub tags API attempt ${attempt}: curl failed: ${response}" >&2
+            [ "$attempt" -lt 2 ] && { sleep 5; continue; }
+            echo "::error::GitHub tags API unreachable after retry" >&2
+            return 2
+        fi
+        http_code="${response##*$'\n'}"
+        body="${response%$'\n'*}"
+        if [ "$http_code" != "200" ]; then
+            echo "::warning::GitHub tags API attempt ${attempt}: HTTP ${http_code}" >&2
+            echo "Response body (first 500 chars):" >&2
+            printf '%s' "$body" | head -c 500 >&2; echo >&2
+            [ "$attempt" -lt 2 ] && { sleep 5; continue; }
+            echo "::error::GitHub tags API persistently returning HTTP ${http_code}" >&2
+            return 2
+        fi
+        if ! printf '%s' "$body" | jq -e 'type == "array"' >/dev/null 2>&1; then
+            echo "::warning::GitHub tags API attempt ${attempt}: response is not a JSON array" >&2
+            echo "Response body (first 500 chars):" >&2
+            printf '%s' "$body" | head -c 500 >&2; echo >&2
+            [ "$attempt" -lt 2 ] && { sleep 5; continue; }
+            echo "::error::GitHub tags API persistently returning non-array response" >&2
+            return 2
+        fi
+        printf '%s' "$body"
+        return 0
+    done
+    return 2
+}
 
-all_minors=$(echo "$tags_json" \
+tags_json=$(fetch_magento_tags) || exit 2
+
+all_minors=$(printf '%s' "$tags_json" \
     | jq -r 'map(.name)
              | map(select(test("^2\\.4\\.[0-9]+$")))
              | sort_by(. | split(".") | map(tonumber))
