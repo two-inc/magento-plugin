@@ -40,6 +40,16 @@ class SurchargeGrid extends Field
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
+    /**
+     * Payment method code whose config subtree this grid reads/writes
+     * (e.g. `two_payment`, `abn_payment`). Brand-overlay packages pass
+     * their own code via `<arguments>` in di.xml; the default keeps
+     * existing vanilla installs working unchanged.
+     *
+     * @var string
+     */
+    private $methodCode;
+
     /** @var string */
     private $scope = 'default';
 
@@ -52,13 +62,15 @@ class SurchargeGrid extends Field
         StoreManagerInterface $storeManager,
         CurrencyRatesProviderInterface $ratesProvider,
         BrandRegistryInterface $brandRegistry,
-        array $data = []
+        array $data = [],
+        string $methodCode = 'two_payment'
     ) {
         parent::__construct($context, $data);
         $this->scopeConfig = $scopeConfig;
         $this->storeManager = $storeManager;
         $this->ratesProvider = $ratesProvider;
         $this->brandRegistry = $brandRegistry;
+        $this->methodCode = $methodCode;
     }
 
     /**
@@ -84,10 +96,10 @@ class SurchargeGrid extends Field
      */
     public function getActiveTerms(): array
     {
-        $selected = $this->getConfigValue(ConfigRepository::XML_PATH_PAYMENT_TERMS);
+        $selected = $this->getConfigValue($this->path('payment_terms'));
         $terms = array_filter(array_map('intval', explode(',', (string)$selected)));
 
-        $custom = (int)$this->getConfigValue(ConfigRepository::XML_PATH_PAYMENT_TERMS_DURATION_DAYS);
+        $custom = (int)$this->getConfigValue($this->path('payment_terms_duration_days'));
         if ($custom > 0) {
             $terms[] = $custom;
         }
@@ -102,8 +114,7 @@ class SurchargeGrid extends Field
      */
     public function getSavedValue(int $days, string $field): string
     {
-        $path = sprintf('payment/two_payment/surcharge_%d_%s', $days, $field);
-        $value = $this->getConfigValue($path);
+        $value = $this->getConfigValue($this->path(sprintf('surcharge_%d_%s', $days, $field)));
         return $value !== null ? (string)$value : '';
     }
 
@@ -112,7 +123,7 @@ class SurchargeGrid extends Field
      */
     public function getDefaultTerm(): int
     {
-        return (int)$this->getConfigValue(ConfigRepository::XML_PATH_DEFAULT_PAYMENT_TERM);
+        return (int)$this->getConfigValue($this->path('default_payment_term'));
     }
 
     /**
@@ -120,7 +131,7 @@ class SurchargeGrid extends Field
      */
     public function getSurchargeType(): string
     {
-        return (string)$this->getConfigValue(ConfigRepository::XML_PATH_SURCHARGE_TYPE);
+        return (string)$this->getConfigValue($this->path('surcharge_type'));
     }
 
     /**
@@ -332,7 +343,7 @@ class SurchargeGrid extends Field
         if ($this->scope === 'default') {
             return false;
         }
-        $path = sprintf('payment/two_payment/surcharge_%d_%s', $days, $field);
+        $path = $this->path(sprintf('surcharge_%d_%s', $days, $field));
         $value = $this->scopeConfig->getValue($path, $this->scope, $this->scopeId);
         $defaultValue = $this->scopeConfig->getValue($path);
         return $value === $defaultValue;
@@ -392,5 +403,16 @@ class SurchargeGrid extends Field
             return $this->scopeConfig->getValue($path, $this->scope, $this->scopeId);
         }
         return $this->scopeConfig->getValue($path);
+    }
+
+    /**
+     * Build a fully-qualified config path under the configured payment
+     * method subtree. Brand-overlay packages set `methodCode` via di.xml
+     * so their merchant config (e.g. `payment/abn_payment/payment_terms`)
+     * is read instead of the vanilla `payment/two_payment/*` subtree.
+     */
+    private function path(string $suffix): string
+    {
+        return 'payment/' . $this->methodCode . '/' . $suffix;
     }
 }

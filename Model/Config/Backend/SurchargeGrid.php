@@ -44,6 +44,15 @@ class SurchargeGrid extends Value
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
+    /**
+     * Payment method code whose config subtree this grid persists into
+     * (e.g. `two_payment`, `abn_payment`). Brand-overlay packages pass
+     * their own code via `<arguments>` in di.xml.
+     *
+     * @var string
+     */
+    private $methodCode;
+
     public function __construct(
         Context $context,
         Registry $registry,
@@ -55,13 +64,15 @@ class SurchargeGrid extends Value
         BrandRegistryInterface $brandRegistry,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
-        array $data = []
+        array $data = [],
+        string $methodCode = 'two_payment'
     ) {
         parent::__construct($context, $registry, $config, $cacheTypeList, $resource, $resourceCollection, $data);
         $this->configWriter = $configWriter;
         $this->storeManager = $storeManager;
         $this->ratesProvider = $ratesProvider;
         $this->brandRegistry = $brandRegistry;
+        $this->methodCode = $methodCode;
     }
 
     /**
@@ -111,7 +122,7 @@ class SurchargeGrid extends Value
                     continue;
                 }
 
-                $path = sprintf('payment/two_payment/surcharge_%d_%s', $days, $type);
+                $path = sprintf('payment/%s/surcharge_%d_%s', $this->methodCode, $days, $type);
 
                 if (isset($inheritData[$days][$type]) && $inheritData[$days][$type]) {
                     $this->configWriter->delete($path, $scope, $scopeId);
@@ -134,7 +145,7 @@ class SurchargeGrid extends Value
         // Persist the base currency so fixed amounts remain meaningful
         $currencyCode = $this->resolveBaseCurrency($scope, $scopeId);
         $this->configWriter->save(
-            ConfigRepository::XML_PATH_SURCHARGE_FIXED_CURRENCY,
+            sprintf('payment/%s/surcharge_fixed_currency', $this->methodCode),
             $currencyCode,
             $scope,
             $scopeId
