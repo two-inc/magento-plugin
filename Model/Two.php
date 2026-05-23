@@ -284,7 +284,17 @@ class Two extends AbstractMethod
      */
     public function getTitle()
     {
-        return (string)__('Business Invoice');
+        try {
+            $info = $this->getInfoInstance();
+            $days = (int)$info->getAdditionalInformation('selectedTerm');
+        } catch (\Exception $e) {
+            $days = 0;
+        }
+        $noun = __('Business Invoice');
+        if ($days > 0) {
+            return sprintf('%s - %s', $noun, __('%1 days', $days));
+        }
+        return (string)$noun;
     }
 
     /**
