@@ -11,9 +11,9 @@ use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Exception\LocalizedException;
 use Psr\Log\LoggerInterface;
+use Two\Gateway\Api\BrandOverlayRegistryInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Payment\OrderService;
 
 /**
@@ -43,6 +43,9 @@ class SalesOrderCancelAfter implements ObserverInterface
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
+    /** @var BrandOverlayRegistryInterface */
+    private $overlayRegistry;
+
     /**
      * @param OrderService $orderService
      * @param LoggerInterface $logger
@@ -50,11 +53,13 @@ class SalesOrderCancelAfter implements ObserverInterface
     public function __construct(
         OrderService $orderService,
         LoggerInterface $logger,
-        BrandRegistryInterface $brandRegistry
+        BrandRegistryInterface $brandRegistry,
+        BrandOverlayRegistryInterface $overlayRegistry
     ) {
         $this->orderService = $orderService;
         $this->logger = $logger;
         $this->brandRegistry = $brandRegistry;
+        $this->overlayRegistry = $overlayRegistry;
     }
 
     /**
@@ -65,7 +70,7 @@ class SalesOrderCancelAfter implements ObserverInterface
     {
         $order = $observer->getEvent()->getOrder();
         if (!$order
-            || $order->getPayment()->getMethod() !== Two::CODE
+            || !$this->overlayRegistry->isTwoStackMethod((string)$order->getPayment()->getMethod())
             || !$order->getTwoOrderId()
         ) {
             return;

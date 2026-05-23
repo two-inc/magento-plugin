@@ -21,6 +21,7 @@ use Magento\Sales\Model\Order\Payment\Transaction\Repository as PaymentTransacti
 use Magento\Sales\Model\OrderFactory;
 use Magento\Sales\Model\ResourceModel\Order as OrderResource;
 use Magento\Sales\Model\Service\InvoiceService;
+use Two\Gateway\Api\BrandOverlayRegistryInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Model\Two;
@@ -103,6 +104,9 @@ class OrderService
      */
     private $logRepository;
 
+    /** @var BrandOverlayRegistryInterface */
+    private $overlayRegistry;
+
     /**
      * OrderService constructor.
      * @param Adapter $apiAdapter
@@ -137,7 +141,8 @@ class OrderService
         PaymentTransactionRepository $paymentTransactionRepository,
         OrderPaymentRepositoryInterface $orderPaymentRepository,
         OrderRepositoryInterface $orderRepository,
-        LogRepository $logRepository
+        LogRepository $logRepository,
+        BrandOverlayRegistryInterface $overlayRegistry
     ) {
         $this->apiAdapter = $apiAdapter;
         $this->restoreQuote = $restoreQuote;
@@ -155,6 +160,7 @@ class OrderService
         $this->orderRepository = $orderRepository;
         $this->orderPaymentRepository = $orderPaymentRepository;
         $this->logRepository = $logRepository;
+        $this->overlayRegistry = $overlayRegistry;
     }
 
     /**
@@ -177,7 +183,10 @@ class OrderService
             'two_order_reference'
         );
 
-        if (!$order->getId() || $order->getPayment()->getMethod() !== Two::CODE || !$order->getTwoOrderId()) {
+        if (!$order->getId()
+            || !$this->overlayRegistry->isTwoStackMethod((string)$order->getPayment()->getMethod())
+            || !$order->getTwoOrderId()
+        ) {
             throw new LocalizedException($generalErrorMessage);
         }
 
