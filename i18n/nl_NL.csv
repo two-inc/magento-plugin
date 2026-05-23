@@ -32,7 +32,7 @@ Branding,Merknaam
 "%1 is not valid.","%1 is niet geldig."
 "%1: %2.","%1: %2."
 "Click here to log in or sign up as a Sole Trader.","Klik hier om in te loggen of u aan te melden als zelfstandig ondernemer."
-"Company ID",Bedrijfs-ID
+"Company Number",Bedrijfsnummer
 "Company Name",Bedrijfsnaam
 "Could not initiate capture with %1","Kon geen vastlegging starten met %1"
 "Could not initiate refund with %1","Kon geen terugbetaling starten met %1"
@@ -157,3 +157,9 @@ Percentage,Percentage
 "No payment terms selected. Select payment terms above to configure surcharges.","Geen betaaltermijnen geselecteerd. Selecteer hierboven betaaltermijnen om toeslagen te configureren."
 "Payment Term","Betaaltermijn"
 days,dagen
+day,dag
+"Selected payment terms","Gewenste betaaltermijn"
+"Selected payment term is not available.","Geselecteerde betaaltermijn is niet beschikbaar."
+"Could not update payment term.","Kan betaaltermijn niet bijwerken."
+"Please try again.","Probeer het opnieuw."
+"Please select a country first","Selecteer eerst een land"
