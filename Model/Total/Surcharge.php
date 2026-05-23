@@ -69,7 +69,7 @@ class Surcharge extends AbstractTotal
         $this->configRepository = $configRepository;
         $this->surchargeCalculator = $surchargeCalculator;
         $this->logRepository = $logRepository;
-        $this->allowedMethods = array_fill_keys(array_values($allowedMethods), true);
+        $this->allowedMethods = array_fill_keys($allowedMethods, true);
         $this->setCode('two_surcharge');
     }
 
