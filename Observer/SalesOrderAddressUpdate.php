@@ -53,18 +53,23 @@ class SalesOrderAddressUpdate implements ObserverInterface
      * @param ComposeOrder $compositeOrder
      * @param Adapter $apiAdapter
      */
+    /** @var \Two\Gateway\Api\BrandOverlayRegistryInterface */
+    private $overlayRegistry;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
         OrderRepositoryInterface $orderRepository,
         ComposeOrder $compositeOrder,
-        Adapter $apiAdapter
+        Adapter $apiAdapter,
+        \Two\Gateway\Api\BrandOverlayRegistryInterface $overlayRegistry
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
         $this->orderRepository = $orderRepository;
         $this->compositeOrder = $compositeOrder;
         $this->apiAdapter = $apiAdapter;
+        $this->overlayRegistry = $overlayRegistry;
     }
 
     /**
@@ -76,7 +81,10 @@ class SalesOrderAddressUpdate implements ObserverInterface
     {
         $orderId = $observer->getEvent()->getOrderId();
         $order = $this->orderRepository->get($orderId);
-        if ($order && $order->getPayment()->getMethod() === Two::CODE && $order->getTwoOrderId()) {
+        if ($order
+            && $this->overlayRegistry->isTwoStackMethod((string)$order->getPayment()->getMethod())
+            && $order->getTwoOrderId()
+        ) {
             try {
                 $additionalInformation = $order->getPayment()->getAdditionalInformation();
                 $payload = $this->compositeOrder->execute(

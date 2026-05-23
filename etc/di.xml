@@ -22,6 +22,17 @@
     <!-- Default brand binding. Overlay packages may rebind via their own DI preference. -->
     <preference for="Two\Gateway\Api\BrandRegistryInterface"
                 type="Two\Gateway\Brand\TwoBrand"/>
+    <!--
+        Brand overlay registry. The default implementation reads its
+        `overlays` constructor argument; overlay packages append entries
+        via <type name="...BrandOverlayRegistry"> in their own etc/di.xml.
+        Empty by default = standalone Two_Gateway install.
+    -->
+    <preference for="Two\Gateway\Api\BrandOverlayRegistryInterface"
+                type="Two\Gateway\Model\BrandOverlayRegistry"/>
+    <!-- Default outbound-API translator: passthrough. Brand overlays rebind. -->
+    <preference for="Two\Gateway\Api\ApiTranslatorInterface"
+                type="Two\Gateway\Model\ApiTranslator\NullApiTranslator"/>
 
     <type name="Two\Gateway\Logger\Handler">
         <arguments>
@@ -91,6 +102,20 @@
             <argument name="environment" xsi:type="array">
                 <item name="payment/two_payment/mode" xsi:type="string">1</item>
                 <item name="payment/two_payment/debug" xsi:type="boolean">1</item>
+            </argument>
+        </arguments>
+    </type>
+
+    <!--
+        Payment-method codes that engage the surcharge quote-total collector.
+        Brand overlays (e.g. ABN_Gateway) append their own code via a
+        matching <type> entry in their own etc/di.xml — Magento merges
+        named-array DI items across modules so the list grows additively.
+    -->
+    <type name="Two\Gateway\Model\Total\Surcharge">
+        <arguments>
+            <argument name="allowedMethods" xsi:type="array">
+                <item name="two_payment" xsi:type="string">two_payment</item>
             </argument>
         </arguments>
     </type>

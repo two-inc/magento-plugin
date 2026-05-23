@@ -73,6 +73,9 @@ class SalesOrderSaveAfter implements ObserverInterface
      * @param InvoiceService $invoiceService
      * @param TransactionFactory $transactionFactory
      */
+    /** @var \Two\Gateway\Api\BrandOverlayRegistryInterface */
+    private $overlayRegistry;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -80,7 +83,8 @@ class SalesOrderSaveAfter implements ObserverInterface
         HistoryFactory $historyFactory,
         OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository,
         InvoiceService $invoiceService,
-        TransactionFactory $transactionFactory
+        TransactionFactory $transactionFactory,
+        \Two\Gateway\Api\BrandOverlayRegistryInterface $overlayRegistry
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -89,6 +93,7 @@ class SalesOrderSaveAfter implements ObserverInterface
         $this->orderStatusHistoryRepository = $orderStatusHistoryRepository;
         $this->invoiceService = $invoiceService;
         $this->transactionFactory = $transactionFactory;
+        $this->overlayRegistry = $overlayRegistry;
     }
 
     /**
@@ -99,7 +104,7 @@ class SalesOrderSaveAfter implements ObserverInterface
     {
         $order = $observer->getEvent()->getOrder();
         if (!$order
-            || $order->getPayment()->getMethod() !== Two::CODE
+            || !$this->overlayRegistry->isTwoStackMethod((string)$order->getPayment()->getMethod())
             || !$order->getTwoOrderId()
         ) {
             return;

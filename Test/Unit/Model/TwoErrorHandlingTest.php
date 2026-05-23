@@ -270,7 +270,7 @@ class TwoErrorHandlingTest extends TestCase
     {
         return [
             'phone'    => ['["buyer","representative","phone_number"]', 'Phone Number'],
-            'org_num'  => ['["buyer","company","organization_number"]', 'Company ID'],
+            'org_num'  => ['["buyer","company","organization_number"]', 'Company Number'],
             'fname'    => ['["buyer","representative","first_name"]', 'First Name'],
             'lname'    => ['["buyer","representative","last_name"]', 'Last Name'],
             'email'    => ['["buyer","representative","email"]', 'Email Address'],

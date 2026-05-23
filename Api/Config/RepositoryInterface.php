@@ -91,7 +91,7 @@ interface RepositoryInterface
      *
      * @return bool
      */
-    public function isDebugMode(int $storeId = null, ?string $scope = null): bool;
+    public function isDebugMode(?int $storeId = null, ?string $scope = null): bool;
 
     /**
      * Get invoice due in days

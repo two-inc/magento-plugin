@@ -23,6 +23,7 @@
 "Select the countries where this payment method should be available.","Velg landene der denne betalingsmetoden skal være tilgjengelig."
 "Amount is missing","Beløp mangler"
 Branding,Merkevarebygging
+"Business Invoice",Bedriftsfaktura
 "Buy now, receive your goods, pay your invoice later.","Kjøp nå, motta varene dine, betal fakturaen senere."
 "By checking this box, I confirm that I have read and agree to %1.","Ved å merke av i denne boksen, bekrefter jeg at jeg har lest og godtar %1."
 "Check last 100 debug log records","Sjekk siste 100 feilsøkingsloggposter"
@@ -31,7 +32,7 @@ Branding,Merkevarebygging
 "%1 is not valid.","%1 er ikke gyldig."
 "%1: %2.","%1: %2."
 "Click here to log in or sign up as a Sole Trader.","Klikk her for å logge inn eller registrere deg som eneforhandler."
-"Company ID",Organisasjonsnummer
+"Company Number",Organisasjonsnummer
 "Company Name",Selskapsnavn
 "Could not initiate capture with %1","Kunne ikke starte fangst med %1"
 "Could not initiate refund with %1","Kunne ikke starte refusjon med %1"
@@ -156,3 +157,9 @@ Percentage,Prosent
 "No payment terms selected. Select payment terms above to configure surcharges.","Ingen betalingsvilkår valgt. Velg betalingsvilkår ovenfor for å konfigurere tillegg."
 "Payment Term","Betalingsvilkår"
 days,dager
+day,dag
+"Selected payment terms","Valgte betalingsvilkår"
+"Selected payment term is not available.","Valgt betalingsvilkår er ikke tilgjengelig."
+"Could not update payment term.","Kunne ikke oppdatere betalingsvilkår."
+"Please try again.","Vennligst prøv igjen."
+"Please select a country first","Vennligst velg et land først"

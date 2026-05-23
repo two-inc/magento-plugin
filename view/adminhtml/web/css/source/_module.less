@@ -80,6 +80,14 @@
     display: none;
 }
 
+// With the caption hidden and the :before icon floated, the title's
+// content area collapses to its padding (~38px) — visibly shorter
+// than peer section titles (~55px). Match the peer height so the row
+// reads as a normal nav entry rather than a squashed one.
+.two-extension--no-caption .admin__page-nav-title {
+    min-height: 55px;
+}
+
 
 .api-key-status-icon::before {
     display: inline-block;

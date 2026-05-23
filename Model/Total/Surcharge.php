@@ -49,16 +49,27 @@ class Surcharge extends AbstractTotal
      */
     private $logRepository;
 
+    /**
+     * @var array<string, true> set of payment-method codes (as keys) that
+     *                          engage the surcharge collector. Populated via
+     *                          DI; brand overlays append their own code.
+     *                          Keyed set so collect() uses O(1) isset() on
+     *                          the hot collectTotals path.
+     */
+    private $allowedMethods;
+
     public function __construct(
         CheckoutSession $checkoutSession,
         ConfigRepository $configRepository,
         SurchargeCalculator $surchargeCalculator,
-        LogRepository $logRepository
+        LogRepository $logRepository,
+        array $allowedMethods = ['two_payment']
     ) {
         $this->checkoutSession = $checkoutSession;
         $this->configRepository = $configRepository;
         $this->surchargeCalculator = $surchargeCalculator;
         $this->logRepository = $logRepository;
+        $this->allowedMethods = array_fill_keys($allowedMethods, true);
         $this->setCode('two_surcharge');
     }
 
@@ -89,7 +100,7 @@ class Surcharge extends AbstractTotal
         // entire checkout flow.
         $payment = $quote->getPayment();
         $paymentMethod = $payment ? $payment->getMethod() : null;
-        if ($paymentMethod !== 'two_payment') {
+        if (!isset($this->allowedMethods[$paymentMethod])) {
             $this->logRepository->addDebugLog(
                 'TotalCollector: skipped (payment method: ' . ($paymentMethod ?: 'none') . ')',
                 []
@@ -272,6 +283,14 @@ class Surcharge extends AbstractTotal
         return $this->configRepository->getDefaultPaymentTerm($storeId);
     }
 
+    /**
+     * Resolve buyer country in precedence order: billing, shipping, store
+     * default (`general/country/default`). Returns empty string if none
+     * are set — collect() runs after method selection, by which point
+     * the buyer has provided an address, so the empty branch is
+     * effectively dead in normal checkout. Better to surface "no
+     * country" than to invent a region-specific guess.
+     */
     private function resolveBuyerCountry(Quote $quote): string
     {
         $billing = $quote->getBillingAddress();
@@ -282,7 +301,7 @@ class Surcharge extends AbstractTotal
         if ($shipping && $shipping->getCountryId()) {
             return $shipping->getCountryId();
         }
-        return $quote->getStore()->getConfig('general/country/default') ?: 'NO';
+        return (string) $quote->getStore()->getConfig('general/country/default');
     }
 
     private function clearSessionSurcharge(): void

@@ -9,7 +9,11 @@ namespace Two\Gateway\Service\Api;
 
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\HTTP\Client\Curl;
+use Magento\Framework\HTTP\Client\CurlFactory;
 use Throwable;
+use Two\Gateway\Api\ApiCall;
+use Two\Gateway\Api\ApiResult;
+use Two\Gateway\Api\ApiTranslatorInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -29,32 +33,30 @@ class Adapter
     private $brandRegistry;
 
     /**
-     * @var Curl
+     * @var CurlFactory
      */
-    private $curlClient;
+    private $curlFactory;
 
     /**
      * @var LogRepository
      */
     private $logRepository;
 
-    /**
-     * Adapter constructor.
-     *
-     * @param ConfigRepository $configRepository
-     * @param Curl $curlClient
-     * @param LogRepository $logRepository
-     */
+    /** @var ApiTranslatorInterface */
+    private $apiTranslator;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
-        Curl $curlClient,
-        LogRepository $logRepository
+        CurlFactory $curlFactory,
+        LogRepository $logRepository,
+        ApiTranslatorInterface $apiTranslator
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
-        $this->curlClient = $curlClient;
+        $this->curlFactory = $curlFactory;
         $this->logRepository = $logRepository;
+        $this->apiTranslator = $apiTranslator;
     }
 
     /**
@@ -78,54 +80,86 @@ class Adapter
             $url = $this->configRepository->addVersionDataInURL(
                 sprintf('%s%s', $this->configRepository->getCheckoutApiUrl($mode), $endpoint)
             );
-            $this->curlClient->addHeader("Content-Type", "application/json");
-            $this->curlClient->addHeader("X-API-Key", $this->configRepository->getApiKey($storeId));
-            $this->curlClient->setOption(CURLOPT_RETURNTRANSFER, true);
-            $this->curlClient->setOption(CURLOPT_SSL_VERIFYHOST, 0);
-            $this->curlClient->setOption(CURLOPT_SSL_VERIFYPEER, 0);
-            $this->curlClient->setOption(CURLOPT_TIMEOUT, 60);
+            $body = ($method == "POST" || $method == "PUT")
+                ? (empty($payload) ? '' : (string)json_encode($payload))
+                : '';
+            $call = new ApiCall(
+                $method,
+                $url,
+                [
+                    'Content-Type' => 'application/json',
+                    'X-API-Key' => $this->configRepository->getApiKey($storeId),
+                ],
+                $body
+            );
 
-            if ($method == "POST" || $method == "PUT") {
-                $params = empty($payload) ? '' : json_encode($payload);
-                $this->curlClient->addHeader("Content-Length", strlen($params));
-                $this->curlClient->post($url, $params);
-            } else {
-                $this->curlClient->setOption(CURLOPT_FOLLOWLOCATION, true);
-                $this->curlClient->get($url);
+            try {
+                $call = $this->apiTranslator->translateRequest($call);
+            } catch (Throwable $e) {
+                return $this->translatorFailure('request', $e, $endpoint, $method);
             }
 
-            $body = trim($this->curlClient->getBody());
-            if (in_array($this->curlClient->getStatus(), [200, 201, 202])) {
-                $result = [];
+            $curl = $this->curlFactory->create();
+            foreach ($call->headers as $name => $value) {
+                $curl->addHeader($name, $value);
+            }
+            $curl->setOption(CURLOPT_RETURNTRANSFER, true);
+            $curl->setOption(CURLOPT_SSL_VERIFYHOST, 0);
+            $curl->setOption(CURLOPT_SSL_VERIFYPEER, 0);
+            $curl->setOption(CURLOPT_TIMEOUT, 60);
+
+            if ($call->method == "POST" || $call->method == "PUT") {
+                $curl->addHeader("Content-Length", strlen($call->body));
+                $curl->post($call->url, $call->body);
+            } else {
+                $curl->setOption(CURLOPT_FOLLOWLOCATION, true);
+                $curl->get($call->url);
+            }
+
+            $result = new ApiResult(
+                (int)$curl->getStatus(),
+                $curl->getHeaders() ?: [],
+                (string)$curl->getBody()
+            );
+
+            try {
+                $result = $this->apiTranslator->translateResponse($result);
+            } catch (Throwable $e) {
+                return $this->translatorFailure('response', $e, $endpoint, $method);
+            }
+
+            $body = trim($result->body);
+            if (in_array($result->status, [200, 201, 202])) {
+                $decoded = [];
                 if ((!$body || $body === '""')) {
                     if (in_array($endpoint, [
                             SoleTraderInterface::DELEGATION_TOKEN_ENDPOINT,
                             SoleTraderInterface::AUTOFILL_TOKEN_ENDPOINT])) {
-                        $result = $this->curlClient->getHeaders();
-                        foreach ($result as $key => $value) {
-                            $result[strtolower($key)] = $value;
+                        $decoded = $result->headers;
+                        foreach ($decoded as $key => $value) {
+                            $decoded[strtolower($key)] = $value;
                         }
                     }
                 } else {
-                    $result = json_decode($body, true);
+                    $decoded = json_decode($body, true);
                 }
                 $this->logRepository->addDebugLog(
-                    sprintf('API response %s %s (status: %s)', $method, $endpoint, $this->curlClient->getStatus()),
-                    $result
+                    sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
+                    $decoded
                 );
-                return $result;
+                return $decoded;
             } else {
                 if ($body) {
-                    $result = json_decode($body, true) ?: [];
-                    $result['http_status'] = $this->curlClient->getStatus();
+                    $decoded = json_decode($body, true) ?: [];
+                    $decoded['http_status'] = $result->status;
                     $this->logRepository->addDebugLog(
-                        sprintf('API response %s %s (status: %s)', $method, $endpoint, $this->curlClient->getStatus()),
-                        $result
+                        sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
+                        $decoded
                     );
-                    return $result;
+                    return $decoded;
                 } else {
                     $this->logRepository->addDebugLog(
-                        sprintf('API response %s %s (status: %s)', $method, $endpoint, $this->curlClient->getStatus()),
+                        sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
                         'Invalid API response.'
                     );
                     throw new LocalizedException(
@@ -139,5 +173,26 @@ class Adapter
                 'error_message' => $exception->getMessage(),
             ];
         }
+    }
+
+    private function translatorFailure(string $phase, Throwable $e, string $endpoint, string $method): array
+    {
+        $this->logRepository->addErrorLog(
+            sprintf(
+                '[api-translator-failure] phase=%s class=%s endpoint=%s method=%s message=%s',
+                $phase,
+                get_class($this->apiTranslator),
+                $endpoint,
+                $method,
+                $e->getMessage()
+            ),
+            null
+        );
+        return [
+            'error_code' => 502,
+            'http_status' => 502,
+            'error_source' => 'api_translator',
+            'error_message' => 'Translator failure',
+        ];
     }
 }

@@ -46,12 +46,13 @@ class Repository implements RepositoryInterface
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
+    /** @var string Magento payment-method code (overlay-specific). */
+    private $code;
+
     /**
-     * @param ScopeConfigInterface $scopeConfig
-     * @param EncryptorInterface $encryptor
-     * @param UrlInterface $urlBuilder
-     * @param ProductMetadataInterface $productMetadata
-     * @param TaxCalculation $taxCalculation
+     * @param string $code Payment-method code (overlay-specific). Defaults
+     *                     to the Two-branded code so existing Two installs
+     *                     don't need a DI override.
      */
     public function __construct(
         ScopeConfigInterface $scopeConfig,
@@ -59,7 +60,8 @@ class Repository implements RepositoryInterface
         UrlInterface $urlBuilder,
         ProductMetadataInterface $productMetadata,
         TaxCalculation $taxCalculation,
-        BrandRegistryInterface $brandRegistry
+        BrandRegistryInterface $brandRegistry,
+        string $code = RepositoryInterface::CODE
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->encryptor = $encryptor;
@@ -67,6 +69,20 @@ class Repository implements RepositoryInterface
         $this->productMetadata = $productMetadata;
         $this->taxCalculation = $taxCalculation;
         $this->brandRegistry = $brandRegistry;
+        $this->code = $code;
+    }
+
+    /**
+     * Build a brand-aware `payment/<code>/<key>` config path.
+     *
+     * Replaces the hardcoded `self::XML_PATH_*` constants (kept on the
+     * interface for BC) when reading runtime config so a brand-overlay
+     * package can declare a virtualType of Repository with its own
+     * `code` and have every config getter target the right CCD subtree.
+     */
+    private function path(string $key): string
+    {
+        return 'payment/' . $this->code . '/' . $key;
     }
 
     /**
@@ -74,7 +90,7 @@ class Repository implements RepositoryInterface
      */
     public function isActive(?int $storeId = null): bool
     {
-        return $this->isSetFlag(self::XML_PATH_ENABLED, $storeId);
+        return $this->isSetFlag($this->path('active'), $storeId);
     }
 
     /**
@@ -115,17 +131,17 @@ class Repository implements RepositoryInterface
      */
     public function getApiKey(?int $storeId = null): string
     {
-        return (string)$this->encryptor->decrypt($this->getConfig(self::XML_PATH_API_KEY, $storeId));
+        return (string)$this->encryptor->decrypt($this->getConfig($this->path('api_key'), $storeId));
     }
 
     /**
      * @inheritDoc
      */
-    public function isDebugMode(int $storeId = null, ?string $scope = null): bool
+    public function isDebugMode(?int $storeId = null, ?string $scope = null): bool
     {
         $scope = $scope ?? ScopeInterface::SCOPE_STORE;
         return $this->isSetFlag(
-            self::XML_PATH_DEBUG,
+            $this->path('debug'),
             $storeId,
             $scope
         );
@@ -136,7 +152,7 @@ class Repository implements RepositoryInterface
      */
     public function getDueInDays(?int $storeId = null): int
     {
-        return (int)$this->getConfig(self::XML_PATH_DAYS_ON_INVOICE, $storeId);
+        return (int)$this->getConfig($this->path('days_on_invoice'), $storeId);
     }
 
     /**
@@ -144,7 +160,7 @@ class Repository implements RepositoryInterface
      */
     public function getFulfillTrigger(?int $storeId = null): string
     {
-        return (string)$this->getConfig(self::XML_PATH_FULFILL_TRIGGER, $storeId);
+        return (string)$this->getConfig($this->path('fulfill_trigger'), $storeId);
     }
 
     /**
@@ -152,7 +168,7 @@ class Repository implements RepositoryInterface
      */
     public function getFulfillOrderStatusList(?int $storeId = null): array
     {
-        return explode(',', (string)$this->getConfig(self::XML_PATH_FULFILL_ORDER_STATUS, $storeId));
+        return explode(',', (string)$this->getConfig($this->path('fulfill_order_status'), $storeId));
     }
 
     /**
@@ -160,7 +176,7 @@ class Repository implements RepositoryInterface
      */
     public function isCompanySearchEnabled(?int $storeId = null): bool
     {
-        return $this->isSetFlag(self::XML_PATH_ENABLE_COMPANY_SEARCH, $storeId);
+        return $this->isSetFlag($this->path('enable_company_search'), $storeId);
     }
 
     /**
@@ -168,7 +184,7 @@ class Repository implements RepositoryInterface
      */
     public function isOrderIntentEnabled(?int $storeId = null): bool
     {
-        return $this->isSetFlag(self::XML_PATH_ENABLE_ORDER_INTENT, $storeId);
+        return $this->isSetFlag($this->path('enable_order_intent'), $storeId);
     }
 
     /**
@@ -176,7 +192,7 @@ class Repository implements RepositoryInterface
      */
     public function isInvoiceEmailsEnabled(?int $storeId = null): bool
     {
-        return $this->isSetFlag(self::XML_PATH_ENABLE_INVOICE_EMAILS, $storeId);
+        return $this->isSetFlag($this->path('enable_invoice_emails'), $storeId);
     }
 
     /**
@@ -184,7 +200,7 @@ class Repository implements RepositoryInterface
      */
     public function isTaxSubtotalsEnabled(?int $storeId = null): bool
     {
-        return $this->isSetFlag(self::XML_PATH_ENABLE_TAX_SUBTOTALS, $storeId);
+        return $this->isSetFlag($this->path('enable_tax_subtotals'), $storeId);
     }
 
     /**
@@ -192,7 +208,7 @@ class Repository implements RepositoryInterface
      */
     public function isDepartmentEnabled(?int $storeId = null): bool
     {
-        return $this->isSetFlag(self::XML_PATH_ENABLE_DEPARTMENT_NAME, $storeId);
+        return $this->isSetFlag($this->path('enable_department'), $storeId);
     }
 
     /**
@@ -200,7 +216,7 @@ class Repository implements RepositoryInterface
      */
     public function isProjectEnabled(?int $storeId = null): bool
     {
-        return $this->isSetFlag(self::XML_PATH_ENABLE_PROJECT_NAME, $storeId);
+        return $this->isSetFlag($this->path('enable_project'), $storeId);
     }
 
     /**
@@ -208,7 +224,7 @@ class Repository implements RepositoryInterface
      */
     public function isOrderNoteEnabled(?int $storeId = null): bool
     {
-        return $this->isSetFlag(self::XML_PATH_ENABLE_ORDER_NOTE, $storeId);
+        return $this->isSetFlag($this->path('enable_order_note'), $storeId);
     }
 
     /**
@@ -216,7 +232,7 @@ class Repository implements RepositoryInterface
      */
     public function isPONumberEnabled(?int $storeId = null): bool
     {
-        return $this->isSetFlag(self::XML_PATH_ENABLE_PO_NUMBER, $storeId);
+        return $this->isSetFlag($this->path('enable_po_number'), $storeId);
     }
 
     /**
@@ -240,7 +256,7 @@ class Repository implements RepositoryInterface
      */
     public function getMode(?int $storeId = null): string
     {
-        return (string)$this->getConfig(self::XML_PATH_MODE, $storeId);
+        return (string)$this->getConfig($this->path('mode'), $storeId);
     }
 
     /**
@@ -372,7 +388,7 @@ class Repository implements RepositoryInterface
     {
         return [
             'client' => 'Magento',
-            'client_v' => $this->getConfig(self::XML_PATH_VERSION)
+            'client_v' => $this->getConfig($this->path('version'))
         ];
     }
 
@@ -411,8 +427,8 @@ class Repository implements RepositoryInterface
      */
     public function isAddressSearchEnabled(?int $storeId = null): bool
     {
-        return $this->isSetFlag(self::XML_PATH_ENABLE_COMPANY_SEARCH, $storeId) &&
-            $this->isSetFlag(self::XML_PATH_ENABLE_ADDRESS_SEARCH, $storeId);
+        return $this->isSetFlag($this->path('enable_company_search'), $storeId) &&
+            $this->isSetFlag($this->path('enable_address_search'), $storeId);
     }
 
     /**
@@ -420,7 +436,7 @@ class Repository implements RepositoryInterface
      */
     public function getPaymentTermsType(?int $storeId = null): string
     {
-        return (string)$this->getConfig(self::XML_PATH_PAYMENT_TERMS_TYPE, $storeId) ?: 'standard';
+        return (string)$this->getConfig($this->path('payment_terms_type'), $storeId) ?: 'standard';
     }
 
     /**
@@ -428,7 +444,7 @@ class Repository implements RepositoryInterface
      */
     public function getPaymentTermsDurationDays(?int $storeId = null): int
     {
-        return (int)$this->getConfig(self::XML_PATH_PAYMENT_TERMS_DURATION_DAYS, $storeId);
+        return (int)$this->getConfig($this->path('payment_terms_duration_days'), $storeId);
     }
 
     /**
@@ -436,7 +452,7 @@ class Repository implements RepositoryInterface
      */
     public function getPaymentTerms(?int $storeId = null): array
     {
-        $value = (string)$this->getConfig(self::XML_PATH_PAYMENT_TERMS, $storeId);
+        $value = (string)$this->getConfig($this->path('payment_terms'), $storeId);
         if ($value === '') {
             return [];
         }
@@ -463,7 +479,7 @@ class Repository implements RepositoryInterface
      */
     public function getDefaultPaymentTerm(?int $storeId = null): int
     {
-        $default = (int)$this->getConfig(self::XML_PATH_DEFAULT_PAYMENT_TERM, $storeId);
+        $default = (int)$this->getConfig($this->path('default_payment_term'), $storeId);
         if ($default > 0) {
             return $default;
         }
@@ -476,7 +492,7 @@ class Repository implements RepositoryInterface
      */
     public function getSurchargeType(?int $storeId = null): string
     {
-        return (string)$this->getConfig(self::XML_PATH_SURCHARGE_TYPE, $storeId) ?: 'none';
+        return (string)$this->getConfig($this->path('surcharge_type'), $storeId) ?: 'none';
     }
 
     /**
@@ -484,7 +500,7 @@ class Repository implements RepositoryInterface
      */
     public function isSurchargeDifferential(?int $storeId = null): bool
     {
-        return $this->isSetFlag(self::XML_PATH_SURCHARGE_DIFFERENTIAL, $storeId);
+        return $this->isSetFlag($this->path('surcharge_differential'), $storeId);
     }
 
     /**
@@ -492,7 +508,7 @@ class Repository implements RepositoryInterface
      */
     public function getSurchargeLineDescription(?int $storeId = null): string
     {
-        return (string)$this->getConfig(self::XML_PATH_SURCHARGE_LINE_DESCRIPTION, $storeId)
+        return (string)$this->getConfig($this->path('surcharge_line_description'), $storeId)
             ?: 'Payment terms fee - %1 days';
     }
 
@@ -501,7 +517,7 @@ class Repository implements RepositoryInterface
      */
     public function getSurchargeTaxRate(?int $storeId = null): float
     {
-        $configured = $this->getConfig(self::XML_PATH_SURCHARGE_TAX_RATE, $storeId);
+        $configured = $this->getConfig($this->path('surcharge_tax_rate'), $storeId);
         if ($configured !== null && $configured !== '') {
             return (float)$configured;
         }
@@ -544,6 +560,6 @@ class Repository implements RepositoryInterface
      */
     public function getSurchargeFixedCurrency(?int $storeId = null): string
     {
-        return (string)$this->getConfig(self::XML_PATH_SURCHARGE_FIXED_CURRENCY, $storeId);
+        return (string)$this->getConfig($this->path('surcharge_fixed_currency'), $storeId);
     }
 }

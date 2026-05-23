@@ -165,8 +165,8 @@ class Two extends AbstractMethod
         OrderRepositoryInterface $orderRepository,
         Adapter $apiAdapter,
         LogRepository $logRepository,
-        AbstractResource $resource = null,
-        AbstractDb $resourceCollection = null,
+        ?AbstractResource $resource = null,
+        ?AbstractDb $resourceCollection = null,
         array $data = []
     ) {
         $this->request = $request;
@@ -273,6 +273,31 @@ class Two extends AbstractMethod
     }
 
     /**
+     * Title for admin order display.
+     *
+     * Returns "Business Invoice" optionally suffixed with the buyer's
+     * selected term in days (e.g. "Business Invoice - 60 days").
+     * DataAssignObserver stores the chosen term under the `selectedTerm`
+     * key as a scalar. The noun and the duration are translated as two
+     * separate __() lookups so each half can use the existing "%1 days"
+     * translation alongside the locale-specific "Business Invoice".
+     */
+    public function getTitle()
+    {
+        try {
+            $info = $this->getInfoInstance();
+            $days = (int)$info->getAdditionalInformation('selectedTerm');
+        } catch (\Exception $e) {
+            $days = 0;
+        }
+        $noun = __('Business Invoice');
+        if ($days > 0) {
+            return sprintf('%s - %s', $noun, __('%1 days', $days));
+        }
+        return (string)$noun;
+    }
+
+    /**
      *
      *
      * @param Phrase $message
@@ -374,7 +399,7 @@ class Two extends AbstractMethod
         if ($fieldNames === null) {
             $fieldNames = [
                 '["buyer","representative","phone_number"]' => __('Phone Number'),
-                '["buyer","company","organization_number"]' => __('Company ID'),
+                '["buyer","company","organization_number"]' => __('Company Number'),
                 '["buyer","representative","first_name"]' => __('First Name'),
                 '["buyer","representative","last_name"]' => __('Last Name'),
                 '["buyer","representative","email"]' => __('Email Address'),
@@ -642,7 +667,7 @@ class Two extends AbstractMethod
     /**
      * @inheritDoc
      */
-    public function isAvailable(CartInterface $quote = null)
+    public function isAvailable(?CartInterface $quote = null)
     {
         if (!$this->configRepository->isActive()
             || $this->configRepository->getApiKey() == '') {
