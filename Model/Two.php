@@ -399,7 +399,7 @@ class Two extends AbstractMethod
         if ($fieldNames === null) {
             $fieldNames = [
                 '["buyer","representative","phone_number"]' => __('Phone Number'),
-                '["buyer","company","organization_number"]' => __('Company ID'),
+                '["buyer","company","organization_number"]' => __('Company Number'),
                 '["buyer","representative","first_name"]' => __('First Name'),
                 '["buyer","representative","last_name"]' => __('Last Name'),
                 '["buyer","representative","email"]' => __('Email Address'),

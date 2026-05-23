@@ -1,0 +1,1907 @@
+diff --git a/Api/Operation.php b/Api/Operation.php
+new file mode 100644
+index 0000000..4b3b7e7
+--- /dev/null
++++ b/Api/Operation.php
+@@ -0,0 +1,32 @@
++<?php
++/**
++ * Copyright © Two.inc All rights reserved.
++ * See COPYING.txt for license details.
++ */
++declare(strict_types=1);
++
++namespace Two\Gateway\Api;
++
++/**
++ * Operation identifiers carried via {@see TranslatorInterface::OP_HEADER}.
++ *
++ * String-valued constants are enum-migration-compatible (PHP 8.1+ backed enum).
++ */
++final class Operation
++{
++    public const CREATE_ORDER     = 'createOrder';
++    public const GET_ORDER        = 'getOrder';
++    public const EDIT_ORDER       = 'editOrder';
++    public const CONFIRM_ORDER    = 'confirmOrder';
++    public const CANCEL_ORDER     = 'cancelOrder';
++    public const REFUND_ORDER     = 'refundOrder';
++    public const FULFILL_ORDER    = 'fulfillOrder';
++    public const GET_FULFILLMENTS = 'getFulfillments';
++    public const PRICE_ORDER_FEE  = 'priceOrderFee';
++    public const MERCHANT_RATES   = 'merchantRates';
++    public const VERIFY_API_KEY   = 'verifyApiKey';
++    public const DELEGATION_TOKEN = 'delegationToken';
++    public const AUTOFILL_TOKEN   = 'autofillToken';
++
++    private function __construct() {}
++}
+diff --git a/Api/TranslatorInterface.php b/Api/TranslatorInterface.php
+new file mode 100644
+index 0000000..65088f8
+--- /dev/null
++++ b/Api/TranslatorInterface.php
+@@ -0,0 +1,74 @@
++<?php
++/**
++ * Copyright © Two.inc All rights reserved.
++ * See COPYING.txt for license details.
++ */
++declare(strict_types=1);
++
++namespace Two\Gateway\Api;
++
++use Psr\Http\Message\RequestInterface;
++use Psr\Http\Message\ResponseInterface;
++
++/**
++ * Outbound HTTP translator between Two-native protocol and a brand-proxy protocol.
++ *
++ * Default binding is {@see \Two\Gateway\Model\Translator\NullTranslator} (passthrough).
++ * A brand overlay module swaps the binding via di.xml <preference>. See docs/proxy-translator-design.md.
++ *
++ * Implementations SHOULD `use PassthroughTrait` to remain forward-compatible with
++ * minor-version additions to this interface. Direct `implements TranslatorInterface`
++ * without the trait is unsupported: new methods added in minor versions will cause
++ * a fatal "Class contains abstract method" error at class-load.
++ */
++interface TranslatorInterface
++{
++    /** Internal header carrying the {@see Operation}::* tag. Adapter strips it post-translation. */
++    public const OP_HEADER = 'X-Two-Operation';
++
++    /** Headers whose name MUST survive translation (value MAY be rewritten). */
++    public const PRESERVE_HEADERS = ['X-Request-ID', 'X-Idempotency-Key'];
++
++    /** Prefix-matched header preserve list. */
++    public const PRESERVE_HEADER_PREFIXES = ['X-Trace-'];
++
++    /**
++     * Response headers required intact for header-reading operations
++     * ({@see Operation::DELEGATION_TOKEN}, {@see Operation::AUTOFILL_TOKEN}).
++     * Names match what Adapter currently consumes via the token-endpoint branch.
++     */
++    public const TOKEN_RESPONSE_HEADERS = [
++        'two-delegated-authority-token',
++    ];
++
++    /**
++     * Translate an outbound Request from Two-native to brand-proxy protocol.
++     *
++     * Contract:
++     *   - MUST return a non-null Request.
++     *   - MUST be idempotent.
++     *   - MUST leave the name of every header in PRESERVE_HEADERS (and every header
++     *     with a name starting with any PRESERVE_HEADER_PREFIXES prefix) reachable
++     *     in the post-translation Request. Adapter restores any missing entry from
++     *     the pre-translation Request and logs at WARN.
++     *   - MUST NOT set Content-Length. Adapter strips and recomputes it.
++     *   - SHOULD NOT rewrite OP_HEADER value; Adapter strips OP_HEADER post-translation.
++     *   - SHOULD rewrite status via withStatus() rather than throwing for control flow.
++     *   - Thrown \Throwable → Adapter returns 502 envelope with error_source='translator'.
++     */
++    public function translateRequest(RequestInterface $request): RequestInterface;
++
++    /**
++     * Translate an inbound Response from brand-proxy to Two-native protocol.
++     *
++     * Contract:
++     *   - MUST return a non-null Response.
++     *   - For header-reading operations, MUST preserve every entry in
++     *     TOKEN_RESPONSE_HEADERS by name. Missing any → translator failure (502).
++     *   - MUST NOT return an empty body for body-reading operations except status 204
++     *     (empty := trim((string)$body) === '').
++     *   - MUST normalise body shape back to Two-native JSON for body-reading operations.
++     *   - Thrown \Throwable → Adapter returns 502 envelope with error_source='translator'.
++     */
++    public function translateResponse(ResponseInterface $response): ResponseInterface;
++}
+diff --git a/Block/Adminhtml/Order/View.php b/Block/Adminhtml/Order/View.php
+index 3545f69..da6446c 100755
+--- a/Block/Adminhtml/Order/View.php
++++ b/Block/Adminhtml/Order/View.php
+@@ -7,6 +7,7 @@ declare(strict_types=1);
+ 
+ namespace Two\Gateway\Block\Adminhtml\Order;
+ 
++use Two\Gateway\Api\Operation;
+ use Magento\Sales\Block\Adminhtml\Order\View as OrderView;
+ use Two\Gateway\Api\BrandRegistryInterface;
+ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+@@ -70,7 +71,9 @@ class View extends OrderView
+         $response = $this->apiAdapter->execute(
+             "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
+             [],
+-            'GET'
++            'GET',
++            null,
++            Operation::GET_FULFILLMENTS
+         );
+         $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
+         if ($error) {
+diff --git a/Block/Adminhtml/System/Config/Field/ApiKeyCheck.php b/Block/Adminhtml/System/Config/Field/ApiKeyCheck.php
+index e427e35..1c44c9e 100755
+--- a/Block/Adminhtml/System/Config/Field/ApiKeyCheck.php
++++ b/Block/Adminhtml/System/Config/Field/ApiKeyCheck.php
+@@ -7,6 +7,7 @@ declare(strict_types=1);
+ 
+ namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
+ 
++use Two\Gateway\Api\Operation;
+ use Magento\Backend\Block\Template\Context;
+ use Magento\Config\Block\System\Config\Form\Field;
+ use Magento\Framework\Data\Form\Element\AbstractElement;
+@@ -75,7 +76,7 @@ class ApiKeyCheck extends Field
+             ];
+         }
+ 
+-        $result = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
++        $result = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET', null, Operation::VERIFY_API_KEY);
+         $error = $this->two->getErrorFromResponse($result);
+         if ($error) {
+             return [
+diff --git a/Controller/Adminhtml/Config/Fees.php b/Controller/Adminhtml/Config/Fees.php
+index 194f566..eb762d1 100644
+--- a/Controller/Adminhtml/Config/Fees.php
++++ b/Controller/Adminhtml/Config/Fees.php
+@@ -7,6 +7,7 @@ declare(strict_types=1);
+ 
+ namespace Two\Gateway\Controller\Adminhtml\Config;
+ 
++use Two\Gateway\Api\Operation;
+ use Magento\Backend\App\Action;
+ use Magento\Framework\App\Config\ScopeConfigInterface;
+ use Magento\Framework\App\ResponseInterface;
+@@ -101,7 +102,8 @@ class Fees extends Action
+                 'net_terms' => array_values($terms),
+             ],
+             'POST',
+-            $storeId
++            $storeId,
++            Operation::MERCHANT_RATES
+         );
+ 
+         $normalised = $this->normaliseRatesResponse($response);
+diff --git a/Model/Translator/NullTranslator.php b/Model/Translator/NullTranslator.php
+new file mode 100644
+index 0000000..a31c6c7
+--- /dev/null
++++ b/Model/Translator/NullTranslator.php
+@@ -0,0 +1,23 @@
++<?php
++/**
++ * Copyright © Two.inc All rights reserved.
++ * See COPYING.txt for license details.
++ */
++declare(strict_types=1);
++
++namespace Two\Gateway\Model\Translator;
++
++use Two\Gateway\Api\TranslatorInterface;
++
++/**
++ * Default passthrough translator. Bound to {@see TranslatorInterface} by
++ * etc/di.xml in vanilla installs. Brand overlays override the preference.
++ *
++ * Not `final`: integration-test spies may extend. Production should not.
++ * Test spies inheriting via PassthroughTrait gain new methods on minor bumps;
++ * spies that need full surface coverage must re-check after each upgrade.
++ */
++class NullTranslator implements TranslatorInterface
++{
++    use PassthroughTrait;
++}
+diff --git a/Model/Translator/PassthroughTrait.php b/Model/Translator/PassthroughTrait.php
+new file mode 100644
+index 0000000..3b9f861
+--- /dev/null
++++ b/Model/Translator/PassthroughTrait.php
+@@ -0,0 +1,34 @@
++<?php
++/**
++ * Copyright © Two.inc All rights reserved.
++ * See COPYING.txt for license details.
++ */
++declare(strict_types=1);
++
++namespace Two\Gateway\Model\Translator;
++
++use Psr\Http\Message\RequestInterface;
++use Psr\Http\Message\ResponseInterface;
++
++/**
++ * Forward-compatible default implementations for {@see \Two\Gateway\Api\TranslatorInterface}.
++ *
++ * Brand translators `use PassthroughTrait;` so that minor-version additions to the
++ * interface ship with defaults and do not break existing brand code at class-load.
++ *
++ * Magento <type> plugin codegen intercepts trait-defaulted methods the same as
++ * hand-written ones; brand authors writing before/around/after plugins should expect
++ * their plugins to fire against these defaults.
++ */
++trait PassthroughTrait
++{
++    public function translateRequest(RequestInterface $request): RequestInterface
++    {
++        return $request;
++    }
++
++    public function translateResponse(ResponseInterface $response): ResponseInterface
++    {
++        return $response;
++    }
++}
+diff --git a/Model/Two.php b/Model/Two.php
+index 9f7ae9a..63540b9 100755
+--- a/Model/Two.php
++++ b/Model/Two.php
+@@ -8,6 +8,7 @@ declare(strict_types=1);
+ namespace Two\Gateway\Model;
+ 
+ use Exception;
++use Two\Gateway\Api\Operation;
+ use Magento\Framework\Api\AttributeValueFactory;
+ use Magento\Framework\Api\ExtensionAttributesFactory;
+ use Magento\Framework\App\Config\ScopeConfigInterface;
+@@ -220,7 +221,7 @@ class Two extends AbstractMethod
+         );
+ 
+         // Create order
+-        $response = $this->apiAdapter->execute('/v1/order', $payload);
++        $response = $this->apiAdapter->execute('/v1/order', $payload, 'POST', null, Operation::CREATE_ORDER);
+         $error = $this->getErrorFromResponse($response);
+         if ($error) {
+             throw new LocalizedException($error);
+@@ -418,7 +419,7 @@ class Two extends AbstractMethod
+         $order = $payment->getOrder();
+         try {
+             $twoOrderId = $order->getTwoOrderId();
+-            $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId() . '/cancel');
++            $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId() . '/cancel', [], 'POST', null, Operation::CANCEL_ORDER);
+             if ($response) {
+                 $error = $this->getErrorFromResponse($response);
+                 $comment = __(
+@@ -490,7 +491,7 @@ class Two extends AbstractMethod
+                         'partial' => $this->composeCapture->execute($createdInvoice),
+                     ];
+                 }
+-                $response = $this->apiAdapter->execute('/v1/order/' . $twoOrderId . '/fulfillments', $payload);
++                $response = $this->apiAdapter->execute('/v1/order/' . $twoOrderId . '/fulfillments', $payload, 'POST', null, Operation::FULFILL_ORDER);
+                 $error = $this->getErrorFromResponse($response);
+ 
+                 if ($error) {
+@@ -598,7 +599,10 @@ class Two extends AbstractMethod
+         );
+         $response = $this->apiAdapter->execute(
+             "/v1/order/" . $twoOrderId . "/refund",
+-            $payload
++            $payload,
++            'POST',
++            null,
++            Operation::REFUND_ORDER
+         );
+ 
+         $error = $this->getErrorFromResponse($response);
+diff --git a/Model/Ui/ConfigProvider.php b/Model/Ui/ConfigProvider.php
+index e542c8c..246ad03 100755
+--- a/Model/Ui/ConfigProvider.php
++++ b/Model/Ui/ConfigProvider.php
+@@ -7,6 +7,7 @@ declare(strict_types=1);
+ 
+ namespace Two\Gateway\Model\Ui;
+ 
++use Two\Gateway\Api\Operation;
+ use Magento\Checkout\Model\ConfigProviderInterface;
+ use Magento\Checkout\Model\Session as CheckoutSession;
+ use Magento\Framework\View\Asset\Repository as AssetRepository;
+@@ -82,7 +83,7 @@ class ConfigProvider implements ConfigProviderInterface
+     {
+         $merchant = null;
+         if ($this->configRepository->getApiKey()) {
+-            $merchant = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
++            $merchant = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET', null, Operation::VERIFY_API_KEY);
+         }
+         $orderIntentConfig = [
+             'extensionPlatformName' => $this->configRepository->getExtensionPlatformName(),
+diff --git a/Model/Webapi/SoleTrader.php b/Model/Webapi/SoleTrader.php
+index 207d66d..258b7bc 100644
+--- a/Model/Webapi/SoleTrader.php
++++ b/Model/Webapi/SoleTrader.php
+@@ -7,6 +7,7 @@ declare(strict_types=1);
+ 
+ namespace Two\Gateway\Model\Webapi;
+ 
++use Two\Gateway\Api\Operation;
+ use Two\Gateway\Api\Webapi\SoleTraderInterface;
+ use Two\Gateway\Service\Api\Adapter;
+ 
+@@ -42,25 +43,37 @@ class SoleTrader implements SoleTraderInterface
+     {
+         $delegateResponse = $this->adapter->execute(
+             self::DELEGATION_TOKEN_ENDPOINT,
+-            ['create_proposal' => true, 'read_current_business' => true]
++            ['create_proposal' => true, 'read_current_business' => true],
++            'POST',
++            null,
++            Operation::DELEGATION_TOKEN
+         );
+-        if (isset($delegateResponse['two-delegated-authority-token'])) {
+-            return $delegateResponse['two-delegated-authority-token'];
+-        } else {
+-            return '';
+-        }
++        return $this->extractToken($delegateResponse);
+     }
+ 
+-    private function getAutofillToken()
++    private function getAutofillToken(): string
+     {
+         $autofillResponse = $this->adapter->execute(
+             self::AUTOFILL_TOKEN_ENDPOINT,
+-            ['read_current_buyer' => true, 'write_current_buyer' => true]
++            ['read_current_buyer' => true, 'write_current_buyer' => true],
++            'POST',
++            null,
++            Operation::AUTOFILL_TOKEN
+         );
+-        if (isset($autofillResponse['two-delegated-authority-token'])) {
+-            return $autofillResponse['two-delegated-authority-token'];
+-        } else {
++        return $this->extractToken($autofillResponse);
++    }
++
++    /**
++     * The token-endpoint Adapter contract returns a lowercase-keyed headers array on
++     * success. A missing header is either (a) an upstream regression we should not
++     * paper over with an empty token, or (b) a translator failure that the Adapter
++     * has already escalated to error_code=502; both surface to the caller as failure.
++     */
++    private function extractToken(array $response): string
++    {
++        if (isset($response['error_code'])) {
+             return '';
+         }
++        return (string)($response['two-delegated-authority-token'] ?? '');
+     }
+ }
+diff --git a/Observer/SalesOrderAddressUpdate.php b/Observer/SalesOrderAddressUpdate.php
+index 20aefa0..4afb40f 100755
+--- a/Observer/SalesOrderAddressUpdate.php
++++ b/Observer/SalesOrderAddressUpdate.php
+@@ -8,6 +8,7 @@ declare(strict_types=1);
+ namespace Two\Gateway\Observer;
+ 
+ use Exception;
++use Two\Gateway\Api\Operation;
+ use Magento\Framework\Event\Observer;
+ use Magento\Framework\Event\ObserverInterface;
+ use Magento\Sales\Api\OrderRepositoryInterface;
+@@ -97,7 +98,7 @@ class SalesOrderAddressUpdate implements ObserverInterface
+                     'tracking_number' => '',
+                 ];
+ 
+-                $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId(), $payload, 'PUT');
++                $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId(), $payload, 'PUT', null, Operation::EDIT_ORDER);
+                 $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
+                 if ($response && $error) {
+                     $order->addStatusToHistory(
+diff --git a/Observer/SalesOrderSaveAfter.php b/Observer/SalesOrderSaveAfter.php
+index 19588dc..7ce5fd7 100755
+--- a/Observer/SalesOrderSaveAfter.php
++++ b/Observer/SalesOrderSaveAfter.php
+@@ -8,6 +8,7 @@ declare(strict_types=1);
+ namespace Two\Gateway\Observer;
+ 
+ use Exception;
++use Two\Gateway\Api\Operation;
+ use Magento\Framework\Event\Observer;
+ use Magento\Framework\Event\ObserverInterface;
+ use Magento\Framework\Exception\LocalizedException;
+@@ -127,6 +128,10 @@ class SalesOrderSaveAfter implements ObserverInterface
+ 
+         $response = $this->apiAdapter->execute(
+             "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
++            [],
++            'POST',
++            null,
++            Operation::FULFILL_ORDER
+         );
+ 
+         $this->parseFulfillResponse($response, $order);
+diff --git a/Observer/SalesOrderShipmentAfter.php b/Observer/SalesOrderShipmentAfter.php
+index ce7945b..d202d71 100755
+--- a/Observer/SalesOrderShipmentAfter.php
++++ b/Observer/SalesOrderShipmentAfter.php
+@@ -8,6 +8,7 @@ declare(strict_types=1);
+ namespace Two\Gateway\Observer;
+ 
+ use Exception;
++use Two\Gateway\Api\Operation;
+ use Magento\Framework\Event\Observer;
+ use Magento\Framework\Event\ObserverInterface;
+ use Magento\Framework\Exception\LocalizedException;
+@@ -134,7 +135,10 @@ class SalesOrderShipmentAfter implements ObserverInterface
+             }
+             $response = $this->apiAdapter->execute(
+                 "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
+-                $payload
++                $payload,
++                'POST',
++                null,
++                Operation::FULFILL_ORDER
+             );
+ 
+             $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
+diff --git a/Service/Api/Adapter.php b/Service/Api/Adapter.php
+index 7235f49..906b857 100755
+--- a/Service/Api/Adapter.php
++++ b/Service/Api/Adapter.php
+@@ -7,137 +7,538 @@ declare(strict_types=1);
+ 
+ namespace Two\Gateway\Service\Api;
+ 
++use Magento\Framework\App\State;
+ use Magento\Framework\Exception\LocalizedException;
+ use Magento\Framework\HTTP\Client\Curl;
++use Magento\Framework\HTTP\Client\CurlFactory;
++use Psr\Http\Message\RequestFactoryInterface;
++use Psr\Http\Message\RequestInterface;
++use Psr\Http\Message\ResponseFactoryInterface;
++use Psr\Http\Message\ResponseInterface;
++use Psr\Http\Message\StreamFactoryInterface;
+ use Throwable;
+ use Two\Gateway\Api\BrandRegistryInterface;
+ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+-use Two\Gateway\Api\Webapi\SoleTraderInterface;
++use Two\Gateway\Api\Operation;
++use Two\Gateway\Api\TranslatorInterface;
+ 
+ /**
+- * Api Adapter
++ * Outbound HTTP chokepoint. See docs/proxy-translator-design.md §5.
+  */
+ class Adapter
+ {
+-    /**
+-     * @var ConfigRepository
+-     */
++    /** @var ConfigRepository */
+     private $configRepository;
+ 
+     /** @var BrandRegistryInterface */
+     private $brandRegistry;
+ 
+-    /**
+-     * @var Curl
+-     */
+-    private $curlClient;
++    /** @var CurlFactory */
++    private $curlFactory;
+ 
+-    /**
+-     * @var LogRepository
+-     */
++    /** @var LogRepository */
+     private $logRepository;
+ 
+-    /**
+-     * Adapter constructor.
+-     *
+-     * @param ConfigRepository $configRepository
+-     * @param Curl $curlClient
+-     * @param LogRepository $logRepository
+-     */
++    /** @var TranslatorInterface */
++    private $translator;
++
++    /** @var RequestFactoryInterface */
++    private $requestFactory;
++
++    /** @var StreamFactoryInterface */
++    private $streamFactory;
++
++    /** @var ResponseFactoryInterface */
++    private $responseFactory;
++
++    /** @var State */
++    private $appState;
++
++    /** @var int translator-CPU WARN threshold in ms */
++    private $translatorWarnMs;
++
+     public function __construct(
+         ConfigRepository $configRepository,
+         BrandRegistryInterface $brandRegistry,
+-        Curl $curlClient,
+-        LogRepository $logRepository
++        CurlFactory $curlFactory,
++        LogRepository $logRepository,
++        TranslatorInterface $translator,
++        RequestFactoryInterface $requestFactory,
++        StreamFactoryInterface $streamFactory,
++        ResponseFactoryInterface $responseFactory,
++        State $appState,
++        int $translatorWarnMs = 100
+     ) {
+         $this->configRepository = $configRepository;
+         $this->brandRegistry = $brandRegistry;
+-        $this->curlClient = $curlClient;
++        $this->curlFactory = $curlFactory;
+         $this->logRepository = $logRepository;
++        $this->translator = $translator;
++        $this->requestFactory = $requestFactory;
++        $this->streamFactory = $streamFactory;
++        $this->responseFactory = $responseFactory;
++        $this->appState = $appState;
++        $this->translatorWarnMs = $translatorWarnMs;
+     }
+ 
+     /**
+-     * Send request to api
++     * Send request to API.
+      *
+-     * @param string $endpoint
+-     * @param array $payload
+-     * @param string $method
+-     * @param int|null $storeId Optional store scope for API key resolution (default: default scope)
+-     * @return array
++     * @param string   $endpoint  path segment, e.g. '/v1/order'
++     * @param array    $payload   JSON-serialisable
++     * @param string   $method    HTTP method (POST/PUT/GET/...)
++     * @param int|null $storeId   optional store scope for API-key resolution
++     * @param string   $operation required {@see Operation}::* constant
+      */
+     public function execute(
+         string $endpoint,
+-        array $payload = [],
+-        string $method = 'POST',
+-        ?int $storeId = null
++        array $payload,
++        string $method,
++        ?int $storeId,
++        string $operation
+     ): array {
++        $this->logRepository->addDebugLog(sprintf('API call: %s %s', $method, $endpoint), $payload);
++
++        $mode = $storeId !== null ? $this->configRepository->getMode($storeId) : null;
++        $nativeUrl = $this->configRepository->addVersionDataInURL(
++            sprintf('%s%s', $this->configRepository->getCheckoutApiUrl($mode), $endpoint)
++        );
++
++        $hasBody = in_array($method, ['POST', 'PUT', 'PATCH'], true);
++
++        // Encode payload up front; surface a fatal encoding error explicitly rather
++        // than silently shipping an empty body. NaN/INF/non-UTF-8 → json_encode = false.
++        $bodyString = '';
++        if ($hasBody && !empty($payload)) {
++            $encoded = json_encode($payload);
++            if ($encoded === false) {
++                $this->logRepository->addDebugLog(
++                    sprintf('[two.api] op=%s json_encode failed: %s', $operation, json_last_error_msg()),
++                    null
++                );
++                return [
++                    'error_code' => 400,
++                    'error_source' => 'two',
++                    'error_message' => 'Outbound payload could not be encoded as JSON',
++                ];
++            }
++            $bodyString = $encoded;
++        }
++
++        // §5.1 step 1-4 — build PSR-7 Request with headers set BEFORE translation.
++        $request = $this->requestFactory->createRequest($method, $nativeUrl)
++            ->withHeader('Content-Type', 'application/json')
++            ->withHeader('X-API-Key', $this->configRepository->getApiKey($storeId))
++            ->withHeader(TranslatorInterface::OP_HEADER, $operation);
++        if ($hasBody) {
++            $request = $request->withBody($this->streamFactory->createStream($bodyString));
++        }
++        $preTranslationRequest = $request;
++
++        // §5.1 step 5 — translateRequest.
++        $translateReqStart = microtime(true);
+         try {
+-            $this->logRepository->addDebugLog(sprintf('API call: %s %s', $method, $endpoint), $payload);
+-            $mode = $storeId !== null ? $this->configRepository->getMode($storeId) : null;
+-            $url = $this->configRepository->addVersionDataInURL(
+-                sprintf('%s%s', $this->configRepository->getCheckoutApiUrl($mode), $endpoint)
+-            );
+-            $this->curlClient->addHeader("Content-Type", "application/json");
+-            $this->curlClient->addHeader("X-API-Key", $this->configRepository->getApiKey($storeId));
+-            $this->curlClient->setOption(CURLOPT_RETURNTRANSFER, true);
+-            $this->curlClient->setOption(CURLOPT_SSL_VERIFYHOST, 0);
+-            $this->curlClient->setOption(CURLOPT_SSL_VERIFYPEER, 0);
+-            $this->curlClient->setOption(CURLOPT_TIMEOUT, 60);
+-
+-            if ($method == "POST" || $method == "PUT") {
+-                $params = empty($payload) ? '' : json_encode($payload);
+-                $this->curlClient->addHeader("Content-Length", strlen($params));
+-                $this->curlClient->post($url, $params);
++            $request = $this->translator->translateRequest($request);
++        } catch (Throwable $e) {
++            return $this->translatorFailure('request', $e, $operation, $nativeUrl, $translateReqStart);
++        }
++        $translateReqMs = (int)round((microtime(true) - $translateReqStart) * 1000);
++
++        // §5.1 step 6 — restore preserve-list headers stripped by translator.
++        $request = $this->restorePreservedHeaders($request, $preTranslationRequest, $operation);
++
++        // §5.1 step 7 — strip OP_HEADER post-translation.
++        $request = $request->withoutHeader(TranslatorInterface::OP_HEADER);
++
++        // §5.1 step 8 — strip Content-Length AND Host; recomputed/derived by Curl.
++        // PSR-7 mandates a Host header; if translator did withUri() the explicit
++        // Host would diverge from the URL — let libcurl set it from the URL.
++        $request = $request->withoutHeader('Content-Length')->withoutHeader('Host');
++
++        // §5.1 step 9 — fresh Curl per call (no state leakage between requests).
++        $curl = $this->curlFactory->create();
++
++        // §5.1 step 10 — unpack PSR-7 headers → Curl. Magento Curl::addHeader keys by
++        // name (single value); use getHeaderLine() to honour RFC-7230 multi-value joining.
++        foreach ($request->getHeaders() as $name => $_) {
++            $curl->addHeader($name, $request->getHeaderLine($name));
++        }
++
++        // §5.1 step 11 — Content-Length only for body methods.
++        $postBody = (string)$request->getBody();
++        if ($hasBody) {
++            $curl->addHeader('Content-Length', (string)strlen($postBody));
++        }
++
++        // §5.1 step 12 — curl options. NOT CURLOPT_HEADER (Magento Curl uses its own
++        // CURLOPT_HEADERFUNCTION callback; setting CURLOPT_HEADER would corrupt body).
++        $curl->setOption(CURLOPT_RETURNTRANSFER, true);
++        $curl->setOption(CURLOPT_SSL_VERIFYHOST, 0);
++        $curl->setOption(CURLOPT_SSL_VERIFYPEER, 0);
++        $curl->setOption(CURLOPT_TIMEOUT, 60);
++
++        // §5.1 step 13 — dispatch.
++        $dispatchedUrl = (string)$request->getUri();
++        $dispatchStart = microtime(true);
++        try {
++            if ($hasBody) {
++                $curl->post($dispatchedUrl, $postBody);
+             } else {
+-                $this->curlClient->setOption(CURLOPT_FOLLOWLOCATION, true);
+-                $this->curlClient->get($url);
++                $curl->setOption(CURLOPT_FOLLOWLOCATION, true);
++                $curl->get($dispatchedUrl);
++            }
++        } catch (Throwable $e) {
++            return $this->upstreamFailure(
++                $e,
++                $operation,
++                $nativeUrl,
++                $dispatchedUrl,
++                $translateReqMs,
++                (int)round((microtime(true) - $dispatchStart) * 1000)
++            );
++        }
++        $dispatchMs = (int)round((microtime(true) - $dispatchStart) * 1000);
++
++        // §5.1 step 14 — assemble PSR-7 Response. Magento Curl::getHeaders() returns
++        // $_responseHeaders (verified against upstream lib/internal source). Header
++        // values are scalar strings (Magento overwrites on duplicate name); multi-value
++        // response headers like Set-Cookie are flattened by the transport, not by us.
++        $status = (int)$curl->getStatus();
++        $preTranslationBody = (string)$curl->getBody();
++        $response = $this->responseFactory->createResponse($status)
++            ->withBody($this->streamFactory->createStream($preTranslationBody));
++        $responseHeadersPre = $curl->getHeaders() ?: [];
++        foreach ($responseHeadersPre as $name => $value) {
++            $response = $response->withHeader($name, (string)$value);
++        }
++
++        // §5.1 step 15 — translateResponse.
++        $translateRespStart = microtime(true);
++        try {
++            $response = $this->translator->translateResponse($response);
++        } catch (Throwable $e) {
++            return $this->translatorFailure(
++                'response',
++                $e,
++                $operation,
++                $nativeUrl,
++                $translateRespStart,
++                $dispatchedUrl,
++                $translateReqMs,
++                $dispatchMs
++            );
++        }
++        $translateRespMs = (int)round((microtime(true) - $translateRespStart) * 1000);
++
++        // §5.1 step 16 — materialise body ONCE. Stream cast-to-string is destructive;
++        // do it here and operate on the string from this point forward.
++        $body = $response->getBody();
++        if ($body->isSeekable()) {
++            $body->rewind();
++        }
++        $bodyAfter = (string)$body;
++        $bodyTrim = trim($bodyAfter);
++
++        // §5.4 empty-body guard: translator emptied a non-empty wire body on a
++        // body-reading op. Status 204 exempt; wire-empty pre-translation is OK.
++        if ($status !== 204
++            && !$this->isHeaderReadingOp($operation)
++            && trim($preTranslationBody) !== ''
++            && $bodyTrim === ''
++        ) {
++            $e = new \RuntimeException('translator returned empty body for body-reading op');
++            return $this->translatorFailure(
++                'response',
++                $e,
++                $operation,
++                $nativeUrl,
++                $translateRespStart,
++                $dispatchedUrl,
++                $translateReqMs,
++                $dispatchMs
++            );
++        }
++
++        // §5.1 step 17 — token-header guard for header-reading ops.
++        if ($this->isHeaderReadingOp($operation)) {
++            $missing = $this->missingTokenHeaders($response, $responseHeadersPre);
++            if ($missing !== []) {
++                $e = new \RuntimeException(
++                    'translator stripped required token response header(s): ' . implode(',', $missing)
++                );
++                return $this->translatorFailure(
++                    'response',
++                    $e,
++                    $operation,
++                    $nativeUrl,
++                    $translateRespStart,
++                    $dispatchedUrl,
++                    $translateReqMs,
++                    $dispatchMs
++                );
+             }
++        }
+ 
+-            $body = trim($this->curlClient->getBody());
+-            if (in_array($this->curlClient->getStatus(), [200, 201, 202])) {
++        // §5.1 step 18 — run existing success/error logic on the materialised string.
++        $finalStatus = (int)$response->getStatusCode();
++        $result = $this->buildResult($finalStatus, $bodyTrim, $response, $operation, $method, $endpoint);
++
++        $this->correlationLog(
++            $operation,
++            $nativeUrl,
++            $dispatchedUrl,
++            $finalStatus,
++            $finalStatus >= 200 && $finalStatus < 300 ? 'ok' : 'two',
++            $translateReqMs,
++            $dispatchMs,
++            $translateRespMs
++        );
++
++        return $result;
++    }
++
++    /**
++     * @param ResponseInterface $response
++     */
++    private function buildResult(
++        int $status,
++        string $bodyAfter,
++        ResponseInterface $response,
++        string $operation,
++        string $method,
++        string $endpoint
++    ): array {
++        try {
++            if (in_array($status, [200, 201, 202], true)) {
+                 $result = [];
+-                if ((!$body || $body === '""')) {
+-                    if (in_array($endpoint, [
+-                            SoleTraderInterface::DELEGATION_TOKEN_ENDPOINT,
+-                            SoleTraderInterface::AUTOFILL_TOKEN_ENDPOINT])) {
+-                        $result = $this->curlClient->getHeaders();
+-                        foreach ($result as $key => $value) {
+-                            $result[strtolower($key)] = $value;
+-                        }
++                if ($bodyAfter === '' || $bodyAfter === '""') {
++                    if ($this->isHeaderReadingOp($operation)) {
++                        $result = $this->responseHeadersAsLowercaseArray($response);
+                     }
+                 } else {
+-                    $result = json_decode($body, true);
++                    $result = json_decode($bodyAfter, true);
++                    if (!is_array($result)) {
++                        $result = [];
++                    }
+                 }
+                 $this->logRepository->addDebugLog(
+-                    sprintf('API response %s %s (status: %s)', $method, $endpoint, $this->curlClient->getStatus()),
++                    sprintf('API response %s %s (status: %s)', $method, $endpoint, $status),
++                    $result
++                );
++                return $result;
++            }
++
++            if ($bodyAfter !== '') {
++                $result = json_decode($bodyAfter, true) ?: [];
++                $result['http_status'] = $status;
++                $this->logRepository->addDebugLog(
++                    sprintf('API response %s %s (status: %s)', $method, $endpoint, $status),
+                     $result
+                 );
+                 return $result;
+-            } else {
+-                if ($body) {
+-                    $result = json_decode($body, true) ?: [];
+-                    $result['http_status'] = $this->curlClient->getStatus();
+-                    $this->logRepository->addDebugLog(
+-                        sprintf('API response %s %s (status: %s)', $method, $endpoint, $this->curlClient->getStatus()),
+-                        $result
+-                    );
+-                    return $result;
+-                } else {
+-                    $this->logRepository->addDebugLog(
+-                        sprintf('API response %s %s (status: %s)', $method, $endpoint, $this->curlClient->getStatus()),
+-                        'Invalid API response.'
+-                    );
+-                    throw new LocalizedException(
+-                        __('Invalid API response from %1.', $this->brandRegistry->getProductName())
+-                    );
+-                }
+             }
++
++            $this->logRepository->addDebugLog(
++                sprintf('API response %s %s (status: %s)', $method, $endpoint, $status),
++                'Invalid API response.'
++            );
++            throw new LocalizedException(
++                __('Invalid API response from %1.', $this->brandRegistry->getProductName())
++            );
+         } catch (Throwable $exception) {
+             return [
+                 'error_code' => 400,
++                'error_source' => 'two',
+                 'error_message' => $exception->getMessage(),
+             ];
+         }
+     }
++
++    /**
++     * Visible for unit-testing the restoration path without faking the whole
++     * execute() pipeline.
++     */
++    protected function restorePreservedHeaders(
++        RequestInterface $request,
++        RequestInterface $preTranslation,
++        string $operation
++    ): RequestInterface {
++        foreach (TranslatorInterface::PRESERVE_HEADERS as $name) {
++            if ($preTranslation->hasHeader($name) && !$request->hasHeader($name)) {
++                $request = $request->withHeader($name, $preTranslation->getHeaderLine($name));
++                $this->logRepository->addDebugLog(
++                    sprintf('[translator] restored stripped header op=%s header=%s', $operation, $name),
++                    null
++                );
++            }
++        }
++        foreach ($preTranslation->getHeaders() as $name => $_) {
++            foreach (TranslatorInterface::PRESERVE_HEADER_PREFIXES as $prefix) {
++                if (stripos($name, $prefix) === 0 && !$request->hasHeader($name)) {
++                    $request = $request->withHeader($name, $preTranslation->getHeaderLine($name));
++                    $this->logRepository->addDebugLog(
++                        sprintf('[translator] restored stripped header op=%s header=%s', $operation, $name),
++                        null
++                    );
++                }
++            }
++        }
++        return $request;
++    }
++
++    private function isHeaderReadingOp(string $operation): bool
++    {
++        return in_array($operation, [Operation::DELEGATION_TOKEN, Operation::AUTOFILL_TOKEN], true);
++    }
++
++    /**
++     * Token-endpoint legacy shape: callers index by lowercase header name.
++     */
++    private function responseHeadersAsLowercaseArray(ResponseInterface $response): array
++    {
++        $out = [];
++        foreach ($response->getHeaders() as $name => $_) {
++            $out[strtolower((string)$name)] = $response->getHeaderLine($name);
++        }
++        return $out;
++    }
++
++    /**
++     * Names from TOKEN_RESPONSE_HEADERS present in pre-translation Curl headers
++     * but absent from post-translation PSR-7 Response.
++     */
++    private function missingTokenHeaders(ResponseInterface $response, array $preHeaders): array
++    {
++        $preLower = [];
++        foreach ($preHeaders as $name => $_) {
++            $preLower[strtolower((string)$name)] = true;
++        }
++        $missing = [];
++        foreach (TranslatorInterface::TOKEN_RESPONSE_HEADERS as $required) {
++            $needle = strtolower($required);
++            if (!isset($preLower[$needle])) {
++                continue; // upstream didn't send it; not the translator's fault
++            }
++            if (!$response->hasHeader($required)) {
++                $missing[] = $required;
++            }
++        }
++        return $missing;
++    }
++
++    private function translatorFailure(
++        string $phase,
++        Throwable $e,
++        string $operation,
++        string $nativeUrl,
++        float $phaseStart,
++        string $dispatchedUrl = '',
++        int $translateReqMs = 0,
++        int $dispatchMs = 0
++    ): array {
++        $translateRespMs = $phase === 'response'
++            ? (int)round((microtime(true) - $phaseStart) * 1000)
++            : 0;
++        if ($phase === 'request') {
++            $translateReqMs = (int)round((microtime(true) - $phaseStart) * 1000);
++        }
++        $this->logRepository->addDebugLog(
++            sprintf(
++                '[translator-failure] phase=%s class=%s op=%s message=%s',
++                $phase,
++                get_class($this->translator),
++                $operation,
++                json_encode($e->getMessage())
++            ),
++            null
++        );
++        $this->correlationLog(
++            $operation,
++            $nativeUrl,
++            $dispatchedUrl,
++            0,
++            'translator',
++            $translateReqMs,
++            $dispatchMs,
++            $translateRespMs
++        );
++        return [
++            'error_code' => 502,
++            'error_source' => 'translator',
++            'error_message' => 'Translator failure',
++        ];
++    }
++
++    private function upstreamFailure(
++        Throwable $e,
++        string $operation,
++        string $nativeUrl,
++        string $dispatchedUrl,
++        int $translateReqMs,
++        int $dispatchMs
++    ): array {
++        $this->correlationLog(
++            $operation,
++            $nativeUrl,
++            $dispatchedUrl,
++            0,
++            'two',
++            $translateReqMs,
++            $dispatchMs,
++            0
++        );
++        return [
++            'error_code' => 400,
++            'error_message' => $e->getMessage(),
++        ];
++    }
++
++    private function correlationLog(
++        string $op,
++        string $nativeUrl,
++        string $dispatchedUrl,
++        int $status,
++        string $errorSource,
++        int $translateReqMs,
++        int $dispatchMs,
++        int $translateRespMs
++    ): void {
++        $line = sprintf(
++            '[two.api] op=%s native_url=%s dispatched_url=%s translator=%s status=%d '
++            . 'error_source=%s translate_req_ms=%d dispatch_ms=%d translate_resp_ms=%d',
++            $op,
++            $nativeUrl,
++            $dispatchedUrl,
++            get_class($this->translator),
++            $status,
++            $errorSource,
++            $translateReqMs,
++            $dispatchMs,
++            $translateRespMs
++        );
++        $warnTranslator = ($translateReqMs > $this->translatorWarnMs)
++            || ($translateRespMs > $this->translatorWarnMs);
++        if ($warnTranslator) {
++            $this->logRepository->addDebugLog('[WARN] ' . $line, null);
++        } else {
++            $this->logRepository->addDebugLog($line, null);
++        }
++
++        if ($this->isDeveloperMode()) {
++            $this->logRepository->addDebugLog(
++                sprintf('[two.api.debug] op=%s translator=%s', $op, get_class($this->translator)),
++                null
++            );
++        }
++    }
++
++    private function isDeveloperMode(): bool
++    {
++        try {
++            return $this->appState->getMode() === State::MODE_DEVELOPER;
++        } catch (Throwable $e) {
++            return false;
++        }
++    }
+ }
+diff --git a/Service/Order/SurchargeCalculator.php b/Service/Order/SurchargeCalculator.php
+index 5bc841f..a52c74f 100644
+--- a/Service/Order/SurchargeCalculator.php
++++ b/Service/Order/SurchargeCalculator.php
+@@ -8,6 +8,7 @@ declare(strict_types=1);
+ namespace Two\Gateway\Service\Order;
+ 
+ use Magento\Framework\Exception\LocalizedException;
++use Two\Gateway\Api\Operation;
+ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+ use Two\Gateway\Api\CurrencyRatesProviderInterface;
+ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+@@ -99,14 +100,32 @@ class SurchargeCalculator
+ 
+         $buyerFeeShare = $this->buildBuyerFeeShare($surchargeType, $selectedTermDays, $orderCurrency, $storeId);
+ 
+-        $response = $this->apiAdapter->execute('/v1/pricing/order/fee', [
+-            'buyer_country_code' => $buyerCountry,
+-            'approved_on_recourse' => false,
+-            'currency' => $orderCurrency,
+-            'gross_amount' => $grossAmount,
+-            'order_terms' => $this->buildOrderTerms($selectedTermDays, $storeId),
+-            'buyer_fee_share' => $buyerFeeShare,
+-        ]);
++        $response = $this->apiAdapter->execute(
++            '/v1/pricing/order/fee',
++            [
++                'buyer_country_code' => $buyerCountry,
++                'approved_on_recourse' => false,
++                'currency' => $orderCurrency,
++                'gross_amount' => $grossAmount,
++                'order_terms' => $this->buildOrderTerms($selectedTermDays, $storeId),
++                'buyer_fee_share' => $buyerFeeShare,
++            ],
++            'POST',
++            $storeId,
++            Operation::PRICE_ORDER_FEE
++        );
++
++        // Translator-failure path is a glue bug we own; do NOT silently zero the
++        // surcharge or it will quietly undercharge merchants until someone reads
++        // the log. Hard-fail at the admin/UI seam so the failure is visible.
++        if (($response['error_source'] ?? null) === 'translator') {
++            $this->logRepository->addDebugLog('Pricing API translator failure', [
++                'error_code' => $response['error_code'] ?? null,
++            ]);
++            throw new LocalizedException(
++                __('Two payment is temporarily unavailable due to a configuration issue. Please contact support.')
++            );
++        }
+ 
+         // `http_status` may be set on success too (observability convenience);
+         // gate on the actual 4xx/5xx range plus presence of `error_code`.
+diff --git a/Service/Payment/OrderService.php b/Service/Payment/OrderService.php
+index 9d93aa1..8dcbef6 100755
+--- a/Service/Payment/OrderService.php
++++ b/Service/Payment/OrderService.php
+@@ -8,6 +8,7 @@ declare(strict_types=1);
+ namespace Two\Gateway\Service\Payment;
+ 
+ use Exception;
++use Two\Gateway\Api\Operation;
+ use Magento\Framework\App\RequestInterface;
+ use Magento\Framework\DB\Transaction;
+ use Magento\Framework\Exception\LocalizedException;
+@@ -204,7 +205,7 @@ class OrderService
+      */
+     public function getTwoOrderFromApi(Order $order): array
+     {
+-        $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId(), [], 'GET');
++        $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId(), [], 'GET', null, Operation::GET_ORDER);
+         $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
+         if ($error) {
+             throw new LocalizedException($error);
+@@ -222,7 +223,7 @@ class OrderService
+      */
+     public function confirmOrder(Order $order)
+     {
+-        $response = $this->apiAdapter->execute("/v1/order/" . $order->getTwoOrderId() . "/confirm");
++        $response = $this->apiAdapter->execute("/v1/order/" . $order->getTwoOrderId() . "/confirm", [], 'POST', null, Operation::CONFIRM_ORDER);
+         $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
+         if ($error) {
+             throw new LocalizedException($error);
+@@ -240,7 +241,7 @@ class OrderService
+      */
+     public function cancelTwoOrder(Order $order): bool
+     {
+-        $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId() . '/cancel');
++        $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId() . '/cancel', [], 'POST', null, Operation::CANCEL_ORDER);
+         if ($response) {
+             $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
+             if ($error) {
+diff --git a/Test/E2E/ApiAdapterTest.php b/Test/E2E/ApiAdapterTest.php
+index 53b174d..5641059 100644
+--- a/Test/E2E/ApiAdapterTest.php
++++ b/Test/E2E/ApiAdapterTest.php
+@@ -3,9 +3,15 @@ declare(strict_types=1);
+ 
+ namespace Two\Gateway\Test\E2E\Service\Api;
+ 
++use Magento\Framework\App\State;
++use Magento\Framework\HTTP\Client\CurlFactory;
++use Nyholm\Psr7\Factory\Psr17Factory;
+ use PHPUnit\Framework\TestCase;
++use Two\Gateway\Api\BrandRegistryInterface;
+ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
++use Two\Gateway\Api\Operation;
++use Two\Gateway\Model\Translator\NullTranslator;
+ use Two\Gateway\Service\Api\Adapter;
+ use Two\Gateway\Test\E2E\Http\RealCurl;
+ 
+@@ -30,13 +36,31 @@ class ApiAdapterTest extends TestCase
+         $config->method('getApiKey')->willReturn($apiKey);
+ 
+         $log = $this->createMock(LogRepository::class);
+-
+-        $this->adapter = new Adapter($config, new RealCurl(), $log);
++        $brand = $this->createMock(BrandRegistryInterface::class);
++        $brand->method('getProductName')->willReturn('Two');
++        $state = $this->createMock(State::class);
++        $state->method('getMode')->willReturn('production');
++
++        $factory = $this->createMock(CurlFactory::class);
++        $factory->method('create')->willReturnCallback(fn() => new RealCurl());
++
++        $psr17 = new Psr17Factory();
++        $this->adapter = new Adapter(
++            $config,
++            $brand,
++            $factory,
++            $log,
++            new NullTranslator(),
++            $psr17,
++            $psr17,
++            $psr17,
++            $state
++        );
+     }
+ 
+     public function testApiKeyIsValid(): void
+     {
+-        $result = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
++        $result = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET', null, Operation::VERIFY_API_KEY);
+ 
+         $this->assertIsArray($result);
+         $this->assertArrayNotHasKey('error_code', $result);
+@@ -52,16 +76,34 @@ class ApiAdapterTest extends TestCase
+         $config->method('getApiKey')->willReturn('invalid-key');
+ 
+         $log = $this->createMock(LogRepository::class);
+-
+-        $adapter = new Adapter($config, new RealCurl(), $log);
+-        $result = $adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
++        $brand = $this->createMock(BrandRegistryInterface::class);
++        $brand->method('getProductName')->willReturn('Two');
++        $state = $this->createMock(State::class);
++        $state->method('getMode')->willReturn('production');
++
++        $factory = $this->createMock(CurlFactory::class);
++        $factory->method('create')->willReturnCallback(fn() => new RealCurl());
++
++        $psr17 = new Psr17Factory();
++        $adapter = new Adapter(
++            $config,
++            $brand,
++            $factory,
++            $log,
++            new NullTranslator(),
++            $psr17,
++            $psr17,
++            $psr17,
++            $state
++        );
++        $result = $adapter->execute('/v1/merchant/verify_api_key', [], 'GET', null, Operation::VERIFY_API_KEY);
+ 
+         $this->assertEquals(401, $result['http_status']);
+     }
+ 
+     public function testBadOrderPayloadReturnsStructuredError(): void
+     {
+-        $result = $this->adapter->execute('/v1/order', []);
++        $result = $this->adapter->execute('/v1/order', [], 'POST', null, Operation::CREATE_ORDER);
+ 
+         $this->assertArrayHasKey('http_status', $result);
+         $this->assertGreaterThanOrEqual(400, $result['http_status']);
+diff --git a/Test/E2E/PricingFeeTest.php b/Test/E2E/PricingFeeTest.php
+index 7aa858d..5e1104f 100644
+--- a/Test/E2E/PricingFeeTest.php
++++ b/Test/E2E/PricingFeeTest.php
+@@ -31,21 +31,45 @@ class PricingFeeTest extends TestCase
+         $config->method('getApiKey')->willReturn($apiKey);
+ 
+         $log = $this->createMock(LogRepository::class);
+-
+-        $this->adapter = new Adapter($config, new RealCurl(), $log);
++        $brand = $this->createMock(BrandRegistryInterface::class);
++        $brand->method('getProductName')->willReturn('Two');
++        $state = $this->createMock(State::class);
++        $state->method('getMode')->willReturn('production');
++
++        $factory = $this->createMock(CurlFactory::class);
++        $factory->method('create')->willReturnCallback(fn() => new RealCurl());
++
++        $psr17 = new Psr17Factory();
++        $this->adapter = new Adapter(
++            $config,
++            $brand,
++            $factory,
++            $log,
++            new NullTranslator(),
++            $psr17,
++            $psr17,
++            $psr17,
++            $state
++        );
+     }
+ 
+     private function fetchFee(int $durationDays, float $grossAmount = 1000.0, string $country = 'NO'): array
+     {
+-        $result = $this->adapter->execute('/v1/pricing/order/fee', [
+-            'buyer_country_code' => $country,
+-            'approved_on_recourse' => false,
+-            'gross_amount' => $grossAmount,
+-            'order_terms' => [
+-                'type' => 'NET_TERMS',
+-                'duration_days' => $durationDays,
++        $result = $this->adapter->execute(
++            '/v1/pricing/order/fee',
++            [
++                'buyer_country_code' => $country,
++                'approved_on_recourse' => false,
++                'gross_amount' => $grossAmount,
++                'order_terms' => [
++                    'type' => 'NET_TERMS',
++                    'duration_days' => $durationDays,
++                ],
+             ],
+-        ]);
++            'POST',
++            null,
++            Operation::PRICE_ORDER_FEE
++        );
+ 
+         // The pricing endpoint may require elevated permissions not available
+         // with a standard test API key. Skip rather than fail.
+@@ -91,16 +115,22 @@ class PricingFeeTest extends TestCase
+ 
+     public function testEndOfMonthTermsAccepted(): void
+     {
+-        $result = $this->adapter->execute('/v1/pricing/order/fee', [
+-            'buyer_country_code' => 'NO',
+-            'approved_on_recourse' => false,
+-            'gross_amount' => 1000.0,
+-            'order_terms' => [
+-                'type' => 'NET_TERMS',
+-                'duration_days' => 60,
+-                'duration_days_calculated_from' => 'END_OF_MONTH',
++        $result = $this->adapter->execute(
++            '/v1/pricing/order/fee',
++            [
++                'buyer_country_code' => 'NO',
++                'approved_on_recourse' => false,
++                'gross_amount' => 1000.0,
++                'order_terms' => [
++                    'type' => 'NET_TERMS',
++                    'duration_days' => 60,
++                    'duration_days_calculated_from' => 'END_OF_MONTH',
++                ],
+             ],
+-        ]);
++            'POST',
++            null,
++            Operation::PRICE_ORDER_FEE
++        );
+ 
+         if (($result['http_status'] ?? 0) === 401) {
+             $this->markTestSkipped('API key does not have access to the pricing endpoint');
+diff --git a/Test/Stubs/CurlFactory.php b/Test/Stubs/CurlFactory.php
+new file mode 100644
+index 0000000..e4d84db
+--- /dev/null
++++ b/Test/Stubs/CurlFactory.php
+@@ -0,0 +1,15 @@
++<?php
++declare(strict_types=1);
++
++namespace Magento\Framework\HTTP\Client;
++
++/**
++ * Minimal CurlFactory stub. Tests override create() to return a mock Curl.
++ */
++class CurlFactory
++{
++    public function create(): Curl
++    {
++        return new Curl();
++    }
++}
+diff --git a/Test/Unit/Service/Api/AdapterTest.php b/Test/Unit/Service/Api/AdapterTest.php
+index 59aaa9a..1e3304a 100644
+--- a/Test/Unit/Service/Api/AdapterTest.php
++++ b/Test/Unit/Service/Api/AdapterTest.php
+@@ -3,178 +3,361 @@ declare(strict_types=1);
+ 
+ namespace Two\Gateway\Test\Unit\Service\Api;
+ 
++use Magento\Framework\App\State;
+ use Magento\Framework\HTTP\Client\Curl;
++use Magento\Framework\HTTP\Client\CurlFactory;
++use Nyholm\Psr7\Factory\Psr17Factory;
+ use PHPUnit\Framework\TestCase;
++use Psr\Http\Message\RequestInterface;
++use Psr\Http\Message\ResponseInterface;
+ use Two\Gateway\Api\BrandRegistryInterface;
+ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
++use Two\Gateway\Api\Operation;
++use Two\Gateway\Api\TranslatorInterface;
++use Two\Gateway\Model\Translator\NullTranslator;
++use Two\Gateway\Model\Translator\PassthroughTrait;
+ use Two\Gateway\Service\Api\Adapter;
+ 
+ class AdapterTest extends TestCase
+ {
+-    /** @var ConfigRepository|\PHPUnit\Framework\MockObject\MockObject */
++    /** @var ConfigRepository&\PHPUnit\Framework\MockObject\MockObject */
+     private $configRepository;
+ 
+-    /** @var Curl|\PHPUnit\Framework\MockObject\MockObject */
++    /** @var BrandRegistryInterface&\PHPUnit\Framework\MockObject\MockObject */
++    private $brandRegistry;
++
++    /** @var Curl&\PHPUnit\Framework\MockObject\MockObject */
+     private $curl;
+ 
+-    /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
++    /** @var CurlFactory&\PHPUnit\Framework\MockObject\MockObject */
++    private $curlFactory;
++
++    /** @var LogRepository&\PHPUnit\Framework\MockObject\MockObject */
+     private $logRepository;
+ 
+-    /** @var BrandRegistryInterface|\PHPUnit\Framework\MockObject\MockObject */
+-    private $brandRegistry;
++    /** @var State&\PHPUnit\Framework\MockObject\MockObject */
++    private $appState;
+ 
+-    /** @var Adapter */
+-    private $adapter;
++    /** @var Psr17Factory */
++    private $psr17;
+ 
+     protected function setUp(): void
+     {
+-        $this->configRepository = $this->createMock(ConfigRepository::class);
+-        $this->curl = $this->createMock(Curl::class);
+-        $this->logRepository = $this->createMock(LogRepository::class);
+-        $this->brandRegistry = $this->createMock(BrandRegistryInterface::class);
+-        $this->brandRegistry->method('getProductName')->willReturn('Two');
++        if (!class_exists(Psr17Factory::class)) {
++            $this->markTestSkipped('nyholm/psr7 not installed (run composer install)');
++        }
+ 
++        $this->configRepository = $this->createMock(ConfigRepository::class);
+         $this->configRepository->method('getCheckoutApiUrl')->willReturn('https://api.two.inc');
+         $this->configRepository->method('addVersionDataInURL')->willReturnArgument(0);
+         $this->configRepository->method('getApiKey')->willReturn('test-key');
+ 
+-        $this->adapter = new Adapter(
++        $this->brandRegistry = $this->createMock(BrandRegistryInterface::class);
++        $this->brandRegistry->method('getProductName')->willReturn('Two');
++
++        $this->curl = $this->createMock(Curl::class);
++        $this->curlFactory = $this->createMock(CurlFactory::class);
++        $this->curlFactory->method('create')->willReturn($this->curl);
++
++        $this->logRepository = $this->createMock(LogRepository::class);
++        $this->appState = $this->createMock(State::class);
++        $this->appState->method('getMode')->willReturn('production');
++
++        $this->psr17 = new Psr17Factory();
++    }
++
++    private function adapter(TranslatorInterface $translator): Adapter
++    {
++        return new Adapter(
+             $this->configRepository,
+             $this->brandRegistry,
+-            $this->curl,
+-            $this->logRepository
++            $this->curlFactory,
++            $this->logRepository,
++            $translator,
++            $this->psr17,
++            $this->psr17,
++            $this->psr17,
++            $this->appState
+         );
+     }
+ 
+-    // ── 2xx responses ───────────────────────────────────────────────────
+-
+-    public function testSuccessfulPostReturnsDecodedJson(): void
++    /** §11.1 — NullTranslator passthrough produces baseline request. */
++    public function testNullTranslatorPassthroughBaseline(): void
+     {
+         $this->curl->method('getStatus')->willReturn(200);
+         $this->curl->method('getBody')->willReturn('{"id":"abc"}');
+-
+-        $result = $this->adapter->execute('/v1/order', ['amount' => 100]);
+-
+-        $this->assertEquals(['id' => 'abc'], $result);
++        $this->curl->method('getHeaders')->willReturn([]);
++
++        $captured = ['headers' => [], 'url' => null, 'body' => null];
++        $this->curl->method('addHeader')->willReturnCallback(function ($n, $v) use (&$captured) {
++            $captured['headers'][$n] = $v;
++        });
++        $this->curl->method('post')->willReturnCallback(function ($u, $b) use (&$captured) {
++            $captured['url'] = $u;
++            $captured['body'] = $b;
++        });
++
++        $result = $this->adapter(new NullTranslator())
++            ->execute('/v1/order', ['amount' => 100], 'POST', null, Operation::CREATE_ORDER);
++
++        $this->assertSame(['id' => 'abc'], $result);
++        $this->assertSame('https://api.two.inc/v1/order', $captured['url']);
++        $this->assertSame('{"amount":100}', $captured['body']);
++        $this->assertSame('application/json', $captured['headers']['Content-Type']);
++        $this->assertSame('test-key', $captured['headers']['X-API-Key']);
++        // OP_HEADER stripped before dispatch.
++        $this->assertArrayNotHasKey(TranslatorInterface::OP_HEADER, $captured['headers']);
++        $this->assertSame((string)strlen('{"amount":100}'), $captured['headers']['Content-Length']);
+     }
+ 
+-    public function testGetRoutesThoughGetMethod(): void
++    /** §11.2 — Translator rewrites URL/status/headers; caller observes post-translation. */
++    public function testTranslatorRewritesUrlStatusHeaders(): void
+     {
+         $this->curl->method('getStatus')->willReturn(200);
+-        $this->curl->method('getBody')->willReturn('{"ok":true}');
+-
+-        $this->curl->expects($this->once())->method('get');
+-        $this->curl->expects($this->never())->method('post');
+-
+-        $result = $this->adapter->execute('/v1/order/123', [], 'GET');
+-
+-        $this->assertEquals(['ok' => true], $result);
++        $this->curl->method('getBody')->willReturn('{"native":true}');
++        $this->curl->method('getHeaders')->willReturn([]);
++
++        $captured = ['url' => null];
++        $this->curl->method('post')->willReturnCallback(function ($u) use (&$captured) {
++            $captured['url'] = $u;
++        });
++
++        $translator = new class implements TranslatorInterface {
++            use PassthroughTrait;
++            public function translateRequest(RequestInterface $r): RequestInterface
++            {
++                return $r->withUri($r->getUri()->withPath('/brand-proxy' . $r->getUri()->getPath()));
++            }
++            public function translateResponse(ResponseInterface $r): ResponseInterface
++            {
++                return $r->withStatus(201)
++                    ->withBody((new Psr17Factory())->createStream('{"id":"x"}'));
++            }
++        };
++
++        $result = $this->adapter($translator)
++            ->execute('/v1/order', ['x' => 1], 'POST', null, Operation::CREATE_ORDER);
++
++        $this->assertSame(['id' => 'x'], $result);
++        $this->assertSame('https://api.two.inc/brand-proxy/v1/order', $captured['url']);
+     }
+ 
+-    public function testSuccessEmptyBodyNonTokenEndpoint(): void
++    /** §11.3 — translateRequest throws RuntimeException → 502 envelope. */
++    public function testTranslatorRequestRuntimeExceptionReturns502(): void
+     {
+-        $this->curl->method('getStatus')->willReturn(200);
+-        $this->curl->method('getBody')->willReturn('');
+-
+-        $result = $this->adapter->execute('/v1/order', ['foo' => 'bar']);
++        $translator = new class implements TranslatorInterface {
++            use PassthroughTrait;
++            public function translateRequest(RequestInterface $r): RequestInterface
++            {
++                throw new \RuntimeException('boom');
++            }
++        };
++
++        $result = $this->adapter($translator)
++            ->execute('/v1/order', [], 'POST', null, Operation::CREATE_ORDER);
++
++        $this->assertSame(502, $result['error_code']);
++        $this->assertSame('translator', $result['error_source']);
++        $this->assertSame('Translator failure', $result['error_message']);
++    }
+ 
+-        $this->assertEquals([], $result);
++    /** §11.4 — translateRequest throws TypeError (returns wrong type) → 502. */
++    public function testTranslatorRequestTypeErrorReturns502(): void
++    {
++        $translator = new class implements TranslatorInterface {
++            use PassthroughTrait;
++            public function translateRequest(RequestInterface $r): RequestInterface
++            {
++                /** @phpstan-ignore-next-line */
++                return null; // forces TypeError on return
++            }
++        };
++
++        $result = $this->adapter($translator)
++            ->execute('/v1/order', [], 'POST', null, Operation::CREATE_ORDER);
++
++        $this->assertSame(502, $result['error_code']);
++        $this->assertSame('translator', $result['error_source']);
+     }
+ 
+-    public function testSuccessEmptyBodyTokenEndpointReturnsHeaders(): void
++    /** §11.6 — translator rewrites body length; Content-Length recomputed. */
++    public function testContentLengthRecomputedAfterBodyRewrite(): void
+     {
+         $this->curl->method('getStatus')->willReturn(200);
+-        $this->curl->method('getBody')->willReturn('');
+-        $this->curl->method('getHeaders')->willReturn([
+-            'X-Delegation-Token' => 'abc123',
+-            'Content-Type' => 'application/json',
+-        ]);
+-
+-        $result = $this->adapter->execute('/registry/v1/delegation');
+-
+-        $this->assertArrayHasKey('x-delegation-token', $result);
+-        $this->assertEquals('abc123', $result['x-delegation-token']);
++        $this->curl->method('getBody')->willReturn('{}');
++        $this->curl->method('getHeaders')->willReturn([]);
++
++        $captured = ['len' => null];
++        $this->curl->method('addHeader')->willReturnCallback(function ($n, $v) use (&$captured) {
++            if (strcasecmp($n, 'Content-Length') === 0) {
++                $captured['len'] = $v;
++            }
++        });
++
++        $longBody = str_repeat('a', 5000);
++        $translator = new class($longBody) implements TranslatorInterface {
++            use PassthroughTrait;
++            private $body;
++            public function __construct(string $body) { $this->body = $body; }
++            public function translateRequest(RequestInterface $r): RequestInterface
++            {
++                return $r->withBody((new Psr17Factory())->createStream($this->body));
++            }
++        };
++
++        $this->adapter($translator)
++            ->execute('/v1/order', ['x' => 1], 'POST', null, Operation::CREATE_ORDER);
++
++        $this->assertSame((string)5000, $captured['len']);
+     }
+ 
+-    // ── Non-2xx responses ───────────────────────────────────────────────
+-
+-    public function testNon2xxWithBodyReturnsJsonPlusHttpStatus(): void
++    /** §11.7 — body readable by translator AND by Adapter (rewind). */
++    public function testResponseBodyReadableTwice(): void
+     {
+-        $this->curl->method('getStatus')->willReturn(422);
+-        $this->curl->method('getBody')->willReturn(
+-            '{"error_code":"VALIDATION_ERROR","error_message":"Invalid field"}'
+-        );
+-
+-        $result = $this->adapter->execute('/v1/order', ['amount' => 100]);
+-
+-        $this->assertEquals('VALIDATION_ERROR', $result['error_code']);
+-        $this->assertEquals('Invalid field', $result['error_message']);
+-        $this->assertEquals(422, $result['http_status']);
++        $this->curl->method('getStatus')->willReturn(200);
++        $this->curl->method('getBody')->willReturn('{"a":1}');
++        $this->curl->method('getHeaders')->willReturn([]);
++
++        $sawInTranslator = null;
++        $translator = new class($sawInTranslator) implements TranslatorInterface {
++            use PassthroughTrait;
++            public $saw;
++            public function __construct(&$saw) { $this->saw = &$saw; }
++            public function translateResponse(ResponseInterface $r): ResponseInterface
++            {
++                $this->saw = (string)$r->getBody();
++                return $r;
++            }
++        };
++
++        $result = $this->adapter($translator)
++            ->execute('/v1/order', [], 'POST', null, Operation::CREATE_ORDER);
++
++        $this->assertSame('{"a":1}', $translator->saw);
++        $this->assertSame(['a' => 1], $result);
+     }
+ 
+-    public function testNon2xxWithMalformedJsonBody(): void
++    /**
++     * §11.8 — preserve-list restoration is unit-tested directly against the
++     * `restorePreservedHeaders` helper (protected). Exercising via execute() is
++     * awkward because the Adapter owns the pre-translation request shape and
++     * doesn't accept user-supplied PRESERVE_HEADERS at the seam; testing the
++     * helper directly avoids contorting the surface for a single assertion.
++     */
++    public function testPreservedHeaderRestoredAfterStrip(): void
+     {
+-        $this->curl->method('getStatus')->willReturn(500);
+-        $this->curl->method('getBody')->willReturn('not json');
+-
+-        $result = $this->adapter->execute('/v1/order', ['amount' => 100]);
++        $pre = $this->psr17->createRequest('POST', 'https://api.two.inc/x')
++            ->withHeader('X-Request-ID', 'req-1')
++            ->withHeader('X-Idempotency-Key', 'idem-1')
++            ->withHeader('X-Trace-Span', 'span-1');
++        $stripped = $pre->withoutHeader('X-Idempotency-Key')->withoutHeader('X-Trace-Span');
+ 
+-        $this->assertEquals(500, $result['http_status']);
++        $adapter = new class(
++            $this->configRepository,
++            $this->brandRegistry,
++            $this->curlFactory,
++            $this->logRepository,
++            new NullTranslator(),
++            $this->psr17,
++            $this->psr17,
++            $this->psr17,
++            $this->appState
++        ) extends Adapter {
++            public function exposeRestore(RequestInterface $r, RequestInterface $pre, string $op): RequestInterface
++            {
++                return $this->restorePreservedHeaders($r, $pre, $op);
++            }
++        };
++
++        $this->logRepository->expects($this->atLeastOnce())->method('addDebugLog');
++
++        $restored = $adapter->exposeRestore($stripped, $pre, Operation::CREATE_ORDER);
++
++        $this->assertTrue($restored->hasHeader('X-Idempotency-Key'));
++        $this->assertSame('idem-1', $restored->getHeaderLine('X-Idempotency-Key'));
++        $this->assertTrue($restored->hasHeader('X-Trace-Span'));
++        $this->assertSame('span-1', $restored->getHeaderLine('X-Trace-Span'));
++        $this->assertTrue($restored->hasHeader('X-Request-ID'));
+     }
+ 
+-    public function testNon2xxWithEmptyBodyReturnsCaughtException(): void
++    /** §11.9 — token-op translator stripping required header → 502, no silent recovery. */
++    public function testTokenHeaderStripReturns502(): void
+     {
+-        $this->curl->method('getStatus')->willReturn(500);
++        $this->curl->method('getStatus')->willReturn(200);
+         $this->curl->method('getBody')->willReturn('');
++        $this->curl->method('getHeaders')->willReturn([
++            'two-delegated-authority-token' => 'TKN',
++        ]);
+ 
+-        $result = $this->adapter->execute('/v1/order', ['amount' => 100]);
++        $translator = new class implements TranslatorInterface {
++            use PassthroughTrait;
++            public function translateResponse(ResponseInterface $r): ResponseInterface
++            {
++                return $r->withoutHeader('two-delegated-authority-token');
++            }
++        };
+ 
+-        $this->assertEquals(400, $result['error_code']);
+-        $this->assertStringContainsString('Invalid API response from Two.', $result['error_message']);
+-    }
++        $result = $this->adapter($translator)
++            ->execute('/registry/v1/delegation', [], 'POST', null, Operation::DELEGATION_TOKEN);
+ 
+-    // ── Edge cases ──────────────────────────────────────────────────────
++        $this->assertSame(502, $result['error_code']);
++        $this->assertSame('translator', $result['error_source']);
++    }
+ 
+-    public function testPostWithEmptyPayloadSendsEmptyString(): void
++    /** §11.10 — empty body on body-reading op → 502; '{}' → success. */
++    public function testTranslatorEmptyBodyReturns502(): void
+     {
+         $this->curl->method('getStatus')->willReturn(200);
+-        $this->curl->method('getBody')->willReturn('[]');
+-
+-        $this->curl->expects($this->once())
+-            ->method('post')
+-            ->with($this->anything(), '');
+-
+-        $this->adapter->execute('/v1/order', []);
++        $this->curl->method('getBody')->willReturn('{"native":true}');
++        $this->curl->method('getHeaders')->willReturn([]);
++
++        $emptier = new class implements TranslatorInterface {
++            use PassthroughTrait;
++            public function translateResponse(ResponseInterface $r): ResponseInterface
++            {
++                return $r->withBody((new Psr17Factory())->createStream(''));
++            }
++        };
++
++        $result = $this->adapter($emptier)
++            ->execute('/v1/order', [], 'POST', null, Operation::CREATE_ORDER);
++
++        $this->assertSame(502, $result['error_code']);
++        $this->assertSame('translator', $result['error_source']);
+     }
+ 
+-    public function testPutRoutesThoughPostBranch(): void
++    public function testTranslatorEmptyObjectBodyIsSuccess(): void
+     {
+         $this->curl->method('getStatus')->willReturn(200);
+-        $this->curl->method('getBody')->willReturn('{}');
++        $this->curl->method('getBody')->willReturn('{"native":true}');
++        $this->curl->method('getHeaders')->willReturn([]);
++
++        $remap = new class implements TranslatorInterface {
++            use PassthroughTrait;
++            public function translateResponse(ResponseInterface $r): ResponseInterface
++            {
++                return $r->withBody((new Psr17Factory())->createStream('{}'));
++            }
++        };
+ 
+-        $this->curl->expects($this->once())->method('post');
+-        $this->curl->expects($this->never())->method('get');
++        $result = $this->adapter($remap)
++            ->execute('/v1/order', [], 'POST', null, Operation::CREATE_ORDER);
+ 
+-        $this->adapter->execute('/v1/order/123', ['status' => 'fulfilled'], 'PUT');
++        $this->assertSame([], $result); // {} decodes to empty array
+     }
+ 
+-    public function testExceptionDuringRequestReturnsCaughtError(): void
++    /** §11.11 — reflection: execute()'s $operation parameter is required, non-nullable string. */
++    public function testExecuteOperationParameterIsRequiredNonNullableString(): void
+     {
+-        $this->configRepository = $this->createMock(ConfigRepository::class);
+-        $this->configRepository->method('getCheckoutApiUrl')
+-            ->willThrowException(new \RuntimeException('Connection failed'));
+-
+-        $adapter = new Adapter(
+-            $this->configRepository,
+-            $this->brandRegistry,
+-            $this->curl,
+-            $this->logRepository
+-        );
+-
+-        $result = $adapter->execute('/v1/order');
+-
+-        $this->assertEquals(400, $result['error_code']);
+-        $this->assertEquals('Connection failed', $result['error_message']);
++        $rm = new \ReflectionMethod(Adapter::class, 'execute');
++        $params = $rm->getParameters();
++        $this->assertSame('operation', $params[4]->getName());
++        $this->assertFalse($params[4]->isOptional());
++        $this->assertTrue($params[4]->hasType());
++        $type = $params[4]->getType();
++        $this->assertInstanceOf(\ReflectionNamedType::class, $type);
++        $this->assertSame('string', $type->getName());
++        $this->assertFalse($type->allowsNull());
+     }
+ }
+diff --git a/Test/bootstrap.php b/Test/bootstrap.php
+index 5093ac4..456d714 100644
+--- a/Test/bootstrap.php
++++ b/Test/bootstrap.php
+@@ -8,6 +8,12 @@
+  */
+ declare(strict_types=1);
+ 
++// Vendor autoload (PSR-7 + nyholm/psr7) if present.
++$vendorAutoload = __DIR__ . '/../vendor/autoload.php';
++if (file_exists($vendorAutoload)) {
++    require_once $vendorAutoload;
++}
++
+ // PSR-4 autoloader for Two\Gateway\ → project root
+ spl_autoload_register(function ($class) {
+     $prefix = 'Two\\Gateway\\';
+@@ -46,6 +52,9 @@ if (!interface_exists(\Magento\Framework\App\Config\Storage\WriterInterface::cla
+ if (!class_exists(\Magento\Framework\HTTP\Client\Curl::class)) {
+     require_once __DIR__ . '/Stubs/Curl.php';
+ }
++if (!class_exists(\Magento\Framework\HTTP\Client\CurlFactory::class)) {
++    require_once __DIR__ . '/Stubs/CurlFactory.php';
++}
+ if (!class_exists(\Magento\Framework\Exception\LocalizedException::class)) {
+     require_once __DIR__ . '/Stubs/LocalizedException.php';
+ }
+diff --git a/composer.json b/composer.json
+index fd66066..24290d7 100755
+--- a/composer.json
++++ b/composer.json
+@@ -9,7 +9,9 @@
+     ],
+     "require": {
+         "php": ">=7.3",
+-        "magento/framework": ">=102.0.0"
++        "magento/framework": ">=102.0.0",
++        "psr/http-message": "^1.0 || ^2.0",
++        "nyholm/psr7": "^1.8"
+     },
+     "autoload": {
+         "files": [
+diff --git a/etc/di.xml b/etc/di.xml
+index 91a7376..0cc0b00 100755
+--- a/etc/di.xml
++++ b/etc/di.xml
+@@ -22,6 +22,16 @@
+     <!-- Default brand binding. Overlay packages may rebind via their own DI preference. -->
+     <preference for="Two\Gateway\Api\BrandRegistryInterface"
+                 type="Two\Gateway\Brand\TwoBrand"/>
++    <!-- Default outbound-API translator: passthrough. Brand overlays rebind. -->
++    <preference for="Two\Gateway\Api\TranslatorInterface"
++                type="Two\Gateway\Model\Translator\NullTranslator"/>
++    <!-- PSR-17 factory bindings — nyholm/psr7's Psr17Factory implements all three. -->
++    <preference for="Psr\Http\Message\RequestFactoryInterface"
++                type="Nyholm\Psr7\Factory\Psr17Factory"/>
++    <preference for="Psr\Http\Message\StreamFactoryInterface"
++                type="Nyholm\Psr7\Factory\Psr17Factory"/>
++    <preference for="Psr\Http\Message\ResponseFactoryInterface"
++                type="Nyholm\Psr7\Factory\Psr17Factory"/>
+ 
+     <type name="Two\Gateway\Logger\Handler">
+         <arguments>
