@@ -105,4 +105,18 @@
             </argument>
         </arguments>
     </type>
+
+    <!--
+        Payment-method codes that engage the surcharge quote-total collector.
+        Brand overlays (e.g. ABN_Gateway) append their own code via a
+        matching <type> entry in their own etc/di.xml — Magento merges
+        named-array DI items across modules so the list grows additively.
+    -->
+    <type name="Two\Gateway\Model\Total\Surcharge">
+        <arguments>
+            <argument name="allowedMethods" xsi:type="array">
+                <item name="two_payment" xsi:type="string">two_payment</item>
+            </argument>
+        </arguments>
+    </type>
 </config>
