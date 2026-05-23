@@ -10,13 +10,19 @@ namespace Two\Gateway\Observer;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Sales\Model\Order;
-use Two\Gateway\Model\Two;
+use Two\Gateway\Api\BrandOverlayRegistryInterface;
 
 /**
  * Observer to disable order confirmation email
  */
 class SalesOrderPlaceAfter implements ObserverInterface
 {
+    private $overlayRegistry;
+
+    public function __construct(BrandOverlayRegistryInterface $overlayRegistry)
+    {
+        $this->overlayRegistry = $overlayRegistry;
+    }
 
     /**
      * @param Observer $observer
@@ -27,7 +33,7 @@ class SalesOrderPlaceAfter implements ObserverInterface
     {
         /** @var Order $order */
         $order = $observer->getEvent()->getOrder();
-        if ($order->getPayment()->getMethod() == Two::CODE) {
+        if ($this->overlayRegistry->isTwoStackMethod((string)$order->getPayment()->getMethod())) {
             $order->setCanSendNewEmailFlag(false);
         }
 

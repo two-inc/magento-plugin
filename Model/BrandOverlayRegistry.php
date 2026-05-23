@@ -9,6 +9,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Model;
 
 use Two\Gateway\Api\BrandOverlayRegistryInterface;
+use Two\Gateway\Model\Two;
 
 class BrandOverlayRegistry implements BrandOverlayRegistryInterface
 {
@@ -32,5 +33,13 @@ class BrandOverlayRegistry implements BrandOverlayRegistryInterface
     public function getOverlays(): array
     {
         return $this->overlays;
+    }
+
+    public function isTwoStackMethod(string $method): bool
+    {
+        if ($method === Two::CODE) {
+            return true;
+        }
+        return in_array($method, array_values($this->overlays), true);
     }
 }

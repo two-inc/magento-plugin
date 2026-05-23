@@ -37,4 +37,18 @@ interface BrandOverlayRegistryInterface
      * @return array<string, string> Map of overlay key => method code.
      */
     public function getOverlays(): array;
+
+    /**
+     * True iff `$method` is a Two-stack payment method code: either the
+     * parent-brand canonical code (`Two::CODE` = 'two_payment') or one
+     * of the registered overlay codes.
+     *
+     * Callers that need to gate behaviour to "any Two-stack payment
+     * method" (observers, controllers, the order-reference lookup in
+     * Service\Payment\OrderService) use this instead of the previous
+     * pattern of `=== Two::CODE` which excluded overlay methods like
+     * `abn_payment` and produced "Unable to find the requested order"
+     * errors on overlay checkouts.
+     */
+    public function isTwoStackMethod(string $method): bool;
 }
