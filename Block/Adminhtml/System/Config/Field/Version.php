@@ -16,17 +16,19 @@ use Magento\Framework\Stdlib\DateTime\TimezoneInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
- * Renders a deployment-status panel listing every gateway-stack module
- * installed alongside Two_Gateway (parent, Hyva extension, brand
- * overlays) plus a single assets-freshness row.
+ * Renders the admin "Version" panel: one row per gateway-stack module
+ * (parent payment method, Hyva extension, brand overlays) plus a
+ * single assets-freshness row.
  *
  * Per-module signals: composer.json version (authoritative for what's
  * deployed), gitSync worktree commit SHA, source mtime.
  * Panel-level: assets mtime + stale warning when assets are older than
  * the newest module's source.
  *
- * The module list comes from the `moduleNames` DI argument. Brand
- * overlays rebind the type and prepend their own module. Unregistered
+ * Rows come from the `moduleLabels` DI argument — a label-keyed map
+ * from human-readable row title to ComponentRegistrar module name.
+ * Brand overlays rebind the type with their own labels (e.g. ABN
+ * adds "Payment Method Theme" / "Hyva Theme" rows). Unregistered
  * entries (e.g. Hyva when not installed) are silently skipped.
  */
 class Version extends Field
@@ -48,23 +50,24 @@ class Version extends Field
     private string $moduleName;
 
     /**
-     * @var string[]
+     * @var array<string, string> Label => module-name map (ordered).
      */
-    private array $moduleNames;
+    private array $moduleLabels;
 
     /**
      * @param ConfigRepository $configRepository
      * @param Context $context
-     * @param ComponentRegistrar|null $componentRegistrar
-     * @param DirectoryList|null $directoryList
-     * @param TimezoneInterface|null $timezone
+     * @param ComponentRegistrar $componentRegistrar
+     * @param DirectoryList $directoryList
+     * @param TimezoneInterface $timezone
      * @param string $moduleName Primary module — used by getVersion() fallback
      *                           and for any caller still expecting a single
      *                           module identity.
-     * @param string[] $moduleNames Ordered list of modules to enumerate in
-     *                              the panel. Defaults to [moduleName,
-     *                              'Two_GatewayHyva']. Unregistered entries
-     *                              are skipped.
+     * @param array<string, string> $moduleLabels Ordered label=>module-name map.
+     *                              Defaults to [Payment Method => Two_Gateway,
+     *                              Hyva Extension => Two_GatewayHyva].
+     *                              Brand overlays rebind to append theme rows.
+     *                              Unregistered modules are skipped.
      * @param array $data
      */
     public function __construct(
@@ -74,7 +77,7 @@ class Version extends Field
         DirectoryList $directoryList,
         TimezoneInterface $timezone,
         string $moduleName = 'Two_Gateway',
-        array $moduleNames = [],
+        array $moduleLabels = [],
         array $data = []
     ) {
         $this->configRepository = $configRepository;
@@ -82,9 +85,12 @@ class Version extends Field
         $this->directoryList = $directoryList;
         $this->timezone = $timezone;
         $this->moduleName = $moduleName;
-        $this->moduleNames = !empty($moduleNames)
-            ? $moduleNames
-            : [$moduleName, 'Two_GatewayHyva'];
+        $this->moduleLabels = !empty($moduleLabels)
+            ? $moduleLabels
+            : [
+                'Payment Method' => 'Two_Gateway',
+                'Hyva Extension' => 'Two_GatewayHyva',
+            ];
         parent::__construct($context, $data);
     }
 
@@ -111,23 +117,18 @@ class Version extends Field
     /**
      * Rows for the multi-module panel.
      *
-     * @return array<int, array{name: string, version: ?string, commit: string, codeAt: string}>
+     * @return array<int, array{label: string, version: ?string, commit: string, codeAt: string}>
      */
     public function getModules(): array
     {
         $rows = [];
-        $seen = [];
-        foreach ($this->moduleNames as $name) {
-            if (isset($seen[$name])) {
-                continue;
-            }
-            $seen[$name] = true;
-            $path = $this->getModulePathFor($name);
+        foreach ($this->moduleLabels as $label => $moduleName) {
+            $path = $this->getModulePathFor($moduleName);
             if (!$path) {
                 continue;
             }
             $rows[] = [
-                'name' => $name,
+                'label' => $label,
                 'version' => $this->readComposerVersion($path),
                 'commit' => $this->extractCommit($path),
                 'codeAt' => $this->formatTs($this->getCodeTs($path)),
@@ -157,8 +158,8 @@ class Version extends Field
             return false;
         }
         $newestCode = 0;
-        foreach ($this->moduleNames as $name) {
-            $path = $this->getModulePathFor($name);
+        foreach ($this->moduleLabels as $moduleName) {
+            $path = $this->getModulePathFor($moduleName);
             if (!$path) {
                 continue;
             }
