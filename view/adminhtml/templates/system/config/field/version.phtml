@@ -9,7 +9,41 @@ use Two\Gateway\Block\Adminhtml\System\Config\Field\Version;
 /**
  * @var Version $block
  */
+
+$version = $block->getVersion();
+$commit  = $block->getDeployedCommit();
+$codeAt  = $block->getCodeDeployedAt();
+$assets  = $block->getAssetsDeployedAt();
+$stale   = $block->isAssetsStale();
 ?>
-<div>
-    <span><?= $block->escapeHtml($block->getVersion()); ?></span>
+<div class="two-build-info" style="line-height:1.6;">
+    <?php if ($version): ?>
+        <div>
+            <strong><?= $block->escapeHtml(__('Plugin version')); ?>:</strong>
+            <span><?= $block->escapeHtml($version); ?></span>
+        </div>
+    <?php endif; ?>
+    <?php if ($commit): ?>
+        <div>
+            <strong><?= $block->escapeHtml(__('Deployed commit')); ?>:</strong>
+            <code><?= $block->escapeHtml($commit); ?></code>
+        </div>
+    <?php endif; ?>
+    <?php if ($codeAt): ?>
+        <div>
+            <strong><?= $block->escapeHtml(__('Code deployed at')); ?>:</strong>
+            <span><?= $block->escapeHtml($codeAt); ?></span>
+        </div>
+    <?php endif; ?>
+    <?php if ($assets): ?>
+        <div>
+            <strong><?= $block->escapeHtml(__('Assets deployed at')); ?>:</strong>
+            <span><?= $block->escapeHtml($assets); ?></span>
+            <?php if ($stale): ?>
+                <span style="color:#c00;font-weight:bold;margin-left:0.5em;">
+                    <?= $block->escapeHtml(__('⚠ stale — assets older than code; run setup:static-content:deploy')); ?>
+                </span>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
 </div>
