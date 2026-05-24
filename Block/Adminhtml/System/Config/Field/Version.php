@@ -216,8 +216,14 @@ class Version extends Field
     {
         $gitFile = $modulePath . '/.git';
         if (is_file($gitFile)) {
-            $content = @file_get_contents($gitFile);
-            if ($content !== false && preg_match('#worktrees/([a-f0-9]{7,40})#', $content, $m)) {
+            // .git is always `gitdir: <relpath>\n`; cap the read defensively
+            // and trim before anchoring the regex to end-of-string so a
+            // worktrees/<sha> segment elsewhere in the path can't shadow
+            // the real SHA at the tail.
+            $content = @file_get_contents($gitFile, false, null, 0, 1024);
+            if ($content !== false
+                && preg_match('#worktrees/([a-f0-9]{7,40})/?$#', trim($content), $m)
+            ) {
                 return substr($m[1], 0, 7);
             }
         }
