@@ -60,16 +60,25 @@
     }
 }
 
+// Flex the title row so the icon centers vertically against the
+// caption (or the title box, when --no-caption hides it). The
+// earlier float + negative-margin approach left the icon anchored to
+// the top of the content box and the visual offset varied with caption
+// presence; flexbox handles both cases uniformly.
+.two-extension .title {
+    display: flex;
+    align-items: center;
+}
+
 .two-extension .title:before {
     content: '';
-    display: inline-block;
+    flex-shrink: 0;
     background-image: url('@{baseDir}Two_Gateway/images/logo.svg');
     background-size: 58px;
     background-repeat: no-repeat;
+    background-position: center;
     width: 65px;
     height: 35px;
-    float: left;
-    margin-top: -5px;
 }
 
 // Opt-in for brands whose admin glyph is a wordmark logo (e.g. the
@@ -80,12 +89,13 @@
     display: none;
 }
 
-// With the caption hidden and the :before icon floated, the title's
-// content area collapses to its padding (~38px) — visibly shorter
-// than peer section titles (~55px). Match the peer height so the row
-// reads as a normal nav entry rather than a squashed one.
+// --no-caption rows have only the 35px icon as visible content; cap
+// the row at peer-title height (~55px) so it reads as a normal nav
+// entry. With flex+align-items:center the icon centers within the
+// row, overflowing the 19px content area into the 18px padding band
+// without breaking layout.
 .two-extension--no-caption .admin__page-nav-title {
-    min-height: 55px;
+    height: 55px;
 }
 
 
