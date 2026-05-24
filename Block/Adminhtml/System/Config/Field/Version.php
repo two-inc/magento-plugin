@@ -201,17 +201,29 @@ class Version extends Field
     }
 
     /**
-     * 7-char SHA from the gitSync worktree symlink target. gitSync writes
-     * worktrees at `.worktrees/<sha>/` and points the module path symlink
-     * (or its parent) at the active worktree.
+     * 7-char SHA of the gitSync-pulled commit.
+     *
+     * gitSync v4 writes worktrees at `<root>/.git/worktrees/<sha>/` and
+     * names each worktree directory after the SHA it points at. The
+     * module's `.git` file (a single line `gitdir: <relpath>`) references
+     * that directory. Read it directly — robust whether the module path
+     * is a symlink straight to the worktree (older layout) or a real
+     * directory whose contents were copied/hardlinked at init (current
+     * Magento init job behaviour, which makes the realpath of
+     * registration.php contain no worktree segment).
      */
     private function extractCommit(string $modulePath): string
     {
-        $real = @realpath($modulePath . '/registration.php');
-        if (!$real) {
-            return '';
+        $gitFile = $modulePath . '/.git';
+        if (is_file($gitFile)) {
+            $content = @file_get_contents($gitFile);
+            if ($content !== false && preg_match('#worktrees/([a-f0-9]{7,40})#', $content, $m)) {
+                return substr($m[1], 0, 7);
+            }
         }
-        if (preg_match('#\.worktrees/([a-f0-9]{7,40})/#', $real, $m)) {
+        // Legacy fallback: module path is a symlink through the worktree.
+        $real = @realpath($modulePath . '/registration.php');
+        if ($real && preg_match('#\.worktrees/([a-f0-9]{7,40})/#', $real, $m)) {
             return substr($m[1], 0, 7);
         }
         return '';
