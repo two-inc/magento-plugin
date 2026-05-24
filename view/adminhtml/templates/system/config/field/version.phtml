@@ -22,7 +22,7 @@ $stale    = $block->isAssetsStale();
                     <th style="padding:0.25em 1em 0.25em 0;">Module</th>
                     <th style="padding:0.25em 1em 0.25em 0;">Version</th>
                     <th style="padding:0.25em 1em 0.25em 0;">Commit</th>
-                    <th style="padding:0.25em 0;">Code deployed at</th>
+                    <th style="padding:0.25em 0;">Deployed at</th>
                 </tr>
             </thead>
             <tbody>
@@ -59,11 +59,11 @@ $stale    = $block->isAssetsStale();
     <?php endif; ?>
     <?php if ($assetsAt): ?>
         <div style="margin-top:0.75em;">
-            <strong><?= $block->escapeHtml(__('Assets deployed at')); ?>:</strong>
+            <strong><?= $block->escapeHtml(__('Deployment completed at')); ?>:</strong>
             <span><?= $block->escapeHtml($assetsAt); ?></span>
             <?php if ($stale): ?>
                 <span style="color:#c00;font-weight:bold;margin-left:0.5em;">
-                    <?= $block->escapeHtml(__('⚠ stale — assets older than code; run setup:static-content:deploy')); ?>
+                    <?= $block->escapeHtml(__('⚠ deployment incomplete — code newer than compiled assets; run setup:static-content:deploy')); ?>
                 </span>
             <?php endif; ?>
         </div>
