@@ -72,11 +72,13 @@ class Version extends Field
     }
 
     /**
-     * Get extension version
-     *
-     * @return string
+     * Get extension version recorded in core_config_data (set by the
+     * module's data patches during setup:upgrade). Returns null when
+     * the patch hasn't run or the row was wiped, in which case the
+     * template falls back to hiding the version line — not crashing
+     * the whole admin page on a strict return-type mismatch.
      */
-    public function getVersion(): string
+    public function getVersion(): ?string
     {
         return $this->configRepository->getExtensionDBVersion();
     }

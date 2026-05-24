@@ -10,16 +10,19 @@ use Two\Gateway\Block\Adminhtml\System\Config\Field\Version;
  * @var Version $block
  */
 
+$version = $block->getVersion();
 $commit  = $block->getDeployedCommit();
 $codeAt  = $block->getCodeDeployedAt();
 $assets  = $block->getAssetsDeployedAt();
 $stale   = $block->isAssetsStale();
 ?>
 <div class="two-build-info" style="line-height:1.6;">
-    <div>
-        <strong><?= $block->escapeHtml(__('Plugin version')); ?>:</strong>
-        <span><?= $block->escapeHtml($block->getVersion()); ?></span>
-    </div>
+    <?php if ($version): ?>
+        <div>
+            <strong><?= $block->escapeHtml(__('Plugin version')); ?>:</strong>
+            <span><?= $block->escapeHtml($version); ?></span>
+        </div>
+    <?php endif; ?>
     <?php if ($commit): ?>
         <div>
             <strong><?= $block->escapeHtml(__('Deployed commit')); ?>:</strong>
