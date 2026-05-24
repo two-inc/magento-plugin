@@ -16,14 +16,18 @@ use Magento\Framework\Stdlib\DateTime\TimezoneInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
- * Renders the plugin version + deployment-freshness panel in admin config.
+ * Renders a deployment-status panel listing every gateway-stack module
+ * installed alongside Two_Gateway (parent, Hyva extension, brand
+ * overlays) plus a single assets-freshness row.
  *
- * Surfaces the signals an operator needs to confirm a deployment fully
- * took: DB-recorded version (setup:upgrade ran), deployed commit SHA
- * (from the gitSync worktree symlink target), source mtime (gitSync
- * pulled), assets mtime (setup:static-content:deploy ran). Warns when
- * assets are older than code — the failure mode where new PHP is live
- * but pub/static/ still serves the previous build.
+ * Per-module signals: composer.json version (authoritative for what's
+ * deployed), gitSync worktree commit SHA, source mtime.
+ * Panel-level: assets mtime + stale warning when assets are older than
+ * the newest module's source.
+ *
+ * The module list comes from the `moduleNames` DI argument. Brand
+ * overlays rebind the type and prepend their own module. Unregistered
+ * entries (e.g. Hyva when not installed) are silently skipped.
  */
 class Version extends Field
 {
@@ -44,14 +48,23 @@ class Version extends Field
     private string $moduleName;
 
     /**
-     * Version constructor.
-     *
+     * @var string[]
+     */
+    private array $moduleNames;
+
+    /**
      * @param ConfigRepository $configRepository
      * @param Context $context
      * @param ComponentRegistrar|null $componentRegistrar
      * @param DirectoryList|null $directoryList
      * @param TimezoneInterface|null $timezone
-     * @param string $moduleName
+     * @param string $moduleName Primary module — used by getVersion() fallback
+     *                           and for any caller still expecting a single
+     *                           module identity.
+     * @param string[] $moduleNames Ordered list of modules to enumerate in
+     *                              the panel. Defaults to [moduleName,
+     *                              'Two_GatewayHyva']. Unregistered entries
+     *                              are skipped.
      * @param array $data
      */
     public function __construct(
@@ -61,6 +74,7 @@ class Version extends Field
         ?DirectoryList $directoryList = null,
         ?TimezoneInterface $timezone = null,
         string $moduleName = 'Two_Gateway',
+        array $moduleNames = [],
         array $data = []
     ) {
         $this->configRepository = $configRepository;
@@ -68,49 +82,135 @@ class Version extends Field
         $this->directoryList = $directoryList;
         $this->timezone = $timezone;
         $this->moduleName = $moduleName;
+        $this->moduleNames = !empty($moduleNames)
+            ? $moduleNames
+            : [$moduleName, 'Two_GatewayHyva'];
         parent::__construct($context, $data);
     }
 
     /**
-     * Resolve the plugin version to display in admin.
+     * Primary-module version, used by any non-panel caller.
      *
-     * Prefers the module's `composer.json` (authoritative for what's
-     * deployed — gitSync writes it alongside the PHP) so admin reflects
-     * the actually-running code. Falls back to the legacy CCD/config.xml
-     * read so brand overlays / older setups that rely on
-     * `payment/<code>/version` keep rendering.
-     *
-     * Returns null when neither source yields a value, in which case the
-     * template hides the version line rather than crashing on a strict
-     * return-type mismatch.
+     * Prefers composer.json on disk (authoritative for deployed code)
+     * with a CCD/config.xml fallback for setups where the module path
+     * can't be resolved. Returns null when neither source yields a
+     * value; the template tolerates null.
      */
     public function getVersion(): ?string
     {
-        $regPath = $this->getModulePath();
-        if ($regPath) {
-            $composer = @file_get_contents($regPath . '/composer.json');
-            if ($composer !== false) {
-                $data = json_decode($composer, true);
-                if (is_array($data) && !empty($data['version'])) {
-                    return (string)$data['version'];
-                }
+        $modulePath = $this->getModulePathFor($this->moduleName);
+        if ($modulePath) {
+            $version = $this->readComposerVersion($modulePath);
+            if ($version !== null) {
+                return $version;
             }
         }
         return $this->configRepository->getExtensionDBVersion();
     }
 
     /**
-     * 7-char SHA of the commit currently mounted by gitSync, extracted
-     * from the worktree symlink target (gitSync writes worktrees at
-     * .worktrees/<sha>/ and symlinks app/code/... to them).
+     * Rows for the multi-module panel.
+     *
+     * @return array<int, array{name: string, version: ?string, commit: string, codeAt: string}>
      */
-    public function getDeployedCommit(): string
+    public function getModules(): array
     {
-        $regPath = $this->getModulePath();
-        if (!$regPath) {
-            return '';
+        $rows = [];
+        $seen = [];
+        foreach ($this->moduleNames as $name) {
+            if (isset($seen[$name])) {
+                continue;
+            }
+            $seen[$name] = true;
+            $path = $this->getModulePathFor($name);
+            if (!$path) {
+                continue;
+            }
+            $rows[] = [
+                'name' => $name,
+                'version' => $this->readComposerVersion($path),
+                'commit' => $this->extractCommit($path),
+                'codeAt' => $this->formatTs($this->getCodeTs($path)),
+            ];
         }
-        $real = @realpath($regPath . '/registration.php');
+        return $rows;
+    }
+
+    /**
+     * mtime of pub/static/deployed_version.txt — when
+     * setup:static-content:deploy last ran. Panel-level, not per-module:
+     * assets are compiled once for the whole install.
+     */
+    public function getAssetsDeployedAt(): string
+    {
+        return $this->formatTs($this->getAssetsTs());
+    }
+
+    /**
+     * True when assets are older than the newest enumerated module's
+     * source. 5-minute grace tolerates normal init-job step ordering.
+     */
+    public function isAssetsStale(): bool
+    {
+        $assetsTs = $this->getAssetsTs();
+        if ($assetsTs <= 0) {
+            return false;
+        }
+        $newestCode = 0;
+        foreach ($this->moduleNames as $name) {
+            $path = $this->getModulePathFor($name);
+            if (!$path) {
+                continue;
+            }
+            $ts = $this->getCodeTs($path);
+            if ($ts > $newestCode) {
+                $newestCode = $ts;
+            }
+        }
+        return $newestCode > 0 && ($newestCode - $assetsTs) > 300;
+    }
+
+    public function render(AbstractElement $element)
+    {
+        $element->unsScope()->unsCanUseWebsiteValue()->unsCanUseDefaultValue();
+        return parent::render($element);
+    }
+
+    public function _getElementHtml(AbstractElement $element)
+    {
+        return $this->_toHtml();
+    }
+
+    private function getModulePathFor(string $moduleName): ?string
+    {
+        if (!$this->componentRegistrar) {
+            return null;
+        }
+        $path = $this->componentRegistrar->getPath(ComponentRegistrar::MODULE, $moduleName);
+        return $path ?: null;
+    }
+
+    private function readComposerVersion(string $modulePath): ?string
+    {
+        $composer = @file_get_contents($modulePath . '/composer.json');
+        if ($composer === false) {
+            return null;
+        }
+        $data = json_decode($composer, true);
+        if (!is_array($data) || empty($data['version'])) {
+            return null;
+        }
+        return (string)$data['version'];
+    }
+
+    /**
+     * 7-char SHA from the gitSync worktree symlink target. gitSync writes
+     * worktrees at `.worktrees/<sha>/` and points the module path symlink
+     * (or its parent) at the active worktree.
+     */
+    private function extractCommit(string $modulePath): string
+    {
+        $real = @realpath($modulePath . '/registration.php');
         if (!$real) {
             return '';
         }
@@ -120,68 +220,9 @@ class Version extends Field
         return '';
     }
 
-    /**
-     * mtime of registration.php — when gitSync last wrote source files.
-     */
-    public function getCodeDeployedAt(): string
+    private function getCodeTs(string $modulePath): int
     {
-        $regPath = $this->getModulePath();
-        if (!$regPath) {
-            return '';
-        }
-        $ts = @filemtime($regPath . '/registration.php');
-        return $ts ? $this->formatTs($ts) : '';
-    }
-
-    /**
-     * mtime of pub/static/deployed_version.txt — when
-     * setup:static-content:deploy last ran.
-     */
-    public function getAssetsDeployedAt(): string
-    {
-        $ts = $this->getAssetsTs();
-        return $ts ? $this->formatTs($ts) : '';
-    }
-
-    /**
-     * True if the assets marker is older than the source mtime.
-     * 5-minute grace handles normal init-job step ordering.
-     */
-    public function isAssetsStale(): bool
-    {
-        $regPath = $this->getModulePath();
-        if (!$regPath) {
-            return false;
-        }
-        $codeTs = @filemtime($regPath . '/registration.php') ?: 0;
-        $assetsTs = $this->getAssetsTs();
-        return $codeTs > 0 && $assetsTs > 0 && ($codeTs - $assetsTs) > 300;
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function render(AbstractElement $element)
-    {
-        $element->unsScope()->unsCanUseWebsiteValue()->unsCanUseDefaultValue();
-        return parent::render($element);
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function _getElementHtml(AbstractElement $element)
-    {
-        return $this->_toHtml();
-    }
-
-    private function getModulePath(): ?string
-    {
-        if (!$this->componentRegistrar) {
-            return null;
-        }
-        $path = $this->componentRegistrar->getPath(ComponentRegistrar::MODULE, $this->moduleName);
-        return $path ?: null;
+        return (int)(@filemtime($modulePath . '/registration.php') ?: 0);
     }
 
     private function getAssetsTs(): int
@@ -199,6 +240,9 @@ class Version extends Field
 
     private function formatTs(int $ts): string
     {
+        if ($ts <= 0) {
+            return '';
+        }
         if ($this->timezone) {
             return $this->timezone->date($ts)->format('Y-m-d H:i:s T');
         }
