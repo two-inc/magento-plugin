@@ -20,11 +20,6 @@
             <group id="general" translate="label" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>General</label>
-                <field id="version" translate="label" type="button" sortOrder="10" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
-                    <label>Deployment status</label>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\Version</frontend_model>
-                </field>
                 <field id="mode" translate="label" type="select" sortOrder="35" showInDefault="1" showInWebsite="1"
                        showInStore="1">
                     <label>Environment</label>
@@ -290,6 +285,28 @@
                         <field id="enable_company_search">1</field>
                     </depends>
                     <config_path>payment/two_payment/enable_address_search</config_path>
+                </field>
+            </group>
+        </section>
+        <!--
+            Deployment version panel. Standalone section so the operator
+            can land directly on it from the left nav rather than scrolling
+            past General config. sortOrder=100 keeps it at the bottom of
+            the "Two" tab regardless of how many config sections grow above.
+        -->
+        <section id="two_version" translate="label" type="text" sortOrder="100" showInDefault="1" showInWebsite="1"
+                 showInStore="1">
+            <class>separator-top</class>
+            <label>Version</label>
+            <tab>two_gateway</tab>
+            <resource>Magento_Sales::config_sales</resource>
+            <group id="general" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
+                   showInStore="1">
+                <label>Version</label>
+                <field id="version" translate="label" type="button" sortOrder="10" showInDefault="1"
+                       showInWebsite="1" showInStore="1">
+                    <label>Version</label>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\Version</frontend_model>
                 </field>
             </group>
         </section>

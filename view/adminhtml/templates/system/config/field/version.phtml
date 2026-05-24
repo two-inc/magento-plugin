@@ -29,7 +29,7 @@ $stale    = $block->isAssetsStale();
                 <?php foreach ($modules as $row): ?>
                     <tr>
                         <td style="padding:0.25em 1em 0.25em 0;">
-                            <strong><?= $block->escapeHtml($row['name']); ?></strong>
+                            <strong><?= $block->escapeHtml($row['label']); ?></strong>
                         </td>
                         <td style="padding:0.25em 1em 0.25em 0;">
                             <?php if (!empty($row['version'])): ?>
