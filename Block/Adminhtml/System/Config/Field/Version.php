@@ -72,14 +72,30 @@ class Version extends Field
     }
 
     /**
-     * Get extension version recorded in core_config_data (set by the
-     * module's data patches during setup:upgrade). Returns null when
-     * the patch hasn't run or the row was wiped, in which case the
-     * template falls back to hiding the version line — not crashing
-     * the whole admin page on a strict return-type mismatch.
+     * Resolve the plugin version to display in admin.
+     *
+     * Prefers the module's `composer.json` (authoritative for what's
+     * deployed — gitSync writes it alongside the PHP) so admin reflects
+     * the actually-running code. Falls back to the legacy CCD/config.xml
+     * read so brand overlays / older setups that rely on
+     * `payment/<code>/version` keep rendering.
+     *
+     * Returns null when neither source yields a value, in which case the
+     * template hides the version line rather than crashing on a strict
+     * return-type mismatch.
      */
     public function getVersion(): ?string
     {
+        $regPath = $this->getModulePath();
+        if ($regPath) {
+            $composer = @file_get_contents($regPath . '/composer.json');
+            if ($composer !== false) {
+                $data = json_decode($composer, true);
+                if (is_array($data) && !empty($data['version'])) {
+                    return (string)$data['version'];
+                }
+            }
+        }
         return $this->configRepository->getExtensionDBVersion();
     }
 
