@@ -42,9 +42,9 @@ class Version extends Field
      */
     private $configRepository;
 
-    private ?ComponentRegistrar $componentRegistrar;
-    private ?DirectoryList $directoryList;
-    private ?TimezoneInterface $timezone;
+    private ComponentRegistrar $componentRegistrar;
+    private DirectoryList $directoryList;
+    private TimezoneInterface $timezone;
     private string $moduleName;
 
     /**
@@ -70,9 +70,9 @@ class Version extends Field
     public function __construct(
         ConfigRepository $configRepository,
         Context $context,
-        ?ComponentRegistrar $componentRegistrar = null,
-        ?DirectoryList $directoryList = null,
-        ?TimezoneInterface $timezone = null,
+        ComponentRegistrar $componentRegistrar,
+        DirectoryList $directoryList,
+        TimezoneInterface $timezone,
         string $moduleName = 'Two_Gateway',
         array $moduleNames = [],
         array $data = []
@@ -183,9 +183,6 @@ class Version extends Field
 
     private function getModulePathFor(string $moduleName): ?string
     {
-        if (!$this->componentRegistrar) {
-            return null;
-        }
         $path = $this->componentRegistrar->getPath(ComponentRegistrar::MODULE, $moduleName);
         return $path ?: null;
     }
@@ -227,9 +224,6 @@ class Version extends Field
 
     private function getAssetsTs(): int
     {
-        if (!$this->directoryList) {
-            return 0;
-        }
         try {
             $marker = $this->directoryList->getPath('static') . '/deployed_version.txt';
         } catch (\Throwable $e) {
@@ -243,9 +237,6 @@ class Version extends Field
         if ($ts <= 0) {
             return '';
         }
-        if ($this->timezone) {
-            return $this->timezone->date($ts)->format('Y-m-d H:i:s T');
-        }
-        return gmdate('Y-m-d H:i:s \U\T\C', $ts);
+        return $this->timezone->date($ts)->format('Y-m-d H:i:s T');
     }
 }
