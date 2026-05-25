@@ -38,6 +38,10 @@ class SynthesiseBrandRenderers
         ScopeConfigInterface $scopeConfig,
         private readonly ActiveBrandResolver $activeBrandResolver
     ) {
+        // Read once at construction. Per design v6 §16.3 the synthesis
+        // flags are cached for the request lifetime — a runtime flag
+        // flip via config:set requires a cache:flush + process restart
+        // to take effect, same as any other Magento config:default.
         $this->enabled = $scopeConfig->isSetFlag(self::FLAG_PATH);
     }
 
