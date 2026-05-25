@@ -20,14 +20,20 @@
     <preference for="Two\Gateway\Api\CurrencyRatesProviderInterface"
                 type="Two\Gateway\Model\CurrencyRatesProvider"/>
     <!--
-        Default brand binding. The brand.xml-sourced descriptor pipeline
-        (Model/Brand/* + Brand/DescriptorBackedBrandRegistry) is shipped
-        alongside but not yet wired here — activation lives in the PR
-        that retires Brand/TwoBrand together with the ABN strip-down,
-        so brand identity transitions everywhere in one step.
+        Brand binding. Routes BrandRegistryInterface through
+        DescriptorBackedBrandRegistry → ActiveBrandResolver →
+        brand.xml-sourced Descriptor. Every consumer (admin blocks,
+        ConfigRepository, payment methods, controllers) resolves
+        brand identity at request time from the active brand's
+        Descriptor.
+
+        Brand overlays no longer need their own BrandRegistryInterface
+        DI preference — declaring an `etc/brand.xml` in the overlay
+        module is sufficient. ActiveBrandResolver enforces the
+        single-overlay invariant.
     -->
     <preference for="Two\Gateway\Api\BrandRegistryInterface"
-                type="Two\Gateway\Brand\TwoBrand"/>
+                type="Two\Gateway\Brand\DescriptorBackedBrandRegistry"/>
     <!--
         Brand overlay registry. The default implementation reads its
         `overlays` constructor argument; overlay packages append entries

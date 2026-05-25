@@ -78,4 +78,24 @@ interface BrandRegistryInterface
      * Plugin documentation URL shown on the admin config header block.
      */
     public function getDocumentationUrl(): string;
+
+    /**
+     * Magento payment-method code for the active brand (e.g.
+     * "two_payment", "abn_payment"). Used to build brand-aware
+     * `payment/<code>/*` CCD paths from a single shared codebase
+     * — callers do not hold this value in their own constructor
+     * args.
+     */
+    public function getCode(): string;
+
+    /**
+     * Ordered label => module-name map for the admin Version panel
+     * (Stores → Configuration → ABN/Two AMRO → Version). Brand
+     * overlays append their theme modules to the parent runtime
+     * rows; the Version block renders one row per ComponentRegistrar-
+     * resolvable module and silently skips unregistered entries.
+     *
+     * @return array<string,string>
+     */
+    public function getModuleLabelChain(): array;
 }

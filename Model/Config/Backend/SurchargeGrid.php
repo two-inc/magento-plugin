@@ -44,15 +44,6 @@ class SurchargeGrid extends Value
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
-    /**
-     * Payment method code whose config subtree this grid persists into
-     * (e.g. `two_payment`, `abn_payment`). Brand-overlay packages pass
-     * their own code via `<arguments>` in di.xml.
-     *
-     * @var string
-     */
-    private $methodCode;
-
     public function __construct(
         Context $context,
         Registry $registry,
@@ -64,15 +55,23 @@ class SurchargeGrid extends Value
         BrandRegistryInterface $brandRegistry,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
-        array $data = [],
-        string $methodCode = 'two_payment'
+        array $data = []
     ) {
         parent::__construct($context, $registry, $config, $cacheTypeList, $resource, $resourceCollection, $data);
         $this->configWriter = $configWriter;
         $this->storeManager = $storeManager;
         $this->ratesProvider = $ratesProvider;
         $this->brandRegistry = $brandRegistry;
-        $this->methodCode = $methodCode;
+    }
+
+    /**
+     * Active payment-method code. Resolved at call time from the
+     * brand registry so the same backend works for every brand
+     * without a per-brand DI rebinding.
+     */
+    private function methodCode(): string
+    {
+        return $this->brandRegistry->getCode();
     }
 
     /**
@@ -122,7 +121,7 @@ class SurchargeGrid extends Value
                     continue;
                 }
 
-                $path = sprintf('payment/%s/surcharge_%d_%s', $this->methodCode, $days, $type);
+                $path = sprintf('payment/%s/surcharge_%d_%s', $this->methodCode(), $days, $type);
 
                 if (isset($inheritData[$days][$type]) && $inheritData[$days][$type]) {
                     $this->configWriter->delete($path, $scope, $scopeId);
@@ -145,7 +144,7 @@ class SurchargeGrid extends Value
         // Persist the base currency so fixed amounts remain meaningful
         $currencyCode = $this->resolveBaseCurrency($scope, $scopeId);
         $this->configWriter->save(
-            sprintf('payment/%s/surcharge_fixed_currency', $this->methodCode),
+            sprintf('payment/%s/surcharge_fixed_currency', $this->methodCode()),
             $currencyCode,
             $scope,
             $scopeId

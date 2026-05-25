@@ -32,13 +32,16 @@ class RepositoryPaymentTermsTest extends TestCase
             ->onlyMethods(['getRateRequest', 'getRate'])
             ->getMock();
 
+        $brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $brandRegistry->method('getCode')->willReturn('two_payment');
+
         $this->repository = new Repository(
             $this->scopeConfig,
             $this->createMock(EncryptorInterface::class),
             $this->createMock(UrlInterface::class),
             $this->createMock(ProductMetadataInterface::class),
             $this->taxCalculation,
-            $this->createMock(BrandRegistryInterface::class)
+            $brandRegistry
         );
     }
 

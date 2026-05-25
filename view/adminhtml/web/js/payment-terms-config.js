@@ -2,15 +2,28 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
     'use strict';
 
     function initPaymentTermsConfig() {
-        var $termsContainer = $('#two_payment_payment_terms_payment_terms_checkboxes');
-        var $customDays = $('#two_payment_payment_terms_payment_terms_duration_days');
-        var $defaultTerm = $('#two_payment_payment_terms_default_payment_term');
-        var $surchargeType = $('#two_payment_payment_terms_surcharge_type');
-        var $differential = $('#two_payment_payment_terms_surcharge_differential');
-
+        // Discover the section-id prefix from the page. The phtml
+        // template ships the checkboxes container with id
+        // `{section}_payment_terms_payment_terms_checkboxes` — strip
+        // the suffix to get the section id, then build every other
+        // selector against it. This keeps the JS brand-agnostic:
+        // `two_payment` on vanilla, `abn_payment` on ABN, ...
+        var $termsContainer = $('.two-term-checkboxes').first();
         if (!$termsContainer.length) {
             return;
         }
+        var containerSuffix = '_payment_terms_payment_terms_checkboxes';
+        var containerId = $termsContainer.attr('id') || '';
+        if (containerId.slice(-containerSuffix.length) !== containerSuffix) {
+            return;
+        }
+        var section = containerId.slice(0, -containerSuffix.length);
+        var prefix = section + '_payment_terms_';
+
+        var $customDays     = $('#' + prefix + 'payment_terms_duration_days');
+        var $defaultTerm    = $('#' + prefix + 'default_payment_term');
+        var $surchargeType  = $('#' + prefix + 'surcharge_type');
+        var $differential   = $('#' + prefix + 'surcharge_differential');
 
         // ── Helpers ──────────────────────────────────────────────────────
 
@@ -31,7 +44,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         }
 
         function getSurchargeType() {
-            var $inherit = $('#two_payment_payment_terms_surcharge_type_inherit');
+            var $inherit = $('#' + prefix + 'surcharge_type_inherit');
             if ($inherit.length && $inherit.is(':checked')) {
                 return 'none';
             }
@@ -72,7 +85,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // ── Surcharge field visibility ───────────────────────────────────
 
         function getFieldRow(fieldId) {
-            return $('#row_two_payment_payment_terms_' + fieldId);
+            return $('#row_' + prefix + fieldId);
         }
 
         function showField(fieldId) {
@@ -131,12 +144,11 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         $surchargeType.on('change', onSurchargeChanged);
         $differential.on('change', onSurchargeChanged);
         $defaultTerm.on('change', onDefaultTermChanged);
-        $('#two_payment_payment_terms_surcharge_type_inherit').on('change', onSurchargeChanged);
+        $('#' + prefix + 'surcharge_type_inherit').on('change', onSurchargeChanged);
 
         // ── "Use System Value" reset ────────────────────────────────────
 
         function initInheritResetBehavior() {
-            var prefix = 'two_payment_payment_terms_';
             $('input[id^="' + prefix + '"][id$="_inherit"]').each(function () {
                 var $inherit = $(this);
                 var fieldId = $inherit.attr('id').replace(/_inherit$/, '');
@@ -170,7 +182,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // ── "Use System Value" for term checkboxes ────────────────────────
 
         function initTermCheckboxInherit() {
-            var $inherit = $('#two_payment_payment_terms_payment_terms_inherit');
+            var $inherit = $('#' + prefix + 'payment_terms_inherit');
             if (!$inherit.length) {
                 return;
             }

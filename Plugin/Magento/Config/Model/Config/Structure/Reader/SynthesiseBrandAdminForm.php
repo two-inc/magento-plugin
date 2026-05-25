@@ -142,14 +142,27 @@ class SynthesiseBrandAdminForm
                 $synthesisedTabs[] = (string)$tabId;
             }
 
+            $suppressedFields = $brand->getSuppressedFields();
+
             $sections = $converted['config']['system']['sections'] ?? [];
             foreach ($sections as $sectionId => $section) {
+                $section = $this->applySuppressions(
+                    $section,
+                    (string)$sectionId,
+                    $brand->getSectionPrefix(),
+                    $suppressedFields
+                );
                 if ($this->sectionExistsInResult($result, (string)$sectionId)) {
-                    // Overlay (Option B′ suppression XML) merged a stub
-                    // for this section into the Structure before us.
-                    // Deep-merge: synthesised content is the base, the
-                    // overlay's scalar attributes (showInDefault="0",
-                    // etc.) win on top, recursively into groups/fields.
+                    // A static `<section id="...">` declaration from
+                    // some module already landed in the merged
+                    // Structure (Magento merges all modules' system.xml
+                    // before our Reader::read afterRead plugin fires).
+                    // Deep-merge keeps synthesised content as the base
+                    // and lets static scalar attributes override per-
+                    // field. The preferred mechanism for hiding fields
+                    // is brand.xml `<suppressed_fields>` (handled
+                    // above); deep-merge remains as a forward-compat
+                    // safety net.
                     $existing = $result['config']['system']['sections'][$sectionId];
                     $result['config']['system']['sections'][$sectionId] =
                         $this->deepMergeOverlay($section, $existing);
@@ -159,6 +172,20 @@ class SynthesiseBrandAdminForm
                 $result['config']['system']['sections'][$sectionId] = $section;
                 $synthesisedSections[] = (string)$sectionId;
             }
+        }
+
+        // Re-sort sections by sortOrder so brand-overlay static stubs
+        // landing in the merged Structure ahead of synthesised siblings
+        // don't bleed PHP-array insertion order into the admin left-nav.
+        // (Cheap belt-and-braces; the brand.xml `<suppressed_fields>`
+        // mechanism above is the primary defence — it removes the need
+        // for static section stubs in the first place.)
+        if (isset($result['config']['system']['sections'])) {
+            uasort(
+                $result['config']['system']['sections'],
+                static fn (array $a, array $b) =>
+                    ((int)($a['sortOrder'] ?? 0)) <=> ((int)($b['sortOrder'] ?? 0))
+            );
         }
 
         if ($synthesisedSections !== [] || $synthesisedTabs !== [] || $skippedSections !== [] || $skippedTabs !== []) {
@@ -210,6 +237,58 @@ class SynthesiseBrandAdminForm
     private function tabExistsInResult(array $result, string $tabId): bool
     {
         return isset($result['config']['system']['tabs'][$tabId]);
+    }
+
+    /**
+     * Apply brand-declared `<suppressed_fields>` to a synthesised
+     * section by setting showInDefault/Website/Store="0" on the
+     * targeted leaf fields. Suppression paths are of the form
+     * `section_suffix/group/field`; only paths whose
+     * `section_suffix` matches this section (i.e. the section id
+     * equals `{prefix}_{section_suffix}`) are applied.
+     *
+     * The targeted field remains structurally present in the
+     * Structure (Magento still validates that the field exists, the
+     * canonical template is the source of truth for what controls
+     * are declared) but renders as hidden in the admin form.
+     *
+     * @param array<string,mixed> $section
+     * @param string $sectionId Full section id, e.g. `abn_payment`.
+     * @param string $sectionPrefix Brand's section prefix, e.g. `abn`.
+     * @param string[] $suppressedPaths `section_suffix/group/field` paths.
+     * @return array<string,mixed>
+     */
+    private function applySuppressions(
+        array $section,
+        string $sectionId,
+        string $sectionPrefix,
+        array $suppressedPaths
+    ): array {
+        $expectedPrefix = $sectionPrefix . '_';
+        // section_suffix is everything after the brand prefix in the
+        // section id, e.g. `payment` for `abn_payment`.
+        if (strncmp($sectionId, $expectedPrefix, strlen($expectedPrefix)) !== 0) {
+            return $section;
+        }
+        $sectionSuffix = substr($sectionId, strlen($expectedPrefix));
+        foreach ($suppressedPaths as $path) {
+            [$pathSection, $groupId, $fieldId] = array_pad(explode('/', $path), 3, '');
+            if ($pathSection !== $sectionSuffix || $groupId === '' || $fieldId === '') {
+                continue;
+            }
+            if (!isset($section['children'][$groupId]['children'][$fieldId])) {
+                $this->logger->warning(sprintf(
+                    '[two_brand_admin_form] suppressed_fields path "%s" did not match any field in section "%s" — ignoring',
+                    $path,
+                    $sectionId
+                ));
+                continue;
+            }
+            $section['children'][$groupId]['children'][$fieldId]['showInDefault'] = '0';
+            $section['children'][$groupId]['children'][$fieldId]['showInWebsite'] = '0';
+            $section['children'][$groupId]['children'][$fieldId]['showInStore'] = '0';
+        }
+        return $section;
     }
 
     /**

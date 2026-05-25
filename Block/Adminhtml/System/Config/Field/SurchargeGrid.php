@@ -40,16 +40,6 @@ class SurchargeGrid extends Field
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
-    /**
-     * Payment method code whose config subtree this grid reads/writes
-     * (e.g. `two_payment`, `abn_payment`). Brand-overlay packages pass
-     * their own code via `<arguments>` in di.xml; the default keeps
-     * existing vanilla installs working unchanged.
-     *
-     * @var string
-     */
-    private $methodCode;
-
     /** @var string */
     private $scope = 'default';
 
@@ -62,15 +52,23 @@ class SurchargeGrid extends Field
         StoreManagerInterface $storeManager,
         CurrencyRatesProviderInterface $ratesProvider,
         BrandRegistryInterface $brandRegistry,
-        array $data = [],
-        string $methodCode = 'two_payment'
+        array $data = []
     ) {
         parent::__construct($context, $data);
         $this->scopeConfig = $scopeConfig;
         $this->storeManager = $storeManager;
         $this->ratesProvider = $ratesProvider;
         $this->brandRegistry = $brandRegistry;
-        $this->methodCode = $methodCode;
+    }
+
+    /**
+     * Active payment-method code. Resolved at call time from the
+     * brand registry so the same block works for every brand without
+     * a per-brand DI rebinding.
+     */
+    private function methodCode(): string
+    {
+        return $this->brandRegistry->getCode();
     }
 
     /**
@@ -406,13 +404,14 @@ class SurchargeGrid extends Field
     }
 
     /**
-     * Build a fully-qualified config path under the configured payment
-     * method subtree. Brand-overlay packages set `methodCode` via di.xml
-     * so their merchant config (e.g. `payment/abn_payment/payment_terms`)
-     * is read instead of the vanilla `payment/two_payment/*` subtree.
+     * Build a fully-qualified config path under the active brand's
+     * payment-method subtree (e.g. `payment/abn_payment/...` on an
+     * ABN install). The brand code is resolved at call time from
+     * BrandRegistryInterface, which routes through ActiveBrandResolver
+     * to the active brand's brand.xml — no per-brand DI rebinding.
      */
     private function path(string $suffix): string
     {
-        return 'payment/' . $this->methodCode . '/' . $suffix;
+        return 'payment/' . $this->methodCode() . '/' . $suffix;
     }
 }

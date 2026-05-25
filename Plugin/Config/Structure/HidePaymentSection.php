@@ -13,8 +13,8 @@ use Magento\Framework\App\Config\ScopeConfigInterface;
 use Two\Gateway\Api\BrandOverlayRegistryInterface;
 
 /**
- * Hide every Two_Gateway admin config section (`two_general`,
- * `two_payment`, `two_search`) when:
+ * Hide every vanilla Two_Gateway admin config section (`two_general`,
+ * `two_payment`, `two_search`, `two_version`) when:
  *   - At least one brand overlay (e.g. ABN_Gateway) is registered, AND
  *   - `payment/two_payment/hide_when_overlay_installed` resolves to truthy.
  *
@@ -45,7 +45,7 @@ use Two\Gateway\Api\BrandOverlayRegistryInterface;
 class HidePaymentSection
 {
     private const HIDE_FLAG_PATH = 'payment/two_payment/hide_when_overlay_installed';
-    private const TARGET_SECTIONS = ['two_general', 'two_payment', 'two_search'];
+    private const TARGET_SECTIONS = ['two_general', 'two_payment', 'two_search', 'two_version'];
 
     public function __construct(
         private readonly BrandOverlayRegistryInterface $overlayRegistry,

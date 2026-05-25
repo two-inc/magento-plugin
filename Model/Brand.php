@@ -115,4 +115,37 @@ class Brand implements BrandRegistryInterface
     {
         return $this->brandTag;
     }
+
+    /**
+     * @deprecated 2.0.0 This class is the virtualType base for the
+     *             legacy `AbnBrand` DI rebinding. After the brand-aware
+     *             runtime-resolution work landed (Two\Gateway\Brand\
+     *             DescriptorBackedBrandRegistry wired as the
+     *             BrandRegistryInterface preference), nothing consumes
+     *             this surface — the constructor is no longer reached
+     *             on a vanilla install, and brand overlays have
+     *             migrated to brand.xml-declared identity.
+     */
+    public function getCode(): string
+    {
+        throw new \LogicException(
+            'Two\\Gateway\\Model\\Brand is deprecated; consume '
+            . 'BrandRegistryInterface via DescriptorBackedBrandRegistry instead. '
+            . 'The brand code now lives in brand.xml and is resolved at request '
+            . 'time via ActiveBrandResolver.'
+        );
+    }
+
+    /**
+     * @deprecated 2.0.0 See note on getCode().
+     */
+    public function getModuleLabelChain(): array
+    {
+        throw new \LogicException(
+            'Two\\Gateway\\Model\\Brand is deprecated; consume '
+            . 'BrandRegistryInterface via DescriptorBackedBrandRegistry instead. '
+            . 'Version-panel rows now come from brand.xml `<module_label_chain>` '
+            . 'via ActiveBrandResolver.'
+        );
+    }
 }
