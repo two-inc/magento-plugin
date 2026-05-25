@@ -1,0 +1,115 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * Brand-form synthesis template (design v6 §3.5).
+ *
+ * Tokenised clone of an admin Configuration section. The synthesis
+ * plugin (`SynthesiseBrandAdminForm::afterRead`) substitutes the
+ * tokens against each registered brand's Descriptor and feeds the
+ * result through Magento's Config\Structure\Converter, then injects
+ * the converted section into the Structure result.
+ *
+ * Tokens:
+ *
+ *   {{code}}             Brand payment-method code, e.g. "two_payment".
+ *                        Used in section ids and CCD config_path.
+ *   {{provider}}         Short brand name, e.g. "Two", "ABN".
+ *                        Used in section/group labels.
+ *   {{tab_sort_order}}   Admin tab sortOrder for this brand.
+ *   {{admin_resource}}   ACL resource string for the brand's section.
+ *
+ * The `brand_code` attribute on `<section>`/`<group>`/`<field>` is
+ * preserved by the Converter (verified by PR #160's §3.5 probe) and
+ * is the runtime hook for code that needs to discriminate by brand
+ * when iterating the Structure (e.g. Block\Adminhtml admin headers,
+ * Mapper\* chains).
+ *
+ * SCOPE: this PR ships a representative-but-minimal template (one
+ * section, two groups, six fields) sufficient to validate the
+ * synthesis mechanism end-to-end. The full ~314-line surface
+ * matching today's static etc/adminhtml/system.xml lands in a
+ * follow-up template-fleshing PR before strip-down activation.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Config:etc/system_file.xsd">
+    <system>
+        <section id="{{code}}" translate="label" type="text" sortOrder="20"
+                 showInDefault="1" showInWebsite="1" showInStore="1"
+                 brand_code="{{code}}">
+            <class>separator-top</class>
+            <label>{{provider}} Payment</label>
+            <tab>two_gateway</tab>
+            <resource>{{admin_resource}}</resource>
+            <group id="payment_method" translate="label" type="text" sortOrder="10"
+                   showInDefault="1" showInWebsite="1" showInStore="1"
+                   brand_code="{{code}}">
+                <label>Payment Method</label>
+                <field id="active" translate="label" type="select" sortOrder="10"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Enable Payment Method</label>
+                    <comment>Activates this plugin as a payment option in the checkout page</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/active</config_path>
+                </field>
+                <field id="title" translate="label" type="text" sortOrder="20"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Title</label>
+                    <comment>Descriptive title which gives the buyer a better understanding of this payment method</comment>
+                    <validate>required-entry</validate>
+                    <depends>
+                        <field id="active">1</field>
+                    </depends>
+                    <config_path>payment/{{code}}/title</config_path>
+                </field>
+                <field id="mode" translate="label" type="select" sortOrder="30"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       brand_code="{{code}}">
+                    <label>Environment</label>
+                    <comment>Sandbox vs production. Sandbox does not involve real money.</comment>
+                    <source_model>Two\Gateway\Model\Config\Source\Mode</source_model>
+                    <depends>
+                        <field id="active">1</field>
+                    </depends>
+                    <config_path>payment/{{code}}/mode</config_path>
+                </field>
+                <field id="api_key" translate="label" type="obscure" sortOrder="40"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       brand_code="{{code}}">
+                    <label>API key</label>
+                    <comment>Issued by {{provider}}. Contact integration@two.inc for production keys.</comment>
+                    <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>
+                    <validate>required-entry</validate>
+                    <depends>
+                        <field id="active">1</field>
+                    </depends>
+                    <config_path>payment/{{code}}/api_key</config_path>
+                </field>
+            </group>
+            <group id="diagnostics" translate="label" type="text" sortOrder="90"
+                   showInDefault="1" showInWebsite="0" showInStore="0"
+                   brand_code="{{code}}">
+                <label>Diagnostics</label>
+                <field id="debug" translate="label" type="select" sortOrder="10"
+                       showInDefault="1" showInWebsite="0" showInStore="0"
+                       brand_code="{{code}}">
+                    <label>Debug mode</label>
+                    <comment>Enables verbose logging. Use only when investigating an issue on sandbox.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/debug</config_path>
+                </field>
+                <field id="version" translate="label" type="label" sortOrder="20"
+                       showInDefault="1" showInWebsite="0" showInStore="0"
+                       brand_code="{{code}}">
+                    <label>Plugin version</label>
+                    <config_path>payment/{{code}}/version</config_path>
+                </field>
+            </group>
+        </section>
+    </system>
+</config>
