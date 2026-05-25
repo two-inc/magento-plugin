@@ -87,12 +87,16 @@
                 per brand. Skips any brand whose intended section id
                 already exists statically (so a brand whose overlay
                 module still ships its own etc/adminhtml/system.xml
-                stays on the static surface — first-writer-wins). The
-                strip-down PR flips this flag to 1 in lockstep with
-                deleting overlay system.xml files.
+                stays on the static surface — first-writer-wins).
+                Default 1 since the magento-abn-plugin strip-down: the
+                overlay no longer ships its own system.xml, so synthesis
+                is the sole source of the per-brand admin tab. Flip to
+                0 only to debug — vanilla Two installs have no overlay
+                brands registered, so synthesis is a no-op for them
+                regardless.
             -->
             <admin_form>
-                <enabled>0</enabled>
+                <enabled>1</enabled>
             </admin_form>
         </two_brand_synthesis>
     </default>
