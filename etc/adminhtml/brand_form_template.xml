@@ -13,21 +13,29 @@
  * through Magento's Config\Structure\Converter, then merges the
  * converted tabs and sections into the Structure result.
  *
- * Tokens:
+ * Tokens (named without the `{{ }}` braces in this docs block —
+ * SynthesiseBrandAdminForm::substitute() does a naive `strtr` against
+ * the whole template string, so any `{{token}}` here would be rewritten
+ * in this XML comment too, and tokens whose substituted value contains
+ * `--` would corrupt the comment and fail re-parse):
  *
- *   {{code}}             Brand payment-method code, e.g. "two_payment".
- *                        Used in CCD config_path values.
- *   {{section_prefix}}   Short brand prefix, e.g. "two", "abn". Used
- *                        for tab id (`{prefix}_gateway`) and section
- *                        ids (`{prefix}_general`/`_payment`/`_search`/
- *                        `_version`).
- *   {{provider}}         Short brand name. Currently unused at the
- *                        admin-XML level but reserved for label
- *                        interpolation in follow-ups.
- *   {{tab_label}}        Admin Configuration tab label.
- *   {{tab_css_class}}    CSS class on the admin tab `<li>`.
- *   {{tab_sort_order}}   Admin tab sortOrder for this brand.
- *   {{admin_resource}}   ACL resource string for the brand's section.
+ *   code             Brand payment-method code, e.g. "two_payment".
+ *                    Used in CCD config_path values.
+ *   section_prefix   Short brand prefix, e.g. "two", "abn". Used
+ *                    for tab id (`{prefix}_gateway`) and section
+ *                    ids (`{prefix}_general`/`_payment`/`_search`/
+ *                    `_version`).
+ *   provider         Short brand name. Currently unused at the
+ *                    admin-XML level but reserved for label
+ *                    interpolation in follow-ups.
+ *   tab_label        Admin Configuration tab label.
+ *   tab_css_class    CSS class on the admin tab `<li>`. Some brands
+ *                    use BEM `block__elem--modifier`; that double-
+ *                    hyphen is fine in the rendered `class=` attr
+ *                    but would corrupt this XML comment if
+ *                    substitution reached here.
+ *   tab_sort_order   Admin tab sortOrder for this brand.
+ *   admin_resource   ACL resource string for the brand's section.
  *
  * The `brand_code` attribute on `<section>`/`<group>`/`<field>` is
  * preserved by the Converter (verified by PR #160's §3.5 probe) and
