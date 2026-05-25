@@ -19,7 +19,13 @@
                 type="Two\Gateway\Model\Webapi\Surcharges"/>
     <preference for="Two\Gateway\Api\CurrencyRatesProviderInterface"
                 type="Two\Gateway\Model\CurrencyRatesProvider"/>
-    <!-- Default brand binding. Overlay packages may rebind via their own DI preference. -->
+    <!--
+        Default brand binding. The brand.xml-sourced descriptor pipeline
+        (Model/Brand/* + Brand/DescriptorBackedBrandRegistry) is shipped
+        alongside but not yet wired here — activation lives in the PR
+        that retires Brand/TwoBrand together with the ABN strip-down,
+        so brand identity transitions everywhere in one step.
+    -->
     <preference for="Two\Gateway\Api\BrandRegistryInterface"
                 type="Two\Gateway\Brand\TwoBrand"/>
     <!--

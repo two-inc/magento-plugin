@@ -39,7 +39,12 @@ use Two\Gateway\Service\UrlCookie;
  * is sufficient to expose a distinct payment method without copying
  * the 600-line Two class.
  *
- * Example brand-overlay binding (in the overlay package's etc/di.xml):
+ * Brand\BrandPaymentMethodFactory instantiates this class with the
+ * active brand's code and the DI-resolved BrandRegistryInterface
+ * (DescriptorBackedBrandRegistry), so legacy overlay virtualTypes
+ * keep working alongside the brand.xml-sourced descriptor pipeline.
+ *
+ * Example brand-overlay binding (legacy, still supported):
  *
  *   <virtualType name="ABN\Gateway\Model\AbnPayment"
  *                type="Two\Gateway\Model\GenericPaymentMethod">
@@ -48,10 +53,6 @@ use Two\Gateway\Service\UrlCookie;
  *           <argument name="brand" xsi:type="object">ABN\Gateway\Model\AbnBrand</argument>
  *       </arguments>
  *   </virtualType>
- *
- * The default Two-branded binding continues to use the parent `Two`
- * class directly via `etc/config.xml` `<model>`. See magento-abn-plugin
- * docs/implementation-plan.md §3.1 + §6.1 for the design.
  */
 class GenericPaymentMethod extends Two
 {
