@@ -73,6 +73,12 @@
             <checkout_renderers>
                 <enabled>0</enabled>
             </checkout_renderers>
+            <payment_xml>
+                <enabled>0</enabled>
+            </payment_xml>
+            <csp>
+                <enabled>0</enabled>
+            </csp>
         </two_brand_synthesis>
     </default>
 </config>

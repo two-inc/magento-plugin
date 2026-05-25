@@ -125,4 +125,23 @@
             </argument>
         </arguments>
     </type>
+
+    <!--
+        Brand-overlay v6 synthesis plugins. Each is gated by its own
+        flag under system/two_brand_synthesis/<layer>/enabled in
+        etc/config.xml (default 0 in this PR — see header there).
+        Wiring is unconditional so a runtime flag flip via
+        `bin/magento config:set` + `cache:flush` activates the
+        synthesis without redeploying.
+    -->
+    <type name="Magento\Payment\Model\Config\Reader">
+        <plugin name="two-synthesise-brand-methods"
+                type="Two\Gateway\Plugin\Magento\Payment\Model\Config\Reader\SynthesiseBrandMethods"
+                sortOrder="10"/>
+    </type>
+    <type name="Magento\Csp\Model\Collector\CspWhitelistXmlCollector">
+        <plugin name="two-synthesise-brand-csp-origins"
+                type="Two\Gateway\Plugin\Magento\Csp\Model\Collector\SynthesiseBrandOrigins"
+                sortOrder="10"/>
+    </type>
 </config>
