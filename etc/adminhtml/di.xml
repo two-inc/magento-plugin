@@ -28,4 +28,16 @@
                 type="Two\Gateway\Plugin\Config\Structure\HidePaymentSection"
                 sortOrder="10"/>
     </type>
+    <!--
+        Layer C/3 spike: probe whether unknown XML attributes on
+        <section>/<group>/<field> survive Config\Structure\Converter.
+        Gated by system/two_brand_synthesis/admin_form_probe/enabled
+        (default 0). Dormant until explicitly flipped; result is
+        logged to var/log and consumed by the admin_form PR design.
+    -->
+    <type name="Magento\Config\Model\Config\Structure\Converter">
+        <plugin name="two-probe-brand-code-attribute-survival"
+                type="Two\Gateway\Plugin\Magento\Config\Model\Config\Structure\Converter\ProbeBrandCodeSurvival"
+                sortOrder="10"/>
+    </type>
 </config>

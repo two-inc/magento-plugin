@@ -79,6 +79,21 @@
             <csp>
                 <enabled>0</enabled>
             </csp>
+            <!--
+                One-shot diagnostic probe for design v6 §3.5: does an
+                unknown `brand_code` attribute on `<section>`/`<group>`/
+                `<field>` survive Magento's Config\Structure\Converter?
+                Answer dictates the admin_form PR's template shape
+                (attribute-driven vs section-id-prefix fallback). Probe
+                injects a throwaway section into a CLONE of the DOM,
+                inspects the converted result, logs to
+                var/log/two_brand_probe.log, then strips the probe from
+                the returned array so no real config surface is altered.
+                Flag-flip on staging once, read the log, flip back off.
+            -->
+            <admin_form_probe>
+                <enabled>0</enabled>
+            </admin_form_probe>
         </two_brand_synthesis>
     </default>
 </config>
