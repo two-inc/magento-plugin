@@ -29,15 +29,16 @@
                 sortOrder="10"/>
     </type>
     <!--
-        Layer C/3 spike: probe whether unknown XML attributes on
-        <section>/<group>/<field> survive Config\Structure\Converter.
-        Gated by system/two_brand_synthesis/admin_form_probe/enabled
-        (default 0). Dormant until explicitly flipped; result is
-        logged to var/log and consumed by the admin_form PR design.
+        Layer C/3: synthesise per-brand admin Configuration sections
+        from a tokenised template + the brand registry. Skips brands
+        whose intended section id already exists statically, so the
+        plugin is a no-op while overlay modules still ship their own
+        etc/adminhtml/system.xml. Activates at the strip-down PR when
+        overlay system.xml files are deleted and the flag flips to 1.
     -->
-    <type name="Magento\Config\Model\Config\Structure\Converter">
-        <plugin name="two-probe-brand-code-attribute-survival"
-                type="Two\Gateway\Plugin\Magento\Config\Model\Config\Structure\Converter\ProbeBrandCodeSurvival"
+    <type name="Magento\Config\Model\Config\Structure\Reader">
+        <plugin name="two-synthesise-brand-admin-form"
+                type="Two\Gateway\Plugin\Magento\Config\Model\Config\Structure\Reader\SynthesiseBrandAdminForm"
                 sortOrder="10"/>
     </type>
 </config>
