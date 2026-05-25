@@ -86,6 +86,7 @@ class Loader
     private function buildDescriptor(\SimpleXMLElement $brand, string $sourcePath): Descriptor
     {
         $code = (string)$brand['code'];
+        $sectionPrefix = (string)($brand['section_prefix'] ?? '');
         $tabSortOrder = (int)$brand['tab_sort_order'];
 
         if ($code === '') {
@@ -150,6 +151,7 @@ class Loader
 
         return new Descriptor(
             $code,
+            $sectionPrefix,
             $tabSortOrder,
             (string)$brand->provider,
             (string)($brand->provider_full_name ?? ''),
