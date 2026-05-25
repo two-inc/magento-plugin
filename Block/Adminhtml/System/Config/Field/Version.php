@@ -13,6 +13,7 @@ use Magento\Framework\Component\ComponentRegistrar;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Framework\Filesystem\DirectoryList;
 use Magento\Framework\Stdlib\DateTime\TimezoneInterface;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
@@ -25,11 +26,12 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
  * Panel-level: assets mtime + stale warning when assets are older than
  * the newest module's source.
  *
- * Rows come from the `moduleLabels` DI argument — a label-keyed map
- * from human-readable row title to ComponentRegistrar module name.
- * Brand overlays rebind the type with their own labels (e.g. ABN
- * adds "Payment Method Theme" / "Hyva Theme" rows). Unregistered
- * entries (e.g. Hyva when not installed) are silently skipped.
+ * Rows come from the active brand's `<module_label_chain>` declared
+ * in its `etc/brand.xml`, resolved at request time via
+ * BrandRegistryInterface. Vanilla Two ships ["Payment Method" =>
+ * Two_Gateway, "Hyva Extension" => Two_GatewayHyva]; ABN adds
+ * "Payment Theme" / "Hyva Theme" rows. Unregistered entries (e.g.
+ * Hyva when not installed) are silently skipped.
  */
 class Version extends Field
 {
@@ -47,12 +49,8 @@ class Version extends Field
     private ComponentRegistrar $componentRegistrar;
     private DirectoryList $directoryList;
     private TimezoneInterface $timezone;
+    private BrandRegistryInterface $brandRegistry;
     private string $moduleName;
-
-    /**
-     * @var array<string, string> Label => module-name map (ordered).
-     */
-    private array $moduleLabels;
 
     /**
      * @param ConfigRepository $configRepository
@@ -60,14 +58,18 @@ class Version extends Field
      * @param ComponentRegistrar $componentRegistrar
      * @param DirectoryList $directoryList
      * @param TimezoneInterface $timezone
+     * @param BrandRegistryInterface $brandRegistry Source of the per-brand
+     *        version-panel row chain. Each brand declares
+     *        `<module_label_chain>` in its `etc/brand.xml`; the registry
+     *        exposes it via `getModuleLabelChain()`. ABN adds
+     *        "Payment Theme"/"Hyva Theme" rows; vanilla Two ships only
+     *        the parent-runtime rows.
      * @param string $moduleName Primary module — used by getVersion() fallback
      *                           and for any caller still expecting a single
-     *                           module identity.
-     * @param array<string, string> $moduleLabels Ordered label=>module-name map.
-     *                              Defaults to [Payment Method => Two_Gateway,
-     *                              Hyva Extension => Two_GatewayHyva].
-     *                              Brand overlays rebind to append theme rows.
-     *                              Unregistered modules are skipped.
+     *                           module identity. Defaults to Two_Gateway
+     *                           (the canonical runtime). Brand overlays
+     *                           do not override this; their identity is
+     *                           expressed via brand.xml, not DI.
      * @param array $data
      */
     public function __construct(
@@ -76,22 +78,31 @@ class Version extends Field
         ComponentRegistrar $componentRegistrar,
         DirectoryList $directoryList,
         TimezoneInterface $timezone,
+        BrandRegistryInterface $brandRegistry,
         string $moduleName = 'Two_Gateway',
-        array $moduleLabels = [],
         array $data = []
     ) {
         $this->configRepository = $configRepository;
         $this->componentRegistrar = $componentRegistrar;
         $this->directoryList = $directoryList;
         $this->timezone = $timezone;
+        $this->brandRegistry = $brandRegistry;
         $this->moduleName = $moduleName;
-        $this->moduleLabels = !empty($moduleLabels)
-            ? $moduleLabels
-            : [
-                'Payment Method' => 'Two_Gateway',
-                'Hyva Extension' => 'Two_GatewayHyva',
-            ];
         parent::__construct($context, $data);
+    }
+
+    /**
+     * Active brand's module_label_chain — sourced from its brand.xml
+     * at request time via BrandRegistryInterface, which routes through
+     * ActiveBrandResolver to the install's single active brand.
+     * Replaces the previous constructor-injected `moduleLabels` array
+     * and the brand-overlay DI rebind pattern.
+     *
+     * @return array<string, string>
+     */
+    private function moduleLabels(): array
+    {
+        return $this->brandRegistry->getModuleLabelChain();
     }
 
     /**
@@ -122,7 +133,7 @@ class Version extends Field
     public function getModules(): array
     {
         $rows = [];
-        foreach ($this->moduleLabels as $label => $moduleName) {
+        foreach ($this->moduleLabels() as $label => $moduleName) {
             $path = $this->getModulePathFor($moduleName);
             if (!$path) {
                 continue;
@@ -158,7 +169,7 @@ class Version extends Field
             return false;
         }
         $newestCode = 0;
-        foreach ($this->moduleLabels as $moduleName) {
+        foreach ($this->moduleLabels() as $moduleName) {
             $path = $this->getModulePathFor($moduleName);
             if (!$path) {
                 continue;

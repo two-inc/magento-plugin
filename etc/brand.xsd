@@ -42,6 +42,7 @@
             <xs:element name="allowed_currencies" type="allowedCurrenciesType" minOccurs="0"/>
             <xs:element name="allowed_countries" type="allowedCountriesType" minOccurs="0"/>
             <xs:element name="extra_http_headers" type="extraHttpHeadersType" minOccurs="0"/>
+            <xs:element name="suppressed_fields" type="suppressedFieldsType" minOccurs="0"/>
         </xs:all>
         <xs:attribute name="code" type="brandCodeType" use="required"/>
         <xs:attribute name="tab_sort_order" type="xs:integer" use="required"/>
@@ -114,6 +115,39 @@
                             <xs:attribute name="name" type="xs:string" use="required"/>
                         </xs:extension>
                     </xs:simpleContent>
+                </xs:complexType>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+
+    <!--
+        Fields to hide from the synthesised admin Configuration form
+        for this brand. Each <field> has a `path` of the form
+        `section_suffix/group/field`, e.g.
+        `payment/payment_terms/payment_terms_duration_days`
+        targets the field inside the synthesised
+        `{section_prefix}_payment` → `payment_terms` group.
+
+        SynthesiseBrandAdminForm sets
+        showInDefault/Website/Store="0" on the matching field during
+        section injection — the field stays declared in the canonical
+        template but doesn't render. This is the preferred mechanism
+        for per-brand control suppression; avoids overlay modules
+        needing a static `<section>` stub in their own system.xml
+        (which would otherwise short-circuit the synthesised section
+        ordering by inserting itself into the merged Structure first).
+    -->
+    <xs:complexType name="suppressedFieldsType">
+        <xs:sequence>
+            <xs:element name="field" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                    <xs:attribute name="path" use="required">
+                        <xs:simpleType>
+                            <xs:restriction base="xs:string">
+                                <xs:pattern value="[a-z][a-z0-9_]*/[a-z][a-z0-9_]*/[a-z][a-z0-9_]*"/>
+                            </xs:restriction>
+                        </xs:simpleType>
+                    </xs:attribute>
                 </xs:complexType>
             </xs:element>
         </xs:sequence>

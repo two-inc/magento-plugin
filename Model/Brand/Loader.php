@@ -149,6 +149,13 @@ class Loader
             }
         }
 
+        $suppressedFields = [];
+        if (isset($brand->suppressed_fields->field)) {
+            foreach ($brand->suppressed_fields->field as $field) {
+                $suppressedFields[] = (string)$field['path'];
+            }
+        }
+
         return new Descriptor(
             $code,
             $sectionPrefix,
@@ -170,7 +177,8 @@ class Loader
             $moduleLabelChain,
             $allowedCurrencies,
             $allowedCountries,
-            $extraHttpHeaders
+            $extraHttpHeaders,
+            $suppressedFields
         );
     }
 }

@@ -83,7 +83,7 @@ class ConfigProvider implements ConfigProviderInterface
         AssetRepository $assetRepository,
         CheckoutSession $checkoutSession,
         StoreManagerInterface $storeManager,
-        string $code = ConfigRepository::CODE
+        ?string $code = null
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -92,7 +92,7 @@ class ConfigProvider implements ConfigProviderInterface
         $this->assetRepository = $assetRepository;
         $this->checkoutSession = $checkoutSession;
         $this->storeManager = $storeManager;
-        $this->code = $code;
+        $this->code = $code ?? $brandRegistry->getCode();
     }
 
     /**

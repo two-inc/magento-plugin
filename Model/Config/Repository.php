@@ -46,13 +46,23 @@ class Repository implements RepositoryInterface
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
-    /** @var string Magento payment-method code (overlay-specific). */
+    /**
+     * @var string|null Optional explicit override. Null = resolve
+     *                  lazily from BrandRegistryInterface::getCode().
+     *                  Kept as a ctor arg for unit-test injection and
+     *                  the rare caller that explicitly targets a
+     *                  non-active brand's CCD subtree.
+     */
     private $code;
 
     /**
-     * @param string $code Payment-method code (overlay-specific). Defaults
-     *                     to the Two-branded code so existing Two installs
-     *                     don't need a DI override.
+     * @param ?string $code Payment-method code. Null (the shipped
+     *                      default) defers to the brand registry —
+     *                      every `payment/<code>/<key>` path is
+     *                      built against the active brand resolved
+     *                      from brand.xml at request time. ABN and
+     *                      future overlays no longer need a virtualType
+     *                      of this Repository.
      */
     public function __construct(
         ScopeConfigInterface $scopeConfig,
@@ -61,7 +71,7 @@ class Repository implements RepositoryInterface
         ProductMetadataInterface $productMetadata,
         TaxCalculation $taxCalculation,
         BrandRegistryInterface $brandRegistry,
-        string $code = RepositoryInterface::CODE
+        ?string $code = null
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->encryptor = $encryptor;
@@ -73,16 +83,21 @@ class Repository implements RepositoryInterface
     }
 
     /**
+     * Active payment-method code. Lazily resolved from the brand
+     * registry so swapping the brand (single-overlay invariant) is
+     * enough — no virtualType-per-brand needed.
+     */
+    private function code(): string
+    {
+        return $this->code ?? $this->brandRegistry->getCode();
+    }
+
+    /**
      * Build a brand-aware `payment/<code>/<key>` config path.
-     *
-     * Replaces the hardcoded `self::XML_PATH_*` constants (kept on the
-     * interface for BC) when reading runtime config so a brand-overlay
-     * package can declare a virtualType of Repository with its own
-     * `code` and have every config getter target the right CCD subtree.
      */
     private function path(string $key): string
     {
-        return 'payment/' . $this->code . '/' . $key;
+        return 'payment/' . $this->code() . '/' . $key;
     }
 
     /**
@@ -546,7 +561,7 @@ class Repository implements RepositoryInterface
      */
     public function getSurchargeConfig(int $days, ?int $storeId = null): array
     {
-        $prefix = sprintf('payment/two_payment/surcharge_%d_', $days);
+        $prefix = sprintf('payment/%s/surcharge_%d_', $this->code(), $days);
         $limitValue = $this->getConfig($prefix . 'limit', $storeId);
         return [
             'percentage' => (float)$this->getConfig($prefix . 'percentage', $storeId),

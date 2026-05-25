@@ -70,4 +70,18 @@ class DescriptorBackedBrandRegistry implements BrandRegistryInterface
     {
         return $this->activeBrandResolver->resolve()->getBrandTag();
     }
+
+    public function getCode(): string
+    {
+        return $this->activeBrandResolver->resolve()->getCode();
+    }
+
+    public function getModuleLabelChain(): array
+    {
+        $chain = [];
+        foreach ($this->activeBrandResolver->resolve()->getModuleLabelChain() as $row) {
+            $chain[$row['label']] = $row['module'];
+        }
+        return $chain;
+    }
 }

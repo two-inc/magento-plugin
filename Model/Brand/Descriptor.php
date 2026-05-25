@@ -43,6 +43,7 @@ final class Descriptor
      * @param string[] $allowedCurrencies ISO codes; empty = unrestricted.
      * @param string[] $allowedCountries ISO codes; empty = unrestricted.
      * @param array<string,string> $extraHttpHeaders name=>value, decoration on outbound requests.
+     * @param string[] $suppressedFields `section_suffix/group/field` paths to hide in the synthesised admin form.
      */
     public function __construct(
         private readonly string $code,
@@ -65,8 +66,20 @@ final class Descriptor
         private readonly array $moduleLabelChain,
         private readonly array $allowedCurrencies,
         private readonly array $allowedCountries,
-        private readonly array $extraHttpHeaders
+        private readonly array $extraHttpHeaders,
+        private readonly array $suppressedFields = []
     ) {
+    }
+
+    /**
+     * `section_suffix/group/field` paths to hide in the synthesised
+     * admin Configuration form. Consumed by SynthesiseBrandAdminForm.
+     *
+     * @return string[]
+     */
+    public function getSuppressedFields(): array
+    {
+        return $this->suppressedFields;
     }
 
     public function getCode(): string

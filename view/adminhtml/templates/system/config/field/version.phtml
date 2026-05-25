@@ -10,9 +10,8 @@ use Two\Gateway\Block\Adminhtml\System\Config\Field\Version;
  * @var Version $block
  */
 
-$modules  = $block->getModules();
-$assetsAt = $block->getAssetsDeployedAt();
-$stale    = $block->isAssetsStale();
+$modules = $block->getModules();
+$stale   = $block->isAssetsStale();
 ?>
 <div class="two-build-info" style="line-height:1.6;">
     <?php if (!empty($modules)): ?>
@@ -57,15 +56,9 @@ $stale    = $block->isAssetsStale();
             </tbody>
         </table>
     <?php endif; ?>
-    <?php if ($assetsAt): ?>
-        <div style="margin-top:0.75em;">
-            <strong><?= $block->escapeHtml(__('Deployment completed at')); ?>:</strong>
-            <span><?= $block->escapeHtml($assetsAt); ?></span>
-            <?php if ($stale): ?>
-                <span style="color:#c00;font-weight:bold;margin-left:0.5em;">
-                    <?= $block->escapeHtml(__('⚠ deployment incomplete — code newer than compiled assets; run setup:static-content:deploy')); ?>
-                </span>
-            <?php endif; ?>
+    <?php if ($stale): ?>
+        <div style="margin-top:0.75em;color:#c00;font-weight:bold;">
+            <?= $block->escapeHtml(__('⚠ deployment incomplete — code newer than compiled assets; run setup:static-content:deploy')); ?>
         </div>
     <?php endif; ?>
 </div>
