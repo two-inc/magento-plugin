@@ -19,7 +19,12 @@
                 type="Two\Gateway\Model\Webapi\Surcharges"/>
     <preference for="Two\Gateway\Api\CurrencyRatesProviderInterface"
                 type="Two\Gateway\Model\CurrencyRatesProvider"/>
-    <!-- Default brand binding. Overlay packages may rebind via their own DI preference. -->
+    <!--
+        v6 brand mechanism: ActiveBrandResolver loads brand.xml from every
+        installed module and returns the single active Descriptor. The legacy
+        <preference for="BrandRegistryInterface"> is dropped — brand identity
+        no longer flows through a DI-rebound interface.
+    -->
     <preference for="Two\Gateway\Api\BrandRegistryInterface"
                 type="Two\Gateway\Brand\TwoBrand"/>
     <!--
@@ -118,5 +123,22 @@
                 <item name="two_payment" xsi:type="string">two_payment</item>
             </argument>
         </arguments>
+    </type>
+
+    <!--
+        v6 brand-overlay plugins. Each intercepts a chokepoint where Magento
+        turns a payment-method code into an instance, allowing the active
+        brand (resolved via etc/brand.xml descriptors) to participate
+        without per-brand DI virtual-types.
+    -->
+    <type name="Magento\Payment\Helper\Data">
+        <plugin name="two_brand_intercept_get_method_instance"
+                type="Two\Gateway\Plugin\Magento\Payment\Helper\Data\InterceptGetMethodInstance"
+                sortOrder="10"/>
+    </type>
+    <type name="Magento\Payment\Model\PaymentMethodList">
+        <plugin name="two_brand_append_brands"
+                type="Two\Gateway\Plugin\Magento\Payment\Model\PaymentMethodList\AppendBrands"
+                sortOrder="10"/>
     </type>
 </config>
