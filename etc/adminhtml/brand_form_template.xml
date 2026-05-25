@@ -37,7 +37,15 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Config:etc/system_file.xsd">
     <system>
-        <section id="{{code}}" translate="label" type="text" sortOrder="20"
+        <!--
+            section sortOrder uses {{tab_sort_order}} (the brand's
+            admin-nav position from etc/brand.xml). Pre-strip-down,
+            all brands share the static `two_gateway` tab so the
+            section's sortOrder governs the visible ordering. The
+            full-template PR introduces per-brand tab synthesis and
+            can split tabSortOrder from sectionSortOrder if needed.
+        -->
+        <section id="{{code}}" translate="label" type="text" sortOrder="{{tab_sort_order}}"
                  showInDefault="1" showInWebsite="1" showInStore="1"
                  brand_code="{{code}}">
             <class>separator-top</class>
