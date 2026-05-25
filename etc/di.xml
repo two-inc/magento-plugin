@@ -26,7 +26,7 @@
         no longer flows through a DI-rebound interface.
     -->
     <preference for="Two\Gateway\Api\BrandRegistryInterface"
-                type="Two\Gateway\Brand\TwoBrand"/>
+                type="Two\Gateway\Brand\DescriptorBackedBrandRegistry"/>
     <!--
         Brand overlay registry. The default implementation reads its
         `overlays` constructor argument; overlay packages append entries
