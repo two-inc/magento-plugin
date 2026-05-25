@@ -9,7 +9,6 @@ namespace Two\Gateway\Plugin\Magento\Payment\Model\Config\Reader;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Payment\Model\Config\Reader;
-use Two\Gateway\Model\Brand\ActiveBrandResolver;
 use Two\Gateway\Model\Brand\Loader;
 
 /**

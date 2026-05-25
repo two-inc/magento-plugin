@@ -11,7 +11,6 @@ use Magento\Csp\Api\Data\PolicyInterface;
 use Magento\Csp\Model\Collector\CspWhitelistXmlCollector;
 use Magento\Csp\Model\Policy\FetchPolicy;
 use Magento\Framework\App\Config\ScopeConfigInterface;
-use Two\Gateway\Model\Brand\ActiveBrandResolver;
 use Two\Gateway\Model\Brand\Descriptor;
 use Two\Gateway\Model\Brand\Loader;
 
