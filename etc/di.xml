@@ -20,14 +20,14 @@
     <preference for="Two\Gateway\Api\CurrencyRatesProviderInterface"
                 type="Two\Gateway\Model\CurrencyRatesProvider"/>
     <!--
-        Brand-identity now flows from each module's etc/brand.xml via
-        ActiveBrandResolver. The DescriptorBackedBrandRegistry adapter
-        implements the legacy BrandRegistryInterface from the resolved
-        Descriptor so existing consumers (Two, Adapter, Repository,
-        controllers, admin blocks) keep working unchanged.
+        Default brand binding. The brand.xml-sourced descriptor pipeline
+        (Model/Brand/* + Brand/DescriptorBackedBrandRegistry) is shipped
+        alongside but not yet wired here — activation lives in the PR
+        that retires Brand/TwoBrand together with the ABN strip-down,
+        so brand identity transitions everywhere in one step.
     -->
     <preference for="Two\Gateway\Api\BrandRegistryInterface"
-                type="Two\Gateway\Brand\DescriptorBackedBrandRegistry"/>
+                type="Two\Gateway\Brand\TwoBrand"/>
     <!--
         Brand overlay registry. The default implementation reads its
         `overlays` constructor argument; overlay packages append entries
@@ -124,22 +124,5 @@
                 <item name="two_payment" xsi:type="string">two_payment</item>
             </argument>
         </arguments>
-    </type>
-
-    <!--
-        Brand-overlay chokepoint plugins. Each intercepts a point where
-        Magento turns a payment-method code into an instance, letting the
-        active brand (resolved via etc/brand.xml descriptors) participate
-        without per-brand DI virtual-types.
-    -->
-    <type name="Magento\Payment\Helper\Data">
-        <plugin name="two_brand_intercept_get_method_instance"
-                type="Two\Gateway\Plugin\Magento\Payment\Helper\Data\InterceptGetMethodInstance"
-                sortOrder="10"/>
-    </type>
-    <type name="Magento\Payment\Model\PaymentMethodList">
-        <plugin name="two_brand_append_brands"
-                type="Two\Gateway\Plugin\Magento\Payment\Model\PaymentMethodList\AppendBrands"
-                sortOrder="10"/>
     </type>
 </config>
