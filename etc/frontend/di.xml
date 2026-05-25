@@ -16,5 +16,8 @@
     <type name="Magento\Checkout\Block\Checkout\LayoutProcessor">
         <plugin name="add-delivery-date-field"
                 type="Two\Gateway\Plugin\Model\Checkout\LayoutProcessorPlugin" sortOrder="10"/>
+        <plugin name="two-synthesise-brand-renderers"
+                type="Two\Gateway\Plugin\Magento\Checkout\Block\LayoutProcessor\SynthesiseBrandRenderers"
+                sortOrder="20"/>
     </type>
 </config>

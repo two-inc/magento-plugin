@@ -58,5 +58,21 @@
                 <model>Two\Gateway\Model\Two</model>
             </two_payment>
         </payment>
+        <!--
+            Per-layer synthesis flags for the brand-overlay v6 mechanism.
+            Default 0 (OFF): the synthesis plugin ships dormant so this
+            change is purely additive on production. A follow-up PR
+            flips the default to 1 in lockstep with magento-abn-plugin's
+            data-only release (which deletes ABN's renderer-bootstrap
+            JS). Design v6 §16.3 specifies these as per-layer debugging
+            knobs, not a rollback mechanism. Layers shipped in
+            subsequent PRs (payment_xml, csp, admin_form) will add
+            their own siblings here.
+        -->
+        <two_brand_synthesis>
+            <checkout_renderers>
+                <enabled>0</enabled>
+            </checkout_renderers>
+        </two_brand_synthesis>
     </default>
 </config>
