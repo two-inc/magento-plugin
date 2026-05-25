@@ -666,14 +666,22 @@ class Two extends AbstractMethod
 
     /**
      * @inheritDoc
+     *
+     * The active + api-key check must be method-code-bound (`_code`), not
+     * brand-aware. Both `two_payment` and an overlay's method (e.g.
+     * `abn_payment`) can be registered side-by-side; routing this method's
+     * self-check through the brand-aware ConfigRepository would make Two's
+     * instance answer with the overlay's config (because the brand-aware
+     * fallback resolves to the install's active brand, not this instance's
+     * `_code`). Use Magento's base `_code`-bound `isAvailable()` for the
+     * active flag and read api_key directly off `_code` for the same reason.
      */
     public function isAvailable(?CartInterface $quote = null)
     {
-        if (!$this->configRepository->isActive()
-            || $this->configRepository->getApiKey() == '') {
+        if (!parent::isAvailable($quote)) {
             return false;
         }
-
-        return parent::isAvailable($quote);
+        $apiKey = $this->_scopeConfig->getValue('payment/' . $this->_code . '/api_key');
+        return $apiKey !== null && $apiKey !== '';
     }
 }
