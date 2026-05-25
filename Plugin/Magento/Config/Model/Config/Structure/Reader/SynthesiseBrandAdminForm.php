@@ -232,28 +232,43 @@ class SynthesiseBrandAdminForm
      *     inside group), recurse: missing keys from the overlay are
      *     left alone; present keys deep-merge.
      *   - The overlay CANNOT add brand-new fields/groups by this
-     *     mechanism. Anything in the overlay that isn't already in
-     *     the synthesised section is dropped on the floor (with a
-     *     debug log). This is intentional: the canonical template
-     *     is the source of truth for what controls exist; the
-     *     overlay's job is to hide, not to extend.
+     *     mechanism. Anything in the overlay that names a sibling
+     *     under a `children` collection (groups, fields) which isn't
+     *     in the synthesised section is dropped on the floor. This
+     *     is intentional: the canonical template is the source of
+     *     truth for what controls exist; the overlay's job is to
+     *     hide, not to extend.
+     *   - Overlay scalar attributes on an existing field/group
+     *     (`comment`, `tooltip`, `validate`, `canRestore`, etc.) ARE
+     *     accepted even if absent from the synthesised body — the
+     *     "skip unknown key" rule is scoped to children collections
+     *     so per-field attribute overrides land cleanly.
      *
      * @param array<string,mixed> $base
      * @param array<string,mixed> $overlay
+     * @param bool $isChildrenList true when the current recursion
+     *        level is inside Magento's converted `children` array
+     *        (the collection of sibling groups/fields under a section
+     *        or group). At that level only, unknown keys are dropped.
      * @return array<string,mixed>
      */
-    private function deepMergeOverlay(array $base, array $overlay): array
+    private function deepMergeOverlay(array $base, array $overlay, bool $isChildrenList = false): array
     {
         foreach ($overlay as $key => $overlayValue) {
-            if (!array_key_exists($key, $base)) {
-                // Overlay added something the synthesised section
-                // doesn't recognise. Skip; the canonical template is
-                // the source of truth.
+            if ($isChildrenList && !array_key_exists($key, $base)) {
+                // Overlay named a sibling field/group that the
+                // synthesised section doesn't declare. Skip — the
+                // canonical template is the source of truth for
+                // what controls exist.
                 continue;
             }
-            $baseValue = $base[$key];
+            $baseValue = $base[$key] ?? null;
             if (is_array($baseValue) && is_array($overlayValue)) {
-                $base[$key] = $this->deepMergeOverlay($baseValue, $overlayValue);
+                $base[$key] = $this->deepMergeOverlay(
+                    $baseValue,
+                    $overlayValue,
+                    $key === 'children'
+                );
             } else {
                 $base[$key] = $overlayValue;
             }

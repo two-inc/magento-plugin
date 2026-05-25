@@ -87,11 +87,13 @@ final class Descriptor
             return $this->sectionPrefix;
         }
         // Derive: `two_payment` → `two`, `abn_payment` → `abn`.
-        // `strstr(..., true)` returns the part before the needle, or
-        // `false` if the needle is absent — in which case fall back to
-        // the full code unchanged.
-        $derived = strstr($this->code, '_payment', true);
-        return $derived !== false ? $derived : $this->code;
+        // Strictly strip a TRAILING `_payment` suffix only; using
+        // strstr() would incorrectly shorten a hypothetical
+        // `foo_payment_method` to `foo`.
+        if (substr($this->code, -8) === '_payment') {
+            return substr($this->code, 0, -8);
+        }
+        return $this->code;
     }
 
     public function getTabSortOrder(): int

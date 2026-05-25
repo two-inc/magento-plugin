@@ -93,7 +93,7 @@
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        brand_code="{{code}}">
                     <label>Debug mode</label>
-                    <comment>The debug mode enables writing to the error logs below. Debug mode should only be enabled when the sandbox enviroment is active</comment>
+                    <comment>The debug mode enables writing to the error logs below. Debug mode should only be enabled when the sandbox environment is active</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/{{code}}/debug</config_path>
                 </field>
@@ -212,7 +212,7 @@
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
                     <label>Payment Terms Type</label>
-                    <comment><![CDATA[<strong>Standard:</strong> Payment due after a fixed number of days from fulfillment.<br/><strong>End of Month:</strong> Payment due at the end of month plus additional days from fulfillment.]]></comment>
+                    <comment><![CDATA[<strong>Standard:</strong> Payment due after a fixed number of days from fulfilment.<br/><strong>End of Month:</strong> Payment due at the end of month plus additional days from fulfilment.]]></comment>
                     <source_model>Two\Gateway\Model\Config\Source\PaymentTermsType</source_model>
                     <config_path>payment/{{code}}/payment_terms_type</config_path>
                 </field>
