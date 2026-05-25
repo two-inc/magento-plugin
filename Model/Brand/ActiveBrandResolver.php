@@ -10,13 +10,13 @@ namespace Two\Gateway\Model\Brand;
 /**
  * Resolves the single active brand for this install.
  *
- * Invariant (v6 §6): max one overlay brand atop Two.
+ * Invariant: max one overlay brand atop Two.
  *   - Two only          → Two is active.
  *   - Two + one overlay → overlay is active.
  *   - Three+ brands     → throws DomainException at first resolve().
  *
- * If business ever pivots to multi-brand-same-install, this class
- * is the only thing that needs rewriting — see §6 Reversibility.
+ * Reversible to a multi-brand registry by rewriting this class
+ * alone if business ever needs multi-brand-same-install.
  */
 class ActiveBrandResolver
 {

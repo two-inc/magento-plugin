@@ -39,15 +39,12 @@ use Two\Gateway\Service\UrlCookie;
  * is sufficient to expose a distinct payment method without copying
  * the 600-line Two class.
  *
- * Under v6 the v6 brand mechanism instantiates this class via
- * Brand\BrandPaymentMethodFactory, which passes the resolved
- * Descriptor's code as the `code` argument and the
- * DescriptorBackedBrandRegistry as the `brand` argument. The
- * constructor signature is preserved verbatim during v6 PR A so
- * legacy overlay virtualTypes (e.g. ABN_Gateway's AbnPayment) keep
- * compiling. PR B replaces the two args with a single Descriptor.
+ * Brand\BrandPaymentMethodFactory instantiates this class with the
+ * active brand's code and the DI-resolved BrandRegistryInterface
+ * (DescriptorBackedBrandRegistry), so legacy overlay virtualTypes
+ * keep working alongside the brand.xml-sourced descriptor pipeline.
  *
- * Example brand-overlay binding (legacy, still supported under PR A):
+ * Example brand-overlay binding (legacy, still supported):
  *
  *   <virtualType name="ABN\Gateway\Model\AbnPayment"
  *                type="Two\Gateway\Model\GenericPaymentMethod">

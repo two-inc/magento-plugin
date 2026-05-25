@@ -11,13 +11,13 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Brand\ActiveBrandResolver;
 
 /**
- * Bridge between v6's brand.xml-sourced Descriptor and the legacy
+ * Bridge between the brand.xml-sourced Descriptor and the legacy
  * BrandRegistryInterface still consumed by Two, Adapter, Repository,
  * controllers and several admin blocks.
  *
- * The legacy interface is scheduled for deletion (v6 §12.1); until
- * every consumer migrates to Descriptor-direct, this adapter lets
- * brand identity flow from brand.xml through the existing API.
+ * The legacy interface is scheduled for deletion; until every
+ * consumer migrates to Descriptor-direct, this adapter lets brand
+ * identity flow from brand.xml through the existing API.
  */
 class DescriptorBackedBrandRegistry implements BrandRegistryInterface
 {

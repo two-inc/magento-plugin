@@ -20,10 +20,11 @@
     <preference for="Two\Gateway\Api\CurrencyRatesProviderInterface"
                 type="Two\Gateway\Model\CurrencyRatesProvider"/>
     <!--
-        v6 brand mechanism: ActiveBrandResolver loads brand.xml from every
-        installed module and returns the single active Descriptor. The legacy
-        <preference for="BrandRegistryInterface"> is dropped — brand identity
-        no longer flows through a DI-rebound interface.
+        Brand-identity now flows from each module's etc/brand.xml via
+        ActiveBrandResolver. The DescriptorBackedBrandRegistry adapter
+        implements the legacy BrandRegistryInterface from the resolved
+        Descriptor so existing consumers (Two, Adapter, Repository,
+        controllers, admin blocks) keep working unchanged.
     -->
     <preference for="Two\Gateway\Api\BrandRegistryInterface"
                 type="Two\Gateway\Brand\DescriptorBackedBrandRegistry"/>
@@ -126,9 +127,9 @@
     </type>
 
     <!--
-        v6 brand-overlay plugins. Each intercepts a chokepoint where Magento
-        turns a payment-method code into an instance, allowing the active
-        brand (resolved via etc/brand.xml descriptors) to participate
+        Brand-overlay chokepoint plugins. Each intercepts a point where
+        Magento turns a payment-method code into an instance, letting the
+        active brand (resolved via etc/brand.xml descriptors) participate
         without per-brand DI virtual-types.
     -->
     <type name="Magento\Payment\Helper\Data">

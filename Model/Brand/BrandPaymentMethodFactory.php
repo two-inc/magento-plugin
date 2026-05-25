@@ -23,10 +23,11 @@ use Two\Gateway\Model\GenericPaymentMethod;
  * the cache persists for the process lifetime, which is fine
  * because Descriptors are immutable per process.
  *
- * v6 PR A: passes the Descriptor's code as the legacy `code`
- * argument and the DI-resolved BrandRegistryInterface (currently
- * DescriptorBackedBrandRegistry) as the `brand` argument. PR B
- * replaces both with a single `descriptor` constructor arg.
+ * Passes the Descriptor's code as the legacy `code` argument and
+ * the DI-resolved BrandRegistryInterface (currently
+ * DescriptorBackedBrandRegistry) as the `brand` argument, preserving
+ * the existing GenericPaymentMethod constructor signature so legacy
+ * overlay virtualTypes continue to compile.
  */
 class BrandPaymentMethodFactory
 {
