@@ -45,6 +45,15 @@
         </xs:all>
         <xs:attribute name="code" type="brandCodeType" use="required"/>
         <xs:attribute name="tab_sort_order" type="xs:integer" use="required"/>
+        <!--
+            Short identifier used as the prefix for synthesised admin
+            Configuration section IDs (e.g. `two` → `two_general`,
+            `two_payment`, `two_search`, `two_version`) and the
+            synthesised admin tab id (`{prefix}_gateway`). Optional —
+            when absent, derived by stripping a trailing `_payment`
+            suffix from `code`.
+        -->
+        <xs:attribute name="section_prefix" type="brandCodeType" use="optional"/>
     </xs:complexType>
 
     <xs:simpleType name="brandCodeType">

@@ -20,6 +20,10 @@ final class Descriptor
 {
     /**
      * @param string $code Magento payment-method code (e.g. "two_payment").
+     * @param string $sectionPrefix Short identifier used as the prefix
+     *        for synthesised admin Configuration section IDs and the
+     *        synthesised admin tab id. Empty string ⇒ derive from `code`
+     *        by stripping a trailing `_payment` suffix.
      * @param int $tabSortOrder Admin Configuration tab sortOrder.
      * @param string $provider Short brand name shown in admin headers.
      * @param string $providerFullName Legal entity name.
@@ -42,6 +46,7 @@ final class Descriptor
      */
     public function __construct(
         private readonly string $code,
+        private readonly string $sectionPrefix,
         private readonly int $tabSortOrder,
         private readonly string $provider,
         private readonly string $providerFullName,
@@ -67,6 +72,26 @@ final class Descriptor
     public function getCode(): string
     {
         return $this->code;
+    }
+
+    /**
+     * Short identifier used as the prefix for synthesised admin
+     * Configuration section IDs (e.g. `two_general`, `two_payment`,
+     * `two_search`, `two_version`) and the admin tab id
+     * (`{prefix}_gateway`). Falls back to `code` minus a trailing
+     * `_payment` suffix when not explicitly declared.
+     */
+    public function getSectionPrefix(): string
+    {
+        if ($this->sectionPrefix !== '') {
+            return $this->sectionPrefix;
+        }
+        // Derive: `two_payment` → `two`, `abn_payment` → `abn`.
+        // `strstr(..., true)` returns the part before the needle, or
+        // `false` if the needle is absent — in which case fall back to
+        // the full code unchanged.
+        $derived = strstr($this->code, '_payment', true);
+        return $derived !== false ? $derived : $this->code;
     }
 
     public function getTabSortOrder(): int

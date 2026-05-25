@@ -11,7 +11,7 @@
 -->
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:two-inc:magento2:Brand/etc/brand.xsd">
-    <brand code="two_payment" tab_sort_order="500">
+    <brand code="two_payment" section_prefix="two" tab_sort_order="500">
         <provider>Two</provider>
         <provider_full_name>Two</provider_full_name>
         <product_name>Two</product_name>

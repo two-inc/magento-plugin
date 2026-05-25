@@ -16,21 +16,26 @@ use Two\Gateway\Model\Brand\Descriptor;
 use Two\Gateway\Model\Brand\Loader;
 
 /**
- * Synthesises one admin Configuration section per registered brand
- * by stamping `etc/adminhtml/brand_form_template.xml` against each
- * brand's `Brand\Descriptor` and feeding the result through
+ * Synthesises a brand's admin Configuration surface — tab plus
+ * the four canonical sections (`{prefix}_general`, `{prefix}_payment`,
+ * `{prefix}_search`, `{prefix}_version`) — by stamping
+ * `etc/adminhtml/brand_form_template.xml` against each brand's
+ * `Brand\Descriptor` and feeding the result through
  * `Magento\Config\Model\Config\Structure\Converter::convert`. The
- * converted section is then merged into the Structure result that
- * `Reader::read` returns.
+ * converted tabs and sections are then merged into the Structure
+ * result that `Reader::read` returns.
  *
  * Two invariants protect against double-rendering during the
  * transition window before strip-down:
  *
  *   1. The plugin uses `afterRead`, not `beforeRead` — it observes
- *      what's already in the Structure and only contributes when a
- *      brand has no static section at the target id. First-writer-
- *      wins; an overlay module that still ships its own
- *      etc/adminhtml/system.xml stays on the static surface.
+ *      what's already in the Structure and only contributes for
+ *      individual section/tab IDs that aren't already statically
+ *      declared. First-writer-wins applies per-element, so an
+ *      overlay module's slim suppression-only `system.xml` (the
+ *      Option B mechanism) merges via Magento's native merge AFTER
+ *      synthesis: synthesis injects the canonical surface, overlay
+ *      attributes hide what each brand suppresses.
  *
  *   2. Synthesis runs only when
  *      `system/two_brand_synthesis/admin_form/enabled` is on. While
@@ -108,35 +113,61 @@ class SynthesiseBrandAdminForm
             return $result;
         }
 
-        $synthesised = 0;
-        $skipped = [];
+        $synthesisedSections = [];
+        $synthesisedTabs = [];
+        $skippedSections = [];
+        $skippedTabs = [];
         foreach ($brands as $brand) {
-            $sectionId = $brand->getCode();
-            if ($this->sectionExistsInResult($result, $sectionId)) {
-                $skipped[] = $sectionId;
-                continue;
-            }
-
             try {
-                $section = $this->renderBrandSection($template, $brand);
+                $converted = $this->renderBrandTemplate($template, $brand);
             } catch (\Throwable $e) {
                 $this->logger->error(sprintf(
-                    '[two_brand_admin_form] failed to synthesise section for brand "%s": %s — leaving Structure unchanged for this brand',
-                    $sectionId,
+                    '[two_brand_admin_form] failed to synthesise template for brand "%s": %s — leaving Structure unchanged for this brand',
+                    $brand->getCode(),
                     $e->getMessage()
                 ));
                 continue;
             }
 
-            $result = $this->mergeSection($result, $sectionId, $section);
-            $synthesised++;
+            $tabs = $converted['config']['system']['tabs'] ?? [];
+            foreach ($tabs as $tabId => $tab) {
+                if ($this->tabExistsInResult($result, (string)$tabId)) {
+                    // Tab is a leaf in the converted form (id, label, sortOrder).
+                    // If an overlay declared it statically, the static
+                    // declaration wins. We don't deep-merge tabs.
+                    $skippedTabs[] = (string)$tabId;
+                    continue;
+                }
+                $result['config']['system']['tabs'][$tabId] = $tab;
+                $synthesisedTabs[] = (string)$tabId;
+            }
+
+            $sections = $converted['config']['system']['sections'] ?? [];
+            foreach ($sections as $sectionId => $section) {
+                if ($this->sectionExistsInResult($result, (string)$sectionId)) {
+                    // Overlay (Option B′ suppression XML) merged a stub
+                    // for this section into the Structure before us.
+                    // Deep-merge: synthesised content is the base, the
+                    // overlay's scalar attributes (showInDefault="0",
+                    // etc.) win on top, recursively into groups/fields.
+                    $existing = $result['config']['system']['sections'][$sectionId];
+                    $result['config']['system']['sections'][$sectionId] =
+                        $this->deepMergeOverlay($section, $existing);
+                    $synthesisedSections[] = $sectionId . '*';
+                    continue;
+                }
+                $result['config']['system']['sections'][$sectionId] = $section;
+                $synthesisedSections[] = (string)$sectionId;
+            }
         }
 
-        if ($synthesised > 0 || $skipped !== []) {
+        if ($synthesisedSections !== [] || $synthesisedTabs !== [] || $skippedSections !== [] || $skippedTabs !== []) {
             $this->logger->info(sprintf(
-                '[two_brand_admin_form] synthesised %d brand section(s); skipped [%s] (already statically declared)',
-                $synthesised,
-                implode(',', $skipped)
+                '[two_brand_admin_form] synthesised tabs [%s] sections [%s]; skipped tabs [%s] sections [%s] (already statically declared)',
+                implode(',', $synthesisedTabs),
+                implode(',', $synthesisedSections),
+                implode(',', $skippedTabs),
+                implode(',', $skippedSections)
             ));
         }
 
@@ -176,18 +207,75 @@ class SynthesiseBrandAdminForm
         return isset($result['config']['system']['sections'][$sectionId]);
     }
 
+    private function tabExistsInResult(array $result, string $tabId): bool
+    {
+        return isset($result['config']['system']['tabs'][$tabId]);
+    }
+
+    /**
+     * Recursively merge a brand-overlay's converted Structure subtree
+     * (typically a slim suppression-only section from the overlay
+     * module's `etc/adminhtml/system.xml`) on top of the synthesised
+     * canonical section.
+     *
+     * Rules:
+     *   - The synthesised section is the BASE — its full shape
+     *     (groups, fields, attributes) is preserved unless the
+     *     overlay overrides specific values.
+     *   - For scalar keys (showInDefault, showInWebsite, showInStore,
+     *     label, sortOrder, …), the overlay wins. This is how an
+     *     overlay suppresses a field: declare it with
+     *     `showInDefault="0" showInWebsite="0" showInStore="0"` in
+     *     its own system.xml and the merged scalars override the
+     *     synthesised defaults.
+     *   - For array keys (children: groups inside section, fields
+     *     inside group), recurse: missing keys from the overlay are
+     *     left alone; present keys deep-merge.
+     *   - The overlay CANNOT add brand-new fields/groups by this
+     *     mechanism. Anything in the overlay that isn't already in
+     *     the synthesised section is dropped on the floor (with a
+     *     debug log). This is intentional: the canonical template
+     *     is the source of truth for what controls exist; the
+     *     overlay's job is to hide, not to extend.
+     *
+     * @param array<string,mixed> $base
+     * @param array<string,mixed> $overlay
+     * @return array<string,mixed>
+     */
+    private function deepMergeOverlay(array $base, array $overlay): array
+    {
+        foreach ($overlay as $key => $overlayValue) {
+            if (!array_key_exists($key, $base)) {
+                // Overlay added something the synthesised section
+                // doesn't recognise. Skip; the canonical template is
+                // the source of truth.
+                continue;
+            }
+            $baseValue = $base[$key];
+            if (is_array($baseValue) && is_array($overlayValue)) {
+                $base[$key] = $this->deepMergeOverlay($baseValue, $overlayValue);
+            } else {
+                $base[$key] = $overlayValue;
+            }
+        }
+        return $base;
+    }
+
     /**
      * Substitute the template's tokens against a brand's Descriptor,
      * parse the result, run it through Magento's own Converter, and
-     * return the converted section subtree (so Magento's downstream
-     * mappers see the same shape they'd see for a statically declared
-     * section).
+     * return the full converted Structure subtree. Callers extract
+     * tabs and sections from `config.system.{tabs,sections}` and
+     * merge them with their own collision policy.
      */
-    private function renderBrandSection(string $template, Descriptor $brand): array
+    private function renderBrandTemplate(string $template, Descriptor $brand): array
     {
         $substituted = strtr($template, [
             '{{code}}' => $this->escapeXmlAttribute($brand->getCode()),
+            '{{section_prefix}}' => $this->escapeXmlAttribute($brand->getSectionPrefix()),
             '{{provider}}' => $this->escapeXmlAttribute($brand->getProvider()),
+            '{{tab_label}}' => $this->escapeXmlAttribute($brand->getTabLabel()),
+            '{{tab_css_class}}' => $this->escapeXmlAttribute($brand->getTabCssClass()),
             '{{tab_sort_order}}' => (string)$brand->getTabSortOrder(),
             '{{admin_resource}}' => $this->escapeXmlAttribute($brand->getAdminResource()),
         ]);
@@ -212,22 +300,13 @@ class SynthesiseBrandAdminForm
         }
 
         $converted = $this->converter->convert($dom);
-        $sectionId = $brand->getCode();
-        $section = $converted['config']['system']['sections'][$sectionId] ?? null;
-        if (!is_array($section)) {
+        if (!isset($converted['config']['system'])) {
             throw new \RuntimeException(sprintf(
-                'converter output has no section at config.system.sections.%s; observed sections: [%s]',
-                $sectionId,
-                implode(',', array_keys($converted['config']['system']['sections'] ?? []))
+                'converter output has no config.system root for brand "%s"',
+                $brand->getCode()
             ));
         }
-        return $section;
-    }
-
-    private function mergeSection(array $result, string $sectionId, array $section): array
-    {
-        $result['config']['system']['sections'][$sectionId] = $section;
-        return $result;
+        return $converted;
     }
 
     /**
