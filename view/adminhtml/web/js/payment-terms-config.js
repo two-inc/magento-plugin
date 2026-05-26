@@ -243,7 +243,20 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             if (!url) {
                 return; // brand has inline_term_fees disabled (no data-fees-url emitted)
             }
-            var terms = getSelectedTerms();
+            // Fees render beside EVERY checkbox regardless of selection state,
+            // so the API call asks for all available term values, plus the
+            // custom-days entry if the merchant has one set. Differs from
+            // getSelectedTerms (which feeds the default-term dropdown and
+            // surcharge-visibility logic and intentionally tracks the
+            // checked state).
+            var terms = $termsContainer.find('.two-term-checkboxes__input').map(function () {
+                return Number(this.value);
+            }).get().filter(function (n) { return n > 0; });
+            var custom = parseInt($customDays.val(), 10);
+            if (custom > 0 && terms.indexOf(custom) === -1) {
+                terms.push(custom);
+            }
+            terms.sort(function (a, b) { return a - b; });
             if (!terms.length) {
                 return;
             }
