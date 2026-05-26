@@ -104,9 +104,27 @@ function defaultMocks() {
         },
         'Magento_Catalog/js/price-utils': { formatPrice: function (n) { return String(n); } },
         'Two_Gateway/js/model/surcharge': makeSurchargeMock(),
-        'Two_Gateway/js/model/brand-config': function (code) {
-            return ((typeof window !== 'undefined' && window.checkoutConfig && window.checkoutConfig.payment) || {})[code] || {};
-        },
+        'Two_Gateway/js/model/brand-config': (function () {
+            function getBrandConfig(code) {
+                return ((typeof window !== 'undefined' && window.checkoutConfig && window.checkoutConfig.payment) || {})[code] || {};
+            }
+            getBrandConfig.getActiveTwoBrandCode = function () {
+                var payment = (typeof window !== 'undefined' && window.checkoutConfig && window.checkoutConfig.payment) || {};
+                for (var code in payment) {
+                    if (Object.prototype.hasOwnProperty.call(payment, code)
+                        && payment[code]
+                        && payment[code].redirectUrlCookieCode) {
+                        return code;
+                    }
+                }
+                return null;
+            };
+            getBrandConfig.getActiveTwoBrandConfig = function () {
+                var code = getBrandConfig.getActiveTwoBrandCode();
+                return code ? getBrandConfig(code) : {};
+            };
+            return getBrandConfig;
+        }()),
         'Two_Gateway/select2-4.1.0/js/select2.min': function () {}
     };
 }
