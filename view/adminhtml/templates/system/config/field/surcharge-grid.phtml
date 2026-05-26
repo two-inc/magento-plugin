@@ -44,7 +44,6 @@ $columnLabels = [
                 <th class="surcharge-grid__fixed"><?= $block->escapeHtml($columnLabels['fixed']) ?></th>
                 <th class="surcharge-grid__percentage"><?= $block->escapeHtml($columnLabels['percentage']) ?></th>
                 <th class="surcharge-grid__limit"><?= $block->escapeHtml($columnLabels['limit']) ?></th>
-                <th class="surcharge-grid__fee surcharge-grid__fee-header"><?= $block->escapeHtml(__('Fee')) ?></th>
                 <?php if ($isNonDefault): ?>
                     <th class="surcharge-grid__inherit"><?= $block->escapeHtml(__('Use Default')) ?></th>
                 <?php endif; ?>
@@ -99,7 +98,6 @@ $columnLabels = [
                             <?php endif; ?>
                         </td>
                     <?php endforeach; ?>
-                    <td class="surcharge-grid__fee" data-term="<?= (int)$days ?>"><span class="surcharge-grid__loading"><span>.</span><span>.</span><span>.</span></span></td>
                     <?php if ($isNonDefault): ?>
                         <td class="surcharge-grid__inherit">
                             <?php foreach ($columns as $col): ?>
