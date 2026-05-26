@@ -13,11 +13,11 @@
  * through Magento's Config\Structure\Converter, then merges the
  * converted tabs and sections into the Structure result.
  *
- * Tokens (named without the `{{ }}` braces in this docs block —
+ * Tokens (named without double curly braces in this docs block —
  * SynthesiseBrandAdminForm::substitute() does a naive `strtr` against
- * the whole template string, so any `{{token}}` here would be rewritten
- * in this XML comment too, and tokens whose substituted value contains
- * `--` would corrupt the comment and fail re-parse):
+ * the whole template string, so any brace-wrapped token name here would
+ * be rewritten in this XML comment too, and tokens whose substituted
+ * value contains `--` would corrupt the comment and fail re-parse):
  *
  *   code             Brand payment-method code, e.g. "two_payment".
  *                    Used in CCD config_path values.
