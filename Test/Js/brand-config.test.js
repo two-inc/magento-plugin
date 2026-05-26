@@ -61,4 +61,67 @@ describe('Two_Gateway/js/model/brand-config', () => {
         expect(getBrandConfig('two_payment').paymentTermsMessage).toBe('Two');
         expect(getBrandConfig('abn_payment').paymentTermsMessage).toBe('ABN');
     });
+
+    describe('getActiveTwoBrandCode', () => {
+        it('returns null when checkoutConfig is absent', () => {
+            expect(getBrandConfig.getActiveTwoBrandCode()).toBeNull();
+        });
+
+        it('returns null when no payment subtree has redirectUrlCookieCode', () => {
+            window.checkoutConfig = {
+                payment: {
+                    checkmo: { title: 'Check / Money order' },
+                    free: { title: 'No Payment Information Required' }
+                }
+            };
+            expect(getBrandConfig.getActiveTwoBrandCode()).toBeNull();
+        });
+
+        it('returns the vanilla two_payment code when its subtree carries the sentinel', () => {
+            window.checkoutConfig = {
+                payment: {
+                    checkmo: { title: 'Check / Money order' },
+                    two_payment: { redirectUrlCookieCode: 'two_redirect_url', brand: 'two' }
+                }
+            };
+            expect(getBrandConfig.getActiveTwoBrandCode()).toBe('two_payment');
+        });
+
+        it('returns the brand-overlay code (abn_payment) on an ABN install', () => {
+            window.checkoutConfig = {
+                payment: {
+                    checkmo: { title: 'Check / Money order' },
+                    abn_payment: { redirectUrlCookieCode: 'abn_redirect_url', brand: 'abn' }
+                }
+            };
+            expect(getBrandConfig.getActiveTwoBrandCode()).toBe('abn_payment');
+        });
+
+        it('ignores subtrees with a falsy redirectUrlCookieCode', () => {
+            window.checkoutConfig = {
+                payment: {
+                    two_payment: { redirectUrlCookieCode: '' },
+                    abn_payment: { redirectUrlCookieCode: 'abn_redirect_url' }
+                }
+            };
+            expect(getBrandConfig.getActiveTwoBrandCode()).toBe('abn_payment');
+        });
+    });
+
+    describe('getActiveTwoBrandConfig', () => {
+        it('returns an empty object when no Two-family brand is active', () => {
+            window.checkoutConfig = { payment: { checkmo: { title: 'cm' } } };
+            expect(getBrandConfig.getActiveTwoBrandConfig()).toEqual({});
+        });
+
+        it('returns the active brand subtree by reference', () => {
+            const abnSubtree = {
+                redirectUrlCookieCode: 'abn_redirect_url',
+                checkoutApiUrl: 'https://abn.example/api',
+                brand: 'abn'
+            };
+            window.checkoutConfig = { payment: { abn_payment: abnSubtree } };
+            expect(getBrandConfig.getActiveTwoBrandConfig()).toBe(abnSubtree);
+        });
+    });
 });

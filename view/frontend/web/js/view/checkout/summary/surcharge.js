@@ -7,8 +7,9 @@
 define([
     'Magento_Checkout/js/view/summary/abstract-total',
     'Magento_Checkout/js/model/quote',
-    'Magento_Checkout/js/model/totals'
-], function (Component, quote, totals) {
+    'Magento_Checkout/js/model/totals',
+    'Two_Gateway/js/model/brand-config'
+], function (Component, quote, totals, brandConfig) {
     'use strict';
 
     return Component.extend({
@@ -19,8 +20,13 @@ define([
         isDisplayed: function () {
             var segment = totals.getSegment('two_surcharge');
             var method = quote.paymentMethod();
+            // Match against the active Two-family brand code rather
+            // than the hardcoded vanilla `two_payment`, so brand
+            // overlays (abn_payment, …) display the surcharge line
+            // when their own payment method is selected.
+            var activeCode = brandConfig.getActiveTwoBrandCode();
             return segment && parseFloat(segment.value) > 0
-                && method && method.method === 'two_payment';
+                && method && activeCode && method.method === activeCode;
         },
 
         getValue: function () {

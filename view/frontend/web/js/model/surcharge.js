@@ -18,11 +18,18 @@ define([
     'ko',
     'jquery',
     'Magento_Checkout/js/model/quote',
-    'mage/url'
-], function (ko, $, quote, url) {
+    'mage/url',
+    'Two_Gateway/js/model/brand-config'
+], function (ko, $, quote, url, brandConfig) {
     'use strict';
 
-    var config = (window.checkoutConfig.payment || {}).two_payment || {};
+    // Resolve the active Two-family brand subtree from checkoutConfig
+    // rather than hardcoding `.two_payment`. The brand-overlay 2.0
+    // architecture lets each overlay (abn_payment, …) ship its own
+    // ConfigProvider subtree under the brand's payment-method code,
+    // so this module needs to discover which is active rather than
+    // assuming vanilla.
+    var config = brandConfig.getActiveTwoBrandConfig();
 
     var selectedTerm = ko.observable(config.selectedPaymentTerm || config.defaultPaymentTerm || 0);
     // Empty by default — template renders loader until the latest loadFees() resolves.
