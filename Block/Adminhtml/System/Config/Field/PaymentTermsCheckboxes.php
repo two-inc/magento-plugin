@@ -16,8 +16,11 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 /**
  * Renders payment terms as individual checkboxes instead of a multiselect.
  *
- * Stores the selected terms as a comma-separated string in the existing
- * config path (payment/two_payment/payment_terms).
+ * Stores the selected terms as a comma-separated string at whatever config
+ * path the field's `<config_path>` element in `system.xml` binds. The block
+ * is path-agnostic — it reads the value via `$element->getValue()` and the
+ * System Config framework supplies the bound element. Brand overlays vary
+ * the path via their own `system.xml` without needing to touch this block.
  */
 class PaymentTermsCheckboxes extends Field
 {
