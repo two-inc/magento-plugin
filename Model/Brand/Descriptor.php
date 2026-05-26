@@ -44,6 +44,7 @@ final class Descriptor
      * @param string[] $allowedCountries ISO codes; empty = unrestricted.
      * @param array<string,string> $extraHttpHeaders name=>value, decoration on outbound requests.
      * @param string[] $suppressedFields `section_suffix/group/field` paths to hide in the synthesised admin form.
+     * @param bool $inlineTermFees Whether to render the per-term merchant fee beside each Payment Terms checkbox in admin.
      */
     public function __construct(
         private readonly string $code,
@@ -67,8 +68,21 @@ final class Descriptor
         private readonly array $allowedCurrencies,
         private readonly array $allowedCountries,
         private readonly array $extraHttpHeaders,
-        private readonly array $suppressedFields = []
+        private readonly array $suppressedFields = [],
+        private readonly bool $inlineTermFees = true
     ) {
+    }
+
+    /**
+     * Whether the admin Payment Terms checkbox list should render the
+     * per-term merchant fee inline beside each checkbox. Default true.
+     * Brand overlays set `<inline_term_fees>false</inline_term_fees>` in
+     * brand.xml when their pricing contract makes the per-term cost
+     * unhelpful to surface in admin.
+     */
+    public function getInlineTermFees(): bool
+    {
+        return $this->inlineTermFees;
     }
 
     /**

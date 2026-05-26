@@ -9,7 +9,9 @@ namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
+use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Data\Form\Element\AbstractElement;
+use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
@@ -30,13 +32,23 @@ class PaymentTermsCheckboxes extends Field
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
+    /** @var StoreManagerInterface */
+    private $storeManager;
+
+    /** @var ScopeConfigInterface */
+    private $scopeConfig;
+
     public function __construct(
         Context $context,
         BrandRegistryInterface $brandRegistry,
+        StoreManagerInterface $storeManager,
+        ScopeConfigInterface $scopeConfig,
         array $data = []
     ) {
         parent::__construct($context, $data);
         $this->brandRegistry = $brandRegistry;
+        $this->storeManager = $storeManager;
+        $this->scopeConfig = $scopeConfig;
     }
 
     /**
@@ -82,5 +94,76 @@ class PaymentTermsCheckboxes extends Field
     {
         $element = $this->getData('element');
         return $element ? $element->getHtmlId() : '';
+    }
+
+    /**
+     * Whether to render an inline merchant-fee span beside each
+     * checkbox. Brand overlays return false to hide.
+     */
+    public function showInlineFees(): bool
+    {
+        return $this->brandRegistry->getInlineTermFees();
+    }
+
+    /**
+     * Admin URL the inline-fees JS hits to fetch merchant fees.
+     */
+    public function getFeesUrl(): string
+    {
+        return $this->getUrl('two/config/fees');
+    }
+
+    /**
+     * Current Configuration scope (default / websites / stores).
+     */
+    public function getScope(): string
+    {
+        $element = $this->getData('element');
+        if ($element) {
+            $form = $element->getForm();
+            if ($form) {
+                $scope = (string)$form->getScope();
+                if ($scope !== '') {
+                    return $scope;
+                }
+            }
+        }
+        return 'default';
+    }
+
+    public function getScopeId(): int
+    {
+        $element = $this->getData('element');
+        if ($element) {
+            $form = $element->getForm();
+            if ($form) {
+                return (int)$form->getScopeId();
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Base currency code of the active scope. The Fees controller
+     * returns amounts in the merchant's contractual currency; JS
+     * appends a degraded-currency suffix when they differ.
+     */
+    public function getBaseCurrency(): string
+    {
+        try {
+            $scope = $this->getScope();
+            $scopeId = $this->getScopeId();
+            if ($scopeId > 0) {
+                if ($scope === 'stores') {
+                    return (string)$this->storeManager->getStore($scopeId)->getBaseCurrencyCode();
+                }
+                if ($scope === 'websites') {
+                    return (string)$this->storeManager->getWebsite($scopeId)->getBaseCurrencyCode();
+                }
+            }
+            return (string)($this->scopeConfig->getValue('currency/options/base') ?: 'EUR');
+        } catch (\Exception $e) {
+            return '';
+        }
     }
 }

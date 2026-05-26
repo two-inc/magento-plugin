@@ -10,12 +10,20 @@ $terms = $block->getAvailableTerms();
 $selected = $block->getSelectedTerms();
 $fieldName = $block->getFieldName();
 $elementId = $block->getElementId();
+$showFees = $block->showInlineFees();
 ?>
 
 <?php // Hidden fallback — ensures the field posts even when nothing is checked ?>
 <input type="hidden" name="<?= $block->escapeHtmlAttr(rtrim($fieldName, '[]')) ?>" value=""/>
 
-<div id="<?= $block->escapeHtmlAttr($elementId) ?>_checkboxes" class="two-term-checkboxes">
+<div id="<?= $block->escapeHtmlAttr($elementId) ?>_checkboxes"
+     class="two-term-checkboxes<?= $showFees ? ' two-term-checkboxes--with-fees' : '' ?>"
+     <?php if ($showFees): ?>
+     data-fees-url="<?= $block->escapeHtmlAttr($block->getFeesUrl()) ?>"
+     data-scope="<?= $block->escapeHtmlAttr($block->getScope()) ?>"
+     data-scope-id="<?= (int)$block->getScopeId() ?>"
+     data-base-currency="<?= $block->escapeHtmlAttr($block->getBaseCurrency()) ?>"
+     <?php endif; ?>>
     <?php foreach ($terms as $days): ?>
         <?php
             $checked = in_array($days, $selected, true);
@@ -31,6 +39,9 @@ $elementId = $block->getElementId();
             />
             <label class="admin__field-label two-term-checkboxes__label"
                    for="<?= $block->escapeHtmlAttr($checkboxId) ?>"><?= (int)$days ?> <?= $block->escapeHtml(__('days')) ?></label>
+            <?php if ($showFees): ?>
+                <span class="two-term-checkboxes__fee" data-term="<?= (int)$days ?>"></span>
+            <?php endif; ?>
         </div>
     <?php endforeach; ?>
 </div>
