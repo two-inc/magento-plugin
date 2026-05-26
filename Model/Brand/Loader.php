@@ -156,6 +156,15 @@ class Loader
             }
         }
 
+        $inlineTermFees = true;
+        if (isset($brand->inline_term_fees)) {
+            $inlineTermFees = filter_var(
+                (string)$brand->inline_term_fees,
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            ) ?? true;
+        }
+
         return new Descriptor(
             $code,
             $sectionPrefix,
@@ -178,7 +187,8 @@ class Loader
             $allowedCurrencies,
             $allowedCountries,
             $extraHttpHeaders,
-            $suppressedFields
+            $suppressedFields,
+            $inlineTermFees
         );
     }
 }

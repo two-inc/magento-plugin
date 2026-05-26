@@ -43,6 +43,15 @@
             <xs:element name="allowed_countries" type="allowedCountriesType" minOccurs="0"/>
             <xs:element name="extra_http_headers" type="extraHttpHeadersType" minOccurs="0"/>
             <xs:element name="suppressed_fields" type="suppressedFieldsType" minOccurs="0"/>
+            <!--
+                Show the per-term merchant fee inline beside each
+                Payment Terms checkbox in admin (e.g. "30 days (1.50%
+                + 0.50)"). Default true. Brand overlays set false to
+                hide the inline fee preview (e.g. when their pricing
+                contract makes the per-term cost noise rather than
+                signal for the merchant).
+            -->
+            <xs:element name="inline_term_fees" type="xs:boolean" minOccurs="0"/>
         </xs:all>
         <xs:attribute name="code" type="brandCodeType" use="required"/>
         <xs:attribute name="tab_sort_order" type="xs:integer" use="required"/>

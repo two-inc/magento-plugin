@@ -230,6 +230,84 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             $checkboxes.prop('disabled', $inherit.is(':checked'));
         }
 
+        // ── Inline merchant fees beside each checkbox ────────────────────
+
+        // Fetched async from admin proxy `two/config/fees` (same endpoint
+        // the old surcharge-grid Fee column used). Each `.two-term-
+        // checkboxes__fee` span is populated with text like " (1.50% + 0.50)"
+        // when the response arrives. On failure the span stays empty.
+        var lastFeesKey = null;
+
+        function loadFees() {
+            var url = $termsContainer.data('fees-url');
+            if (!url) {
+                return; // brand has inline_term_fees disabled (no data-fees-url emitted)
+            }
+            var terms = getSelectedTerms();
+            if (!terms.length) {
+                return;
+            }
+            var key = terms.join(',');
+            if (key === lastFeesKey) {
+                return;
+            }
+            lastFeesKey = key;
+            var $formKey = $('input[name="form_key"]').first();
+            $.ajax({
+                url: url,
+                type: 'POST',
+                dataType: 'json',
+                data: {
+                    form_key: $formKey.val() || (window.FORM_KEY || ''),
+                    terms: JSON.stringify(terms),
+                    scope: String($termsContainer.data('scope') || 'default'),
+                    scopeId: parseInt($termsContainer.data('scope-id'), 10) || 0
+                }
+            }).done(function (response) {
+                if (!response || !response.success || !response.fees) {
+                    return; // leave spans empty
+                }
+                var gridCurrency = String($termsContainer.data('base-currency') || '').toUpperCase();
+                var responseCurrency = String(response.currency || '').toUpperCase();
+                var degraded = responseCurrency !== '' && responseCurrency !== gridCurrency;
+                var suffix = degraded ? ' ' + responseCurrency : '';
+                $termsContainer.find('.two-term-checkboxes__fee').each(function () {
+                    var $span = $(this);
+                    var term = String($span.data('term'));
+                    var fee = response.fees[term];
+                    if (!fee) {
+                        $span.text('');
+                        return;
+                    }
+                    var pctStr = Number(fee.percentage || 0).toFixed(2);
+                    var fixedStr = Number(fee.fixed || 0).toFixed(2);
+                    var pctZero = pctStr === '0.00';
+                    var fixedZero = fixedStr === '0.00';
+                    var inner;
+                    if (pctZero && fixedZero) {
+                        inner = '0.00' + suffix;
+                    } else if (pctZero) {
+                        inner = fixedStr + suffix;
+                    } else if (fixedZero) {
+                        inner = pctStr + '%';
+                    } else {
+                        inner = pctStr + '% + ' + fixedStr + suffix;
+                    }
+                    $span.text(' (' + inner + ')');
+                });
+            }).fail(function () {
+                // Allow a retry on the same term-set after a transient error,
+                // and clear any half-populated spans.
+                lastFeesKey = null;
+                $termsContainer.find('.two-term-checkboxes__fee').text('');
+            });
+        }
+
+        // Additional handlers for fee refresh — fire alongside the term-set
+        // change handlers without disturbing their existing wiring.
+        $termsContainer.on('change', '.two-term-checkboxes__input', loadFees);
+        $customDays.on('change keyup', loadFees);
+
         // ── Initialize ───────────────────────────────────────────────────
 
         updateDefaultTermOptions();
@@ -237,6 +315,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         updateSurchargeVisibility();
         initInheritResetBehavior();
         initTermCheckboxInherit();
+        loadFees();
     }
 
     $(document).ready(function () {

@@ -89,6 +89,15 @@ interface BrandRegistryInterface
     public function getCode(): string;
 
     /**
+     * Whether the admin Payment Terms checkbox list should render the
+     * per-term merchant fee inline beside each checkbox (e.g.
+     * "30 days (1.50% + 0.50)"). Default true. Brand overlays return
+     * false to hide the inline fee preview when their pricing contract
+     * makes the per-term cost unhelpful to surface in admin.
+     */
+    public function getInlineTermFees(): bool;
+
+    /**
      * Ordered label => module-name map for the admin Version panel
      * (Stores → Configuration → ABN/Two AMRO → Version). Brand
      * overlays append their theme modules to the parent runtime
