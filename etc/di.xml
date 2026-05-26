@@ -133,6 +133,22 @@
     </type>
 
     <!--
+        Append the `two_surcharge` total segment to CartTotalRepository::get
+        whenever the quote address has `two_surcharge_amount > 0`. Required
+        because Hyvä's PriceSummary view-model loads the segments via the
+        repository, which on non-virtual quotes reads from `_totals` array
+        on a freshly-loaded quote (empty unless collectTotals() ran on that
+        exact instance). Standard segments (subtotal / shipping / tax /
+        grand_total) survive via quote_address DB columns; our custom
+        segment doesn't. See the plugin class docblock for the full trace.
+    -->
+    <type name="Magento\Quote\Api\CartTotalRepositoryInterface">
+        <plugin name="two_gateway_append_surcharge_segment"
+                type="Two\Gateway\Plugin\Magento\Quote\Model\Cart\CartTotalRepositoryAppendSurcharge"
+                sortOrder="10"/>
+    </type>
+
+    <!--
         Brand-overlay v6 synthesis plugins. Each is gated by its own
         flag under system/two_brand_synthesis/<layer>/enabled in
         etc/config.xml (default 0 in this PR — see header there).
