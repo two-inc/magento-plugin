@@ -3,11 +3,34 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
 
     return function (config, element) {
         var $container = $(element);
-        var $termsContainer = $('#two_payment_payment_terms_payment_terms_checkboxes');
-        var $customDays = $('#two_payment_payment_terms_payment_terms_duration_days');
-        var $surchargeType = $('#two_payment_payment_terms_surcharge_type');
-        var $differential = $('#two_payment_payment_terms_surcharge_differential');
-        var $defaultTerm = $('#two_payment_payment_terms_default_payment_term');
+
+        // Derive the section-id prefix from the DOM (same approach as
+        // payment-terms-config.js). The phtml template renders the term
+        // checkboxes container with id `{section}_payment_terms_payment_terms_checkboxes`
+        // — strip the suffix to recover the section id and build every
+        // other selector against it. Keeps the file brand-agnostic:
+        // `two_payment` on vanilla, `abn_payment` on an ABN overlay
+        // install, etc. The previous hardcoded `two_payment_*` selectors
+        // matched nothing on overlay installs, so $surchargeType.val()
+        // returned undefined → getSurchargeType() defaulted to 'none' →
+        // updateContainerVisibility() hid the grid's row immediately on
+        // load.
+        var $termsContainer = $('.two-term-checkboxes').first();
+        if (!$termsContainer.length) {
+            return;
+        }
+        var containerSuffix = '_payment_terms_payment_terms_checkboxes';
+        var termsContainerId = $termsContainer.attr('id') || '';
+        if (termsContainerId.slice(-containerSuffix.length) !== containerSuffix) {
+            return;
+        }
+        var section = termsContainerId.slice(0, -containerSuffix.length);
+        var prefix = section + '_payment_terms_';
+
+        var $customDays = $('#' + prefix + 'payment_terms_duration_days');
+        var $surchargeType = $('#' + prefix + 'surcharge_type');
+        var $differential = $('#' + prefix + 'surcharge_differential');
+        var $defaultTerm = $('#' + prefix + 'default_payment_term');
         var $table = $container.find('.surcharge-grid');
         var $noTermsMsg = $container.find('.surcharge-grid__no-terms');
         var $currencyNote = $container.find('.surcharge-grid__currency-note');
@@ -42,7 +65,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         }
 
         function getSurchargeType() {
-            var $inherit = $('#two_payment_payment_terms_surcharge_type_inherit');
+            var $inherit = $('#' + prefix + 'surcharge_type_inherit');
             if ($inherit.length && $inherit.is(':checked')) {
                 return 'none';
             }
@@ -242,7 +265,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         $surchargeType.on('change', update);
         $differential.on('change', update);
         $defaultTerm.on('change', update);
-        $('#two_payment_payment_terms_surcharge_type_inherit').on('change', update);
+        $('#' + prefix + 'surcharge_type_inherit').on('change', update);
 
         // ── Fee column (read-only, fetched from Two API via admin proxy) ─
 
