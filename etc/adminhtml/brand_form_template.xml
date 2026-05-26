@@ -17,7 +17,8 @@
  * SynthesiseBrandAdminForm::substitute() does a naive `strtr` against
  * the whole template string, so any brace-wrapped token name here would
  * be rewritten in this XML comment too, and tokens whose substituted
- * value contains `--` would corrupt the comment and fail re-parse):
+ * value contains XML control character sequences would corrupt the
+ * comment and fail re-parse):
  *
  *   code             Brand payment-method code, e.g. "two_payment".
  *                    Used in CCD config_path values.
@@ -30,9 +31,9 @@
  *                    interpolation in follow-ups.
  *   tab_label        Admin Configuration tab label.
  *   tab_css_class    CSS class on the admin tab `<li>`. Some brands
- *                    use BEM `block__elem--modifier`; that double-
- *                    hyphen is fine in the rendered `class=` attr
- *                    but would corrupt this XML comment if
+ *                    use values that contain double hyphens (BEM
+ *                    modifier syntax); fine in the rendered `class=`
+ *                    attr but would corrupt this XML comment if
  *                    substitution reached here.
  *   tab_sort_order   Admin tab sortOrder for this brand.
  *   admin_resource   ACL resource string for the brand's section.
