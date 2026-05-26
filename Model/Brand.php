@@ -148,4 +148,17 @@ class Brand implements BrandRegistryInterface
             . 'via ActiveBrandResolver.'
         );
     }
+
+    /**
+     * @deprecated 2.0.0 See note on getCode().
+     */
+    public function getInlineTermFees(): bool
+    {
+        throw new \LogicException(
+            'Two\\Gateway\\Model\\Brand is deprecated; consume '
+            . 'BrandRegistryInterface via DescriptorBackedBrandRegistry instead. '
+            . 'Inline-term-fees flag now comes from brand.xml `<inline_term_fees>` '
+            . 'via ActiveBrandResolver.'
+        );
+    }
 }
