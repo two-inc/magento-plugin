@@ -27,7 +27,7 @@
                 -->
                 <hide_when_overlay_installed>1</hide_when_overlay_installed>
                 <version>2.0.0-dev</version>
-                <title>Two</title>
+                <title>Two - Buy Now Pay Later on Invoice Terms</title>
                 <sort_order>-10</sort_order>
                 <mode>sandbox</mode>
                 <invoice_type>FUNDED_INVOICE</invoice_type>
