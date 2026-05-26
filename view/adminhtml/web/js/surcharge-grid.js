@@ -105,9 +105,6 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 html += '/></td>';
             });
 
-            html += '<td class="surcharge-grid__fee" data-term="' + days + '">'
-                  + '<span class="surcharge-grid__loading"><span>.</span><span>.</span><span>.</span></span>'
-                  + '</td>';
             html += '</tr>';
             return $(html);
         }
@@ -255,7 +252,8 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             updateColumnVisibility();
             updateDifferentialState();
             updateHelperText();
-            loadFees();
+            // Fee-preview column removed (ABN-356 / ABN-401-F12); skip the
+            // loadFees() AJAX whose response would have no cells to populate.
         }
 
         // ── Event bindings ───────────────────────────────────────────────
