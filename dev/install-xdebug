@@ -16,7 +16,7 @@ if [ -z "$XDEBUG_SO" ]; then
     exit 1
 fi
 
-# Disable the apt-installed ini (it defaults to mode=develop)
+# Disable the apt-installed ini files (they default to mode=develop)
 find /etc/php/${PHP_VERSION} -name '*xdebug*' -exec rm -f {} + 2>/dev/null
 
 # Write our config to both CLI and FPM conf.d (mode=off, activated by make debug)
