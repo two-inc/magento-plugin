@@ -273,14 +273,18 @@ class Two extends AbstractMethod
     }
 
     /**
-     * Title for admin order display.
+     * Title for storefront payment-method list, admin order display
+     * and order/invoice/creditmemo line items.
      *
-     * Returns "Business Invoice" optionally suffixed with the buyer's
-     * selected term in days (e.g. "Business Invoice - 60 days").
-     * DataAssignObserver stores the chosen term under the `selectedTerm`
-     * key as a scalar. The noun and the duration are translated as two
-     * separate __() lookups so each half can use the existing "%1 days"
-     * translation alongside the locale-specific "Business Invoice".
+     * Resolution order:
+     *   1. `payment/<code>/title` from CCD (admin-saved override).
+     *   2. BrandRegistry::getProductName() (brand overlay fallback).
+     *
+     * Optionally suffixed with the buyer's selected term in days
+     * (e.g. "Zakelijk op Rekening - 60 days"). DataAssignObserver
+     * stores the chosen term under the `selectedTerm` key as a
+     * scalar; the duration is wrapped in a separate __() call so the
+     * existing "%1 days" CSV entry handles localisation.
      */
     public function getTitle()
     {
@@ -290,7 +294,10 @@ class Two extends AbstractMethod
         } catch (\Exception $e) {
             $days = 0;
         }
-        $noun = __('Business Invoice');
+        $configured = (string)$this->getConfigData('title');
+        $noun = $configured !== ''
+            ? __($configured)
+            : __($this->brandRegistry->getProductName());
         if ($days > 0) {
             return sprintf('%s - %s', $noun, __('%1 days', $days));
         }
