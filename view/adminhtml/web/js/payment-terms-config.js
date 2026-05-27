@@ -280,15 +280,11 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 if (!response || !response.success || !response.fees) {
                     return; // leave spans empty
                 }
-                var gridCurrency = String($termsContainer.data('base-currency') || '').toUpperCase();
-                var responseCurrency = String(response.currency || '').toUpperCase();
-                var degraded = responseCurrency !== '' && responseCurrency !== gridCurrency;
-                // Fixed-portion currency: response currency wins when it
-                // differs from the scope's base (degraded display), else
-                // show the scope base currency. Always emitted, never
-                // blank — Doug 2026-05-27: the merchant has to be able
-                // to tell at a glance which currency the fixed fee is in.
-                var currency = degraded ? responseCurrency : gridCurrency;
+                // Currency MUST come from the API response — the fee
+                // values do too, and we don't get to guess what currency
+                // they're in. If the API omits it, we cannot safely
+                // render any fixed amount.
+                var currency = String(response.currency || '').toUpperCase().trim();
                 var suffix = currency !== '' ? ' ' + currency : '';
                 $termsContainer.find('.two-term-checkboxes__fee').each(function () {
                     var $span = $(this);
@@ -302,6 +298,18 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     var fixedStr = Number(fee.fixed || 0).toFixed(2);
                     var pctZero = pctStr === '0.00';
                     var fixedZero = fixedStr === '0.00';
+                    // Without an API-supplied currency, any fixed
+                    // component would be ambiguous. Drop the fixed
+                    // portion entirely in that case; percentage can
+                    // stand alone since it carries its own unit (%).
+                    if (currency === '') {
+                        if (pctZero) {
+                            $span.text('');
+                            return;
+                        }
+                        $span.text(' (' + pctStr + '%)');
+                        return;
+                    }
                     var inner;
                     if (pctZero && fixedZero) {
                         inner = '0.00' + suffix;
@@ -312,8 +320,6 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     } else {
                         inner = pctStr + '% + ' + fixedStr + suffix;
                     }
-                    // suffix carries the currency code (e.g. " EUR") so
-                    // fixed-amount components are always disambiguated.
                     $span.text(' (' + inner + ')');
                 });
             }).fail(function () {
