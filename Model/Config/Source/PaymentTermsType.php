@@ -22,12 +22,17 @@ class PaymentTermsType implements OptionSourceInterface
 
     /**
      * @inheritDoc
+     *
+     * Both options are always returned. Brands that don't offer
+     * End-of-Month suppress the whole field via their brand.xml
+     * `<suppressed_fields>` (e.g. ABN), so per-brand filtering on
+     * this list is unnecessary.
      */
     public function toOptionArray(): array
     {
-        // Filter to the brand's supported payment term types via BrandRegistryInterface.
         return [
-            ['value' => self::STANDARD, 'label' => __('Standard')]
+            ['value' => self::STANDARD, 'label' => __('Standard')],
+            ['value' => self::END_OF_MONTH, 'label' => __('End of Month')]
         ];
     }
 }
