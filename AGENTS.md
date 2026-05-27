@@ -54,3 +54,9 @@ firing in other areas is harmless (wasted parse on a payload no
 consumer reads). The cost of registering globally is essentially
 zero; the cost of getting this wrong is a recurring restart-time
 production bug that masks itself behind cache-flush workarounds.
+
+The inverse trap applies to `etc/crontab/di.xml`: a plugin registered
+ONLY there fires in CLI processes (cron, indexer) but NOT in HTTP
+requests. If you find yourself reaching for crontab-scope DI, ask
+whether the symmetric case (HTTP request misses the plugin) would
+break correctness — almost always yes; register globally instead.
