@@ -41,36 +41,26 @@ php bin/magento setup:static-content:deploy
 
 Then configure the plugin under **Stores > Configuration > Sales > Payment Methods > Two**.
 
-### Post-install smoke test
+### Post-install steps
 
-Run this immediately after `setup:upgrade` to catch the
-ABN-415-class regression surface — DI scope misregistration,
-Structure cache poisoning, or a stale opcache holding the old
-interceptor list — in one round-trip:
+Run these immediately after `setup:upgrade` to refresh the DI graph
+and clear any stale cache types:
 
 ```bash
 php bin/magento setup:di:compile
 php bin/magento cache:flush
-php bin/magento config:set payment/two_payment/title 'smoke test'
-php bin/magento config:show payment/two_payment/title
 ```
 
-The final command must print `smoke test` (and no error trace).
-If it errors, doesn't round-trip the value, or admin Configuration
-shows fewer Two/brand sections than expected, the cause is almost
-certainly one of:
+If admin Configuration is missing expected Two/brand sections, the
+cause is almost certainly one of:
 
-- A plugin you've added is registered only under `etc/adminhtml/di.xml`
-  or `etc/crontab/di.xml` instead of `etc/di.xml`. See AGENTS.md
+- A plugin registered only under `etc/adminhtml/di.xml` or
+  `etc/crontab/di.xml` instead of `etc/di.xml`. See AGENTS.md
   for the DI-scope rule.
 - An FPM worker holding stale opcache. Restart PHP-FPM
   (`systemctl reload php-fpm` or `kill -USR2 <fpm-master-pid>`).
-- A cache type (config / layout / full_page) is in stale state.
+- A cache type (config / layout / full_page) in stale state.
   `bin/magento cache:flush` is the canonical fix.
-
-The same sequence runs in CI on every PR (see `.github/workflows/ci.yml`'s
-`di-compile` job), so regressions are caught upstream of merchant
-installs.
 
 ## Development
 

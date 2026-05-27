@@ -204,7 +204,7 @@ jobs:
       # two_payment/title` default from etc/config.xml. A regression
       # in any of these surfaces as an empty or error-containing
       # config:show output.
-      - name: Install-time smoke (ABN-423 M3)
+      - name: Install-time smoke test (ABN-423 M3)
         run: |
           docker exec magento-project-community-edition ./retry \
             "php bin/magento module:enable Two_Gateway && php bin/magento setup:upgrade && php bin/magento cache:flush"
