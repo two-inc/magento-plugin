@@ -9,7 +9,6 @@ namespace Two\Gateway\Plugin\Magento\Config\Model\Config\Structure\Reader;
 
 use Magento\Config\Model\Config\Structure\Converter;
 use Magento\Config\Model\Config\Structure\Reader;
-use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Module\Dir;
 use Psr\Log\LoggerInterface;
 use Two\Gateway\Model\Brand\Descriptor;
@@ -25,26 +24,27 @@ use Two\Gateway\Model\Brand\Loader;
  * converted tabs and sections are then merged into the Structure
  * result that `Reader::read` returns.
  *
- * Two invariants protect against double-rendering during the
- * transition window before strip-down:
+ * Double-rendering is prevented by using `afterRead` and observing
+ * what's already in the Structure: synthesis only contributes
+ * section/tab IDs that aren't already statically declared.
+ * First-writer-wins applies per-element, so an overlay module's
+ * slim suppression-only `system.xml` (the Option B mechanism)
+ * merges via Magento's native merge AFTER synthesis: synthesis
+ * injects the canonical surface, overlay attributes hide what
+ * each brand suppresses.
  *
- *   1. The plugin uses `afterRead`, not `beforeRead` — it observes
- *      what's already in the Structure and only contributes for
- *      individual section/tab IDs that aren't already statically
- *      declared. First-writer-wins applies per-element, so an
- *      overlay module's slim suppression-only `system.xml` (the
- *      Option B mechanism) merges via Magento's native merge AFTER
- *      synthesis: synthesis injects the canonical surface, overlay
- *      attributes hide what each brand suppresses.
- *
- *   2. Synthesis runs only when
- *      `system/two_brand_synthesis/admin_form/enabled` is on. While
- *      the flag is 0 (the shipped default), afterRead is a literal
- *      pass-through and the template is never read.
- *
- * The strip-down PR flips this flag to 1 in lockstep with deleting
- * each overlay module's static system.xml — the moment one is gone,
- * the synthesis takes over for that brand.
+ * Synthesis is unconditional. The previous `system/two_brand_synthesis/
+ * admin_form/enabled` flag-gate was a transition kill-switch from
+ * before strip-down; it has been removed because it created a
+ * cold-cache race (ABN-415): if ScopeConfig couldn't resolve the
+ * flag during the first admin request after a pod restart, the
+ * plugin no-op'd, the un-synthesised Reader output was cached
+ * under `adminhtml::backend_system_configuration_structure`, and
+ * the ABN admin tab disappeared for the lifetime of the PHP-FPM
+ * worker. Always synthesising removes the race entirely; the
+ * existing skip-if-already-declared logic still protects against
+ * collision with static overlays for any brand that later opts
+ * into a stub system.xml.
  *
  * Design v6 §3.5 verified: `brand_code` survives Converter conversion
  * at section / group / field levels (PR #160's probe). Synthesised
@@ -54,7 +54,6 @@ use Two\Gateway\Model\Brand\Loader;
  */
 class SynthesiseBrandAdminForm
 {
-    private const FLAG_PATH = 'two_brand_synthesis/admin_form/enabled';
     private const TEMPLATE_RELATIVE_PATH = '/adminhtml/brand_form_template.xml';
     private const MODULE_NAME = 'Two_Gateway';
 
@@ -69,37 +68,11 @@ class SynthesiseBrandAdminForm
     private ?string $rawTemplate = null;
 
     public function __construct(
-        private readonly ScopeConfigInterface $scopeConfig,
         private readonly Loader $loader,
         private readonly Converter $converter,
         private readonly Dir $moduleDir,
         private readonly LoggerInterface $logger
     ) {
-    }
-
-    /**
-     * Resolve the synthesis-enabled flag at call time rather than at
-     * construct time.
-     *
-     * Why this matters: the plugin is constructed as part of the
-     * `Config\Structure\Reader` plugin-chain DI on the very first
-     * admin request after a cold pod start. At that point the
-     * `config` cache type is mid-rebuild — `ScopeConfigInterface`
-     * cannot always resolve `system/<path>` flags reliably until
-     * Reader::read has finished. If we capture the flag in the
-     * constructor, a cold-start race intermittently produces
-     * `$enabled = false`, the plugin no-ops, the synthesised admin
-     * sections never land in the cached Structure result, and the
-     * admin tab disappears for the lifetime of the PHP-FPM worker.
-     *
-     * Resolving at call time means afterRead always reads the flag
-     * at a point where the cache is stable. Verified by ABN-401
-     * post-restart repro: deferring the check kept the admin tab
-     * alive across cold restarts.
-     */
-    private function isEnabled(): bool
-    {
-        return $this->scopeConfig->isSetFlag(self::FLAG_PATH);
     }
 
     /**
@@ -110,10 +83,6 @@ class SynthesiseBrandAdminForm
      */
     public function afterRead(Reader $subject, array $result): array
     {
-        if (!$this->isEnabled()) {
-            return $result;
-        }
-
         try {
             $template = $this->loadTemplate();
         } catch (\Throwable $e) {
