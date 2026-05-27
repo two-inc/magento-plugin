@@ -166,4 +166,19 @@
                 type="Two\Gateway\Plugin\Magento\Csp\Model\Collector\SynthesiseBrandOrigins"
                 sortOrder="10"/>
     </type>
+    <!--
+        Synthesise per-brand admin Configuration sections (Layer C/3).
+        MUST be registered globally (not under etc/adminhtml/di.xml) —
+        CLI invocations of bin/magento populate the adminhtml-scoped
+        structure cache key using the CLI process's DI graph, which
+        doesn't load adminhtml-area plugins. Cache then serves the
+        un-synthesised result to admin web requests and the ABN admin
+        tab vanishes (ABN-415). The plugin's `afterRead` is a no-op
+        on non-Reader read paths; safe to register globally.
+    -->
+    <type name="Magento\Config\Model\Config\Structure\Reader">
+        <plugin name="two-synthesise-brand-admin-form"
+                type="Two\Gateway\Plugin\Magento\Config\Model\Config\Structure\Reader\SynthesiseBrandAdminForm"
+                sortOrder="10"/>
+    </type>
 </config>

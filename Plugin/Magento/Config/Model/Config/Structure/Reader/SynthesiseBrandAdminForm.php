@@ -35,16 +35,32 @@ use Two\Gateway\Model\Brand\Loader;
  *
  * Synthesis is unconditional. The previous `system/two_brand_synthesis/
  * admin_form/enabled` flag-gate was a transition kill-switch from
- * before strip-down; it has been removed because it created a
- * cold-cache race (ABN-415): if ScopeConfig couldn't resolve the
- * flag during the first admin request after a pod restart, the
- * plugin no-op'd, the un-synthesised Reader output was cached
- * under `adminhtml::backend_system_configuration_structure`, and
- * the ABN admin tab disappeared for the lifetime of the PHP-FPM
- * worker. Always synthesising removes the race entirely; the
- * existing skip-if-already-declared logic still protects against
- * collision with static overlays for any brand that later opts
- * into a stub system.xml.
+ * before strip-down. It was removed in PR #181 because we suspected
+ * a cold-cache race on the flag was the cause of ABN-415 (admin tab
+ * vanishes post-restart). That fix closed a real race but the
+ * symptom kept recurring.
+ *
+ * Evidence-driven follow-up (ABN-423 diagnostic harness on staging)
+ * showed the actual root cause: this plugin used to be registered
+ * in `etc/adminhtml/di.xml`. CLI invocations of bin/magento
+ * (`config:set`, `app:config:import`, `deploy:mode:set`, and similar)
+ * populate the `adminhtml::backend_system_configuration_structure`
+ * cache file but bootstrap with the CLI process's DI graph, which
+ * loads `etc/di.xml` + `etc/crontab/di.xml` and NOT
+ * `etc/adminhtml/di.xml`. The afterRead chain on `Structure\Reader`
+ * therefore omitted this plugin for every CLI-driven cache write —
+ * the cache landed un-synthesised, and subsequent admin web requests
+ * read it via `Scoped::_loadScopedData` and saw the broken Structure.
+ *
+ * Registration moved to `etc/di.xml` (global) so the plugin fires
+ * on every Reader::read regardless of which area the caller
+ * bootstrapped under. The afterRead body only adds tabs and sections
+ * to the adminhtml Structure shape, so firing in other areas is
+ * harmless (at worst, a wasted parse on a payload no consumer reads).
+ *
+ * The skip-if-already-declared logic still protects against collision
+ * with static overlays for any brand that later opts into a stub
+ * system.xml.
  *
  * Design v6 §3.5 verified: `brand_code` survives Converter conversion
  * at section / group / field levels (PR #160's probe). Synthesised

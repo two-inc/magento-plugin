@@ -29,16 +29,14 @@
                 sortOrder="10"/>
     </type>
     <!--
-        Layer C/3: synthesise per-brand admin Configuration sections
-        from a tokenised template + the brand registry. Skips brands
-        whose intended section id already exists statically, so the
-        plugin is a no-op while overlay modules still ship their own
-        etc/adminhtml/system.xml. Activates at the strip-down PR when
-        overlay system.xml files are deleted and the flag flips to 1.
+        SynthesiseBrandAdminForm is registered globally in etc/di.xml,
+        not here. CLI commands (bin/magento config:set, app:config:import,
+        deploy:mode:set, etc.) populate the adminhtml-scoped structure
+        cache key but bootstrap with the CLI process's DI graph — which
+        loaded only etc/di.xml + etc/crontab/di.xml (or similar), not
+        etc/adminhtml/di.xml. Registering the plugin here meant CLI-driven
+        cache writes never invoked synthesis; the cache then served the
+        un-synthesised result to subsequent admin web requests and the
+        ABN admin tab disappeared (ABN-415).
     -->
-    <type name="Magento\Config\Model\Config\Structure\Reader">
-        <plugin name="two-synthesise-brand-admin-form"
-                type="Two\Gateway\Plugin\Magento\Config\Model\Config\Structure\Reader\SynthesiseBrandAdminForm"
-                sortOrder="10"/>
-    </type>
 </config>
