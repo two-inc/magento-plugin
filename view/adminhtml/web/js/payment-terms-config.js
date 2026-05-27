@@ -243,7 +243,20 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             if (!url) {
                 return; // brand has inline_term_fees disabled (no data-fees-url emitted)
             }
-            var terms = getSelectedTerms();
+            // Fees render beside EVERY checkbox regardless of selection state,
+            // so the API call asks for all available term values, plus the
+            // custom-days entry if the merchant has one set. Differs from
+            // getSelectedTerms (which feeds the default-term dropdown and
+            // surcharge-visibility logic and intentionally tracks the
+            // checked state).
+            var terms = $termsContainer.find('.two-term-checkboxes__input').map(function () {
+                return Number(this.value);
+            }).get().filter(function (n) { return n > 0; });
+            var custom = parseInt($customDays.val(), 10);
+            if (custom > 0 && terms.indexOf(custom) === -1) {
+                terms.push(custom);
+            }
+            terms.sort(function (a, b) { return a - b; });
             if (!terms.length) {
                 return;
             }
@@ -267,10 +280,12 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 if (!response || !response.success || !response.fees) {
                     return; // leave spans empty
                 }
-                var gridCurrency = String($termsContainer.data('base-currency') || '').toUpperCase();
-                var responseCurrency = String(response.currency || '').toUpperCase();
-                var degraded = responseCurrency !== '' && responseCurrency !== gridCurrency;
-                var suffix = degraded ? ' ' + responseCurrency : '';
+                // Currency MUST come from the API response — the fee
+                // values do too, and we don't get to guess what currency
+                // they're in. If the API omits it, we cannot safely
+                // render any fixed amount.
+                var currency = String(response.currency || '').toUpperCase().trim();
+                var suffix = currency !== '' ? ' ' + currency : '';
                 $termsContainer.find('.two-term-checkboxes__fee').each(function () {
                     var $span = $(this);
                     var term = String($span.data('term'));
@@ -283,6 +298,18 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     var fixedStr = Number(fee.fixed || 0).toFixed(2);
                     var pctZero = pctStr === '0.00';
                     var fixedZero = fixedStr === '0.00';
+                    // Without an API-supplied currency, any fixed
+                    // component would be ambiguous. Drop the fixed
+                    // portion entirely in that case; percentage can
+                    // stand alone since it carries its own unit (%).
+                    if (currency === '') {
+                        if (pctZero) {
+                            $span.text('');
+                            return;
+                        }
+                        $span.text(' (' + pctStr + '%)');
+                        return;
+                    }
                     var inner;
                     if (pctZero && fixedZero) {
                         inner = '0.00' + suffix;
