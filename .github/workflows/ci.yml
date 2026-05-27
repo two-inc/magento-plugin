@@ -195,6 +195,43 @@ jobs:
           docker exec magento-project-community-edition ./retry \
             "php bin/magento setup:di:compile"
 
+      # ABN-423 M3: install-time smoke test. Catches the full
+      # ABN-415-class regression surface in one sequence: DI scope
+      # (compile picks up plugins from etc/di.xml, etc/adminhtml/di.xml,
+      # etc/crontab/di.xml), Setup/Recurring.php firing (cache:flush
+      # auto-runs as part of setup:upgrade), structure cache rebuild,
+      # and the brand admin form synthesis emitting the `payment/
+      # two_payment/title` default from etc/config.xml. A regression
+      # in any of these surfaces as an empty or error-containing
+      # config:show output.
+      - name: Install-time smoke (ABN-423 M3)
+        run: |
+          docker exec magento-project-community-edition ./retry \
+            "php bin/magento module:enable Two_Gateway && php bin/magento setup:upgrade && php bin/magento cache:flush"
+          # Round-trip a config:set/config:show on a default-bearing path.
+          # config:set writes to core_config_data, which forces Structure
+          # to resolve `payment/two_payment/title` end-to-end: DI-graph
+          # bootstrap → Reader::read → SynthesiseBrandAdminForm (the
+          # ABN-415 regression surface) → Element resolution. A failure
+          # anywhere in that chain surfaces here as a non-zero exit or
+          # an error/exception trace in stderr.
+          set -o pipefail
+          docker exec magento-project-community-edition \
+            php bin/magento config:set payment/two_payment/title 'CI smoke' 2>&1 | tee /tmp/set.log
+          out=$(docker exec magento-project-community-edition \
+            php bin/magento config:show payment/two_payment/title 2>&1)
+          echo "config:show output: $out"
+          if echo "$out" | grep -qiE 'error|exception|fatal'; then
+            echo "::error::Smoke test failed: config:show returned an error."
+            echo "Likely causes: DI scope drift (see ABN-415), Structure cache poisoning,"
+            echo "or Setup/Recurring.php failed to clear the config cache."
+            exit 1
+          fi
+          if ! echo "$out" | grep -q 'CI smoke'; then
+            echo "::error::Smoke test failed: config round-trip didn't surface the set value."
+            exit 1
+          fi
+
   jest:
     name: Jest (Node 20)
     runs-on: ${{ vars.RUNNER_STANDARD }}
