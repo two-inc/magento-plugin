@@ -283,7 +283,13 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 var gridCurrency = String($termsContainer.data('base-currency') || '').toUpperCase();
                 var responseCurrency = String(response.currency || '').toUpperCase();
                 var degraded = responseCurrency !== '' && responseCurrency !== gridCurrency;
-                var suffix = degraded ? ' ' + responseCurrency : '';
+                // Fixed-portion currency: response currency wins when it
+                // differs from the scope's base (degraded display), else
+                // show the scope base currency. Always emitted, never
+                // blank — Doug 2026-05-27: the merchant has to be able
+                // to tell at a glance which currency the fixed fee is in.
+                var currency = degraded ? responseCurrency : gridCurrency;
+                var suffix = currency !== '' ? ' ' + currency : '';
                 $termsContainer.find('.two-term-checkboxes__fee').each(function () {
                     var $span = $(this);
                     var term = String($span.data('term'));
@@ -306,6 +312,8 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     } else {
                         inner = pctStr + '% + ' + fixedStr + suffix;
                     }
+                    // suffix carries the currency code (e.g. " EUR") so
+                    // fixed-amount components are always disambiguated.
                     $span.text(' (' + inner + ')');
                 });
             }).fail(function () {
