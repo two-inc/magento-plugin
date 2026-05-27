@@ -58,8 +58,6 @@ class SynthesiseBrandAdminForm
     private const TEMPLATE_RELATIVE_PATH = '/adminhtml/brand_form_template.xml';
     private const MODULE_NAME = 'Two_Gateway';
 
-    private readonly bool $enabled;
-
     /**
      * Cached raw template XML, lazy-loaded on first synthesis pass.
      * Cached as a string (not parsed DOM) so each brand iteration
@@ -71,16 +69,37 @@ class SynthesiseBrandAdminForm
     private ?string $rawTemplate = null;
 
     public function __construct(
-        ScopeConfigInterface $scopeConfig,
+        private readonly ScopeConfigInterface $scopeConfig,
         private readonly Loader $loader,
         private readonly Converter $converter,
         private readonly Dir $moduleDir,
         private readonly LoggerInterface $logger
     ) {
-        // Per design v6 §16.3, synthesis flags are cached for the
-        // request lifetime; a runtime config:set requires cache:flush
-        // + restart for the new value to land.
-        $this->enabled = $scopeConfig->isSetFlag(self::FLAG_PATH);
+    }
+
+    /**
+     * Resolve the synthesis-enabled flag at call time rather than at
+     * construct time.
+     *
+     * Why this matters: the plugin is constructed as part of the
+     * `Config\Structure\Reader` plugin-chain DI on the very first
+     * admin request after a cold pod start. At that point the
+     * `config` cache type is mid-rebuild — `ScopeConfigInterface`
+     * cannot always resolve `system/<path>` flags reliably until
+     * Reader::read has finished. If we capture the flag in the
+     * constructor, a cold-start race intermittently produces
+     * `$enabled = false`, the plugin no-ops, the synthesised admin
+     * sections never land in the cached Structure result, and the
+     * admin tab disappears for the lifetime of the PHP-FPM worker.
+     *
+     * Resolving at call time means afterRead always reads the flag
+     * at a point where the cache is stable. Verified by ABN-401
+     * post-restart repro: deferring the check kept the admin tab
+     * alive across cold restarts.
+     */
+    private function isEnabled(): bool
+    {
+        return $this->scopeConfig->isSetFlag(self::FLAG_PATH);
     }
 
     /**
@@ -91,7 +110,7 @@ class SynthesiseBrandAdminForm
      */
     public function afterRead(Reader $subject, array $result): array
     {
-        if (!$this->enabled) {
+        if (!$this->isEnabled()) {
             return $result;
         }
 
@@ -110,6 +129,17 @@ class SynthesiseBrandAdminForm
 
         $brands = $this->loader->load();
         if ($brands === []) {
+            // Empty brand list at this point is unexpected — at least
+            // the vanilla Two brand should be registered. Most likely
+            // cause is a cold-cache race where Loader sees an empty
+            // ComponentRegistrar during early bootstrap. Log loudly so
+            // the regression is visible in var/log/system.log rather
+            // than presenting as a silently-missing admin tab.
+            $this->logger->warning(
+                '[two_brand_admin_form] Loader::load() returned no brands — '
+                . 'admin Configuration section synthesis skipped; '
+                . 'check ComponentRegistrar paths and brand.xml registration'
+            );
             return $result;
         }
 
