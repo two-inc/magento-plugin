@@ -10,14 +10,9 @@ namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
+use Magento\Framework\Locale\ResolverInterface as LocaleResolverInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
-/**
- * Surcharge Tax Rate field with dynamic comment.
- *
- * Shows the store's default tax rate when available, or a red warning
- * when no tax rules are configured.
- */
 class SurchargeTaxRate extends Field
 {
     /**
@@ -25,13 +20,18 @@ class SurchargeTaxRate extends Field
      */
     private $configRepository;
 
+    /** @var LocaleResolverInterface */
+    private $localeResolver;
+
     public function __construct(
         Context $context,
         ConfigRepository $configRepository,
+        LocaleResolverInterface $localeResolver,
         array $data = []
     ) {
         parent::__construct($context, $data);
         $this->configRepository = $configRepository;
+        $this->localeResolver = $localeResolver;
     }
 
     /**
@@ -45,7 +45,7 @@ class SurchargeTaxRate extends Field
             $element->setComment(
                 (string)__(
                     'Leave empty to use your store\'s default tax rate (%1%). Enter 0 for tax-exempt.',
-                    number_format($defaultRate, 1)
+                    number_format($defaultRate, 1, $this->decimalSeparator(), '')
                 )
             );
         } else {
@@ -69,5 +69,18 @@ class SurchargeTaxRate extends Field
         }
 
         return parent::_getElementHtml($element);
+    }
+
+    /**
+     * Decimal separator for the current admin locale. Mirrors the
+     * SurchargeGrid block helper — kept duplicated rather than
+     * factored out because there are only two consumers.
+     */
+    private function decimalSeparator(): string
+    {
+        $locale = (string)$this->localeResolver->getLocale() ?: 'en_US';
+        $formatter = new \NumberFormatter($locale, \NumberFormatter::DECIMAL);
+        $separator = $formatter->getSymbol(\NumberFormatter::DECIMAL_SEPARATOR_SYMBOL);
+        return $separator !== false && $separator !== '' ? $separator : '.';
     }
 }
