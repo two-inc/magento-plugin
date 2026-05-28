@@ -314,6 +314,12 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 var responseCurrency = String(response.currency || '').toUpperCase();
                 var degraded = responseCurrency !== '' && responseCurrency !== gridCurrency;
                 var suffix = degraded ? ' ' + responseCurrency : '';
+                var decimalSep = String($container.data('decimal-separator') || '.');
+                function formatAmount(n) {
+                    var s = Number(n).toFixed(2);
+                    return decimalSep === '.' ? s : s.replace('.', decimalSep);
+                }
+                var zero = formatAmount(0);
                 $container.find('td.surcharge-grid__fee').each(function () {
                     var $cell = $(this);
                     var term = String($cell.data('term'));
@@ -321,13 +327,13 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     if (!fee) {
                         return;
                     }
-                    var pctStr = Number(fee.percentage || 0).toFixed(2);
-                    var fixedStr = Number(fee.fixed || 0).toFixed(2);
-                    var pctZero = pctStr === '0.00';
-                    var fixedZero = fixedStr === '0.00';
+                    var pctStr = formatAmount(fee.percentage || 0);
+                    var fixedStr = formatAmount(fee.fixed || 0);
+                    var pctZero = pctStr === zero;
+                    var fixedZero = fixedStr === zero;
                     var text;
                     if (pctZero && fixedZero) {
-                        text = '0.00' + suffix;
+                        text = zero + suffix;
                     } else if (pctZero) {
                         text = fixedStr + suffix;
                     } else if (fixedZero) {

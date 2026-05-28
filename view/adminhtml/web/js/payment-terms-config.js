@@ -286,6 +286,15 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 // render any fixed amount.
                 var currency = String(response.currency || '').toUpperCase().trim();
                 var suffix = currency !== '' ? ' ' + currency : '';
+                // Admin locale's decimal separator, sourced server-side
+                // from ICU (matches what the surcharge-grid display path
+                // uses). Falls back to '.' on legacy renders that didn't
+                // emit the attribute.
+                var decimalSep = String($termsContainer.data('decimal-separator') || '.');
+                function formatAmount(n) {
+                    var s = Number(n).toFixed(2);
+                    return decimalSep === '.' ? s : s.replace('.', decimalSep);
+                }
                 $termsContainer.find('.two-term-checkboxes__fee').each(function () {
                     var $span = $(this);
                     var term = String($span.data('term'));
@@ -294,10 +303,11 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                         $span.text('');
                         return;
                     }
-                    var pctStr = Number(fee.percentage || 0).toFixed(2);
-                    var fixedStr = Number(fee.fixed || 0).toFixed(2);
-                    var pctZero = pctStr === '0.00';
-                    var fixedZero = fixedStr === '0.00';
+                    var pctStr = formatAmount(fee.percentage || 0);
+                    var fixedStr = formatAmount(fee.fixed || 0);
+                    var zero = formatAmount(0);
+                    var pctZero = pctStr === zero;
+                    var fixedZero = fixedStr === zero;
                     // Without an API-supplied currency, any fixed
                     // component would be ambiguous. Drop the fixed
                     // portion entirely in that case; percentage can
@@ -312,7 +322,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     }
                     var inner;
                     if (pctZero && fixedZero) {
-                        inner = '0.00' + suffix;
+                        inner = zero + suffix;
                     } else if (pctZero) {
                         inner = fixedStr + suffix;
                     } else if (fixedZero) {

@@ -186,7 +186,8 @@
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Surcharge Tax Rate (%)</label>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeTaxRate</frontend_model>
-                    <validate>validate-number validate-zero-or-greater</validate>
+                    <backend_model>Two\Gateway\Model\Config\Backend\LocaleDecimal</backend_model>
+                    <validate>validate-zero-or-greater</validate>
                     <config_path>payment/two_payment/surcharge_tax_rate</config_path>
                 </field>
                 <!-- Per-term surcharge grid (fixed, percentage, limit per term) -->

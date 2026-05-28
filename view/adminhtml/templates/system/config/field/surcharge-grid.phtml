@@ -31,7 +31,8 @@ $columnLabels = [
      data-fees-url="<?= $block->escapeHtmlAttr($block->getFeesUrl()) ?>"
      data-scope="<?= $block->escapeHtmlAttr($block->getScope()) ?>"
      data-scope-id="<?= (int)$block->getScopeId() ?>"
-     data-base-currency="<?= $block->escapeHtmlAttr($currencyCode) ?>">
+     data-base-currency="<?= $block->escapeHtmlAttr($currencyCode) ?>"
+     data-decimal-separator="<?= $block->escapeHtmlAttr($block->getDecimalSeparator()) ?>">
 
     <p class="surcharge-grid__no-terms note" <?= !empty($terms) ? 'style="display:none"' : '' ?>>
         <span><?= $block->escapeHtml(__('No payment terms selected. Select payment terms above to configure surcharges.')) ?></span>

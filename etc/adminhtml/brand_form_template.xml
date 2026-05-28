@@ -260,7 +260,8 @@
                        canRestore="1" brand_code="{{code}}">
                     <label>Surcharge Tax Rate (%)</label>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeTaxRate</frontend_model>
-                    <validate>validate-number validate-zero-or-greater</validate>
+                    <backend_model>Two\Gateway\Model\Config\Backend\LocaleDecimal</backend_model>
+                    <validate>validate-zero-or-greater</validate>
                     <config_path>payment/{{code}}/surcharge_tax_rate</config_path>
                 </field>
                 <field id="surcharge_grid" translate="label" type="text" sortOrder="100"

@@ -11,11 +11,11 @@ use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Data\Form\Element\AbstractElement;
-use Magento\Framework\Locale\ResolverInterface as LocaleResolverInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
+use Two\Gateway\Service\Locale\AdminDecimalFormatter;
 
 /**
  * Renders a grid of surcharge inputs (fixed, percentage, limit) per payment term.
@@ -41,8 +41,8 @@ class SurchargeGrid extends Field
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
-    /** @var LocaleResolverInterface */
-    private $localeResolver;
+    /** @var AdminDecimalFormatter */
+    private $decimalFormatter;
 
     /** @var string */
     private $scope = 'default';
@@ -56,7 +56,7 @@ class SurchargeGrid extends Field
         StoreManagerInterface $storeManager,
         CurrencyRatesProviderInterface $ratesProvider,
         BrandRegistryInterface $brandRegistry,
-        LocaleResolverInterface $localeResolver,
+        AdminDecimalFormatter $decimalFormatter,
         array $data = []
     ) {
         parent::__construct($context, $data);
@@ -64,7 +64,7 @@ class SurchargeGrid extends Field
         $this->storeManager = $storeManager;
         $this->ratesProvider = $ratesProvider;
         $this->brandRegistry = $brandRegistry;
-        $this->localeResolver = $localeResolver;
+        $this->decimalFormatter = $decimalFormatter;
     }
 
     /**
@@ -132,17 +132,9 @@ class SurchargeGrid extends Field
         return str_replace('.', $this->decimalSeparator(), (string)$value);
     }
 
-    /**
-     * Decimal separator for the current admin locale. Derived from
-     * ICU via NumberFormatter so it matches whatever $.mage.parseNumber
-     * accepts on the JS side (both read the same locale data).
-     */
     private function decimalSeparator(): string
     {
-        $locale = (string)$this->localeResolver->getLocale() ?: 'en_US';
-        $formatter = new \NumberFormatter($locale, \NumberFormatter::DECIMAL);
-        $separator = $formatter->getSymbol(\NumberFormatter::DECIMAL_SEPARATOR_SYMBOL);
-        return $separator !== false && $separator !== '' ? $separator : '.';
+        return $this->decimalFormatter->getSeparator();
     }
 
     /**
@@ -412,6 +404,17 @@ class SurchargeGrid extends Field
     public function getScopeId(): int
     {
         return $this->scopeId;
+    }
+
+
+    /**
+     * Decimal separator for the active admin locale, exposed so
+     * the grid's data attributes can carry it through to the JS
+     * fees-formatting routine.
+     */
+    public function getDecimalSeparator(): string
+    {
+        return $this->decimalFormatter->getSeparator();
     }
 
     private function resolveScope(AbstractElement $element): void

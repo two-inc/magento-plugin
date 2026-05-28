@@ -23,6 +23,7 @@ $showFees = $block->showInlineFees();
      data-scope="<?= $block->escapeHtmlAttr($block->getScope()) ?>"
      data-scope-id="<?= (int)$block->getScopeId() ?>"
      data-base-currency="<?= $block->escapeHtmlAttr($block->getBaseCurrency()) ?>"
+     data-decimal-separator="<?= $block->escapeHtmlAttr($block->getDecimalSeparator()) ?>"
      <?php endif; ?>>
     <?php foreach ($terms as $days): ?>
         <?php
