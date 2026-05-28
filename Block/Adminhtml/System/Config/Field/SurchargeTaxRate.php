@@ -10,8 +10,8 @@ namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
-use Magento\Framework\Locale\ResolverInterface as LocaleResolverInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Service\Locale\AdminDecimalFormatter;
 
 class SurchargeTaxRate extends Field
 {
@@ -20,18 +20,18 @@ class SurchargeTaxRate extends Field
      */
     private $configRepository;
 
-    /** @var LocaleResolverInterface */
-    private $localeResolver;
+    /** @var AdminDecimalFormatter */
+    private $decimalFormatter;
 
     public function __construct(
         Context $context,
         ConfigRepository $configRepository,
-        LocaleResolverInterface $localeResolver,
+        AdminDecimalFormatter $decimalFormatter,
         array $data = []
     ) {
         parent::__construct($context, $data);
         $this->configRepository = $configRepository;
-        $this->localeResolver = $localeResolver;
+        $this->decimalFormatter = $decimalFormatter;
     }
 
     /**
@@ -40,12 +40,13 @@ class SurchargeTaxRate extends Field
     protected function _getElementHtml(AbstractElement $element): string
     {
         $defaultRate = $this->configRepository->getDefaultTaxRate();
+        $separator = $this->decimalFormatter->getSeparator();
 
         if ($defaultRate > 0) {
             $element->setComment(
                 (string)__(
                     'Leave empty to use your store\'s default tax rate (%1%). Enter 0 for tax-exempt.',
-                    number_format($defaultRate, 1, $this->decimalSeparator(), '')
+                    number_format($defaultRate, 1, $separator, '')
                 )
             );
         } else {
@@ -68,19 +69,18 @@ class SurchargeTaxRate extends Field
             );
         }
 
-        return parent::_getElementHtml($element);
-    }
+        // Locale-format the stored value (canonical "21.5") into
+        // the admin's separator (e.g. "21,5" under nl_NL) before
+        // it renders into the input's value attribute. The
+        // validate-zero-or-greater validator routes through
+        // $.mage.parseNumber, which is locale-aware, so the
+        // comma round-trips. Save-side normalisation happens
+        // in the LocaleDecimal backend model.
+        $value = $element->getValue();
+        if (is_string($value) && $value !== '') {
+            $element->setValue(str_replace('.', $separator, $value));
+        }
 
-    /**
-     * Decimal separator for the current admin locale. Mirrors the
-     * SurchargeGrid block helper — kept duplicated rather than
-     * factored out because there are only two consumers.
-     */
-    private function decimalSeparator(): string
-    {
-        $locale = (string)$this->localeResolver->getLocale() ?: 'en_US';
-        $formatter = new \NumberFormatter($locale, \NumberFormatter::DECIMAL);
-        $separator = $formatter->getSymbol(\NumberFormatter::DECIMAL_SEPARATOR_SYMBOL);
-        return $separator !== false && $separator !== '' ? $separator : '.';
+        return parent::_getElementHtml($element);
     }
 }

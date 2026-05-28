@@ -14,6 +14,7 @@ use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Service\Locale\AdminDecimalFormatter;
 
 /**
  * Renders payment terms as individual checkboxes instead of a multiselect.
@@ -38,17 +39,22 @@ class PaymentTermsCheckboxes extends Field
     /** @var ScopeConfigInterface */
     private $scopeConfig;
 
+    /** @var AdminDecimalFormatter */
+    private $decimalFormatter;
+
     public function __construct(
         Context $context,
         BrandRegistryInterface $brandRegistry,
         StoreManagerInterface $storeManager,
         ScopeConfigInterface $scopeConfig,
+        AdminDecimalFormatter $decimalFormatter,
         array $data = []
     ) {
         parent::__construct($context, $data);
         $this->brandRegistry = $brandRegistry;
         $this->storeManager = $storeManager;
         $this->scopeConfig = $scopeConfig;
+        $this->decimalFormatter = $decimalFormatter;
     }
 
     /**
@@ -148,6 +154,16 @@ class PaymentTermsCheckboxes extends Field
      * returns amounts in the merchant's contractual currency; JS
      * appends a degraded-currency suffix when they differ.
      */
+    /**
+     * Decimal separator for the active admin locale, emitted as a
+     * data attribute on the container so the inline-fees JS can
+     * render fetched amounts with the matching separator.
+     */
+    public function getDecimalSeparator(): string
+    {
+        return $this->decimalFormatter->getSeparator();
+    }
+
     public function getBaseCurrency(): string
     {
         try {
