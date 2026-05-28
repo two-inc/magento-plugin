@@ -134,6 +134,13 @@ class SurchargeGrid extends Value
                     continue;
                 }
 
+                // Accept the Dutch comma decimal separator. Front-end
+                // JS already normalises on input, but admins posting
+                // directly (curl, REST app:config:import, scripted
+                // setup:config:set chain) hit this code path without
+                // the JS pass; normalise server-side too.
+                $value = str_replace(',', '.', $value);
+
                 $numericValue = (float)$value;
                 $this->validateValue($type, $numericValue, $days, $maxFixed, $maxPercentage);
 

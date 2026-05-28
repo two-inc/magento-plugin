@@ -170,3 +170,4 @@ day,dag
 "Optional field which enables the buyer to register the project the purchase is connected to. The information is eventually displayed on the invoice.","Optioneel veld waarmee de koper het project kan registreren waaraan de aankoop is gekoppeld. De informatie verschijnt uiteindelijk op de factuur."
 "Optional field which enables the buyer to register their purchase order number.","Optioneel veld waarmee de koper het inkoopordernummer kan registreren."
 "Let your buyer input additional emails to forward the invoice to on order fulfilment.","Laat uw koper aanvullende e-mailadressen invoeren om de factuur door te sturen bij bestellingsuitvoering."
+"Select your company from the dropdown to continue.","Selecteer uw bedrijf uit de lijst om door te gaan."
