@@ -11,6 +11,7 @@ use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Data\Form\Element\AbstractElement;
+use Magento\Framework\Locale\ResolverInterface as LocaleResolverInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
@@ -40,6 +41,9 @@ class SurchargeGrid extends Field
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
+    /** @var LocaleResolverInterface */
+    private $localeResolver;
+
     /** @var string */
     private $scope = 'default';
 
@@ -52,6 +56,7 @@ class SurchargeGrid extends Field
         StoreManagerInterface $storeManager,
         CurrencyRatesProviderInterface $ratesProvider,
         BrandRegistryInterface $brandRegistry,
+        LocaleResolverInterface $localeResolver,
         array $data = []
     ) {
         parent::__construct($context, $data);
@@ -59,6 +64,7 @@ class SurchargeGrid extends Field
         $this->storeManager = $storeManager;
         $this->ratesProvider = $ratesProvider;
         $this->brandRegistry = $brandRegistry;
+        $this->localeResolver = $localeResolver;
     }
 
     /**
@@ -108,12 +114,35 @@ class SurchargeGrid extends Field
     }
 
     /**
-     * Get the saved surcharge value for a given term and field.
+     * Get the saved surcharge value for a given term and field,
+     * formatted with the admin locale's decimal separator (e.g.
+     * "5,3" under nl_NL, "5.3" under en_US).
+     *
+     * Storage is canonical period-decimal (the backend model
+     * normalises comma → period on save), so display formatting
+     * is the inverse: swap the period for the locale separator
+     * before emitting into the input's value attribute.
      */
     public function getSavedValue(int $days, string $field): string
     {
         $value = $this->getConfigValue($this->path(sprintf('surcharge_%d_%s', $days, $field)));
-        return $value !== null ? (string)$value : '';
+        if ($value === null || $value === '') {
+            return '';
+        }
+        return str_replace('.', $this->decimalSeparator(), (string)$value);
+    }
+
+    /**
+     * Decimal separator for the current admin locale. Derived from
+     * ICU via NumberFormatter so it matches whatever $.mage.parseNumber
+     * accepts on the JS side (both read the same locale data).
+     */
+    private function decimalSeparator(): string
+    {
+        $locale = (string)$this->localeResolver->getLocale() ?: 'en_US';
+        $formatter = new \NumberFormatter($locale, \NumberFormatter::DECIMAL);
+        $separator = $formatter->getSymbol(\NumberFormatter::DECIMAL_SEPARATOR_SYMBOL);
+        return $separator !== false && $separator !== '' ? $separator : '.';
     }
 
     /**
