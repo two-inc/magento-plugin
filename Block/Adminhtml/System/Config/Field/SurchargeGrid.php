@@ -251,7 +251,7 @@ class SurchargeGrid extends Field
             $precision = $this->getCurrencyPrecision($baseCurrency);
             $factor = pow(10, $precision);
             $convertedMax = ceil($converted * $factor) / $factor;
-            $formatted = number_format($convertedMax, $precision, '.', '');
+            $formatted = number_format($convertedMax, $precision, $this->decimalSeparator(), '');
             return $baseCurrency . ' ' . $formatted . ' (' . $limitCurrency . ' ' . $limitAmount . ')';
         }
 
