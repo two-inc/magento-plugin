@@ -265,6 +265,22 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         $defaultTerm.on('change', update);
         $('#' + prefix + 'surcharge_type_inherit').on('change', update);
 
+        // Accept the Dutch comma decimal separator on every surcharge
+        // input (Fixed, Percentage, Limit). Magento's stock
+        // validate-number rule is locale-blind and only accepts the
+        // period separator, so without normalisation a Dutch admin
+        // typing "10,50" trips the validator and cannot save. Replace
+        // commas with periods as the user types — the visible value
+        // updates in place, the validator passes, and the backend
+        // model receives a parsable string.
+        $container.on('input', '.surcharge-grid__input', function () {
+            var $input = $(this);
+            var value = $input.val();
+            if (typeof value === 'string' && value.indexOf(',') !== -1) {
+                $input.val(value.replace(/,/g, '.'));
+            }
+        });
+
         // ── Fee column (read-only, fetched from Two API via admin proxy) ─
 
         // Memoise the term-set we last fetched so rapid re-fires (keystrokes
