@@ -66,8 +66,15 @@ $columnLabels = [
                         $inheritName = $block->getInheritName($days, $col);
                         $inherited = $isNonDefault && $block->isInherited($days, $col);
                         $max = ($col === 'fixed') ? $maxFixed : (($col === 'percentage') ? $maxPercentage : null);
+                        // validate-number is intentionally NOT in this list.
+                        // Its regex is locale-blind (period-only) and would
+                        // reject Dutch admins typing "10,50". validate-zero-
+                        // or-greater and validate-number-range both route
+                        // input through $.mage.parseNumber, which is locale-
+                        // aware (it normalises comma → period internally),
+                        // so dropping validate-number lets the comma flow
+                        // through natively without us pre-normalising.
                         $validateRules = [
-                            '"validate-number":true',
                             '"validate-zero-or-greater":true',
                         ];
                         // null = no upper bound (e.g. brand has no fixed-fee
