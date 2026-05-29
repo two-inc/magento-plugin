@@ -15,6 +15,7 @@ define([
     'Magento_Checkout/js/model/full-screen-loader',
     'Magento_Checkout/js/action/redirect-on-success',
     'mage/url',
+    'Magento_Catalog/js/price-utils',
     'Two_Gateway/js/model/surcharge',
     'Two_Gateway/js/model/brand-config',
     'Magento_Ui/js/lib/view/utils/async',
@@ -32,6 +33,7 @@ define([
     fullScreenLoader,
     redirectOnSuccessAction,
     url,
+    priceUtils,
     surchargeModel,
     getBrandConfig
 ) {
@@ -120,11 +122,10 @@ define([
                 if (amount < 0.005) {
                     return '';
                 }
-                return '+' + surchargeModel.currencySymbol + amount.toFixed(2);
+                return '+' + priceUtils.formatPrice(amount, quote.getPriceFormat());
             });
             this.termOptions = ko.pureComputed(function () {
                 var surcharges = surchargeModel.termSurcharges();
-                var symbol = surchargeModel.currencySymbol;
                 var isLoading = !surcharges || !Object.keys(surcharges).length;
                 var amounts = terms.map(function (days) {
                     return parseFloat(surcharges[days] || 0);
@@ -135,7 +136,7 @@ define([
                         days: days,
                         daysLabel: days + ' ' + $t('days'),
                         isLoading: isLoading,
-                        surchargeLabel: (isLoading || allZero) ? '' : '+' + symbol + amounts[i].toFixed(2)
+                        surchargeLabel: (isLoading || allZero) ? '' : '+' + priceUtils.formatPrice(amounts[i], quote.getPriceFormat())
                     };
                 });
             });
