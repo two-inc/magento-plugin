@@ -34,6 +34,10 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         var $table = $container.find('.surcharge-grid');
         var $noTermsMsg = $container.find('.surcharge-grid__no-terms');
         var $currencyNote = $container.find('.surcharge-grid__currency-note');
+        // Grid-level inherit ("Use Website/Default"). Present only at a
+        // non-default scope; absent at default scope.
+        var $inheritToggle = $container.find('.surcharge-grid__inherit-toggle');
+        var $inheritSentinel = $container.find('.surcharge-grid__inherit-sentinel');
         // maxFixed === null when the brand has no upper bound on fixed-fee
         // surcharges. Template emits `data-max-fixed=""` in that case;
         // parseInt('', 10) is NaN, so we explicitly track "no bound" and
@@ -233,22 +237,24 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             $container.closest('tr').toggle(hasSurcharge);
         }
 
-        // ── Inherit checkboxes ───────────────────────────────────────────
+        // ── Grid-level inherit ("Use Website/Default") ─────────────────────
 
-        function initInheritCheckboxes() {
-            $container.on('change', '.surcharge-grid__inherit-checkbox', function () {
-                var $cb = $(this);
-                var col = $cb.data('column');
-                var term = $cb.data('term');
-                var inherited = $cb.is(':checked');
-                var $row = $container.find('.surcharge-grid__row[data-term="' + term + '"]');
-
-                var $input = $row.find('.surcharge-grid__input[data-column="' + col + '"]');
-                $input.prop('disabled', inherited).data('inherit-disabled', inherited);
-
-                var $flag = $row.find('.surcharge-grid__inherit-flag[data-column="' + col + '"]');
-                $flag.val(inherited ? '1' : '0');
-            });
+        // One checkbox inherits or overrides the whole grid. Checked →
+        // the grid inherits the parent scope: all inputs disabled and the
+        // hidden sentinel posts '1' so the backend purges every per-term
+        // override row at this scope. Unchecked → editable override, and
+        // the differential rule reapplies (it owns the default-term row).
+        function applyGridInherit() {
+            if (!$inheritToggle.length) {
+                return; // default scope — no inherit control rendered
+            }
+            var inherit = $inheritToggle.is(':checked');
+            $inheritSentinel.val(inherit ? '1' : '0');
+            $container.find('.surcharge-grid__input').prop('disabled', inherit);
+            $table.toggleClass('surcharge-grid--inherited', inherit);
+            if (!inherit) {
+                updateDifferentialState();
+            }
         }
 
         // ── Master update ────────────────────────────────────────────────
@@ -259,6 +265,10 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             updateColumnVisibility();
             updateDifferentialState();
             updateHelperText();
+            // Last: grid-level inherit has final say on input disabled
+            // state, overriding column/differential toggles when the whole
+            // grid is inheriting.
+            applyGridInherit();
             // Fee-preview column removed (ABN-356 / ABN-401-F12); skip the
             // loadFees() AJAX whose response would have no cells to populate.
         }
@@ -271,6 +281,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         $differential.on('change', update);
         $defaultTerm.on('change', update);
         $('#' + prefix + 'surcharge_type_inherit').on('change', update);
+        $inheritToggle.on('change', applyGridInherit);
 
         // ── Fee column (read-only, fetched from Two API via admin proxy) ─
 
@@ -281,7 +292,6 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // loadFees() writes during init.
         var lastFeesKey = null;
 
-        initInheritCheckboxes();
         update();
 
         function loadFees() {
