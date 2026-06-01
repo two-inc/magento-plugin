@@ -11,6 +11,13 @@ $maxFixed = $block->getMaxFixed();
 $maxPercentage = $block->getMaxPercentage();
 $defaultTerm = $block->getDefaultTerm();
 $isNonDefault = $block->isNonDefaultScope();
+// One inherit control for the whole grid (not per-cell). Checked = the
+// grid inherits the parent scope; unchecked = the grid is overridden
+// here. hasScopeOverride() reflects whether an actual override row
+// exists, so the checkbox starts in the right state.
+$hasOverride  = $isNonDefault && $block->hasScopeOverride();
+$inheriting   = $isNonDefault && !$hasOverride;
+$inheritLabel = $block->getScope() === 'stores' ? __('Use Website Value') : __('Use Default Value');
 $surchargeType = $block->getSurchargeType();
 $currencyCode = $block->getBaseCurrencyCode();
 $columns = ['fixed', 'percentage', 'limit'];
@@ -38,6 +45,23 @@ $columnLabels = [
         <span><?= $block->escapeHtml(__('No payment terms selected. Select payment terms above to configure surcharges.')) ?></span>
     </p>
 
+    <?php if ($isNonDefault): ?>
+        <div class="surcharge-grid__inherit-control">
+            <label>
+                <input type="checkbox"
+                       class="surcharge-grid__inherit-toggle"
+                       <?= $inheriting ? 'checked="checked"' : '' ?>
+                />
+                <?= $block->escapeHtml($inheritLabel) ?>
+            </label>
+            <input type="hidden"
+                   name="<?= $block->escapeHtmlAttr($block->getInheritFieldName()) ?>"
+                   class="surcharge-grid__inherit-sentinel"
+                   value="<?= $inheriting ? '1' : '0' ?>"
+            />
+        </div>
+    <?php endif; ?>
+
     <table class="admin__table-secondary surcharge-grid" cellspacing="0" <?= empty($terms) ? 'style="display:none"' : '' ?>>
         <thead>
             <tr>
@@ -45,9 +69,6 @@ $columnLabels = [
                 <th class="surcharge-grid__fixed"><?= $block->escapeHtml($columnLabels['fixed']) ?></th>
                 <th class="surcharge-grid__percentage"><?= $block->escapeHtml($columnLabels['percentage']) ?></th>
                 <th class="surcharge-grid__limit"><?= $block->escapeHtml($columnLabels['limit']) ?></th>
-                <?php if ($isNonDefault): ?>
-                    <th class="surcharge-grid__inherit"><?= $block->escapeHtml(__('Use Default')) ?></th>
-                <?php endif; ?>
             </tr>
         </thead>
         <tbody>
@@ -64,8 +85,6 @@ $columnLabels = [
                         <?php
                         $value = $block->getSavedValue($days, $col);
                         $name = $block->getFieldName($days, $col);
-                        $inheritName = $block->getInheritName($days, $col);
-                        $inherited = $isNonDefault && $block->isInherited($days, $col);
                         $max = ($col === 'fixed') ? $maxFixed : (($col === 'percentage') ? $maxPercentage : null);
                         // validate-number is intentionally NOT in this list.
                         // Its regex is locale-blind (period-only) and would
@@ -93,35 +112,10 @@ $columnLabels = [
                                    data-column="<?= $col ?>"
                                    data-term="<?= (int)$days ?>"
                                    data-validate='{<?= $block->escapeHtmlAttr(implode(',', $validateRules)) ?>}'
-                                   <?= $inherited ? 'disabled="disabled"' : '' ?>
+                                   <?= $inheriting ? 'disabled="disabled"' : '' ?>
                             />
-                            <?php if ($isNonDefault): ?>
-                                <input type="hidden"
-                                       name="<?= $block->escapeHtmlAttr($inheritName) ?>"
-                                       value="<?= $inherited ? '1' : '0' ?>"
-                                       class="surcharge-grid__inherit-flag"
-                                       data-column="<?= $col ?>"
-                                       data-term="<?= (int)$days ?>"
-                                />
-                            <?php endif; ?>
                         </td>
                     <?php endforeach; ?>
-                    <?php if ($isNonDefault): ?>
-                        <td class="surcharge-grid__inherit">
-                            <?php foreach ($columns as $col): ?>
-                                <?php $inherited = $block->isInherited($days, $col); ?>
-                                <label class="surcharge-grid__inherit-label">
-                                    <input type="checkbox"
-                                           class="surcharge-grid__inherit-checkbox"
-                                           data-column="<?= $col ?>"
-                                           data-term="<?= (int)$days ?>"
-                                           <?= $inherited ? 'checked="checked"' : '' ?>
-                                    />
-                                    <?= $block->escapeHtml($columnLabels[$col]) ?>
-                                </label>
-                            <?php endforeach; ?>
-                        </td>
-                    <?php endif; ?>
                 </tr>
             <?php endforeach; ?>
         </tbody>
