@@ -71,6 +71,11 @@ class DescriptorBackedBrandRegistry implements BrandRegistryInterface
         return $this->activeBrandResolver->resolve()->getBrandTag();
     }
 
+    public function getCheckoutSubtitle(): string
+    {
+        return $this->activeBrandResolver->resolve()->getCheckoutSubtitle();
+    }
+
     public function getCode(): string
     {
         return $this->activeBrandResolver->resolve()->getCode();

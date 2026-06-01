@@ -29,6 +29,7 @@
             <xs:element name="product_name" type="xs:string"/>
             <xs:element name="tab_label" type="xs:string"/>
             <xs:element name="tab_css_class" type="xs:string" minOccurs="0"/>
+            <xs:element name="checkout_subtitle" type="xs:string" minOccurs="0"/>
             <xs:element name="checkout_url_template" type="xs:string"/>
             <xs:element name="brand_tag" type="xs:string" minOccurs="0"/>
             <xs:element name="sign_up_url" type="xs:string" minOccurs="0"/>

@@ -69,7 +69,8 @@ final class Descriptor
         private readonly array $allowedCountries,
         private readonly array $extraHttpHeaders,
         private readonly array $suppressedFields = [],
-        private readonly bool $inlineTermFees = true
+        private readonly bool $inlineTermFees = true,
+        private readonly string $checkoutSubtitle = ''
     ) {
     }
 
@@ -161,6 +162,18 @@ final class Descriptor
     public function getBrandTag(): string
     {
         return $this->brandTag;
+    }
+
+    /**
+     * i18n source key for the checkout payment-method subtitle, or '' when
+     * the brand defines none. The vanilla Two brand returns ''; brand
+     * overlays set <checkout_subtitle> in brand.xml. Empty means the
+     * renderers emit no subtitle text — the key is never passed to the
+     * translator, so no untranslated key can leak into the storefront.
+     */
+    public function getCheckoutSubtitle(): string
+    {
+        return $this->checkoutSubtitle;
     }
 
     public function getSignUpUrl(): string

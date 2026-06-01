@@ -70,6 +70,15 @@ interface BrandRegistryInterface
     public function getBrandTag(): string;
 
     /**
+     * i18n source key for the checkout payment-method subtitle, or '' when
+     * the brand defines none. The vanilla Two brand returns ''; brand
+     * overlays supply one via <checkout_subtitle> in brand.xml. Renderers
+     * must treat '' as "no subtitle" and never pass it to the translator,
+     * so an unmapped key can never leak into the storefront.
+     */
+    public function getCheckoutSubtitle(): string;
+
+    /**
      * Merchant sign-up URL shown on the admin config header block.
      */
     public function getSignUpUrl(): string;
