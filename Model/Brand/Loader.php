@@ -188,7 +188,8 @@ class Loader
             $allowedCountries,
             $extraHttpHeaders,
             $suppressedFields,
-            $inlineTermFees
+            $inlineTermFees,
+            (string)($brand->checkout_subtitle ?? '')
         );
     }
 }

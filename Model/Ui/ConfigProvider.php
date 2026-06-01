@@ -143,6 +143,7 @@ class ConfigProvider implements ConfigProviderInterface
                     'selectedPaymentTerm' => (int)$this->checkoutSession->getTwoSelectedTerm()
                         ?: $this->configRepository->getDefaultPaymentTerm(),
                     'currencySymbol' => $this->getCurrencySymbol(),
+                    'subtitleHtml' => $this->getSubtitleHtml(),
                     'surchargeDescription' => $this->configRepository->getSurchargeLineDescription(),
                     'isPaymentTermsEnabled' => true,
                     'orderIntentApprovedMessage' => __(
@@ -186,6 +187,22 @@ class ConfigProvider implements ConfigProviderInterface
         } catch (\Exception $e) {
             return '';
         }
+    }
+
+    /**
+     * Resolve the brand's checkout subtitle for the storefront renderer.
+     *
+     * The string is brand data (BrandRegistryInterface::getCheckoutSubtitle,
+     * sourced from brand.xml). The vanilla Two brand returns '' → no
+     * subtitle. We only pass a non-empty key to the translator, so an
+     * unmapped locale falls back to the (brand-owned) source key rather
+     * than ever leaking a vanilla key. May contain HTML (e.g. a link);
+     * the KO template binds it via `html:`.
+     */
+    private function getSubtitleHtml(): string
+    {
+        $key = $this->brandRegistry->getCheckoutSubtitle();
+        return $key === '' ? '' : (string)__($key);
     }
 
     /**

@@ -44,6 +44,8 @@ class Brand implements BrandRegistryInterface
     private $documentationUrl;
     /** @var string */
     private $brandTag;
+    /** @var string */
+    private $checkoutSubtitle;
 
     /**
      * @param int[] $availablePaymentTerms
@@ -58,7 +60,8 @@ class Brand implements BrandRegistryInterface
         ?array $surchargeFixedMax = null,
         string $signUpUrl = '',
         string $documentationUrl = '',
-        string $brandTag = ''
+        string $brandTag = '',
+        string $checkoutSubtitle = ''
     ) {
         $this->provider = $provider;
         $this->providerFullName = $providerFullName;
@@ -69,6 +72,7 @@ class Brand implements BrandRegistryInterface
         $this->signUpUrl = $signUpUrl;
         $this->documentationUrl = $documentationUrl;
         $this->brandTag = $brandTag;
+        $this->checkoutSubtitle = $checkoutSubtitle;
     }
 
     public function getProvider(): string
@@ -114,6 +118,11 @@ class Brand implements BrandRegistryInterface
     public function getBrandTag(): string
     {
         return $this->brandTag;
+    }
+
+    public function getCheckoutSubtitle(): string
+    {
+        return $this->checkoutSubtitle;
     }
 
     /**

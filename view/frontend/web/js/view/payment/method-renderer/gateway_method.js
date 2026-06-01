@@ -46,7 +46,11 @@ define([
             template: 'Two_Gateway/payment/gateway_method'
         },
         redirectAfterPlaceOrder: false,
-        twoSubtitleHtml: $t('For all companies.'),
+        // Brand-supplied checkout subtitle; populated in initialize() from
+        // the brand's checkoutConfig subtree. Empty ('') for the vanilla
+        // Two brand → the template renders no subtitle text. Brand overlays
+        // (ABN, …) supply the string + its translations.
+        twoSubtitleHtml: '',
         isPaymentTermsAccepted: ko.observable(false),
         soleTraderCountryCodes: ['gb'],
         formSelector: 'form#two_gateway_form',
@@ -84,6 +88,7 @@ define([
             this._brandConfig = getBrandConfig(this.getCode());
             var config = this._brandConfig;
 
+            this.twoSubtitleHtml = config.subtitleHtml || '';
             this.paymentTermsMessage = config.paymentTermsMessage;
             this.termsNotAcceptedMessage = config.termsNotAcceptedMessage;
             this.isPaymentTermsEnabled = config.isPaymentTermsEnabled;
