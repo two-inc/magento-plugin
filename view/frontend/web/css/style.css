@@ -52,7 +52,11 @@
     color: var(--color-brownie-vanilla);
 }
 
-.two-payment-subtitle a {
+/* All links inside the Two/ABN payment-method block render blue +
+   underlined (brand subtitle "lees meer", terms "betaalvoorwaarden", …).
+   Scoped to the block rather than a bare `a` so it stays out of the rest
+   of checkout and so the class+element specificity wins over resets. */
+.two-payment-method a {
     color: #0066cc;
     text-decoration: underline;
 }
@@ -90,10 +94,6 @@
     font-weight: 500;
 }
 
-.terms-text a {
-    text-decoration: none;
-    /* Style the anchor tags inside .terms-text */
-}
 
 .terms-container {
     margin-top: 1.5rem;
