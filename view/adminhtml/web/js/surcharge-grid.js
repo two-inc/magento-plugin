@@ -65,10 +65,13 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         }
 
         function getSurchargeType() {
-            var $inherit = $('#' + prefix + 'surcharge_type_inherit');
-            if ($inherit.length && $inherit.is(':checked')) {
-                return 'none';
-            }
+            // Effective (resolved) type, scope-aware. When the type field's
+            // "Use Website/Default" is ticked the <select> is disabled but
+            // still carries the inherited value, so read it directly. An
+            // inherited Percentage type must still render the grid; returning
+            // 'none' on inherit (the old behaviour) hid the grid at store
+            // scope and stranded any store-scope override out of sight
+            // (ABN-440).
             return $surchargeType.val() || 'none';
         }
 
