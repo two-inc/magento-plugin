@@ -5,12 +5,17 @@
 # If no token is provided, attempts to fetch it from GCP Secret Manager
 # (requires an active @two.inc gcloud login).
 
+# Preserve an inline override (e.g. `TWO_API_BASE_URL=https://api.release.two.inc ./start-proxy.sh`)
+# so sourcing .env.local below doesn't clobber it.
+_TWO_API_BASE_URL_OVERRIDE="${TWO_API_BASE_URL}"
+
 # Source .env.local if it exists
 if [ -f .env.local ]; then
   set -a
   source .env.local
   set +a
 fi
+TWO_API_BASE_URL="${_TWO_API_BASE_URL_OVERRIDE:-${TWO_API_BASE_URL}}"
 
 # Define environment variables
 PROXY_USER="${PROXY_USER:-$USER}"
@@ -23,7 +28,28 @@ USER_LOWER=$(echo "${PROXY_USER}" | tr '[:upper:]' '[:lower:]')
 SANITIZED_USER=$(echo "${USER_LOWER}" | sed -E 's/[^a-z0-9-]+/-/g' | sed -E 's/^-+|-+$//g' | sed -E 's/--+/-/g')
 export SUBDOMAIN="magento-${SANITIZED_USER}"
 
-PROXY_URL="https://${SUBDOMAIN}.frp.beta.two.inc"
+# Derive the FRP domain from the API base URL so the tunnel follows whichever env
+# TWO_API_BASE_URL points at: api.<env>.two.inc -> <subdomain>.frp.<env>.two.inc.
+# A non-Two base (localhost, unset, ...) defaults the tunnel to staging. The
+# staging/release guard is enforced in start mode below so stop/url still work.
+# Connect to release by setting TWO_API_BASE_URL=https://api.release.two.inc.
+API_HOST="${TWO_API_BASE_URL#http://}"
+API_HOST="${API_HOST#https://}"
+API_HOST="${API_HOST%%/*}"   # strip path
+API_HOST="${API_HOST%%:*}"   # strip port
+case "${API_HOST}" in
+  api.*.two.inc)
+    FRP_ZONE="${API_HOST#api.}"   # e.g. staging.two.inc
+    FRP_ENV="${FRP_ZONE%%.*}"     # e.g. staging
+    ;;
+  *)
+    FRP_ENV="staging"
+    FRP_ZONE="staging.two.inc"
+    ;;
+esac
+
+export FRP_DOMAIN="${SUBDOMAIN}.frp.${FRP_ZONE}"
+PROXY_URL="https://${FRP_DOMAIN}"
 
 # ── stop mode ────────────────────────────────────────────────────────────────
 if [ "$1" = "stop" ]; then
@@ -81,6 +107,15 @@ else
 fi
 
 # Start frpc in background
+# Per-env FRP is only provisioned for staging and release (routes/certs/DNS/authz).
+case "${FRP_ENV}" in
+  staging | release) ;;
+  *)
+    echo "FRP tunnels are only supported for staging or release (got '${FRP_ENV}' from TWO_API_BASE_URL=${TWO_API_BASE_URL})"
+    exit 1
+    ;;
+esac
+
 frpc -c frpc.toml &
 FRP_PID=$!
 

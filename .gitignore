@@ -32,3 +32,5 @@ plans/
 
 # Node deps for Test/Js Jest runner; lockfile + manifest are tracked
 node_modules/
+
+.worktrees/
