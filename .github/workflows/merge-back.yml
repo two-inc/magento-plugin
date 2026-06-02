@@ -13,12 +13,12 @@ permissions:
   pull-requests: write
 
 jobs:
-  main-to-develop:
-    name: main → develop
+  main-to-staging:
+    name: main → staging
     runs-on: ${{ vars.RUNNER_STANDARD }}
     if: github.ref_name == 'main'
     steps:
-      # Use the org GitHub App token — branch protection on `develop`
+      # Use the org GitHub App token — branch protection on `staging`
       # blocks the default GITHUB_TOKEN from pushing, and a PR opened
       # with GITHUB_TOKEN wouldn't trigger downstream CI on the new
       # PR branch.
@@ -34,7 +34,7 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
 
-      - name: Fast-forward develop to main (or fall back to a sync PR)
+      - name: Fast-forward staging to main (or fall back to a sync PR)
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
@@ -42,34 +42,34 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.noreply.github.com"
-          git fetch origin develop
-          # No-op when develop is already at or ahead of main.
-          behind=$(gh api "repos/${REPO}/compare/develop...main" --jq '.ahead_by')
+          git fetch origin staging
+          # No-op when staging is already at or ahead of main.
+          behind=$(gh api "repos/${REPO}/compare/staging...main" --jq '.ahead_by')
           if [ "$behind" = "0" ]; then
-            echo "develop already at or ahead of main — nothing to merge back."
+            echo "staging already at or ahead of main — nothing to merge back."
             exit 0
           fi
-          git checkout develop
+          git checkout staging
           if git merge --ff-only origin/main; then
-            git push origin develop
-            echo "Fast-forwarded develop to main ($behind commit(s))."
+            git push origin staging
+            echo "Fast-forwarded staging to main ($behind commit(s))."
             exit 0
           fi
           # Diverged — open a sync PR instead. Use a deterministic
           # branch name so repeated runs update the same PR rather
           # than spawning new ones.
-          echo "develop diverged from main — opening a sync PR."
-          sync_branch="sync/main-to-develop"
+          echo "staging diverged from main — opening a sync PR."
+          sync_branch="sync/main-to-staging"
           git checkout -B "$sync_branch" origin/main
           git push --force-with-lease origin "$sync_branch"
-          existing=$(gh pr list --base develop --head "$sync_branch" --state open --json number --jq '.[0].number // ""')
+          existing=$(gh pr list --base staging --head "$sync_branch" --state open --json number --jq '.[0].number // ""')
           if [ -z "$existing" ]; then
             gh pr create \
-              --base develop \
+              --base staging \
               --head "$sync_branch" \
               --reviewer brtkwr \
-              --title "chore: sync main → develop" \
-              --body "Auto-sync PR opened by .github/workflows/merge-back.yml after a push to main that couldn't fast-forward into develop. Resolve any conflicts and merge."
+              --title "chore: sync main → staging" \
+              --body "Auto-sync PR opened by .github/workflows/merge-back.yml after a push to main that couldn't fast-forward into staging. Resolve any conflicts and merge."
           else
             echo "Sync PR #$existing already open — updated branch."
           fi
