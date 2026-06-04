@@ -39,6 +39,15 @@ abstract class AbstractSalesModelStub
         return $this->_data[$key] ?? null;
     }
 
+    /**
+     * Mirrors Magento\Framework\DataObject::getDataUsingMethod for the simple
+     * data-bag case the totals block exercises (no custom getter override).
+     */
+    public function getDataUsingMethod($key, $args = null)
+    {
+        return $this->_data[$key] ?? null;
+    }
+
     public function hasData($key = ''): bool
     {
         if ($key === '') {

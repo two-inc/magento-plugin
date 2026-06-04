@@ -35,17 +35,16 @@ class Surcharge extends Template
         }
 
         $amount = (float)$source->getDataUsingMethod('two_surcharge_amount');
-        $taxAmount = (float)$source->getDataUsingMethod('two_surcharge_tax_amount');
         if ($amount <= 0) {
             return $this;
         }
 
-        // Display gross (net + tax) so the row matches the invoice/order grand
-        // total math; tax is otherwise hidden in the Tax line.
-        $value = $amount + $taxAmount;
-        $baseAmount = (float)$source->getDataUsingMethod('base_two_surcharge_amount');
-        $baseTax = (float)$source->getDataUsingMethod('base_two_surcharge_tax_amount');
-        $baseValue = $baseAmount + $baseTax;
+        // Display the NET surcharge — its VAT lives in the Tax line, exactly as
+        // on checkout. The net rows (items + shipping + tax + net surcharge)
+        // then reconcile to the grand total. (Showing gross here double-
+        // presents the surcharge VAT — once in the Tax line, once in this row.)
+        $value = $amount;
+        $baseValue = (float)$source->getDataUsingMethod('base_two_surcharge_amount');
 
         $label = $source->getDataUsingMethod('two_surcharge_description');
         if (!$label) {
