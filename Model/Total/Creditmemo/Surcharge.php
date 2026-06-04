@@ -53,27 +53,33 @@ class Surcharge extends AbstractTotal
         // potentially more) and we keep 6dp internally so the refund
         // line gross matches what ComposeOrder declared at placement.
         // See Model/Total/Surcharge for the 6dp invariant rationale.
-        if ($creditmemo->hasData('two_surcharge_amount')
-            && $creditmemo->getData('two_surcharge_amount') !== null
-            && $creditmemo->getData('two_surcharge_amount') !== ''
-        ) {
-            $amount = round((float)$creditmemo->getData('two_surcharge_amount'), 6);
-        } else {
-            // Proportional refund — keep at 6dp internally. Previously,
-            // this rounded at 2dp, losing up to half a cent that defeated
-            // the Total\Surcharge fix for the dominant (partial-refund)
-            // case.
-            $orderSubtotal = (float)$order->getSubtotal();
-            $cmSubtotal = (float)$creditmemo->getSubtotal();
-            $proportion = $orderSubtotal > 0 ? $cmSubtotal / $orderSubtotal : 0.0;
-            $amount = round($orderSurcharge * $proportion, 6);
-        }
+        // The proportional default is the surcharge net Magento's native tax
+        // collector has ALREADY refunded VAT for on this credit memo (it
+        // prorates order tax by subtotal). Compute it regardless of any
+        // override so we can reconcile the tax line to what's actually
+        // refunded. Keep 6dp internally (a 2dp round here previously lost up
+        // to half a cent and defeated the Total\Surcharge precision fix).
+        $orderSubtotal = (float)$order->getSubtotal();
+        $cmSubtotal = (float)$creditmemo->getSubtotal();
+        $proportion = $orderSubtotal > 0 ? $cmSubtotal / $orderSubtotal : 0.0;
+        $defaultNet = round($orderSurcharge * $proportion, 6);
 
-        if ($amount <= 0) {
+        // Phase 5 plugin sets `two_surcharge_amount` directly on the creditmemo
+        // from request data. hasData() distinguishes "explicit merchant
+        // override" (including 0) from "never set, use proportional default".
+        $hasOverride = $creditmemo->hasData('two_surcharge_amount')
+            && $creditmemo->getData('two_surcharge_amount') !== null
+            && $creditmemo->getData('two_surcharge_amount') !== '';
+        $amount = $hasOverride
+            ? round((float)$creditmemo->getData('two_surcharge_amount'), 6)
+            : $defaultNet;
+
+        // Nothing refunded and nothing native assumed → no surcharge in play.
+        if ($amount <= 0 && $defaultNet <= 0) {
             return $this;
         }
 
-        $amount = min($amount, $maxRefundable);
+        $amount = max(0.0, min($amount, $maxRefundable));
 
         $taxRatePercent = (float)$order->getTwoSurchargeTaxRate();
         $taxAmount = round($amount * ($taxRatePercent / 100), 6);
@@ -87,9 +93,18 @@ class Surcharge extends AbstractTotal
             // order/base (matches base_to_order_rate semantics above).
             $rate = $baseOrderSurcharge > 0 ? $orderSurcharge / $baseOrderSurcharge : 1.0;
         }
-        $baseAmount = round($amount / $rate, 6);
-        $baseAmount = min($baseAmount, $baseMaxRefundable);
+        $baseAmount = max(0.0, min(round($amount / $rate, 6), $baseMaxRefundable));
         $baseTaxAmount = round($taxAmount / $rate, 6);
+        $baseDefaultNet = round($defaultNet / $rate, 6);
+
+        // Tax delta: native already refunded VAT on the proportional default
+        // surcharge net, so adjust the tax line ONLY for the difference an
+        // override introduces. This is exactly zero on the non-override path,
+        // preserving the #201 de-dup guarantee (surcharge VAT counted once);
+        // when the merchant edits the surcharge it moves the Tax line to the
+        // VAT on the surcharge actually refunded (refunded net × rate).
+        $taxDelta = round(($amount - $defaultNet) * ($taxRatePercent / 100), 6);
+        $baseTaxDelta = round(($baseAmount - $baseDefaultNet) * ($taxRatePercent / 100), 6);
 
         $creditmemo->setTwoSurchargeAmount($amount);
         $creditmemo->setBaseTwoSurchargeAmount($baseAmount);
@@ -98,14 +113,15 @@ class Surcharge extends AbstractTotal
         $creditmemo->setTwoSurchargeDescription((string)$order->getTwoSurchargeDescription());
         $creditmemo->setTwoSurchargeTaxRate($taxRatePercent);
 
-        // Add ONLY the surcharge net to the grand total. The surcharge VAT is
-        // already carried in the credit-memo's tax_amount/grand_total via
-        // Magento's native propagation of the order/invoice tax, so re-adding
-        // it here double-counts the VAT — which pushes the refund total past
-        // the order's paid total and makes Magento reject the refund with "The
-        // most money available to refund is ..." (ABN-443).
-        $creditmemo->setGrandTotal((float)$creditmemo->getGrandTotal() + $amount);
-        $creditmemo->setBaseGrandTotal((float)$creditmemo->getBaseGrandTotal() + $baseAmount);
+        // Grand total gets the surcharge net plus the tax delta. The base
+        // surcharge VAT is already in tax_amount via Magento's native tax
+        // propagation (re-adding the full VAT was the ABN-443 double-count);
+        // we only move the Tax line and grand total by the override delta so
+        // both stay consistent with the surcharge actually refunded.
+        $creditmemo->setGrandTotal((float)$creditmemo->getGrandTotal() + $amount + $taxDelta);
+        $creditmemo->setBaseGrandTotal((float)$creditmemo->getBaseGrandTotal() + $baseAmount + $baseTaxDelta);
+        $creditmemo->setTaxAmount((float)$creditmemo->getTaxAmount() + $taxDelta);
+        $creditmemo->setBaseTaxAmount((float)$creditmemo->getBaseTaxAmount() + $baseTaxDelta);
 
         // NOTE: do NOT mutate $order->setTwoSurchargeRefunded here. collect()
         // runs on prepareCreditmemo and again on save/register — mutating the
