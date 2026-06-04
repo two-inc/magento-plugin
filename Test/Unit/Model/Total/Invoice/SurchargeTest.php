@@ -111,4 +111,42 @@ class SurchargeTest extends TestCase
         );
         $this->assertSame('Zakelijk op Rekening - 90 dagen', $invoice->getTwoSurchargeDescription());
     }
+
+    /**
+     * Guards that the fix only de-duplicates the surcharge VAT and never
+     * disturbs legitimate line-item VAT: when the native tax total carries
+     * both a line-item VAT component and the surcharge VAT, collect() must
+     * leave tax_amount exactly as-is (line VAT intact, surcharge VAT not
+     * re-added) and add only the surcharge net to the grand total.
+     */
+    public function testPreservesLineItemVatAndDoesNotReAddSurchargeVat(): void
+    {
+        $order = $this->makeOrder();
+
+        $lineItemVat = 200.0;
+        $nativeTax = $lineItemVat + self::SURCHARGE_TAX; // line VAT + surcharge VAT, both via native propagation
+        $nativeGrand = 1000.0 + $nativeTax;              // goods + all VAT; surcharge net not yet added
+
+        $invoice = new Invoice();
+        $invoice->setOrder($order);
+        $invoice->setData('grand_total', $nativeGrand);
+        $invoice->setData('base_grand_total', $nativeGrand);
+        $invoice->setData('tax_amount', $nativeTax);
+        $invoice->setData('base_tax_amount', $nativeTax);
+
+        (new Surcharge())->collect($invoice);
+
+        $this->assertEqualsWithDelta(
+            $nativeGrand + self::NET,
+            (float)$invoice->getGrandTotal(),
+            0.0001,
+            'Grand total must grow by the surcharge net only.'
+        );
+        $this->assertEqualsWithDelta(
+            $nativeTax,
+            (float)$invoice->getTaxAmount(),
+            0.0001,
+            'tax_amount must be untouched: line-item VAT preserved AND surcharge VAT not re-added.'
+        );
+    }
 }
