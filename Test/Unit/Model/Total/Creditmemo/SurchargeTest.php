@@ -156,4 +156,83 @@ class SurchargeTest extends TestCase
             'tax_amount must be untouched: line-item VAT preserved AND surcharge VAT not re-added.'
         );
     }
+
+    /**
+     * When the merchant edits the surcharge refund down, the refunded surcharge
+     * VAT must follow (refunded net x rate) — both the Tax line and the grand
+     * total. Mirrors the canonical example: order €1000 goods + €100 surcharge,
+     * all @21% (full tax €231). Native refunds the full surcharge VAT (€21) by
+     * default; halving the surcharge to €50 must drop the refunded surcharge
+     * VAT to €10.50, so Tax €231 -> €220.50 and Grand €1331 -> €1270.50.
+     */
+    public function testTaxTracksSurchargeOverrideDownward(): void
+    {
+        $order = new Order();
+        $order->setData('two_surcharge_amount', 100.0);
+        $order->setData('base_two_surcharge_amount', 100.0);
+        $order->setData('two_surcharge_refunded', 0.0);
+        $order->setData('base_two_surcharge_refunded', 0.0);
+        $order->setData('two_surcharge_tax_rate', 21.0);
+        $order->setData('two_surcharge_description', 'Surcharge');
+        $order->setData('subtotal', 1000.0);
+        $order->setData('base_to_order_rate', 1.0);
+
+        // Native credit-memo state for a FULL refund: goods 1000 + tax 231
+        // (210 goods VAT + 21 surcharge VAT). Surcharge net not yet added.
+        $creditmemo = new Creditmemo();
+        $creditmemo->setOrder($order);
+        $creditmemo->setData('subtotal', 1000.0);
+        $creditmemo->setData('grand_total', 1231.0);
+        $creditmemo->setData('base_grand_total', 1231.0);
+        $creditmemo->setData('tax_amount', 231.0);
+        $creditmemo->setData('base_tax_amount', 231.0);
+
+        // Merchant overrides the refunded surcharge to half (€50).
+        $creditmemo->setData('two_surcharge_amount', 50.0);
+
+        (new Surcharge())->collect($creditmemo);
+
+        $this->assertEqualsWithDelta(
+            220.5,
+            (float)$creditmemo->getTaxAmount(),
+            0.0001,
+            'Tax must drop to 220.50 (210 goods VAT + 10.50 surcharge VAT on the €50 refunded).'
+        );
+        $this->assertEqualsWithDelta(
+            1270.5,
+            (float)$creditmemo->getGrandTotal(),
+            0.0001,
+            'Grand total must be 1270.50 (1000 goods + 220.50 tax + 50 surcharge net).'
+        );
+    }
+
+    /**
+     * The proportional (non-override) path must remain a no-op on tax — the
+     * #201 / double-count guarantee. Refunded net equals the proportional
+     * default, so the delta is zero and native tax stands.
+     */
+    public function testProportionalRefundDoesNotAdjustTax(): void
+    {
+        $order = $this->makeOrder();
+
+        $nativeTax = self::SURCHARGE_TAX; // native already carries the full surcharge VAT
+        $nativeGrand = 1000.0 + $nativeTax;
+
+        $creditmemo = new Creditmemo();
+        $creditmemo->setOrder($order);
+        $creditmemo->setData('subtotal', self::SUBTOTAL);  // full refund => proportion 1.0
+        $creditmemo->setData('grand_total', $nativeGrand);
+        $creditmemo->setData('base_grand_total', $nativeGrand);
+        $creditmemo->setData('tax_amount', $nativeTax);
+        $creditmemo->setData('base_tax_amount', $nativeTax);
+
+        (new Surcharge())->collect($creditmemo);
+
+        $this->assertEqualsWithDelta(
+            $nativeTax,
+            (float)$creditmemo->getTaxAmount(),
+            0.0001,
+            'No override => proportional default => zero tax delta.'
+        );
+    }
 }
