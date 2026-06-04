@@ -25,7 +25,6 @@ class Surcharge extends DefaultTotal
     {
         $source = $this->getSource();
         $amount = (float)$source->getDataUsingMethod('two_surcharge_amount');
-        $tax = (float)$source->getDataUsingMethod('two_surcharge_tax_amount');
         if ($amount <= 0) {
             return [];
         }
@@ -33,7 +32,9 @@ class Surcharge extends DefaultTotal
         $label = $source->getDataUsingMethod('two_surcharge_description')
             ?: (string)__('Two Surcharge');
 
-        $value = $this->getAmountPrefix() . $this->getOrder()->formatPriceTxt($amount + $tax);
+        // NET surcharge — its VAT is shown in the Tax line, matching the
+        // on-screen totals, the checkout, and the grand total.
+        $value = $this->getAmountPrefix() . $this->getOrder()->formatPriceTxt($amount);
 
         return [[
             'amount'    => $value,
