@@ -59,7 +59,7 @@ class SurchargeOverride extends Template
                 'block_name' => 'two_surcharge_override',
                 'strong'     => false,
             ]),
-            'grand_total'
+            'tax'
         );
         return $this;
     }
