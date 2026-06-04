@@ -43,13 +43,12 @@ class Surcharge extends AbstractTotal
 
         $orderTax = (float)$order->getTwoSurchargeTaxAmount();
         $baseOrderTax = (float)$order->getBaseTwoSurchargeTaxAmount();
-        // Tax follows the same proportion as the net amount remaining.
+        // Tax follows the same proportion as the net amount remaining. Kept for
+        // the descriptor fields below; NOT re-applied to the invoice tax total
+        // (see grand-total note).
         $proportion = $orderSurcharge > 0 ? $remaining / $orderSurcharge : 1.0;
         $taxAmount = round($orderTax * $proportion, 6);
         $baseTaxAmount = round($baseOrderTax * $proportion, 6);
-
-        $grossAmount = $remaining + $taxAmount;
-        $baseGrossAmount = $baseRemaining + $baseTaxAmount;
 
         $invoice->setTwoSurchargeAmount($remaining);
         $invoice->setBaseTwoSurchargeAmount($baseRemaining);
@@ -58,10 +57,14 @@ class Surcharge extends AbstractTotal
         $invoice->setTwoSurchargeDescription((string)$order->getTwoSurchargeDescription());
         $invoice->setTwoSurchargeTaxRate((float)$order->getTwoSurchargeTaxRate());
 
-        $invoice->setGrandTotal((float)$invoice->getGrandTotal() + $grossAmount);
-        $invoice->setBaseGrandTotal((float)$invoice->getBaseGrandTotal() + $baseGrossAmount);
-        $invoice->setTaxAmount((float)$invoice->getTaxAmount() + $taxAmount);
-        $invoice->setBaseTaxAmount((float)$invoice->getBaseTaxAmount() + $baseTaxAmount);
+        // Add ONLY the surcharge net to the grand total. The surcharge VAT is
+        // booked into order.tax_amount at placement and Magento's native tax
+        // collector propagates it onto the invoice before this collector runs,
+        // so it is already present in tax_amount/grand_total. Adding it again
+        // here double-counts the VAT, inflating the invoice (and the order's
+        // paid total) by one surcharge-VAT and breaking refunds (ABN-443).
+        $invoice->setGrandTotal((float)$invoice->getGrandTotal() + $remaining);
+        $invoice->setBaseGrandTotal((float)$invoice->getBaseGrandTotal() + $baseRemaining);
 
         // NOTE: do NOT mutate $order->setTwoSurchargeInvoiced here. collect()
         // runs once on prepareInvoice and again on register() — mutating the

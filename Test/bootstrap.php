@@ -58,6 +58,12 @@ if (!class_exists(\Magento\Bundle\Model\Product\Price::class)) {
 if (!class_exists(\Magento\Catalog\Model\Product\Type::class)) {
     require_once __DIR__ . '/Stubs/ProductType.php';
 }
+// Sales models (Invoice, Creditmemo, Order) with faithful DataObject
+// semantics — required before the catch-all below so the surcharge Total
+// collectors operate on real data bags, not empty method-less stubs.
+if (!class_exists(\Magento\Sales\Model\Order\Invoice::class, false)) {
+    require_once __DIR__ . '/Stubs/SalesModels.php';
+}
 
 // Catch-all autoloader for remaining Magento classes/interfaces.
 // Creates empty stubs so that type hints, extends, and implements resolve.
