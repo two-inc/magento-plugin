@@ -51,6 +51,9 @@ class Surcharge extends Template
             $label = (string)__('Two Surcharge');
         }
 
+        // Place the surcharge row directly above the Tax line — the surcharge
+        // is part of the tax base, so net surcharge then tax reads naturally
+        // (and matches checkout ordering).
         $parent->addTotalBefore(
             new DataObject([
                 'code'       => 'two_surcharge',
@@ -58,7 +61,7 @@ class Surcharge extends Template
                 'base_value' => $baseValue,
                 'label'      => $label,
             ]),
-            'grand_total'
+            'tax'
         );
 
         return $this;

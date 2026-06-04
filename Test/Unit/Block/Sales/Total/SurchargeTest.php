@@ -93,6 +93,10 @@ class SurchargeTest extends TestCase
             'base_value must also be NET'
         );
         $this->assertSame('Zakelijk op Rekening - 60 dagen', $capture->total->getLabel());
-        $this->assertSame('grand_total', $capture->before);
+        $this->assertSame(
+            'tax',
+            $capture->before,
+            'surcharge row must sit directly above the Tax line (it contributes to the tax base)'
+        );
     }
 }
