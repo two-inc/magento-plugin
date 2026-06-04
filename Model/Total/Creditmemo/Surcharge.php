@@ -91,9 +91,6 @@ class Surcharge extends AbstractTotal
         $baseAmount = min($baseAmount, $baseMaxRefundable);
         $baseTaxAmount = round($taxAmount / $rate, 6);
 
-        $grossAmount = round($amount + $taxAmount, 6);
-        $baseGrossAmount = round($baseAmount + $baseTaxAmount, 6);
-
         $creditmemo->setTwoSurchargeAmount($amount);
         $creditmemo->setBaseTwoSurchargeAmount($baseAmount);
         $creditmemo->setTwoSurchargeTaxAmount($taxAmount);
@@ -101,10 +98,14 @@ class Surcharge extends AbstractTotal
         $creditmemo->setTwoSurchargeDescription((string)$order->getTwoSurchargeDescription());
         $creditmemo->setTwoSurchargeTaxRate($taxRatePercent);
 
-        $creditmemo->setGrandTotal((float)$creditmemo->getGrandTotal() + $grossAmount);
-        $creditmemo->setBaseGrandTotal((float)$creditmemo->getBaseGrandTotal() + $baseGrossAmount);
-        $creditmemo->setTaxAmount((float)$creditmemo->getTaxAmount() + $taxAmount);
-        $creditmemo->setBaseTaxAmount((float)$creditmemo->getBaseTaxAmount() + $baseTaxAmount);
+        // Add ONLY the surcharge net to the grand total. The surcharge VAT is
+        // already carried in the credit-memo's tax_amount/grand_total via
+        // Magento's native propagation of the order/invoice tax, so re-adding
+        // it here double-counts the VAT — which pushes the refund total past
+        // the order's paid total and makes Magento reject the refund with "The
+        // most money available to refund is ..." (ABN-443).
+        $creditmemo->setGrandTotal((float)$creditmemo->getGrandTotal() + $amount);
+        $creditmemo->setBaseGrandTotal((float)$creditmemo->getBaseGrandTotal() + $baseAmount);
 
         // NOTE: do NOT mutate $order->setTwoSurchargeRefunded here. collect()
         // runs on prepareCreditmemo and again on save/register — mutating the
