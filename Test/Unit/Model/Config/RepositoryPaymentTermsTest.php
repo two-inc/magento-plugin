@@ -176,6 +176,31 @@ class RepositoryPaymentTermsTest extends TestCase
         $this->assertEquals(30, $this->repository->getDefaultPaymentTerm());
     }
 
+    public function testGetDefaultPaymentTermPreselectsSingleAvailableTermDespiteStaleDefault(): void
+    {
+        // ABN-439: with a single available term, that term must always be the
+        // default (and therefore preselected), even if a stale
+        // default_payment_term points at a term that's no longer available.
+        $this->stubConfig([
+            'payment/two_payment/default_payment_term' => '30', // stale, not available
+            'payment/two_payment/payment_terms' => '90',        // only 90 available
+            'payment/two_payment/payment_terms_duration_days' => '',
+        ]);
+        $this->assertEquals(90, $this->repository->getDefaultPaymentTerm());
+    }
+
+    public function testGetDefaultPaymentTermIgnoresDefaultOutsideAvailableTerms(): void
+    {
+        // A configured default that isn't among the available terms falls back
+        // to the lowest available term rather than returning an unselectable one.
+        $this->stubConfig([
+            'payment/two_payment/default_payment_term' => '14', // not available
+            'payment/two_payment/payment_terms' => '30,60,90',
+            'payment/two_payment/payment_terms_duration_days' => '',
+        ]);
+        $this->assertEquals(30, $this->repository->getDefaultPaymentTerm());
+    }
+
     // ── getSurchargeType ─────────────────────────────────────────────
 
     public function testGetSurchargeTypeReturnsNoneByDefault(): void
