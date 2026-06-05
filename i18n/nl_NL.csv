@@ -9,96 +9,96 @@
 "%1 requires whole order to be shipped before it can be fulfilled.","%1 vereist dat de gehele bestelling wordt verzonden voordat deze kan worden uitgevoerd."
 "%1 terms and conditions","%1 voorwaarden en condities"
 "* Required Fields","* Verplichte velden"
-"API Key",API-sleutel
+"API Key","API-sleutel"
 "API key is missing","API-sleutel ontbreekt"
 "API key is not valid","API-sleutel is niet geldig"
 "API key is valid","API-sleutel is geldig"
-"Add PO Number Field","PO-nummer veld toevoegen"
+"Add PO Number Field","PO-nummerveld toevoegen"
 "Add Department Field","Afdelingsveld toevoegen"
-"Add Order Note Field","Bestelnotitie veld toevoegen"
+"Add Order Note Field","Bestelnotitieveld toevoegen"
 "Add Project Field","Projectveld toevoegen"
 "Allowed Countries","Toegestane landen"
-"Choose whether to enable this payment method for all allowed countries or only specific ones.","Kies of je deze betaalmethode wilt inschakelen voor alle toegestane landen of alleen voor specifieke."
+"Choose whether to enable this payment method for all allowed countries or only specific ones.","Kies of je de betaalmethode voor alle toegestane of specifieke landen wilt inschakelen."
 "Country Availability","Beschikbaarheid per land"
 "Select the countries where this payment method should be available.","Selecteer de landen waar deze betaalmethode beschikbaar moet zijn."
 "Amount is missing","Bedrag ontbreekt"
-Branding,Merknaam
+"Branding","Merknaam"
 "Business Invoice","Zakelijke factuur"
 "Buy now, receive your goods, pay your invoice later.","Koop nu, ontvang uw goederen, betaal uw factuur later."
 "Check last 100 debug log records","Controleer de laatste 100 debug-logboek records"
 "Check last 100 error log records","Controleer de laatste 100 foutenlogboek records"
-"City",Stad
+"City","Stad"
 "%1 is not valid.","%1 is niet geldig."
 "%1: %2.","%1: %2."
 "Click here to log in or sign up as a Sole Trader.","Klik hier om in te loggen of u aan te melden als zelfstandig ondernemer."
-"Company Number",Bedrijfsnummer
-"Company Name",Bedrijfsnaam
+"Company Number","Bedrijfsnummer"
+"Company Name","Bedrijfsnaam"
 "Could not initiate capture with %1","Kon geen vastlegging starten met %1"
 "Could not initiate refund with %1","Kon geen terugbetaling starten met %1"
 "Could not update %1 order status to cancelled. Please contact support with order ID %2. Error: %3","Kon %1 orderstatus niet updaten naar geannuleerd. Neem contact op met support met bestelnummer %2. Fout: %3"
-"Country",Land
-"Credit Note",Creditnota
-"Debug Mode",Debug-modus
-Department,Afdeling
-Download,Download
+"Country","Land"
+"Credit Note","Creditnota"
+"Debug Mode","Debug-modus"
+"Department","Afdeling"
+"Download","Download"
 "Download as .txt file","Downloaden als .txt-bestand"
-"Email Address",E-mailadres
+"Email Address","E-mailadres"
 "Enable Address Search","Adres zoeken inschakelen"
 "Enable Company Search","Bedrijf zoeken inschakelen"
 "Enable Order Intent","Bestelintentie inschakelen"
 "Enable Payment Method","Betaalmethode inschakelen"
-"Enable Tax Subtotals","Btw subtotalen inschakelen"
+"Enable Tax Subtotals","BTW-subtotalen inschakelen"
 "Enter company name to search","Voer bedrijfsnaam in om te zoeken"
 "Enter details manually","Gegevens handmatig invoeren"
-Environment,Omgeving
+"Environment","Omgeving"
 "Failed to refund order with %1. Reason: %2","Het is niet gelukt om de bestelling met %1 terug te betalen. Reden: %2"
 "Failed to update %1 customer address: %2","Kon het adres van klant %1 niet bijwerken: %2"
 "Find out more","Meer informatie"
-"First Name",Voornaam
+"First Name","Voornaam"
 "Fulfilment Order Status","Status van vervulling bestelling"
 "Fulfilment Trigger","Trigger voor vervulling"
-General,Algemeen
+"General","Algemeen"
 "Invalid API response from %1.","Ongeldige API-respons van %1."
-Invoice,Factuur
+"Invoice","Factuur"
 "Invoice purchase with %1 is not available for this order.","Aankoop op factuur met %1 is niet beschikbaar voor deze bestelling."
 "Last 100 debug log lines","Laatste 100 debug-logregels"
 "Last 100 error log records","Laatste 100 foutenlogboek records"
-"Last Name",Achternaam
+"Last Name","Achternaam"
 "Log is empty","Logboek is leeg"
-OK,OK
+"OK","OK"
 "On Completion","Bij voltooiing"
 "On Invoice","Op factuur"
 "On Shipment","Bij verzending"
-"Order ID",Bestelnummer
-"Order Note",Bestelnotitie
+"Order ID","Bestelnummer"
+"Order Note","Bestelnotitie"
 "Order edit request was accepted by %1","Bestellingswijzigingsverzoek is geaccepteerd door %1"
-"PO Number",PO-nummer
-Payment,Betaling
-"Payment Method",Betaalmethode
-"Phone Number",Telefoonnummer
+"PO Number","PO-nummer"
+"Payment","Betaling"
+"Payment Method","Betaalmethode"
+"Phone Number","Telefoonnummer"
 "Place Order","Bestelling plaatsen"
 "Please try again later.","Probeer het later opnieuw."
-Production,Productie
-Project,Project
+"Production","Productie"
+"Project","Project"
 "Registered Organisation","Geregistreerde organisatie"
-Sandbox,Zandbak
-Search,Zoekopdracht
+"Sandbox","Zandbak"
+"Search","Zoekopdracht"
 "Search for company","Zoek naar bedrijf"
 "Sign up now","Meld u nu aan"
-"Sole Trader",Eenmanszaak
+"Sole Trader","Eenmanszaak"
 "Something went wrong with your request to %1. %2","Er is iets misgegaan met uw verzoek aan %1. %2"
-"Sort Order",Sorteervolgorde
-"Street Address",Straatadres
+"Sort Order","Sorteervolgorde"
+"Street Address","Straatadres"
 "Successfully refunded order with %1 for order ID: %2. Refund reference: %3","Bestelling succesvol terugbetaald met %1 voor bestelnummer: %2. Terugbetalingsreferentie: %3"
-TWO,TWO
+"TWO","TWO"
 "The %1 payment plugin for Magento simplifies B2B shopping, making it easy and safe for merchants to offer invoices as a payment method.<br>The payment method lives next to other payment methods in your existing checkout, and offers a variety of configuration options to suit your businesses needs.<br>If you would like to know more about how to configure the plugin, check out our <a href=""%2"" target=""_blank"">step by step guide</a>.","De %1-betaalplug-in voor Magento vereenvoudigt B2B-shoppen en maakt het voor verkopers eenvoudig en veilig om facturen als betaalmethode aan te bieden. <br> De betaalmethode staat naast andere betaalmethoden in je bestaande kassa en biedt een verscheidenheid aan configuratieopties die aansluiten op de behoeften van je bedrijf. <br> Als je meer wilt weten over het configureren van de plug-in, bekijk dan onze <a href=""%2"" target=""_blank""> stapsgewijze handleiding </a> ."
 "The buyer and the seller are the same company.","De koper en de verkoper zijn hetzelfde bedrijf."
 "The capture action is not available.","De vastleg actie is niet beschikbaar."
-Title,Titel
+"Title","Titel"
 "Two is a payment solution for B2B purchases online, allowing you to buy from your favourite merchants and suppliers on trade credit. Using Two, you can access flexible trade credit instantly to make purchasing simple.","Two is een betalingsoplossing voor online B2B-aankopen, waarmee u op handelskrediet kunt kopen bij uw favoriete handelaren en leveranciers. Met Two heeft u direct toegang tot flexibel handelskrediet om het aankopen eenvoudig te maken."
 "Unable to confirm %1 order with %2 state.","Kan %1 bestelling met %2 status niet bevestigen."
 "Unable to find the requested %1 order","Kan de gevraagde %1 bestelling niet vinden"
-Version,Versie
+"Version","Versie"
 "You must accept %1 to place order.","U moet %1 accepteren om de bestelling te plaatsen."
 "You will be redirected to %1 when you place order.","U wordt doorgestuurd naar %1 wanneer u een bestelling plaatst."
 "Your invoice purchase with %1 could not be processed. The cart will be restored.","Uw factuuraankoop met %1 kon niet worden verwerkt. De winkelwagen wordt hersteld."
@@ -108,17 +108,17 @@ Version,Versie
 "Your invoice purchase with %1 is likely to be accepted subject to additional checks.","Uw aankoop op factuur met %1 wordt waarschijnlijk geaccepteerd, mits er aanvullende controles worden uitgevoerd."
 "Your request to %1 failed. Reason: %2","Uw verzoek aan %1 is mislukt. Reden: %2"
 "Your sole trader account could not be verified.","Uw eenmanszaakaccount kon niet worden geverifieerd."
-"Zip/Postal Code",Postcode
+"Zip/Postal Code","Postcode"
 "Invoice email address","E-mailadres factuur"
 "Please ensure that your invoice email address list only contains valid email addresses separated by commas.","Zorg ervoor dat uw factuur-e-mailadreslijst alleen geldige e-mailadressen bevat, gescheiden door komma's."
 "Please enter 3 or more characters","Voer 3 of meer tekens in"
 "Enable Invoice Emails","Factuur-e-mails inschakelen"
-"Payment Terms Type","Betalingsvoorwaarden type"
-"Payment Terms Duration","Betalingsvoorwaarden duur"
+"Payment Terms Type","Type betaaltermijnen"
+"Payment Terms Duration","Duur betaaltermijnen"
 "Hyva Extension","Hyva-extensie"
-"Checkout Fields","Afrekenveldenst"
-Advanced,Geavanceerd
-Standard,Standaard
+"Checkout Fields","Afrekenvelden"
+"Advanced","Geavanceerd"
+"Standard","Standaard"
 "End of Month","Einde van de maand"
 "%1 days","%1 dagen"
 "Controls the position of this payment method relative to other payment methods at checkout. Lower numbers appear first. Default is empty (no specific order).","Bepaalt de positie van deze betaalmethode ten opzichte van andere betaalmethoden bij het afrekenen. Lagere nummers verschijnen eerst. Standaard is leeg (geen specifieke volgorde)."
@@ -129,10 +129,10 @@ Standard,Standaard
 "Default Payment Term","Standaard betaaltermijn"
 "Select the payment term that will be automatically selected for your customer.","Kies de betaaltermijn die automatisch wordt geselecteerd voor je klant."
 "Surcharge Method","Toeslagstrategie"
-"No surcharge applied","Geen toeslag toegepast"
+"No surcharge applied","Geen toeslag"
 "Select a method to surcharge your customer.","Kies een methode om kosten door te berekenen aan je klant."
-No,Nee
-Percentage,Percentage
+"No","Nee"
+"Percentage","Percentage"
 "Fixed fee","Vast bedrag"
 "Fixed fee and percentage","Vast bedrag en percentage"
 "Surcharge Calculation Basis","Basis voor toeslagberekening"
@@ -140,7 +140,7 @@ Percentage,Percentage
 "Fee difference vs default payment term","Verschil ten opzichte van standaard betaaltermijn"
 "Surcharge Line Description","Omschrijving toeslagregel"
 "Description shown to the buyer for the surcharge line item.","Omschrijving die aan de koper wordt getoond voor de toeslagregel."
-"Payment terms fee","Betaaltermijn toeslag"
+"Payment terms fee","Toeslag betaaltermijnen"
 "Payment terms fee - %1 days","Betaaltermijn toeslag - %1 dagen"
 "Surcharge Tax Rate (%)","BTW-tarief toeslag (%)"
 "Leave empty to use your store's default tax rate (%1%). Enter 0 for tax-exempt.","Laat leeg om het standaard BTW-tarief van je winkel te gebruiken (%1%). Voer 0 in voor BTW-vrijstelling."
@@ -155,8 +155,8 @@ Percentage,Percentage
 "default","standaard"
 "No payment terms selected. Select payment terms above to configure surcharges.","Geen betaaltermijnen geselecteerd. Selecteer hierboven betaaltermijnen om toeslagen te configureren."
 "Payment Term","Betaaltermijn"
-days,dagen
-day,dag
+"days","dagen"
+"day","dag"
 "Selected payment terms","Gewenste betaaltermijn"
 "Selected payment term is not available.","Geselecteerde betaaltermijn is niet beschikbaar."
 "Could not update payment term.","Kan betaaltermijn niet bijwerken."
@@ -180,3 +180,45 @@ day,dag
 "Adds a searchable company name input field on shipping details page where the buyer can select their company from a dropdown menu.","Voegt een veld toe op de verzenddetails pagina waar de koper het bedrijf kan kiezen uit een dropdown menu."
 "Autocomplete address based on selected country and company.","Automatisch invullen van adres gebaseerd op geselecteerd land en bedrijf."
 "If fulfilment trigger is On Completion, select one or more order statuses which can trigger fulfilment.","Als de vervullingstrigger op Bij voltooiing staat, selecteer dan een of meer orderstatussen die vervulling kunnen triggeren."
+"For all companies.","Voor alle bedrijven."
+"Two Surcharge","Betalingstoeslag"
+"%1 days - %2: value cannot be negative.","%1 dagen - %2: waarde mag niet negatief zijn."
+"%1 days - fixed amount: maximum is %2.","%1 dagen - vast bedrag: maximum is %2."
+"%1 days - percentage: maximum is %2.","%1 dagen - percentage: maximum is %2."
+"30 days","30 dagen"
+"60 days","60 dagen"
+"90 days","90 dagen"
+"Add optional tax_subtotals metadata to order creation payload to enforce additional validation (recommended).","Voeg optionele BTW-subtotalen toe aan order creatie data om extra validatie toe te passen (aanbevolen)."
+"All Allowed Countries","Alle toegestane landen"
+"Amounts are shown in %1.","Bedragen worden getoond in %1."
+"City is not valid.","Stad is niet geldig."
+"Country is not valid.","Land is niet geldig."
+"Debug mode","Debug-modus"
+"Developed by Magmodules.","Ontwikkeld door Magmodules."
+"Email Address is not valid.","E-mailadres is niet geldig."
+"Enter the amount you want to charge your customer. Max %1.","Vul het bedrag in dat je bij je klant in rekening wilt brengen. Max %1."
+"Enter the amount and percentage of the fee you want to charge your customer. Max %1 / %2.","Vul het bedrag en het percentage van de fee in dat je bij je klant in rekening wilt brengen. Max %1 / %2."
+"Enter the percentage of the fee you want to charge your customer. Max: %1.","Vul het percentage van de fee in dat je bij je klant in rekening wilt brengen. Max: %1."
+"Enter a limit amount (in %1) if you do not want to charge your customer more than a specific amount.","Vul een limietbedrag (in %1) in als je je klant niet meer dan een specifiek bedrag in rekening wilt brengen."
+"First Name is not valid.","Voornaam is niet geldig."
+"Fulfilment can be triggered by either initializing shipping or creating an invoice in the Magento admin","Vervulling kan getriggerd worden door verzending of door een factuur aan te maken in het Magento portaal"
+"I accept the %1 and authorize %2 to process my data automatically.","Ik accepteer de %1 en geef toestemming aan %2 voor automatische verwerking van mijn gegevens."
+"Company number is not valid.","KVK-nummer is niet geldig."
+"Last Name is not valid.","Achternaam is niet geldig."
+"No extra costs","Geen extra kosten"
+"Order on invoice","Op rekening bestellen"
+"Pay within 30 days","Betaal binnen 30 dagen"
+"Payment Surcharge Configuration","Configuratie van toeslagen"
+"Payment Terms %1 days","Betaaltermijn %1 dagen"
+"Perform a check during checkout to inform the buyer whether an order is likely to be accepted before being placed (recommended).","Doe een controle tijdens checkout om de koper te informeren of de bestelling waarschijnlijk geaccepteerd zal worden voordat deze geplaatst wordt (aanbevolen)."
+"Phone Number is not valid.","Telefoonnummer is niet geldig."
+"Select the payment term(s) you want to offer.","Selecteer de betaaltermijn(en) die je wilt aanbieden."
+"Specific Countries","Specifieke landen"
+"Street Address is not valid.","Adres is niet geldig."
+"Warning: The fixed fee limit of %1 %2 cannot be enforced correctly because no exchange rate is configured from %3 to %4. Configure exchange rates in Stores → Currency → Currency Rates.","Waarschuwing: de vaste toeslaglimiet van %1 %2 kan niet correct worden toegepast omdat er geen wisselkoers is geconfigureerd van %3 naar %4. Configureer wisselkoersen in Winkels → Valuta → Valutakoersen."
+"Yes","Ja"
+"Zip/Postal Code is not valid.","Postcode is niet geldig."
+"payment terms","betaalvoorwaarden"
+"Refund Two Surcharge","Toeslag terugbetalen"
+"Max refundable: %1","Maximaal terugbetaalbaar: %1"
+
