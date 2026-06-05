@@ -48,7 +48,7 @@
                 <field id="debug" translate="label comment" type="select" sortOrder="60" showInDefault="1" showInWebsite="1"
                        showInStore="1">
                     <label>Debug mode</label>
-                    <comment>The debug mode enables writing to the error logs below. Debug mode should only be enabled when the sandbox enviroment is active</comment>
+                    <comment>The debug mode enables writing to the error logs below. Debug mode should only be enabled when the sandbox environment is active</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/debug</config_path>
                 </field>
