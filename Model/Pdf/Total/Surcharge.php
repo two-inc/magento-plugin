@@ -30,7 +30,7 @@ class Surcharge extends DefaultTotal
         }
 
         $label = $source->getDataUsingMethod('two_surcharge_description')
-            ?: (string)__('Two Surcharge');
+            ?: (string)__('Surcharge');
 
         // NET surcharge — its VAT is shown in the Tax line, matching the
         // on-screen totals, the checkout, and the grand total.
