@@ -16,7 +16,7 @@
     <td>
         <input type="text"
                name="creditmemo[two_surcharge_amount]"
-               value="<?= $block->escapeHtmlAttr($block->getDefaultRefund()) ?>"
+               value="<?= $block->escapeHtmlAttr($block->getFormattedDefaultRefund()) ?>"
                title="<?= $block->escapeHtmlAttr(__('Max refundable: %1', $block->formatPrice($block->getMaxRefundable()))) ?>"
                class="input-text admin__control-text not-negative-amount"
                id="two_surcharge_refund" />

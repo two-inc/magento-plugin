@@ -67,4 +67,41 @@ class SurchargeOverrideTest extends TestCase
             'editable surcharge override row must be inserted above the Tax line'
         );
     }
+
+    public function testFormatsDefaultRefundInAdminLocale(): void
+    {
+        $nl = new class extends SurchargeOverride {
+            public function __construct()
+            {
+            }
+            public function getDefaultRefund(): float
+            {
+                return 2.5;
+            }
+            protected function localeDecimalSymbol(): string
+            {
+                return ',';
+            }
+        };
+        $this->assertSame(
+            '2,50',
+            $nl->getFormattedDefaultRefund(),
+            'nl_NL must render 2dp with a comma decimal separator (not the raw "2.5")'
+        );
+
+        $en = new class extends SurchargeOverride {
+            public function __construct()
+            {
+            }
+            public function getDefaultRefund(): float
+            {
+                return 2.5;
+            }
+            protected function localeDecimalSymbol(): string
+            {
+                return '.';
+            }
+        };
+        $this->assertSame('2.50', $en->getFormattedDefaultRefund());
+    }
 }
