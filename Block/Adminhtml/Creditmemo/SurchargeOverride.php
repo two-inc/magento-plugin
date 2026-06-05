@@ -10,6 +10,7 @@ namespace Two\Gateway\Block\Adminhtml\Creditmemo;
 use Magento\Backend\Block\Template;
 use Magento\Backend\Block\Template\Context;
 use Magento\Framework\DataObject;
+use Magento\Framework\Locale\FormatInterface;
 use Magento\Framework\Registry;
 
 /**
@@ -24,10 +25,20 @@ class SurchargeOverride extends Template
      */
     private $registry;
 
-    public function __construct(Context $context, Registry $registry, array $data = [])
-    {
+    /**
+     * @var FormatInterface
+     */
+    private $localeFormat;
+
+    public function __construct(
+        Context $context,
+        Registry $registry,
+        FormatInterface $localeFormat,
+        array $data = []
+    ) {
         parent::__construct($context, $data);
         $this->registry = $registry;
+        $this->localeFormat = $localeFormat;
     }
 
     /**
@@ -104,10 +115,15 @@ class SurchargeOverride extends Template
         if (!$cm || !$order) {
             return 0.0;
         }
-        $current = (float)$cm->getTwoSurchargeAmount();
-        if ($current > 0) {
-            return min($current, $this->getMaxRefundable());
+        // Once collectTotals has run, the collector has resolved the refundable
+        // surcharge — the proportional default OR the merchant's override,
+        // including an explicit 0. Honour that value verbatim; testing
+        // `> 0` made an explicit 0 (or a cleared field) snap back to the full
+        // default, discarding the merchant's "refund no surcharge".
+        if ($cm->hasData('two_surcharge_amount')) {
+            return min(max(0.0, (float)$cm->getTwoSurchargeAmount()), $this->getMaxRefundable());
         }
+        // Not yet collected (defensive) — fall back to the proportional default.
         $orderSubtotal = (float)$order->getSubtotal();
         $cmSubtotal = (float)$cm->getSubtotal();
         if ($orderSubtotal <= 0) {
@@ -147,5 +163,30 @@ class SurchargeOverride extends Template
             return (string)$value;
         }
         return $order->formatPriceTxt((float)$value);
+    }
+
+    /**
+     * The pre-filled input value, formatted for the admin locale: fixed 2dp
+     * with the locale decimal separator (e.g. "2,50" for nl_NL, "2.50" for
+     * en) and no grouping separator. Rendering the raw float instead would
+     * surface as "2.5" after a recalc — losing the trailing zero and the
+     * locale comma the merchant typed.
+     */
+    public function getFormattedDefaultRefund(): string
+    {
+        return number_format($this->getDefaultRefund(), 2, $this->localeDecimalSymbol(), '');
+    }
+
+    /**
+     * Decimal separator for the current admin locale (',' for nl_NL, '.' for
+     * en_*). No grouping separator is emitted by the caller — refund
+     * surcharges are small by construction and the override parser
+     * (Plugin\Model\Sales\CreditmemoSurchargeOverride) intentionally rejects
+     * thousands separators.
+     */
+    protected function localeDecimalSymbol(): string
+    {
+        $format = $this->localeFormat->getPriceFormat();
+        return (string)($format['decimalSymbol'] ?? '.');
     }
 }
