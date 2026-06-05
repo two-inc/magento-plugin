@@ -115,10 +115,15 @@ class SurchargeOverride extends Template
         if (!$cm || !$order) {
             return 0.0;
         }
-        $current = (float)$cm->getTwoSurchargeAmount();
-        if ($current > 0) {
-            return min($current, $this->getMaxRefundable());
+        // Once collectTotals has run, the collector has resolved the refundable
+        // surcharge — the proportional default OR the merchant's override,
+        // including an explicit 0. Honour that value verbatim; testing
+        // `> 0` made an explicit 0 (or a cleared field) snap back to the full
+        // default, discarding the merchant's "refund no surcharge".
+        if ($cm->hasData('two_surcharge_amount')) {
+            return min(max(0.0, (float)$cm->getTwoSurchargeAmount()), $this->getMaxRefundable());
         }
+        // Not yet collected (defensive) — fall back to the proportional default.
         $orderSubtotal = (float)$order->getSubtotal();
         $cmSubtotal = (float)$cm->getSubtotal();
         if ($orderSubtotal <= 0) {

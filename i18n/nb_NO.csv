@@ -173,3 +173,6 @@ day,dag
 "Optional field which enables the buyer to register the project the purchase is connected to. The information is eventually displayed on the invoice.","Valgfritt felt som lar kjøperen registrere prosjektet kjøpet er knyttet til. Informasjonen vises til slutt på fakturaen."
 "Optional field which enables the buyer to register their purchase order number.","Valgfritt felt som lar kjøperen registrere bestillingsnummeret sitt."
 "Select your company from the dropdown to continue.","Velg ditt selskap fra rullegardinmenyen for å fortsette."
+"Surcharge refund must be a valid amount (e.g. 1.50 or 1,50).","Refusjon av tilleggsgebyr må være et gyldig beløp (f.eks. 1.50 eller 1,50)."
+"Surcharge refund cannot be negative.","Refusjon av tilleggsgebyr kan ikke være negativ."
+"Surcharge refund (%1) exceeds the remaining refundable surcharge (%2).","Refusjon av tilleggsgebyr (%1) overstiger det gjenværende refunderbare tilleggsgebyret (%2)."

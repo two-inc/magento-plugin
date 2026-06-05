@@ -170,3 +170,6 @@ day,dag
 "Optional field which enables the buyer to register their purchase order number.","Optioneel veld waarmee de koper het inkoopordernummer kan registreren."
 "Let your buyer input additional emails to forward the invoice to on order fulfilment.","Laat uw koper aanvullende e-mailadressen invoeren om de factuur door te sturen bij bestellingsuitvoering."
 "Select your company from the dropdown to continue.","Selecteer uw bedrijf uit de lijst om door te gaan."
+"Surcharge refund must be a valid amount (e.g. 1.50 or 1,50).","Toeslagrestitutie moet een geldig bedrag zijn (bijv. 1.50 of 1,50)."
+"Surcharge refund cannot be negative.","Toeslagrestitutie mag niet negatief zijn."
+"Surcharge refund (%1) exceeds the remaining refundable surcharge (%2).","Toeslagrestitutie (%1) overschrijdt de resterende restitueerbare toeslag (%2)."

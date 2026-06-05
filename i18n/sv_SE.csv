@@ -170,3 +170,6 @@ day,dag
 "Optional field which enables the buyer to register the project the purchase is connected to. The information is eventually displayed on the invoice.","Valfritt fält som gör det möjligt för köparen att registrera projektet köpet är kopplat till. Informationen visas så småningom på fakturan."
 "Optional field which enables the buyer to register their purchase order number.","Valfritt fält som gör det möjligt för köparen att registrera sitt inköpsordernummer."
 "Select your company from the dropdown to continue.","Välj ditt företag från rullgardinsmenyn för att fortsätta."
+"Surcharge refund must be a valid amount (e.g. 1.50 or 1,50).","Återbetalning av tilläggsavgift måste vara ett giltigt belopp (t.ex. 1.50 eller 1,50)."
+"Surcharge refund cannot be negative.","Återbetalning av tilläggsavgift får inte vara negativ."
+"Surcharge refund (%1) exceeds the remaining refundable surcharge (%2).","Återbetalning av tilläggsavgift (%1) överstiger den återstående återbetalningsbara tilläggsavgiften (%2)."
