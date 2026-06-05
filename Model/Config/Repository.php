@@ -494,11 +494,16 @@ class Repository implements RepositoryInterface
      */
     public function getDefaultPaymentTerm(?int $storeId = null): int
     {
+        $terms = $this->getAllBuyerTerms($storeId);
         $default = (int)$this->getConfig($this->path('default_payment_term'), $storeId);
-        if ($default > 0) {
+        // Only honour the configured default if it's actually an available
+        // buyer term. Otherwise fall back to the lowest available term so the
+        // buyer always lands on a real, selectable term — in particular a
+        // single available term is always the default (and thus preselected),
+        // even if a stale default_payment_term points elsewhere (ABN-439).
+        if ($default > 0 && in_array($default, $terms, true)) {
             return $default;
         }
-        $terms = $this->getAllBuyerTerms($storeId);
         return $terms ? min($terms) : 30;
     }
 
