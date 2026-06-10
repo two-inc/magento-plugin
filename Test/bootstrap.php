@@ -64,6 +64,11 @@ if (!class_exists(\Magento\Catalog\Model\Product\Type::class)) {
 if (!class_exists(\Magento\Sales\Model\Order\Invoice::class, false)) {
     require_once __DIR__ . '/Stubs/SalesModels.php';
 }
+// Quote model with the CartInterface relationship intact - required so
+// type hints against CartInterface accept Quote mocks.
+if (!class_exists(\Magento\Quote\Model\Quote::class, false)) {
+    require_once __DIR__ . '/Stubs/QuoteModels.php';
+}
 
 // Catch-all autoloader for remaining Magento classes/interfaces.
 // Creates empty stubs so that type hints, extends, and implements resolve.

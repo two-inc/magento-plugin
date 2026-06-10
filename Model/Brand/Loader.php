@@ -111,6 +111,14 @@ class Loader
             ];
         }
 
+        $minimumOrder = null;
+        if (isset($brand->minimum_order)) {
+            $minimumOrder = [
+                'amount' => (float)$brand->minimum_order['amount'],
+                'currency' => (string)$brand->minimum_order['currency'],
+            ];
+        }
+
         $cspOrigins = [];
         if (isset($brand->csp_origins->origin)) {
             foreach ($brand->csp_origins->origin as $origin) {
@@ -189,7 +197,8 @@ class Loader
             $extraHttpHeaders,
             $suppressedFields,
             $inlineTermFees,
-            (string)($brand->checkout_subtitle ?? '')
+            (string)($brand->checkout_subtitle ?? ''),
+            $minimumOrder
         );
     }
 }

@@ -34,6 +34,7 @@ use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
+use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\UrlCookie;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 
@@ -120,6 +121,10 @@ class Two extends AbstractMethod
      * @var LogRepository
      */
     private $logRepository;
+    /**
+     * @var MinimumOrderGate
+     */
+    private $minimumOrderGate;
 
     /**
      * Two constructor.
@@ -141,6 +146,7 @@ class Two extends AbstractMethod
      * @param OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository
      * @param Adapter $apiAdapter
      * @param LogRepository $logRepository
+     * @param MinimumOrderGate $minimumOrderGate
      * @param AbstractResource|null $resource
      * @param AbstractDb|null $resourceCollection
      * @param array $data
@@ -165,6 +171,7 @@ class Two extends AbstractMethod
         OrderRepositoryInterface $orderRepository,
         Adapter $apiAdapter,
         LogRepository $logRepository,
+        MinimumOrderGate $minimumOrderGate,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -193,6 +200,7 @@ class Two extends AbstractMethod
         $this->orderStatusHistoryRepository = $orderStatusHistoryRepository;
         $this->orderRepository = $orderRepository;
         $this->logRepository = $logRepository;
+        $this->minimumOrderGate = $minimumOrderGate;
     }
 
     /**
@@ -689,6 +697,12 @@ class Two extends AbstractMethod
             return false;
         }
         $apiKey = $this->_scopeConfig->getValue('payment/' . $this->_code . '/api_key');
-        return $apiKey !== null && $apiKey !== '';
+        if ($apiKey === null || $apiKey === '') {
+            return false;
+        }
+        // Brand product constraint (e.g. ABN AMRO's EUR 250 minimum). Uses
+        // this instance's brand binding so side-by-side method instances
+        // each gate on their own brand.
+        return $this->minimumOrderGate->isSatisfied($this->brandRegistry, $quote);
     }
 }

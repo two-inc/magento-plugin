@@ -27,6 +27,7 @@ use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
+use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\UrlCookie;
 
 /**
@@ -81,6 +82,7 @@ class GenericPaymentMethod extends Two
         OrderRepositoryInterface $orderRepository,
         Adapter $apiAdapter,
         LogRepository $logRepository,
+        MinimumOrderGate $minimumOrderGate,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -105,6 +107,7 @@ class GenericPaymentMethod extends Two
             $orderRepository,
             $apiAdapter,
             $logRepository,
+            $minimumOrderGate,
             $resource,
             $resourceCollection,
             $data
