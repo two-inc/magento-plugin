@@ -700,9 +700,9 @@ class Two extends AbstractMethod
         if ($apiKey === null || $apiKey === '') {
             return false;
         }
-        // Brand product constraint (e.g. ABN AMRO's EUR 250 minimum). Uses
-        // this instance's brand binding so side-by-side method instances
-        // each gate on their own brand.
+        // Brand product minimum-order constraint (brand.xml <minimum_order/>).
+        // The brand is passed in rather than re-resolved by the gate;
+        // ActiveBrandResolver guarantees one active brand per install.
         return $this->minimumOrderGate->isSatisfied($this->brandRegistry, $quote);
     }
 }

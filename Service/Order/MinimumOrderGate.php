@@ -38,6 +38,16 @@ class MinimumOrderGate
      */
     private $logRepository;
 
+    /**
+     * Currency pairs already reported this request. The fail-closed
+     * condition is a stable store misconfiguration, not a per-quote
+     * event, and isAvailable() fires many times per page view — one
+     * log line per pair is the correct cardinality.
+     *
+     * @var array<string,true>
+     */
+    private $reportedPairs = [];
+
     public function __construct(
         CurrencyRatesProviderInterface $ratesProvider,
         LogRepository $logRepository
@@ -49,10 +59,17 @@ class MinimumOrderGate
     /**
      * Whether the quote satisfies the brand's minimum order value.
      *
-     * The brand is passed by the payment-method instance rather than
-     * resolved from DI so that side-by-side method instances (vanilla
-     * `two_payment` next to an overlay's method) each gate on their
-     * own brand binding.
+     * The brand is passed in by the payment-method instance rather than
+     * resolved from DI here, keeping the gate decoupled from brand
+     * resolution; ActiveBrandResolver guarantees a single active brand
+     * per install. Non-Quote CartInterface implementations pass the gate:
+     * every storefront/GraphQL/admin checkout flow hands the concrete
+     * Quote model to isAvailable(), and hiding the method on an unknown
+     * cart type would be a worse failure than skipping the minimum.
+     *
+     * @return bool false when the basket currency or an exchange rate
+     *              cannot be resolved for a cross-currency basket
+     *              (fail-closed).
      */
     public function isSatisfied(BrandRegistryInterface $brand, ?CartInterface $quote): bool
     {
@@ -62,8 +79,14 @@ class MinimumOrderGate
         }
 
         $grandTotal = (float)$quote->getGrandTotal();
+        $store = $quote->getStore();
         $quoteCurrency = (string)($quote->getQuoteCurrencyCode()
-            ?: $quote->getStore()->getBaseCurrencyCode());
+            ?: ($store !== null ? $store->getBaseCurrencyCode() : ''));
+
+        if ($quoteCurrency === '') {
+            $this->reportFailClosed('(unresolved)', $minimumOrder['currency']);
+            return false;
+        }
 
         if ($quoteCurrency === $minimumOrder['currency']) {
             return $grandTotal >= $minimumOrder['amount'];
@@ -74,17 +97,31 @@ class MinimumOrderGate
             $minimumOrder['currency'],
             $quote->getStoreId() !== null ? (int)$quote->getStoreId() : null
         );
-        if ($rate === null) {
-            $this->logRepository->addDebugLog(
-                'MinimumOrderGate: no exchange rate, hiding payment method',
-                [
-                    'from' => $quoteCurrency,
-                    'to' => $minimumOrder['currency'],
-                ]
-            );
+        if ($rate === null || $rate <= 0) {
+            $this->reportFailClosed($quoteCurrency, $minimumOrder['currency']);
             return false;
         }
 
-        return $grandTotal * $rate >= $minimumOrder['amount'];
+        // Compare at currency precision: full-precision arithmetic,
+        // rounded once at the decision boundary (the plugin-wide model).
+        return round($grandTotal * $rate, 2) >= $minimumOrder['amount'];
+    }
+
+    /**
+     * Failing closed hides the payment method outright — a revenue stop
+     * if the cause is a missing exchange rate on a live store — so it
+     * must land in the monitored error log, not the debug log.
+     */
+    private function reportFailClosed(string $from, string $to): void
+    {
+        $pair = $from . '->' . $to;
+        if (isset($this->reportedPairs[$pair])) {
+            return;
+        }
+        $this->reportedPairs[$pair] = true;
+        $this->logRepository->addErrorLog(
+            'MinimumOrderGate: cannot convert basket to brand currency, hiding payment method',
+            ['from' => $from, 'to' => $to]
+        );
     }
 }

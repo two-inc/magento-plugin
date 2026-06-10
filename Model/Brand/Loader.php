@@ -113,9 +113,23 @@ class Loader
 
         $minimumOrder = null;
         if (isset($brand->minimum_order)) {
+            $amount = (float)$brand->minimum_order['amount'];
+            $currency = strtoupper(trim((string)$brand->minimum_order['currency']));
+            // brand.xsd marks both attributes required, but nothing validates
+            // the schema at runtime (simplexml ignores the
+            // xsi:noNamespaceSchemaLocation hint). A typo'd amount would coerce
+            // to 0.0 and silently disable the gate, so reject malformed
+            // declarations here like the empty-code guard above.
+            if ($amount <= 0 || $currency === '') {
+                throw new \DomainException(sprintf(
+                    'brand.xml at %s declares <minimum_order> with invalid'
+                    . ' amount/currency (amount must be > 0, currency non-empty)',
+                    $sourcePath
+                ));
+            }
             $minimumOrder = [
-                'amount' => (float)$brand->minimum_order['amount'],
-                'currency' => (string)$brand->minimum_order['currency'],
+                'amount' => $amount,
+                'currency' => $currency,
             ];
         }
 

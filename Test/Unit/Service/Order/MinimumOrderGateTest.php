@@ -3,7 +3,9 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Service\Order;
 
+use Magento\Quote\Api\Data\CartInterface;
 use Magento\Quote\Model\Quote;
+use Magento\Store\Model\Store;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
@@ -18,6 +20,9 @@ class MinimumOrderGateTest extends TestCase
     /** @var CurrencyRatesProviderInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $ratesProvider;
 
+    /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
+    private $logRepository;
+
     /** @var MinimumOrderGate */
     private $gate;
 
@@ -25,25 +30,27 @@ class MinimumOrderGateTest extends TestCase
     {
         $this->brand = $this->createMock(BrandRegistryInterface::class);
         $this->ratesProvider = $this->createMock(CurrencyRatesProviderInterface::class);
+        $this->logRepository = $this->createMock(LogRepository::class);
 
         $this->gate = new MinimumOrderGate(
             $this->ratesProvider,
-            $this->createMock(LogRepository::class)
+            $this->logRepository
         );
     }
 
     /**
      * @return Quote|\PHPUnit\Framework\MockObject\MockObject
      */
-    private function quote(float $grandTotal, string $currency)
+    private function quote(float $grandTotal, ?string $currency, ?Store $store = null)
     {
         $quote = $this->getMockBuilder(Quote::class)
             ->disableOriginalConstructor()
-            ->onlyMethods(['getGrandTotal', 'getQuoteCurrencyCode', 'getStoreId'])
+            ->onlyMethods(['getGrandTotal', 'getQuoteCurrencyCode', 'getStoreId', 'getStore'])
             ->getMock();
         $quote->method('getGrandTotal')->willReturn($grandTotal);
         $quote->method('getQuoteCurrencyCode')->willReturn($currency);
         $quote->method('getStoreId')->willReturn(1);
+        $quote->method('getStore')->willReturn($store);
         return $quote;
     }
 
@@ -90,7 +97,37 @@ class MinimumOrderGateTest extends TestCase
         $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
         $this->ratesProvider->expects($this->never())->method('getRate');
 
-        $this->gate->isSatisfied($this->brand, $this->quote(300.0, 'EUR'));
+        $this->assertTrue($this->gate->isSatisfied($this->brand, $this->quote(300.0, 'EUR')));
+    }
+
+    public function testFallsBackToStoreBaseCurrencyWhenQuoteCurrencyMissing(): void
+    {
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->ratesProvider->expects($this->never())->method('getRate');
+
+        $store = $this->createMock(Store::class);
+        $store->method('getBaseCurrencyCode')->willReturn('EUR');
+
+        $this->assertTrue($this->gate->isSatisfied($this->brand, $this->quote(300.0, null, $store)));
+    }
+
+    public function testFailsClosedWhenBasketCurrencyUnresolvable(): void
+    {
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+
+        // No quote currency and no store: the gate cannot establish what
+        // currency the basket is in, so it must not offer the method.
+        $this->assertFalse($this->gate->isSatisfied($this->brand, $this->quote(300.0, null)));
+    }
+
+    public function testPassesForNonQuoteCartInterface(): void
+    {
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+
+        // Deliberate: every real checkout flow passes the concrete Quote;
+        // an unknown CartInterface impl skips the gate rather than hiding
+        // the method (documented in MinimumOrderGate::isSatisfied()).
+        $this->assertTrue($this->gate->isSatisfied($this->brand, $this->createMock(CartInterface::class)));
     }
 
     // ── Cross-currency comparison via store FX rates ─────────────────
@@ -123,5 +160,35 @@ class MinimumOrderGateTest extends TestCase
         $this->ratesProvider->method('getRate')->willReturn(null);
 
         $this->assertFalse($this->gate->isSatisfied($this->brand, $this->quote(10000.0, 'SEK')));
+    }
+
+    public function testFailsClosedWhenRateIsZero(): void
+    {
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->ratesProvider->method('getRate')->willReturn(0.0);
+
+        $this->assertFalse($this->gate->isSatisfied($this->brand, $this->quote(10000.0, 'SEK')));
+    }
+
+    public function testConvertedTotalComparedAtCurrencyPrecision(): void
+    {
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->ratesProvider->method('getRate')
+            ->with('GBP', 'EUR', 1)
+            ->willReturn(1.17);
+
+        // £213.675 x 1.17 = €249.99975 raw; rounded once at the decision
+        // boundary it is €250.00 and satisfies the minimum.
+        $this->assertTrue($this->gate->isSatisfied($this->brand, $this->quote(213.675, 'GBP')));
+    }
+
+    public function testReportsMissingRateOncePerCurrencyPair(): void
+    {
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->ratesProvider->method('getRate')->willReturn(null);
+        $this->logRepository->expects($this->once())->method('addErrorLog');
+
+        $this->gate->isSatisfied($this->brand, $this->quote(100.0, 'SEK'));
+        $this->gate->isSatisfied($this->brand, $this->quote(200.0, 'SEK'));
     }
 }
