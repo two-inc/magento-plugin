@@ -239,6 +239,26 @@ class Two extends AbstractMethod
                 sprintf('Order was not accepted by %s', $this->brandRegistry->getProductName()),
                 $response
             );
+            // The backend's decline reason is opaque, but when the basket
+            // sits near the brand's minimum the likely cause is the
+            // minimum-order rule (the display gate and the backend convert
+            // with different FX rates) — tell the buyer something they can
+            // act on instead of only the generic decline.
+            $netAmount = (float)$order->getGrandTotal() - (float)$order->getTaxAmount();
+            if ($this->minimumOrderGate->isNearOrBelowMinimum(
+                $this->brandRegistry,
+                $netAmount,
+                (string)$order->getOrderCurrencyCode(),
+                $order->getStoreId() !== null ? (int)$order->getStoreId() : null
+            )) {
+                $minimumOrder = $this->brandRegistry->getMinimumOrder();
+                throw new LocalizedException(__(
+                    'Invoice purchase with %1 is not available for this order. Note: %1 requires a minimum order value of %2 %3 excluding tax.',
+                    $this->brandRegistry->getProductName(),
+                    $minimumOrder['amount'],
+                    $minimumOrder['currency']
+                ));
+            }
             throw new LocalizedException(
                 __('Invoice purchase with %1 is not available for this order.', $this->brandRegistry->getProductName())
             );

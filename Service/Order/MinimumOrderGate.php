@@ -117,6 +117,39 @@ class MinimumOrderGate
     }
 
     /**
+     * Whether a net amount sits below (or within a small band above) the
+     * brand's minimum — used to decide if a backend decline should carry
+     * the minimum-order hint. The band covers rate skew between this
+     * plugin's store FX rates and the risk engine's spot rates: a basket
+     * that passed the display gate here can still be marginally below
+     * the threshold by the backend's rates. Fail-soft: unresolvable
+     * conversion means no hint, never a blocked message.
+     *
+     * @param float $netAmount Net amount in $currency
+     */
+    public function isNearOrBelowMinimum(
+        BrandRegistryInterface $brand,
+        float $netAmount,
+        string $currency,
+        ?int $storeId
+    ): bool {
+        $minimumOrder = $brand->getMinimumOrder();
+        if ($minimumOrder === null) {
+            return false;
+        }
+
+        if ($currency !== $minimumOrder['currency']) {
+            $rate = $this->ratesProvider->getRate($currency, $minimumOrder['currency'], $storeId);
+            if ($rate === null || $rate <= 0) {
+                return false;
+            }
+            $netAmount = round($netAmount * $rate, 2);
+        }
+
+        return $netAmount < $minimumOrder['amount'] * 1.05;
+    }
+
+    /**
      * Failing closed hides the payment method outright — a revenue stop
      * if the cause is a missing exchange rate on a live store — so it
      * must land in the monitored error log, not the debug log.
