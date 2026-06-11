@@ -61,15 +61,16 @@ interface BrandRegistryInterface
     public function getSurchargeFixedMax(): ?array;
 
     /**
-     * Minimum NET order value (basket total excluding tax) required for
-     * this brand's payment method to be offered at checkout, expressed
-     * in a specific currency — net, because the funding partner's
-     * server-side risk rule compares net. Returning null means there is
-     * no minimum - any order value is acceptable. Baskets in other
+     * Minimum order value required for this brand's payment method to
+     * be offered at checkout: amount + currency + basis ('net' = basket
+     * excluding tax, 'gross' = including; ABN AMRO defines its minimum
+     * net, matching the funding partner's server-side risk rule, while
+     * the platform's country defaults are gross — hence explicit).
+     * Returning null means there is no minimum. Baskets in other
      * currencies are converted to this currency via the store's
      * exchange rates before comparing.
      *
-     * @return array{amount: float, currency: string}|null
+     * @return array{amount: float, currency: string, basis: string}|null
      */
     public function getMinimumOrder(): ?array;
 

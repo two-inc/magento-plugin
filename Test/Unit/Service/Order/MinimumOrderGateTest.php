@@ -82,7 +82,7 @@ class MinimumOrderGateTest extends TestCase
 
     public function testSatisfiedWhenQuoteIsNull(): void
     {
-        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
 
         $this->assertTrue($this->gate->isSatisfied($this->brand, null));
     }
@@ -91,21 +91,21 @@ class MinimumOrderGateTest extends TestCase
 
     public function testNotSatisfiedWhenEurTotalBelowEurMinimum(): void
     {
-        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
 
         $this->assertFalse($this->gate->isSatisfied($this->brand, $this->quote(249.99, 'EUR')));
     }
 
     public function testSatisfiedWhenEurTotalEqualsEurMinimum(): void
     {
-        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
 
         $this->assertTrue($this->gate->isSatisfied($this->brand, $this->quote(250.0, 'EUR')));
     }
 
     public function testComparesNetNotGross(): void
     {
-        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
 
         // EUR 302.50 gross with EUR 52.50 tax is exactly EUR 250 net: satisfied
         $this->assertTrue($this->gate->isSatisfied($this->brand, $this->quote(302.50, 'EUR', null, 52.50)));
@@ -116,7 +116,7 @@ class MinimumOrderGateTest extends TestCase
 
     public function testSameCurrencySkipsRateLookup(): void
     {
-        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
         $this->ratesProvider->expects($this->never())->method('getRate');
 
         $this->assertTrue($this->gate->isSatisfied($this->brand, $this->quote(300.0, 'EUR')));
@@ -124,7 +124,7 @@ class MinimumOrderGateTest extends TestCase
 
     public function testFallsBackToStoreBaseCurrencyWhenQuoteCurrencyMissing(): void
     {
-        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
         $this->ratesProvider->expects($this->never())->method('getRate');
 
         $store = $this->createMock(Store::class);
@@ -135,7 +135,7 @@ class MinimumOrderGateTest extends TestCase
 
     public function testFailsClosedWhenBasketCurrencyUnresolvable(): void
     {
-        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
 
         // No quote currency and no store: the gate cannot establish what
         // currency the basket is in, so it must not offer the method.
@@ -144,7 +144,7 @@ class MinimumOrderGateTest extends TestCase
 
     public function testPassesForNonQuoteCartInterface(): void
     {
-        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
 
         // Deliberate: every real checkout flow passes the concrete Quote;
         // an unknown CartInterface impl skips the gate rather than hiding
@@ -156,7 +156,7 @@ class MinimumOrderGateTest extends TestCase
 
     public function testNotSatisfiedWhenConvertedGbpTotalBelowEurMinimum(): void
     {
-        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
         $this->ratesProvider->method('getRate')
             ->with('GBP', 'EUR', 1)
             ->willReturn(1.17);
@@ -167,7 +167,7 @@ class MinimumOrderGateTest extends TestCase
 
     public function testSatisfiedWhenConvertedGbpTotalAboveEurMinimum(): void
     {
-        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
         $this->ratesProvider->method('getRate')
             ->with('GBP', 'EUR', 1)
             ->willReturn(1.17);
@@ -178,7 +178,7 @@ class MinimumOrderGateTest extends TestCase
 
     public function testFailsClosedWhenNoExchangeRateConfigured(): void
     {
-        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
         $this->ratesProvider->method('getRate')->willReturn(null);
 
         $this->assertFalse($this->gate->isSatisfied($this->brand, $this->quote(10000.0, 'SEK')));
@@ -186,7 +186,7 @@ class MinimumOrderGateTest extends TestCase
 
     public function testFailsClosedWhenRateIsZero(): void
     {
-        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
         $this->ratesProvider->method('getRate')->willReturn(0.0);
 
         $this->assertFalse($this->gate->isSatisfied($this->brand, $this->quote(10000.0, 'SEK')));
@@ -194,7 +194,7 @@ class MinimumOrderGateTest extends TestCase
 
     public function testConvertedTotalComparedAtCurrencyPrecision(): void
     {
-        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
         $this->ratesProvider->method('getRate')
             ->with('GBP', 'EUR', 1)
             ->willReturn(1.17);
@@ -204,32 +204,78 @@ class MinimumOrderGateTest extends TestCase
         $this->assertTrue($this->gate->isSatisfied($this->brand, $this->quote(213.675, 'GBP')));
     }
 
-    public function testNearOrBelowMinimumDrivesTheDeclineHint(): void
+    public function testBelowMinimumDrivesTheDeclineHintStrictly(): void
     {
-        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
 
-        // Just above threshold but inside the rate-skew band: hint
-        $this->assertTrue($this->gate->isNearOrBelowMinimum($this->brand, 255.0, 'EUR', 1));
-        // Comfortably above: no hint (a risk decline must not be blamed
-        // on the minimum)
-        $this->assertFalse($this->gate->isNearOrBelowMinimum($this->brand, 400.0, 'EUR', 1));
+        $this->assertTrue($this->gate->isBelowMinimum($this->brand, 249.99, 'EUR', 1));
+        // No tolerance band: at or above the minimum is not "below"
+        $this->assertFalse($this->gate->isBelowMinimum($this->brand, 250.0, 'EUR', 1));
         // No minimum configured: never hint
         $this->brand = $this->createMock(BrandRegistryInterface::class);
         $this->brand->method('getMinimumOrder')->willReturn(null);
-        $this->assertFalse($this->gate->isNearOrBelowMinimum($this->brand, 10.0, 'EUR', 1));
+        $this->assertFalse($this->gate->isBelowMinimum($this->brand, 10.0, 'EUR', 1));
     }
 
-    public function testNearMinimumFailsSoftWithoutRate(): void
+    public function testBelowMinimumFailsSoftWithoutRate(): void
     {
-        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
         $this->ratesProvider->method('getRate')->willReturn(null);
 
-        $this->assertFalse($this->gate->isNearOrBelowMinimum($this->brand, 10.0, 'SEK', 1));
+        $this->assertFalse($this->gate->isBelowMinimum($this->brand, 10.0, 'SEK', 1));
+    }
+
+    public function testMerchantMinimumRaisesTheBar(): void
+    {
+        // No platform minimum, merchant sets one: it gates alone
+        $this->stubMinimum(null);
+        $merchantMinimum = ['amount' => 500.0, 'currency' => 'EUR', 'basis' => 'gross'];
+
+        $this->assertFalse($this->gate->isSatisfied($this->brand, $this->quote(499.0, 'EUR'), $merchantMinimum));
+        $this->assertTrue($this->gate->isSatisfied($this->brand, $this->quote(500.0, 'EUR'), $merchantMinimum));
+    }
+
+    public function testMerchantMinimumAppliesOnTopOfThePlatformFloor(): void
+    {
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
+        $merchantMinimum = ['amount' => 400.0, 'currency' => 'EUR', 'basis' => 'net'];
+
+        // Above the floor but below the merchant's own bar: hidden
+        $this->assertFalse($this->gate->isSatisfied($this->brand, $this->quote(300.0, 'EUR'), $merchantMinimum));
+        $this->assertTrue($this->gate->isSatisfied($this->brand, $this->quote(400.0, 'EUR'), $merchantMinimum));
+    }
+
+    public function testGrossBasisComparesGrandTotal(): void
+    {
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'gross']);
+
+        // EUR 250 gross with tax included satisfies a GROSS minimum even
+        // though its net value is below
+        $this->assertTrue($this->gate->isSatisfied($this->brand, $this->quote(250.0, 'EUR', null, 43.39)));
+        $this->assertFalse($this->gate->isSatisfied($this->brand, $this->quote(249.99, 'EUR', null, 43.39)));
+    }
+
+    public function testMinimumForDisplayConvertsToOrderCurrency(): void
+    {
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
+        $this->ratesProvider->method('getRate')
+            ->with('EUR', 'GBP', 1)
+            ->willReturn(0.86);
+
+        $this->assertSame(
+            ['amount' => 215.0, 'basis' => 'net'],
+            $this->gate->getMinimumForDisplay($this->brand, 'GBP', 1)
+        );
+        // No rate: no display value (caller falls back to the generic message)
+        $brand = $this->createMock(BrandRegistryInterface::class);
+        $brand->method('getMinimumOrder')->willReturn(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
+        $gate = new MinimumOrderGate($this->createMock(CurrencyRatesProviderInterface::class), $this->logRepository);
+        $this->assertNull($gate->getMinimumForDisplay($brand, 'SEK', 1));
     }
 
     public function testReportsMissingRateOncePerCurrencyPair(): void
     {
-        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
         $this->ratesProvider->method('getRate')->willReturn(null);
         $this->logRepository->expects($this->once())->method('addErrorLog');
 

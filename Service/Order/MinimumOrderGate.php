@@ -19,11 +19,12 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
  * is offered at checkout.
  *
  * The minimum is declared per brand in brand.xml as
- * `<minimum_order amount="250" currency="EUR"/>` and compares the
- * basket's NET total (grand total minus tax) — the funding partner's
- * risk rule enforces the same net semantics server-side. Baskets in a
- * different currency are converted to the brand currency via the
- * store's exchange rates before comparing. When no rate is
+ * `<minimum_order amount="250" currency="EUR" basis="net"/>` and
+ * compares the basket's net (grand total minus tax) or gross value per
+ * the declared basis — ABN AMRO's funding-partner rule is net; the
+ * platform's country defaults are gross. Baskets in a different
+ * currency are converted to the brand currency via the store's
+ * exchange rates before comparing. When no rate is
  * configured the gate fails closed: the method is hidden rather
  * than offered on an order we cannot prove satisfies the brand's
  * product minimum.
@@ -73,63 +74,87 @@ class MinimumOrderGate
      *              cannot be resolved for a cross-currency basket
      *              (fail-closed).
      */
-    public function isSatisfied(BrandRegistryInterface $brand, ?CartInterface $quote): bool
-    {
-        $minimumOrder = $brand->getMinimumOrder();
-        if ($minimumOrder === null || !$quote instanceof Quote) {
+    public function isSatisfied(
+        BrandRegistryInterface $brand,
+        ?CartInterface $quote,
+        ?array $merchantMinimum = null
+    ): bool {
+        if (!$quote instanceof Quote) {
             return true;
         }
 
-        // Net basket value: the server-side funding-partner rule compares
-        // net, so the display gate must too — a gross-compared gate shows
-        // the method on baskets the credit check then declines.
-        $taxAmount = 0.0;
-        foreach ($quote->getAllAddresses() as $address) {
-            $taxAmount += (float)$address->getTaxAmount();
+        // The brand minimum is the platform/partner floor; the merchant
+        // minimum (admin setting, validated to exceed the floor on save)
+        // may only raise the bar — both must be satisfied.
+        foreach ([$brand->getMinimumOrder(), $merchantMinimum] as $minimum) {
+            if ($minimum !== null && !$this->satisfiesMinimum($quote, $minimum)) {
+                return false;
+            }
         }
-        $netTotal = (float)$quote->getGrandTotal() - $taxAmount;
+
+        return true;
+    }
+
+    /**
+     * @param array{amount: float, currency: string, basis: string} $minimum
+     */
+    private function satisfiesMinimum(Quote $quote, array $minimum): bool
+    {
+        $basketValue = $this->basketValue($quote, $minimum['basis']);
         $store = $quote->getStore();
         $quoteCurrency = (string)($quote->getQuoteCurrencyCode()
             ?: ($store !== null ? $store->getBaseCurrencyCode() : ''));
 
         if ($quoteCurrency === '') {
-            $this->reportFailClosed('(unresolved)', $minimumOrder['currency']);
+            $this->reportFailClosed('(unresolved)', $minimum['currency']);
             return false;
         }
 
-        if ($quoteCurrency === $minimumOrder['currency']) {
-            return $netTotal >= $minimumOrder['amount'];
+        if ($quoteCurrency === $minimum['currency']) {
+            return $basketValue >= $minimum['amount'];
         }
 
         $rate = $this->ratesProvider->getRate(
             $quoteCurrency,
-            $minimumOrder['currency'],
+            $minimum['currency'],
             $quote->getStoreId() !== null ? (int)$quote->getStoreId() : null
         );
         if ($rate === null || $rate <= 0) {
-            $this->reportFailClosed($quoteCurrency, $minimumOrder['currency']);
+            $this->reportFailClosed($quoteCurrency, $minimum['currency']);
             return false;
         }
 
         // Compare at currency precision: full-precision arithmetic,
         // rounded once at the decision boundary (the plugin-wide model).
-        return round($netTotal * $rate, 2) >= $minimumOrder['amount'];
+        return round($basketValue * $rate, 2) >= $minimum['amount'];
     }
 
     /**
-     * Whether a net amount sits below (or within a small band above) the
-     * brand's minimum — used to decide if a backend decline should carry
-     * the minimum-order hint. The band covers rate skew between this
-     * plugin's store FX rates and the risk engine's spot rates: a basket
-     * that passed the display gate here can still be marginally below
-     * the threshold by the backend's rates. Fail-soft: unresolvable
-     * conversion means no hint, never a blocked message.
-     *
-     * @param float $netAmount Net amount in $currency
+     * The basket value the minimum compares against, per the brand's
+     * declared basis (net = grand total minus tax, gross = grand total).
      */
-    public function isNearOrBelowMinimum(
+    private function basketValue(Quote $quote, string $basis): float
+    {
+        if ($basis === 'gross') {
+            return (float)$quote->getGrandTotal();
+        }
+        $taxAmount = 0.0;
+        foreach ($quote->getAllAddresses() as $address) {
+            $taxAmount += (float)$address->getTaxAmount();
+        }
+        return (float)$quote->getGrandTotal() - $taxAmount;
+    }
+
+    /**
+     * Whether an order value (in $currency, on the brand's basis) is
+     * strictly below the brand's minimum — the fallback signal for the
+     * decline hint when the API response carries no machine-readable
+     * decline reason. Fail-soft: unresolvable conversion means no hint,
+     * never a blocked message.
+     */
+    public function isBelowMinimum(
         BrandRegistryInterface $brand,
-        float $netAmount,
+        float $amount,
         string $currency,
         ?int $storeId
     ): bool {
@@ -143,10 +168,36 @@ class MinimumOrderGate
             if ($rate === null || $rate <= 0) {
                 return false;
             }
-            $netAmount = round($netAmount * $rate, 2);
+            $amount = round($amount * $rate, 2);
         }
 
-        return $netAmount < $minimumOrder['amount'] * 1.05;
+        return $amount < $minimumOrder['amount'];
+    }
+
+    /**
+     * The brand minimum expressed in $currency for buyer-facing display,
+     * or null when no minimum exists / no rate is available.
+     *
+     * @return array{amount: float, basis: string}|null
+     */
+    public function getMinimumForDisplay(
+        BrandRegistryInterface $brand,
+        string $currency,
+        ?int $storeId
+    ): ?array {
+        $minimumOrder = $brand->getMinimumOrder();
+        if ($minimumOrder === null) {
+            return null;
+        }
+        $amount = $minimumOrder['amount'];
+        if ($currency !== $minimumOrder['currency']) {
+            $rate = $this->ratesProvider->getRate($minimumOrder['currency'], $currency, $storeId);
+            if ($rate === null || $rate <= 0) {
+                return null;
+            }
+            $amount = round($amount * $rate, 2);
+        }
+        return ['amount' => $amount, 'basis' => $minimumOrder['basis']];
     }
 
     /**

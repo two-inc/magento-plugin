@@ -36,7 +36,7 @@ class LoaderTest extends TestCase
         // ' eur ' in the xml must not force the FX branch into permanent
         // fail-closed against uppercase quote currency codes
         $this->assertSame(
-            ['amount' => 250.0, 'currency' => 'EUR'],
+            ['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net'],
             $brands['two_payment']->getMinimumOrder()
         );
     }

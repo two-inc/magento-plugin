@@ -10,6 +10,6 @@
             <term>30</term>
         </available_payment_terms>
         <admin_resource>Two_Gateway::config</admin_resource>
-        <minimum_order amount="0" currency="EUR"/>
+        <minimum_order amount="0" currency="EUR" basis="net"/>
     </brand>
 </config>
