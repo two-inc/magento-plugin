@@ -732,8 +732,9 @@ class Two extends AbstractMethod
             return false;
         }
         // Brand product minimum-order constraint (brand.xml <minimum_order/>)
-        // plus the merchant's own optional minimum (admin setting; validated
-        // on save to exceed the platform floor). The brand is passed in
+        // plus the merchant's own optional minimum (admin setting in the
+        // STORE BASE currency; validated on save to exceed the platform
+        // floor converted to that currency). The brand is passed in
         // rather than re-resolved by the gate; ActiveBrandResolver
         // guarantees one active brand per install.
         $merchantMinimum = null;
@@ -742,8 +743,7 @@ class Two extends AbstractMethod
             if ($merchantValue > 0) {
                 $platformMinimum = $this->brandRegistry->getMinimumOrder();
                 $store = $quote->getStore();
-                $currency = $platformMinimum['currency']
-                    ?? ($store !== null ? (string)$store->getBaseCurrencyCode() : '');
+                $currency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
                 if ($currency !== '') {
                     $merchantMinimum = [
                         'amount' => $merchantValue,
