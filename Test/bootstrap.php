@@ -45,6 +45,7 @@ if (!interface_exists(\Magento\Framework\App\Config\Storage\WriterInterface::cla
 }
 if (!class_exists(\Magento\Framework\HTTP\Client\Curl::class)) {
     require_once __DIR__ . '/Stubs/Curl.php';
+    require_once __DIR__ . '/Stubs/ComponentRegistrar.php';
 }
 if (!class_exists(\Magento\Framework\HTTP\Client\CurlFactory::class)) {
     require_once __DIR__ . '/Stubs/CurlFactory.php';

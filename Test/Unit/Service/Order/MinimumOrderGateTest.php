@@ -41,16 +41,27 @@ class MinimumOrderGateTest extends TestCase
     /**
      * @return Quote|\PHPUnit\Framework\MockObject\MockObject
      */
-    private function quote(float $grandTotal, ?string $currency, ?Store $store = null)
+    private function quote(float $grandTotal, ?string $currency, ?Store $store = null, float $taxAmount = 0.0)
     {
         $quote = $this->getMockBuilder(Quote::class)
             ->disableOriginalConstructor()
-            ->onlyMethods(['getGrandTotal', 'getQuoteCurrencyCode', 'getStoreId', 'getStore'])
+            ->onlyMethods(['getGrandTotal', 'getQuoteCurrencyCode', 'getStoreId', 'getStore', 'getAllAddresses'])
             ->getMock();
         $quote->method('getGrandTotal')->willReturn($grandTotal);
         $quote->method('getQuoteCurrencyCode')->willReturn($currency);
         $quote->method('getStoreId')->willReturn(1);
         $quote->method('getStore')->willReturn($store);
+        $address = new class ($taxAmount) {
+            public function __construct(private readonly float $taxAmount)
+            {
+            }
+
+            public function getTaxAmount(): float
+            {
+                return $this->taxAmount;
+            }
+        };
+        $quote->method('getAllAddresses')->willReturn([$address]);
         return $quote;
     }
 
@@ -90,6 +101,17 @@ class MinimumOrderGateTest extends TestCase
         $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
 
         $this->assertTrue($this->gate->isSatisfied($this->brand, $this->quote(250.0, 'EUR')));
+    }
+
+    public function testComparesNetNotGross(): void
+    {
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+
+        // EUR 302.50 gross with EUR 52.50 tax is exactly EUR 250 net: satisfied
+        $this->assertTrue($this->gate->isSatisfied($this->brand, $this->quote(302.50, 'EUR', null, 52.50)));
+        // EUR 250 gross with tax is below EUR 250 net: the credit check would
+        // decline it, so the gate must hide the method
+        $this->assertFalse($this->gate->isSatisfied($this->brand, $this->quote(250.0, 'EUR', null, 43.39)));
     }
 
     public function testSameCurrencySkipsRateLookup(): void

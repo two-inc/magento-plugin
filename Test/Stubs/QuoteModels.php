@@ -54,6 +54,11 @@ namespace Magento\Quote\Model {
             {
                 return null;
             }
+
+            public function getAllAddresses()
+            {
+                return [];
+            }
         }
     }
 }

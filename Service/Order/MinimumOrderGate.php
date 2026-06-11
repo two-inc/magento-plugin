@@ -19,7 +19,9 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
  * is offered at checkout.
  *
  * The minimum is declared per brand in brand.xml as
- * `<minimum_order amount="250" currency="EUR"/>`. Baskets in a
+ * `<minimum_order amount="250" currency="EUR"/>` and compares the
+ * basket's NET total (grand total minus tax) — the funding partner's
+ * risk rule enforces the same net semantics server-side. Baskets in a
  * different currency are converted to the brand currency via the
  * store's exchange rates before comparing. When no rate is
  * configured the gate fails closed: the method is hidden rather
@@ -78,7 +80,14 @@ class MinimumOrderGate
             return true;
         }
 
-        $grandTotal = (float)$quote->getGrandTotal();
+        // Net basket value: the server-side funding-partner rule compares
+        // net, so the display gate must too — a gross-compared gate shows
+        // the method on baskets the credit check then declines.
+        $taxAmount = 0.0;
+        foreach ($quote->getAllAddresses() as $address) {
+            $taxAmount += (float)$address->getTaxAmount();
+        }
+        $netTotal = (float)$quote->getGrandTotal() - $taxAmount;
         $store = $quote->getStore();
         $quoteCurrency = (string)($quote->getQuoteCurrencyCode()
             ?: ($store !== null ? $store->getBaseCurrencyCode() : ''));
@@ -89,7 +98,7 @@ class MinimumOrderGate
         }
 
         if ($quoteCurrency === $minimumOrder['currency']) {
-            return $grandTotal >= $minimumOrder['amount'];
+            return $netTotal >= $minimumOrder['amount'];
         }
 
         $rate = $this->ratesProvider->getRate(
@@ -104,7 +113,7 @@ class MinimumOrderGate
 
         // Compare at currency precision: full-precision arithmetic,
         // rounded once at the decision boundary (the plugin-wide model).
-        return round($grandTotal * $rate, 2) >= $minimumOrder['amount'];
+        return round($netTotal * $rate, 2) >= $minimumOrder['amount'];
     }
 
     /**
