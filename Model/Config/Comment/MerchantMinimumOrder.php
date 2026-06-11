@@ -114,6 +114,11 @@ class MerchantMinimumOrder implements CommentInterface
      * from the admin config-scope selector (store param, website default
      * store, or the global default store).
      *
+     * Counterpart: Backend\MerchantMinimumOrder::resolveScopeStore() resolves
+     * the same scope from the config model at save time. Keep their store
+     * resolution in lockstep or the displayed floor and the validated floor
+     * can disagree.
+     *
      * @return \Magento\Store\Api\Data\StoreInterface|null
      */
     private function resolveScopeStore()

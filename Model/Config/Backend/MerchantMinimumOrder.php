@@ -138,6 +138,11 @@ class MerchantMinimumOrder extends Value
      * from the config scope being saved (store view, website default
      * store, or the global default store).
      *
+     * Counterpart: Comment\MerchantMinimumOrder::resolveScopeStore() resolves
+     * the same scope from request params (the comment renders at page load,
+     * before any model scope exists). Keep their store resolution in lockstep
+     * or the displayed floor and the validated floor can disagree.
+     *
      * @return \Magento\Store\Api\Data\StoreInterface|null
      */
     private function resolveScopeStore()
