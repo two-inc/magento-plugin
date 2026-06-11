@@ -126,7 +126,7 @@ across modules). Elements may appear in any order (`xs:all`).
 | `api_base_url` | yes | string | Two API base for this brand. |
 | `available_payment_terms` | yes | `<term>` list | Day counts offered (positive integers). |
 | `surcharge_fixed_max` | no | `amount` + `currency` attrs | Cap on the fixed surcharge component. |
-| `minimum_order` | no | `amount` + `currency` attrs | Minimum NET basket value (excl. tax, matching the funding partner's server-side rule) for the method to be offered (worked example below). |
+| `minimum_order` | no | `amount` + `currency` + `basis` attrs | Minimum basket value for the method to be offered; `basis` (`net`\|`gross`) declares whether it compares excl. or incl. tax — always explicit (worked example below). |
 | `csp_origins` | no | `<origin>` list | Extra CSP origins. |
 | `admin_resource` | yes | string | ACL resource gating the admin section. |
 | `module_label_chain` | no | `<module label="…">` list | Admin Version-panel rows; rows for missing modules silently skip. |
@@ -217,7 +217,7 @@ touch points, in dependency order:
 The overlay then declares the value in its `brand.xml`:
 
 ```xml
-<minimum_order amount="250" currency="EUR"/>
+<minimum_order amount="250" currency="EUR" basis="net"/>
 ```
 
 **Release ordering:** the parent release containing steps 1–6 must be
