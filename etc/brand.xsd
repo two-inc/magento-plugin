@@ -38,11 +38,13 @@
             <xs:element name="available_payment_terms" type="paymentTermsType"/>
             <xs:element name="surcharge_fixed_max" type="surchargeFixedMaxType" minOccurs="0"/>
             <!--
-                Minimum order value for the payment method to be offered,
-                expressed in a specific currency (e.g. the ABN AMRO product
-                requires a EUR 250 minimum). Absent = no minimum. Baskets in
-                other currencies are converted to this currency via the
-                store's exchange rates before comparing.
+                Minimum NET order value (basket total excluding tax) for
+                the payment method to be offered, expressed in a specific
+                currency (e.g. the ABN AMRO product requires a EUR 250 net
+                minimum, matching the funding partner's server-side risk
+                rule). Absent = no minimum. Baskets in other currencies are
+                converted to this currency via the store's exchange rates
+                before comparing.
             -->
             <xs:element name="minimum_order" type="minimumOrderType" minOccurs="0"/>
             <xs:element name="csp_origins" type="cspOriginsType" minOccurs="0"/>

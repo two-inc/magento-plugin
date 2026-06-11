@@ -61,11 +61,13 @@ interface BrandRegistryInterface
     public function getSurchargeFixedMax(): ?array;
 
     /**
-     * Minimum order value required for this brand's payment method to
-     * be offered at checkout, expressed in a specific currency.
-     * Returning null means there is no minimum - any order value is
-     * acceptable. Baskets in other currencies are converted to this
-     * currency via the store's exchange rates before comparing.
+     * Minimum NET order value (basket total excluding tax) required for
+     * this brand's payment method to be offered at checkout, expressed
+     * in a specific currency — net, because the funding partner's
+     * server-side risk rule compares net. Returning null means there is
+     * no minimum - any order value is acceptable. Baskets in other
+     * currencies are converted to this currency via the store's
+     * exchange rates before comparing.
      *
      * @return array{amount: float, currency: string}|null
      */
