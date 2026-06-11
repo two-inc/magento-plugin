@@ -204,6 +204,29 @@ class MinimumOrderGateTest extends TestCase
         $this->assertTrue($this->gate->isSatisfied($this->brand, $this->quote(213.675, 'GBP')));
     }
 
+    public function testNearOrBelowMinimumDrivesTheDeclineHint(): void
+    {
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+
+        // Just above threshold but inside the rate-skew band: hint
+        $this->assertTrue($this->gate->isNearOrBelowMinimum($this->brand, 255.0, 'EUR', 1));
+        // Comfortably above: no hint (a risk decline must not be blamed
+        // on the minimum)
+        $this->assertFalse($this->gate->isNearOrBelowMinimum($this->brand, 400.0, 'EUR', 1));
+        // No minimum configured: never hint
+        $this->brand = $this->createMock(BrandRegistryInterface::class);
+        $this->brand->method('getMinimumOrder')->willReturn(null);
+        $this->assertFalse($this->gate->isNearOrBelowMinimum($this->brand, 10.0, 'EUR', 1));
+    }
+
+    public function testNearMinimumFailsSoftWithoutRate(): void
+    {
+        $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
+        $this->ratesProvider->method('getRate')->willReturn(null);
+
+        $this->assertFalse($this->gate->isNearOrBelowMinimum($this->brand, 10.0, 'SEK', 1));
+    }
+
     public function testReportsMissingRateOncePerCurrencyPair(): void
     {
         $this->stubMinimum(['amount' => 250.0, 'currency' => 'EUR']);
