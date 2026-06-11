@@ -80,6 +80,15 @@
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/active</config_path>
                 </field>
+                <field id="merchant_minimum_order" translate="label" type="text" sortOrder="25" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Minimum Order Value</label>
+                    <backend_model>Two\Gateway\Model\Config\Backend\MerchantMinimumOrder</backend_model>
+                    <comment model="Two\Gateway\Model\Config\Comment\MerchantMinimumOrder"/>
+                    <depends>
+                        <field id="active">1</field>
+                    </depends>
+                </field>
                 <field id="title" translate="label comment" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                        showInStore="1" canRestore="1">
                     <label>Title</label>
