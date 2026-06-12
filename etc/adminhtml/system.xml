@@ -88,6 +88,7 @@
                     <depends>
                         <field id="active">1</field>
                     </depends>
+                    <config_path>payment/two_payment/merchant_minimum_order</config_path>
                 </field>
                 <field id="title" translate="label comment" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                        showInStore="1" canRestore="1">

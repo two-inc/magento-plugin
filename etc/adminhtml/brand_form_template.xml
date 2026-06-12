@@ -150,6 +150,17 @@
                     </depends>
                     <config_path>payment/{{code}}/title</config_path>
                 </field>
+                <field id="merchant_minimum_order" translate="label" type="text" sortOrder="25"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Minimum Order Value</label>
+                    <backend_model>Two\Gateway\Model\Config\Backend\MerchantMinimumOrder</backend_model>
+                    <comment model="Two\Gateway\Model\Config\Comment\MerchantMinimumOrder"/>
+                    <depends>
+                        <field id="active">1</field>
+                    </depends>
+                    <config_path>payment/{{code}}/merchant_minimum_order</config_path>
+                </field>
             </group>
             <group id="checkout_fields" translate="label" type="text" sortOrder="20"
                    showInDefault="1" showInWebsite="1" showInStore="1"
