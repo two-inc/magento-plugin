@@ -70,6 +70,15 @@ if (!class_exists(\Magento\Sales\Model\Order\Invoice::class, false)) {
 if (!class_exists(\Magento\Quote\Model\Quote::class, false)) {
     require_once __DIR__ . '/Stubs/QuoteModels.php';
 }
+// Cache interface with real method signatures (mock targets) and a
+// faithful Json serializer (instantiated directly, not mocked) for
+// MinimumOrderProvider tests.
+if (!interface_exists(\Magento\Framework\App\CacheInterface::class, false)) {
+    require_once __DIR__ . '/Stubs/CacheInterface.php';
+}
+if (!class_exists(\Magento\Framework\Serialize\Serializer\Json::class, false)) {
+    require_once __DIR__ . '/Stubs/JsonSerializer.php';
+}
 
 // Catch-all autoloader for remaining Magento classes/interfaces.
 // Creates empty stubs so that type hints, extends, and implements resolve.
