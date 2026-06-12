@@ -31,6 +31,7 @@
                 <sort_order>-10</sort_order>
                 <mode>sandbox</mode>
                 <invoice_type>FUNDED_INVOICE</invoice_type>
+                <merchant_minimum_order_basis>gross</merchant_minimum_order_basis>
                 <days_on_invoice>14</days_on_invoice>
                 <finalize_purchase>1</finalize_purchase>
                 <enable_order_intent>1</enable_order_intent>
