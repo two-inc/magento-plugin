@@ -344,9 +344,6 @@
 }
 
 .two-term-chip--single {
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
     border-color: var(--color-blue2);
     background: var(--color-blue2);
     color: var(--color-white);
