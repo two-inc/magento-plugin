@@ -7,7 +7,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // `{section}_payment_terms_payment_terms_checkboxes` — strip
         // the suffix to get the section id, then build every other
         // selector against it. This keeps the JS brand-agnostic:
-        // `two_payment` on vanilla, `abn_payment` on ABN, ...
+        // `two_payment` on vanilla, `acme_payment` on a brand overlay, ...
         var $termsContainer = $('.two-term-checkboxes').first();
         if (!$termsContainer.length) {
             return;

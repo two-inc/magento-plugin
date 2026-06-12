@@ -3,7 +3,10 @@
 Two's Magento 2 BNPL payment plugin. Brand-aware single-module
 extension; brand-specific identity values resolve through
 `Two\Gateway\Api\BrandRegistryInterface`. The default DI
-binding in `etc/di.xml` resolves to `Two\Gateway\Brand\TwoBrand`.
+binding in `etc/di.xml` resolves to
+`Two\Gateway\Brand\DescriptorBackedBrandRegistry`.
+Building a partner overlay or adding a brand-driven field:
+see docs/brand-overlay-guide.md.
 
 Standard Magento dev workflow: composer install, bin/magento
 setup:di:compile, setup:upgrade, cache:flush. PHPUnit under Test/.

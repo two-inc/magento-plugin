@@ -14,7 +14,7 @@ use Two\Gateway\Model\Two;
 /**
  * AfterPlaceOrder Plugin
  * Set Two-stack orders (parent-brand `two_payment` + any registered
- * brand overlays such as `abn_payment`) to status pending after place.
+ * brand overlays such as `acme_payment`) to status pending after place.
  */
 class AfterPlaceOrder
 {

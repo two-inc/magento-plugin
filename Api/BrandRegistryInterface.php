@@ -63,9 +63,9 @@ interface BrandRegistryInterface
     /**
      * Minimum order value required for this brand's payment method to
      * be offered at checkout: amount + currency + basis ('net' = basket
-     * excluding tax, 'gross' = including; ABN AMRO defines its minimum
-     * net, matching the funding partner's server-side risk rule, while
-     * the platform's country defaults are gross — hence explicit).
+     * excluding tax, 'gross' = including). Basis is always explicit in
+     * brand.xml — funding-partner rules and platform country defaults
+     * may differ, so the brand declares its requirement unambiguously.
      * Returning null means there is no minimum. Baskets in other
      * currencies are converted to this currency via the store's
      * exchange rates before comparing.
@@ -104,7 +104,7 @@ interface BrandRegistryInterface
 
     /**
      * Magento payment-method code for the active brand (e.g.
-     * "two_payment", "abn_payment"). Used to build brand-aware
+     * "two_payment", "acme_payment"). Used to build brand-aware
      * `payment/<code>/*` CCD paths from a single shared codebase
      * — callers do not hold this value in their own constructor
      * args.
@@ -122,7 +122,7 @@ interface BrandRegistryInterface
 
     /**
      * Ordered label => module-name map for the admin Version panel
-     * (Stores → Configuration → ABN/Two AMRO → Version). Brand
+     * (Stores → Configuration → [Brand] → Version). Brand
      * overlays append their theme modules to the parent runtime
      * rows; the Version block renders one row per ComponentRegistrar-
      * resolvable module and silently skips unregistered entries.

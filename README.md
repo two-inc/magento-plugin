@@ -128,9 +128,9 @@ Install also runs:
 
 ### Brand overlays
 
-Brand-specific overlay packages (e.g. ABN AMRO's Zakelijk op Rekening) live in
-their own Composer packages and are installed separately from this plugin, not
-through `make install`. See `two-inc/magento-abn-plugin` for the ABN overlay.
+Brand-specific overlay packages live in their own Composer packages and are
+installed separately from this plugin, not through `make install`. See
+`docs/brand-overlay-guide.md` for how overlay modules are structured.
 
 ### Debugging
 

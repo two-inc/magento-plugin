@@ -25,7 +25,7 @@ define([
 
     // Resolve the active Two-family brand subtree from checkoutConfig
     // rather than hardcoding `.two_payment`. The brand-overlay 2.0
-    // architecture lets each overlay (abn_payment, …) ship its own
+    // architecture lets each overlay (acme_payment, …) ship its own
     // ConfigProvider subtree under the brand's payment-method code,
     // so this module needs to discover which is active rather than
     // assuming vanilla.

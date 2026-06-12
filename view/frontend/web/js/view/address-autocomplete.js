@@ -15,7 +15,7 @@ define([
     'use strict';
 
     // Resolve the active Two-family brand subtree so overlays
-    // (abn_payment, …) get their own checkoutApiUrl /
+    // (acme_payment, …) get their own checkoutApiUrl /
     // isCompanySearchEnabled / companySearchLimit instead of falling
     // through to an empty object when the vanilla `two_payment` key
     // isn't present.

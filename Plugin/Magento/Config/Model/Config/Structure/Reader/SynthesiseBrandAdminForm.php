@@ -268,7 +268,7 @@ class SynthesiseBrandAdminForm
      * are declared) but renders as hidden in the admin form.
      *
      * @param array<string,mixed> $section
-     * @param string $sectionId Full section id, e.g. `abn_payment`.
+     * @param string $sectionId Full section id, e.g. `acme_payment`.
      * @param string $sectionPrefix Brand's section prefix, e.g. `abn`.
      * @param string[] $suppressedPaths `section_suffix/group/field` paths.
      * @return array<string,mixed>
@@ -281,7 +281,7 @@ class SynthesiseBrandAdminForm
     ): array {
         $expectedPrefix = $sectionPrefix . '_';
         // section_suffix is everything after the brand prefix in the
-        // section id, e.g. `payment` for `abn_payment`.
+        // section id, e.g. `payment` for `acme_payment`.
         if (strncmp($sectionId, $expectedPrefix, strlen($expectedPrefix)) !== 0) {
             return $section;
         }
