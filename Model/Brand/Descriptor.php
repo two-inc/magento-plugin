@@ -116,7 +116,7 @@ final class Descriptor
         if ($this->sectionPrefix !== '') {
             return $this->sectionPrefix;
         }
-        // Derive: `two_payment` → `two`, `abn_payment` → `abn`.
+        // Derive: `two_payment` → `two`, `acme_payment` → `acme`.
         // Strictly strip a TRAILING `_payment` suffix only; using
         // strstr() would incorrectly shorten a hypothetical
         // `foo_payment_method` to `foo`.

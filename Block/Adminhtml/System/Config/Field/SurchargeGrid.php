@@ -490,7 +490,7 @@ class SurchargeGrid extends Field
 
     /**
      * Build a fully-qualified config path under the active brand's
-     * payment-method subtree (e.g. `payment/abn_payment/...` on an
+     * payment-method subtree (e.g. `payment/acme_payment/...` on an
      * ABN install). The brand code is resolved at call time from
      * BrandRegistryInterface, which routes through ActiveBrandResolver
      * to the active brand's brand.xml — no per-brand DI rebinding.

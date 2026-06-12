@@ -50,7 +50,7 @@ use Two\Gateway\Service\UrlCookie;
  *   <virtualType name="ABN\Gateway\Model\AbnPayment"
  *                type="Two\Gateway\Model\GenericPaymentMethod">
  *       <arguments>
- *           <argument name="code" xsi:type="string">abn_payment</argument>
+ *           <argument name="code" xsi:type="string">acme_payment</argument>
  *           <argument name="brand" xsi:type="object">ABN\Gateway\Model\AbnBrand</argument>
  *       </arguments>
  *   </virtualType>
@@ -112,7 +112,7 @@ class GenericPaymentMethod extends Two
             $resourceCollection,
             $data
         );
-        // Brand-overlay payment-method code, e.g. 'abn_payment'. Replaces
+        // Brand-overlay payment-method code, e.g. 'acme_payment'. Replaces
         // the hardcoded `self::CODE` baked into the parent Two class so a
         // single class can back multiple brand-overlay virtualTypes.
         $this->_code = $code;

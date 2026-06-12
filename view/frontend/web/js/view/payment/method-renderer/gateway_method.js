@@ -83,7 +83,7 @@ define([
             this._super();
 
             // Brand-overlay config: read once at initialize time, keyed on
-            // this.getCode() so abn_payment, two_payment, etc each pull
+            // this.getCode() so acme_payment, two_payment, etc each pull
             // their own subtree from window.checkoutConfig.payment.
             this._brandConfig = getBrandConfig(this.getCode());
             var config = this._brandConfig;

@@ -22,7 +22,7 @@ define([
             var method = quote.paymentMethod();
             // Match against the active Two-family brand code rather
             // than the hardcoded vanilla `two_payment`, so brand
-            // overlays (abn_payment, …) display the surcharge line
+            // overlays (acme_payment, …) display the surcharge line
             // when their own payment method is selected.
             var activeCode = brandConfig.getActiveTwoBrandCode();
             return segment && parseFloat(segment.value) > 0

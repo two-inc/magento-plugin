@@ -104,7 +104,7 @@ interface BrandRegistryInterface
 
     /**
      * Magento payment-method code for the active brand (e.g.
-     * "two_payment", "abn_payment"). Used to build brand-aware
+     * "two_payment", "acme_payment"). Used to build brand-aware
      * `payment/<code>/*` CCD paths from a single shared codebase
      * — callers do not hold this value in their own constructor
      * args.

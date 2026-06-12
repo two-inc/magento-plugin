@@ -9,7 +9,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // checkboxes container with id `{section}_payment_terms_payment_terms_checkboxes`
         // — strip the suffix to recover the section id and build every
         // other selector against it. Keeps the file brand-agnostic:
-        // `two_payment` on vanilla, `abn_payment` on a brand overlay
+        // `two_payment` on vanilla, `acme_payment` on a brand overlay
         // install, etc. The previous hardcoded `two_payment_*` selectors
         // matched nothing on overlay installs, so $surchargeType.val()
         // returned undefined → getSurchargeType() defaulted to 'none' →

@@ -24,7 +24,7 @@ use Two\Gateway\Model\Two;
  * config the gateway_method renderer needs. The `$code` constructor
  * argument decides which subtree of `payment` gets populated, so
  * brand-overlay packages can declare a
- * virtualType of this class with `code='abn_payment'` and a
+ * virtualType of this class with `code='acme_payment'` and a
  * brand-bound BrandRegistryInterface to expose their own subtree
  * without re-implementing the body of getConfig().
  *
