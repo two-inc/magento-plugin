@@ -124,7 +124,6 @@ across modules). Elements may appear in any order (`xs:all`).
 | `api_base_url` | yes | string | Two API base for this brand. |
 | `available_payment_terms` | yes | `<term>` list | Day counts offered (positive integers). |
 | `surcharge_fixed_max` | no | `amount` + `currency` attrs | Cap on the fixed surcharge component. |
-| `minimum_order` | no | `amount` + `currency` + `basis` attrs | Minimum basket value for the method to be offered; `basis` (`net`\|`gross`) declares whether it compares excl. or incl. tax — always explicit (worked example below). |
 | `csp_origins` | no | `<origin>` list | Extra CSP origins. |
 | `admin_resource` | yes | string | ACL resource gating the admin section. |
 | `module_label_chain` | no | `<module label="…">` list | Admin Version-panel rows; rows for missing modules silently skip. |
@@ -146,9 +145,9 @@ passive). Two consequences:
    parse it produces a silently-absent feature, not a deploy failure.
    Always verify the feature's observable behaviour after deploy.
 2. Where silent mis-parsing would be dangerous, `Loader` carries its own
-   guards (duplicate/empty `code`, malformed `minimum_order`) that throw
-   `DomainException` at load. Follow that pattern when you add fields
-   whose zero-value would silently disable a constraint.
+   guards (duplicate/empty `code`) that throw `DomainException` at load.
+   Follow that pattern when you add fields whose zero-value would
+   silently disable a constraint.
 
 ## suppressed_fields: hiding admin controls per brand
 
@@ -167,24 +166,23 @@ instead of shipping a `<section>` stub in the overlay's system.xml —
 a static stub inserts itself into the merged Structure first and
 short-circuits the synthesised section ordering.
 
-## Worked example: adding a brand-driven field (`minimum_order`)
+## Worked example: adding a brand-driven field
 
-The minimum-order gate (TWO-24743) — a €250 EUR floor — is the canonical recipe for
-extending `BrandRegistryInterface` with a new brand-driven value. Six
-touch points, in dependency order:
+`surcharge_fixed_max` is the recipe for extending
+`BrandRegistryInterface` with a new brand-driven value. Six touch
+points, in dependency order:
 
 1. **Schema** — `etc/brand.xsd`: add the element to `brandType`
    (optional, `minOccurs="0"`, so existing brand.xml files stay valid)
-   plus its complexType. The attribute-pair idiom
-   (`<minimum_order amount="250" currency="EUR"/>`) matches
-   `surcharge_fixed_max`.
+   plus its complexType (attribute-pair idiom:
+   `<surcharge_fixed_max amount="25.0" currency="EUR"/>`).
 
 2. **Loader** — `Model/Brand/Loader.php` `buildDescriptor()`: parse the
-   element, **normalise and validate** (currency is upper-cased and
-   trimmed; `amount <= 0` or empty currency throws `DomainException` —
-   because nothing validates the xsd at runtime, a typo would otherwise
-   coerce to `0.0` and silently disable the gate). Pass the value as a
-   constructor argument to `Descriptor`.
+   element, **normalise and validate** — because nothing validates the
+   xsd at runtime, a typo'd amount would otherwise coerce to `0.0` and
+   silently disable whatever the value drives. Throw `DomainException`
+   on malformed input. Pass the value as a constructor argument to
+   `Descriptor`.
 
 3. **Value object** — `Model/Brand/Descriptor.php`: append a readonly
    constructor property + getter. Mirror the same getter on the legacy
@@ -194,35 +192,31 @@ touch points, in dependency order:
    `Brand/DescriptorBackedBrandRegistry.php`).
 
 4. **Interface + adapter** — `Api/BrandRegistryInterface.php`: declare
-   the getter with the full return-shape docblock
-   (`@return array{amount: float, currency: string}|null` here; null =
-   feature absent). `Brand/DescriptorBackedBrandRegistry.php`: delegate
-   to the resolved descriptor.
+   the getter with the full return-shape docblock (null = feature
+   absent). `Brand/DescriptorBackedBrandRegistry.php`: delegate to the
+   resolved descriptor.
 
 5. **Consumer** — the code that reads the value lands in the same PR
-   (no speculative brand fields). For the minimum:
-   `Service/Order/MinimumOrderGate` enforces it at the end of
-   `Two::isAvailable()`. Note its defensive patterns — fail-closed on
-   unresolvable currency/missing FX rate, ERROR-level logging deduped
-   per currency pair, comparison at currency precision — they exist
-   because hiding a payment method is a silent revenue stop when
-   misconfigured.
+   (no speculative brand fields).
 
 6. **Tests** — unit tests for the Loader parse/validation and the
-   consumer's boundaries (the `MinimumOrderGateTest` boundary set is the
-   template: exact-minimum, cross-currency, fail-closed paths).
-
-The overlay then declares the value in its `brand.xml`:
-
-```xml
-<minimum_order amount="250" currency="EUR" basis="net"/>
-```
+   consumer's boundaries.
 
 **Release ordering:** the parent release containing steps 1–6 must be
 deployed before an overlay brand.xml that uses the new element —
 on an older parent the element is silently ignored (see the validation
-warning above), so verify the feature's behaviour (here: the
-€249.99/€250.00 availability boundary) after deploy.
+warning above), so verify the feature's observable behaviour after
+deploy.
+
+**brand.xml or the API?** Reserve brand.xml for values that are
+intrinsically brand-static (URLs, labels, payment terms, CSP origins).
+A value the platform owns and may change per merchant — the minimum
+order value is the canonical case — belongs in the Two API instead:
+the gate reads `GET /v1/merchant`'s `min_order_amount/currency/basis`
+via `Service/Order/MinimumOrderProvider` (TWO-24775), so the storefront
+and checkout-api can never disagree on the threshold. The brand.xml
+`<minimum_order>` element that originally shipped with TWO-24743 was
+removed in favour of that lookup.
 
 ## Local development
 

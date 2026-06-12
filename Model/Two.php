@@ -35,6 +35,7 @@ use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
 use Two\Gateway\Service\Order\MinimumOrderGate;
+use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Service\UrlCookie;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 
@@ -125,6 +126,10 @@ class Two extends AbstractMethod
      * @var MinimumOrderGate
      */
     private $minimumOrderGate;
+    /**
+     * @var MinimumOrderProvider
+     */
+    private $minimumOrderProvider;
 
     /**
      * Two constructor.
@@ -147,6 +152,7 @@ class Two extends AbstractMethod
      * @param Adapter $apiAdapter
      * @param LogRepository $logRepository
      * @param MinimumOrderGate $minimumOrderGate
+     * @param MinimumOrderProvider $minimumOrderProvider
      * @param AbstractResource|null $resource
      * @param AbstractDb|null $resourceCollection
      * @param array $data
@@ -172,6 +178,7 @@ class Two extends AbstractMethod
         Adapter $apiAdapter,
         LogRepository $logRepository,
         MinimumOrderGate $minimumOrderGate,
+        MinimumOrderProvider $minimumOrderProvider,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -201,6 +208,7 @@ class Two extends AbstractMethod
         $this->orderRepository = $orderRepository;
         $this->logRepository = $logRepository;
         $this->minimumOrderGate = $minimumOrderGate;
+        $this->minimumOrderProvider = $minimumOrderProvider;
     }
 
     /**
@@ -246,21 +254,21 @@ class Two extends AbstractMethod
             // while older backends carry only a generic reason.
             $storeId = $order->getStoreId() !== null ? (int)$order->getStoreId() : null;
             $orderCurrency = (string)$order->getOrderCurrencyCode();
-            $minimumOrder = $this->brandRegistry->getMinimumOrder();
+            $minimumOrder = $this->minimumOrderProvider->getMinimum($storeId);
             $declinedOnMinimum = ($response['decline_reason'] ?? null) === 'ORDER_BELOW_MIN_INVOICE_AMOUNT';
             if (!$declinedOnMinimum && $minimumOrder !== null) {
                 $orderValue = $minimumOrder['basis'] === 'gross'
                     ? (float)$order->getGrandTotal()
                     : (float)$order->getGrandTotal() - (float)$order->getTaxAmount();
                 $declinedOnMinimum = $this->minimumOrderGate->isBelowMinimum(
-                    $this->brandRegistry,
+                    $minimumOrder,
                     $orderValue,
                     $orderCurrency,
                     $storeId
                 );
             }
             if ($declinedOnMinimum && $minimumOrder !== null) {
-                $display = $this->minimumOrderGate->getMinimumForDisplay($this->brandRegistry, $orderCurrency, $storeId);
+                $display = $this->minimumOrderGate->getMinimumForDisplay($minimumOrder, $orderCurrency, $storeId);
                 if ($display !== null) {
                     throw new LocalizedException(__(
                         'Invoice purchase with %1 is not available for this order. Minimum order value is %2 %3 tax.',
@@ -731,17 +739,20 @@ class Two extends AbstractMethod
         if ($apiKey === null || $apiKey === '') {
             return false;
         }
-        // Brand product minimum-order constraint (brand.xml <minimum_order/>)
-        // plus the merchant's own optional minimum (admin setting in the
-        // STORE BASE currency; validated on save to exceed the platform
-        // floor converted to that currency). The brand is passed in
-        // rather than re-resolved by the gate; ActiveBrandResolver
-        // guarantees one active brand per install.
+        // Platform minimum-order constraint (the API-resolved tuple from
+        // GET /v1/merchant - the same value checkout-api enforces at order
+        // create/intent) plus the merchant's own optional minimum (admin
+        // setting in the STORE BASE currency; validated on save to exceed
+        // the platform floor converted to that currency).
+        $storeId = null;
+        if ($quote instanceof \Magento\Quote\Model\Quote && $quote->getStoreId() !== null) {
+            $storeId = (int)$quote->getStoreId();
+        }
+        $platformMinimum = $this->minimumOrderProvider->getMinimum($storeId);
         $merchantMinimum = null;
         if ($quote instanceof \Magento\Quote\Model\Quote) {
             $merchantValue = (float)$this->getConfigData('merchant_minimum_order');
             if ($merchantValue > 0) {
-                $platformMinimum = $this->brandRegistry->getMinimumOrder();
                 $store = $quote->getStore();
                 $currency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
                 if ($currency !== '') {
@@ -753,6 +764,6 @@ class Two extends AbstractMethod
                 }
             }
         }
-        return $this->minimumOrderGate->isSatisfied($this->brandRegistry, $quote, $merchantMinimum);
+        return $this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum);
     }
 }

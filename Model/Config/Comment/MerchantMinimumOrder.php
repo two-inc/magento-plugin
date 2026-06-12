@@ -11,21 +11,21 @@ use Magento\Config\Model\Config\CommentInterface;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Pricing\PriceCurrencyInterface;
 use Magento\Store\Model\StoreManagerInterface;
-use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
 
 /**
  * Shows the merchant the platform/partner minimum their own value must
- * exceed (the brand's minimum_order), converted into the store base
+ * exceed (the API-resolved platform minimum), converted into the store base
  * currency the field is interpreted in, with the platform's native
  * value in brackets - e.g. "Platform minimum £215.73 (€250.00)".
  */
 class MerchantMinimumOrder implements CommentInterface
 {
     /**
-     * @var BrandRegistryInterface
+     * @var MinimumOrderProvider
      */
-    private $brandRegistry;
+    private $minimumOrderProvider;
 
     /**
      * @var CurrencyRatesProviderInterface
@@ -48,13 +48,13 @@ class MerchantMinimumOrder implements CommentInterface
     private $request;
 
     public function __construct(
-        BrandRegistryInterface $brandRegistry,
+        MinimumOrderProvider $minimumOrderProvider,
         CurrencyRatesProviderInterface $ratesProvider,
         StoreManagerInterface $storeManager,
         PriceCurrencyInterface $priceCurrency,
         RequestInterface $request
     ) {
-        $this->brandRegistry = $brandRegistry;
+        $this->minimumOrderProvider = $minimumOrderProvider;
         $this->ratesProvider = $ratesProvider;
         $this->storeManager = $storeManager;
         $this->priceCurrency = $priceCurrency;
@@ -66,14 +66,16 @@ class MerchantMinimumOrder implements CommentInterface
      */
     public function getCommentText($elementValue)
     {
-        $platformMinimum = $this->brandRegistry->getMinimumOrder();
+        $store = $this->resolveScopeStore();
+        $platformMinimum = $this->minimumOrderProvider->getMinimum(
+            $store !== null ? (int)$store->getId() : null
+        );
         if ($platformMinimum === null) {
             return (string)__(
                 'Hide the payment method below this order value (store base currency, including tax). Leave empty for no minimum.'
             );
         }
 
-        $store = $this->resolveScopeStore();
         $baseCurrency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
         $nativeDisplay = $this->priceCurrency->format(
             $platformMinimum['amount'],

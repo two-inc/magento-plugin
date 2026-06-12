@@ -56,11 +56,6 @@ class DescriptorBackedBrandRegistry implements BrandRegistryInterface
         return $this->activeBrandResolver->resolve()->getSurchargeFixedMax();
     }
 
-    public function getMinimumOrder(): ?array
-    {
-        return $this->activeBrandResolver->resolve()->getMinimumOrder();
-    }
-
     public function getSignUpUrl(): string
     {
         return $this->activeBrandResolver->resolve()->getSignUpUrl();
