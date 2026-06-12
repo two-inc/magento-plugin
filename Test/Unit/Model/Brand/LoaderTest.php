@@ -18,15 +18,25 @@ class LoaderTest extends TestCase
         return new Loader($registrar);
     }
 
-    public function testRejectsZeroMinimumOrderAmount(): void
+    public function testRejectsNonNumericMinimumOrderAmount(): void
     {
         // brand.xsd marks amount required but nothing validates the schema
-        // at runtime; a zero/typo'd amount would silently disable the gate,
-        // so the Loader must refuse to load it.
+        // at runtime; a typo'd amount (here a comma decimal) would coerce
+        // to 0.0 and silently disable the gate, so the Loader must refuse
+        // to load it.
         $this->expectException(\DomainException::class);
         $this->expectExceptionMessageMatches('/minimum_order/');
 
         $this->loaderFor('invalid_minimum')->load();
+    }
+
+    public function testZeroMinimumOrderAmountMeansNoMinimum(): void
+    {
+        // An explicit zero is valid and means "no minimum" - same semantics
+        // as the checkout-api merchant config.
+        $brands = $this->loaderFor('zero_minimum')->load();
+
+        $this->assertNull($brands['two_payment']->getMinimumOrder());
     }
 
     public function testNormalisesMinimumOrderCurrency(): void
