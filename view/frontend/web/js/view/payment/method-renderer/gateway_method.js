@@ -303,7 +303,7 @@ define([
             if (url) {
                 // Magento's place-order action stops the full-screen loader the
                 // moment the AJAX resolves — which leaves the checkout bare for
-                // the few seconds the redirect to the Two/ABN checkout takes,
+                // the few seconds the redirect to the hosted checkout takes,
                 // making buyers think nothing happened. Re-show the loader so
                 // the overlay stays up until the browser actually navigates
                 // away (the new page discards it).

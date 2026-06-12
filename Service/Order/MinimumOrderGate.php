@@ -14,15 +14,14 @@ use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 
 /**
- * Enforces a brand's minimum order value (e.g. the ABN AMRO product
- * requires a €250 minimum) when deciding whether the payment method
- * is offered at checkout.
+ * Enforces a brand's minimum order value when deciding whether the
+ * payment method is offered at checkout.
  *
  * The minimum is declared per brand in brand.xml as
  * `<minimum_order amount="250" currency="EUR" basis="net"/>` and
  * compares the basket's net (grand total minus tax) or gross value per
- * the declared basis — ABN AMRO's funding-partner rule is net; the
- * platform's country defaults are gross. Baskets in a different
+ * the declared basis — always explicit, since funding-partner rules and
+ * platform country defaults may differ. Baskets in a different
  * currency are converted to the brand currency via the store's
  * exchange rates before comparing. When no rate is
  * configured the gate fails closed: the method is hidden rather

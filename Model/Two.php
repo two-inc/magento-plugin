@@ -320,7 +320,7 @@ class Two extends AbstractMethod
      *   2. BrandRegistry::getProductName() (brand overlay fallback).
      *
      * Optionally suffixed with the buyer's selected term in days
-     * (e.g. "Zakelijk op Rekening - 60 days"). DataAssignObserver
+     * (e.g. "Partner Product - 60 days"). DataAssignObserver
      * stores the chosen term under the `selectedTerm` key as a
      * scalar; the duration is wrapped in a separate __() call so the
      * existing "%1 days" CSV entry handles localisation.

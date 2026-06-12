@@ -143,7 +143,7 @@ class SurchargeOverride extends Template
     /**
      * Label for the row — mirrors the order's surcharge description so the
      * editable line on the creditmemo create form reads the same as the
-     * static line shown elsewhere (e.g. "Zakelijk op Rekening - 30 dagen"
+     * static line shown elsewhere (e.g. "Partner Product - 30 dagen"
      * prefixed with "Refund").
      */
     public function getLabel(): string

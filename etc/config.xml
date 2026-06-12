@@ -62,8 +62,8 @@
             Per-layer synthesis flags for the brand-overlay v6 mechanism.
             Default 0 (OFF): the synthesis plugin ships dormant so this
             change is purely additive on production. A follow-up PR
-            flips the default to 1 in lockstep with magento-abn-plugin's
-            data-only release (which deletes ABN's renderer-bootstrap
+            flips the default to 1 in lockstep with a brand overlay's
+            data-only release (which deletes the overlay's renderer-bootstrap
             JS). Design v6 §16.3 specifies these as per-layer debugging
             knobs, not a rollback mechanism. Layers shipped in
             subsequent PRs (payment_xml, csp, admin_form) will add
@@ -88,7 +88,7 @@
                 already exists statically (so a brand whose overlay
                 module still ships its own etc/adminhtml/system.xml
                 stays on the static surface — first-writer-wins).
-                Default 1 since the magento-abn-plugin strip-down: the
+                Default 1 since the brand overlay strip-down: the
                 overlay no longer ships its own system.xml, so synthesis
                 is the sole source of the per-brand admin tab. Flip to
                 0 only to debug — vanilla Two installs have no overlay

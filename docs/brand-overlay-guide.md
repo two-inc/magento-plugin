@@ -1,9 +1,7 @@
 # Brand overlay guide
 
-How to build a brand overlay module on top of `Two_Gateway` — a partner
-edition (like the ABN AMRO plugin) that rebrands the payment method
-without forking any code. Reference implementation:
-[two-inc/magento-abn-plugin](https://github.com/two-inc/magento-abn-plugin).
+How to build a brand overlay module on top of `Two_Gateway` — a brand
+overlay edition that rebrands the payment method without forking any code.
 
 ## Architecture in one paragraph
 
@@ -72,10 +70,10 @@ Two things, both small:
      method. The brand's `code` is the only override; every other
      constructor argument resolves by type through the ObjectManager,
      so new required parent constructor params auto-inject. -->
-<virtualType name="ABN\Gateway\Model\AbnPayment"
+<virtualType name="Acme\Gateway\Model\AcmePayment"
              type="Two\Gateway\Model\GenericPaymentMethod">
     <arguments>
-        <argument name="code" xsi:type="string">abn_payment</argument>
+        <argument name="code" xsi:type="string">acme_payment</argument>
     </arguments>
 </virtualType>
 
@@ -83,7 +81,7 @@ Two things, both small:
 <type name="Two\Gateway\Model\BrandOverlayRegistry">
     <arguments>
         <argument name="overlays" xsi:type="array">
-            <item name="abn_payment" xsi:type="string">abn_payment</item>
+            <item name="acme_payment" xsi:type="string">acme_payment</item>
         </argument>
     </arguments>
 </type>
@@ -171,7 +169,7 @@ short-circuits the synthesised section ordering.
 
 ## Worked example: adding a brand-driven field (`minimum_order`)
 
-The €250 ABN minimum-order gate (TWO-24743) is the canonical recipe for
+The minimum-order gate (TWO-24743) — a €250 EUR floor — is the canonical recipe for
 extending `BrandRegistryInterface` with a new brand-driven value. Six
 touch points, in dependency order:
 
@@ -229,8 +227,8 @@ warning above), so verify the feature's behaviour (here: the
 ## Local development
 
 `make up` in this repo runs a vanilla Magento dev stack on port 1234;
-the ABN overlay repo's `make up` runs an ABN-flavoured stack on 1235 —
-both can co-run. The overlay repo's `dev/install.sh` supports
+a brand overlay repo's `make up` typically runs a brand-flavoured stack
+on a different port — both can co-run. The overlay repo's `dev/install.sh` supports
 `BASE=released|develop|tag:|sha:|ref:|path:` to test an overlay against
 any parent version, which is exactly what the release-ordering caveat
 above requires before shipping a new brand field.

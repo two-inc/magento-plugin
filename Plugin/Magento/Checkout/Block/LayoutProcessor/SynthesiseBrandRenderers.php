@@ -21,9 +21,8 @@ use Two\Gateway\Model\Brand\Descriptor;
  * view/frontend/web/js/view/payment/two_payment.js file shipped
  * with magento-plugin. This plugin therefore only emits a synthesis
  * entry when the resolved active brand is something other than the
- * default Two brand (i.e. when an overlay package such as the
- * future data-only magento-abn-plugin is installed and contributes
- * its own etc/brand.xml).
+ * default Two brand (i.e. when a data-only brand overlay package
+ * is installed and contributes its own etc/brand.xml).
  *
  * Gated by the system/two_brand_synthesis/checkout_renderers/enabled
  * flag, default 0. While dormant, afterProcess is a pass-through.

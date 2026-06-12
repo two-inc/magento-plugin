@@ -23,7 +23,7 @@ use Two\Gateway\Model\Two;
  * Populates `window.checkoutConfig.payment[<code>]` with the runtime
  * config the gateway_method renderer needs. The `$code` constructor
  * argument decides which subtree of `payment` gets populated, so
- * brand-overlay packages (magento-abn-plugin) can declare a
+ * brand-overlay packages can declare a
  * virtualType of this class with `code='abn_payment'` and a
  * brand-bound BrandRegistryInterface to expose their own subtree
  * without re-implementing the body of getConfig().
