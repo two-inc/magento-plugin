@@ -201,15 +201,58 @@ class Version extends Field
 
     private function readComposerVersion(string $modulePath): ?string
     {
-        $composer = @file_get_contents($modulePath . '/composer.json');
-        if ($composer === false) {
-            return null;
+        // Monorepo sub-path modules (e.g. ABN_Gateway at <repo>/plugin)
+        // keep their composer.json one level up; check both.
+        foreach ([$modulePath, dirname($modulePath)] as $dir) {
+            $composer = @file_get_contents($dir . '/composer.json');
+            if ($composer === false) {
+                continue;
+            }
+            $data = json_decode($composer, true);
+            if (!is_array($data)) {
+                continue;
+            }
+            if (!empty($data['version'])) {
+                return (string)$data['version'];
+            }
+            if ($version = $this->resolvePackageVersion($data, $dir)) {
+                return $version;
+            }
         }
-        $data = json_decode($composer, true);
-        if (!is_array($data) || empty($data['version'])) {
-            return null;
+        return null;
+    }
+
+    /**
+     * Version for a composer.json that carries no version field (the
+     * convention for tag-versioned packages): ask composer's installed
+     * registry, then fall back to bumpver.toml for git-checkout deploys
+     * (git-sync pods, dev installs) where the package isn't
+     * composer-installed.
+     *
+     * @param array $composerData decoded composer.json
+     */
+    private function resolvePackageVersion(array $composerData, string $dir): ?string
+    {
+        $name = $composerData['name'] ?? null;
+        if (is_string($name)
+            && $name !== ''
+            && class_exists(\Composer\InstalledVersions::class)
+            && \Composer\InstalledVersions::isInstalled($name)
+        ) {
+            $version = \Composer\InstalledVersions::getPrettyVersion($name);
+            if ($version !== null && $version !== '') {
+                return $version;
+            }
         }
-        return (string)$data['version'];
+
+        $bumpver = @file_get_contents($dir . '/bumpver.toml');
+        if ($bumpver !== false
+            && preg_match('/^current_version\s*=\s*"([^"]+)"/m', $bumpver, $m)
+        ) {
+            return $m[1];
+        }
+
+        return null;
     }
 
     /**
