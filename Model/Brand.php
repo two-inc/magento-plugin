@@ -46,8 +46,6 @@ class Brand implements BrandRegistryInterface
     private $brandTag;
     /** @var string */
     private $checkoutSubtitle;
-    /** @var array{amount: float, currency: string}|null */
-    private $minimumOrder;
 
     /**
      * @param int[] $availablePaymentTerms
@@ -63,8 +61,7 @@ class Brand implements BrandRegistryInterface
         string $signUpUrl = '',
         string $documentationUrl = '',
         string $brandTag = '',
-        string $checkoutSubtitle = '',
-        ?array $minimumOrder = null
+        string $checkoutSubtitle = ''
     ) {
         $this->provider = $provider;
         $this->providerFullName = $providerFullName;
@@ -76,7 +73,6 @@ class Brand implements BrandRegistryInterface
         $this->documentationUrl = $documentationUrl;
         $this->brandTag = $brandTag;
         $this->checkoutSubtitle = $checkoutSubtitle;
-        $this->minimumOrder = $minimumOrder;
     }
 
     public function getProvider(): string
@@ -107,11 +103,6 @@ class Brand implements BrandRegistryInterface
     public function getSurchargeFixedMax(): ?array
     {
         return $this->surchargeFixedMax;
-    }
-
-    public function getMinimumOrder(): ?array
-    {
-        return $this->minimumOrder;
     }
 
     public function getSignUpUrl(): string

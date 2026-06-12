@@ -61,20 +61,6 @@ interface BrandRegistryInterface
     public function getSurchargeFixedMax(): ?array;
 
     /**
-     * Minimum order value required for this brand's payment method to
-     * be offered at checkout: amount + currency + basis ('net' = basket
-     * excluding tax, 'gross' = including). Basis is always explicit in
-     * brand.xml — funding-partner rules and platform country defaults
-     * may differ, so the brand declares its requirement unambiguously.
-     * Returning null means there is no minimum. Baskets in other
-     * currencies are converted to this currency via the store's
-     * exchange rates before comparing.
-     *
-     * @return array{amount: float, currency: string, basis: string}|null
-     */
-    public function getMinimumOrder(): ?array;
-
-    /**
      * Short brand tag used to decorate non-production checkout URLs
      * (e.g. `?brand=<tag>`). Empty string ('') means do not decorate
      * — the URL host already conveys the brand. Implementations may

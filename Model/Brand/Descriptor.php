@@ -45,7 +45,6 @@ final class Descriptor
      * @param array<string,string> $extraHttpHeaders name=>value, decoration on outbound requests.
      * @param string[] $suppressedFields `section_suffix/group/field` paths to hide in the synthesised admin form.
      * @param bool $inlineTermFees Whether to render the per-term merchant fee beside each Payment Terms checkbox in admin.
-     * @param array{amount:float,currency:string}|null $minimumOrder Minimum order value for the method to be offered; null = no minimum.
      */
     public function __construct(
         private readonly string $code,
@@ -71,8 +70,7 @@ final class Descriptor
         private readonly array $extraHttpHeaders,
         private readonly array $suppressedFields = [],
         private readonly bool $inlineTermFees = true,
-        private readonly string $checkoutSubtitle = '',
-        private readonly ?array $minimumOrder = null
+        private readonly string $checkoutSubtitle = ''
     ) {
     }
 
@@ -203,12 +201,6 @@ final class Descriptor
     public function getSurchargeFixedMax(): ?array
     {
         return $this->surchargeFixedMax;
-    }
-
-    /** @return array{amount:float,currency:string}|null */
-    public function getMinimumOrder(): ?array
-    {
-        return $this->minimumOrder;
     }
 
     /** @return string[] */

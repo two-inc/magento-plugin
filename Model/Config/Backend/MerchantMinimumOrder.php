@@ -18,12 +18,12 @@ use Magento\Framework\Pricing\PriceCurrencyInterface;
 use Magento\Framework\Registry;
 use Magento\Store\Model\ScopeInterface;
 use Magento\Store\Model\StoreManagerInterface;
-use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
 
 /**
  * Merchant-set minimum order value, interpreted in the STORE BASE
- * currency. The platform/partner minimum (the brand's minimum_order)
+ * currency. The platform/partner minimum (resolved from the Two API)
  * is the floor: a merchant may only RAISE the bar, never lower it
  * below what the funding setup requires. The floor is converted into
  * the store base currency for the comparison; when no exchange rate
@@ -33,9 +33,9 @@ use Two\Gateway\Api\CurrencyRatesProviderInterface;
 class MerchantMinimumOrder extends Value
 {
     /**
-     * @var BrandRegistryInterface
+     * @var MinimumOrderProvider
      */
-    private $brandRegistry;
+    private $minimumOrderProvider;
 
     /**
      * @var CurrencyRatesProviderInterface
@@ -57,7 +57,7 @@ class MerchantMinimumOrder extends Value
         Registry $registry,
         ScopeConfigInterface $config,
         TypeListInterface $cacheTypeList,
-        BrandRegistryInterface $brandRegistry,
+        MinimumOrderProvider $minimumOrderProvider,
         CurrencyRatesProviderInterface $ratesProvider,
         StoreManagerInterface $storeManager,
         PriceCurrencyInterface $priceCurrency,
@@ -65,7 +65,7 @@ class MerchantMinimumOrder extends Value
         ?AbstractDb $resourceCollection = null,
         array $data = []
     ) {
-        $this->brandRegistry = $brandRegistry;
+        $this->minimumOrderProvider = $minimumOrderProvider;
         $this->ratesProvider = $ratesProvider;
         $this->storeManager = $storeManager;
         $this->priceCurrency = $priceCurrency;
@@ -88,14 +88,14 @@ class MerchantMinimumOrder extends Value
         }
         $this->setValue($normalised);
 
-        $platformMinimum = $this->brandRegistry->getMinimumOrder();
-        if ($platformMinimum === null) {
-            return parent::beforeSave();
-        }
-
         $store = $this->resolveScopeStore();
         $baseCurrency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
         $storeId = $store !== null ? (int)$store->getId() : null;
+
+        $platformMinimum = $this->minimumOrderProvider->getMinimum($storeId);
+        if ($platformMinimum === null) {
+            return parent::beforeSave();
+        }
 
         $floor = $platformMinimum['amount'];
         if ($baseCurrency !== '' && $baseCurrency !== $platformMinimum['currency']) {
