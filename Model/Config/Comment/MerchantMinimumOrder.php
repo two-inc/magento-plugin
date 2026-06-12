@@ -72,7 +72,7 @@ class MerchantMinimumOrder implements CommentInterface
         );
         if ($platformMinimum === null) {
             return (string)__(
-                'Hide the payment method below this order value (store base currency, including tax). Leave empty for no minimum.'
+                'Hide the payment method below this order value (store base currency, on the tax basis selected below). Leave empty for no minimum.'
             );
         }
 
@@ -105,7 +105,7 @@ class MerchantMinimumOrder implements CommentInterface
         }
 
         return (string)__(
-            'Platform minimum %1, %2 tax. A value here is interpreted in the store base currency on the same tax basis and must exceed it.',
+            'Platform minimum %1, %2 tax. A value here is interpreted in the store base currency on the tax basis selected below and must exceed it.',
             $minimumDisplay,
             $platformMinimum['basis'] === 'gross' ? __('including') : __('excluding')
         );

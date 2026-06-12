@@ -756,10 +756,13 @@ class Two extends AbstractMethod
                 $store = $quote->getStore();
                 $currency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
                 if ($currency !== '') {
+                    $merchantBasis = (string)$this->getConfigData('merchant_minimum_order_basis');
                     $merchantMinimum = [
                         'amount' => $merchantValue,
                         'currency' => $currency,
-                        'basis' => $platformMinimum['basis'] ?? 'gross',
+                        'basis' => in_array($merchantBasis, ['net', 'gross'], true)
+                            ? $merchantBasis
+                            : ($platformMinimum['basis'] ?? 'gross'),
                     ];
                 }
             }
