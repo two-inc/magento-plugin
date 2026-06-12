@@ -83,7 +83,7 @@ define([
             this._super();
 
             // Brand-overlay config: read once at initialize time, keyed on
-            // this.getCode() so abn_payment, two_payment, etc each pull
+            // this.getCode() so acme_payment, two_payment, etc each pull
             // their own subtree from window.checkoutConfig.payment.
             this._brandConfig = getBrandConfig(this.getCode());
             var config = this._brandConfig;
@@ -303,7 +303,7 @@ define([
             if (url) {
                 // Magento's place-order action stops the full-screen loader the
                 // moment the AJAX resolves — which leaves the checkout bare for
-                // the few seconds the redirect to the Two/ABN checkout takes,
+                // the few seconds the redirect to the hosted checkout takes,
                 // making buyers think nothing happened. Re-show the loader so
                 // the overlay stays up until the browser actually navigates
                 // away (the new page discards it).

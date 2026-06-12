@@ -47,7 +47,7 @@ interface BrandOverlayRegistryInterface
      * method" (observers, controllers, the order-reference lookup in
      * Service\Payment\OrderService) use this instead of the previous
      * pattern of `=== Two::CODE` which excluded overlay methods like
-     * `abn_payment` and produced "Unable to find the requested order"
+     * `acme_payment` and produced "Unable to find the requested order"
      * errors on overlay checkouts.
      */
     public function isTwoStackMethod(string $method): bool;

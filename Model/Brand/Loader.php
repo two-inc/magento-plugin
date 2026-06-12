@@ -111,6 +111,42 @@ class Loader
             ];
         }
 
+        $minimumOrder = null;
+        if (isset($brand->minimum_order)) {
+            $rawAmount = trim((string)$brand->minimum_order['amount']);
+            $currency = strtoupper(trim((string)$brand->minimum_order['currency']));
+            $basis = strtolower(trim((string)$brand->minimum_order['basis']));
+            // brand.xsd marks all three attributes required, but nothing
+            // validates the schema at runtime (simplexml ignores the
+            // xsi:noNamespaceSchemaLocation hint). Validate the amount as a
+            // string before casting - a typo'd amount would otherwise coerce
+            // to 0.0 silently - and reject an implied basis, which would
+            // silently flip net/gross semantics.
+            if (!is_numeric($rawAmount)
+                || (float)$rawAmount < 0
+                || $currency === ''
+                || !in_array($basis, ['net', 'gross'], true)
+            ) {
+                throw new \DomainException(sprintf(
+                    'brand.xml at %s declares <minimum_order> with invalid'
+                    . ' amount/currency/basis (amount a non-negative number,'
+                    . ' currency non-empty, basis "net" or "gross")',
+                    $sourcePath
+                ));
+            }
+            $amount = (float)$rawAmount;
+            // An explicit zero means "no minimum" - same semantics as the
+            // checkout-api merchant config, where 0 is the escape hatch for
+            // overriding an inherited partner minimum.
+            if ($amount > 0) {
+                $minimumOrder = [
+                    'amount' => $amount,
+                    'currency' => $currency,
+                    'basis' => $basis,
+                ];
+            }
+        }
+
         $cspOrigins = [];
         if (isset($brand->csp_origins->origin)) {
             foreach ($brand->csp_origins->origin as $origin) {
@@ -189,7 +225,8 @@ class Loader
             $extraHttpHeaders,
             $suppressedFields,
             $inlineTermFees,
-            (string)($brand->checkout_subtitle ?? '')
+            (string)($brand->checkout_subtitle ?? ''),
+            $minimumOrder
         );
     }
 }

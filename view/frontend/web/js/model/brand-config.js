@@ -6,7 +6,7 @@
 /**
  * Brand-overlay-aware config lookup. Reads from
  * `window.checkoutConfig.payment[<methodCode>]` so each brand-overlay
- * payment method (two_payment, abn_payment, …) gets its own config
+ * payment method (two_payment, acme_payment, …) gets its own config
  * subtree without forking the gateway_method renderer per brand.
  *
  * Returns an empty object when the requested subtree is absent so
@@ -50,7 +50,7 @@
 
     /**
      * Returns the payment-method code for the currently-active Two-family
-     * brand (two_payment, abn_payment, …) by scanning checkoutConfig.payment
+     * brand (two_payment, acme_payment, …) by scanning checkoutConfig.payment
      * for a subtree with a truthy `redirectUrlCookieCode`. That field is
      * emitted only by Two_Gateway's Model/Ui/ConfigProvider, so its presence
      * is a reliable Two-family sentinel that does not collide with other

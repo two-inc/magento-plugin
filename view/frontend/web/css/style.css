@@ -52,7 +52,7 @@
     color: var(--color-brownie-vanilla);
 }
 
-/* All links inside the Two/ABN payment-method block render blue +
+/* All links inside the Two payment-method block render blue +
    underlined (brand subtitle "lees meer", terms "betaalvoorwaarden", …).
    Scoped to the block rather than a bare `a` so it stays out of the rest
    of checkout and so the class+element specificity wins over resets. */
@@ -263,7 +263,7 @@
  * checkout page (Registered Organisation / Sole Trader): solid Two-brand
  * blue (`--color-blue2`) for the selected state, white fill with blue
  * text for unselected. Brand overlays that ship a different palette
- * (e.g. ABN's teal/white pairing) override these rules from their own
+ * (e.g. a brand overlay's palette) override these rules from their own
  * style.css which loads after this one.
  */
 .two-term-chip {

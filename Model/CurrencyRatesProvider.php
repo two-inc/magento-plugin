@@ -27,6 +27,15 @@ class CurrencyRatesProvider implements CurrencyRatesProviderInterface
     /** @var StoreManagerInterface */
     private $storeManager;
 
+    /**
+     * Rate-table loads memoised per base currency: getRate() sits on the
+     * payment-method isAvailable() hot path (many calls per page view)
+     * and the rate table is static within a request.
+     *
+     * @var array<string,\Magento\Directory\Model\Currency|null>
+     */
+    private $baseCurrencyCache = [];
+
     public function __construct(
         CurrencyFactory $currencyFactory,
         StoreManagerInterface $storeManager
@@ -84,10 +93,13 @@ class CurrencyRatesProvider implements CurrencyRatesProviderInterface
         if ($baseCurrency === '') {
             return null;
         }
+        if (array_key_exists($baseCurrency, $this->baseCurrencyCache)) {
+            return $this->baseCurrencyCache[$baseCurrency];
+        }
         try {
-            return $this->currencyFactory->create()->load($baseCurrency);
+            return $this->baseCurrencyCache[$baseCurrency] = $this->currencyFactory->create()->load($baseCurrency);
         } catch (\Exception $e) {
-            return null;
+            return $this->baseCurrencyCache[$baseCurrency] = null;
         }
     }
 }

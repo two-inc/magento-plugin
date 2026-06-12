@@ -45,6 +45,7 @@ if (!interface_exists(\Magento\Framework\App\Config\Storage\WriterInterface::cla
 }
 if (!class_exists(\Magento\Framework\HTTP\Client\Curl::class)) {
     require_once __DIR__ . '/Stubs/Curl.php';
+    require_once __DIR__ . '/Stubs/ComponentRegistrar.php';
 }
 if (!class_exists(\Magento\Framework\HTTP\Client\CurlFactory::class)) {
     require_once __DIR__ . '/Stubs/CurlFactory.php';
@@ -63,6 +64,11 @@ if (!class_exists(\Magento\Catalog\Model\Product\Type::class)) {
 // collectors operate on real data bags, not empty method-less stubs.
 if (!class_exists(\Magento\Sales\Model\Order\Invoice::class, false)) {
     require_once __DIR__ . '/Stubs/SalesModels.php';
+}
+// Quote model with the CartInterface relationship intact - required so
+// type hints against CartInterface accept Quote mocks.
+if (!class_exists(\Magento\Quote\Model\Quote::class, false)) {
+    require_once __DIR__ . '/Stubs/QuoteModels.php';
 }
 
 // Catch-all autoloader for remaining Magento classes/interfaces.

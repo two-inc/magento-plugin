@@ -34,6 +34,7 @@ use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
+use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\UrlCookie;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 
@@ -120,6 +121,10 @@ class Two extends AbstractMethod
      * @var LogRepository
      */
     private $logRepository;
+    /**
+     * @var MinimumOrderGate
+     */
+    private $minimumOrderGate;
 
     /**
      * Two constructor.
@@ -141,6 +146,7 @@ class Two extends AbstractMethod
      * @param OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository
      * @param Adapter $apiAdapter
      * @param LogRepository $logRepository
+     * @param MinimumOrderGate $minimumOrderGate
      * @param AbstractResource|null $resource
      * @param AbstractDb|null $resourceCollection
      * @param array $data
@@ -165,6 +171,7 @@ class Two extends AbstractMethod
         OrderRepositoryInterface $orderRepository,
         Adapter $apiAdapter,
         LogRepository $logRepository,
+        MinimumOrderGate $minimumOrderGate,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -193,6 +200,7 @@ class Two extends AbstractMethod
         $this->orderStatusHistoryRepository = $orderStatusHistoryRepository;
         $this->orderRepository = $orderRepository;
         $this->logRepository = $logRepository;
+        $this->minimumOrderGate = $minimumOrderGate;
     }
 
     /**
@@ -231,6 +239,37 @@ class Two extends AbstractMethod
                 sprintf('Order was not accepted by %s', $this->brandRegistry->getProductName()),
                 $response
             );
+            // Surface the minimum when the decline is attributable to it:
+            // primarily by the API's machine-readable decline reason
+            // (emitted by the platform's minimum-order rejection), with a
+            // strictly-below-minimum check on the order value as fallback
+            // while older backends carry only a generic reason.
+            $storeId = $order->getStoreId() !== null ? (int)$order->getStoreId() : null;
+            $orderCurrency = (string)$order->getOrderCurrencyCode();
+            $minimumOrder = $this->brandRegistry->getMinimumOrder();
+            $declinedOnMinimum = ($response['decline_reason'] ?? null) === 'ORDER_BELOW_MIN_INVOICE_AMOUNT';
+            if (!$declinedOnMinimum && $minimumOrder !== null) {
+                $orderValue = $minimumOrder['basis'] === 'gross'
+                    ? (float)$order->getGrandTotal()
+                    : (float)$order->getGrandTotal() - (float)$order->getTaxAmount();
+                $declinedOnMinimum = $this->minimumOrderGate->isBelowMinimum(
+                    $this->brandRegistry,
+                    $orderValue,
+                    $orderCurrency,
+                    $storeId
+                );
+            }
+            if ($declinedOnMinimum && $minimumOrder !== null) {
+                $display = $this->minimumOrderGate->getMinimumForDisplay($this->brandRegistry, $orderCurrency, $storeId);
+                if ($display !== null) {
+                    throw new LocalizedException(__(
+                        'Invoice purchase with %1 is not available for this order. Minimum order value is %2 %3 tax.',
+                        $this->brandRegistry->getProductName(),
+                        $order->getOrderCurrency()->formatTxt($display['amount']),
+                        $display['basis'] === 'gross' ? __('including') : __('excluding')
+                    ));
+                }
+            }
             throw new LocalizedException(
                 __('Invoice purchase with %1 is not available for this order.', $this->brandRegistry->getProductName())
             );
@@ -281,7 +320,7 @@ class Two extends AbstractMethod
      *   2. BrandRegistry::getProductName() (brand overlay fallback).
      *
      * Optionally suffixed with the buyer's selected term in days
-     * (e.g. "Zakelijk op Rekening - 60 days"). DataAssignObserver
+     * (e.g. "Partner Product - 60 days"). DataAssignObserver
      * stores the chosen term under the `selectedTerm` key as a
      * scalar; the duration is wrapped in a separate __() call so the
      * existing "%1 days" CSV entry handles localisation.
@@ -676,7 +715,7 @@ class Two extends AbstractMethod
      *
      * The active + api-key check must be method-code-bound (`_code`), not
      * brand-aware. Both `two_payment` and an overlay's method (e.g.
-     * `abn_payment`) can be registered side-by-side; routing this method's
+     * `acme_payment`) can be registered side-by-side; routing this method's
      * self-check through the brand-aware ConfigRepository would make Two's
      * instance answer with the overlay's config (because the brand-aware
      * fallback resolves to the install's active brand, not this instance's
@@ -689,6 +728,31 @@ class Two extends AbstractMethod
             return false;
         }
         $apiKey = $this->_scopeConfig->getValue('payment/' . $this->_code . '/api_key');
-        return $apiKey !== null && $apiKey !== '';
+        if ($apiKey === null || $apiKey === '') {
+            return false;
+        }
+        // Brand product minimum-order constraint (brand.xml <minimum_order/>)
+        // plus the merchant's own optional minimum (admin setting in the
+        // STORE BASE currency; validated on save to exceed the platform
+        // floor converted to that currency). The brand is passed in
+        // rather than re-resolved by the gate; ActiveBrandResolver
+        // guarantees one active brand per install.
+        $merchantMinimum = null;
+        if ($quote instanceof \Magento\Quote\Model\Quote) {
+            $merchantValue = (float)$this->getConfigData('merchant_minimum_order');
+            if ($merchantValue > 0) {
+                $platformMinimum = $this->brandRegistry->getMinimumOrder();
+                $store = $quote->getStore();
+                $currency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
+                if ($currency !== '') {
+                    $merchantMinimum = [
+                        'amount' => $merchantValue,
+                        'currency' => $currency,
+                        'basis' => $platformMinimum['basis'] ?? 'gross',
+                    ];
+                }
+            }
+        }
+        return $this->minimumOrderGate->isSatisfied($this->brandRegistry, $quote, $merchantMinimum);
     }
 }
