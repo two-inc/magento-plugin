@@ -16,7 +16,7 @@ use Two\Gateway\Api\CurrencyRatesProviderInterface;
 
 /**
  * Shows the merchant the platform/partner minimum their own value must
- * exceed (the API-resolved platform minimum), converted into the store base
+ * meet or exceed (the API-resolved platform minimum), converted into the store base
  * currency the field is interpreted in, with the platform's native
  * value in brackets - e.g. "Platform minimum £215.73 (€250.00)".
  */
@@ -105,7 +105,7 @@ class MerchantMinimumOrder implements CommentInterface
         }
 
         return (string)__(
-            'Platform minimum %1, %2 tax. A value here is interpreted in the store base currency on the tax basis selected below and must exceed it.',
+            'Platform minimum %1, %2 tax. A value here is interpreted in the store base currency on the tax basis selected below and must be at least this.',
             $minimumDisplay,
             $platformMinimum['basis'] === 'gross' ? __('including') : __('excluding')
         );

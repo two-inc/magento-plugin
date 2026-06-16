@@ -83,7 +83,7 @@ class MinimumOrderGate
         }
 
         // The platform minimum is the funding-partner floor; the merchant
-        // minimum (admin setting, validated to exceed the floor on save)
+        // minimum (admin setting, validated to meet or exceed the floor on save)
         // may only raise the bar — both must be satisfied.
         foreach ([$platformMinimum, $merchantMinimum] as $minimum) {
             if ($minimum !== null && !$this->satisfiesMinimum($quote, $minimum)) {

@@ -108,7 +108,7 @@ class MerchantMinimumOrder extends Value
             $floor = round($floor * $rate, 2);
         }
 
-        if ((float)$normalised <= $floor) {
+        if ((float)$normalised < $floor) {
             $floorDisplay = $this->priceCurrency->format(
                 $floor,
                 false,
@@ -124,7 +124,7 @@ class MerchantMinimumOrder extends Value
                 $platformMinimum['currency']
             );
             throw new LocalizedException(__(
-                'Minimum Order Value must exceed the platform minimum of %1, %2 tax.',
+                'Minimum Order Value must be at least the platform minimum of %1, %2 tax.',
                 $floorDisplay === $nativeDisplay ? $floorDisplay : sprintf('%s (%s)', $floorDisplay, $nativeDisplay),
                 $platformMinimum['basis'] === 'gross' ? __('including') : __('excluding')
             ));

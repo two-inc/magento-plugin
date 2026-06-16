@@ -742,8 +742,8 @@ class Two extends AbstractMethod
         // Platform minimum-order constraint (the API-resolved tuple from
         // GET /v1/merchant - the same value checkout-api enforces at order
         // create/intent) plus the merchant's own optional minimum (admin
-        // setting in the STORE BASE currency; validated on save to exceed
-        // the platform floor converted to that currency).
+        // setting in the STORE BASE currency; validated on save to meet or
+        // exceed the platform floor converted to that currency).
         $storeId = null;
         if ($quote instanceof \Magento\Quote\Model\Quote && $quote->getStoreId() !== null) {
             $storeId = (int)$quote->getStoreId();
