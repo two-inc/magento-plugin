@@ -205,7 +205,12 @@ class SurchargeCalculator
             $payload['surcharge'] = $this->convertAmount((float)$config['fixed'], $fixedCurrency, $orderCurrency);
         }
 
-        if ($config['limit'] !== null) {
+        // `cap` only applies where the fee has a percentage component. The admin
+        // grid exposes the Limit field for the percentage and fixed_and_percentage
+        // types only (a fixed-only fee is constant — there is nothing to clamp), so
+        // a stored limit left over from a previous surcharge type must not leak into
+        // a fixed-only request and clamp the fee.
+        if ($hasPercentage && $config['limit'] !== null) {
             $payload['cap'] = $this->convertAmount((float)$config['limit'], $fixedCurrency, $orderCurrency);
         }
 
