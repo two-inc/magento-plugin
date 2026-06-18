@@ -314,10 +314,14 @@ class SurchargeCalculatorTest extends TestCase
         $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
     }
 
-    public function testPayloadIncludesExplicitZeroCap(): void
+    public function testPayloadOmitsCapInFixedOnlyModeEvenWhenLimitSet(): void
     {
+        // A fixed-only fee is constant and has nothing to clamp; the admin grid
+        // never exposes the Limit field for this type. A stored limit (e.g. left
+        // over from a previous percentage configuration) must not leak into the
+        // request and clamp the fixed fee.
         $this->stubCommonConfig(SurchargeType::FIXED);
-        $this->stubSurchargeConfig(0, 10, 0.0);
+        $this->stubSurchargeConfig(0, 10, 25.0);
         $this->stubFixedCurrency('NOK');
 
         $this->adapter->expects($this->once())
@@ -325,13 +329,34 @@ class SurchargeCalculatorTest extends TestCase
             ->with(
                 '/v1/pricing/order/fee',
                 $this->callback(function ($payload) {
-                    return array_key_exists('cap', $payload['buyer_fee_share'])
-                        && $payload['buyer_fee_share']['cap'] === 0.0;
+                    return !array_key_exists('cap', $payload['buyer_fee_share']);
                 })
             )
             ->willReturn(['buyer_fee_share' => 0]);
 
         $this->calculator->calculate(1000.0, 30, 'NO', 'NOK');
+    }
+
+    public function testPayloadIncludesCapInPercentageOnlyMode(): void
+    {
+        // The Limit field IS exposed for the percentage type, so a configured
+        // limit must still be sent as the cap when no fixed component is present.
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50, 0, 30);
+        $this->stubFixedCurrency('NOK');
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return $payload['buyer_fee_share']['cap'] === 30.0
+                        && !array_key_exists('surcharge', $payload['buyer_fee_share']);
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
     }
 
     // ── Differential mode (reference_terms) ──────────────────────────
