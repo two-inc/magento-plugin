@@ -199,7 +199,7 @@
 "Enter the amount you want to charge your customer. Max %1.","Vul het bedrag in dat je bij je klant in rekening wilt brengen. Max %1."
 "Enter the amount and percentage of the fee you want to charge your customer. Max %1 / %2.","Vul het bedrag en het percentage van de fee in dat je bij je klant in rekening wilt brengen. Max %1 / %2."
 "Enter the percentage of the fee you want to charge your customer. Max: %1.","Vul het percentage van de fee in dat je bij je klant in rekening wilt brengen. Max: %1."
-"Enter a limit amount (in %1) if you do not want to charge your customer more than a specific amount.","Vul een limietbedrag (in %1) in als je je klant niet meer dan een specifiek bedrag in rekening wilt brengen."
+"Enter a limit amount (in %1) if you do not want to charge your customer more than a specific amount. Leave the limit field empty if you don't want to impose a limit amount.","Vul een limietbedrag (in %1) in als je je klant niet meer dan een specifiek bedrag in rekening wilt brengen. Laat het limietveld leeg als je geen limietbedrag wilt instellen."
 "First Name is not valid.","Voornaam is niet geldig."
 "Fulfilment can be triggered by either initializing shipping or creating an invoice in the Magento admin","Vervulling kan getriggerd worden door verzending of door een factuur aan te maken in het Magento portaal"
 "I accept the %1 and authorize %2 to process my data automatically.","Ik accepteer de %1 en geef toestemming aan %2 voor automatische verwerking van mijn gegevens."

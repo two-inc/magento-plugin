@@ -197,7 +197,7 @@
 "Country is not valid.","Land er ikke gyldig."
 "Developed by Magmodules.","Utviklet av Magmodules."
 "Email Address is not valid.","E-postadresse er ikke gyldig."
-"Enter a limit amount (in %1) if you do not want to charge your customer more than a specific amount.","Skriv inn et maksbeløp (i %1) hvis du ikke vil belaste kunden mer enn et bestemt beløp."
+"Enter a limit amount (in %1) if you do not want to charge your customer more than a specific amount. Leave the limit field empty if you don't want to impose a limit amount.","Skriv inn et maksbeløp (i %1) hvis du ikke vil belaste kunden mer enn et bestemt beløp. La feltet stå tomt hvis du ikke vil angi et maksbeløp."
 "Enter the amount and percentage of the fee you want to charge your customer. Max %1 / %2.","Skriv inn beløpet og prosentandelen av gebyret du vil belaste kunden. Maks %1 / %2."
 "Enter the amount you want to charge your customer. Max %1.","Skriv inn beløpet du vil belaste kunden. Maks %1."
 "Enter the percentage of the fee you want to charge your customer. Max: %1.","Skriv inn prosentandelen av gebyret du vil belaste kunden. Maks: %1."
