@@ -105,6 +105,19 @@ class Brand implements BrandRegistryInterface
         return $this->surchargeFixedMax;
     }
 
+    /**
+     * @deprecated 2.0.0 See note on getCode().
+     */
+    public function getSurchargeRoundingSteps(): array
+    {
+        throw new \LogicException(
+            'Two\\Gateway\\Model\\Brand is deprecated; consume '
+            . 'BrandRegistryInterface via DescriptorBackedBrandRegistry instead. '
+            . 'Surcharge rounding steps now come from brand.xml '
+            . '`<surcharge_rounding_steps>` via ActiveBrandResolver.'
+        );
+    }
+
     public function getSignUpUrl(): string
     {
         return $this->signUpUrl;

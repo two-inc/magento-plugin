@@ -28,6 +28,13 @@
             <term>60</term>
             <term>90</term>
         </available_payment_terms>
+        <surcharge_rounding_steps>
+            <step>0.10</step>
+            <step>0.50</step>
+            <step>1.00</step>
+            <step>5.00</step>
+            <step>10.00</step>
+        </surcharge_rounding_steps>
         <admin_resource>Magento_Sales::config_sales</admin_resource>
         <module_label_chain>
             <module label="Payment Method">Two_Gateway</module>

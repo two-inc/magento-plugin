@@ -19,6 +19,15 @@ use Magento\Framework\Component\ComponentRegistrar;
  */
 class Loader
 {
+    /**
+     * Fallback buyer-surcharge rounding steps used when a brand.xml
+     * omits <surcharge_rounding_steps> (or declares it empty). Brand
+     * overlays narrow this set in their own brand.xml.
+     *
+     * @var float[]
+     */
+    private const DEFAULT_ROUNDING_STEPS = [0.10, 0.50, 1.00, 5.00, 10.00];
+
     /** @var array<string,Descriptor>|null */
     private ?array $cache = null;
 
@@ -111,6 +120,32 @@ class Loader
             ];
         }
 
+        // Brand-driven Rounding Step dropdown options. Validate at load
+        // time — nothing validates brand.xsd at runtime, so a malformed
+        // <step> would otherwise coerce to 0.0 and silently offer a
+        // bogus option. Absent/empty falls back to the parent default.
+        $roundingSteps = [];
+        if (isset($brand->surcharge_rounding_steps->step)) {
+            foreach ($brand->surcharge_rounding_steps->step as $step) {
+                $raw = trim((string)$step);
+                if (!is_numeric($raw) || (float)$raw <= 0) {
+                    throw new \DomainException(sprintf(
+                        'brand.xml at %s declares an invalid surcharge rounding '
+                        . 'step "%s"; each <step> must be a number greater than zero.',
+                        $sourcePath,
+                        $raw
+                    ));
+                }
+                $roundingSteps[] = (float)$raw;
+            }
+        }
+        if ($roundingSteps === []) {
+            $roundingSteps = self::DEFAULT_ROUNDING_STEPS;
+        }
+        // Dedup (0.5 == 0.50 as floats) and present ascending.
+        $roundingSteps = array_values(array_unique($roundingSteps, SORT_NUMERIC));
+        sort($roundingSteps, SORT_NUMERIC);
+
         $cspOrigins = [];
         if (isset($brand->csp_origins->origin)) {
             foreach ($brand->csp_origins->origin as $origin) {
@@ -189,7 +224,8 @@ class Loader
             $extraHttpHeaders,
             $suppressedFields,
             $inlineTermFees,
-            (string)($brand->checkout_subtitle ?? '')
+            (string)($brand->checkout_subtitle ?? ''),
+            $roundingSteps
         );
     }
 }

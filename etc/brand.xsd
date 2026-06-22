@@ -37,6 +37,14 @@
             <xs:element name="api_base_url" type="xs:string"/>
             <xs:element name="available_payment_terms" type="paymentTermsType"/>
             <xs:element name="surcharge_fixed_max" type="surchargeFixedMaxType" minOccurs="0"/>
+            <!--
+                Buyer-surcharge rounding steps offered in the admin
+                "Rounding Step" dropdown (major currency units). Brand
+                overlays narrow the parent default set (e.g. to 0.50 /
+                1.00). Omit the element to inherit the parent default
+                set; an empty element is treated as omitted.
+            -->
+            <xs:element name="surcharge_rounding_steps" type="surchargeRoundingStepsType" minOccurs="0"/>
             <xs:element name="csp_origins" type="cspOriginsType" minOccurs="0"/>
             <xs:element name="admin_resource" type="xs:string"/>
             <xs:element name="module_label_chain" type="moduleLabelChainType" minOccurs="0"/>
@@ -83,6 +91,18 @@
         <xs:attribute name="amount" type="xs:decimal" use="required"/>
         <xs:attribute name="currency" type="xs:string" use="required"/>
     </xs:complexType>
+
+    <xs:complexType name="surchargeRoundingStepsType">
+        <xs:sequence>
+            <xs:element name="step" type="positiveDecimalType" minOccurs="1" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:simpleType name="positiveDecimalType">
+        <xs:restriction base="xs:decimal">
+            <xs:minExclusive value="0"/>
+        </xs:restriction>
+    </xs:simpleType>
 
     <xs:complexType name="cspOriginsType">
         <xs:sequence>

@@ -305,13 +305,12 @@
                         <field id="surcharge_type" separator=",">percentage,fixed_and_percentage</field>
                     </depends>
                 </field>
-                <field id="surcharge_rounding_step" translate="label comment" type="text" sortOrder="120"
+                <field id="surcharge_rounding_step" translate="label comment" type="select" sortOrder="120"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
                     <label>Rounding Step</label>
-                    <comment><![CDATA[Increment the surcharge is rounded to (e.g. 1 = whole units, 0.50 = nearest half). Must be greater than zero.]]></comment>
-                    <backend_model>Two\Gateway\Model\Config\Backend\LocaleDecimal</backend_model>
-                    <validate>validate-number validate-greater-than-zero</validate>
+                    <comment><![CDATA[Increment the surcharge is rounded to (e.g. 1 = whole units, 0.50 = nearest half).]]></comment>
+                    <source_model>Two\Gateway\Model\Config\Source\RoundingStep</source_model>
                     <config_path>payment/{{code}}/surcharge_rounding_step</config_path>
                     <depends>
                         <field id="surcharge_type" separator=",">percentage,fixed_and_percentage</field>
