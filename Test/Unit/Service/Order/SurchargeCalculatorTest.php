@@ -10,6 +10,7 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\ApiTranslator\NullApiTranslator;
+use Two\Gateway\Model\Config\Source\RoundingBasis;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Order\SurchargeCalculator;
@@ -69,6 +70,12 @@ class SurchargeCalculatorTest extends TestCase
     private function stubFixedCurrency(string $currency = 'NOK'): void
     {
         $this->config->method('getSurchargeFixedCurrency')->willReturn($currency);
+    }
+
+    private function stubRounding(string $basis, float $step): void
+    {
+        $this->config->method('getSurchargeRoundingBasis')->willReturn($basis);
+        $this->config->method('getSurchargeRoundingStep')->willReturn($step);
     }
 
     private function stubFxRate(string $from, float $multiplier): void
@@ -357,6 +364,130 @@ class SurchargeCalculatorTest extends TestCase
             ->willReturn(['buyer_fee_share' => 0]);
 
         $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    // ── Rounding ─────────────────────────────────────────────────────
+
+    public function testPayloadIncludesRoundingForPercentage(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+        $this->stubRounding(RoundingBasis::UP, 1.0);
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return $payload['buyer_fee_share']['rounding'] === ['step' => 1.0, 'basis' => 'UP'];
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testPayloadIncludesRoundingForFixedAndPercentage(): void
+    {
+        $this->stubCommonConfig(SurchargeType::FIXED_AND_PERCENTAGE);
+        $this->stubSurchargeConfig(50, 5);
+        $this->stubFixedCurrency('NOK');
+        $this->stubRounding(RoundingBasis::STANDARD, 0.5);
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return $payload['buyer_fee_share']['rounding'] === ['step' => 0.5, 'basis' => 'STANDARD'];
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testRoundingBasisDownMapsToApiEnum(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+        $this->stubRounding(RoundingBasis::DOWN, 10.0);
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return $payload['buyer_fee_share']['rounding']['basis'] === 'DOWN';
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testPayloadOmitsRoundingWhenBasisNone(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+        // A configured step is irrelevant when the basis is "none".
+        $this->stubRounding(RoundingBasis::NONE, 1.0);
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return !array_key_exists('rounding', $payload['buyer_fee_share']);
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testPayloadOmitsRoundingWhenStepNotPositive(): void
+    {
+        // A basis with no (zero) step is incomplete and the API rejects step <= 0,
+        // so the block is omitted rather than sent invalid.
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+        $this->stubRounding(RoundingBasis::STANDARD, 0.0);
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return !array_key_exists('rounding', $payload['buyer_fee_share']);
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testPayloadOmitsRoundingInFixedOnlyModeEvenWhenConfigured(): void
+    {
+        // The admin never exposes rounding for a fixed-only fee (there is nothing
+        // to snap). A stored basis/step left over from a previous percentage
+        // configuration must not leak into a fixed-only request.
+        $this->stubCommonConfig(SurchargeType::FIXED);
+        $this->stubSurchargeConfig(0, 10);
+        $this->stubFixedCurrency('NOK');
+        $this->stubRounding(RoundingBasis::UP, 1.0);
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return !array_key_exists('rounding', $payload['buyer_fee_share']);
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0]);
+
+        $this->calculator->calculate(1000.0, 30, 'NO', 'NOK');
     }
 
     // ── Differential mode (reference_terms) ──────────────────────────

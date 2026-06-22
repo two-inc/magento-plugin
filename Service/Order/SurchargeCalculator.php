@@ -11,6 +11,7 @@ use Magento\Framework\Exception\LocalizedException;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Model\Config\Source\RoundingBasis;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Api\Adapter;
 
@@ -25,6 +26,17 @@ use Two\Gateway\Service\Api\Adapter;
  */
 class SurchargeCalculator
 {
+    /**
+     * Maps the merchant's rounding-basis config value to the pricing API's
+     * rounding basis enum. A value absent from this map (i.e. "none") means
+     * no rounding block is sent.
+     */
+    private const ROUNDING_BASIS_TO_API = [
+        RoundingBasis::UP => 'UP',
+        RoundingBasis::DOWN => 'DOWN',
+        RoundingBasis::STANDARD => 'STANDARD',
+    ];
+
     /**
      * @var ConfigRepository
      */
@@ -175,6 +187,7 @@ class SurchargeCalculator
      *  - percentage types supply `percentage`
      *  - fixed types supply `surcharge` (FX-converted to order currency)
      *  - limit > 0 supplies `cap` (FX-converted to order currency)
+     *  - a rounding basis + step supplies `rounding` (percentage modes only)
      *  - differential mode supplies `reference_terms` so the API computes
      *    the threshold itself — no delta math in the plugin
      *  - `surcharge_basis` is sent explicitly for clarity
@@ -214,12 +227,50 @@ class SurchargeCalculator
             $payload['cap'] = $this->convertAmount((float)$config['limit'], $fixedCurrency, $orderCurrency);
         }
 
+        // `rounding` snaps the final buyer line item to a clean increment, computed
+        // server-side. Like `cap`, the admin only exposes the controls for the
+        // percentage and fixed_and_percentage types (a fixed-only fee is constant —
+        // there is nothing to snap), so the $hasPercentage gate stops a stored basis/
+        // step left over from a previous surcharge type leaking into a fixed-only
+        // request.
+        if ($hasPercentage) {
+            $rounding = $this->buildRounding($storeId);
+            if ($rounding !== null) {
+                $payload['rounding'] = $rounding;
+            }
+        }
+
         if ($this->configRepository->isSurchargeDifferential($storeId)) {
             $defaultDays = $this->configRepository->getDefaultPaymentTerm($storeId);
             $payload['reference_terms'] = $this->buildOrderTerms($defaultDays, $storeId);
         }
 
         return $payload;
+    }
+
+    /**
+     * Build the `rounding` block from merchant config, or null when rounding
+     * is off (basis "none") or the step is not a positive number.
+     *
+     * The pricing API requires both step and basis when the block is present
+     * and rejects a step <= 0, so an unconfigured/zero step omits the block
+     * entirely rather than sending an invalid request.
+     *
+     * @return array{step: float, basis: string}|null
+     */
+    private function buildRounding(?int $storeId): ?array
+    {
+        $basis = $this->configRepository->getSurchargeRoundingBasis($storeId);
+        if (!isset(self::ROUNDING_BASIS_TO_API[$basis])) {
+            return null;
+        }
+
+        $step = $this->configRepository->getSurchargeRoundingStep($storeId);
+        if ($step <= 0.0) {
+            return null;
+        }
+
+        return ['step' => $step, 'basis' => self::ROUNDING_BASIS_TO_API[$basis]];
     }
 
     /**

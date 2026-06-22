@@ -53,6 +53,8 @@
                 <surcharge_differential>0</surcharge_differential>
                 <surcharge_line_description>Payment terms fee - %1 days</surcharge_line_description>
                 <surcharge_tax_rate/>
+                <surcharge_rounding_basis>none</surcharge_rounding_basis>
+                <surcharge_rounding_step/>
                 <can_use_internal>0</can_use_internal>
                 <can_use_checkout>1</can_use_checkout>
                 <payment_action>authorize</payment_action>

@@ -582,4 +582,20 @@ class Repository implements RepositoryInterface
     {
         return (string)$this->getConfig($this->path('surcharge_fixed_currency'), $storeId);
     }
+
+    /**
+     * @inheritDoc
+     */
+    public function getSurchargeRoundingBasis(?int $storeId = null): string
+    {
+        return (string)$this->getConfig($this->path('surcharge_rounding_basis'), $storeId) ?: 'none';
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getSurchargeRoundingStep(?int $storeId = null): float
+    {
+        return (float)$this->getConfig($this->path('surcharge_rounding_step'), $storeId);
+    }
 }

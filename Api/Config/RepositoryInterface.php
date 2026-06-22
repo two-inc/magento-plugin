@@ -364,4 +364,26 @@ interface RepositoryInterface
      * @return string
      */
     public function getSurchargeFixedCurrency(?int $storeId = null): string;
+
+    /**
+     * Get the buyer surcharge rounding basis (none/up/down/standard).
+     *
+     * "none" means no rounding is applied to the buyer fee share line item.
+     *
+     * @param int|null $storeId
+     *
+     * @return string
+     */
+    public function getSurchargeRoundingBasis(?int $storeId = null): string;
+
+    /**
+     * Get the increment the buyer surcharge line item is rounded to.
+     *
+     * Zero (or unset) means no step is configured.
+     *
+     * @param int|null $storeId
+     *
+     * @return float
+     */
+    public function getSurchargeRoundingStep(?int $storeId = null): float;
 }
