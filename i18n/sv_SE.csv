@@ -194,7 +194,7 @@
 "Country is not valid.","Land är inte giltigt."
 "Developed by Magmodules.","Utvecklad av Magmodules."
 "Email Address is not valid.","E-postadress är inte giltig."
-"Enter a limit amount (in %1) if you do not want to charge your customer more than a specific amount.","Ange ett maxbelopp (i %1) om du inte vill debitera din kund mer än ett specifikt belopp."
+"Enter a limit amount (in %1) if you do not want to charge your customer more than a specific amount. Leave the limit field empty if you don't want to impose a limit amount.","Ange ett maxbelopp (i %1) om du inte vill debitera din kund mer än ett specifikt belopp. Lämna fältet tomt om du inte vill ange något maxbelopp."
 "Enter the amount and percentage of the fee you want to charge your customer. Max %1 / %2.","Ange beloppet och procentandelen av avgiften du vill debitera din kund. Max %1 / %2."
 "Enter the amount you want to charge your customer. Max %1.","Ange beloppet du vill debitera din kund. Max %1."
 "Enter the percentage of the fee you want to charge your customer. Max: %1.","Ange procentandelen av avgiften du vill debitera din kund. Max: %1."
