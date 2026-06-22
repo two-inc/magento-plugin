@@ -232,4 +232,4 @@
 "Up","Opp"
 "Down","Ned"
 "Snap the buyer surcharge line item to a clean increment. Select None for standard two-decimal amounts.","Rund tilleggslinjen til et fast trinn. Velg Ingen for vanlige beløp med to desimaler."
-"Increment the surcharge is rounded to (e.g. 1 = whole units, 0.50 = nearest half). Must be greater than zero.","Trinnet tillegget rundes til (f.eks. 1 = hele enheter, 0,50 = nærmeste halve). Må være større enn null."
+"Increment the surcharge is rounded to (e.g. 1 = whole units, 0.50 = nearest half).","Trinnet tillegget rundes til (f.eks. 1 = hele enheter, 0,50 = nærmeste halve)."
