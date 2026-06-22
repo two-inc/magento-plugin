@@ -297,7 +297,7 @@
                 <field id="surcharge_rounding_basis" translate="label comment" type="select" sortOrder="110"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Buyer Fee Rounding</label>
+                    <label>Surcharge Rounding</label>
                     <comment>Snap the buyer surcharge line item to a clean increment. Select None for standard two-decimal amounts.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\RoundingBasis</source_model>
                     <config_path>payment/{{code}}/surcharge_rounding_basis</config_path>
