@@ -223,3 +223,10 @@
 "Select the payment term(s) you want to offer.","Välj betalningsvillkor du vill erbjuda."
 "Warning: The fixed fee limit of %1 %2 cannot be enforced correctly because no exchange rate is configured from %3 to %4. Configure exchange rates in Stores → Currency → Currency Rates.","Varning: Den fasta avgiftsgränsen %1 %2 kan inte upprätthållas korrekt eftersom ingen växelkurs är konfigurerad från %3 till %4. Konfigurera växelkurser i Stores → Currency → Currency Rates."
 
+"Surcharge Rounding","Avrundning av tillägg"
+"Rounding Step","Avrundningssteg"
+"None","Ingen"
+"Up","Uppåt"
+"Down","Nedåt"
+"Snap the buyer surcharge line item to a clean increment. Select None for standard two-decimal amounts.","Avrunda tilläggsraden till ett jämnt steg. Välj Ingen för vanliga belopp med två decimaler."
+"Increment the surcharge is rounded to (e.g. 1 = whole units, 0.50 = nearest half).","Steget som tillägget avrundas till (t.ex. 1 = hela enheter, 0,50 = närmaste halva)."

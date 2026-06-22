@@ -226,3 +226,10 @@
 "Select the payment term(s) you want to offer.","Velg betalingsvilkår du vil tilby."
 "Warning: The fixed fee limit of %1 %2 cannot be enforced correctly because no exchange rate is configured from %3 to %4. Configure exchange rates in Stores → Currency → Currency Rates.","Advarsel: Den faste avgiftsgrensen %1 %2 kan ikke håndheves korrekt fordi ingen valutakurs er konfigurert fra %3 til %4. Konfigurer valutakurser i Stores → Currency → Currency Rates."
 
+"Surcharge Rounding","Avrunding av tillegg"
+"Rounding Step","Avrundingssteg"
+"None","Ingen"
+"Up","Opp"
+"Down","Ned"
+"Snap the buyer surcharge line item to a clean increment. Select None for standard two-decimal amounts.","Rund tilleggslinjen til et fast trinn. Velg Ingen for vanlige beløp med to desimaler."
+"Increment the surcharge is rounded to (e.g. 1 = whole units, 0.50 = nearest half).","Trinnet tillegget rundes til (f.eks. 1 = hele enheter, 0,50 = nærmeste halve)."

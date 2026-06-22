@@ -222,3 +222,10 @@
 "Refund Two Surcharge","Toeslag terugbetalen"
 "Max refundable: %1","Maximaal terugbetaalbaar: %1"
 
+"Surcharge Rounding","Afronden van Toeslag"
+"Rounding Step","Afronding"
+"None","Geen"
+"Up","Naar boven"
+"Down","Naar beneden"
+"Snap the buyer surcharge line item to a clean increment. Select None for standard two-decimal amounts.","Rond de toeslag voor je klant af naar een gekozen hoeveelheid. Selecteer Geen om geen afronding toe te passen."
+"Increment the surcharge is rounded to (e.g. 1 = whole units, 0.50 = nearest half).","Kies naar welk bedrag je wilt afronden (1 = heel bedrag, 0,50 = dichtstbijzijnde helft)"

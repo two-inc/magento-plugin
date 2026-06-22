@@ -45,6 +45,7 @@ final class Descriptor
      * @param array<string,string> $extraHttpHeaders name=>value, decoration on outbound requests.
      * @param string[] $suppressedFields `section_suffix/group/field` paths to hide in the synthesised admin form.
      * @param bool $inlineTermFees Whether to render the per-term merchant fee beside each Payment Terms checkbox in admin.
+     * @param float[] $surchargeRoundingSteps Buyer-surcharge rounding steps offered in the admin Rounding Step dropdown, ascending.
      */
     public function __construct(
         private readonly string $code,
@@ -70,7 +71,8 @@ final class Descriptor
         private readonly array $extraHttpHeaders,
         private readonly array $suppressedFields = [],
         private readonly bool $inlineTermFees = true,
-        private readonly string $checkoutSubtitle = ''
+        private readonly string $checkoutSubtitle = '',
+        private readonly array $surchargeRoundingSteps = []
     ) {
     }
 
@@ -201,6 +203,19 @@ final class Descriptor
     public function getSurchargeFixedMax(): ?array
     {
         return $this->surchargeFixedMax;
+    }
+
+    /**
+     * Buyer-surcharge rounding steps offered in the admin Rounding Step
+     * dropdown, ascending. Brand overlays narrow the set via brand.xml
+     * <surcharge_rounding_steps>; Loader applies the parent default set
+     * when the element is absent or empty.
+     *
+     * @return float[]
+     */
+    public function getSurchargeRoundingSteps(): array
+    {
+        return $this->surchargeRoundingSteps;
     }
 
     /** @return string[] */

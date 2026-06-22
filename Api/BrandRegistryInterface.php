@@ -61,6 +61,16 @@ interface BrandRegistryInterface
     public function getSurchargeFixedMax(): ?array;
 
     /**
+     * Buyer-surcharge rounding steps (in major currency units) offered
+     * in the admin "Rounding Step" dropdown, ascending. Brand overlays
+     * narrow the set via brand.xml <surcharge_rounding_steps>; the
+     * default binding returns the parent default set. Never empty.
+     *
+     * @return float[]
+     */
+    public function getSurchargeRoundingSteps(): array;
+
+    /**
      * Short brand tag used to decorate non-production checkout URLs
      * (e.g. `?brand=<tag>`). Empty string ('') means do not decorate
      * — the URL host already conveys the brand. Implementations may

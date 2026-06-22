@@ -28,7 +28,7 @@ jobs:
       matrix: ${{ steps.gen.outputs.matrix }}
       php_lint_matrix: ${{ steps.gen.outputs.php_lint_matrix }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - id: gen
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -51,7 +51,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.discover-magento-matrix.outputs.php_lint_matrix) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
@@ -72,7 +72,7 @@ jobs:
     name: Codesniffer
     runs-on: ${{ vars.RUNNER_STANDARD }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Run codesniffer
         run: |
           docker run \
@@ -89,7 +89,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.discover-magento-matrix.outputs.php_lint_matrix) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up PHP ${{ matrix.php }}
         uses: shivammathur/setup-php@v2
@@ -121,7 +121,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.discover-magento-matrix.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Start Magento docker container
         run: |
@@ -165,7 +165,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.discover-magento-matrix.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Start Magento docker container
         run: |
@@ -236,7 +236,7 @@ jobs:
     name: Jest (Node 20)
     runs-on: ${{ vars.RUNNER_STANDARD }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
