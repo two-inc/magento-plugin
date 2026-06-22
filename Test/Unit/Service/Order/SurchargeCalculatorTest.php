@@ -379,7 +379,9 @@ class SurchargeCalculatorTest extends TestCase
             ->with(
                 '/v1/pricing/order/fee',
                 $this->callback(function ($payload) {
-                    return $payload['buyer_fee_share']['rounding'] === ['step' => 1.0, 'basis' => 'UP'];
+                    $share = $payload['buyer_fee_share'];
+                    return $share['rounding'] === ['step' => 1.0, 'basis' => 'UP']
+                        && $share['percentage'] === 50.0;
                 })
             )
             ->willReturn(['buyer_fee_share' => 0]);
@@ -399,7 +401,11 @@ class SurchargeCalculatorTest extends TestCase
             ->with(
                 '/v1/pricing/order/fee',
                 $this->callback(function ($payload) {
-                    return $payload['buyer_fee_share']['rounding'] === ['step' => 0.5, 'basis' => 'STANDARD'];
+                    $share = $payload['buyer_fee_share'];
+                    // Rounding is added alongside the other keys, not in place of them.
+                    return $share['rounding'] === ['step' => 0.5, 'basis' => 'STANDARD']
+                        && $share['surcharge'] === 5.0
+                        && $share['percentage'] === 50.0;
                 })
             )
             ->willReturn(['buyer_fee_share' => 0]);
@@ -418,7 +424,8 @@ class SurchargeCalculatorTest extends TestCase
             ->with(
                 '/v1/pricing/order/fee',
                 $this->callback(function ($payload) {
-                    return $payload['buyer_fee_share']['rounding']['basis'] === 'DOWN';
+                    // Full structure: basis maps to DOWN and the step passes through intact.
+                    return $payload['buyer_fee_share']['rounding'] === ['step' => 10.0, 'basis' => 'DOWN'];
                 })
             )
             ->willReturn(['buyer_fee_share' => 0]);
@@ -446,13 +453,16 @@ class SurchargeCalculatorTest extends TestCase
         $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
     }
 
-    public function testPayloadOmitsRoundingWhenStepNotPositive(): void
+    /**
+     * @dataProvider nonPositiveStepProvider
+     */
+    public function testPayloadOmitsRoundingWhenStepNotPositive(float $step): void
     {
-        // A basis with no (zero) step is incomplete and the API rejects step <= 0,
-        // so the block is omitted rather than sent invalid.
+        // A basis with a non-positive step is incomplete and the API rejects
+        // step <= 0, so the block is omitted rather than sent invalid.
         $this->stubCommonConfig(SurchargeType::PERCENTAGE);
         $this->stubSurchargeConfig(50);
-        $this->stubRounding(RoundingBasis::STANDARD, 0.0);
+        $this->stubRounding(RoundingBasis::STANDARD, $step);
 
         $this->adapter->expects($this->once())
             ->method('execute')
@@ -465,6 +475,15 @@ class SurchargeCalculatorTest extends TestCase
             ->willReturn(['buyer_fee_share' => 0]);
 
         $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    /** @return array<string, array{float}> */
+    public function nonPositiveStepProvider(): array
+    {
+        return [
+            'zero step' => [0.0],
+            'negative step' => [-5.0],
+        ];
     }
 
     public function testPayloadOmitsRoundingInFixedOnlyModeEvenWhenConfigured(): void
