@@ -81,7 +81,17 @@ class PaymentTermsCheckboxes extends Field
     {
         $element = $this->getData('element');
         $value = $element ? (string)$element->getValue() : '';
-        return array_filter(array_map('intval', explode(',', $value)));
+        $selected = array_values(array_filter(array_map('intval', explode(',', $value))));
+        if (count($selected) === 0) {
+            // Nothing stored: prepopulate the shortest available term so the form
+            // never loads with no selection (a selection is mandatory on save).
+            $available = array_map('intval', $this->getAvailableTerms());
+            sort($available);
+            if (count($available) > 0) {
+                $selected = [$available[0]];
+            }
+        }
+        return $selected;
     }
 
     /**

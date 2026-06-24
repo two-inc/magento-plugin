@@ -21,8 +21,8 @@ class PaymentTermsCheckboxes extends Value
     /**
      * @inheritDoc
      *
-     * @throws LocalizedException when the merchant clears every term after
-     *         terms were previously configured.
+     * @throws LocalizedException when no payment term is selected and no custom
+     *         term is entered — a selection is mandatory.
      */
     public function beforeSave()
     {
@@ -35,19 +35,12 @@ class PaymentTermsCheckboxes extends Value
         }
         sort($value);
 
-        // The optional custom term (sibling field) also satisfies the
-        // "offer at least one term" rule.
+        // A selection is mandatory. The optional custom term (sibling field)
+        // also satisfies it, so a single off-preset term may be offered alone.
         $custom = (int)$this->getFieldsetDataValue('payment_terms_duration_days');
-        $newHasTerms = count($value) > 0 || $custom > 0;
-
-        // An empty selection is a valid "use the account default term" state,
-        // but the merchant may not transition a configured gateway into it —
-        // clearing all terms is what previously surfaced a system error.
-        $oldHasTerms = (string)$this->getOldValue() !== '';
-
-        if (!$newHasTerms && $oldHasTerms) {
+        if (count($value) === 0 && $custom <= 0) {
             throw new LocalizedException(
-                __('Select at least one payment term, or enter a custom term. Clearing every term is not allowed once terms have been configured.')
+                __('Select at least one payment term or enter a custom term.')
             );
         }
 
