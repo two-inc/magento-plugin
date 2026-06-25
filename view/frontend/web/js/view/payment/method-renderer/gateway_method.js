@@ -82,6 +82,14 @@ define([
         initialize: function () {
             this._super();
 
+            // Autofill prefetch result for the entered email (belt-and-braces
+            // for the sole-trader chip): mint tokens + read the buyer on the
+            // Two cookie when sole trader becomes available, so the chip click
+            // can resolve synchronously. ready=false until the first prefetch
+            // resolves; matches=true when that buyer owns the entered email.
+            this.prefetched = { ready: false, buyer: null, matches: false };
+            this.prefetchedEmail = null;
+
             // Brand-overlay config: read once at initialize time, keyed on
             // this.getCode() so acme_payment, two_payment, etc each pull
             // their own subtree from window.checkoutConfig.payment.
@@ -108,9 +116,8 @@ define([
             this.availableBuyerTerms = terms;
             this.showTermSelector = terms.length > 1;
             this.showSingleTerm = terms.length === 1;
-            this.singleTermLabel = terms.length === 1
-                ? $t('Payment Terms %1 days').replace('%1', terms[0])
-                : '';
+            this.singleTermLabel =
+                terms.length === 1 ? $t('Payment Terms %1 days').replace('%1', terms[0]) : '';
 
             // Empty-object termSurcharges → loading state (template shows the
             // three-dot loader). Once populated, label becomes '+€n.nn' or ''
@@ -135,13 +142,20 @@ define([
                 var amounts = terms.map(function (days) {
                     return parseFloat(surcharges[days] || 0);
                 });
-                var allZero = !isLoading && amounts.every(function (a) { return a < 0.005; });
+                var allZero =
+                    !isLoading &&
+                    amounts.every(function (a) {
+                        return a < 0.005;
+                    });
                 return terms.map(function (days, i) {
                     return {
                         days: days,
                         daysLabel: days + ' ' + $t('days'),
                         isLoading: isLoading,
-                        surchargeLabel: (isLoading || allZero) ? '' : '+' + priceUtils.formatPrice(amounts[i], quote.getPriceFormat())
+                        surchargeLabel:
+                            isLoading || allZero
+                                ? ''
+                                : '+' + priceUtils.formatPrice(amounts[i], quote.getPriceFormat())
                     };
                 });
             });
@@ -226,6 +240,10 @@ define([
             this.countryCode(countryCode);
             if (this.soleTraderCountryCodes.includes(countryCode.toLowerCase())) {
                 this.showModeTab(true);
+                // Prefetch the autofill buyer for the entered email so a known
+                // sole trader is auto-selected and the chip click can open the
+                // signup popup synchronously. No-op when the email is unknown.
+                this.prefetchSoleTrader();
             } else {
                 if (this.showSoleTrader()) {
                     this.registeredOrganisationMode();
@@ -500,7 +518,9 @@ define([
             });
 
             return $.ajax({
-                url: `${this._brandConfig.checkoutApiUrl}/v1/order_intent?${queryParams.toString()}`,
+                url: `${
+                    this._brandConfig.checkoutApiUrl
+                }/v1/order_intent?${queryParams.toString()}`,
                 type: 'POST',
                 global: true,
                 contentType: 'application/json',
@@ -557,7 +577,8 @@ define([
                                         country: self.countryCode()?.toUpperCase(),
                                         limit: self._brandConfig.companySearchLimit,
                                         offset:
-                                            ((params.page || 1) - 1) * self._brandConfig.companySearchLimit,
+                                            ((params.page || 1) - 1) *
+                                            self._brandConfig.companySearchLimit,
                                         q: unescape(params.term)
                                     });
                                     return `${
@@ -731,7 +752,7 @@ define([
             const URL = `${this._brandConfig.checkoutPageUrl}/soletrader/signup?businessToken=${this.delegationToken}&autofillToken=${this.autofillToken}&autofillData=${data}${brandParams}`;
             const windowFeatures =
                 'location=yes,resizable=yes,scrollbars=yes,status=yes, height=805, width=610';
-            window.open(URL, '_blank', windowFeatures);
+            return window.open(URL, '_blank', windowFeatures);
         },
 
         showErrorMessage(message) {
@@ -740,68 +761,134 @@ define([
 
         registeredOrganisationMode() {
             this.showSoleTrader(false);
+            this.showPopupMessage(false);
             this.enableCompanySearch();
             this.fillCustomerData();
         },
 
-        soleTraderMode() {
+        // Enter the sole-trader UI. No token/buyer work here — that is owned by
+        // the email-driven prefetch and the chip-click handler.
+        enterSoleTraderUi() {
             this.showSoleTrader(true);
             this.clearCompany(true);
-            this.getTokens()
-                .then((json) => {
-                    console.debug({ logger: 'twoPayment.soleTraderMode', json });
-                    this.delegationToken = json.delegation_token;
-                    this.autofillToken = json.autofill_token;
-                    this.getCurrentBuyer();
-                    $(this.searchForCompanyButton).hide();
-                })
-                .catch(() => this.showErrorMessage(this.soleTraderErrorMessage));
+            $(this.searchForCompanyButton).hide();
         },
 
-        getCurrentBuyer() {
-            const URL = `${this._brandConfig.checkoutApiUrl}/autofill/v1/buyer/current`;
-            const OPTIONS = {
-                credentials: 'include',
-                headers: {
-                    'two-delegated-authority-token': this.autofillToken
-                }
-            };
+        // Sole-trader chip click. Resolves against the prefetched autofill
+        // result so the signup popup (when needed) opens in the same
+        // synchronous gesture as the click and is not popup-blocker-killed.
+        soleTraderMode() {
+            this.enterSoleTraderUi();
+            const pf = this.prefetched;
+            if (pf.ready && pf.matches && pf.buyer) {
+                this.fillCompanyData({
+                    companyId: pf.buyer.organization_number,
+                    companyName: pf.buyer.company_name
+                });
+                this.showPopupMessage(false);
+            } else if (pf.ready) {
+                // Resolved with no matching buyer → signup. Opening here keeps
+                // the gesture intact; if the browser blocks it, show the link.
+                const win = this.openIframe();
+                this.showPopupMessage(!win);
+            } else {
+                // Prefetch not ready (payment selected before email entered):
+                // kick it off and offer the link as the fallback.
+                this.showPopupMessage(true);
+                this.prefetchSoleTrader();
+            }
+        },
 
-            fetch(URL, OPTIONS)
-                .then((response) => {
-                    if (response.ok) {
-                        return response.json();
-                    } else if (response.status == 404) {
-                        return null;
-                    } else {
-                        throw new Error(`Error response from ${URL}.`);
-                    }
-                })
+        // Mint tokens + read the buyer on the Two cookie for the entered email.
+        // Deduped per email so re-renders don't re-mint. A matching buyer
+        // auto-selects Sole trader and prefills via applyPrefetch().
+        prefetchSoleTrader() {
+            if (!this.showModeTab()) {
+                return;
+            }
+            const email = (this.getEmail() || '').trim();
+            if (!email || email === this.prefetchedEmail) {
+                return;
+            }
+            this.prefetchedEmail = email;
+            this.prefetched = { ready: false, buyer: null, matches: false };
+            this.getTokens()
                 .then((json) => {
-                    if (json) {
-                        const email = this.getEmail();
-                        if (json.email == email) {
-                            // Only autofill if email matches
-                            this.fillCompanyData({
-                                companyId: json.organization_number,
-                                companyName: json.company_name
-                            });
-                            this.showPopupMessage(false);
-                        } else {
-                            this.showPopupMessage(true);
-                        }
-                    } else {
-                        this.showPopupMessage(true);
-                    }
+                    this.delegationToken = json.delegation_token;
+                    this.autofillToken = json.autofill_token;
+                    return this.fetchBuyer();
                 })
-                .catch(() => this.showErrorMessage(this.soleTraderErrorMessage));
+                .then((buyer) => {
+                    const entered = (this.getEmail() || '').trim().toLowerCase();
+                    const matches = !!(
+                        buyer &&
+                        buyer.email &&
+                        String(buyer.email).toLowerCase() === entered
+                    );
+                    this.prefetched = { ready: true, buyer: buyer, matches: matches };
+                    this.applyPrefetch();
+                })
+                .catch(() => {
+                    this.prefetched = { ready: true, buyer: null, matches: false };
+                });
+        },
+
+        // Read the buyer on the Two cookie; resolves to the buyer or null. No
+        // UI side effects — the caller decides what to do with the result.
+        fetchBuyer() {
+            const URL = `${this._brandConfig.checkoutApiUrl}/autofill/v1/buyer/current`;
+            return fetch(URL, {
+                credentials: 'include',
+                headers: { 'two-delegated-authority-token': this.autofillToken }
+            })
+                .then((response) => {
+                    if (response.ok) return response.json();
+                    if (response.status == 404) return null;
+                    throw new Error(`Error response from ${URL}.`);
+                })
+                .catch(() => null);
+        },
+
+        // React to a resolved prefetch: a matching buyer auto-selects Sole
+        // trader and prefills; a non-match reverts an active Sole-trader
+        // selection to Registered organisation.
+        applyPrefetch() {
+            const pf = this.prefetched;
+            if (pf.matches && pf.buyer) {
+                this.enterSoleTraderUi();
+                this.fillCompanyData({
+                    companyId: pf.buyer.organization_number,
+                    companyName: pf.buyer.company_name
+                });
+                this.showPopupMessage(false);
+            } else if (this.showSoleTrader()) {
+                this.registeredOrganisationMode();
+            }
         },
 
         popupMessageListener() {
             window.addEventListener('message', (event) => {
                 if (this.showSoleTrader() && event.origin == this._brandConfig.checkoutPageUrl) {
                     if (event.data == 'ACCEPTED') {
-                        this.getCurrentBuyer();
+                        // Signup complete: the new sole trader now owns the
+                        // entered email — re-read and autofill, staying in
+                        // sole-trader mode.
+                        this.fetchBuyer().then((buyer) => {
+                            const entered = (this.getEmail() || '').trim().toLowerCase();
+                            const matches = !!(
+                                buyer &&
+                                buyer.email &&
+                                String(buyer.email).toLowerCase() === entered
+                            );
+                            this.prefetched = { ready: true, buyer: buyer, matches: matches };
+                            if (matches) {
+                                this.fillCompanyData({
+                                    companyId: buyer.organization_number,
+                                    companyName: buyer.company_name
+                                });
+                                this.showPopupMessage(false);
+                            }
+                        });
                     } else {
                         this.showErrorMessage(this.soleTraderErrorMessage);
                     }
