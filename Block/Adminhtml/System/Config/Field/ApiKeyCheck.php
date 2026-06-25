@@ -84,9 +84,14 @@ class ApiKeyCheck extends Field
                 'error' => $error
             ];
         } else {
+            // verify_api_key returns {id, short_name}; surface both so the
+            // merchant can confirm at a glance which account the key resolves to.
             return [
                 'message' => __('API key is valid'),
-                'status' => 'success'
+                'status' => 'success',
+                'merchant_id' => is_array($result) && isset($result['id']) ? (string)$result['id'] : '',
+                'merchant_short_name' => is_array($result) && isset($result['short_name'])
+                    ? (string)$result['short_name'] : ''
             ];
         }
     }
