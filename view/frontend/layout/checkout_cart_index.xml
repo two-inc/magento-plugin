@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+-->
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <!--
+            Render the payment-terms surcharge as a line in the cart-page
+            totals. The quote collector already adds it to the totals (so the
+            grand total includes it), but without this registration the cart
+            page never showed it as its own row — unlike shipping. Mirrors the
+            checkout-page registration in checkout_index_index.xml.
+        -->
+        <referenceBlock name="checkout.cart.totals">
+            <arguments>
+                <argument name="jsLayout" xsi:type="array">
+                    <item name="components" xsi:type="array">
+                        <item name="block-totals" xsi:type="array">
+                            <item name="children" xsi:type="array">
+                                <item name="two-surcharge" xsi:type="array">
+                                    <item name="component" xsi:type="string">Two_Gateway/js/view/cart/totals/surcharge</item>
+                                    <item name="sortOrder" xsi:type="string">39</item>
+                                    <item name="config" xsi:type="array">
+                                        <item name="title" xsi:type="string">Payment terms fee</item>
+                                    </item>
+                                </item>
+                            </item>
+                        </item>
+                    </item>
+                </argument>
+            </arguments>
+        </referenceBlock>
+    </body>
+</page>
