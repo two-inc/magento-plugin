@@ -26,7 +26,7 @@
                     Has no effect when no overlay is registered.
                 -->
                 <hide_when_overlay_installed>1</hide_when_overlay_installed>
-                <version>1.16.2</version>
+                <version>2.0.0</version>
                 <title>Two - Buy Now Pay Later on Invoice Terms</title>
                 <sort_order>-10</sort_order>
                 <mode>sandbox</mode>
