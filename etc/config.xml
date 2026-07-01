@@ -26,11 +26,12 @@
                     Has no effect when no overlay is registered.
                 -->
                 <hide_when_overlay_installed>1</hide_when_overlay_installed>
-                <version>1.14.1</version>
-                <title>Two</title>
+                <version>2.0.0-dev</version>
+                <title>Two - Buy Now Pay Later on Invoice Terms</title>
                 <sort_order>-10</sort_order>
                 <mode>sandbox</mode>
                 <invoice_type>FUNDED_INVOICE</invoice_type>
+                <merchant_minimum_order_basis>gross</merchant_minimum_order_basis>
                 <days_on_invoice>14</days_on_invoice>
                 <finalize_purchase>1</finalize_purchase>
                 <enable_order_intent>1</enable_order_intent>
@@ -52,11 +53,54 @@
                 <surcharge_differential>0</surcharge_differential>
                 <surcharge_line_description>Payment terms fee - %1 days</surcharge_line_description>
                 <surcharge_tax_rate/>
+                <surcharge_rounding_basis>none</surcharge_rounding_basis>
+                <surcharge_rounding_step/>
                 <can_use_internal>0</can_use_internal>
                 <can_use_checkout>1</can_use_checkout>
                 <payment_action>authorize</payment_action>
                 <model>Two\Gateway\Model\Two</model>
             </two_payment>
         </payment>
+        <!--
+            Per-layer synthesis flags for the brand-overlay v6 mechanism.
+            Default 0 (OFF): the synthesis plugin ships dormant so this
+            change is purely additive on production. A follow-up PR
+            flips the default to 1 in lockstep with a brand overlay's
+            data-only release (which deletes the overlay's renderer-bootstrap
+            JS). Design v6 §16.3 specifies these as per-layer debugging
+            knobs, not a rollback mechanism. Layers shipped in
+            subsequent PRs (payment_xml, csp, admin_form) will add
+            their own siblings here.
+        -->
+        <two_brand_synthesis>
+            <checkout_renderers>
+                <enabled>0</enabled>
+            </checkout_renderers>
+            <payment_xml>
+                <enabled>0</enabled>
+            </payment_xml>
+            <csp>
+                <enabled>0</enabled>
+            </csp>
+            <!--
+                Layer C/3: per-brand admin Configuration section
+                synthesis. While enabled, the Structure\Reader plugin
+                clones the etc/adminhtml/brand_form_template.xml,
+                stamps in each brand's identity, and appends a section
+                per brand. Skips any brand whose intended section id
+                already exists statically (so a brand whose overlay
+                module still ships its own etc/adminhtml/system.xml
+                stays on the static surface — first-writer-wins).
+                Default 1 since the brand overlay strip-down: the
+                overlay no longer ships its own system.xml, so synthesis
+                is the sole source of the per-brand admin tab. Flip to
+                0 only to debug — vanilla Two installs have no overlay
+                brands registered, so synthesis is a no-op for them
+                regardless.
+            -->
+            <admin_form>
+                <enabled>1</enabled>
+            </admin_form>
+        </two_brand_synthesis>
     </default>
 </config>

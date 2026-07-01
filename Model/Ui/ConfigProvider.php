@@ -23,8 +23,8 @@ use Two\Gateway\Model\Two;
  * Populates `window.checkoutConfig.payment[<code>]` with the runtime
  * config the gateway_method renderer needs. The `$code` constructor
  * argument decides which subtree of `payment` gets populated, so
- * brand-overlay packages (magento-abn-plugin) can declare a
- * virtualType of this class with `code='abn_payment'` and a
+ * brand-overlay packages can declare a
+ * virtualType of this class with `code='acme_payment'` and a
  * brand-bound BrandRegistryInterface to expose their own subtree
  * without re-implementing the body of getConfig().
  *
@@ -83,7 +83,7 @@ class ConfigProvider implements ConfigProviderInterface
         AssetRepository $assetRepository,
         CheckoutSession $checkoutSession,
         StoreManagerInterface $storeManager,
-        string $code = ConfigRepository::CODE
+        ?string $code = null
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -92,7 +92,7 @@ class ConfigProvider implements ConfigProviderInterface
         $this->assetRepository = $assetRepository;
         $this->checkoutSession = $checkoutSession;
         $this->storeManager = $storeManager;
-        $this->code = $code;
+        $this->code = $code ?? $brandRegistry->getCode();
     }
 
     /**
@@ -143,6 +143,7 @@ class ConfigProvider implements ConfigProviderInterface
                     'selectedPaymentTerm' => (int)$this->checkoutSession->getTwoSelectedTerm()
                         ?: $this->configRepository->getDefaultPaymentTerm(),
                     'currencySymbol' => $this->getCurrencySymbol(),
+                    'subtitleHtml' => $this->getSubtitleHtml(),
                     'surchargeDescription' => $this->configRepository->getSurchargeLineDescription(),
                     'isPaymentTermsEnabled' => true,
                     'orderIntentApprovedMessage' => __(
@@ -186,6 +187,22 @@ class ConfigProvider implements ConfigProviderInterface
         } catch (\Exception $e) {
             return '';
         }
+    }
+
+    /**
+     * Resolve the brand's checkout subtitle for the storefront renderer.
+     *
+     * The string is brand data (BrandRegistryInterface::getCheckoutSubtitle,
+     * sourced from brand.xml). The vanilla Two brand returns '' → no
+     * subtitle. We only pass a non-empty key to the translator, so an
+     * unmapped locale falls back to the (brand-owned) source key rather
+     * than ever leaking a vanilla key. May contain HTML (e.g. a link);
+     * the KO template binds it via `html:`.
+     */
+    private function getSubtitleHtml(): string
+    {
+        $key = $this->brandRegistry->getCheckoutSubtitle();
+        return $key === '' ? '' : (string)__($key);
     }
 
     /**

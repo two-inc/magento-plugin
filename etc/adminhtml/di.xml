@@ -28,4 +28,15 @@
                 type="Two\Gateway\Plugin\Config\Structure\HidePaymentSection"
                 sortOrder="10"/>
     </type>
+    <!--
+        SynthesiseBrandAdminForm is registered globally in etc/di.xml,
+        not here. CLI commands (bin/magento config:set, app:config:import,
+        deploy:mode:set, etc.) populate the adminhtml-scoped structure
+        cache key but bootstrap with the CLI process's DI graph — which
+        loaded only etc/di.xml + etc/crontab/di.xml (or similar), not
+        etc/adminhtml/di.xml. Registering the plugin here meant CLI-driven
+        cache writes never invoked synthesis; the cache then served the
+        un-synthesised result to subsequent admin web requests and the
+        ABN admin tab disappeared (ABN-415).
+    -->
 </config>

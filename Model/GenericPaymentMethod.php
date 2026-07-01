@@ -27,6 +27,8 @@ use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
+use Two\Gateway\Service\Order\MinimumOrderGate;
+use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Service\UrlCookie;
 
 /**
@@ -39,19 +41,20 @@ use Two\Gateway\Service\UrlCookie;
  * is sufficient to expose a distinct payment method without copying
  * the 600-line Two class.
  *
- * Example brand-overlay binding (in the overlay package's etc/di.xml):
+ * Brand\BrandPaymentMethodFactory instantiates this class with the
+ * active brand's code and the DI-resolved BrandRegistryInterface
+ * (DescriptorBackedBrandRegistry), so legacy overlay virtualTypes
+ * keep working alongside the brand.xml-sourced descriptor pipeline.
+ *
+ * Example brand-overlay binding (legacy, still supported):
  *
  *   <virtualType name="ABN\Gateway\Model\AbnPayment"
  *                type="Two\Gateway\Model\GenericPaymentMethod">
  *       <arguments>
- *           <argument name="code" xsi:type="string">abn_payment</argument>
+ *           <argument name="code" xsi:type="string">acme_payment</argument>
  *           <argument name="brand" xsi:type="object">ABN\Gateway\Model\AbnBrand</argument>
  *       </arguments>
  *   </virtualType>
- *
- * The default Two-branded binding continues to use the parent `Two`
- * class directly via `etc/config.xml` `<model>`. See magento-abn-plugin
- * docs/implementation-plan.md §3.1 + §6.1 for the design.
  */
 class GenericPaymentMethod extends Two
 {
@@ -80,6 +83,8 @@ class GenericPaymentMethod extends Two
         OrderRepositoryInterface $orderRepository,
         Adapter $apiAdapter,
         LogRepository $logRepository,
+        MinimumOrderGate $minimumOrderGate,
+        MinimumOrderProvider $minimumOrderProvider,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -104,11 +109,13 @@ class GenericPaymentMethod extends Two
             $orderRepository,
             $apiAdapter,
             $logRepository,
+            $minimumOrderGate,
+            $minimumOrderProvider,
             $resource,
             $resourceCollection,
             $data
         );
-        // Brand-overlay payment-method code, e.g. 'abn_payment'. Replaces
+        // Brand-overlay payment-method code, e.g. 'acme_payment'. Replaces
         // the hardcoded `self::CODE` baked into the parent Two class so a
         // single class can back multiple brand-overlay virtualTypes.
         $this->_code = $code;

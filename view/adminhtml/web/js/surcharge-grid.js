@@ -3,14 +3,41 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
 
     return function (config, element) {
         var $container = $(element);
-        var $termsContainer = $('#two_payment_payment_terms_payment_terms_checkboxes');
-        var $customDays = $('#two_payment_payment_terms_payment_terms_duration_days');
-        var $surchargeType = $('#two_payment_payment_terms_surcharge_type');
-        var $differential = $('#two_payment_payment_terms_surcharge_differential');
-        var $defaultTerm = $('#two_payment_payment_terms_default_payment_term');
+
+        // Derive the section-id prefix from the DOM (same approach as
+        // payment-terms-config.js). The phtml template renders the term
+        // checkboxes container with id `{section}_payment_terms_payment_terms_checkboxes`
+        // — strip the suffix to recover the section id and build every
+        // other selector against it. Keeps the file brand-agnostic:
+        // `two_payment` on vanilla, `acme_payment` on a brand overlay
+        // install, etc. The previous hardcoded `two_payment_*` selectors
+        // matched nothing on overlay installs, so $surchargeType.val()
+        // returned undefined → getSurchargeType() defaulted to 'none' →
+        // updateContainerVisibility() hid the grid's row immediately on
+        // load.
+        var $termsContainer = $('.two-term-checkboxes').first();
+        if (!$termsContainer.length) {
+            return;
+        }
+        var containerSuffix = '_payment_terms_payment_terms_checkboxes';
+        var termsContainerId = $termsContainer.attr('id') || '';
+        if (termsContainerId.slice(-containerSuffix.length) !== containerSuffix) {
+            return;
+        }
+        var section = termsContainerId.slice(0, -containerSuffix.length);
+        var prefix = section + '_payment_terms_';
+
+        var $customDays = $('#' + prefix + 'payment_terms_duration_days');
+        var $surchargeType = $('#' + prefix + 'surcharge_type');
+        var $differential = $('#' + prefix + 'surcharge_differential');
+        var $defaultTerm = $('#' + prefix + 'default_payment_term');
         var $table = $container.find('.surcharge-grid');
         var $noTermsMsg = $container.find('.surcharge-grid__no-terms');
         var $currencyNote = $container.find('.surcharge-grid__currency-note');
+        // Grid-level inherit ("Use Website/Default"). Present only at a
+        // non-default scope; absent at default scope.
+        var $inheritToggle = $container.find('.surcharge-grid__inherit-toggle');
+        var $inheritSentinel = $container.find('.surcharge-grid__inherit-sentinel');
         // maxFixed === null when the brand has no upper bound on fixed-fee
         // surcharges. Template emits `data-max-fixed=""` in that case;
         // parseInt('', 10) is NaN, so we explicitly track "no bound" and
@@ -42,10 +69,13 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         }
 
         function getSurchargeType() {
-            var $inherit = $('#two_payment_payment_terms_surcharge_type_inherit');
-            if ($inherit.length && $inherit.is(':checked')) {
-                return 'none';
-            }
+            // Effective (resolved) type, scope-aware. When the type field's
+            // "Use Website/Default" is ticked the <select> is disabled but
+            // still carries the inherited value, so read it directly. An
+            // inherited Percentage type must still render the grid; returning
+            // 'none' on inherit (the old behaviour) hid the grid at store
+            // scope and stranded any store-scope override out of sight
+            // (ABN-440).
             return $surchargeType.val() || 'none';
         }
 
@@ -66,7 +96,11 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
 
             $.each(columns, function (_, col) {
                 var name = 'groups[payment_terms][fields][surcharge_grid][value][' + days + '][' + col + ']';
-                var validateRules = ['"validate-number":true', '"validate-zero-or-greater":true'];
+                // validate-number intentionally omitted — locale-blind regex
+                // would reject Dutch admins typing "10,50". The other two
+                // rules route through $.mage.parseNumber, which IS locale-
+                // aware (mirrors the surcharge-grid.phtml template).
+                var validateRules = ['"validate-zero-or-greater":true'];
                 if (col === 'fixed' && maxFixed !== null) {
                     validateRules.push('"validate-number-range":"0-' + maxFixed + '"');
                 } else if (col === 'percentage') {
@@ -82,9 +116,6 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 html += '/></td>';
             });
 
-            html += '<td class="surcharge-grid__fee" data-term="' + days + '">'
-                  + '<span class="surcharge-grid__loading"><span>.</span><span>.</span><span>.</span></span>'
-                  + '</td>';
             html += '</tr>';
             return $(html);
         }
@@ -206,22 +237,24 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             $container.closest('tr').toggle(hasSurcharge);
         }
 
-        // ── Inherit checkboxes ───────────────────────────────────────────
+        // ── Grid-level inherit ("Use Website/Default") ─────────────────────
 
-        function initInheritCheckboxes() {
-            $container.on('change', '.surcharge-grid__inherit-checkbox', function () {
-                var $cb = $(this);
-                var col = $cb.data('column');
-                var term = $cb.data('term');
-                var inherited = $cb.is(':checked');
-                var $row = $container.find('.surcharge-grid__row[data-term="' + term + '"]');
-
-                var $input = $row.find('.surcharge-grid__input[data-column="' + col + '"]');
-                $input.prop('disabled', inherited).data('inherit-disabled', inherited);
-
-                var $flag = $row.find('.surcharge-grid__inherit-flag[data-column="' + col + '"]');
-                $flag.val(inherited ? '1' : '0');
-            });
+        // One checkbox inherits or overrides the whole grid. Checked →
+        // the grid inherits the parent scope: all inputs disabled and the
+        // hidden sentinel posts '1' so the backend purges every per-term
+        // override row at this scope. Unchecked → editable override, and
+        // the differential rule reapplies (it owns the default-term row).
+        function applyGridInherit() {
+            if (!$inheritToggle.length) {
+                return; // default scope — no inherit control rendered
+            }
+            var inherit = $inheritToggle.is(':checked');
+            $inheritSentinel.val(inherit ? '1' : '0');
+            $container.find('.surcharge-grid__input').prop('disabled', inherit);
+            $table.toggleClass('surcharge-grid--inherited', inherit);
+            if (!inherit) {
+                updateDifferentialState();
+            }
         }
 
         // ── Master update ────────────────────────────────────────────────
@@ -232,7 +265,12 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             updateColumnVisibility();
             updateDifferentialState();
             updateHelperText();
-            loadFees();
+            // Last: grid-level inherit has final say on input disabled
+            // state, overriding column/differential toggles when the whole
+            // grid is inheriting.
+            applyGridInherit();
+            // Fee-preview column removed (ABN-356 / ABN-401-F12); skip the
+            // loadFees() AJAX whose response would have no cells to populate.
         }
 
         // ── Event bindings ───────────────────────────────────────────────
@@ -242,7 +280,8 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         $surchargeType.on('change', update);
         $differential.on('change', update);
         $defaultTerm.on('change', update);
-        $('#two_payment_payment_terms_surcharge_type_inherit').on('change', update);
+        $('#' + prefix + 'surcharge_type_inherit').on('change', update);
+        $inheritToggle.on('change', applyGridInherit);
 
         // ── Fee column (read-only, fetched from Two API via admin proxy) ─
 
@@ -253,7 +292,6 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // loadFees() writes during init.
         var lastFeesKey = null;
 
-        initInheritCheckboxes();
         update();
 
         function loadFees() {
@@ -289,6 +327,12 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 var responseCurrency = String(response.currency || '').toUpperCase();
                 var degraded = responseCurrency !== '' && responseCurrency !== gridCurrency;
                 var suffix = degraded ? ' ' + responseCurrency : '';
+                var decimalSep = String($container.data('decimal-separator') || '.');
+                function formatAmount(n) {
+                    var s = Number(n).toFixed(2);
+                    return decimalSep === '.' ? s : s.replace('.', decimalSep);
+                }
+                var zero = formatAmount(0);
                 $container.find('td.surcharge-grid__fee').each(function () {
                     var $cell = $(this);
                     var term = String($cell.data('term'));
@@ -296,13 +340,13 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     if (!fee) {
                         return;
                     }
-                    var pctStr = Number(fee.percentage || 0).toFixed(2);
-                    var fixedStr = Number(fee.fixed || 0).toFixed(2);
-                    var pctZero = pctStr === '0.00';
-                    var fixedZero = fixedStr === '0.00';
+                    var pctStr = formatAmount(fee.percentage || 0);
+                    var fixedStr = formatAmount(fee.fixed || 0);
+                    var pctZero = pctStr === zero;
+                    var fixedZero = fixedStr === zero;
                     var text;
                     if (pctZero && fixedZero) {
-                        text = '0.00' + suffix;
+                        text = zero + suffix;
                     } else if (pctZero) {
                         text = fixedStr + suffix;
                     } else if (fixedZero) {

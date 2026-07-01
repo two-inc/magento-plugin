@@ -2,15 +2,28 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
     'use strict';
 
     function initPaymentTermsConfig() {
-        var $termsContainer = $('#two_payment_payment_terms_payment_terms_checkboxes');
-        var $customDays = $('#two_payment_payment_terms_payment_terms_duration_days');
-        var $defaultTerm = $('#two_payment_payment_terms_default_payment_term');
-        var $surchargeType = $('#two_payment_payment_terms_surcharge_type');
-        var $differential = $('#two_payment_payment_terms_surcharge_differential');
-
+        // Discover the section-id prefix from the page. The phtml
+        // template ships the checkboxes container with id
+        // `{section}_payment_terms_payment_terms_checkboxes` — strip
+        // the suffix to get the section id, then build every other
+        // selector against it. This keeps the JS brand-agnostic:
+        // `two_payment` on vanilla, `acme_payment` on a brand overlay, ...
+        var $termsContainer = $('.two-term-checkboxes').first();
         if (!$termsContainer.length) {
             return;
         }
+        var containerSuffix = '_payment_terms_payment_terms_checkboxes';
+        var containerId = $termsContainer.attr('id') || '';
+        if (containerId.slice(-containerSuffix.length) !== containerSuffix) {
+            return;
+        }
+        var section = containerId.slice(0, -containerSuffix.length);
+        var prefix = section + '_payment_terms_';
+
+        var $customDays     = $('#' + prefix + 'payment_terms_duration_days');
+        var $defaultTerm    = $('#' + prefix + 'default_payment_term');
+        var $surchargeType  = $('#' + prefix + 'surcharge_type');
+        var $differential   = $('#' + prefix + 'surcharge_differential');
 
         // ── Helpers ──────────────────────────────────────────────────────
 
@@ -31,10 +44,12 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         }
 
         function getSurchargeType() {
-            var $inherit = $('#two_payment_payment_terms_surcharge_type_inherit');
-            if ($inherit.length && $inherit.is(':checked')) {
-                return 'none';
-            }
+            // Effective (resolved) type, scope-aware. When the type field's
+            // "Use Website/Default" is ticked the <select> is disabled but
+            // still carries the inherited value, so read it directly. An
+            // inherited Percentage type must still surface the surcharge
+            // fields; returning 'none' on inherit (the old behaviour) hid
+            // them at store scope (ABN-440).
             return $surchargeType.val() || 'none';
         }
 
@@ -72,7 +87,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // ── Surcharge field visibility ───────────────────────────────────
 
         function getFieldRow(fieldId) {
-            return $('#row_two_payment_payment_terms_' + fieldId);
+            return $('#row_' + prefix + fieldId);
         }
 
         function showField(fieldId) {
@@ -131,12 +146,11 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         $surchargeType.on('change', onSurchargeChanged);
         $differential.on('change', onSurchargeChanged);
         $defaultTerm.on('change', onDefaultTermChanged);
-        $('#two_payment_payment_terms_surcharge_type_inherit').on('change', onSurchargeChanged);
+        $('#' + prefix + 'surcharge_type_inherit').on('change', onSurchargeChanged);
 
         // ── "Use System Value" reset ────────────────────────────────────
 
         function initInheritResetBehavior() {
-            var prefix = 'two_payment_payment_terms_';
             $('input[id^="' + prefix + '"][id$="_inherit"]').each(function () {
                 var $inherit = $(this);
                 var fieldId = $inherit.attr('id').replace(/_inherit$/, '');
@@ -170,7 +184,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // ── "Use System Value" for term checkboxes ────────────────────────
 
         function initTermCheckboxInherit() {
-            var $inherit = $('#two_payment_payment_terms_payment_terms_inherit');
+            var $inherit = $('#' + prefix + 'payment_terms_inherit');
             if (!$inherit.length) {
                 return;
             }
@@ -218,6 +232,121 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             $checkboxes.prop('disabled', $inherit.is(':checked'));
         }
 
+        // ── Inline merchant fees beside each checkbox ────────────────────
+
+        // Fetched async from admin proxy `two/config/fees` (same endpoint
+        // the old surcharge-grid Fee column used). Each `.two-term-
+        // checkboxes__fee` span is populated with text like " (1.50% + 0.50)"
+        // when the response arrives. On failure the span stays empty.
+        var lastFeesKey = null;
+
+        function loadFees() {
+            var url = $termsContainer.data('fees-url');
+            if (!url) {
+                return; // brand has inline_term_fees disabled (no data-fees-url emitted)
+            }
+            // Fees render beside EVERY checkbox regardless of selection state,
+            // so the API call asks for all available term values, plus the
+            // custom-days entry if the merchant has one set. Differs from
+            // getSelectedTerms (which feeds the default-term dropdown and
+            // surcharge-visibility logic and intentionally tracks the
+            // checked state).
+            var terms = $termsContainer.find('.two-term-checkboxes__input').map(function () {
+                return Number(this.value);
+            }).get().filter(function (n) { return n > 0; });
+            var custom = parseInt($customDays.val(), 10);
+            if (custom > 0 && terms.indexOf(custom) === -1) {
+                terms.push(custom);
+            }
+            terms.sort(function (a, b) { return a - b; });
+            if (!terms.length) {
+                return;
+            }
+            var key = terms.join(',');
+            if (key === lastFeesKey) {
+                return;
+            }
+            lastFeesKey = key;
+            var $formKey = $('input[name="form_key"]').first();
+            $.ajax({
+                url: url,
+                type: 'POST',
+                dataType: 'json',
+                data: {
+                    form_key: $formKey.val() || (window.FORM_KEY || ''),
+                    terms: JSON.stringify(terms),
+                    scope: String($termsContainer.data('scope') || 'default'),
+                    scopeId: parseInt($termsContainer.data('scope-id'), 10) || 0
+                }
+            }).done(function (response) {
+                if (!response || !response.success || !response.fees) {
+                    return; // leave spans empty
+                }
+                // Currency MUST come from the API response — the fee
+                // values do too, and we don't get to guess what currency
+                // they're in. If the API omits it, we cannot safely
+                // render any fixed amount.
+                var currency = String(response.currency || '').toUpperCase().trim();
+                var suffix = currency !== '' ? ' ' + currency : '';
+                // Admin locale's decimal separator, sourced server-side
+                // from ICU (matches what the surcharge-grid display path
+                // uses). Falls back to '.' on legacy renders that didn't
+                // emit the attribute.
+                var decimalSep = String($termsContainer.data('decimal-separator') || '.');
+                function formatAmount(n) {
+                    var s = Number(n).toFixed(2);
+                    return decimalSep === '.' ? s : s.replace('.', decimalSep);
+                }
+                $termsContainer.find('.two-term-checkboxes__fee').each(function () {
+                    var $span = $(this);
+                    var term = String($span.data('term'));
+                    var fee = response.fees[term];
+                    if (!fee) {
+                        $span.text('');
+                        return;
+                    }
+                    var pctStr = formatAmount(fee.percentage || 0);
+                    var fixedStr = formatAmount(fee.fixed || 0);
+                    var zero = formatAmount(0);
+                    var pctZero = pctStr === zero;
+                    var fixedZero = fixedStr === zero;
+                    // Without an API-supplied currency, any fixed
+                    // component would be ambiguous. Drop the fixed
+                    // portion entirely in that case; percentage can
+                    // stand alone since it carries its own unit (%).
+                    if (currency === '') {
+                        if (pctZero) {
+                            $span.text('');
+                            return;
+                        }
+                        $span.text(' (' + pctStr + '%)');
+                        return;
+                    }
+                    var inner;
+                    if (pctZero && fixedZero) {
+                        inner = zero + suffix;
+                    } else if (pctZero) {
+                        inner = fixedStr + suffix;
+                    } else if (fixedZero) {
+                        inner = pctStr + '%';
+                    } else {
+                        inner = pctStr + '% + ' + fixedStr + suffix;
+                    }
+                    $span.text(' (' + inner + ')');
+                });
+            }).fail(function () {
+                // Allow a retry on the same term-set after a transient error,
+                // and clear any half-populated spans.
+                lastFeesKey = null;
+                $termsContainer.find('.two-term-checkboxes__fee').text('');
+            });
+        }
+
+        // Additional handlers for fee refresh — fire alongside the term-set
+        // change handlers without disturbing their existing wiring.
+        $termsContainer.on('change', '.two-term-checkboxes__input', loadFees);
+        $customDays.on('change keyup', loadFees);
+
         // ── Initialize ───────────────────────────────────────────────────
 
         updateDefaultTermOptions();
@@ -225,6 +354,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         updateSurchargeVisibility();
         initInheritResetBehavior();
         initTermCheckboxInherit();
+        loadFees();
     }
 
     $(document).ready(function () {

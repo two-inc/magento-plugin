@@ -1,0 +1,185 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * Schema for etc/brand.xml. One <brand> element per brand module
+ * describes the brand-identity values (immutable at install time)
+ * consumed by Two\Gateway\Model\Brand\Loader.
+ */
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+    <xs:element name="config">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="brand" type="brandType" minOccurs="1" maxOccurs="unbounded"/>
+            </xs:sequence>
+        </xs:complexType>
+        <xs:unique name="uniqueBrandCode">
+            <xs:selector xpath="brand"/>
+            <xs:field xpath="@code"/>
+        </xs:unique>
+    </xs:element>
+
+    <xs:complexType name="brandType">
+        <xs:all>
+            <xs:element name="provider" type="xs:string"/>
+            <xs:element name="provider_full_name" type="xs:string" minOccurs="0"/>
+            <xs:element name="product_name" type="xs:string"/>
+            <xs:element name="tab_label" type="xs:string"/>
+            <xs:element name="tab_css_class" type="xs:string" minOccurs="0"/>
+            <xs:element name="checkout_subtitle" type="xs:string" minOccurs="0"/>
+            <xs:element name="checkout_url_template" type="xs:string"/>
+            <xs:element name="brand_tag" type="xs:string" minOccurs="0"/>
+            <xs:element name="sign_up_url" type="xs:string" minOccurs="0"/>
+            <xs:element name="documentation_url" type="xs:string" minOccurs="0"/>
+            <xs:element name="api_base_url" type="xs:string"/>
+            <xs:element name="available_payment_terms" type="paymentTermsType"/>
+            <xs:element name="surcharge_fixed_max" type="surchargeFixedMaxType" minOccurs="0"/>
+            <!--
+                Buyer-surcharge rounding steps offered in the admin
+                "Rounding Step" dropdown (major currency units). Brand
+                overlays narrow the parent default set (e.g. to 0.50 /
+                1.00). Omit the element to inherit the parent default
+                set; an empty element is treated as omitted.
+            -->
+            <xs:element name="surcharge_rounding_steps" type="surchargeRoundingStepsType" minOccurs="0"/>
+            <xs:element name="csp_origins" type="cspOriginsType" minOccurs="0"/>
+            <xs:element name="admin_resource" type="xs:string"/>
+            <xs:element name="module_label_chain" type="moduleLabelChainType" minOccurs="0"/>
+            <xs:element name="allowed_currencies" type="allowedCurrenciesType" minOccurs="0"/>
+            <xs:element name="allowed_countries" type="allowedCountriesType" minOccurs="0"/>
+            <xs:element name="extra_http_headers" type="extraHttpHeadersType" minOccurs="0"/>
+            <xs:element name="suppressed_fields" type="suppressedFieldsType" minOccurs="0"/>
+            <!--
+                Show the per-term merchant fee inline beside each
+                Payment Terms checkbox in admin (e.g. "30 days (1.50%
+                + 0.50)"). Default true. Brand overlays set false to
+                hide the inline fee preview (e.g. when their pricing
+                contract makes the per-term cost noise rather than
+                signal for the merchant).
+            -->
+            <xs:element name="inline_term_fees" type="xs:boolean" minOccurs="0"/>
+        </xs:all>
+        <xs:attribute name="code" type="brandCodeType" use="required"/>
+        <xs:attribute name="tab_sort_order" type="xs:integer" use="required"/>
+        <!--
+            Short identifier used as the prefix for synthesised admin
+            Configuration section IDs (e.g. `two` → `two_general`,
+            `two_payment`, `two_search`, `two_version`) and the
+            synthesised admin tab id (`{prefix}_gateway`). Optional —
+            when absent, derived by stripping a trailing `_payment`
+            suffix from `code`.
+        -->
+        <xs:attribute name="section_prefix" type="brandCodeType" use="optional"/>
+    </xs:complexType>
+
+    <xs:simpleType name="brandCodeType">
+        <xs:restriction base="xs:string">
+            <xs:pattern value="[a-z][a-z0-9_]*"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:complexType name="paymentTermsType">
+        <xs:sequence>
+            <xs:element name="term" type="xs:positiveInteger" minOccurs="1" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="surchargeFixedMaxType">
+        <xs:attribute name="amount" type="xs:decimal" use="required"/>
+        <xs:attribute name="currency" type="xs:string" use="required"/>
+    </xs:complexType>
+
+    <xs:complexType name="surchargeRoundingStepsType">
+        <xs:sequence>
+            <xs:element name="step" type="positiveDecimalType" minOccurs="1" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:simpleType name="positiveDecimalType">
+        <xs:restriction base="xs:decimal">
+            <xs:minExclusive value="0"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:complexType name="cspOriginsType">
+        <xs:sequence>
+            <xs:element name="origin" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="moduleLabelChainType">
+        <xs:sequence>
+            <xs:element name="module" minOccurs="1" maxOccurs="unbounded">
+                <xs:complexType>
+                    <xs:simpleContent>
+                        <xs:extension base="xs:string">
+                            <xs:attribute name="label" type="xs:string" use="required"/>
+                        </xs:extension>
+                    </xs:simpleContent>
+                </xs:complexType>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="allowedCurrenciesType">
+        <xs:sequence>
+            <xs:element name="currency" type="xs:string" minOccurs="1" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="allowedCountriesType">
+        <xs:sequence>
+            <xs:element name="country" type="xs:string" minOccurs="1" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="extraHttpHeadersType">
+        <xs:sequence>
+            <xs:element name="header" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                    <xs:simpleContent>
+                        <xs:extension base="xs:string">
+                            <xs:attribute name="name" type="xs:string" use="required"/>
+                        </xs:extension>
+                    </xs:simpleContent>
+                </xs:complexType>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+
+    <!--
+        Fields to hide from the synthesised admin Configuration form
+        for this brand. Each <field> has a `path` of the form
+        `section_suffix/group/field`, e.g.
+        `payment/payment_terms/payment_terms_duration_days`
+        targets the field inside the synthesised
+        `{section_prefix}_payment` → `payment_terms` group.
+
+        SynthesiseBrandAdminForm sets
+        showInDefault/Website/Store="0" on the matching field during
+        section injection — the field stays declared in the canonical
+        template but doesn't render. This is the preferred mechanism
+        for per-brand control suppression; avoids overlay modules
+        needing a static `<section>` stub in their own system.xml
+        (which would otherwise short-circuit the synthesised section
+        ordering by inserting itself into the merged Structure first).
+    -->
+    <xs:complexType name="suppressedFieldsType">
+        <xs:sequence>
+            <xs:element name="field" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                    <xs:attribute name="path" use="required">
+                        <xs:simpleType>
+                            <xs:restriction base="xs:string">
+                                <xs:pattern value="[a-z][a-z0-9_]*/[a-z][a-z0-9_]*/[a-z][a-z0-9_]*"/>
+                            </xs:restriction>
+                        </xs:simpleType>
+                    </xs:attribute>
+                </xs:complexType>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+</xs:schema>

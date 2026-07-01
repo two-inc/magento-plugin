@@ -9,11 +9,29 @@ namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
+use Magento\Framework\Component\ComponentRegistrar;
 use Magento\Framework\Data\Form\Element\AbstractElement;
+use Magento\Framework\Filesystem\DirectoryList;
+use Magento\Framework\Stdlib\DateTime\TimezoneInterface;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 
 /**
- * Render version field html element in Stores Configuration
+ * Renders the admin "Version" panel: one row per gateway-stack module
+ * (parent payment method, Hyva extension, brand overlays) plus a
+ * single assets-freshness row.
+ *
+ * Per-module signals: composer.json version (authoritative for what's
+ * deployed), gitSync worktree commit SHA, source mtime.
+ * Panel-level: assets mtime + stale warning when assets are older than
+ * the newest module's source.
+ *
+ * Rows come from the active brand's `<module_label_chain>` declared
+ * in its `etc/brand.xml`, resolved at request time via
+ * BrandRegistryInterface. Vanilla Two ships ["Payment Method" =>
+ * Two_Gateway, "Hyva Extension" => Two_GatewayHyva]; ABN adds
+ * "Payment Theme" / "Hyva Theme" rows. Unregistered entries (e.g.
+ * Hyva when not installed) are silently skipped.
  */
 class Version extends Field
 {
@@ -28,46 +46,270 @@ class Version extends Field
      */
     private $configRepository;
 
+    private ComponentRegistrar $componentRegistrar;
+    private DirectoryList $directoryList;
+    private TimezoneInterface $timezone;
+    private BrandRegistryInterface $brandRegistry;
+    private string $moduleName;
+
     /**
-     * Version constructor.
-     *
-     * @param Context $context
      * @param ConfigRepository $configRepository
+     * @param Context $context
+     * @param ComponentRegistrar $componentRegistrar
+     * @param DirectoryList $directoryList
+     * @param TimezoneInterface $timezone
+     * @param BrandRegistryInterface $brandRegistry Source of the per-brand
+     *        version-panel row chain. Each brand declares
+     *        `<module_label_chain>` in its `etc/brand.xml`; the registry
+     *        exposes it via `getModuleLabelChain()`. ABN adds
+     *        "Payment Theme"/"Hyva Theme" rows; vanilla Two ships only
+     *        the parent-runtime rows.
+     * @param string $moduleName Primary module — used by getVersion() fallback
+     *                           and for any caller still expecting a single
+     *                           module identity. Defaults to Two_Gateway
+     *                           (the canonical runtime). Brand overlays
+     *                           do not override this; their identity is
+     *                           expressed via brand.xml, not DI.
      * @param array $data
      */
     public function __construct(
         ConfigRepository $configRepository,
         Context $context,
+        ComponentRegistrar $componentRegistrar,
+        DirectoryList $directoryList,
+        TimezoneInterface $timezone,
+        BrandRegistryInterface $brandRegistry,
+        string $moduleName = 'Two_Gateway',
         array $data = []
     ) {
         $this->configRepository = $configRepository;
+        $this->componentRegistrar = $componentRegistrar;
+        $this->directoryList = $directoryList;
+        $this->timezone = $timezone;
+        $this->brandRegistry = $brandRegistry;
+        $this->moduleName = $moduleName;
         parent::__construct($context, $data);
     }
 
     /**
-     * Get extension version
+     * Active brand's module_label_chain — sourced from its brand.xml
+     * at request time via BrandRegistryInterface, which routes through
+     * ActiveBrandResolver to the install's single active brand.
+     * Replaces the previous constructor-injected `moduleLabels` array
+     * and the brand-overlay DI rebind pattern.
      *
-     * @return string
+     * @return array<string, string>
      */
-    public function getVersion(): string
+    private function moduleLabels(): array
     {
+        return $this->brandRegistry->getModuleLabelChain();
+    }
+
+    /**
+     * Primary-module version, used by any non-panel caller.
+     *
+     * Prefers composer.json on disk (authoritative for deployed code)
+     * with a CCD/config.xml fallback for setups where the module path
+     * can't be resolved. Returns null when neither source yields a
+     * value; the template tolerates null.
+     */
+    public function getVersion(): ?string
+    {
+        $modulePath = $this->getModulePathFor($this->moduleName);
+        if ($modulePath) {
+            $version = $this->readComposerVersion($modulePath);
+            if ($version !== null) {
+                return $version;
+            }
+        }
         return $this->configRepository->getExtensionDBVersion();
     }
 
     /**
-     * @inheritDoc
+     * Rows for the multi-module panel.
+     *
+     * @return array<int, array{label: string, version: ?string, commit: string, codeAt: string}>
      */
+    public function getModules(): array
+    {
+        $rows = [];
+        foreach ($this->moduleLabels() as $label => $moduleName) {
+            $path = $this->getModulePathFor($moduleName);
+            if (!$path) {
+                continue;
+            }
+            $rows[] = [
+                'label' => $label,
+                'version' => $this->readComposerVersion($path),
+                'commit' => $this->extractCommit($path),
+                'codeAt' => $this->formatTs($this->getCodeTs($path)),
+            ];
+        }
+        return $rows;
+    }
+
+    /**
+     * mtime of pub/static/deployed_version.txt — when
+     * setup:static-content:deploy last ran. Panel-level, not per-module:
+     * assets are compiled once for the whole install.
+     */
+    public function getAssetsDeployedAt(): string
+    {
+        return $this->formatTs($this->getAssetsTs());
+    }
+
+    /**
+     * True when assets are older than the newest enumerated module's
+     * source. 5-minute grace tolerates normal init-job step ordering.
+     */
+    public function isAssetsStale(): bool
+    {
+        $assetsTs = $this->getAssetsTs();
+        if ($assetsTs <= 0) {
+            return false;
+        }
+        $newestCode = 0;
+        foreach ($this->moduleLabels() as $moduleName) {
+            $path = $this->getModulePathFor($moduleName);
+            if (!$path) {
+                continue;
+            }
+            $ts = $this->getCodeTs($path);
+            if ($ts > $newestCode) {
+                $newestCode = $ts;
+            }
+        }
+        return $newestCode > 0 && ($newestCode - $assetsTs) > 300;
+    }
+
     public function render(AbstractElement $element)
     {
         $element->unsScope()->unsCanUseWebsiteValue()->unsCanUseDefaultValue();
         return parent::render($element);
     }
 
-    /**
-     * @inheritDoc
-     */
     public function _getElementHtml(AbstractElement $element)
     {
         return $this->_toHtml();
+    }
+
+    private function getModulePathFor(string $moduleName): ?string
+    {
+        $path = $this->componentRegistrar->getPath(ComponentRegistrar::MODULE, $moduleName);
+        return $path ?: null;
+    }
+
+    private function readComposerVersion(string $modulePath): ?string
+    {
+        // Monorepo sub-path modules (e.g. ABN_Gateway at <repo>/plugin)
+        // keep their composer.json one level up; check both.
+        foreach ([$modulePath, dirname($modulePath)] as $dir) {
+            $composer = @file_get_contents($dir . '/composer.json');
+            if ($composer === false) {
+                continue;
+            }
+            $data = json_decode($composer, true);
+            if (!is_array($data)) {
+                continue;
+            }
+            if (!empty($data['version'])) {
+                return (string)$data['version'];
+            }
+            if ($version = $this->resolvePackageVersion($data, $dir)) {
+                return $version;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Version for a composer.json that carries no version field (the
+     * convention for tag-versioned packages): ask composer's installed
+     * registry, then fall back to bumpver.toml for git-checkout deploys
+     * (git-sync pods, dev installs) where the package isn't
+     * composer-installed.
+     *
+     * @param array $composerData decoded composer.json
+     */
+    private function resolvePackageVersion(array $composerData, string $dir): ?string
+    {
+        $name = $composerData['name'] ?? null;
+        if (is_string($name)
+            && $name !== ''
+            && class_exists(\Composer\InstalledVersions::class)
+            && \Composer\InstalledVersions::isInstalled($name)
+        ) {
+            $version = \Composer\InstalledVersions::getPrettyVersion($name);
+            if ($version !== null && $version !== '') {
+                return $version;
+            }
+        }
+
+        $bumpver = @file_get_contents($dir . '/bumpver.toml');
+        if ($bumpver !== false
+            && preg_match('/^current_version\s*=\s*"([^"]+)"/m', $bumpver, $m)
+        ) {
+            return $m[1];
+        }
+
+        return null;
+    }
+
+    /**
+     * 7-char SHA of the gitSync-pulled commit.
+     *
+     * gitSync v4 writes worktrees at `<root>/.git/worktrees/<sha>/` and
+     * names each worktree directory after the SHA it points at. The
+     * module's `.git` file (a single line `gitdir: <relpath>`) references
+     * that directory. Read it directly — robust whether the module path
+     * is a symlink straight to the worktree (older layout) or a real
+     * directory whose contents were copied/hardlinked at init (current
+     * Magento init job behaviour, which makes the realpath of
+     * registration.php contain no worktree segment).
+     */
+    private function extractCommit(string $modulePath): string
+    {
+        $gitFile = $modulePath . '/.git';
+        if (is_file($gitFile)) {
+            // .git is always `gitdir: <relpath>\n`; cap the read defensively
+            // and trim before anchoring the regex to end-of-string so a
+            // worktrees/<sha> segment elsewhere in the path can't shadow
+            // the real SHA at the tail.
+            $content = @file_get_contents($gitFile, false, null, 0, 1024);
+            if ($content !== false
+                && preg_match('#worktrees/([a-f0-9]{7,40})/?$#', trim($content), $m)
+            ) {
+                return substr($m[1], 0, 7);
+            }
+        }
+        // Legacy fallback: module path is a symlink through the worktree.
+        $real = @realpath($modulePath . '/registration.php');
+        if ($real && preg_match('#\.worktrees/([a-f0-9]{7,40})/#', $real, $m)) {
+            return substr($m[1], 0, 7);
+        }
+        return '';
+    }
+
+    private function getCodeTs(string $modulePath): int
+    {
+        return (int)(@filemtime($modulePath . '/registration.php') ?: 0);
+    }
+
+    private function getAssetsTs(): int
+    {
+        try {
+            $marker = $this->directoryList->getPath('static') . '/deployed_version.txt';
+        } catch (\Throwable $e) {
+            return 0;
+        }
+        return (int)(@filemtime($marker) ?: 0);
+    }
+
+    private function formatTs(int $ts): string
+    {
+        if ($ts <= 0) {
+            return '';
+        }
+        return $this->timezone->date($ts)->format('Y-m-d H:i:s T');
     }
 }

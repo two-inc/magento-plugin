@@ -41,6 +41,27 @@ php bin/magento setup:static-content:deploy
 
 Then configure the plugin under **Stores > Configuration > Sales > Payment Methods > Two**.
 
+### Post-install steps
+
+Run these immediately after `setup:upgrade` to refresh the DI graph
+and clear any stale cache types:
+
+```bash
+php bin/magento setup:di:compile
+php bin/magento cache:flush
+```
+
+If admin Configuration is missing expected Two/brand sections, the
+cause is almost certainly one of:
+
+- A plugin registered only under `etc/adminhtml/di.xml` or
+  `etc/crontab/di.xml` instead of `etc/di.xml`. See AGENTS.md
+  for the DI-scope rule.
+- An FPM worker holding stale opcache. Restart PHP-FPM
+  (`systemctl reload php-fpm` or `kill -USR2 <fpm-master-pid>`).
+- A cache type (config / layout / full_page) in stale state.
+  `bin/magento cache:flush` is the canonical fix.
+
 ## Development
 
 The development environment runs Magento in Docker with the plugin bind-mounted, so file changes are reflected immediately.
@@ -107,9 +128,9 @@ Install also runs:
 
 ### Brand overlays
 
-Brand-specific overlay packages (e.g. ABN AMRO's Zakelijk op Rekening) live in
-their own Composer packages and are installed separately from this plugin, not
-through `make install`. See `two-inc/magento-abn-plugin` for the ABN overlay.
+Brand-specific overlay packages live in their own Composer packages and are
+installed separately from this plugin, not through `make install`. See
+`docs/brand-overlay-guide.md` for how overlay modules are structured.
 
 ### Debugging
 

@@ -61,6 +61,16 @@ interface BrandRegistryInterface
     public function getSurchargeFixedMax(): ?array;
 
     /**
+     * Buyer-surcharge rounding steps (in major currency units) offered
+     * in the admin "Rounding Step" dropdown, ascending. Brand overlays
+     * narrow the set via brand.xml <surcharge_rounding_steps>; the
+     * default binding returns the parent default set. Never empty.
+     *
+     * @return float[]
+     */
+    public function getSurchargeRoundingSteps(): array;
+
+    /**
      * Short brand tag used to decorate non-production checkout URLs
      * (e.g. `?brand=<tag>`). Empty string ('') means do not decorate
      * — the URL host already conveys the brand. Implementations may
@@ -68,6 +78,15 @@ interface BrandRegistryInterface
      * route correctly.
      */
     public function getBrandTag(): string;
+
+    /**
+     * i18n source key for the checkout payment-method subtitle, or '' when
+     * the brand defines none. The vanilla Two brand returns ''; brand
+     * overlays supply one via <checkout_subtitle> in brand.xml. Renderers
+     * must treat '' as "no subtitle" and never pass it to the translator,
+     * so an unmapped key can never leak into the storefront.
+     */
+    public function getCheckoutSubtitle(): string;
 
     /**
      * Merchant sign-up URL shown on the admin config header block.
@@ -78,4 +97,33 @@ interface BrandRegistryInterface
      * Plugin documentation URL shown on the admin config header block.
      */
     public function getDocumentationUrl(): string;
+
+    /**
+     * Magento payment-method code for the active brand (e.g.
+     * "two_payment", "acme_payment"). Used to build brand-aware
+     * `payment/<code>/*` CCD paths from a single shared codebase
+     * — callers do not hold this value in their own constructor
+     * args.
+     */
+    public function getCode(): string;
+
+    /**
+     * Whether the admin Payment Terms checkbox list should render the
+     * per-term merchant fee inline beside each checkbox (e.g.
+     * "30 days (1.50% + 0.50)"). Default true. Brand overlays return
+     * false to hide the inline fee preview when their pricing contract
+     * makes the per-term cost unhelpful to surface in admin.
+     */
+    public function getInlineTermFees(): bool;
+
+    /**
+     * Ordered label => module-name map for the admin Version panel
+     * (Stores → Configuration → [Brand] → Version). Brand
+     * overlays append their theme modules to the parent runtime
+     * rows; the Version block renders one row per ComponentRegistrar-
+     * resolvable module and silently skips unregistered entries.
+     *
+     * @return array<string,string>
+     */
+    public function getModuleLabelChain(): array;
 }

@@ -51,6 +51,12 @@ esac
 export FRP_DOMAIN="${SUBDOMAIN}.frp.${FRP_ZONE}"
 PROXY_URL="https://${FRP_DOMAIN}"
 
+# frpc control-plane address. The frps server is shared across envs (INF-1458):
+# per-env routing happens via customDomains/FRP_DOMAIN through the istio gateway,
+# while the client always dials the single frps instance in beta. Overridable so
+# a per-env frps can be adopted here without touching frpc.toml again.
+export FRP_SERVER_ADDR="${FRP_SERVER_ADDR:-frp.beta.two.inc}"
+
 # ── stop mode ────────────────────────────────────────────────────────────────
 if [ "$1" = "stop" ]; then
   if [ -f "$PIDFILE" ]; then

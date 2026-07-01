@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Sales:etc/pdf_file.xsd">
+    <totals>
+        <!--
+            Move Shipping & Handling ahead of Tax on invoice/credit-memo PDFs.
+            Core (Magento_Sales) places shipping at 400 and Magento_Tax places
+            tax at 300, so shipping prints AFTER tax — but shipping is part of
+            the tax base, and the on-screen totals already show it before tax.
+            Re-sort to keep the document consistent and intuitive.
+        -->
+        <total name="shipping">
+            <sort_order>250</sort_order>
+        </total>
+        <!--
+            Render the Two surcharge (NET) on invoice + credit-memo PDFs,
+            directly above the Tax line (its VAT is in the Tax total). This is
+            a totals MODEL — the renderer builds the row and its label from the
+            order's surcharge fields. The surcharge previously never appeared
+            on PDFs because it was registered under item-renderers, not totals.
+        -->
+        <total name="two_surcharge">
+            <title translate="true">Surcharge</title>
+            <source_field>two_surcharge_amount</source_field>
+            <model>Two\Gateway\Model\Pdf\Total\Surcharge</model>
+            <font_size>7</font_size>
+            <display_zero>false</display_zero>
+            <sort_order>280</sort_order>
+        </total>
+    </totals>
+</config>

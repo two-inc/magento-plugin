@@ -10,6 +10,7 @@ namespace Two\Gateway\Model\Config\Backend;
 use Magento\Framework\App\Config\Value;
 use Magento\Framework\App\Config\Storage\WriterInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
+use Magento\Framework\App\ResourceConnection;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Model\Context;
 use Magento\Framework\Registry;
@@ -44,6 +45,9 @@ class SurchargeGrid extends Value
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
+    /** @var ResourceConnection */
+    private $resourceConnection;
+
     public function __construct(
         Context $context,
         Registry $registry,
@@ -53,6 +57,7 @@ class SurchargeGrid extends Value
         StoreManagerInterface $storeManager,
         CurrencyRatesProviderInterface $ratesProvider,
         BrandRegistryInterface $brandRegistry,
+        ResourceConnection $resourceConnection,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -62,6 +67,17 @@ class SurchargeGrid extends Value
         $this->storeManager = $storeManager;
         $this->ratesProvider = $ratesProvider;
         $this->brandRegistry = $brandRegistry;
+        $this->resourceConnection = $resourceConnection;
+    }
+
+    /**
+     * Active payment-method code. Resolved at call time from the
+     * brand registry so the same backend works for every brand
+     * without a per-brand DI rebinding.
+     */
+    private function methodCode(): string
+    {
+        return $this->brandRegistry->getCode();
     }
 
     /**
@@ -90,13 +106,21 @@ class SurchargeGrid extends Value
             return parent::afterSave();
         }
 
-        $inheritData = [];
-        if (isset($groups['payment_terms']['fields']['surcharge_grid']['inherit'])) {
-            $inheritData = $groups['payment_terms']['fields']['surcharge_grid']['inherit'];
-        }
-
         $scope = $this->getScope();
         $scopeId = (int)$this->getScopeId();
+
+        // Grid-level "Use Website/Default": a single checkbox inherits the
+        // whole grid. Purge every per-term cell row at this scope so none
+        // is left orphaned — invisible to the admin grid but still read at
+        // runtime, which is the ABN-440 root cause. The flag rides inside
+        // [value] (not Magento's native [inherit]) so this afterSave still
+        // runs and can do the purge itself.
+        if (!empty($gridValues['__inherit'])) {
+            $this->deleteScopeCells($scope, $scopeId);
+            return parent::afterSave();
+        }
+        unset($gridValues['__inherit']);
+
         $maxFixed = $this->getConvertedFixedMax($scope, $scopeId);
         $maxPercentage = ConfigRepository::SURCHARGE_PERCENTAGE_MAX;
 
@@ -111,18 +135,20 @@ class SurchargeGrid extends Value
                     continue;
                 }
 
-                $path = sprintf('payment/two_payment/surcharge_%d_%s', $days, $type);
-
-                if (isset($inheritData[$days][$type]) && $inheritData[$days][$type]) {
-                    $this->configWriter->delete($path, $scope, $scopeId);
-                    continue;
-                }
+                $path = sprintf('payment/%s/surcharge_%d_%s', $this->methodCode(), $days, $type);
 
                 $value = (string)$value;
                 if ($value === '') {
                     $this->configWriter->delete($path, $scope, $scopeId);
                     continue;
                 }
+
+                // Accept the Dutch comma decimal separator. Front-end
+                // JS already normalises on input, but admins posting
+                // directly (curl, REST app:config:import, scripted
+                // setup:config:set chain) hit this code path without
+                // the JS pass; normalise server-side too.
+                $value = str_replace(',', '.', $value);
 
                 $numericValue = (float)$value;
                 $this->validateValue($type, $numericValue, $days, $maxFixed, $maxPercentage);
@@ -134,13 +160,36 @@ class SurchargeGrid extends Value
         // Persist the base currency so fixed amounts remain meaningful
         $currencyCode = $this->resolveBaseCurrency($scope, $scopeId);
         $this->configWriter->save(
-            ConfigRepository::XML_PATH_SURCHARGE_FIXED_CURRENCY,
+            sprintf('payment/%s/surcharge_fixed_currency', $this->methodCode()),
             $currencyCode,
             $scope,
             $scopeId
         );
 
         return parent::afterSave();
+    }
+
+    /**
+     * Delete every per-term surcharge cell row plus the base-currency
+     * marker at the given scope. Used when the grid inherits, so an
+     * inherited grid leaves no orphaned surcharge_* override behind.
+     */
+    private function deleteScopeCells(string $scope, int $scopeId): void
+    {
+        $conn = $this->resourceConnection->getConnection();
+        $method = $this->methodCode();
+        $paths = $conn->fetchCol(
+            $conn->select()
+                ->from($conn->getTableName('core_config_data'), 'path')
+                ->where('scope = ?', $scope)
+                ->where('scope_id = ?', $scopeId)
+                ->where('path LIKE ?', 'payment/' . $method . '/surcharge%')
+                ->where('path REGEXP ?', 'surcharge_[0-9]+_(fixed|percentage|limit)$')
+        );
+        $paths[] = sprintf('payment/%s/surcharge_fixed_currency', $method);
+        foreach (array_unique($paths) as $path) {
+            $this->configWriter->delete($path, $scope, $scopeId);
+        }
     }
 
     /**

@@ -84,23 +84,17 @@ class SurchargeGridTest extends TestCase
         $this->assertEquals(['payment/two_payment/surcharge_30_percentage'], $saved);
     }
 
-    public function testInheritFlagDeletesConfig(): void
+    public function testInheritFlagPurgesAllScopeOverrides(): void
     {
+        // Grid-level inherit: the __inherit sentinel rides inside the value
+        // array. Every per-term cell row plus the currency marker is purged
+        // at this scope, and nothing is written (the grid inherits the
+        // parent). This is the ABN-440 fix — no orphaned override survives.
         $this->model->setTestValue([
+            '__inherit' => '1',
             30 => ['fixed' => '10', 'percentage' => '25', 'limit' => '50'],
         ]);
         $this->model->setTestScope('websites', 1);
-        $this->model->setTestGroups([
-            'payment_terms' => [
-                'fields' => [
-                    'surcharge_grid' => [
-                        'inherit' => [
-                            30 => ['fixed' => '1', 'percentage' => '0', 'limit' => '1'],
-                        ],
-                    ],
-                ],
-            ],
-        ]);
 
         $deleted = [];
         $this->configWriter->method('delete')->willReturnCallback(
@@ -119,8 +113,10 @@ class SurchargeGridTest extends TestCase
         $this->model->callAfterSave();
 
         $this->assertContains('payment/two_payment/surcharge_30_fixed', $deleted);
+        $this->assertContains('payment/two_payment/surcharge_30_percentage', $deleted);
         $this->assertContains('payment/two_payment/surcharge_30_limit', $deleted);
-        $this->assertEquals(['payment/two_payment/surcharge_30_percentage'], $saved);
+        $this->assertContains('payment/two_payment/surcharge_fixed_currency', $deleted);
+        $this->assertEmpty($saved, 'an inheriting grid writes nothing at the scope');
     }
 
     public function testRejectsNegativeValue(): void
@@ -200,7 +196,6 @@ class SurchargeGridTestable
     private $value;
     private $scope = 'default';
     private $scopeId = 0;
-    private $groups = [];
 
     public function __construct(WriterInterface $configWriter)
     {
@@ -218,52 +213,64 @@ class SurchargeGridTestable
         $this->scopeId = $scopeId;
     }
 
-    public function setTestGroups(array $groups): void
-    {
-        $this->groups = $groups;
-    }
-
     public function callAfterSave(): void
     {
         if (!is_array($this->value)) {
             return;
         }
 
-        $inheritData = [];
-        if (isset($this->groups['payment_terms']['fields']['surcharge_grid']['inherit'])) {
-            $inheritData = $this->groups['payment_terms']['fields']['surcharge_grid']['inherit'];
+        $value = $this->value;
+
+        // Grid-level inherit: purge every per-term cell + currency marker
+        // at this scope, write nothing. Mirrors deleteScopeCells() (which
+        // in production queries core_config_data for the live rows).
+        if (!empty($value['__inherit'])) {
+            foreach ($value as $days => $fields) {
+                if ($days === '__inherit' || !is_array($fields)) {
+                    continue;
+                }
+                foreach (self::FIELDS as $type) {
+                    $this->configWriter->delete(
+                        sprintf('payment/two_payment/surcharge_%d_%s', (int)$days, $type),
+                        $this->scope,
+                        $this->scopeId
+                    );
+                }
+            }
+            $this->configWriter->delete(
+                'payment/two_payment/surcharge_fixed_currency',
+                $this->scope,
+                $this->scopeId
+            );
+            return;
         }
+        unset($value['__inherit']);
 
         // Hard-coded to the test brand's surcharge bound — see
         // BrandRegistryInterface::getSurchargeFixedMax().
         $maxFixed = 25;
         $maxPercentage = ConfigRepository::SURCHARGE_PERCENTAGE_MAX;
 
-        foreach ($this->value as $days => $fields) {
+        foreach ($value as $days => $fields) {
             if (!is_array($fields)) {
                 continue;
             }
             $days = (int)$days;
 
-            foreach ($fields as $type => $value) {
+            foreach ($fields as $type => $cellValue) {
                 if (!in_array($type, self::FIELDS, true)) {
                     continue;
                 }
 
                 $path = sprintf('payment/two_payment/surcharge_%d_%s', $days, $type);
 
-                if (isset($inheritData[$days][$type]) && $inheritData[$days][$type]) {
+                $cellValue = (string)$cellValue;
+                if ($cellValue === '') {
                     $this->configWriter->delete($path, $this->scope, $this->scopeId);
                     continue;
                 }
 
-                $value = (string)$value;
-                if ($value === '') {
-                    $this->configWriter->delete($path, $this->scope, $this->scopeId);
-                    continue;
-                }
-
-                $numericValue = (float)$value;
+                $numericValue = (float)$cellValue;
                 if ($numericValue < 0) {
                     throw new LocalizedException(
                         __('%1 days - %2: value cannot be negative.', $days, $type)
@@ -280,7 +287,7 @@ class SurchargeGridTestable
                     );
                 }
 
-                $this->configWriter->save($path, $value, $this->scope, $this->scopeId);
+                $this->configWriter->save($path, $cellValue, $this->scope, $this->scopeId);
             }
         }
     }

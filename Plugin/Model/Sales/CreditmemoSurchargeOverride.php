@@ -67,6 +67,11 @@ class CreditmemoSurchargeOverride
 
         $raw = $data['two_surcharge_amount'];
         if ($raw === '' || $raw === null) {
+            // A cleared field means "refund no surcharge" — treat it as an
+            // explicit 0 override (not "fall back to the proportional
+            // default"), so the merchant's intent to zero the surcharge sticks
+            // through the recalc round-trip instead of snapping back to full.
+            $subject->setData('two_surcharge_amount', 0.0);
             return null;
         }
 
@@ -95,13 +100,13 @@ class CreditmemoSurchargeOverride
             || !preg_match('/^[-+]?(?:\d+(?:[.,]\d+)?|[.,]\d+)$/', $trimmed)
         ) {
             throw new \Magento\Framework\Exception\LocalizedException(
-                __('Refund Two Surcharge must be a valid amount (e.g. 1.50 or 1,50).')
+                __('Surcharge refund must be a valid amount (e.g. 1.50 or 1,50).')
             );
         }
         $value = (float)$this->localeFormat->getNumber($trimmed);
         if ($value < 0) {
             throw new \Magento\Framework\Exception\LocalizedException(
-                __('Refund Two Surcharge cannot be negative.')
+                __('Surcharge refund cannot be negative.')
             );
         }
 
@@ -116,7 +121,7 @@ class CreditmemoSurchargeOverride
             if ($value - $maxRefundable > 0.01) {
                 throw new \Magento\Framework\Exception\LocalizedException(
                     __(
-                        'Refund Two Surcharge (%1) exceeds the remaining refundable surcharge (%2).',
+                        'Surcharge refund (%1) exceeds the remaining refundable surcharge (%2).',
                         $value,
                         max(0.0, $maxRefundable)
                     )

@@ -10,11 +10,13 @@ namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\App\Config\ScopeConfigInterface;
+use Magento\Framework\App\ResourceConnection;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
+use Two\Gateway\Service\Locale\AdminDecimalFormatter;
 
 /**
  * Renders a grid of surcharge inputs (fixed, percentage, limit) per payment term.
@@ -40,6 +42,12 @@ class SurchargeGrid extends Field
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
+    /** @var AdminDecimalFormatter */
+    private $decimalFormatter;
+
+    /** @var ResourceConnection */
+    private $resource;
+
     /** @var string */
     private $scope = 'default';
 
@@ -52,6 +60,8 @@ class SurchargeGrid extends Field
         StoreManagerInterface $storeManager,
         CurrencyRatesProviderInterface $ratesProvider,
         BrandRegistryInterface $brandRegistry,
+        AdminDecimalFormatter $decimalFormatter,
+        ResourceConnection $resource,
         array $data = []
     ) {
         parent::__construct($context, $data);
@@ -59,6 +69,18 @@ class SurchargeGrid extends Field
         $this->storeManager = $storeManager;
         $this->ratesProvider = $ratesProvider;
         $this->brandRegistry = $brandRegistry;
+        $this->decimalFormatter = $decimalFormatter;
+        $this->resource = $resource;
+    }
+
+    /**
+     * Active payment-method code. Resolved at call time from the
+     * brand registry so the same block works for every brand without
+     * a per-brand DI rebinding.
+     */
+    private function methodCode(): string
+    {
+        return $this->brandRegistry->getCode();
     }
 
     /**
@@ -84,10 +106,10 @@ class SurchargeGrid extends Field
      */
     public function getActiveTerms(): array
     {
-        $selected = $this->getConfigValue(ConfigRepository::XML_PATH_PAYMENT_TERMS);
+        $selected = $this->getConfigValue($this->path('payment_terms'));
         $terms = array_filter(array_map('intval', explode(',', (string)$selected)));
 
-        $custom = (int)$this->getConfigValue(ConfigRepository::XML_PATH_PAYMENT_TERMS_DURATION_DAYS);
+        $custom = (int)$this->getConfigValue($this->path('payment_terms_duration_days'));
         if ($custom > 0) {
             $terms[] = $custom;
         }
@@ -98,13 +120,27 @@ class SurchargeGrid extends Field
     }
 
     /**
-     * Get the saved surcharge value for a given term and field.
+     * Get the saved surcharge value for a given term and field,
+     * formatted with the admin locale's decimal separator (e.g.
+     * "5,3" under nl_NL, "5.3" under en_US).
+     *
+     * Storage is canonical period-decimal (the backend model
+     * normalises comma → period on save), so display formatting
+     * is the inverse: swap the period for the locale separator
+     * before emitting into the input's value attribute.
      */
     public function getSavedValue(int $days, string $field): string
     {
-        $path = sprintf('payment/two_payment/surcharge_%d_%s', $days, $field);
-        $value = $this->getConfigValue($path);
-        return $value !== null ? (string)$value : '';
+        $value = $this->getConfigValue($this->path(sprintf('surcharge_%d_%s', $days, $field)));
+        if ($value === null || $value === '') {
+            return '';
+        }
+        return str_replace('.', $this->decimalSeparator(), (string)$value);
+    }
+
+    private function decimalSeparator(): string
+    {
+        return $this->decimalFormatter->getSeparator();
     }
 
     /**
@@ -112,7 +148,7 @@ class SurchargeGrid extends Field
      */
     public function getDefaultTerm(): int
     {
-        return (int)$this->getConfigValue(ConfigRepository::XML_PATH_DEFAULT_PAYMENT_TERM);
+        return (int)$this->getConfigValue($this->path('default_payment_term'));
     }
 
     /**
@@ -120,7 +156,7 @@ class SurchargeGrid extends Field
      */
     public function getSurchargeType(): string
     {
-        return (string)$this->getConfigValue(ConfigRepository::XML_PATH_SURCHARGE_TYPE);
+        return (string)$this->getConfigValue($this->path('surcharge_type'));
     }
 
     /**
@@ -213,7 +249,7 @@ class SurchargeGrid extends Field
             $precision = $this->getCurrencyPrecision($baseCurrency);
             $factor = pow(10, $precision);
             $convertedMax = ceil($converted * $factor) / $factor;
-            $formatted = number_format($convertedMax, $precision, '.', '');
+            $formatted = number_format($convertedMax, $precision, $this->decimalSeparator(), '');
             return $baseCurrency . ' ' . $formatted . ' (' . $limitCurrency . ' ' . $limitAmount . ')';
         }
 
@@ -313,29 +349,44 @@ class SurchargeGrid extends Field
     }
 
     /**
-     * Get the "inherit" checkbox name for scope override.
+     * Name of the hidden grid-level "inherit" sentinel posted with the
+     * grid value. Nested under [value] (not Magento's native [inherit])
+     * on purpose: keeping it inside the value array means the backend
+     * model's afterSave() always runs, so it can purge the per-term rows
+     * itself. Magento's native field [inherit] flag would instead delete
+     * the synthetic surcharge_grid path and skip the backend, leaving the
+     * flat surcharge_NN_* rows orphaned (the ABN-440 root cause).
      */
-    public function getInheritName(int $days, string $field): string
+    public function getInheritFieldName(): string
     {
-        return sprintf(
-            'groups[payment_terms][fields][surcharge_grid][inherit][%d][%s]',
-            $days,
-            $field
-        );
+        return 'groups[payment_terms][fields][surcharge_grid][value][__inherit]';
     }
 
     /**
-     * Check if a field is using the inherited (default/website) value at current scope.
+     * Whether an explicit surcharge override exists at the current scope.
+     *
+     * Tests for the presence of a stored per-term cell row
+     * (surcharge_{days}_{fixed|percentage|limit}) rather than comparing
+     * resolved values against the parent scope — value-equality can't
+     * tell "no override" from "override that happens to equal the
+     * parent", and it can't see an orphaned row whose value matches.
+     * Drives the grid-level "Use Website/Default" checkbox: checked
+     * (inheriting) when no override row exists.
      */
-    public function isInherited(int $days, string $field): bool
+    public function hasScopeOverride(): bool
     {
         if ($this->scope === 'default') {
             return false;
         }
-        $path = sprintf('payment/two_payment/surcharge_%d_%s', $days, $field);
-        $value = $this->scopeConfig->getValue($path, $this->scope, $this->scopeId);
-        $defaultValue = $this->scopeConfig->getValue($path);
-        return $value === $defaultValue;
+        $conn = $this->resource->getConnection();
+        $select = $conn->select()
+            ->from($conn->getTableName('core_config_data'), 'config_id')
+            ->where('scope = ?', $this->scope)
+            ->where('scope_id = ?', $this->scopeId)
+            ->where('path LIKE ?', 'payment/' . $this->methodCode() . '/surcharge%')
+            ->where('path REGEXP ?', 'surcharge_[0-9]+_(fixed|percentage|limit)$')
+            ->limit(1);
+        return (bool)$conn->fetchOne($select);
     }
 
     /**
@@ -376,14 +427,57 @@ class SurchargeGrid extends Field
         return $this->scopeId;
     }
 
+
+    /**
+     * Decimal separator for the active admin locale, exposed so
+     * the grid's data attributes can carry it through to the JS
+     * fees-formatting routine.
+     */
+    public function getDecimalSeparator(): string
+    {
+        return $this->decimalFormatter->getSeparator();
+    }
+
+    /**
+     * Resolve the config scope of the page being rendered.
+     *
+     * Reads the canonical `store` / `website` request params (the same
+     * source Magento's config save pipeline uses to scope writes) and
+     * normalises them through StoreManager so a code *or* an id both
+     * resolve. The previous implementation read $element->getForm()->
+     * getScope(), but the Data\Form object never carries scope, so it
+     * always fell back to 'default' — the grid then rendered default-
+     * scope values at every scope and never surfaced store/website
+     * overrides (ABN-440).
+     */
     private function resolveScope(AbstractElement $element): void
     {
-        $form = $element->getForm();
-        if ($form) {
-            $scope = (string)$form->getScope();
-            $this->scope = ($scope !== '') ? $scope : 'default';
-            $this->scopeId = (int)$form->getScopeId();
+        $request = $this->getRequest();
+        $store = $request->getParam('store');
+        $website = $request->getParam('website');
+
+        if ($store !== null && $store !== '') {
+            try {
+                $this->scope = 'stores';
+                $this->scopeId = (int)$this->storeManager->getStore($store)->getId();
+                return;
+            } catch (\Exception $e) {
+                // fall through to default
+            }
         }
+
+        if ($website !== null && $website !== '') {
+            try {
+                $this->scope = 'websites';
+                $this->scopeId = (int)$this->storeManager->getWebsite($website)->getId();
+                return;
+            } catch (\Exception $e) {
+                // fall through to default
+            }
+        }
+
+        $this->scope = 'default';
+        $this->scopeId = 0;
     }
 
     private function getConfigValue(string $path)
@@ -392,5 +486,17 @@ class SurchargeGrid extends Field
             return $this->scopeConfig->getValue($path, $this->scope, $this->scopeId);
         }
         return $this->scopeConfig->getValue($path);
+    }
+
+    /**
+     * Build a fully-qualified config path under the active brand's
+     * payment-method subtree (e.g. `payment/acme_payment/...` on an
+     * ABN install). The brand code is resolved at call time from
+     * BrandRegistryInterface, which routes through ActiveBrandResolver
+     * to the active brand's brand.xml — no per-brand DI rebinding.
+     */
+    private function path(string $suffix): string
+    {
+        return 'payment/' . $this->methodCode() . '/' . $suffix;
     }
 }

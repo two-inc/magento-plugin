@@ -45,6 +45,7 @@ if (!interface_exists(\Magento\Framework\App\Config\Storage\WriterInterface::cla
 }
 if (!class_exists(\Magento\Framework\HTTP\Client\Curl::class)) {
     require_once __DIR__ . '/Stubs/Curl.php';
+    require_once __DIR__ . '/Stubs/ComponentRegistrar.php';
 }
 if (!class_exists(\Magento\Framework\HTTP\Client\CurlFactory::class)) {
     require_once __DIR__ . '/Stubs/CurlFactory.php';
@@ -57,6 +58,26 @@ if (!class_exists(\Magento\Bundle\Model\Product\Price::class)) {
 }
 if (!class_exists(\Magento\Catalog\Model\Product\Type::class)) {
     require_once __DIR__ . '/Stubs/ProductType.php';
+}
+// Sales models (Invoice, Creditmemo, Order) with faithful DataObject
+// semantics — required before the catch-all below so the surcharge Total
+// collectors operate on real data bags, not empty method-less stubs.
+if (!class_exists(\Magento\Sales\Model\Order\Invoice::class, false)) {
+    require_once __DIR__ . '/Stubs/SalesModels.php';
+}
+// Quote model with the CartInterface relationship intact - required so
+// type hints against CartInterface accept Quote mocks.
+if (!class_exists(\Magento\Quote\Model\Quote::class, false)) {
+    require_once __DIR__ . '/Stubs/QuoteModels.php';
+}
+// Cache interface with real method signatures (mock targets) and a
+// faithful Json serializer (instantiated directly, not mocked) for
+// MinimumOrderProvider tests.
+if (!interface_exists(\Magento\Framework\App\CacheInterface::class, false)) {
+    require_once __DIR__ . '/Stubs/CacheInterface.php';
+}
+if (!class_exists(\Magento\Framework\Serialize\Serializer\Json::class, false)) {
+    require_once __DIR__ . '/Stubs/JsonSerializer.php';
 }
 
 // Catch-all autoloader for remaining Magento classes/interfaces.

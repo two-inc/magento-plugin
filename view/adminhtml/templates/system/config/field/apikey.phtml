@@ -18,4 +18,10 @@ $status = $block->getApiKeyStatus();
     <?php if (isset($status['error'])): ?>
         <span class="api-key-error-message"><?= $block->escapeHtml($status['error']); ?></span>
     <?php endif; ?>
+    <?php if (!empty($status['merchant_id'])): ?>
+        <div style="margin-top: 8px; color: #666; font-size: 13px;">
+            <strong><?= $block->escapeHtml(__('Merchant ID:')); ?></strong>
+            <?= $block->escapeHtml($status['merchant_id']); ?><?php if (!empty($status['merchant_short_name'])): ?> &middot; <?= $block->escapeHtml($status['merchant_short_name']); ?><?php endif; ?>
+        </div>
+    <?php endif; ?>
 </div>

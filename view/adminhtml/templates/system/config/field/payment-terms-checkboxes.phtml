@@ -10,12 +10,33 @@ $terms = $block->getAvailableTerms();
 $selected = $block->getSelectedTerms();
 $fieldName = $block->getFieldName();
 $elementId = $block->getElementId();
+$showFees = $block->showInlineFees();
 ?>
 
-<?php // Hidden fallback — ensures the field posts even when nothing is checked ?>
-<input type="hidden" name="<?= $block->escapeHtmlAttr(rtrim($fieldName, '[]')) ?>" value=""/>
+<?php
+    // Hidden fallback — ensures the field still posts (as an empty scalar) when
+    // no checkbox is ticked, so the backend model runs and rejects the empty
+    // selection instead of the field vanishing from the POST.
+    //
+    // getFieldName() appends '[]' for the checkbox array; the scalar name is
+    // that minus the suffix. Strip exactly the trailing '[]' — NOT rtrim($n,'[]'),
+    // which greedily eats the closing ']' of '[value]' too, producing a malformed
+    // name. On deselect-all that corrupt name was the ONLY thing posted for the
+    // field, so Magento core _processGroup received a string instead of an array
+    // and fatally errored before the backend model ever ran.
+    $scalarFieldName = substr($fieldName, 0, -2);
+?>
+<input type="hidden" name="<?= $block->escapeHtmlAttr($scalarFieldName) ?>" value=""/>
 
-<div id="<?= $block->escapeHtmlAttr($elementId) ?>_checkboxes" class="two-term-checkboxes">
+<div id="<?= $block->escapeHtmlAttr($elementId) ?>_checkboxes"
+     class="two-term-checkboxes<?= $showFees ? ' two-term-checkboxes--with-fees' : '' ?>"
+     <?php if ($showFees): ?>
+     data-fees-url="<?= $block->escapeHtmlAttr($block->getFeesUrl()) ?>"
+     data-scope="<?= $block->escapeHtmlAttr($block->getScope()) ?>"
+     data-scope-id="<?= (int)$block->getScopeId() ?>"
+     data-base-currency="<?= $block->escapeHtmlAttr($block->getBaseCurrency()) ?>"
+     data-decimal-separator="<?= $block->escapeHtmlAttr($block->getDecimalSeparator()) ?>"
+     <?php endif; ?>>
     <?php foreach ($terms as $days): ?>
         <?php
             $checked = in_array($days, $selected, true);
@@ -31,6 +52,9 @@ $elementId = $block->getElementId();
             />
             <label class="admin__field-label two-term-checkboxes__label"
                    for="<?= $block->escapeHtmlAttr($checkboxId) ?>"><?= (int)$days ?> <?= $block->escapeHtml(__('days')) ?></label>
+            <?php if ($showFees): ?>
+                <span class="two-term-checkboxes__fee" data-term="<?= (int)$days ?>"></span>
+            <?php endif; ?>
         </div>
     <?php endforeach; ?>
 </div>

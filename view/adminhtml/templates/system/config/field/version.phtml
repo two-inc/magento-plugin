@@ -9,7 +9,56 @@ use Two\Gateway\Block\Adminhtml\System\Config\Field\Version;
 /**
  * @var Version $block
  */
+
+$modules = $block->getModules();
+$stale   = $block->isAssetsStale();
 ?>
-<div>
-    <span><?= $block->escapeHtml($block->getVersion()); ?></span>
+<div class="two-build-info" style="line-height:1.6;">
+    <?php if (!empty($modules)): ?>
+        <table style="border-collapse:collapse;">
+            <thead>
+                <tr style="text-align:left;border-bottom:1px solid #ddd;">
+                    <th style="padding:0.25em 1em 0.25em 0;">Module</th>
+                    <th style="padding:0.25em 1em 0.25em 0;">Version</th>
+                    <th style="padding:0.25em 1em 0.25em 0;">Commit</th>
+                    <th style="padding:0.25em 0;">Deployed at</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($modules as $row): ?>
+                    <tr>
+                        <td style="padding:0.25em 1em 0.25em 0;">
+                            <strong><?= $block->escapeHtml($row['label']); ?></strong>
+                        </td>
+                        <td style="padding:0.25em 1em 0.25em 0;">
+                            <?php if (!empty($row['version'])): ?>
+                                <?= $block->escapeHtml($row['version']); ?>
+                            <?php else: ?>
+                                <span style="color:#888;">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="padding:0.25em 1em 0.25em 0;">
+                            <?php if (!empty($row['commit'])): ?>
+                                <code><?= $block->escapeHtml($row['commit']); ?></code>
+                            <?php else: ?>
+                                <span style="color:#888;">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="padding:0.25em 0;">
+                            <?php if (!empty($row['codeAt'])): ?>
+                                <?= $block->escapeHtml($row['codeAt']); ?>
+                            <?php else: ?>
+                                <span style="color:#888;">—</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    <?php endif; ?>
+    <?php if ($stale): ?>
+        <div style="margin-top:0.75em;color:#c00;font-weight:bold;">
+            <?= $block->escapeHtml(__('⚠ deployment incomplete — code newer than compiled assets; run setup:static-content:deploy')); ?>
+        </div>
+    <?php endif; ?>
 </div>

@@ -9,11 +9,17 @@ define([
     'Magento_Ui/js/form/form',
     'Magento_Customer/js/customer-data',
     'Magento_Checkout/js/model/step-navigator',
-    'uiRegistry'
-], function ($, $t, _, Component, customerData, stepNavigator, uiRegistry) {
+    'uiRegistry',
+    'Two_Gateway/js/model/brand-config'
+], function ($, $t, _, Component, customerData, stepNavigator, uiRegistry, brandConfig) {
     'use strict';
 
-    const config = (window.checkoutConfig.payment || {}).two_payment || {};
+    // Resolve the active Two-family brand subtree so overlays
+    // (acme_payment, …) get their own checkoutApiUrl /
+    // isCompanySearchEnabled / companySearchLimit instead of falling
+    // through to an empty object when the vanilla `two_payment` key
+    // isn't present.
+    const config = brandConfig.getActiveTwoBrandConfig();
 
     return Component.extend({
         countrySelector: '#shipping-new-address-form select[name="country_id"]',
