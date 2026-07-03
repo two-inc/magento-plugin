@@ -35,8 +35,6 @@ final class Descriptor
      * @param string $signUpUrl Merchant sign-up link shown in admin header.
      * @param string $documentationUrl Plugin docs URL shown in admin header.
      * @param string $apiBaseUrl Outbound API base URL.
-     * @param int[] $availablePaymentTerms Buyer-selectable terms in days.
-     * @param array{amount:float,currency:string}|null $surchargeFixedMax
      * @param string[] $cspOrigins Additional CSP fetch-policy origins.
      * @param string $adminResource ACL resource for the brand's admin form.
      * @param array<array{label:string,module:string}> $moduleLabelChain Version-panel rows.
@@ -61,8 +59,6 @@ final class Descriptor
         private readonly string $signUpUrl,
         private readonly string $documentationUrl,
         private readonly string $apiBaseUrl,
-        private readonly array $availablePaymentTerms,
-        private readonly ?array $surchargeFixedMax,
         private readonly array $cspOrigins,
         private readonly string $adminResource,
         private readonly array $moduleLabelChain,
@@ -191,18 +187,6 @@ final class Descriptor
     public function getApiBaseUrl(): string
     {
         return $this->apiBaseUrl;
-    }
-
-    /** @return int[] */
-    public function getAvailablePaymentTerms(): array
-    {
-        return $this->availablePaymentTerms;
-    }
-
-    /** @return array{amount:float,currency:string}|null */
-    public function getSurchargeFixedMax(): ?array
-    {
-        return $this->surchargeFixedMax;
     }
 
     /**

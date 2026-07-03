@@ -12,6 +12,7 @@ use Magento\Tax\Model\Calculation as TaxCalculation;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Config\Repository;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 
 class RepositoryPaymentTermsTest extends TestCase
 {
@@ -20,6 +21,9 @@ class RepositoryPaymentTermsTest extends TestCase
 
     /** @var TaxCalculation|\PHPUnit\Framework\MockObject\MockObject */
     private $taxCalculation;
+
+    /** @var SettingsProvider|\PHPUnit\Framework\MockObject\MockObject */
+    private $settingsProvider;
 
     /** @var Repository */
     private $repository;
@@ -35,13 +39,19 @@ class RepositoryPaymentTermsTest extends TestCase
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
         $brandRegistry->method('getCode')->willReturn('two_payment');
 
+        // Unstubbed getDefaultTerm() returns null, so the default-term
+        // tests below exercise the config-based fallback; the API-default
+        // cases stub it explicitly.
+        $this->settingsProvider = $this->createMock(SettingsProvider::class);
+
         $this->repository = new Repository(
             $this->scopeConfig,
             $this->createMock(EncryptorInterface::class),
             $this->createMock(UrlInterface::class),
             $this->createMock(ProductMetadataInterface::class),
             $this->taxCalculation,
-            $brandRegistry
+            $brandRegistry,
+            $this->settingsProvider
         );
     }
 
@@ -199,6 +209,33 @@ class RepositoryPaymentTermsTest extends TestCase
             'payment/two_payment/payment_terms_duration_days' => '',
         ]);
         $this->assertEquals(30, $this->repository->getDefaultPaymentTerm());
+    }
+
+    public function testGetDefaultPaymentTermPrefersApiTermWhenOffered(): void
+    {
+        // The merchant's due_in_days (from GET /v1/merchant) is
+        // authoritative and wins over the admin-configured default when
+        // it is one of the offered buyer terms.
+        $this->settingsProvider->method('getDefaultTerm')->willReturn(90);
+        $this->stubConfig([
+            'payment/two_payment/default_payment_term' => '30',
+            'payment/two_payment/payment_terms' => '30,60,90',
+            'payment/two_payment/payment_terms_duration_days' => '',
+        ]);
+        $this->assertEquals(90, $this->repository->getDefaultPaymentTerm());
+    }
+
+    public function testGetDefaultPaymentTermIgnoresApiTermOutsideOfferedTerms(): void
+    {
+        // due_in_days is not guaranteed to be an offered term; when it
+        // isn't, fall through to the admin-configured default.
+        $this->settingsProvider->method('getDefaultTerm')->willReturn(14);
+        $this->stubConfig([
+            'payment/two_payment/default_payment_term' => '60',
+            'payment/two_payment/payment_terms' => '30,60,90',
+            'payment/two_payment/payment_terms_duration_days' => '',
+        ]);
+        $this->assertEquals(60, $this->repository->getDefaultPaymentTerm());
     }
 
     // ── getSurchargeType ─────────────────────────────────────────────

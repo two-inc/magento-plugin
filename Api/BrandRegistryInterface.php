@@ -42,25 +42,6 @@ interface BrandRegistryInterface
     public function getCheckoutUrlTemplate(): string;
 
     /**
-     * Buyer-selectable payment terms (in days) supported by this
-     * brand's commercial agreement.
-     *
-     * @return int[]
-     */
-    public function getAvailablePaymentTerms(): array;
-
-    /**
-     * Maximum allowed value of a fixed-amount surcharge configured
-     * by the merchant, expressed in a specific currency. Returning
-     * null means there is no upper bound — any positive value is
-     * acceptable. Calling code must interpret null as "no max" and
-     * skip the upper-bound check.
-     *
-     * @return array{amount: float, currency: string}|null
-     */
-    public function getSurchargeFixedMax(): ?array;
-
-    /**
      * Buyer-surcharge rounding steps (in major currency units) offered
      * in the admin "Rounding Step" dropdown, ascending. Brand overlays
      * narrow the set via brand.xml <surcharge_rounding_steps>; the

@@ -15,6 +15,7 @@ use Magento\Store\Model\ScopeInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
  * Config Repository
@@ -47,6 +48,16 @@ class Repository implements RepositoryInterface
     private $brandRegistry;
 
     /**
+     * @var SettingsProvider Injected via \Proxy in di.xml — this
+     *                       Repository owns the API key that the
+     *                       provider resolves the merchant record with,
+     *                       so a direct binding would be a construction
+     *                       cycle. The proxy defers instantiation until
+     *                       getDefaultPaymentTerm() first calls it.
+     */
+    private $settingsProvider;
+
+    /**
      * @var string|null Optional explicit override. Null = resolve
      *                  lazily from BrandRegistryInterface::getCode().
      *                  Kept as a ctor arg for unit-test injection and
@@ -71,6 +82,7 @@ class Repository implements RepositoryInterface
         ProductMetadataInterface $productMetadata,
         TaxCalculation $taxCalculation,
         BrandRegistryInterface $brandRegistry,
+        SettingsProvider $settingsProvider,
         ?string $code = null
     ) {
         $this->scopeConfig = $scopeConfig;
@@ -79,6 +91,7 @@ class Repository implements RepositoryInterface
         $this->productMetadata = $productMetadata;
         $this->taxCalculation = $taxCalculation;
         $this->brandRegistry = $brandRegistry;
+        $this->settingsProvider = $settingsProvider;
         $this->code = $code;
     }
 
@@ -495,12 +508,20 @@ class Repository implements RepositoryInterface
     public function getDefaultPaymentTerm(?int $storeId = null): int
     {
         $terms = $this->getAllBuyerTerms($storeId);
+        // The merchant's default term is authoritative from the merchant
+        // API (due_in_days). Honour it only when it is one of the offered
+        // buyer terms — it is not guaranteed to be a member (TWO-24859).
+        $apiDefault = $this->settingsProvider->getDefaultTerm($storeId);
+        if ($apiDefault !== null && in_array($apiDefault, $terms, true)) {
+            return $apiDefault;
+        }
+        // Otherwise honour the admin-configured default if it is an
+        // available buyer term, else fall back to the lowest available
+        // term so the buyer always lands on a real, selectable term — in
+        // particular a single available term is always the default (and
+        // thus preselected), even if a stale default_payment_term points
+        // elsewhere (ABN-439).
         $default = (int)$this->getConfig($this->path('default_payment_term'), $storeId);
-        // Only honour the configured default if it's actually an available
-        // buyer term. Otherwise fall back to the lowest available term so the
-        // buyer always lands on a real, selectable term — in particular a
-        // single available term is always the default (and thus preselected),
-        // even if a stale default_payment_term points elsewhere (ABN-439).
         if ($default > 0 && in_array($default, $terms, true)) {
             return $default;
         }

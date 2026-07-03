@@ -35,7 +35,15 @@
             <xs:element name="sign_up_url" type="xs:string" minOccurs="0"/>
             <xs:element name="documentation_url" type="xs:string" minOccurs="0"/>
             <xs:element name="api_base_url" type="xs:string"/>
-            <xs:element name="available_payment_terms" type="paymentTermsType"/>
+            <!--
+                DEPRECATED, ignored by Loader: the offerable payment terms
+                and the buyer-surcharge cap are now sourced per-merchant
+                from GET /v1/merchant (available_terms / surcharge_limit),
+                not from brand.xml. Kept optional in the schema so brand.xml
+                files carrying the legacy elements still validate during the
+                transition; remove once no brand.xml declares them.
+            -->
+            <xs:element name="available_payment_terms" type="paymentTermsType" minOccurs="0"/>
             <xs:element name="surcharge_fixed_max" type="surchargeFixedMaxType" minOccurs="0"/>
             <!--
                 Buyer-surcharge rounding steps offered in the admin
