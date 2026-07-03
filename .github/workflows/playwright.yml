@@ -1,0 +1,62 @@
+name: playwright
+
+# Runs the Playwright suite that drives the plugin on a staging store and captures
+# the docs screenshots (admin config tabs + storefront checkout journey). The
+# checkout journey runs with no credentials; the admin-config specs need a Magento
+# admin password (ADMIN_PASS) and skip cleanly without it.
+on:
+  workflow_dispatch:
+    inputs:
+      store_url:
+        description: "Storefront base URL"
+        required: false
+        default: "https://magento.staging.two.inc"
+      grep:
+        description: "Only run tests whose title matches (blank = all)"
+        required: false
+        default: ""
+  # Only trigger on changes to the suite itself. The tests run against the
+  # *deployed* staging store, so a PR's plugin changes aren't live yet at PR time
+  # and can't be meaningfully exercised here; scoping to e2e/** validates test
+  # changes against the current deployment without gating undeployed plugin code.
+  pull_request:
+    paths:
+      - "e2e/**"
+      - ".github/workflows/playwright.yml"
+
+concurrency:
+  group: playwright-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run Playwright e2e
+        # Inputs are passed via env (never interpolated into the script) to avoid
+        # shell injection through the free-text grep filter.
+        env:
+          STORE_URL: ${{ github.event.inputs.store_url }}
+          GREP: ${{ github.event.inputs.grep }}
+        run: |
+          if [ -n "$GREP" ]; then
+            npx playwright test -g "$GREP"
+          else
+            npx playwright test
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: e2e/screenshots/
+          if-no-files-found: warn
