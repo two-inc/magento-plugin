@@ -17,6 +17,7 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Service\Locale\AdminDecimalFormatter;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
  * Renders a grid of surcharge inputs (fixed, percentage, limit) per payment term.
@@ -42,6 +43,9 @@ class SurchargeGrid extends Field
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
+    /** @var SettingsProvider */
+    private $settingsProvider;
+
     /** @var AdminDecimalFormatter */
     private $decimalFormatter;
 
@@ -60,6 +64,7 @@ class SurchargeGrid extends Field
         StoreManagerInterface $storeManager,
         CurrencyRatesProviderInterface $ratesProvider,
         BrandRegistryInterface $brandRegistry,
+        SettingsProvider $settingsProvider,
         AdminDecimalFormatter $decimalFormatter,
         ResourceConnection $resource,
         array $data = []
@@ -69,6 +74,7 @@ class SurchargeGrid extends Field
         $this->storeManager = $storeManager;
         $this->ratesProvider = $ratesProvider;
         $this->brandRegistry = $brandRegistry;
+        $this->settingsProvider = $settingsProvider;
         $this->decimalFormatter = $decimalFormatter;
         $this->resource = $resource;
     }
@@ -166,7 +172,7 @@ class SurchargeGrid extends Field
      */
     public function getMaxFixed(): ?int
     {
-        $limit = $this->brandRegistry->getSurchargeFixedMax();
+        $limit = $this->settingsProvider->getSurchargeLimit($this->resolveStoreId());
         if ($limit === null) {
             return null;
         }
@@ -232,7 +238,7 @@ class SurchargeGrid extends Field
      */
     public function getFixedLimitLabel(): string
     {
-        $limit = $this->brandRegistry->getSurchargeFixedMax();
+        $limit = $this->settingsProvider->getSurchargeLimit($this->resolveStoreId());
         if ($limit === null) {
             return '';
         }
@@ -271,7 +277,7 @@ class SurchargeGrid extends Field
      */
     public function getCurrencyWarning(): string
     {
-        $limit = $this->brandRegistry->getSurchargeFixedMax();
+        $limit = $this->settingsProvider->getSurchargeLimit($this->resolveStoreId());
         if ($limit === null) {
             return '';
         }
@@ -398,11 +404,22 @@ class SurchargeGrid extends Field
     }
 
     /**
-     * Available term constants (for JS to know which terms are standard).
+     * The merchant's offerable payment terms (for JS to know which
+     * terms are standard), sourced from the merchant API.
      */
     public function getAvailablePaymentTerms(): array
     {
-        return $this->brandRegistry->getAvailablePaymentTerms();
+        return $this->settingsProvider->getAvailableTerms($this->resolveStoreId());
+    }
+
+    /**
+     * Store id for the active config scope, or null for website/default
+     * scope — used to resolve the per-store API key when reading
+     * merchant settings.
+     */
+    private function resolveStoreId(): ?int
+    {
+        return $this->scope === 'stores' && $this->scopeId > 0 ? $this->scopeId : null;
     }
 
     /**

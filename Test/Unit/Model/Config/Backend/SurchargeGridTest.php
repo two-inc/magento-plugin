@@ -246,8 +246,9 @@ class SurchargeGridTestable
         }
         unset($value['__inherit']);
 
-        // Hard-coded to the test brand's surcharge bound — see
-        // BrandRegistryInterface::getSurchargeFixedMax().
+        // Hard-coded to the merchant's surcharge cap for this test — in
+        // production it comes from SettingsProvider::getSurchargeLimit()
+        // (the GET /v1/merchant surcharge_limit).
         $maxFixed = 25;
         $maxPercentage = ConfigRepository::SURCHARGE_PERCENTAGE_MAX;
 

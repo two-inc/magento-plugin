@@ -21,6 +21,7 @@ use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
  * Backend model for the surcharge grid.
@@ -45,6 +46,9 @@ class SurchargeGrid extends Value
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
+    /** @var SettingsProvider */
+    private $settingsProvider;
+
     /** @var ResourceConnection */
     private $resourceConnection;
 
@@ -57,6 +61,7 @@ class SurchargeGrid extends Value
         StoreManagerInterface $storeManager,
         CurrencyRatesProviderInterface $ratesProvider,
         BrandRegistryInterface $brandRegistry,
+        SettingsProvider $settingsProvider,
         ResourceConnection $resourceConnection,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
@@ -67,6 +72,7 @@ class SurchargeGrid extends Value
         $this->storeManager = $storeManager;
         $this->ratesProvider = $ratesProvider;
         $this->brandRegistry = $brandRegistry;
+        $this->settingsProvider = $settingsProvider;
         $this->resourceConnection = $resourceConnection;
     }
 
@@ -213,16 +219,15 @@ class SurchargeGrid extends Value
     }
 
     /**
-     * Get the fixed max converted to the store's base currency.
-     */
-    /**
-     * Brand-defined fixed-fee max, converted into the merchant's base
-     * currency. Returns null when the brand imposes no upper bound;
-     * validateValue() must skip the upper-bound check in that case.
+     * Merchant's fixed-fee surcharge cap (from GET /v1/merchant),
+     * converted into the merchant's base currency. Returns null when
+     * there is no upper bound; validateValue() must skip the
+     * upper-bound check in that case.
      */
     private function getConvertedFixedMax(string $scope, int $scopeId): ?int
     {
-        $limit = $this->brandRegistry->getSurchargeFixedMax();
+        $storeId = ($scope === 'stores' && $scopeId > 0) ? $scopeId : null;
+        $limit = $this->settingsProvider->getSurchargeLimit($storeId);
         if ($limit === null) {
             return null;
         }
@@ -234,7 +239,6 @@ class SurchargeGrid extends Value
             return $limitAmount;
         }
 
-        $storeId = ($scope === 'stores' && $scopeId > 0) ? $scopeId : null;
         $rate = $this->ratesProvider->getRate($limitCurrency, $baseCurrency, $storeId);
         if ($rate !== null && $rate > 0) {
             return (int)ceil($limitAmount * $rate);

@@ -105,21 +105,6 @@ class Loader
             ));
         }
 
-        $terms = [];
-        if (isset($brand->available_payment_terms->term)) {
-            foreach ($brand->available_payment_terms->term as $term) {
-                $terms[] = (int)$term;
-            }
-        }
-
-        $surchargeFixedMax = null;
-        if (isset($brand->surcharge_fixed_max)) {
-            $surchargeFixedMax = [
-                'amount' => (float)$brand->surcharge_fixed_max['amount'],
-                'currency' => (string)$brand->surcharge_fixed_max['currency'],
-            ];
-        }
-
         // Brand-driven Rounding Step dropdown options. Validate at load
         // time — nothing validates brand.xsd at runtime, so a malformed
         // <step> would otherwise coerce to 0.0 and silently offer a
@@ -214,8 +199,6 @@ class Loader
             (string)($brand->sign_up_url ?? ''),
             (string)($brand->documentation_url ?? ''),
             (string)$brand->api_base_url,
-            $terms,
-            $surchargeFixedMax,
             $cspOrigins,
             (string)$brand->admin_resource,
             $moduleLabelChain,
