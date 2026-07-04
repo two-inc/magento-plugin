@@ -34,10 +34,6 @@ class Brand implements BrandRegistryInterface
     private $productName;
     /** @var string */
     private $checkoutUrlTemplate;
-    /** @var int[] */
-    private $availablePaymentTerms;
-    /** @var array{amount: float, currency: string}|null */
-    private $surchargeFixedMax;
     /** @var string */
     private $signUpUrl;
     /** @var string */
@@ -47,17 +43,11 @@ class Brand implements BrandRegistryInterface
     /** @var string */
     private $checkoutSubtitle;
 
-    /**
-     * @param int[] $availablePaymentTerms
-     * @param array{amount: float, currency: string}|null $surchargeFixedMax
-     */
     public function __construct(
         string $provider,
         string $providerFullName,
         string $productName,
         string $checkoutUrlTemplate,
-        array $availablePaymentTerms,
-        ?array $surchargeFixedMax = null,
         string $signUpUrl = '',
         string $documentationUrl = '',
         string $brandTag = '',
@@ -67,8 +57,6 @@ class Brand implements BrandRegistryInterface
         $this->providerFullName = $providerFullName;
         $this->productName = $productName;
         $this->checkoutUrlTemplate = $checkoutUrlTemplate;
-        $this->availablePaymentTerms = $availablePaymentTerms;
-        $this->surchargeFixedMax = $surchargeFixedMax;
         $this->signUpUrl = $signUpUrl;
         $this->documentationUrl = $documentationUrl;
         $this->brandTag = $brandTag;
@@ -93,16 +81,6 @@ class Brand implements BrandRegistryInterface
     public function getCheckoutUrlTemplate(): string
     {
         return $this->checkoutUrlTemplate;
-    }
-
-    public function getAvailablePaymentTerms(): array
-    {
-        return $this->availablePaymentTerms;
-    }
-
-    public function getSurchargeFixedMax(): ?array
-    {
-        return $this->surchargeFixedMax;
     }
 
     /**

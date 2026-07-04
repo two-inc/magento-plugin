@@ -9,6 +9,18 @@
         xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
     <preference for="Two\Gateway\Api\Config\RepositoryInterface"
                 type="Two\Gateway\Model\Config\Repository"/>
+    <!--
+        SettingsProvider resolves the merchant record via the API key
+        this Repository owns, so it is injected as a \Proxy to break the
+        construction cycle (Repository → SettingsProvider → RecordProvider
+        → ConfigRepository). The proxy defers instantiation until
+        getDefaultPaymentTerm() first reads the merchant's default term.
+    -->
+    <type name="Two\Gateway\Model\Config\Repository">
+        <arguments>
+            <argument name="settingsProvider" xsi:type="object">Two\Gateway\Service\Merchant\SettingsProvider\Proxy</argument>
+        </arguments>
+    </type>
     <preference for="Two\Gateway\Api\Log\RepositoryInterface"
                 type="Two\Gateway\Model\Log\Repository"/>
     <preference for="Two\Gateway\Api\Webapi\SoleTraderInterface"

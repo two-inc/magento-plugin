@@ -181,6 +181,7 @@
                     <label>Default Payment Term</label>
                     <comment>Select the payment term that will be automatically selected for your customer.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\AvailablePaymentTerms</source_model>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\DefaultPaymentTerm</frontend_model>
                     <config_path>payment/two_payment/default_payment_term</config_path>
                 </field>
                 <field id="surcharge_type" translate="label comment" type="select" sortOrder="50" showInDefault="1"

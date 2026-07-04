@@ -8,20 +8,22 @@ declare(strict_types=1);
 namespace Two\Gateway\Model\Config\Source;
 
 use Magento\Framework\Data\OptionSourceInterface;
-use Two\Gateway\Api\BrandRegistryInterface;
-use Two\Gateway\Api\Config\RepositoryInterface;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
  * Available Payment Terms Source Model (multiselect)
+ *
+ * Options come from the merchant's offerable terms on GET /v1/merchant;
+ * the admin narrows the buyer-facing set from them.
  */
 class AvailablePaymentTerms implements OptionSourceInterface
 {
-    /** @var BrandRegistryInterface */
-    private $brandRegistry;
+    /** @var SettingsProvider */
+    private $settingsProvider;
 
-    public function __construct(BrandRegistryInterface $brandRegistry)
+    public function __construct(SettingsProvider $settingsProvider)
     {
-        $this->brandRegistry = $brandRegistry;
+        $this->settingsProvider = $settingsProvider;
     }
 
     /**
@@ -30,7 +32,7 @@ class AvailablePaymentTerms implements OptionSourceInterface
     public function toOptionArray(): array
     {
         $options = [];
-        foreach ($this->brandRegistry->getAvailablePaymentTerms() as $days) {
+        foreach ($this->settingsProvider->getAvailableTerms() as $days) {
             $options[] = ['value' => $days, 'label' => __('%1 days', $days)];
         }
         return $options;
