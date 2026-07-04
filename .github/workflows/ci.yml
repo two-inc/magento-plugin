@@ -263,6 +263,110 @@ jobs:
             exit 1
           fi
 
+  # Merchant-upgrade smoke: install the latest released version from the PREVIOUS
+  # major (currently 1.16.2), then composer-require this branch's HEAD and re-run
+  # di:compile — proves the cross-major vanilla merchant upgrade (1.x -> 2.x) lands
+  # cleanly on every PR. Unlike the ABN overlay (1.x -> 2.0 is a package rename +
+  # monorepo split, TWO-25001), vanilla two-inc/magento2 keeps the same package
+  # name across majors, so this is a clean same-package upgrade and the right home
+  # for real 1.x -> 2.0 coverage (TWO-25005).
+  upgrade-smoke:
+    name: Upgrade smoke (prev-major → HEAD, PHP ${{ matrix.php }}, Magento ${{ matrix.magento }})
+    runs-on: ${{ vars.RUNNER_STANDARD }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - magento: 2.4.6
+            php: "8.2"
+            php_image: php82-fpm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Resolve prior release (previous major)
+        id: prior
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Release tags are bare semver. Take the highest major, then the latest
+          # release BELOW it — i.e. the previous-major line (1.x while HEAD is 2.x).
+          # That's the cross-major merchant upgrade. Skip (visibly) if there's no
+          # previous major yet.
+          tags_json=$(curl -sH 'Cache-Control: no-cache' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            'https://api.github.com/repos/two-inc/magento-plugin/tags?per_page=100')
+          semver=$(echo "$tags_json" | jq -c 'map(.name) | map(select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$")))')
+          maxmajor=$(echo "$semver" | jq -r 'map(split(".")[0] | tonumber) | max // 0')
+          LATEST_TAG=$(echo "$semver" | jq -r --argjson mm "$maxmajor" '
+            map(select((split(".") | map(tonumber)) as $v | $v[0] < $mm))
+            | sort_by(split(".") | map(tonumber)) | last // ""')
+          if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
+            echo "::warning::upgrade-smoke: no previous-major release tag found — skipping (nothing to upgrade FROM yet)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Prior-major release resolved: $LATEST_TAG (HEAD major $maxmajor)"
+          echo "tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+      - name: Install prior release + di:compile
+        if: steps.prior.outputs.skip != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          docker run --detach --name magento-project-community-edition \
+            michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
+          sleep 10
+          # Clone the prior release tag and wire it as a path repository (composer
+          # reads name+version from its composer.json). two-inc/magento2 is a
+          # single root-level package (no sub-path), so the repo root is the path.
+          git clone --depth=1 --branch "${{ steps.prior.outputs.tag }}" \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/two-inc/magento-plugin.git" \
+            /tmp/prev
+          docker exec magento-project-community-edition mkdir -p /data/extensions/two-magento2
+          docker cp /tmp/prev/. magento-project-community-edition:/data/extensions/two-magento2/
+          docker exec magento-project-community-edition \
+            composer config repositories.two-magento2 path /data/extensions/two-magento2
+          docker exec magento-project-community-edition \
+            composer require 'two-inc/magento2:*' --no-plugins
+          # Force-clear pre-generated DI before module:enable (base image ships
+          # generated/code; shallow rmdir trips "Directory not empty", TWO-25003).
+          docker exec magento-project-community-edition /bin/bash -c \
+            "rm -rf /data/generated/code /data/generated/metadata /data/var/cache /data/var/page_cache" || true
+          docker exec magento-project-community-edition ./retry \
+            "php bin/magento module:enable Two_Gateway && php bin/magento setup:di:compile"
+      - name: Upgrade to this-branch HEAD + di:compile
+        if: steps.prior.outputs.skip != 'true'
+        run: |
+          # Ship this branch's tracked source and re-point the SAME repo key at it,
+          # so composer drops the prior path and resolves HEAD on the next require.
+          docker exec magento-project-community-edition mkdir -p /data/extensions/two-magento2-head
+          git ls-files -z | tar --null -cf - -T - \
+            | docker exec -i magento-project-community-edition tar -x -C /data/extensions/two-magento2-head
+          docker exec magento-project-community-edition \
+            composer config repositories.two-magento2 path /data/extensions/two-magento2-head
+          docker exec magento-project-community-edition \
+            composer require 'two-inc/magento2:*@dev' --no-plugins
+          docker exec magento-project-community-edition /bin/bash -c \
+            "rm -rf /data/generated/code /data/generated/metadata /data/var/cache /data/var/page_cache" || true
+          docker exec magento-project-community-edition ./retry \
+            "php bin/magento module:enable Two_Gateway && php bin/magento setup:di:compile"
+      - name: Verify upgrade landed
+        if: steps.prior.outputs.skip != 'true'
+        run: |
+          status=$(docker exec magento-project-community-edition php bin/magento module:status)
+          echo "$status"
+          echo "$status" | awk '/^List of enabled modules:/{f=1; next} /^$/{f=0} f' \
+            | grep -qxF 'Two_Gateway' \
+            || { echo "::error::Two_Gateway not enabled post-upgrade"; exit 1; }
+          # HEAD installs from a path repo (dev-* version); if the resolved version
+          # still equals the prior release tag, the upgrade require didn't take.
+          ver=$(docker exec magento-project-community-edition \
+            composer show two-inc/magento2 --format=json 2>/dev/null | jq -r '.versions[0]' || echo unknown)
+          echo "Post-upgrade two-inc/magento2 version: $ver"
+          if [ "$ver" = "${{ steps.prior.outputs.tag }}" ]; then
+            echo "::error::still at ${{ steps.prior.outputs.tag }} post-upgrade — upgrade require did not take"
+            exit 1
+          fi
+
   jest:
     name: Jest (Node 20)
     runs-on: ${{ vars.RUNNER_STANDARD }}
