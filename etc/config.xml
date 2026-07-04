@@ -48,7 +48,12 @@
                 <payment_terms_type>standard</payment_terms_type>
                 <payment_terms_duration_days/>
                 <payment_terms>14,30,60,90</payment_terms>
-                <default_payment_term>30</default_payment_term>
+                <!-- No static default: the merchant API's due_in_days seeds the
+                     admin field's default (see the DefaultPaymentTerm
+                     frontend_model), and an empty stored value lets the runtime
+                     resolver tell "admin never chose" from "admin chose", so an
+                     explicit admin choice is never silently overridden by the
+                     API (TWO-24859). -->
                 <surcharge_type>none</surcharge_type>
                 <surcharge_differential>0</surcharge_differential>
                 <surcharge_line_description>Payment terms fee - %1 days</surcharge_line_description>

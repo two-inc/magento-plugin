@@ -502,29 +502,30 @@ class Repository implements RepositoryInterface
         return $terms;
     }
 
-    /**
-     * @inheritDoc
-     */
     public function getDefaultPaymentTerm(?int $storeId = null): int
     {
         $terms = $this->getAllBuyerTerms($storeId);
-        // The merchant's default term is authoritative from the merchant
-        // API (due_in_days). Honour it only when it is one of the offered
-        // buyer terms — it is not guaranteed to be a member (TWO-24859).
-        $apiDefault = $this->settingsProvider->getDefaultTerm($storeId);
-        if ($apiDefault !== null && in_array($apiDefault, $terms, true)) {
-            return $apiDefault;
-        }
-        // Otherwise honour the admin-configured default if it is an
-        // available buyer term, else fall back to the lowest available
-        // term so the buyer always lands on a real, selectable term — in
-        // particular a single available term is always the default (and
-        // thus preselected), even if a stale default_payment_term points
-        // elsewhere (ABN-439).
+        // An admin who has explicitly configured a default term owns that
+        // choice — the merchant API must not silently override it. Honour
+        // the configured value whenever it is one of the offered buyer
+        // terms. (There is no config.xml fallback for this path, so a value
+        // here means the admin actually saved one — see etc/config.xml.)
         $default = (int)$this->getConfig($this->path('default_payment_term'), $storeId);
         if ($default > 0 && in_array($default, $terms, true)) {
             return $default;
         }
+        // No explicit admin choice: fall back to the merchant's API default
+        // (due_in_days) when it is an offered term. This is the same value
+        // the admin field pre-selects when unset, so a never-touched install
+        // and the checkout agree on the default term (TWO-24859).
+        $apiDefault = $this->settingsProvider->getDefaultTerm($storeId);
+        if ($apiDefault !== null && in_array($apiDefault, $terms, true)) {
+            return $apiDefault;
+        }
+        // Else the lowest available term, so the buyer always lands on a
+        // real, selectable term — in particular a single available term is
+        // always the default (and thus preselected), even if a stale
+        // default_payment_term points elsewhere (ABN-439).
         return $terms ? min($terms) : 30;
     }
 

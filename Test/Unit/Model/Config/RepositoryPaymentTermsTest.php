@@ -211,24 +211,40 @@ class RepositoryPaymentTermsTest extends TestCase
         $this->assertEquals(30, $this->repository->getDefaultPaymentTerm());
     }
 
-    public function testGetDefaultPaymentTermPrefersApiTermWhenOffered(): void
+    public function testGetDefaultPaymentTermAdminChoiceWinsOverApi(): void
     {
-        // The merchant's due_in_days (from GET /v1/merchant) is
-        // authoritative and wins over the admin-configured default when
-        // it is one of the offered buyer terms.
+        // An explicit admin-configured default (when offered) is the
+        // admin's own choice and must NOT be silently overridden by the
+        // merchant's due_in_days (TWO-24859). The API default only seeds
+        // the field when the admin hasn't chosen — see the unset test.
         $this->settingsProvider->method('getDefaultTerm')->willReturn(90);
         $this->stubConfig([
             'payment/two_payment/default_payment_term' => '30',
             'payment/two_payment/payment_terms' => '30,60,90',
             'payment/two_payment/payment_terms_duration_days' => '',
         ]);
-        $this->assertEquals(90, $this->repository->getDefaultPaymentTerm());
+        $this->assertEquals(30, $this->repository->getDefaultPaymentTerm());
+    }
+
+    public function testGetDefaultPaymentTermUsesApiDefaultWhenAdminUnset(): void
+    {
+        // No explicit admin choice (config.xml carries no static default):
+        // fall back to the merchant's due_in_days when it is an offered
+        // term, so a never-touched install matches what the admin field
+        // pre-selects.
+        $this->settingsProvider->method('getDefaultTerm')->willReturn(60);
+        $this->stubConfig([
+            'payment/two_payment/default_payment_term' => '',
+            'payment/two_payment/payment_terms' => '30,60,90',
+            'payment/two_payment/payment_terms_duration_days' => '',
+        ]);
+        $this->assertEquals(60, $this->repository->getDefaultPaymentTerm());
     }
 
     public function testGetDefaultPaymentTermIgnoresApiTermOutsideOfferedTerms(): void
     {
         // due_in_days is not guaranteed to be an offered term; when it
-        // isn't, fall through to the admin-configured default.
+        // isn't, fall through (here to the admin-configured default).
         $this->settingsProvider->method('getDefaultTerm')->willReturn(14);
         $this->stubConfig([
             'payment/two_payment/default_payment_term' => '60',
