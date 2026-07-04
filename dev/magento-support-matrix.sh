@@ -4,17 +4,22 @@
 #
 # Usage:
 #   ./dev/magento-support-matrix.sh                        # human-readable report
-#   ./dev/magento-support-matrix.sh --emit-matrix          # GHA matrix JSON: classified Magento × PHP combos
+#   ./dev/magento-support-matrix.sh --emit-matrix          # GHA matrix JSON: RUNNABLE Magento × PHP combos
+#   ./dev/magento-support-matrix.sh --emit-skips           # JSON: combos we CANNOT run, with reasons
 #   ./dev/magento-support-matrix.sh --emit-php-lint-matrix # GHA matrix JSON: PHP-only (lint / phpunit jobs)
 #
-# This script is a CLASSIFIER, not a filter. Every combination inside the
-# current support window is EMITTED, tagged with a status:
-#     {"...","status":"run"}                          — CI exercises this combo
-#     {"...","status":"skip","skip_reason":"..."}     — CI records why it can't
+# This script CLASSIFIES every combination inside the current support window
+# as run | skip, then splits the two:
+#   --emit-matrix  → only runnable combos. These become real matrix legs, so a
+#                    green leg genuinely means "tested" — a skipped combo is
+#                    NEVER emitted here and so can never masquerade as a passed
+#                    test (TWO-24998: the run/skip decision happens at
+#                    matrix-assembly time, not inside a green job).
+#   --emit-skips   → the combos we could not run, each with a skip_reason. The
+#                    discover job renders these to $GITHUB_STEP_SUMMARY and
+#                    emits a ::warning:: per combo so an untested combination is
+#                    visible at a glance and cannot be mistaken for a pass.
 # Nothing testable is silently green; nothing untestable silently vanishes.
-# The consuming jobs' first step reads matrix.status and either does the work
-# (run) or writes the reason to $GITHUB_STEP_SUMMARY + a ::warning:: and exits
-# 0 (skip). See TWO-24998.
 #
 # Strategy:
 #   1. Query github.com/magento/magento2 tags for bare-semver 2.4.x.
@@ -63,6 +68,7 @@ intentionally_excluded=(
 mode=report
 case "${1:-}" in
     --emit-matrix) mode=matrix ;;
+    --emit-skips) mode=skips ;;
     --emit-php-lint-matrix) mode=php_lint ;;
     "") mode=report ;;
     *) echo "Unknown flag: $1" >&2; exit 2 ;;
@@ -324,7 +330,13 @@ if [ "$run_count" -eq 0 ]; then
     echo "::warning::Every in-window combo classified as SKIP — zero real version coverage this run" >&2
 fi
 
-matrix_json=$(printf '%s\n' "${matrix_entries[@]}" | jq -sc '.')
+# Full classified set, then split into the runnable matrix and the skip list.
+# Runnable combos carry only the keys the test jobs consume ({magento, php,
+# php_image}); skip combos carry their reason instead of an image.
+classified_json=$(printf '%s\n' "${matrix_entries[@]}" | jq -sc '.')
+run_json=$(echo "$classified_json" | jq -c '[.[] | select(.status == "run") | {magento, php, php_image}]')
+skip_json=$(echo "$classified_json" | jq -c '[.[] | select(.status == "skip") | {magento, php, skip_reason}]')
+
 if [ ${#php_lint_minors[@]} -eq 0 ]; then
     php_lint_json='[]'
 else
@@ -335,7 +347,10 @@ fi
 
 case "$mode" in
     matrix)
-        echo "$matrix_json"
+        echo "$run_json"
+        ;;
+    skips)
+        echo "$skip_json"
         ;;
     php_lint)
         echo "$php_lint_json"
@@ -343,7 +358,7 @@ case "$mode" in
     report)
         echo ""
         echo "Classified Magento × PHP matrix ($run_count run, $skip_count skip):"
-        echo "$matrix_json" | jq -r '.[]
+        echo "$classified_json" | jq -r '.[]
             | if .status == "skip"
               then "  SKIP  \(.magento) PHP \(.php) — \(.skip_reason)"
               else "  RUN   \(.magento) PHP \(.php)"

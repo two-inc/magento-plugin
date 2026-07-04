@@ -34,13 +34,35 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           matrix=$(./dev/magento-support-matrix.sh --emit-matrix)
+          skips=$(./dev/magento-support-matrix.sh --emit-skips)
           php_lint_matrix=$(./dev/magento-support-matrix.sh --emit-php-lint-matrix)
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           echo "php_lint_matrix=$php_lint_matrix" >> "$GITHUB_OUTPUT"
-          echo "Generated PHPStan / DI-compile matrix:"
+          echo "Runnable PHPStan / DI-compile matrix:"
           echo "$matrix" | jq .
+          echo "Skipped (NOT tested) combinations:"
+          echo "$skips" | jq .
           echo "Generated PHP lint matrix:"
           echo "$php_lint_matrix" | jq .
+
+          # The run/skip decision is made HERE, at matrix-assembly time — the
+          # test jobs only ever receive runnable combos, so a green test leg
+          # always means "tested" (TWO-24998). Untestable combos never become
+          # green legs; instead they are surfaced two ways that read clearly as
+          # "not run" at a glance:
+          #   1. a coverage table in this job's step summary, and
+          #   2. one ::warning:: annotation per skipped combo (yellow, shown on
+          #      the run summary — distinct from a green pass).
+          {
+            echo "## Magento × PHP version coverage"
+            echo ""
+            echo "| Magento | PHP | Status | Reason |"
+            echo "|---|---|---|---|"
+            echo "$matrix" | jq -r '.[] | "| \(.magento) | \(.php) | ✅ tested | |"'
+            echo "$skips"  | jq -r '.[] | "| \(.magento) | \(.php) | 🚫 NOT run | \(.skip_reason) |"'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "$skips" | jq -r '.[]
+            | "::warning title=Combination NOT tested::\(.magento) / PHP \(.php) — \(.skip_reason)"'
 
   lint:
     name: Lint (PHP ${{ matrix.php }})
@@ -121,37 +143,16 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.discover-magento-matrix.outputs.matrix) }}
     steps:
-      # Honour the classifier's run/skip tag (TWO-24998). A `skip` combo
-      # records its reason to the step summary + a ::warning:: and every
-      # later step gates off — the leg shows green (GHA can't paint a
-      # matrix leg grey; job-level `if:` is evaluated before matrix
-      # expansion) but carries its reason in plain, greppable text.
-      - name: Classify combo
-        id: classify
-        run: |
-          if [ "${{ matrix.status }}" = "skip" ]; then
-            {
-              echo "### ⏭️ PHPStan — ${{ matrix.magento }} / PHP ${{ matrix.php }} — SKIPPED"
-              echo ""
-              echo "Reason: ${{ matrix.skip_reason }}"
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "::warning title=Skipped combo (PHPStan)::${{ matrix.magento }}/PHP ${{ matrix.php }} — ${{ matrix.skip_reason }}"
-            echo "proceed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "proceed=true" >> "$GITHUB_OUTPUT"
-          fi
-
+      # The matrix carries only runnable combos (see discover-magento-matrix),
+      # so every leg here is a real test — a green leg means "tested".
       - uses: actions/checkout@v7
-        if: steps.classify.outputs.proceed == 'true'
 
       - name: Start Magento docker container
-        if: steps.classify.outputs.proceed == 'true'
         run: |
           docker run --detach --name magento-project-community-edition \
             michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
       - name: Upload tracked source into container
-        if: steps.classify.outputs.proceed == 'true'
         # Ship only tracked files — avoids leaking .git/, dotfiles,
         # or any untracked working-tree state into the CI container.
         # `git ls-files | tar` is preferred over `git archive` here
@@ -163,7 +164,6 @@ jobs:
           git ls-files -z | tar --null -cf - -T - | docker exec -i magento-project-community-edition tar -x -C /data/extensions/magento-plugin
 
       - name: Install extension from uploaded source
-        if: steps.classify.outputs.proceed == 'true'
         run: |
           docker exec magento-project-community-edition \
             composer config repositories.local path '/data/extensions/*'
@@ -171,13 +171,11 @@ jobs:
             composer require 'two-inc/magento2:*@dev' --no-plugins
 
       - name: Activate extension
-        if: steps.classify.outputs.proceed == 'true'
         run: |
           docker exec magento-project-community-edition ./retry \
             "php bin/magento module:enable Two_Gateway && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
 
       - name: Run PHPStan
-        if: steps.classify.outputs.proceed == 'true'
         run: |
           docker exec magento-project-community-edition /bin/bash -c \
             "./vendor/bin/phpstan analyse --no-progress -c /data/extensions/*/phpstan.neon /data/extensions"
@@ -191,34 +189,16 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.discover-magento-matrix.outputs.matrix) }}
     steps:
-      # Honour the classifier's run/skip tag (TWO-24998) — see the PHPStan
-      # job's Classify step for the full rationale.
-      - name: Classify combo
-        id: classify
-        run: |
-          if [ "${{ matrix.status }}" = "skip" ]; then
-            {
-              echo "### ⏭️ DI compile — ${{ matrix.magento }} / PHP ${{ matrix.php }} — SKIPPED"
-              echo ""
-              echo "Reason: ${{ matrix.skip_reason }}"
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "::warning title=Skipped combo (DI compile)::${{ matrix.magento }}/PHP ${{ matrix.php }} — ${{ matrix.skip_reason }}"
-            echo "proceed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "proceed=true" >> "$GITHUB_OUTPUT"
-          fi
-
+      # The matrix carries only runnable combos (see discover-magento-matrix),
+      # so every leg here is a real test — a green leg means "tested".
       - uses: actions/checkout@v7
-        if: steps.classify.outputs.proceed == 'true'
 
       - name: Start Magento docker container
-        if: steps.classify.outputs.proceed == 'true'
         run: |
           docker run --detach --name magento-project-community-edition \
             michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
 
       - name: Upload tracked source into container
-        if: steps.classify.outputs.proceed == 'true'
         # Ship only tracked files — avoids leaking .git/, dotfiles,
         # or any untracked working-tree state into the CI container.
         # `git ls-files | tar` is preferred over `git archive` here
@@ -230,7 +210,6 @@ jobs:
           git ls-files -z | tar --null -cf - -T - | docker exec -i magento-project-community-edition tar -x -C /data/extensions/magento-plugin
 
       - name: Install extension from uploaded source
-        if: steps.classify.outputs.proceed == 'true'
         run: |
           docker exec magento-project-community-edition \
             composer config repositories.local path '/data/extensions/*'
@@ -238,7 +217,6 @@ jobs:
             composer require 'two-inc/magento2:*@dev' --no-plugins
 
       - name: Run setup:di:compile
-        if: steps.classify.outputs.proceed == 'true'
         run: |
           docker exec magento-project-community-edition ./retry \
             "php bin/magento setup:di:compile"
@@ -253,7 +231,6 @@ jobs:
       # in any of these surfaces as an empty or error-containing
       # config:show output.
       - name: Install-time smoke test (ABN-423 M3)
-        if: steps.classify.outputs.proceed == 'true'
         run: |
           docker exec magento-project-community-edition ./retry \
             "php bin/magento module:enable Two_Gateway && php bin/magento setup:upgrade && php bin/magento cache:flush"
@@ -292,31 +269,3 @@ jobs:
           cache: 'npm'
       - run: npm ci --no-audit --no-fund
       - run: npm run test:js
-
-  # Durable, greppable record of exactly which Magento × PHP combinations
-  # this run exercised and — for the rest — why it couldn't (TWO-24998).
-  # `if: always()` so the table renders even when a matrix leg fails; it
-  # reads the classifier's output directly, so it reflects run/skip intent
-  # independent of leg pass/fail. Serves the merchant-troubleshooting flow:
-  # open the run for a merchant's version → read the table.
-  coverage-report:
-    name: Version coverage report
-    needs: [discover-magento-matrix, phpstan, di-compile]
-    if: always()
-    runs-on: ${{ vars.RUNNER_STANDARD }}
-    steps:
-      - name: Render coverage table
-        env:
-          MATRIX: ${{ needs.discover-magento-matrix.outputs.matrix }}
-        run: |
-          {
-            echo "## Magento × PHP version coverage"
-            echo ""
-            echo "| Magento | PHP | Status | Reason |"
-            echo "|---|---|---|---|"
-            echo "$MATRIX" | jq -r '.[]
-              | if .status == "skip"
-                then "| \(.magento) | \(.php) | ⏭️ skipped | \(.skip_reason) |"
-                else "| \(.magento) | \(.php) | ✅ tested | |"
-                end'
-          } >> "$GITHUB_STEP_SUMMARY"
