@@ -1,4 +1,4 @@
-import { test, Locator, Page } from '@playwright/test';
+import { test, expect, Locator, Page } from '@playwright/test';
 import { adminLogin } from './_helpers';
 
 // "Two" admin config (Stores -> Configuration -> Two) -> docs screenshots.
@@ -50,26 +50,29 @@ test.describe('Two admin config', () => {
     test('config_tabs', async ({ page }) => {
         await adminLogin(page);
         await gotoSection(page, 'two_general');
-        const title = page
-            .locator('.admin__page-nav-title')
-            .filter({ hasText: /^\s*Two\s*$/ })
-            .first();
-        const version = page.locator('a[href*="/section/two_version/"]').first();
+        // Anchor the clip on the section links, which reliably render in the nav
+        // (the other config specs resolve them the same way). Top = just above the
+        // General link to include the "Two" tab header; bottom = the last section
+        // link present (Version if the user sees it, else Search).
         const nav = page.locator('.admin__page-nav, #system_config_tabs').first();
-        const t = await title.boundingBox();
-        const v = await version.boundingBox();
+        const general = page.locator('a[href*="/section/two_general/"]').first();
+        const bottom = page
+            .locator('a[href*="/section/two_version/"], a[href*="/section/two_search/"]')
+            .last();
+        await expect(nav).toBeVisible({ timeout: 15_000 });
+        await expect(general).toBeVisible({ timeout: 15_000 });
+        await expect(bottom).toBeVisible({ timeout: 15_000 });
         const nb = await nav.boundingBox();
-        if (t && v) {
-            const x = nb ? nb.x : Math.max(0, t.x - 40);
-            const width = nb ? nb.width + 4 : 440;
-            await page.screenshot({
-                path: `${OUT}/config_tabs.png`,
-                clip: { x, y: t.y - 16, width, height: v.y + v.height - t.y + 28 }
-            });
-            console.log('config_tabs ok, nav?', !!nb);
-        } else {
-            throw new Error('could not resolve Two tab title / version link for config_tabs clip');
-        }
+        const g = await general.boundingBox();
+        const b = await bottom.boundingBox();
+        if (!nb || !g || !b)
+            throw new Error('could not resolve the Two config nav for config_tabs clip');
+        const top = Math.max(0, g.y - 72); // include the "Two" tab header row above General
+        await page.screenshot({
+            path: `${OUT}/config_tabs.png`,
+            clip: { x: nb.x, y: top, width: nb.width + 4, height: b.y + b.height - top + 20 }
+        });
+        console.log('config_tabs ok');
     });
 
     test('config_general', async ({ page }) => {
