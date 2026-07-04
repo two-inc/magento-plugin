@@ -29,9 +29,16 @@ use Two\Gateway\Service\Api\Adapter;
  * resolved record is memoized per request and cached for
  * CACHE_LIFETIME seconds, keyed on the API key so a key swap
  * (different merchant, or sandbox <-> production) never serves the old
- * merchant's record. A fetch failure resolves to null and is cached as
- * such: callers degrade to their own "no value configured" behaviour
- * rather than paying two API calls per page view on a blip.
+ * merchant's record.
+ *
+ * Only a *successful* fetch is cached. A failure (no API key,
+ * unresolvable merchant id, error response) resolves to null and is
+ * memoized per request but deliberately NOT written to the cross-request
+ * cache, so the next page view retries rather than serving a 900s-stale
+ * "no record". The first read during an outage can't be protected —
+ * there is nothing to serve — but once one read succeeds it is cached and
+ * served for CACHE_LIFETIME. Callers degrade to their own "no value
+ * configured" behaviour while the record is null.
  */
 class RecordProvider
 {
@@ -116,9 +123,16 @@ class RecordProvider
 
         $record = $this->fetchRecord($storeId);
 
+        // Memoize either way so a single request never pays the
+        // verify+fetch round-trip twice.
         $wrapper = ['record' => $record];
         $this->memo[$cacheKey] = $wrapper;
-        $this->cache->save($this->json->serialize($wrapper), $cacheKey, [], self::CACHE_LIFETIME);
+
+        // Persist only a successful record to the cross-request cache; a
+        // failure is left uncached so the next request retries.
+        if ($record !== null) {
+            $this->cache->save($this->json->serialize($wrapper), $cacheKey, [], self::CACHE_LIFETIME);
+        }
 
         return $record;
     }
@@ -142,6 +156,18 @@ class RecordProvider
 
         $merchant = $this->apiAdapter->execute('/v1/merchant/' . $merchantId, [], 'GET', $storeId);
 
-        return is_array($merchant) ? $merchant : null;
+        // Adapter::execute always returns an array; a failure is signalled by
+        // an error_code / http_status marker (never present on a real merchant
+        // record). Treat those as "no record" so a blip resolves to null
+        // rather than caching an error payload as the merchant record.
+        if (!is_array($merchant) || isset($merchant['error_code']) || isset($merchant['http_status'])) {
+            $this->logRepository->addDebugLog(
+                'RecordProvider: merchant fetch failed, treating as no record',
+                is_array($merchant) ? $merchant : ['response' => $merchant]
+            );
+            return null;
+        }
+
+        return $merchant;
     }
 }

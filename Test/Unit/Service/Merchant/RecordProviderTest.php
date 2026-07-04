@@ -123,18 +123,41 @@ class RecordProviderTest extends TestCase
         $this->assertSame(['available_terms' => [30, 60, 90]], $provider->getRecord(1));
     }
 
-    public function testCachesTheNullOutcome(): void
+    public function testMerchantErrorPayloadResolvesToNull(): void
     {
-        // An unresolvable merchant is the degraded case and must not cost
-        // two API calls per page view: the resolved null is cached too.
-        $this->stubApi(['error' => 'unauthorized']);
+        // Adapter::execute returns an error dict (with error_code) on a
+        // failed merchant fetch, not a merchant record — it must resolve to
+        // null, not be treated as the record.
+        $this->stubApi(['id' => 'abc-123'], ['error_code' => 400, 'error_message' => 'boom']);
+
+        $this->assertNull($this->provider->getRecord(1));
+    }
+
+    public function testDoesNotCacheFailureSoNextRequestRetries(): void
+    {
+        // A fetch failure is NOT persisted to the cross-request cache, so a
+        // later page view retries rather than serving a 900s-stale "no
+        // record" (TWO-24952). We can't protect the first read during an
+        // outage, but recovery must not wait out the cache lifetime.
+        $this->stubApi(['id' => 'abc-123'], ['http_status' => 503]);
+        $this->cache->expects($this->never())->method('save');
+
+        $this->assertNull($this->provider->getRecord(1));
+    }
+
+    public function testCachesSuccessfulRecord(): void
+    {
+        // A successful record IS written to the cross-request cache for the
+        // full lifetime, so subsequent requests skip the verify+fetch pair.
+        $record = ['id' => 'abc-123', 'available_terms' => [30, 60, 90]];
+        $this->stubApi(['id' => 'abc-123'], $record);
         $this->cache->expects($this->once())->method('save')->with(
-            '{"record":null}',
+            $this->stringContains('"available_terms"'),
             $this->stringContains('two_gateway_merchant_record_'),
             [],
             900
         );
 
-        $this->assertNull($this->provider->getRecord(1));
+        $this->assertSame($record, $this->provider->getRecord(1));
     }
 }
