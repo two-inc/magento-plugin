@@ -331,8 +331,11 @@ jobs:
           # generated/code; shallow rmdir trips "Directory not empty", TWO-25003).
           docker exec magento-project-community-edition /bin/bash -c \
             "rm -rf /data/generated/code /data/generated/metadata /data/var/cache /data/var/page_cache" || true
+          # setup:upgrade installs the 1.x schema + records its
+          # setup_module.schema_version — this is the FROM state the HEAD leg's
+          # upgrade then has to migrate across (TWO-25005).
           docker exec magento-project-community-edition ./retry \
-            "php bin/magento module:enable Two_Gateway && php bin/magento setup:di:compile"
+            "php bin/magento module:enable Two_Gateway && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
       - name: Upgrade to this-branch HEAD + di:compile
         if: steps.prior.outputs.skip != 'true'
         run: |
@@ -347,8 +350,12 @@ jobs:
             composer require 'two-inc/magento2:*@dev' --no-plugins
           docker exec magento-project-community-edition /bin/bash -c \
             "rm -rf /data/generated/code /data/generated/metadata /data/var/cache /data/var/page_cache" || true
+          # setup:upgrade against HEAD runs the cross-major schema/data patches
+          # and bumps schema_version 1.x -> HEAD — the real upgrade surface this
+          # job exists to protect (Bharat review, TWO-25005). Without it the job
+          # would only prove a fresh-HEAD install, which the di-compile job covers.
           docker exec magento-project-community-edition ./retry \
-            "php bin/magento module:enable Two_Gateway && php bin/magento setup:di:compile"
+            "php bin/magento module:enable Two_Gateway && php bin/magento setup:upgrade && php bin/magento setup:di:compile"
       - name: Verify upgrade landed
         if: steps.prior.outputs.skip != 'true'
         run: |
