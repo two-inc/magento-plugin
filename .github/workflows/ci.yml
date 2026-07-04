@@ -33,9 +33,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          matrix=$(./dev/magento-support-matrix.sh --emit-matrix)
-          skips=$(./dev/magento-support-matrix.sh --emit-skips)
-          php_lint_matrix=$(./dev/magento-support-matrix.sh --emit-php-lint-matrix)
+          # One classification, sliced three ways — so the run/skip/lint lists
+          # are always mutually consistent (a transient image-probe blip can't
+          # land a combo in one list but not its mirror) and we hit upstream +
+          # Docker Hub once, not 3x (review: brtkwr on #237).
+          all=$(./dev/magento-support-matrix.sh --emit-all)
+          matrix=$(echo "$all" | jq -c '.matrix')
+          skips=$(echo "$all" | jq -c '.skips')
+          php_lint_matrix=$(echo "$all" | jq -c '.php_lint')
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           echo "php_lint_matrix=$php_lint_matrix" >> "$GITHUB_OUTPUT"
           echo "Runnable PHPStan / DI-compile matrix:"
