@@ -1,0 +1,13 @@
+{
+    "name": "magento-two-e2e",
+    "private": true,
+    "scripts": {
+        "test": "playwright test",
+        "admin": "playwright test admin-",
+        "checkout": "playwright test checkout-"
+    },
+    "devDependencies": {
+        "@playwright/test": "^1.61.1",
+        "@types/node": "^22.20.0"
+    }
+}

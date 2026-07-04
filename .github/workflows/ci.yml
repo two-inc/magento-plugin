@@ -33,14 +33,41 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          matrix=$(./dev/magento-support-matrix.sh --emit-matrix)
-          php_lint_matrix=$(./dev/magento-support-matrix.sh --emit-php-lint-matrix)
+          # One classification, sliced three ways — so the run/skip/lint lists
+          # are always mutually consistent (a transient image-probe blip can't
+          # land a combo in one list but not its mirror) and we hit upstream +
+          # Docker Hub once, not 3x (review: brtkwr on #237).
+          all=$(./dev/magento-support-matrix.sh --emit-all)
+          matrix=$(echo "$all" | jq -c '.matrix')
+          skips=$(echo "$all" | jq -c '.skips')
+          php_lint_matrix=$(echo "$all" | jq -c '.php_lint')
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           echo "php_lint_matrix=$php_lint_matrix" >> "$GITHUB_OUTPUT"
-          echo "Generated PHPStan / DI-compile matrix:"
+          echo "Runnable PHPStan / DI-compile matrix:"
           echo "$matrix" | jq .
+          echo "Skipped (NOT tested) combinations:"
+          echo "$skips" | jq .
           echo "Generated PHP lint matrix:"
           echo "$php_lint_matrix" | jq .
+
+          # The run/skip decision is made HERE, at matrix-assembly time — the
+          # test jobs only ever receive runnable combos, so a green test leg
+          # always means "tested" (TWO-24998). Untestable combos never become
+          # green legs; instead they are surfaced two ways that read clearly as
+          # "not run" at a glance:
+          #   1. a coverage table in this job's step summary, and
+          #   2. one ::warning:: annotation per skipped combo (yellow, shown on
+          #      the run summary — distinct from a green pass).
+          {
+            echo "## Magento × PHP version coverage"
+            echo ""
+            echo "| Magento | PHP | Status | Reason |"
+            echo "|---|---|---|---|"
+            echo "$matrix" | jq -r '.[] | "| \(.magento) | \(.php) | ✅ tested | |"'
+            echo "$skips"  | jq -r '.[] | "| \(.magento) | \(.php) | 🚫 NOT run | \(.skip_reason) |"'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "$skips" | jq -r '.[]
+            | "::warning title=Combination NOT tested::\(.magento) / PHP \(.php) — \(.skip_reason)"'
 
   lint:
     name: Lint (PHP ${{ matrix.php }})
@@ -121,6 +148,8 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.discover-magento-matrix.outputs.matrix) }}
     steps:
+      # The matrix carries only runnable combos (see discover-magento-matrix),
+      # so every leg here is a real test — a green leg means "tested".
       - uses: actions/checkout@v7
 
       - name: Start Magento docker container
@@ -165,6 +194,8 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.discover-magento-matrix.outputs.matrix) }}
     steps:
+      # The matrix carries only runnable combos (see discover-magento-matrix),
+      # so every leg here is a real test — a green leg means "tested".
       - uses: actions/checkout@v7
 
       - name: Start Magento docker container
