@@ -247,10 +247,14 @@ for minor in $supported; do
         echo "::error::magento/magento2@$minor composer.json missing require.php" >&2
         exit 2
     fi
+    # `|| true`: under `set -o pipefail`, grep exits 1 when a constraint has no
+    # `~X.Y.0` clause (e.g. an unexpected format), which would terminate the
+    # script here and bypass the diagnostic below. Swallow it so the empty-check
+    # fires with a useful error instead.
     php_minors_for_magento=$(echo "$php_constraint" \
         | grep -oE '~[0-9]+\.[0-9]+\.0' \
         | sed -E 's/~([0-9]+\.[0-9]+)\.0/\1/' \
-        | sort -V)
+        | sort -V) || true
     if [ -z "$php_minors_for_magento" ]; then
         echo "::error::Could not parse php constraint '$php_constraint' for Magento $minor" >&2
         exit 2
@@ -284,7 +288,7 @@ for minor in $supported; do
     minor_excl="${excluded_minor_map[$minor]:-}"
 
     for php in $accepted; do
-        php_image="php$(echo "$php" | tr -d '.')-fpm"
+        php_image="php${php//./}-fpm"
         img_tag="${CI_IMAGE_REPO}:${php_image}-magento${minor}"
 
         # 1. Past upstream PHP support (php.net no longer lists this minor).
