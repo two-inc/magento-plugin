@@ -1,0 +1,108 @@
+name: playwright
+
+# Runs the Playwright suite that drives the plugin on a staging store and captures
+# the docs screenshots (admin config tabs + storefront checkout journey). The
+# checkout journey runs with no credentials; the admin-gated specs (admin config,
+# minimum-order gate) need a Magento admin password (ADMIN_PASS) and skip cleanly
+# without it.
+
+permissions:
+  contents: read
+  id-token: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      store_url:
+        description: "Storefront base URL"
+        required: false
+        default: "https://magento.staging.two.inc"
+      grep:
+        description: "Only run tests whose title matches (blank = all)"
+        required: false
+        default: ""
+  # Only trigger on changes to the suite itself. The tests run against the
+  # *deployed* staging store, so a PR's plugin changes aren't live yet at PR time
+  # and can't be meaningfully exercised here; scoping to e2e/** validates test
+  # changes against the current deployment without gating undeployed plugin code.
+  pull_request:
+    paths:
+      - "e2e/**"
+      - ".github/workflows/playwright.yml"
+
+# One global group: the minimum-order spec temporarily rewrites shared staging
+# store config (and restores it), so two runs must never overlap. Queue rather
+# than cancel — cancelling a run mid-test could skip the config restore.
+concurrency:
+  group: playwright
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v4
+
+      # Dedicated e2e WIF service account (set as repo vars once provisioned).
+      # continue-on-error: PRs from forks don't get an OIDC token, and the suite
+      # must still run its credential-free specs there.
+      - name: Authenticate to Google Cloud
+        if: vars.E2E_SA != ''
+        continue-on-error: true
+        uses: google-github-actions/auth@v3
+        with:
+          service_account: ${{ vars.E2E_SA }}
+          workload_identity_provider: ${{ vars.E2E_WIF_PROVIDER }}
+      - uses: google-github-actions/setup-gcloud@v3
+        if: vars.E2E_SA != ''
+        continue-on-error: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+
+      # Pull the CI admin password from Secret Manager. When the SA, grant, or
+      # secret isn't in place yet this no-ops and the admin-gated specs skip;
+      # the checkout journey still runs.
+      - name: Resolve admin password
+        if: vars.E2E_SA != ''
+        continue-on-error: true
+        working-directory: .
+        env:
+          SECRET_NAME: ${{ vars.E2E_ADMIN_SECRET }}
+          SECRET_PROJECT: ${{ vars.E2E_ADMIN_SECRET_PROJECT }}
+        run: |
+          if pw=$(gcloud secrets versions access latest \
+                    --secret="$SECRET_NAME" --project="$SECRET_PROJECT" 2>/dev/null); then
+            echo "::add-mask::$pw"
+            echo "ADMIN_PASS=$pw" >> "$GITHUB_ENV"
+            echo "admin password resolved - admin-gated specs will run"
+          else
+            echo "admin password not accessible - admin-gated specs will skip"
+          fi
+
+      - name: Run Playwright e2e
+        # Inputs are passed via env (never interpolated into the script) to avoid
+        # shell injection through the free-text grep filter.
+        env:
+          STORE_URL: ${{ github.event.inputs.store_url }}
+          ADMIN_USER: ${{ vars.E2E_ADMIN_USER }}
+          GREP: ${{ github.event.inputs.grep }}
+        run: |
+          if [ -n "$GREP" ]; then
+            npx playwright test -g "$GREP"
+          else
+            npx playwright test
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: e2e/screenshots/
+          if-no-files-found: warn
