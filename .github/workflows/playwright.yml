@@ -48,18 +48,18 @@ jobs:
       - uses: actions/checkout@v4
 
       # Dedicated e2e WIF service account (set as repo vars once provisioned).
-      # continue-on-error: PRs from forks don't get an OIDC token, and the suite
-      # must still run its credential-free specs there.
+      # Runs only on trusted events (same-repo PRs / push / dispatch): fork PRs
+      # don't get an OIDC token, so there these steps are skipped and the suite
+      # still runs its credential-free specs. On trusted runs a failure is fatal
+      # (no continue-on-error) so a green check means the admin-gated specs ran.
       - name: Authenticate to Google Cloud
-        if: vars.E2E_SA != ''
-        continue-on-error: true
+        if: ${{ vars.E2E_SA != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: google-github-actions/auth@v3
         with:
           service_account: ${{ vars.E2E_SA }}
           workload_identity_provider: ${{ vars.E2E_WIF_PROVIDER }}
       - uses: google-github-actions/setup-gcloud@v3
-        if: vars.E2E_SA != ''
-        continue-on-error: true
+        if: ${{ vars.E2E_SA != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
 
       - uses: actions/setup-node@v4
         with:
@@ -67,24 +67,25 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
 
-      # Pull the CI admin password from Secret Manager. When the SA, grant, or
-      # secret isn't in place yet this no-ops and the admin-gated specs skip;
-      # the checkout journey still runs.
+      # Pull the CI admin password from Secret Manager. On trusted runs the SA +
+      # grant + secret + e2e_ci user are provisioned, so a failure fails the job
+      # rather than silently skipping the admin-gated specs. Fork PRs skip this
+      # (guarded above) and run only the credential-free specs.
       - name: Resolve admin password
-        if: vars.E2E_SA != ''
-        continue-on-error: true
+        if: ${{ vars.E2E_SA != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         working-directory: .
         env:
           SECRET_NAME: ${{ vars.E2E_ADMIN_SECRET }}
           SECRET_PROJECT: ${{ vars.E2E_ADMIN_SECRET_PROJECT }}
         run: |
           if pw=$(gcloud secrets versions access latest \
-                    --secret="$SECRET_NAME" --project="$SECRET_PROJECT" 2>/dev/null); then
+                    --secret="$SECRET_NAME" --project="$SECRET_PROJECT"); then
             echo "::add-mask::$pw"
             echo "ADMIN_PASS=$pw" >> "$GITHUB_ENV"
             echo "admin password resolved - admin-gated specs will run"
           else
-            echo "admin password not accessible - admin-gated specs will skip"
+            echo "::error::$SECRET_NAME not accessible - failing rather than silently skipping the admin-gated specs"
+            exit 1
           fi
 
       - name: Run Playwright e2e
