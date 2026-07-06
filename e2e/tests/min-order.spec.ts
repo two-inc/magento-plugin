@@ -60,9 +60,22 @@ async function readMinimumConfig(page: Page): Promise<MinimumConfig> {
     };
 }
 
-// Set one config field, driving its "Use Default" checkbox first. Clicking the
-// checkbox is what fires Magento's handler that enables/disables the input, so
-// a custom value must wait for the field to be editable before filling.
+// Toggle a "Use Default" checkbox to the desired state. Playwright's
+// setChecked() times out on Magento's `config-inherit` checkbox, so drive it
+// with a native in-page click (same technique the shipping radio uses) — that
+// both flips the box and fires the onclick handler that enables/disables the
+// paired field. No-op when it is already in the desired state.
+async function setInherit(page: Page, inheritSel: string, desired: boolean) {
+    const box = page.locator(inheritSel);
+    if ((await box.isChecked()) === desired) {
+        return;
+    }
+    await box.evaluate((el) => (el as HTMLInputElement).click());
+}
+
+// Set one config field, driving its "Use Default" checkbox first. A custom
+// value must wait for the field to become editable before filling; restoring
+// to default just leaves the box checked.
 async function setConfigField(
     page: Page,
     inheritSel: string,
@@ -70,12 +83,10 @@ async function setConfigField(
     inherited: boolean,
     apply: () => Promise<void>
 ) {
+    await setInherit(page, inheritSel, inherited);
     if (inherited) {
-        // Restore to default: checking the box disables and resets the field.
-        await page.locator(inheritSel).setChecked(true);
         return;
     }
-    await page.locator(inheritSel).setChecked(false);
     await expect(page.locator(fieldSel)).toBeEditable({ timeout: 10_000 });
     await apply();
 }
