@@ -284,17 +284,25 @@ jobs:
       - uses: actions/checkout@v7
       - name: Resolve prior release (previous major)
         id: prior
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -o pipefail
           # Release tags are bare semver. Take the highest major, then the latest
           # release BELOW it — i.e. the previous-major line (1.x while HEAD is 2.x).
           # That's the cross-major merchant upgrade. Skip (visibly) if there's no
           # previous major yet.
-          tags_json=$(curl -sH 'Cache-Control: no-cache' \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            'https://api.github.com/repos/two-inc/magento-plugin/tags?per_page=100')
-          semver=$(echo "$tags_json" | jq -c 'map(.name) | map(select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$")))')
+          #
+          # git ls-remote (not the GitHub tags API): no token, no per_page=100
+          # cap, and — critically for an honest-CI job — a transport error FAILS
+          # the step rather than yielding empty JSON that would skip-green having
+          # tested nothing. Only a genuine "no previous major yet" is a skip.
+          if ! raw_tags=$(git ls-remote --tags --refs \
+            https://github.com/two-inc/magento-plugin.git 2>&1); then
+            echo "::error::upgrade-smoke: could not list remote tags: $raw_tags"
+            exit 1
+          fi
+          semver=$(printf '%s\n' "$raw_tags" \
+            | sed -n 's#.*refs/tags/\([0-9]\{1,\}\.[0-9]\{1,\}\.[0-9]\{1,\}\)$#\1#p' \
+            | jq -R . | jq -sc .)
           maxmajor=$(echo "$semver" | jq -r 'map(split(".")[0] | tonumber) | max // 0')
           LATEST_TAG=$(echo "$semver" | jq -r --argjson mm "$maxmajor" '
             map(select((split(".") | map(tonumber)) as $v | $v[0] < $mm))
@@ -314,7 +322,9 @@ jobs:
         run: |
           docker run --detach --name magento-project-community-edition \
             michielgerritsen/magento-project-community-edition:${{ matrix.php_image }}-magento${{ matrix.magento }}
-          sleep 10
+          # No readiness sleep: the image ships a pre-installed Magento, and the
+          # sibling di-compile job execs straight after `docker run --detach`
+          # with no wait. The magento commands below are wrapped in ./retry.
           # Clone the prior release tag and wire it as a path repository (composer
           # reads name+version from its composer.json). two-inc/magento2 is a
           # single root-level package (no sub-path), so the repo root is the path.
@@ -359,6 +369,7 @@ jobs:
       - name: Verify upgrade landed
         if: steps.prior.outputs.skip != 'true'
         run: |
+          set -o pipefail
           status=$(docker exec magento-project-community-edition php bin/magento module:status)
           echo "$status"
           echo "$status" | awk '/^List of enabled modules:/{f=1; next} /^$/{f=0} f' \
@@ -366,8 +377,14 @@ jobs:
             || { echo "::error::Two_Gateway not enabled post-upgrade"; exit 1; }
           # HEAD installs from a path repo (dev-* version); if the resolved version
           # still equals the prior release tag, the upgrade require didn't take.
+          # Fail loud if composer can't report the version — a bare `|| echo
+          # unknown` would sail past the guard below on any composer error.
           ver=$(docker exec magento-project-community-edition \
-            composer show two-inc/magento2 --format=json 2>/dev/null | jq -r '.versions[0]' || echo unknown)
+            composer show two-inc/magento2 --format=json 2>/dev/null | jq -r '.versions[0]') \
+            || { echo "::error::composer show two-inc/magento2 failed post-upgrade"; exit 1; }
+          if [ -z "$ver" ] || [ "$ver" = "null" ]; then
+            echo "::error::could not resolve two-inc/magento2 version post-upgrade"; exit 1
+          fi
           echo "Post-upgrade two-inc/magento2 version: $ver"
           if [ "$ver" = "${{ steps.prior.outputs.tag }}" ]; then
             echo "::error::still at ${{ steps.prior.outputs.tag }} post-upgrade — upgrade require did not take"
