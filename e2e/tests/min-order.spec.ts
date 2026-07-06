@@ -48,8 +48,23 @@ async function grandTotal(page: Page): Promise<number> {
     );
 }
 
+// The minimum-order fields live in the collapsible "payment_method" group
+// (name="groups[payment_method]..."). A section landing leaves group state to a
+// remembered UI cookie, so the fieldset can be collapsed — the fields are then
+// in the DOM but not visible, and fill() hangs on the visibility check even
+// though the input is enabled. Force the group open. Clicking the header
+// toggles, so only click when the field isn't already visible.
+async function expandPaymentGroup(page: Page) {
+    if (await page.locator(MIN_FIELD).isVisible()) {
+        return;
+    }
+    await page.locator('#two_payment_payment_method-head').click();
+    await expect(page.locator(MIN_FIELD)).toBeVisible({ timeout: 10_000 });
+}
+
 async function readMinimumConfig(page: Page): Promise<MinimumConfig> {
     await gotoTwoPaymentConfig(page);
+    await expandPaymentGroup(page);
     // inputValue() reads a disabled input fine; isChecked() tells us whether
     // the field was on its default so we can put it back exactly as found.
     return {
@@ -93,6 +108,7 @@ async function setConfigField(
 
 async function writeMinimumConfig(page: Page, cfg: MinimumConfig) {
     await gotoTwoPaymentConfig(page);
+    await expandPaymentGroup(page);
     await setConfigField(page, MIN_INHERIT, MIN_FIELD, cfg.amountInherited, () =>
         page.locator(MIN_FIELD).fill(cfg.amount)
     );
