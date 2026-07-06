@@ -32,6 +32,21 @@ export async function availableMethods(page: Page): Promise<string[]> {
     );
 }
 
+// The quote's current shipping charge, for confirming a rate change landed.
+async function shippingAmount(page: Page): Promise<number> {
+    return page.evaluate(
+        () =>
+            new Promise<number>((resolve) => {
+                (window as any).require(['Magento_Checkout/js/model/quote'], (q: any) => {
+                    // totals() can be momentarily null mid-recalc — exactly the
+                    // window we poll in; NaN keeps the caller polling.
+                    const t = q.totals();
+                    resolve(t ? Number(t.shipping_amount) : NaN);
+                });
+            })
+    );
+}
+
 // Native click on the shipping radio — Playwright's .check()/.click() on the
 // styled input doesn't fire Magento's shipping-change handler that recalculates
 // totals, so wait for the radio to load, then drive it in-page like a real click.
@@ -43,6 +58,16 @@ export async function selectShipping(page: Page, kind: 'freeshipping' | 'flatrat
     await expect(radio).toBeVisible({ timeout: 20_000 });
     await radio.evaluate((el) => (el as HTMLInputElement).click());
     await waitIdle(page);
+    // waitIdle only clears the loading-mask; the totals recalc lands a beat later
+    // via a knockout observable, so a grand_total read here can catch the stale
+    // pre-recalc value (flaky on slow CI runners). Poll until shipping_amount
+    // reflects the chosen rate — non-zero for flat, zero for free — before
+    // returning, so any following total read is settled.
+    if (kind === 'flatrate') {
+        await expect.poll(() => shippingAmount(page), { timeout: 20_000 }).toBeGreaterThan(0);
+    } else {
+        await expect.poll(() => shippingAmount(page), { timeout: 20_000 }).toBe(0);
+    }
 }
 
 export async function addToCart(page: Page) {
