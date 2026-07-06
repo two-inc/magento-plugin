@@ -748,6 +748,23 @@ class Two extends AbstractMethod
         if ($quote instanceof \Magento\Quote\Model\Quote && $quote->getStoreId() !== null) {
             $storeId = (int)$quote->getStoreId();
         }
+        // Amasty OneStepCheckout persists the buyer's shipping method to the
+        // server quote only at order placement, so the server quote is blind to
+        // the live shipping choice and this gate would judge a stale total (a
+        // dearer shipping that crosses the minimum never registers server-side).
+        // When Amasty OSC is active for this store, offer the method
+        // unconditionally and let the checkout renderer gate visibility
+        // client-side against the live total; place-order + the Two API still
+        // enforce the minimum fail-closed. Read at STORE scope so it tracks the
+        // active store view (e.g. ?___store=amasty). Absent module → false → no
+        // change for every other checkout.
+        if ($this->_scopeConfig->isSetFlag(
+            'amasty_checkout/general/enabled',
+            \Magento\Store\Model\ScopeInterface::SCOPE_STORE,
+            $storeId
+        )) {
+            return true;
+        }
         $platformMinimum = $this->minimumOrderProvider->getMinimum($storeId);
         $merchantMinimum = null;
         if ($quote instanceof \Magento\Quote\Model\Quote) {
@@ -768,5 +785,58 @@ class Two extends AbstractMethod
             }
         }
         return $this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum);
+    }
+
+    /**
+     * The active minimum-order constraints for a quote, each already converted
+     * to the quote's display currency, for the checkout renderer's client-side
+     * visibility gate. Same platform + merchant minimums isAvailable() enforces
+     * (kept in step deliberately), projected to {amount, basis} in the display
+     * currency so the JS only has to compare — no rule/FX logic client-side.
+     *
+     * @return array<int, array{amount: float, basis: string}>
+     */
+    public function getDisplayMinimums(?CartInterface $quote): array
+    {
+        if (!$quote instanceof \Magento\Quote\Model\Quote) {
+            return [];
+        }
+        $storeId = $quote->getStoreId() !== null ? (int)$quote->getStoreId() : null;
+        $store = $quote->getStore();
+        $displayCurrency = (string)($quote->getQuoteCurrencyCode()
+            ?: ($store !== null ? $store->getBaseCurrencyCode() : ''));
+        if ($displayCurrency === '') {
+            return [];
+        }
+
+        $out = [];
+        $platform = $this->minimumOrderProvider->getMinimum($storeId);
+        if ($platform !== null) {
+            $shown = $this->minimumOrderGate->getMinimumForDisplay($platform, $displayCurrency, $storeId);
+            if ($shown !== null) {
+                $out[] = $shown;
+            }
+        }
+
+        $merchantValue = (float)$this->getConfigData('merchant_minimum_order');
+        if ($merchantValue > 0 && $store !== null && (string)$store->getBaseCurrencyCode() !== '') {
+            $merchantBasis = (string)$this->getConfigData('merchant_minimum_order_basis');
+            $shown = $this->minimumOrderGate->getMinimumForDisplay(
+                [
+                    'amount' => $merchantValue,
+                    'currency' => (string)$store->getBaseCurrencyCode(),
+                    'basis' => in_array($merchantBasis, ['net', 'gross'], true)
+                        ? $merchantBasis
+                        : ($platform['basis'] ?? 'gross'),
+                ],
+                $displayCurrency,
+                $storeId
+            );
+            if ($shown !== null) {
+                $out[] = $shown;
+            }
+        }
+
+        return $out;
     }
 }

@@ -18,6 +18,7 @@ define([
     'Magento_Catalog/js/price-utils',
     'Two_Gateway/js/model/surcharge',
     'Two_Gateway/js/model/brand-config',
+    'Two_Gateway/js/model/minimum-order-visibility',
     'Magento_Ui/js/lib/view/utils/async',
     'mage/validation',
     'jquery/jquery-storageapi'
@@ -35,7 +36,8 @@ define([
     url,
     priceUtils,
     surchargeModel,
-    getBrandConfig
+    getBrandConfig,
+    isAboveMinimums
 ) {
     'use strict';
 
@@ -111,6 +113,20 @@ define([
             this.isProjectFieldEnabled = config.isProjectFieldEnabled;
             this.isOrderNoteFieldEnabled = config.isOrderNoteFieldEnabled;
             this.isPONumberFieldEnabled = config.isPONumberFieldEnabled;
+
+            // Client-side minimum-order visibility gate. config.minimumOrder is
+            // the server-resolved constraint(s) {amount, basis} already in the
+            // display currency; we only compare against the live quote total.
+            // Hides the method below the minimum (the case the server can miss
+            // on Amasty, where shipping isn't persisted until place-order); on
+            // Amasty isAvailable offers the method unconditionally, so this also
+            // drives showing it once the total clears the minimum. Server
+            // isAvailable + place-order + the Two API remain the enforcers —
+            // this is display only. No minimums → always visible.
+            var minimums = config.minimumOrder || [];
+            this.isTwoVisible = ko.computed(function () {
+                return isAboveMinimums(quote.getTotals()(), minimums);
+            });
 
             var terms = config.availableBuyerTerms || [];
             this.availableBuyerTerms = terms;

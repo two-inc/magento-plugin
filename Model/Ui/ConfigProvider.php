@@ -143,6 +143,11 @@ class ConfigProvider implements ConfigProviderInterface
                     'selectedPaymentTerm' => (int)$this->checkoutSession->getTwoSelectedTerm()
                         ?: $this->configRepository->getDefaultPaymentTerm(),
                     'currencySymbol' => $this->getCurrencySymbol(),
+                    // Server-resolved minimum-order constraints in the display
+                    // currency, for the renderer's client-side visibility gate
+                    // (hide below min; on Amasty, where isAvailable offers the
+                    // method unconditionally, this also drives showing above it).
+                    'minimumOrder' => $this->two->getDisplayMinimums($this->checkoutSession->getQuote()),
                     'subtitleHtml' => $this->getSubtitleHtml(),
                     'surchargeDescription' => $this->configRepository->getSurchargeLineDescription(),
                     'isPaymentTermsEnabled' => true,
