@@ -5,13 +5,17 @@
  * Behavioural tests for the checkout payment-availability refresher
  * (view/frontend/web/js/view/payment-availability.js).
  *
- * It subscribes to quote.getTotals() and, on a genuine grand-total change,
- * re-fetches payment-information and applies ONLY the method list. The
- * load-bearing guarantees:
- *  - it NEVER calls quote.setTotals() (the clobber that got the first attempt
- *    reverted),
- *  - it does not fetch on the bootstrap total nor on no-op re-emits,
- *  - a mid-flight change is parked and run on completion (trailing edge).
+ * Load-bearing guarantees:
+ *  - NEVER calls quote.setTotals() (the clobber that got the first attempt
+ *    reverted);
+ *  - only calls paymentService.setPaymentMethods() when the available-method
+ *    SET changed (re-applying an unchanged list rebuilds every Luma renderer
+ *    and wipes in-progress payment forms);
+ *  - no fetch on the bootstrap total nor on no-op re-emits; keys on
+ *    grand_total AND tax (net-basis gate);
+ *  - a mid-flight change is parked and run on completion (trailing edge);
+ *  - a failed probe is silent (no error banner) and rolls back so the next
+ *    emit retries.
  */
 
 'use strict';
@@ -32,19 +36,16 @@ function loadComponent(deps) {
 
     return factory(
         deps.Component,
-        deps.$,
         deps.quote,
         deps.urlBuilder,
         deps.storage,
         deps.customer,
         deps.methodConverter,
-        deps.paymentService,
-        deps.errorProcessor,
-        deps.globalMessageList
+        deps.paymentService
     );
 }
 
-/** Minimal KO-style observable. */
+/** Minimal KO-style observable with a disposable subscription. */
 function makeObservable(initial) {
     let value = initial;
     const subs = [];
@@ -56,7 +57,11 @@ function makeObservable(initial) {
 
         return value;
     };
-    obs.subscribe = (fn) => subs.push(fn);
+    obs.subscribe = (fn) => {
+        subs.push(fn);
+
+        return { dispose: () => { const i = subs.indexOf(fn); if (i > -1) { subs.splice(i, 1); } } };
+    };
 
     return obs;
 }
@@ -73,7 +78,7 @@ const ComponentMock = {
 /** mage/storage.get() stub returning a jQuery-style promise. */
 function makeStorage(opts) {
     opts = opts || {};
-    const response = opts.response || { totals: { grand_total: '999' }, payment_methods: [{ method: 'two_payment' }] };
+    const response = opts.response || { payment_methods: [{ method: 'two_payment' }] };
     const get = jest.fn(function () {
         let settled = null;
         const done = [];
@@ -95,59 +100,91 @@ function makeStorage(opts) {
     return { get };
 }
 
-function setup(initialTotals, storageOpts) {
-    const totals = makeObservable(initialTotals);
+function setup(cfg) {
+    cfg = cfg || {};
+    const totals = makeObservable(cfg.initialTotals);
     const setTotals = jest.fn();
     const quote = {
         getTotals: () => totals,
         getQuoteId: () => 'cart1',
         setTotals
     };
-    const storage = makeStorage(storageOpts);
+    const storage = makeStorage(cfg.storage);
     const setPaymentMethods = jest.fn();
-    const process = jest.fn();
+    // Current server-available methods the checkout already shows.
+    const available = cfg.available || [];
+    const paymentService = {
+        setPaymentMethods,
+        getAvailablePaymentMethods: () => available
+    };
+    const createUrl = jest.fn((t) => t);
     const Widget = loadComponent({
         Component: ComponentMock,
-        $: {},
         quote,
-        urlBuilder: { createUrl: (t) => t },
+        urlBuilder: { createUrl },
         storage,
-        customer: { isLoggedIn: () => false },
+        customer: { isLoggedIn: () => !!cfg.loggedIn },
         methodConverter: (m) => m,
-        paymentService: { setPaymentMethods },
-        errorProcessor: { process },
-        globalMessageList: {}
+        paymentService
     });
     const instance = new Widget();
     instance.initialize();
 
-    return { instance, totals, storage, setPaymentMethods, setTotals, process };
+    return { instance, totals, storage, setPaymentMethods, setTotals, createUrl };
 }
 
 describe('Two_Gateway/js/view/payment-availability', () => {
     it('does not fetch on the bootstrap total at mount', () => {
-        const { storage } = setup({ grand_total: '224.00' });
+        const { storage } = setup({ initialTotals: { grand_total: '224.00' } });
         expect(storage.get).not.toHaveBeenCalled();
     });
 
-    it('re-fetches and applies ONLY the method list on a grand-total change', () => {
-        const { totals, storage, setPaymentMethods, setTotals } = setup({ grand_total: '224.00' });
+    it('re-fetches on a grand-total change and never touches totals', () => {
+        const { totals, storage, setTotals } = setup({ initialTotals: { grand_total: '224.00' } });
         totals({ grand_total: '264.00' });
 
         expect(storage.get).toHaveBeenCalledTimes(1);
-        expect(setPaymentMethods).toHaveBeenCalledTimes(1);
         // The whole point of the rewrite: totals are never clobbered.
         expect(setTotals).not.toHaveBeenCalled();
     });
 
-    it('does not fetch on a no-op re-emit with an unchanged grand total', () => {
-        const { totals, storage } = setup({ grand_total: '224.00' });
-        totals({ grand_total: '224.00' });
+    it('applies the method list only when the available-method set changed', () => {
+        // Two currently absent; server now returns it → set changed → apply.
+        const { totals, setPaymentMethods } = setup({
+            initialTotals: { grand_total: '224.00' },
+            available: [],
+            storage: { response: { payment_methods: [{ method: 'two_payment' }] } }
+        });
+        totals({ grand_total: '264.00' });
+        expect(setPaymentMethods).toHaveBeenCalledTimes(1);
+    });
+
+    it('does NOT re-apply when the method set is unchanged (no renderer churn)', () => {
+        // Two already shown and still returned → set unchanged → skip, so the
+        // buyer's in-progress form/selection is never rebuilt.
+        const { totals, setPaymentMethods } = setup({
+            initialTotals: { grand_total: '264.00' },
+            available: [{ method: 'two_payment' }],
+            storage: { response: { payment_methods: [{ method: 'two_payment' }] } }
+        });
+        totals({ grand_total: '300.00' });
+        expect(setPaymentMethods).not.toHaveBeenCalled();
+    });
+
+    it('does not fetch on a no-op re-emit with an unchanged key', () => {
+        const { totals, storage } = setup({ initialTotals: { grand_total: '224.00', tax_amount: '0' } });
+        totals({ grand_total: '224.00', tax_amount: '0' });
         expect(storage.get).not.toHaveBeenCalled();
     });
 
+    it('keys on tax too — a tax-only change (net basis) triggers a re-fetch', () => {
+        const { totals, storage } = setup({ initialTotals: { grand_total: '264.00', tax_amount: '44.00' } });
+        totals({ grand_total: '264.00', tax_amount: '20.00' });
+        expect(storage.get).toHaveBeenCalledTimes(1);
+    });
+
     it('seeds the baseline from the first emit when totals are absent at mount', () => {
-        const { totals, storage } = setup(null);
+        const { totals, storage } = setup({ initialTotals: null });
         totals({ grand_total: '224.00' });
         expect(storage.get).not.toHaveBeenCalled();
         totals({ grand_total: '264.00' });
@@ -155,27 +192,51 @@ describe('Two_Gateway/js/view/payment-availability', () => {
     });
 
     it('parks a mid-flight change and runs it once the refresh resolves', () => {
-        const { totals, storage } = setup({ grand_total: '224.00' }, { defer: true });
+        const { totals, storage } = setup({ initialTotals: { grand_total: '224.00' }, storage: { defer: true } });
         totals({ grand_total: '264.00' });
         expect(storage.get).toHaveBeenCalledTimes(1);
 
-        // Change before the in-flight fetch resolves: parked, not fired.
         totals({ grand_total: '300.00' });
         expect(storage.get).toHaveBeenCalledTimes(1);
 
-        // Resolve → the parked change drives a second fetch.
         storage.get._last._resolve();
         expect(storage.get).toHaveBeenCalledTimes(2);
     });
 
-    it('routes a failed fetch through the error processor and clears the in-flight flag', () => {
-        const { totals, storage, process } = setup({ grand_total: '224.00' }, { defer: true });
+    it('fails silently and rolls back so the next emit retries', () => {
+        const { totals, storage, setPaymentMethods } = setup({
+            initialTotals: { grand_total: '224.00' },
+            storage: { defer: true }
+        });
         totals({ grand_total: '264.00' });
-        storage.get._last._reject();
-        expect(process).toHaveBeenCalledTimes(1);
+        // No error surfaced (no errorProcessor dependency at all) and no list applied.
+        expect(() => storage.get._last._reject()).not.toThrow();
+        expect(setPaymentMethods).not.toHaveBeenCalled();
 
-        // Flag cleared → a later change fetches again.
+        // Key rolled back → a later change still fetches (retry not stranded).
         totals({ grand_total: '300.00' });
         expect(storage.get).toHaveBeenCalledTimes(2);
+    });
+
+    it('uses the registered-customer URL when logged in', () => {
+        const { totals, createUrl } = setup({ initialTotals: { grand_total: '224.00' }, loggedIn: true });
+        totals({ grand_total: '264.00' });
+        expect(createUrl).toHaveBeenCalledWith('/carts/mine/payment-information', {});
+    });
+
+    it('uses the guest URL with the cart id when not logged in', () => {
+        const { totals, createUrl } = setup({ initialTotals: { grand_total: '224.00' }, loggedIn: false });
+        totals({ grand_total: '264.00' });
+        expect(createUrl).toHaveBeenCalledWith(
+            '/guest-carts/:cartId/payment-information',
+            { cartId: 'cart1' }
+        );
+    });
+
+    it('disposes the totals subscription on destroy', () => {
+        const { instance, totals, storage } = setup({ initialTotals: { grand_total: '224.00' } });
+        instance.destroy();
+        totals({ grand_total: '264.00' });
+        expect(storage.get).not.toHaveBeenCalled();
     });
 });

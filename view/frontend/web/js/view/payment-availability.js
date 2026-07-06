@@ -16,15 +16,23 @@
  * re-fetch on every totals change and are unaffected; this gives Luma (and
  * Luma-derived one-step checkouts) the same behaviour.
  *
- * On a genuine grand-total change it re-fetches the payment-information
- * endpoint and applies ONLY the returned method list — the server re-runs
- * isAvailable, so the method appears/disappears in both directions. It
- * deliberately does NOT call quote.setTotals(): the shared core action
- * (get-payment-information) does, which stamps the server's (possibly
- * pre-shipping) totals over the correctly-collected client totals — the
- * regression that got the first attempt reverted. Skipping setTotals also
- * means this can't re-emit the totals observable, so there is no refresh
- * loop to guard against beyond the no-op dedup.
+ * On a genuine totals change it re-fetches the payment-information endpoint
+ * (the server re-runs isAvailable) and applies the returned method list ONLY
+ * WHEN the set of available methods actually changed. Two constraints drive
+ * that:
+ *   - It never calls quote.setTotals(). The shared core action
+ *     (get-payment-information) does, which stamps the server's possibly-
+ *     pre-shipping totals over the correctly-collected client totals — the
+ *     regression that got the first attempt reverted.
+ *   - It skips paymentService.setPaymentMethods() when the method set is
+ *     unchanged. That call swaps the availablePaymentMethods observable with
+ *     fresh object references, which makes Luma's payment list rebuild EVERY
+ *     renderer — wiping a half-filled Two form and the selected method. We
+ *     only want to add/remove Two as it crosses the minimum, not churn the
+ *     list on every totals tick.
+ *
+ * Server isAvailable + place-order + API enforcement stay the sole source of
+ * truth; no minimum logic is duplicated here.
  *
  * Mounted from checkout_index_index.xml under the always-present sidebar,
  * NOT under the Two payment renderer: when the method is hidden its renderer
@@ -32,27 +40,13 @@
  */
 define([
     'uiComponent',
-    'jquery',
     'Magento_Checkout/js/model/quote',
     'Magento_Checkout/js/model/url-builder',
     'mage/storage',
     'Magento_Customer/js/model/customer',
     'Magento_Checkout/js/model/payment/method-converter',
-    'Magento_Checkout/js/model/payment-service',
-    'Magento_Checkout/js/model/error-processor',
-    'Magento_Ui/js/model/messageList'
-], function (
-    Component,
-    $,
-    quote,
-    urlBuilder,
-    storage,
-    customer,
-    methodConverter,
-    paymentService,
-    errorProcessor,
-    globalMessageList
-) {
+    'Magento_Checkout/js/model/payment-service'
+], function (Component, quote, urlBuilder, storage, customer, methodConverter, paymentService) {
     'use strict';
 
     return Component.extend({
@@ -67,89 +61,141 @@ define([
             this._super();
 
             this._refreshing = false;
-            // Trailing edge: a total that changes again mid-refresh is parked
-            // here and re-run when the in-flight refresh resolves, so rapid
-            // interactions (switch shipping, then apply a coupon) converge on
-            // the final total.
-            this._pendingGrandTotal = null;
+            // Trailing edge: a change during an in-flight fetch is parked here
+            // and run when that fetch resolves, so rapid interactions converge.
+            this._pendingKey = null;
             // Baseline from the totals already loaded at mount — core has just
-            // fetched the payment list for this value, so there is nothing to
-            // re-ask yet. A KO subscribable does not replay, so seeding here is
-            // what lets us detect the first post-mount change on a
-            // fast/returning-customer stack.
-            this._lastGrandTotal = this._readGrandTotal(quote.getTotals()());
-
-            quote.getTotals().subscribe(this._onTotalsChanged.bind(this));
+            // fetched the payment list for this value. A KO subscribable does
+            // not replay, so seeding here is what lets us detect the first
+            // post-mount change on a fast/returning-customer stack.
+            this._lastKey = this._readKey(quote.getTotals()());
+            this._totalsSubscription = quote.getTotals().subscribe(this._onTotalsChanged.bind(this));
 
             return this;
         },
 
         /**
-         * @param {Object|null} totals
-         * @returns {Number|null} parsed grand total, or null when absent/NaN
+         * Dispose the totals subscription so a torn-down instance (checkout
+         * re-render, one-step-checkout derivative) leaves no zombie handler.
          */
-        _readGrandTotal: function (totals) {
+        destroy: function () {
+            if (this._totalsSubscription) {
+                this._totalsSubscription.dispose();
+                this._totalsSubscription = null;
+            }
+            this._super();
+        },
+
+        /**
+         * Availability key: grand total AND tax. The min-order gate can compare
+         * on a net basis (grand_total − tax), so a tax-only move can flip
+         * availability without changing grand_total; keying on both makes the
+         * dedup match what the server actually gates on.
+         *
+         * @param {Object|null} totals
+         * @returns {String|null} null when totals/grand_total is absent or NaN
+         */
+        _readKey: function (totals) {
             if (!totals) {
                 return null;
             }
-            var value = parseFloat(totals.grand_total);
+            var grand = parseFloat(totals.grand_total);
+            if (isNaN(grand)) {
+                return null;
+            }
+            var tax = parseFloat(totals.tax_amount) || 0;
 
-            return isNaN(value) ? null : value;
+            return grand + '|' + tax;
         },
 
         /**
          * @param {Object|null} totals
          */
         _onTotalsChanged: function (totals) {
-            var grandTotal = this._readGrandTotal(totals);
+            var key = this._readKey(totals);
 
-            if (grandTotal === null) {
+            if (key === null) {
                 return;
             }
-            if (this._lastGrandTotal === null) {
-                this._lastGrandTotal = grandTotal;
+            if (this._lastKey === null) {
+                this._lastKey = key;
 
                 return;
             }
-            if (grandTotal === this._lastGrandTotal) {
+            if (key === this._lastKey) {
                 return;
             }
             if (this._refreshing) {
-                this._pendingGrandTotal = grandTotal;
+                this._pendingKey = key;
 
                 return;
             }
-            this._lastGrandTotal = grandTotal;
-            this._refresh();
+            this._refresh(key);
         },
 
         /**
-         * Re-fetch the payment-information endpoint and apply ONLY the method
-         * list. Never touches totals (see class doc).
+         * Re-fetch payment-information and apply the method list only when the
+         * available-method set changed. Never touches totals.
+         *
+         * @param {String} targetKey
          */
-        _refresh: function () {
+        _refresh: function (targetKey) {
             var self = this;
+            var priorKey = this._lastKey;
 
+            this._lastKey = targetKey;
             this._refreshing = true;
-            this._pendingGrandTotal = null;
+            this._pendingKey = null;
 
             storage.get(this._paymentInformationUrl(), false)
                 .done(function (response) {
-                    paymentService.setPaymentMethods(
-                        methodConverter(response['payment_methods'])
-                    );
+                    self._applyIfChanged(response);
                 })
-                .fail(function (response) {
-                    errorProcessor.process(response, globalMessageList);
+                .fail(function () {
+                    // Silent: a background availability probe must not paint the
+                    // checkout error banner. Roll the key back so the next
+                    // totals emit retries rather than the failure stranding a
+                    // stale list. (Availability is server-enforced at
+                    // place-order regardless.)
+                    self._lastKey = priorKey;
+                    if (typeof console !== 'undefined' && console.warn) {
+                        console.warn('Two_Gateway: payment availability refresh failed');
+                    }
                 })
                 .always(function () {
                     self._refreshing = false;
-                    if (self._pendingGrandTotal !== null &&
-                        self._pendingGrandTotal !== self._lastGrandTotal) {
-                        self._lastGrandTotal = self._pendingGrandTotal;
-                        self._refresh();
+                    if (self._pendingKey !== null && self._pendingKey !== self._lastKey) {
+                        self._refresh(self._pendingKey);
                     }
                 });
+        },
+
+        /**
+         * Swap the method list only when the set of available method codes
+         * differs from what's shown — otherwise Luma rebuilds every renderer
+         * and wipes in-progress payment forms (see class doc).
+         *
+         * @param {Object} response
+         */
+        _applyIfChanged: function (response) {
+            var incoming = methodConverter((response && response['payment_methods']) || []);
+
+            if (this._codes(incoming) !== this._codes(paymentService.getAvailablePaymentMethods())) {
+                paymentService.setPaymentMethods(incoming);
+            }
+        },
+
+        /**
+         * Order-independent signature of a method list's codes.
+         *
+         * @param {Array|null} methods
+         * @returns {String}
+         */
+        _codes: function (methods) {
+            return (methods || [])
+                .map(function (m) { return m.method; })
+                .sort()
+                .join(',');
         },
 
         /**
