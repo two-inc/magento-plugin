@@ -57,6 +57,13 @@ define([
             // observable while a refresh is still in flight.
             this._refreshing = false;
 
+            // Trailing edge: a total that changes again mid-refresh is
+            // parked here and re-run when the in-flight refresh resolves,
+            // so rapid interactions (switch shipping, then apply a coupon)
+            // still converge on the final total rather than leaving the
+            // availability decided against a superseded value.
+            this._pendingGrandTotal = null;
+
             // Baseline the grand total from the totals already loaded at
             // mount (core has just fetched the payment list for this value
             // on step entry, so there is nothing to re-ask yet). A KO
@@ -87,9 +94,6 @@ define([
          * @param {Object|null} totals
          */
         _onTotalsChanged: function (totals) {
-            if (this._refreshing) {
-                return;
-            }
             var grandTotal = this._readGrandTotal(totals);
 
             if (grandTotal === null) {
@@ -106,8 +110,17 @@ define([
             if (grandTotal === this._lastGrandTotal) {
                 // A no-op re-emit (Magento republishes the observable in
                 // several flows without a value change) — including the one
-                // get-payment-information itself triggers. Skipping it is
-                // what keeps this off an infinite refresh loop.
+                // get-payment-information itself triggers. Testing this
+                // BEFORE the in-flight guard is what keeps the self-triggered
+                // re-emit off both the refresh loop and the pending queue.
+                return;
+            }
+            if (this._refreshing) {
+                // A genuine change arrived while a refresh is in flight. Park
+                // it; _refreshAvailability re-runs against the latest parked
+                // value once the current call resolves.
+                this._pendingGrandTotal = grandTotal;
+
                 return;
             }
             this._lastGrandTotal = grandTotal;
@@ -123,12 +136,26 @@ define([
             var deferred = $.Deferred();
 
             this._refreshing = true;
-            // Pass the shared checkout message list so a failed refresh
-            // reports through the standard error path rather than
-            // dereferencing a null container inside the core action.
-            getPaymentInformation(deferred, globalMessageList);
+            this._pendingGrandTotal = null;
+
+            try {
+                // Pass the shared checkout message list so a failed refresh
+                // reports through the standard error path rather than
+                // dereferencing a null container inside the core action.
+                getPaymentInformation(deferred, globalMessageList);
+            } catch (e) {
+                // A synchronous throw would otherwise strand _refreshing at
+                // true and wedge the component. Reject so the always() below
+                // clears the flag and drains any parked change.
+                deferred.reject(e);
+            }
             $.when(deferred).always(function () {
                 self._refreshing = false;
+                if (self._pendingGrandTotal !== null &&
+                    self._pendingGrandTotal !== self._lastGrandTotal) {
+                    self._lastGrandTotal = self._pendingGrandTotal;
+                    self._refreshAvailability();
+                }
             });
         }
     });

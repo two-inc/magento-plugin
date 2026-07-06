@@ -181,7 +181,7 @@ describe('Two_Gateway/js/view/payment-availability', () => {
         expect(getPaymentInformation).toHaveBeenCalledTimes(1);
     });
 
-    it('ignores a totals change while a refresh is still in flight', () => {
+    it('defers a mid-flight totals change and runs it when the refresh resolves', () => {
         const { totals, getPaymentInformation } = setup(
             { grand_total: '224.00' },
             { defer: true }
@@ -189,13 +189,40 @@ describe('Two_Gateway/js/view/payment-availability', () => {
         totals({ grand_total: '264.00' });
         expect(getPaymentInformation).toHaveBeenCalledTimes(1);
 
-        // Re-entrant change before the in-flight call resolves: swallowed.
+        // Change before the in-flight call resolves: parked, not fired yet.
         totals({ grand_total: '300.00' });
         expect(getPaymentInformation).toHaveBeenCalledTimes(1);
 
-        // Once the in-flight call resolves, later changes refresh again.
+        // In-flight call resolves → the parked change drives a second refresh.
         getPaymentInformation.lastDeferred.resolve();
+        expect(getPaymentInformation).toHaveBeenCalledTimes(2);
+
+        // Second resolves with nothing parked → no third refresh.
+        getPaymentInformation.lastDeferred.resolve();
+        expect(getPaymentInformation).toHaveBeenCalledTimes(2);
+
+        // A later change still refreshes normally.
         totals({ grand_total: '320.00' });
+        expect(getPaymentInformation).toHaveBeenCalledTimes(3);
+    });
+
+    it('coalesces multiple mid-flight changes to the latest parked value', () => {
+        const { totals, getPaymentInformation } = setup(
+            { grand_total: '224.00' },
+            { defer: true }
+        );
+        totals({ grand_total: '264.00' });
+        totals({ grand_total: '300.00' });
+        totals({ grand_total: '310.00' });
+        // Only the first fired; 300 and 310 collapse into one parked value.
+        expect(getPaymentInformation).toHaveBeenCalledTimes(1);
+
+        getPaymentInformation.lastDeferred.resolve();
+        expect(getPaymentInformation).toHaveBeenCalledTimes(2);
+
+        // The parked refresh advanced the baseline to 310, so resolving with
+        // nothing new parked ends the chain.
+        getPaymentInformation.lastDeferred.resolve();
         expect(getPaymentInformation).toHaveBeenCalledTimes(2);
     });
 
