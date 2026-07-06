@@ -131,7 +131,11 @@ async function writeMinimumConfig(page: Page, cfg: MinimumConfig) {
 test.describe('minimum order value gate', () => {
     test.skip(!process.env.ADMIN_PASS, 'ADMIN_PASS not set');
 
-    test('method shows and hides live as shipping moves the total across the minimum', async ({
+    // Skipped: the live show/hide it asserts depends on the reactive
+    // payment-availability refresh (ABN-460), which was reverted after the
+    // get-payment-information approach clobbered the quote totals. Re-enable
+    // once ABN-460 is rebuilt without that side effect and browser-verified.
+    test.skip('method shows and hides live as shipping moves the total across the minimum', async ({
         page,
         browser
     }) => {

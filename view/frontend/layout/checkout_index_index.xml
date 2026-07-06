@@ -63,17 +63,6 @@
                                 </item>
                                 <item name="sidebar" xsi:type="array">
                                     <item name="children" xsi:type="array">
-                                        <!--
-                                            Headless: re-runs server-side payment
-                                            availability when the totals change so the
-                                            method shows/hides as the basket crosses the
-                                            minimum-order threshold. Mounted here (always
-                                            present) rather than under the payment renderer,
-                                            which is absent while the method is hidden.
-                                        -->
-                                        <item name="two-payment-availability" xsi:type="array">
-                                            <item name="component" xsi:type="string">Two_Gateway/js/view/payment-availability</item>
-                                        </item>
                                         <item name="summary" xsi:type="array">
                                             <item name="children" xsi:type="array">
                                                 <item name="totals" xsi:type="array">
