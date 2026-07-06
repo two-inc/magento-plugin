@@ -29,8 +29,8 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
  * Rows come from the active brand's `<module_label_chain>` declared
  * in its `etc/brand.xml`, resolved at request time via
  * BrandRegistryInterface. Vanilla Two ships ["Payment Method" =>
- * Two_Gateway, "Hyva Extension" => Two_GatewayHyva]; ABN adds
- * "Payment Theme" / "Hyva Theme" rows. Unregistered entries (e.g.
+ * Two_Gateway, "Hyva Extension" => Two_GatewayHyva]; a partner
+ * overlay adds its own brand rows. Unregistered entries (e.g.
  * Hyva when not installed) are silently skipped.
  */
 class Version extends Field
@@ -61,8 +61,8 @@ class Version extends Field
      * @param BrandRegistryInterface $brandRegistry Source of the per-brand
      *        version-panel row chain. Each brand declares
      *        `<module_label_chain>` in its `etc/brand.xml`; the registry
-     *        exposes it via `getModuleLabelChain()`. ABN adds
-     *        "Payment Theme"/"Hyva Theme" rows; vanilla Two ships only
+     *        exposes it via `getModuleLabelChain()`. A partner overlay
+     *        adds its own brand rows; vanilla Two ships only
      *        the parent-runtime rows.
      * @param string $moduleName Primary module — used by getVersion() fallback
      *                           and for any caller still expecting a single
@@ -201,7 +201,7 @@ class Version extends Field
 
     private function readComposerVersion(string $modulePath): ?string
     {
-        // Monorepo sub-path modules (e.g. ABN_Gateway at <repo>/plugin)
+        // Monorepo sub-path modules (e.g. an overlay gateway module at <repo>/plugin)
         // keep their composer.json one level up; check both.
         foreach ([$modulePath, dirname($modulePath)] as $dir) {
             $composer = @file_get_contents($dir . '/composer.json');
