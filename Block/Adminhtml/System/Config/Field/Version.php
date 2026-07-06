@@ -267,8 +267,18 @@ class Version extends Field
      * Magento init job behaviour, which makes the realpath of
      * registration.php contain no worktree segment).
      */
-    private function extractCommit(string $modulePath): string
+    protected function extractCommit(string $modulePath): string
     {
+        // Composer-installed deploys (Packagist/dist — the current 2.0
+        // distribution model) put the module under vendor/ with NO .git
+        // worktree, so the path-based resolution below finds nothing. The
+        // installed registry records the exact source/dist commit, which is
+        // authoritative and layout-independent — prefer it.
+        $fromComposer = $this->commitFromComposer($modulePath);
+        if ($fromComposer !== null) {
+            return $fromComposer;
+        }
+
         $gitFile = $modulePath . '/.git';
         if (is_file($gitFile)) {
             // .git is always `gitdir: <relpath>\n`; cap the read defensively
@@ -288,6 +298,51 @@ class Version extends Field
             return substr($m[1], 0, 7);
         }
         return '';
+    }
+
+    /**
+     * 7-char commit SHA from Composer's installed registry, or null when the
+     * module isn't composer-installed or carries no hex source reference.
+     *
+     * Reads the package name from composer.json (checking the module dir and
+     * one level up — monorepo sub-path modules keep composer.json a level up,
+     * mirroring readComposerVersion()), then asks the installed registry for
+     * that package's source/dist reference. A path-repo or branch install may
+     * carry a non-SHA reference; the hex guard rejects those so the caller
+     * falls back to the .git/worktree resolution.
+     */
+    protected function commitFromComposer(string $modulePath): ?string
+    {
+        foreach ([$modulePath, dirname($modulePath)] as $dir) {
+            $composer = @file_get_contents($dir . '/composer.json');
+            if ($composer === false) {
+                continue;
+            }
+            $data = json_decode($composer, true);
+            $name = is_array($data) ? ($data['name'] ?? null) : null;
+            if (!is_string($name) || $name === '') {
+                continue;
+            }
+            $ref = $this->composerReference($name);
+            if (is_string($ref) && preg_match('/^[a-f0-9]{7,40}$/', $ref)) {
+                return substr($ref, 0, 7);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The installed package's source/dist reference (commit SHA), or null.
+     * Wraps the static Composer registry as an override seam for testing.
+     */
+    protected function composerReference(string $packageName): ?string
+    {
+        if (!class_exists(\Composer\InstalledVersions::class)
+            || !\Composer\InstalledVersions::isInstalled($packageName)
+        ) {
+            return null;
+        }
+        return \Composer\InstalledVersions::getReference($packageName);
     }
 
     private function getCodeTs(string $modulePath): int
