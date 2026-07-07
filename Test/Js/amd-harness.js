@@ -55,7 +55,8 @@ function defaultMocks() {
             shippingAddress: makeObservable({}),
             billingAddress: makeObservable({}),
             getTotals: function () { return makeObservable({}); },
-            getQuoteId: function () { return null; }
+            getQuoteId: function () { return null; },
+            paymentMethod: makeObservable(null)
         },
         'Magento_Customer/js/customer-data': {
             get: function () { return makeObservable({}); },

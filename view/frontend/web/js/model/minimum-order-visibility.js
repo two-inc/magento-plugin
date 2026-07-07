@@ -27,7 +27,11 @@ define([], function () {
         if (!minimums || !minimums.length) {
             return true;
         }
-        if (!totals) {
+        // Missing totals, or a totals object collected before grand_total is
+        // populated (Magento's observable initialises to {} before totals
+        // arrive): treat as data-not-ready and stay visible — never hide on
+        // missing data. A real grand_total of 0 IS data and is compared.
+        if (!totals || totals.grand_total === undefined || totals.grand_total === null) {
             return true;
         }
         var grand = parseFloat(totals.grand_total) || 0;

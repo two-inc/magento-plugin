@@ -119,13 +119,34 @@ define([
             // display currency; we only compare against the live quote total.
             // Hides the method below the minimum (the case the server can miss
             // on Amasty, where shipping isn't persisted until place-order); on
-            // Amasty isAvailable offers the method unconditionally, so this also
-            // drives showing it once the total clears the minimum. Server
-            // isAvailable + place-order + the Two API remain the enforcers —
-            // this is display only. No minimums → always visible.
+            // an Amasty store view isAvailable offers the method
+            // unconditionally, so this also drives showing it once the total
+            // clears the minimum. config.minimumOrderUnresolved is set when the
+            // server has an active minimum it could NOT convert to the display
+            // currency (missing FX rate) → hide, mirroring the server gate's
+            // fail-closed stance rather than failing open. Enforcement itself is
+            // server-side (isAvailable on non-Amasty; authorize() + the Two API
+            // at placement on Amasty) — this is display only. No minimums and
+            // nothing unresolved → always visible. pureComputed so it sleeps
+            // when the renderer is unbound (Amasty re-renders the method list).
+            var self = this;
             var minimums = config.minimumOrder || [];
-            this.isTwoVisible = ko.computed(function () {
-                return isAboveMinimums(quote.getTotals()(), minimums);
+            var minimumsUnresolved = !!config.minimumOrderUnresolved;
+            this.isTwoVisible = ko.pureComputed(function () {
+                return !minimumsUnresolved && isAboveMinimums(quote.getTotals()(), minimums);
+            });
+            // Hiding the radio is not enough on Amasty, whose global place-order
+            // button lives outside this renderer: if the total drops below the
+            // minimum while Two is the selected method (e.g. a cheaper shipping
+            // rate picked after selection), deselect it so a hidden method can
+            // never be the one submitted. authorize() is the server backstop;
+            // this is the earlier, cleaner client stop. Subscription disposed
+            // in dispose() so re-renders don't leak it.
+            this._twoVisibilitySub = this.isTwoVisible.subscribe(function (visible) {
+                var selected = quote.paymentMethod();
+                if (!visible && selected && selected.method === self.getCode()) {
+                    quote.paymentMethod(null);
+                }
             });
 
             var terms = config.availableBuyerTerms || [];
@@ -180,6 +201,21 @@ define([
             this.configureFormValidation();
             this.popupMessageListener();
             return this;
+        },
+        /**
+         * Tear down the minimum-order visibility subscription and computed so a
+         * re-rendered method list (Amasty rebuilds it on shipping/total change)
+         * doesn't accumulate live subscriptions to the singleton quote totals.
+         */
+        dispose: function () {
+            if (this._twoVisibilitySub) {
+                this._twoVisibilitySub.dispose();
+                this._twoVisibilitySub = null;
+            }
+            if (this.isTwoVisible && this.isTwoVisible.dispose) {
+                this.isTwoVisible.dispose();
+            }
+            this._super();
         },
         selectTerm: function (days) {
             surchargeModel.selectTerm(days);

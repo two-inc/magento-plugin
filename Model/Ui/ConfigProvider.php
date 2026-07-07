@@ -118,6 +118,7 @@ class ConfigProvider implements ConfigProviderInterface
         $paymentTerms = __("payment terms");
         $brandParams = $this->buildBrandQueryString();
         $paymentTermsLink = $this->configRepository->getCheckoutPageUrl() . '/terms' . $brandParams;
+        $minimumOrder = $this->two->getMinimumOrderVisibility($this->checkoutSession->getQuote());
 
         return [
             'payment' => [
@@ -147,7 +148,12 @@ class ConfigProvider implements ConfigProviderInterface
                     // currency, for the renderer's client-side visibility gate
                     // (hide below min; on Amasty, where isAvailable offers the
                     // method unconditionally, this also drives showing above it).
-                    'minimumOrder' => $this->two->getDisplayMinimums($this->checkoutSession->getQuote()),
+                    // minimumOrderUnresolved is true when an active minimum could
+                    // not be projected into the display currency (missing FX
+                    // rate) → the renderer hides, matching the server gate's
+                    // fail-closed stance rather than failing open.
+                    'minimumOrder' => $minimumOrder['minimums'],
+                    'minimumOrderUnresolved' => $minimumOrder['unresolved'],
                     'subtitleHtml' => $this->getSubtitleHtml(),
                     'surchargeDescription' => $this->configRepository->getSurchargeLineDescription(),
                     'isPaymentTermsEnabled' => true,

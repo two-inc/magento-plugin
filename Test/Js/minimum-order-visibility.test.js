@@ -36,6 +36,16 @@ describe('Two_Gateway/js/model/minimum-order-visibility', () => {
         expect(isAboveMinimums(null, [{ amount: 250, basis: 'gross' }])).toBe(true);
     });
 
+    it('is visible when totals are collected but grand_total not yet populated', () => {
+        // Magento's quote.getTotals() observable initialises to {} before
+        // totals arrive — data-not-ready, must stay visible, not hide as €0.
+        expect(isAboveMinimums({}, [{ amount: 250, basis: 'gross' }])).toBe(true);
+    });
+
+    it('hides a real zero-total order below the minimum (0 IS data)', () => {
+        expect(isAboveMinimums({ grand_total: '0' }, [{ amount: 250, basis: 'gross' }])).toBe(false);
+    });
+
     it('gross basis compares the grand total', () => {
         const min = [{ amount: 250, basis: 'gross' }];
         expect(isAboveMinimums({ grand_total: '273.00', tax_amount: '45' }, min)).toBe(true);
