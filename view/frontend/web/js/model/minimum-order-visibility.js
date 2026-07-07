@@ -7,7 +7,7 @@
  * Client-side minimum-order visibility test for the Two payment method.
  *
  * `minimums` are the server-resolved constraints (`{amount, basis}`) already
- * projected into the quote's display currency by Model\Two::getDisplayMinimums
+ * projected into the quote's display currency by Model\Two::getMinimumOrderVisibility
  * — so this only compares, it does not re-derive the rule or do any FX. The
  * method is visible only when the live quote total satisfies EVERY minimum on
  * its declared basis (net = grand total − tax, gross = grand total).

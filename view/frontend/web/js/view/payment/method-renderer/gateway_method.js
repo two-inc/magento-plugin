@@ -127,8 +127,10 @@ define([
             // fail-closed stance rather than failing open. Enforcement itself is
             // server-side (isAvailable on non-Amasty; authorize() + the Two API
             // at placement on Amasty) — this is display only. No minimums and
-            // nothing unresolved → always visible. pureComputed so it sleeps
-            // when the renderer is unbound (Amasty re-renders the method list).
+            // nothing unresolved → always visible. pureComputed + the explicit
+            // dispose() teardown below are what release the totals dependency
+            // when the renderer is destroyed (the deselect subscription keeps
+            // the computed awake, so we rely on dispose(), not auto-sleep).
             var self = this;
             var minimums = config.minimumOrder || [];
             var minimumsUnresolved = !!config.minimumOrderUnresolved;

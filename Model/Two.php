@@ -811,7 +811,10 @@ class Two extends AbstractMethod
         $baseCurrency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
         $displayCurrency = (string)($quote->getQuoteCurrencyCode() ?: $baseCurrency);
         if ($displayCurrency === '') {
-            return $empty;
+            // A real quote whose currency cannot be resolved: fail closed
+            // (hide), matching MinimumOrderGate's stance on an empty quote
+            // currency, rather than showing the method for want of a currency.
+            return ['minimums' => [], 'unresolved' => true];
         }
 
         $minimums = [];
@@ -891,19 +894,26 @@ class Two extends AbstractMethod
             if ($minimum === null) {
                 continue;
             }
-            $orderValue = $minimum['basis'] === 'gross'
+            // Project the minimum into the order currency once, then compare —
+            // the same projection the client-display gate uses, so enforce and
+            // display cannot disagree. A null projection means an active minimum
+            // we cannot convert (missing FX rate): fail CLOSED and reject, never
+            // delegate to the fail-soft isBelowMinimum(), which would let a
+            // below-minimum order through on the one path (Amasty + JS bypass)
+            // where this is the sole merchant-minimum enforcer.
+            $display = $this->minimumOrderGate->getMinimumForDisplay($minimum, $orderCurrency, $storeId);
+            if ($display === null) {
+                throw new LocalizedException(
+                    __('Invoice purchase with %1 is not available for this order.', $this->brandRegistry->getProductName())
+                );
+            }
+            $orderValue = $display['basis'] === 'gross'
                 ? (float)$order->getGrandTotal()
                 : (float)$order->getGrandTotal() - (float)$order->getTaxAmount();
-            if (!$this->minimumOrderGate->isBelowMinimum($minimum, $orderValue, $orderCurrency, $storeId)) {
-                continue;
-            }
-            $display = $this->minimumOrderGate->getMinimumForDisplay($minimum, $orderCurrency, $storeId);
-            if ($display !== null) {
+            // +epsilon mirrors the gate/client >= at currency precision.
+            if ($orderValue + 0.0001 < $display['amount']) {
                 throw new LocalizedException($this->minimumOrderMessage($display, $order));
             }
-            throw new LocalizedException(
-                __('Invoice purchase with %1 is not available for this order.', $this->brandRegistry->getProductName())
-            );
         }
     }
 
