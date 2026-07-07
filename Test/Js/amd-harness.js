@@ -55,7 +55,8 @@ function defaultMocks() {
             shippingAddress: makeObservable({}),
             billingAddress: makeObservable({}),
             getTotals: function () { return makeObservable({}); },
-            getQuoteId: function () { return null; }
+            getQuoteId: function () { return null; },
+            paymentMethod: makeObservable(null)
         },
         'Magento_Customer/js/customer-data': {
             get: function () { return makeObservable({}); },
@@ -104,6 +105,7 @@ function defaultMocks() {
         },
         'Magento_Catalog/js/price-utils': { formatPrice: function (n) { return String(n); } },
         'Two_Gateway/js/model/surcharge': makeSurchargeMock(),
+        'Two_Gateway/js/model/minimum-order-visibility': function () { return true; },
         'Two_Gateway/js/model/brand-config': (function () {
             function getBrandConfig(code) {
                 return ((typeof window !== 'undefined' && window.checkoutConfig && window.checkoutConfig.payment) || {})[code] || {};

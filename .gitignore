@@ -34,3 +34,4 @@ plans/
 node_modules/
 
 .worktrees/
+.review/

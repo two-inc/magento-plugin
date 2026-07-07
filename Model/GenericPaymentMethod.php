@@ -9,6 +9,7 @@ namespace Two\Gateway\Model;
 
 use Magento\Framework\Api\AttributeValueFactory;
 use Magento\Framework\Api\ExtensionAttributesFactory;
+use Magento\Config\Model\ResourceModel\Config\Data\CollectionFactory as ConfigDataCollectionFactory;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Data\Collection\AbstractDb;
@@ -85,6 +86,7 @@ class GenericPaymentMethod extends Two
         LogRepository $logRepository,
         MinimumOrderGate $minimumOrderGate,
         MinimumOrderProvider $minimumOrderProvider,
+        ConfigDataCollectionFactory $configDataCollectionFactory,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -111,6 +113,7 @@ class GenericPaymentMethod extends Two
             $logRepository,
             $minimumOrderGate,
             $minimumOrderProvider,
+            $configDataCollectionFactory,
             $resource,
             $resourceCollection,
             $data
