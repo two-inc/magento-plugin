@@ -766,24 +766,9 @@ class Two extends AbstractMethod
             return true;
         }
         $platformMinimum = $this->minimumOrderProvider->getMinimum($storeId);
-        $merchantMinimum = null;
-        if ($quote instanceof \Magento\Quote\Model\Quote) {
-            $merchantValue = (float)$this->getConfigData('merchant_minimum_order');
-            if ($merchantValue > 0) {
-                $store = $quote->getStore();
-                $currency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
-                if ($currency !== '') {
-                    $merchantBasis = (string)$this->getConfigData('merchant_minimum_order_basis');
-                    $merchantMinimum = [
-                        'amount' => $merchantValue,
-                        'currency' => $currency,
-                        'basis' => in_array($merchantBasis, ['net', 'gross'], true)
-                            ? $merchantBasis
-                            : ($platformMinimum['basis'] ?? 'gross'),
-                    ];
-                }
-            }
-        }
+        $merchantMinimum = $quote instanceof \Magento\Quote\Model\Quote
+            ? $this->buildMerchantMinimum($quote, $platformMinimum)
+            : null;
         return $this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum);
     }
 
@@ -818,25 +803,48 @@ class Two extends AbstractMethod
             }
         }
 
-        $merchantValue = (float)$this->getConfigData('merchant_minimum_order');
-        if ($merchantValue > 0 && $store !== null && (string)$store->getBaseCurrencyCode() !== '') {
-            $merchantBasis = (string)$this->getConfigData('merchant_minimum_order_basis');
-            $shown = $this->minimumOrderGate->getMinimumForDisplay(
-                [
-                    'amount' => $merchantValue,
-                    'currency' => (string)$store->getBaseCurrencyCode(),
-                    'basis' => in_array($merchantBasis, ['net', 'gross'], true)
-                        ? $merchantBasis
-                        : ($platform['basis'] ?? 'gross'),
-                ],
-                $displayCurrency,
-                $storeId
-            );
+        $merchant = $this->buildMerchantMinimum($quote, $platform);
+        if ($merchant !== null) {
+            $shown = $this->minimumOrderGate->getMinimumForDisplay($merchant, $displayCurrency, $storeId);
             if ($shown !== null) {
                 $out[] = $shown;
             }
         }
 
         return $out;
+    }
+
+    /**
+     * The merchant's own optional minimum-order tuple for a quote, or null when
+     * unset (<= 0) or the store base currency is unresolvable. Single source of
+     * truth shared by isAvailable()'s server gate and getDisplayMinimums()'s
+     * client-display projection: the two MUST agree on the constraint, so the
+     * construction lives in exactly one place. Amount is in the store BASE
+     * currency (validated on save to meet/exceed the platform floor); basis
+     * falls back to the platform minimum's basis, then 'gross', when the admin
+     * value is neither 'net' nor 'gross'.
+     *
+     * @param array<string, mixed>|null $platform Platform minimum, for basis fallback only.
+     * @return array{amount: float, currency: string, basis: string}|null
+     */
+    private function buildMerchantMinimum(\Magento\Quote\Model\Quote $quote, ?array $platform): ?array
+    {
+        $merchantValue = (float)$this->getConfigData('merchant_minimum_order');
+        if ($merchantValue <= 0) {
+            return null;
+        }
+        $store = $quote->getStore();
+        $currency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
+        if ($currency === '') {
+            return null;
+        }
+        $merchantBasis = (string)$this->getConfigData('merchant_minimum_order_basis');
+        return [
+            'amount' => $merchantValue,
+            'currency' => $currency,
+            'basis' => in_array($merchantBasis, ['net', 'gross'], true)
+                ? $merchantBasis
+                : ($platform['basis'] ?? 'gross'),
+        ];
     }
 }
