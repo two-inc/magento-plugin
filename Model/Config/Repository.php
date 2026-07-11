@@ -567,6 +567,21 @@ class Repository implements RepositoryInterface
     }
 
     /**
+     * @inheritDoc
+     */
+    public function getSurchargeTaxClassId(?int $storeId = null): ?int
+    {
+        $configured = $this->getConfig($this->path('surcharge_tax_class'), $storeId);
+        // Unset, or the source model's explicit legacy option (''),
+        // means flat-rate fallback — upgrading merchants who never touch
+        // the new field keep their existing behaviour.
+        if ($configured === null || $configured === '') {
+            return null;
+        }
+        return (int)$configured;
+    }
+
+    /**
      * Look up the store's default tax rate from Magento's tax rules.
      *
      * @param int|null $storeId

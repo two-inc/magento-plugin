@@ -204,9 +204,17 @@
                     <config_path>payment/two_payment/surcharge_line_description</config_path>
                 </field>
 
+                <field id="surcharge_tax_class" translate="label comment" type="select" sortOrder="80"
+                       showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Surcharge Tax Class</label>
+                    <comment><![CDATA[Product Tax Class applied to the surcharge. When a class is selected, surcharge tax is resolved through Magento's Tax Rules (destination-aware, supports combined rates such as US state + local); <strong>None</strong> means the surcharge is never taxed. The default keeps using the legacy flat Surcharge Tax Rate below.]]></comment>
+                    <source_model>Two\Gateway\Model\Config\Source\SurchargeTaxClass</source_model>
+                    <config_path>payment/two_payment/surcharge_tax_class</config_path>
+                </field>
                 <field id="surcharge_tax_rate" translate="label comment" type="text" sortOrder="90" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Surcharge Tax Rate (%)</label>
+                    <comment>Legacy flat tax rate. Only used when Surcharge Tax Class above is set to the legacy option.</comment>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeTaxRate</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\LocaleDecimal</backend_model>
                     <validate>validate-zero-or-greater</validate>

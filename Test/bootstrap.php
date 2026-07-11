@@ -79,6 +79,22 @@ if (!interface_exists(\Magento\Framework\App\CacheInterface::class, false)) {
 if (!class_exists(\Magento\Framework\Serialize\Serializer\Json::class, false)) {
     require_once __DIR__ . '/Stubs/JsonSerializer.php';
 }
+// Tax rules engine API surface (TaxCalculationInterface, QuoteDetails*
+// data objects and their factories) with real signatures — required so
+// SurchargeTaxCalculator tests get functioning factories/data bags
+// instead of empty catch-all stubs. NoSuchEntityException must extend
+// LocalizedException/\Exception to be throwable, so this loads after
+// the LocalizedException stub above.
+if (!interface_exists(\Magento\Tax\Api\TaxCalculationInterface::class, false)) {
+    require_once __DIR__ . '/Stubs/LocalizedException.php';
+    require_once __DIR__ . '/Stubs/TaxEngine.php';
+}
+// Quote total-collection surface (AbstractTotal with typed collect()
+// signature, Total data bag, checkout Session magic bag) — required so
+// Model\Total\Surcharge can be instantiated and collected in tests.
+if (!class_exists(\Magento\Quote\Model\Quote\Address\Total::class, false)) {
+    require_once __DIR__ . '/Stubs/QuoteTotals.php';
+}
 
 // Catch-all autoloader for remaining Magento classes/interfaces.
 // Creates empty stubs so that type hints, extends, and implements resolve.
