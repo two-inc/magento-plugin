@@ -336,6 +336,33 @@ class RepositoryPaymentTermsTest extends TestCase
         $this->assertEquals(0.0, $this->repository->getSurchargeTaxRate());
     }
 
+    // ── getSurchargeTaxClassId ──────────────────────────────────────
+
+    public function testGetSurchargeTaxClassIdReturnsConfiguredClass(): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_tax_class' => '4']);
+        $this->assertSame(4, $this->repository->getSurchargeTaxClassId());
+    }
+
+    public function testGetSurchargeTaxClassIdZeroIsValidNoneSelection(): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_tax_class' => '0']);
+        $this->assertSame(0, $this->repository->getSurchargeTaxClassId());
+    }
+
+    public function testGetSurchargeTaxClassIdNullWhenUnset(): void
+    {
+        $this->stubConfig([]);
+        $this->assertNull($this->repository->getSurchargeTaxClassId());
+    }
+
+    public function testGetSurchargeTaxClassIdNullOnExplicitLegacySelection(): void
+    {
+        // The source model's legacy option saves an empty string.
+        $this->stubConfig(['payment/two_payment/surcharge_tax_class' => '']);
+        $this->assertNull($this->repository->getSurchargeTaxClassId());
+    }
+
     // ── getSurchargeConfig ──────────────────────────────────────────
 
     public function testGetSurchargeConfigReturnsPerTermValues(): void

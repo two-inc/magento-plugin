@@ -45,6 +45,7 @@ interface RepositoryInterface
     public const XML_PATH_SURCHARGE_DIFFERENTIAL = 'payment/two_payment/surcharge_differential';
     public const XML_PATH_SURCHARGE_LINE_DESCRIPTION = 'payment/two_payment/surcharge_line_description';
     public const XML_PATH_SURCHARGE_TAX_RATE = 'payment/two_payment/surcharge_tax_rate';
+    public const XML_PATH_SURCHARGE_TAX_CLASS_ID = 'payment/two_payment/surcharge_tax_class';
     public const XML_PATH_SURCHARGE_FIXED_CURRENCY = 'payment/two_payment/surcharge_fixed_currency';
     public const XML_PATH_DEFAULT_PRODUCT_TAX_CLASS = 'tax/classes/default_product_tax_class';
     public const XML_PATH_VERSION = 'payment/two_payment/version';
@@ -343,6 +344,24 @@ interface RepositoryInterface
      * @return float
      */
     public function getSurchargeTaxRate(?int $storeId = null): float;
+
+    /**
+     * Get the Product Tax Class id used to tax the surcharge via
+     * Magento's tax rules engine (destination-aware, rule-driven,
+     * additive multi-rate).
+     *
+     * Returns null when the merchant has not opted into engine-driven
+     * surcharge tax (config unset, or explicitly set to the legacy
+     * flat-rate option) — callers must then fall back to
+     * getSurchargeTaxRate(). A value of 0 is a valid selection
+     * ("None"): no tax rule can match class id 0, so the surcharge is
+     * untaxed everywhere.
+     *
+     * @param int|null $storeId
+     *
+     * @return int|null
+     */
+    public function getSurchargeTaxClassId(?int $storeId = null): ?int;
 
     /**
      * Get surcharge config for a specific term
