@@ -48,12 +48,16 @@ class SurchargeTaxCalculatorTest extends TestCase
     /** @var \Magento\Tax\Api\Data\QuoteDetailsInterface[] QuoteDetails captured per calculateTax() call */
     private $capturedQuoteDetails = [];
 
+    /** @var bool[] $round argument captured per calculateTax() call */
+    private $capturedRoundArgs = [];
+
     protected function setUp(): void
     {
         $this->taxCalculation = $this->createMock(TaxCalculationInterface::class);
         $this->taxClassRepository = $this->createMock(TaxClassRepositoryInterface::class);
         $this->log = $this->createMock(LogRepository::class);
         $this->capturedQuoteDetails = [];
+        $this->capturedRoundArgs = [];
 
         $this->calculator = new SurchargeTaxCalculator(
             $this->taxCalculation,
@@ -76,8 +80,9 @@ class SurchargeTaxCalculatorTest extends TestCase
     private function stubEngineRate(float $ratePercent): void
     {
         $this->taxCalculation->method('calculateTax')->willReturnCallback(
-            function ($quoteDetails) use ($ratePercent) {
+            function ($quoteDetails, $storeId = null, $round = true) use ($ratePercent) {
                 $this->capturedQuoteDetails[] = $quoteDetails;
+                $this->capturedRoundArgs[] = $round;
                 $item = $quoteDetails->getItems()[0];
                 $rowTax = (float)$item->getUnitPrice() * (float)$item->getQuantity() * $ratePercent / 100;
                 $detailsItem = new TaxDetailsItem([
@@ -225,6 +230,7 @@ class SurchargeTaxCalculatorTest extends TestCase
     public function testNoMatchingRuleYieldsZeroTax(): void
     {
         $this->stubEngineRate(0.0);
+        $this->stubRegularTaxClass();
 
         $result = $this->calculator->calculateForQuote(
             $this->makeQuote($this->usAddress()),
@@ -247,6 +253,9 @@ class SurchargeTaxCalculatorTest extends TestCase
         // The provisioned class ships with no Tax Rule attached, so the
         // engine resolves nothing regardless of destination.
         $this->stubEngineRate(0.0);
+        $this->taxClassRepository->method('get')->with(99)->willReturn(
+            new TaxClass(['className' => SurchargeTaxCalculator::NO_TAX_CLASS_NAME])
+        );
         $this->log->expects($this->never())->method('addErrorLog');
 
         $result = $this->calculator->calculateForQuote(
@@ -322,5 +331,139 @@ class SurchargeTaxCalculatorTest extends TestCase
         );
 
         $this->assertEqualsWithDelta(10.0, $result['tax_amount'], 1e-9);
+    }
+
+    public function testDeletedConfiguredClassLogsErrorEvenWhenTaxIsZero(): void
+    {
+        // The realistic deleted-class case: Magento cascades the class's
+        // Tax Calculation rules away, so the engine resolves ZERO tax.
+        // The existence check must run unconditionally — gating it on
+        // tax_amount > 0 would make the merchant silently stop
+        // collecting surcharge tax with no log signal.
+        $this->stubEngineRate(0.0);
+        $this->taxClassRepository->method('get')->willThrowException(new NoSuchEntityException());
+        $this->log->expects($this->once())->method('addErrorLog')
+            ->with($this->stringContains('no longer exists'), $this->anything());
+
+        $result = $this->calculator->calculateForQuote(
+            $this->makeQuote($this->usAddress()),
+            $this->makeShippingAssignment($this->usAddress()),
+            100.0,
+            100.0,
+            7,
+            1
+        );
+
+        // Zero result is still returned (checkout not blocked) — the
+        // error log is the signal.
+        $this->assertSame(0.0, $result['tax_amount']);
+        $this->assertSame(0.0, $result['base_tax_amount']);
+    }
+
+    // ── engine returns no item for our code (never silently zero) ───
+
+    public function testEngineResponseWithoutSurchargeItemThrows(): void
+    {
+        // Empty item set — e.g. a third-party TaxCalculationInterface
+        // override (Avalara/TaxJar style) dropping unknown item types.
+        // Must throw, NOT return a valid-looking zero: indistinguishable
+        // from a legitimate zero-rate destination match otherwise.
+        $this->taxCalculation->method('calculateTax')->willReturn(
+            new TaxDetails(['items' => []])
+        );
+        $this->stubRegularTaxClass();
+
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+
+        $this->calculator->calculateForQuote(
+            $this->makeQuote($this->usAddress()),
+            $this->makeShippingAssignment($this->usAddress()),
+            100.0,
+            100.0,
+            4,
+            1
+        );
+    }
+
+    public function testEngineResponseWithMismatchedItemCodeThrows(): void
+    {
+        $this->taxCalculation->method('calculateTax')->willReturn(
+            new TaxDetails(['items' => [
+                'shipping' => new TaxDetailsItem(['code' => 'shipping', 'rowTax' => 5.0, 'taxPercent' => 5.0]),
+            ]])
+        );
+        $this->stubRegularTaxClass();
+
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+
+        $this->calculator->calculateForQuote(
+            $this->makeQuote($this->usAddress()),
+            $this->makeShippingAssignment($this->usAddress()),
+            100.0,
+            100.0,
+            4,
+            1
+        );
+    }
+
+    public function testBaseCurrencyPassMissingItemThrowsDespiteQuotePassSucceeding(): void
+    {
+        // Currency-pair consistency: each pass is checked independently.
+        // Quote pass resolves, base pass returns an empty set — without
+        // the per-pass check this would produce a mismatched order
+        // (tax_amount nonzero, base_tax_amount zero).
+        $call = 0;
+        $this->taxCalculation->method('calculateTax')->willReturnCallback(
+            function ($quoteDetails) use (&$call) {
+                $call++;
+                if ($call === 1) {
+                    $item = $quoteDetails->getItems()[0];
+                    return new TaxDetails(['items' => [
+                        $item->getCode() => new TaxDetailsItem([
+                            'code' => $item->getCode(),
+                            'rowTax' => 7.25,
+                            'taxPercent' => 7.25,
+                        ]),
+                    ]]);
+                }
+                return new TaxDetails(['items' => []]);
+            }
+        );
+        $this->stubRegularTaxClass();
+
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+
+        $this->calculator->calculateForQuote(
+            $this->makeQuote($this->usAddress()),
+            $this->makeShippingAssignment($this->usAddress()),
+            100.0,
+            80.0,
+            4,
+            1
+        );
+    }
+
+    // ── rounding flag mirrors core ──────────────────────────────────
+
+    public function testCalculateTaxIsCalledWithRoundTrueForBothPasses(): void
+    {
+        // Core's Tax::getQuoteTaxDetails() always calls calculateTax()
+        // with the default $round=true for both the quote-currency and
+        // base-currency passes — the surcharge must get identical
+        // per-rate rounding treatment in additive multi-rate
+        // jurisdictions (US state+local, CA GST+PST).
+        $this->stubEngineRate(7.25);
+        $this->stubRegularTaxClass();
+
+        $this->calculator->calculateForQuote(
+            $this->makeQuote($this->usAddress()),
+            $this->makeShippingAssignment($this->usAddress()),
+            100.0,
+            80.0,
+            4,
+            1
+        );
+
+        $this->assertSame([true, true], $this->capturedRoundArgs);
     }
 }
