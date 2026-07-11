@@ -141,6 +141,16 @@ class SurchargeTaxCalculatorTest extends TestCase
         };
     }
 
+    private function makeNullShippingAssignment(): ShippingAssignmentInterface
+    {
+        return new class implements ShippingAssignmentInterface {
+            public function getShipping()
+            {
+                return null;
+            }
+        };
+    }
+
     private function stubRegularTaxClass(): void
     {
         $this->taxClassRepository->method('get')->willReturn(
@@ -223,6 +233,30 @@ class SurchargeTaxCalculatorTest extends TestCase
         $this->assertSame(TaxClassKeyInterface::TYPE_ID, $details->getCustomerTaxClassKey()->getType());
         $this->assertSame(3, $details->getCustomerTaxClassKey()->getValue());
         $this->assertSame(42, $details->getCustomerId());
+    }
+
+    // ── virtual-only quote: no shipping on the assignment ───────────
+
+    public function testNullShippingOnAssignmentDegradesToNullShippingAddress(): void
+    {
+        // A virtual-item-only quote can carry a shipping assignment whose
+        // getShipping() is null; the calculator must not fatal on it and
+        // must submit a null shipping address (mapAddress()'s absent-address
+        // path) so the engine falls back to its default rate resolution.
+        $this->stubEngineRate(0.0);
+        $this->stubRegularTaxClass();
+
+        $result = $this->calculator->calculateForQuote(
+            $this->makeQuote($this->usAddress()),
+            $this->makeNullShippingAssignment(),
+            100.0,
+            100.0,
+            4,
+            1
+        );
+
+        $this->assertNull($this->capturedQuoteDetails[0]->getShippingAddress());
+        $this->assertEqualsWithDelta(0.0, $result['tax_amount'], 1e-9);
     }
 
     // ── no matching tax rule for the destination ────────────────────

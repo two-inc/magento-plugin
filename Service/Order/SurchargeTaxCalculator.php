@@ -243,7 +243,8 @@ class SurchargeTaxCalculator
                     ->setValue($taxClassId)
             );
 
-        $shippingAddress = $shippingAssignment->getShipping()->getAddress();
+        $shipping = $shippingAssignment->getShipping();
+        $shippingAddress = $shipping !== null ? $shipping->getAddress() : null;
 
         $quoteDetails = $this->quoteDetailsFactory->create();
         $quoteDetails->setBillingAddress($this->mapAddress($quote->getBillingAddress()));
