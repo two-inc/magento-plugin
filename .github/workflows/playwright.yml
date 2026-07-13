@@ -45,7 +45,7 @@ jobs:
       run:
         working-directory: e2e
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Dedicated e2e WIF service account (set as repo vars once provisioned).
       # Runs only on trusted events (same-repo PRs / push / dispatch): fork PRs
@@ -61,7 +61,7 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v3
         if: ${{ vars.E2E_SA != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "20"
       - run: npm ci
@@ -101,7 +101,7 @@ jobs:
           else
             npx playwright test
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: screenshots
