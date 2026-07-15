@@ -187,14 +187,25 @@ class MinimumOrderGate
 
     /**
      * The minimum expressed in $currency for buyer-facing display,
-     * or null when no minimum exists / no rate is available.
+     * or null when no minimum exists / no rate is available. This
+     * projection sits on the enforcement paths too — the client
+     * visibility gate and the placement backstop both apply the split
+     * fail policy to a null — so the unconvertible case is logged
+     * through the same channel as satisfiesMinimum(): a fail-closed
+     * null must be visible in the monitored error log, never silent.
      *
+     * @param array{amount: float, currency: string, basis: string}|null $minimumOrder
+     * @param bool $failClosedOnUnconvertible whether the caller treats an
+     *             unconvertible minimum as blocking (platform floor) or
+     *             skips it (merchant's own extra minimum). Controls the
+     *             log channel only; the return value is null either way.
      * @return array{amount: float, basis: string}|null
      */
     public function getMinimumForDisplay(
         ?array $minimumOrder,
         string $currency,
-        ?int $storeId
+        ?int $storeId,
+        bool $failClosedOnUnconvertible
     ): ?array {
         if ($minimumOrder === null) {
             return null;
@@ -202,7 +213,12 @@ class MinimumOrderGate
         $amount = $minimumOrder['amount'];
         if ($currency !== $minimumOrder['currency']) {
             $rate = $this->ratesProvider->getRate($minimumOrder['currency'], $currency, $storeId);
-            if ($rate === null || $rate <= 0) {
+            if ($rate === null || $rate <= 0 || !is_finite($rate)) {
+                $this->handleUnconvertible(
+                    $minimumOrder['currency'],
+                    $currency === '' ? '(unresolved)' : $currency,
+                    $failClosedOnUnconvertible
+                );
                 return null;
             }
             $amount = round($amount * $rate, 2);
@@ -211,11 +227,13 @@ class MinimumOrderGate
     }
 
     /**
-     * Log an unconvertible basket-to-minimum comparison and return the
-     * satisfiesMinimum() outcome for it: false (blocked) when failing
-     * closed, true (treated as satisfied) when failing open. Fail-closed
-     * hides the method — a revenue stop — so it lands in the monitored
-     * error log; fail-open hides nothing and logs at debug level.
+     * Log an unconvertible currency conversion (basket-to-minimum in
+     * satisfiesMinimum(), minimum-to-display in getMinimumForDisplay())
+     * and return the satisfiesMinimum() outcome for it: false (blocked)
+     * when failing closed, true (treated as satisfied) when failing
+     * open. Fail-closed hides the method or rejects the order — a
+     * revenue stop — so it lands in the monitored error log; fail-open
+     * blocks nothing and logs at debug level.
      */
     private function handleUnconvertible(string $from, string $to, bool $failClosedOnUnconvertible): bool
     {
@@ -224,12 +242,14 @@ class MinimumOrderGate
             $this->reportedPairs[$pair] = true;
             if ($failClosedOnUnconvertible) {
                 $this->logRepository->addErrorLog(
-                    'MinimumOrderGate: cannot convert basket to minimum currency, hiding payment method',
+                    'MinimumOrderGate: cannot convert platform minimum for comparison, '
+                        . 'failing closed (method hidden or order rejected)',
                     ['from' => $from, 'to' => $to]
                 );
             } else {
                 $this->logRepository->addDebugLog(
-                    'MinimumOrderGate: cannot convert basket to merchant minimum currency, skipping merchant minimum',
+                    'MinimumOrderGate: cannot convert merchant minimum for comparison, '
+                        . 'failing open (merchant minimum skipped)',
                     ['from' => $from, 'to' => $to]
                 );
             }

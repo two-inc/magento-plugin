@@ -284,7 +284,14 @@ class Two extends AbstractMethod
                 );
             }
             if ($declinedOnMinimum && $minimumOrder !== null) {
-                $display = $this->minimumOrderGate->getMinimumForDisplay($minimumOrder, $orderCurrency, $storeId);
+                // Display-only decline hint: an unconvertible rate just falls
+                // back to the generic message, so log fail-open (debug).
+                $display = $this->minimumOrderGate->getMinimumForDisplay(
+                    $minimumOrder,
+                    $orderCurrency,
+                    $storeId,
+                    failClosedOnUnconvertible: false
+                );
                 if ($display !== null) {
                     throw new LocalizedException($this->minimumOrderMessage($display, $order));
                 }
@@ -812,19 +819,23 @@ class Two extends AbstractMethod
         $storeId = $quote->getStoreId() !== null ? (int)$quote->getStoreId() : null;
         $store = $quote->getStore();
         $baseCurrency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
+        // An unresolvable display currency ('') is NOT short-circuited: it
+        // flows into each per-minimum projection below, exactly like
+        // assertOrderMeetsMinimum(), so the split fail policy applies —
+        // an active platform floor fails closed (unresolved = hide), while
+        // a merchant minimum alone fails open (method stays visible).
         $displayCurrency = (string)($quote->getQuoteCurrencyCode() ?: $baseCurrency);
-        if ($displayCurrency === '') {
-            // A real quote whose currency cannot be resolved: fail closed
-            // (hide), matching MinimumOrderGate's stance on an empty quote
-            // currency, rather than showing the method for want of a currency.
-            return ['minimums' => [], 'unresolved' => true];
-        }
 
         $minimums = [];
         $unresolved = false;
         $platform = $this->minimumOrderProvider->getMinimum($storeId);
         if ($platform !== null) {
-            $shown = $this->minimumOrderGate->getMinimumForDisplay($platform, $displayCurrency, $storeId);
+            $shown = $this->minimumOrderGate->getMinimumForDisplay(
+                $platform,
+                $displayCurrency,
+                $storeId,
+                failClosedOnUnconvertible: true
+            );
             if ($shown === null) {
                 // Unprojectable platform floor: fail closed (hide the method).
                 $unresolved = true;
@@ -834,7 +845,12 @@ class Two extends AbstractMethod
         }
         $merchant = $this->buildMerchantMinimum($baseCurrency, $platform, $storeId);
         if ($merchant !== null) {
-            $shown = $this->minimumOrderGate->getMinimumForDisplay($merchant, $displayCurrency, $storeId);
+            $shown = $this->minimumOrderGate->getMinimumForDisplay(
+                $merchant,
+                $displayCurrency,
+                $storeId,
+                failClosedOnUnconvertible: false
+            );
             if ($shown !== null) {
                 $minimums[] = $shown;
             }
@@ -914,7 +930,12 @@ class Two extends AbstractMethod
         $displays = [];
         $platform = $this->minimumOrderProvider->getMinimum($storeId);
         if ($platform !== null) {
-            $display = $this->minimumOrderGate->getMinimumForDisplay($platform, $orderCurrency, $storeId);
+            $display = $this->minimumOrderGate->getMinimumForDisplay(
+                $platform,
+                $orderCurrency,
+                $storeId,
+                failClosedOnUnconvertible: true
+            );
             if ($display === null) {
                 // Unprojectable platform floor: fail CLOSED and reject, never
                 // delegate to the fail-soft isBelowMinimum(), which would let
@@ -928,7 +949,12 @@ class Two extends AbstractMethod
         }
         $merchant = $this->buildMerchantMinimum($baseCurrency, $platform, $storeId);
         if ($merchant !== null) {
-            $display = $this->minimumOrderGate->getMinimumForDisplay($merchant, $orderCurrency, $storeId);
+            $display = $this->minimumOrderGate->getMinimumForDisplay(
+                $merchant,
+                $orderCurrency,
+                $storeId,
+                failClosedOnUnconvertible: false
+            );
             if ($display !== null) {
                 $displays[] = $display;
             }

@@ -141,6 +141,42 @@ class TwoAssertOrderMeetsMinimumTest extends TestCase
         $this->addToAssertionCount(1); // no exception: order placement proceeds
     }
 
+    public function testNanRatePlatformFloorRejectsOrder(): void
+    {
+        // NAN <= 0 is false in PHP: without the finiteness guard in the
+        // display projection, the platform floor would come back as
+        // ['amount' => NAN] (non-null), the below-minimum comparison against
+        // NaN would always be false, and the sole placement backstop would
+        // silently admit an order it could not verify. Fail closed instead.
+        $this->minimumOrderProvider->method('getMinimum')
+            ->willReturn(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
+        $this->ratesProvider->method('getRate')->willReturn(NAN);
+
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('not available for this order');
+
+        $this->assertOrderMeetsMinimum($this->order('SEK', 'SEK', 10000.0));
+    }
+
+    public function testNanRateMerchantMinimumIsSkippedAndOrderProceeds(): void
+    {
+        // NaN on the merchant bar's rate fails open, same as a missing rate:
+        // the bar is skipped and placement proceeds.
+        $this->minimumOrderProvider->method('getMinimum')
+            ->willReturn(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
+        $this->model->configData = [
+            'merchant_minimum_order' => 500.0,
+            'merchant_minimum_order_basis' => 'net',
+        ];
+        $this->ratesProvider->method('getRate')
+            ->with('USD', 'EUR', 1)
+            ->willReturn(NAN);
+
+        $this->assertOrderMeetsMinimum($this->order('EUR', 'USD', 300.0));
+
+        $this->addToAssertionCount(1); // no exception: order placement proceeds
+    }
+
     public function testProjectableButUnmetMerchantMinimumStillRejects(): void
     {
         // Fail-open covers ONLY the missing-FX case: with a usable USD->EUR

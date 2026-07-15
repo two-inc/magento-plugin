@@ -309,11 +309,55 @@ class MinimumOrderGateTest extends TestCase
 
         $this->assertSame(
             ['amount' => 215.0, 'basis' => 'net'],
-            $this->gate->getMinimumForDisplay(self::EUR_250_NET, 'GBP', 1)
+            $this->gate->getMinimumForDisplay(self::EUR_250_NET, 'GBP', 1, failClosedOnUnconvertible: true)
         );
         // No rate: no display value (caller falls back to the generic message)
         $gate = new MinimumOrderGate($this->createMock(CurrencyRatesProviderInterface::class), $this->logRepository);
-        $this->assertNull($gate->getMinimumForDisplay(self::EUR_250_NET, 'SEK', 1));
+        $this->assertNull($gate->getMinimumForDisplay(self::EUR_250_NET, 'SEK', 1, failClosedOnUnconvertible: false));
+    }
+
+    public function testMinimumForDisplayReturnsNullOnNanRate(): void
+    {
+        // NAN <= 0 is false in PHP: without the finiteness guard a NaN rate
+        // would produce ['amount' => NAN] — non-null, so the placement
+        // backstop's below-minimum comparison (always false against NaN)
+        // would silently admit an order it could not verify.
+        $this->ratesProvider->method('getRate')->willReturn(NAN);
+
+        $this->assertNull(
+            $this->gate->getMinimumForDisplay(self::EUR_250_NET, 'SEK', 1, failClosedOnUnconvertible: true)
+        );
+    }
+
+    public function testMinimumForDisplayUnconvertibleLogsErrorWhenFailingClosed(): void
+    {
+        // The display projection sits on the enforcement paths (visibility
+        // gate, placement backstop): a fail-closed unconvertible platform
+        // floor must land in the monitored error log, once per pair.
+        $this->ratesProvider->method('getRate')->willReturn(null);
+        $this->logRepository->expects($this->once())->method('addErrorLog');
+        $this->logRepository->expects($this->never())->method('addDebugLog');
+
+        $this->assertNull(
+            $this->gate->getMinimumForDisplay(self::EUR_250_NET, 'SEK', 1, failClosedOnUnconvertible: true)
+        );
+        $this->assertNull(
+            $this->gate->getMinimumForDisplay(self::EUR_250_NET, 'SEK', 1, failClosedOnUnconvertible: true)
+        );
+    }
+
+    public function testMinimumForDisplayUnconvertibleLogsDebugWhenFailingOpen(): void
+    {
+        $this->ratesProvider->method('getRate')->willReturn(null);
+        $this->logRepository->expects($this->never())->method('addErrorLog');
+        $this->logRepository->expects($this->once())->method('addDebugLog');
+
+        $this->assertNull(
+            $this->gate->getMinimumForDisplay(self::EUR_250_NET, 'SEK', 1, failClosedOnUnconvertible: false)
+        );
+        $this->assertNull(
+            $this->gate->getMinimumForDisplay(self::EUR_250_NET, 'SEK', 1, failClosedOnUnconvertible: false)
+        );
     }
 
     public function testReportsMissingRateOncePerCurrencyPair(): void

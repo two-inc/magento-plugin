@@ -114,6 +114,74 @@ class TwoMinimumOrderVisibilityTest extends TestCase
         $this->assertSame([['amount' => 250.0, 'basis' => 'net']], $result['minimums']);
     }
 
+    public function testNanRatePlatformFloorSetsUnresolved(): void
+    {
+        // A NaN rate is as unusable as a missing one; it must set
+        // `unresolved` (fail closed), not leak NAN into `minimums`.
+        $this->minimumOrderProvider->method('getMinimum')
+            ->willReturn(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
+        $this->ratesProvider->method('getRate')->willReturn(NAN);
+
+        $result = $this->model->getMinimumOrderVisibility($this->quote('SEK', 'SEK'));
+
+        $this->assertTrue($result['unresolved']);
+        $this->assertSame([], $result['minimums']);
+    }
+
+    public function testNanRateMerchantMinimumIsOmittedAndDoesNotSetUnresolved(): void
+    {
+        // NaN on the merchant bar's rate fails open: bar omitted, method
+        // stays visible — same treatment as a missing rate.
+        $this->minimumOrderProvider->method('getMinimum')
+            ->willReturn(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
+        $this->model->configData = [
+            'merchant_minimum_order' => 500.0,
+            'merchant_minimum_order_basis' => 'net',
+        ];
+        $this->ratesProvider->method('getRate')
+            ->with('USD', 'EUR', 1)
+            ->willReturn(NAN);
+
+        $result = $this->model->getMinimumOrderVisibility($this->quote('EUR', 'USD'));
+
+        $this->assertFalse($result['unresolved']);
+        $this->assertSame([['amount' => 250.0, 'basis' => 'net']], $result['minimums']);
+    }
+
+    public function testUnresolvableDisplayCurrencyWithMerchantMinimumOnlyFailsOpen(): void
+    {
+        // No platform floor, merchant minimum configured, but neither quote
+        // nor store base currency resolvable: the merchant bar cannot even be
+        // constructed (base currency unknown) — fail open, method visible.
+        // Before the fix an empty display currency blanket-set `unresolved`
+        // even with no platform floor in play.
+        $this->minimumOrderProvider->method('getMinimum')->willReturn(null);
+        $this->model->configData = [
+            'merchant_minimum_order' => 500.0,
+            'merchant_minimum_order_basis' => 'net',
+        ];
+
+        $result = $this->model->getMinimumOrderVisibility($this->quote('', ''));
+
+        $this->assertFalse($result['unresolved']);
+        $this->assertSame([], $result['minimums']);
+    }
+
+    public function testUnresolvableDisplayCurrencyWithPlatformFloorStillFailsClosed(): void
+    {
+        // Platform floor active but the display currency is unresolvable:
+        // the floor cannot be projected — fail closed via the normal
+        // per-minimum branch (no rate exists for an empty currency code).
+        $this->minimumOrderProvider->method('getMinimum')
+            ->willReturn(['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net']);
+        $this->ratesProvider->method('getRate')->willReturn(null);
+
+        $result = $this->model->getMinimumOrderVisibility($this->quote('', ''));
+
+        $this->assertTrue($result['unresolved']);
+        $this->assertSame([], $result['minimums']);
+    }
+
     public function testBothMinimumsShownWhenProjectable(): void
     {
         $this->minimumOrderProvider->method('getMinimum')
