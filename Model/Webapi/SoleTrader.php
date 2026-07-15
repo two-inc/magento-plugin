@@ -9,6 +9,7 @@ namespace Two\Gateway\Model\Webapi;
 
 use Two\Gateway\Api\Webapi\SoleTraderInterface;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\SupportedCompanyTypes;
 
 class SoleTrader implements SoleTraderInterface
 {
@@ -18,13 +19,29 @@ class SoleTrader implements SoleTraderInterface
     private $adapter;
 
     /**
+     * @var SupportedCompanyTypes
+     */
+    private $supportedCompanyTypes;
+
+    /**
      * SoleTrader constructor.
      * @param Adapter $adapter
+     * @param SupportedCompanyTypes $supportedCompanyTypes
      */
     public function __construct(
-        Adapter $adapter
+        Adapter $adapter,
+        SupportedCompanyTypes $supportedCompanyTypes
     ) {
         $this->adapter = $adapter;
+        $this->supportedCompanyTypes = $supportedCompanyTypes;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getSupportedCompanyTypes(string $countryCode): array
+    {
+        return $this->supportedCompanyTypes->getForCountry($countryCode);
     }
 
     /**

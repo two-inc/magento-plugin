@@ -15,6 +15,7 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\UrlCookie;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Model\Two;
 
 /**
@@ -71,6 +72,11 @@ class ConfigProvider implements ConfigProviderInterface
     private $storeManager;
 
     /**
+     * @var SupportedCompanyTypes
+     */
+    private $supportedCompanyTypes;
+
+    /**
      * @param string $code Payment-method code (overlay-specific). Defaults
      *                     to the Two-branded value for backward
      *                     compatibility with installs that don't override.
@@ -83,6 +89,7 @@ class ConfigProvider implements ConfigProviderInterface
         AssetRepository $assetRepository,
         CheckoutSession $checkoutSession,
         StoreManagerInterface $storeManager,
+        SupportedCompanyTypes $supportedCompanyTypes,
         ?string $code = null
     ) {
         $this->configRepository = $configRepository;
@@ -92,7 +99,26 @@ class ConfigProvider implements ConfigProviderInterface
         $this->assetRepository = $assetRepository;
         $this->checkoutSession = $checkoutSession;
         $this->storeManager = $storeManager;
+        $this->supportedCompanyTypes = $supportedCompanyTypes;
         $this->code = $code ?? $brandRegistry->getCode();
+    }
+
+    /**
+     * Registry answer for the quote's current billing country, keyed by
+     * lowercased ISO code — the renderer's warm-start memo entry. Empty
+     * when the quote has no billing country yet; fail-soft (the service
+     * resolves registry errors to an empty type list, which the renderer
+     * treats as business-only checkout).
+     *
+     * @return array<string,string[]>
+     */
+    private function getSupportedCompanyTypesSeed(): array
+    {
+        $country = (string)$this->checkoutSession->getQuote()->getBillingAddress()->getCountryId();
+        if ($country === '') {
+            return [];
+        }
+        return [strtolower($country) => $this->supportedCompanyTypes->getForCountry($country)];
     }
 
     /**
@@ -134,7 +160,13 @@ class ConfigProvider implements ConfigProviderInterface
                     'isCompanySearchEnabled' => $this->configRepository->isCompanySearchEnabled(),
                     'isAddressSearchEnabled' => $this->configRepository->isAddressSearchEnabled(),
                     'companySearchLimit' => 50,
-                    'supportedCountryCodes' => ['no', 'gb', 'se', 'nl'],
+                    // Warm-start seed for the renderer's per-country
+                    // supported-company-types memo: the quote's current
+                    // billing country resolved server-side (the merchant
+                    // API key never reaches the browser). Other countries
+                    // are fetched live via GET /V1/two/supported-company-types
+                    // as the buyer edits the billing address.
+                    'supportedCompanyTypes' => $this->getSupportedCompanyTypesSeed(),
                     'isDepartmentFieldEnabled' => $this->configRepository->isDepartmentEnabled(),
                     'isProjectFieldEnabled' => $this->configRepository->isProjectEnabled(),
                     'isOrderNoteFieldEnabled' => $this->configRepository->isOrderNoteEnabled(),

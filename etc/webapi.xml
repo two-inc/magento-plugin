@@ -6,6 +6,12 @@
             <resource ref="anonymous"/>
         </resources>
     </route>
+    <route url="/V1/two/supported-company-types/:countryCode" method="GET">
+        <service class="Two\Gateway\Api\Webapi\SoleTraderInterface" method="getSupportedCompanyTypes"/>
+        <resources>
+            <resource ref="anonymous"/>
+        </resources>
+    </route>
     <route url="/V1/two/select-term" method="POST">
         <service class="Two\Gateway\Api\Webapi\TermSelectionInterface" method="selectTerm"/>
         <resources>
