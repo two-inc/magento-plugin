@@ -43,6 +43,8 @@ namespace Magento\Store\Model {
         {
             public function getStore($storeId = null);
 
+            public function getStores($withDefault = false, $codeKey = false);
+
             public function getWebsite($websiteId = null);
 
             public function getGroup($groupId = null);

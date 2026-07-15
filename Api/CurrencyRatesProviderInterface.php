@@ -10,31 +10,31 @@ namespace Two\Gateway\Api;
 /**
  * Service contract for currency exchange rate lookups.
  *
- * Magento ships no read-side service contract for currency rate lookups — its
- * rate data is only reachable via the legacy Currency active-record model
- * (Magento\Directory\Model\Currency::load). This interface wraps that access
- * so callers see a clean contract, and the one internal implementation is
- * the single place where the phpstan "service contracts" rule is suppressed.
+ * Rates are sourced from Two's EUR-pivot spot-rate table
+ * (GET /refdata/v1/fx-rates), cached with a 6h background refresh and a
+ * last-known-good fallback, so conversions use the same rates Two applies
+ * server-side. Callers depend on this contract; the fetch/cache protocol
+ * lives behind the single implementation.
  */
 interface CurrencyRatesProviderInterface
 {
     /**
-     * Get the exchange rate from one currency to another, resolved via the
-     * store's configured base-currency rate table.
+     * Get the exchange rate from one currency to another, computed through
+     * the EUR pivot of Two's spot-rate table: one unit of $fromCurrency is
+     * worth `rate` units of $toCurrency.
      *
-     * Rates are always computed through base:
-     * - from == to           → 1.0
-     * - from == base         → base-to-target rate (from DB)
-     * - to == base           → inverse of base-to-source rate
-     * - neither is base      → cross-rate via base: (base→to) / (base→from)
-     *
-     * This avoids the stale-direct-cross-rate trap where admins only
-     * maintain base→* rates but historic DB entries exist for other pairs.
+     * Null means the pair cannot currently be converted — a currency absent
+     * from the table, or no table has ever been fetched (e.g. no API key
+     * configured, or the very first fetch failed). Once a table has been
+     * fetched, lookups keep resolving from the last-known-good table even
+     * when refreshes fail; callers apply their own posture to null
+     * (minimum-order platform floor fails closed, merchant bar fails open,
+     * display conversions fail soft).
      *
      * @param string $fromCurrency ISO 4217 code
      * @param string $toCurrency   ISO 4217 code
-     * @param int|null $storeId    Store scope; null = current store
-     * @return float|null Rate, or null when no rate is configured for the pair
+     * @param int|null $storeId    Store scope for API-key resolution; null = default scope
+     * @return float|null Rate, or null when the pair cannot be resolved
      */
     public function getRate(string $fromCurrency, string $toCurrency, ?int $storeId = null): ?float;
 }
