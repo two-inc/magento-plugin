@@ -102,10 +102,14 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             var type = getSurchargeType();
             var hasSurcharge = type !== 'none';
 
-            // Global surcharge fields
+            // Global surcharge fields. The deprecated
+            // custom_surcharge_tax_rate row is NOT managed here — its
+            // visibility is owned by the system.xml <depends> on the
+            // surcharge tax treatment ("custom" only), and a jQuery
+            // show() would fight Magento's dependence controller.
             var surchargeFields = [
                 'surcharge_differential',
-                'surcharge_tax_rate'
+                'surcharge_tax_class'
             ];
             $.each(surchargeFields, function (_, id) {
                 hasSurcharge ? showField(id) : hideField(id);

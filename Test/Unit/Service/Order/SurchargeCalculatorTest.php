@@ -55,7 +55,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('isSurchargeDifferential')->willReturn($differential);
         $this->config->method('getPaymentTermsType')->willReturn('standard');
         $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
+        $this->config->method('getCustomSurchargeTaxRate')->willReturn(0.0);
     }
 
     private function stubSurchargeConfig(float $percentage = 0, float $fixed = 0, ?float $limit = null): void
@@ -562,7 +562,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('getDefaultPaymentTerm')->willReturn(30);
         $this->config->method('getPaymentTermsType')->willReturn('end_of_month');
         $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
+        $this->config->method('getCustomSurchargeTaxRate')->willReturn(0.0);
         $this->stubSurchargeConfig(100);
 
         $this->adapter->expects($this->once())
@@ -592,7 +592,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('isSurchargeDifferential')->willReturn(false);
         $this->config->method('getPaymentTermsType')->willReturn('standard');
         $this->config->method('getSurchargeLineDescription')->willReturn('Extended terms fee - %1 days');
-        $this->config->method('getSurchargeTaxRate')->willReturn(25.0);
+        $this->config->method('getCustomSurchargeTaxRate')->willReturn(25.0);
         $this->stubSurchargeConfig(0, 10);
         $this->stubFixedCurrency('NOK');
 

@@ -15,6 +15,7 @@ use Magento\Store\Model\ScopeInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface;
+use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
@@ -557,8 +558,14 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
-    public function getSurchargeTaxRate(?int $storeId = null): float
+    public function getCustomSurchargeTaxRate(?int $storeId = null): float
     {
+        // DEPRECATED FIELD: initial attempt at tax support, superseded
+        // by the tax-rule-based configurable selector (surcharge_tax_class),
+        // retained only for pre-existing merchants. Stored config key
+        // stays `surcharge_tax_rate` on purpose — renaming the persisted
+        // core_config_data path would be a data migration with zero
+        // benefit; only the code-level name changed.
         $configured = $this->getConfig($this->path('surcharge_tax_rate'), $storeId);
         if ($configured !== null && $configured !== '') {
             return (float)$configured;
@@ -569,13 +576,36 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
+    public function hasCustomSurchargeTaxRate(?int $storeId = null): bool
+    {
+        // Existence, not truthiness: a merchant-configured rate of 0 or
+        // "0.00" is still a real value and must keep the deprecated
+        // "Custom" treatment available (falsy-zero bug guard). '' is
+        // excluded because etc/config.xml declares an empty
+        // <surcharge_tax_rate/> initial node, so scopeConfig yields ''
+        // (not null) even when no merchant ever touched the field.
+        $configured = $this->getConfig($this->path('surcharge_tax_rate'), $storeId);
+        return $configured !== null && $configured !== '';
+    }
+
+    /**
+     * @inheritDoc
+     */
     public function getSurchargeTaxClassId(?int $storeId = null): ?int
     {
         $configured = $this->getConfig($this->path('surcharge_tax_class'), $storeId);
-        // Unset, or the source model's explicit legacy option (''),
-        // means flat-rate fallback — upgrading merchants who never touch
-        // the new field keep their existing behaviour.
-        if ($configured === null || $configured === '') {
+        // Unselected ('' / unset) or the deprecated "custom" flat-rate
+        // treatment means the flat-rate path — upgrading merchants who
+        // never re-save the config keep their existing behaviour, and
+        // "custom" is the explicit spelling of that same choice. The
+        // non-numeric guard is deliberate: any unknown token must never
+        // int-cast to 0, because class id 0 is a real selection ("None"
+        // = never taxed).
+        if ($configured === null
+            || $configured === ''
+            || $configured === SurchargeTaxClassSource::CUSTOM
+            || !is_numeric($configured)
+        ) {
             return null;
         }
         return (int)$configured;
