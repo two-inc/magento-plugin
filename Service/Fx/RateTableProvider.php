@@ -123,11 +123,7 @@ class RateTableProvider
             return $this->memo[$cacheKey]['table'];
         }
 
-        $entry = null;
-        $cached = $this->cache->load($cacheKey);
-        if ($cached !== false) {
-            $entry = $this->json->unserialize($cached);
-        }
+        $entry = $this->loadEntry($cacheKey);
 
         $age = $entry === null ? null : time() - (int)$entry['fetched_at'];
         if ($entry !== null && $age < self::REFRESH_INTERVAL) {
@@ -182,6 +178,43 @@ class RateTableProvider
 
         $this->persist($cacheKey, $fresh);
         return true;
+    }
+
+    /**
+     * The cached entry, or null when absent or unusable. A corrupt or
+     * wrong-shaped cache value must degrade to "missing" (refetch), never
+     * throw — this sits on the payment method's isAvailable() hot path.
+     *
+     * @return array{rates: array<string,float>, as_of: ?string, fetched_at: int}|null
+     */
+    private function loadEntry(string $cacheKey): ?array
+    {
+        $cached = $this->cache->load($cacheKey);
+        if ($cached === false) {
+            return null;
+        }
+        try {
+            $entry = $this->json->unserialize($cached);
+        } catch (\InvalidArgumentException $e) {
+            $this->logRepository->addDebugLog(
+                'RateTableProvider: discarding corrupt cached rate table',
+                ['error' => $e->getMessage()]
+            );
+            return null;
+        }
+        if (!is_array($entry)
+            || !isset($entry['fetched_at'])
+            || !isset($entry['rates'])
+            || !is_array($entry['rates'])
+            || $entry['rates'] === []
+        ) {
+            $this->logRepository->addDebugLog(
+                'RateTableProvider: discarding malformed cached rate table',
+                ['entry' => $entry]
+            );
+            return null;
+        }
+        return $entry;
     }
 
     /**

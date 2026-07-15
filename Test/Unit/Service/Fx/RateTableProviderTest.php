@@ -150,13 +150,56 @@ class RateTableProviderTest extends TestCase
         $this->assertNull($this->provider(null, '')->getRateTable(1));
     }
 
-    // ── Staleness ────────────────────────────────────────────────────
+    // ── Cache-entry robustness ───────────────────────────────────────
 
-    public function testStaleTableIsRefreshedFromEndpoint(): void
+    public function testCorruptCacheEntryIsDiscardedAndRefetched(): void
+    {
+        // A corrupt cache value must degrade to "missing" and refetch —
+        // never throw on the isAvailable() hot path.
+        $this->apiAdapter->expects($this->once())->method('execute')->willReturn(self::RATES_RESPONSE);
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->method('load')->willReturnCallback(
+            fn (string $key) => strpos($key, '_cooldown') !== false ? false : 'not-json{{'
+        );
+        $cache->expects($this->once())->method('save')->with(
+            $this->stringContains('"rates"'),
+            $this->stringContains('two_gateway_fx_rate_table_'),
+            [],
+            null
+        );
+
+        $table = $this->provider($cache)->getRateTable(1);
+
+        $this->assertSame(1.17, $table['rates']['GBP']);
+    }
+
+    public function testWrongShapedCacheEntryIsDiscardedAndRefetched(): void
     {
         $this->apiAdapter->expects($this->once())->method('execute')->willReturn(self::RATES_RESPONSE);
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->method('load')->willReturnCallback(
+            fn (string $key) => strpos($key, '_cooldown') !== false ? false : '{"unexpected":true}'
+        );
 
-        $table = $this->provider($this->cacheWith($this->staleEntry()))->getRateTable(1);
+        $table = $this->provider($cache)->getRateTable(1);
+
+        $this->assertSame(1.17, $table['rates']['GBP']);
+    }
+
+    // ── Staleness ────────────────────────────────────────────────────
+
+    public function testStaleTableIsRefreshedFromEndpointAndPersisted(): void
+    {
+        $this->apiAdapter->expects($this->once())->method('execute')->willReturn(self::RATES_RESPONSE);
+        $cache = $this->cacheWith($this->staleEntry());
+        $cache->expects($this->once())->method('save')->with(
+            $this->stringContains('"as_of":"2026-07-15"'),
+            $this->stringContains('two_gateway_fx_rate_table_'),
+            [],
+            null
+        );
+
+        $table = $this->provider($cache)->getRateTable(1);
 
         // The fresh endpoint rate (1.17), not the stale cached one (1.10).
         $this->assertSame(1.17, $table['rates']['GBP']);

@@ -693,6 +693,22 @@ class SurchargeCalculatorTest extends TestCase
         $this->calculator->calculate(1000.0, 30, 'NO', 'GBP');
     }
 
+    public function testConversionForwardsStoreScopeToRateLookup(): void
+    {
+        // FX rates are fetched with the store-scoped API key (TWO-25103):
+        // dropping the store id would resolve the default scope's key and
+        // break multi-store installs with per-store keys.
+        $this->stubCommonConfig(SurchargeType::FIXED);
+        $this->stubSurchargeConfig(0, 10);
+        $this->stubFixedCurrency('NOK');
+        $this->ratesProvider->expects($this->atLeastOnce())->method('getRate')
+            ->with('NOK', 'SEK', 7)
+            ->willReturn(1.1);
+        $this->adapter->method('execute')->willReturn(['buyer_fee_share' => 11.0]);
+
+        $this->calculator->calculate(1000.0, 30, 'NO', 'SEK', 7);
+    }
+
     public function testNoConversionWhenFixedCurrencyEmpty(): void
     {
         $this->stubCommonConfig(SurchargeType::FIXED);

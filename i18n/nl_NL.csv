@@ -221,7 +221,7 @@
 "Select the payment term(s) you want to offer.","Selecteer de betaaltermijn(en) die je wilt aanbieden."
 "Specific Countries","Specifieke landen"
 "Street Address is not valid.","Adres is niet geldig."
-"Warning: The fixed fee limit of %1 %2 cannot be enforced correctly because no exchange rate is configured from %3 to %4. Configure exchange rates in Stores → Currency → Currency Rates.","Waarschuwing: de vaste toeslaglimiet van %1 %2 kan niet correct worden toegepast omdat er geen wisselkoers is geconfigureerd van %3 naar %4. Configureer wisselkoersen in Winkels → Valuta → Valutakoersen."
+"Warning: The fixed fee limit of %1 %2 cannot be enforced correctly because no exchange rate is currently available from %3 to %4.","Waarschuwing: de vaste toeslaglimiet van %1 %2 kan niet correct worden toegepast omdat er momenteel geen wisselkoers beschikbaar is van %3 naar %4."
 "Yes","Ja"
 "Zip/Postal Code is not valid.","Postcode is niet geldig."
 "payment terms","betaalvoorwaarden"

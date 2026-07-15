@@ -215,7 +215,12 @@ class SurchargeCalculator
         ];
 
         if ($hasFixed) {
-            $payload['surcharge'] = $this->convertAmount((float)$config['fixed'], $fixedCurrency, $orderCurrency);
+            $payload['surcharge'] = $this->convertAmount(
+                (float)$config['fixed'],
+                $fixedCurrency,
+                $orderCurrency,
+                $storeId
+            );
         }
 
         // `cap` only applies where the fee has a percentage component. The admin
@@ -224,7 +229,12 @@ class SurchargeCalculator
         // a stored limit left over from a previous surcharge type must not leak into
         // a fixed-only request and clamp the fee.
         if ($hasPercentage && $config['limit'] !== null) {
-            $payload['cap'] = $this->convertAmount((float)$config['limit'], $fixedCurrency, $orderCurrency);
+            $payload['cap'] = $this->convertAmount(
+                (float)$config['limit'],
+                $fixedCurrency,
+                $orderCurrency,
+                $storeId
+            );
         }
 
         // `rounding` snaps the final buyer line item to a clean increment, computed
@@ -293,20 +303,23 @@ class SurchargeCalculator
     /**
      * Convert an amount between currencies if needed.
      *
-     * @throws LocalizedException if Magento has no exchange rate for the pair
+     * @throws LocalizedException when no FX rate is resolvable for the pair
      */
-    private function convertAmount(float $amount, string $fromCurrency, string $toCurrency): float
-    {
+    private function convertAmount(
+        float $amount,
+        string $fromCurrency,
+        string $toCurrency,
+        ?int $storeId = null
+    ): float {
         if ($amount === 0.0 || $fromCurrency === '' || $fromCurrency === $toCurrency) {
             return $amount;
         }
 
-        $rate = $this->ratesProvider->getRate($fromCurrency, $toCurrency);
+        $rate = $this->ratesProvider->getRate($fromCurrency, $toCurrency, $storeId);
         if ($rate === null) {
             throw new LocalizedException(
                 __(
-                    'Cannot convert surcharge from %1 to %2. '
-                    . 'Please configure currency exchange rates under Stores > Currency Rates.',
+                    'Cannot convert surcharge from %1 to %2: no exchange rate is currently available.',
                     $fromCurrency,
                     $toCurrency
                 )
