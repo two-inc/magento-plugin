@@ -889,7 +889,17 @@ class Two extends AbstractMethod
      * placement; checkout-api independently enforces the platform floor but
      * never receives the merchant's own admin minimum.
      *
-     * @throws LocalizedException when the finalised order is below a minimum.
+     * Split fail policy on an unprojectable minimum (missing FX rate), the
+     * same split the gate and the client-display projection apply: only the
+     * PLATFORM floor fails CLOSED (reject the order — the floor is a platform
+     * guarantee and must never be waived for want of a rate). The MERCHANT
+     * minimum fails OPEN: an unprojectable merchant bar is skipped and the
+     * order proceeds — a local preference must not block placement over a
+     * missing rate. When a minimum IS projectable, a below-minimum order is
+     * rejected for both.
+     *
+     * @throws LocalizedException when the finalised order is below a
+     *     projectable minimum, or when the platform floor cannot be projected.
      */
     private function assertOrderMeetsMinimum(Order $order): void
     {
@@ -897,25 +907,36 @@ class Two extends AbstractMethod
         $orderCurrency = (string)$order->getOrderCurrencyCode();
         $store = $order->getStore();
         $baseCurrency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
+
+        // Project each minimum into the order currency once, then compare —
+        // the same projection the client-display gate uses, so enforce and
+        // display cannot disagree.
+        $displays = [];
         $platform = $this->minimumOrderProvider->getMinimum($storeId);
-        $active = [$platform, $this->buildMerchantMinimum($baseCurrency, $platform, $storeId)];
-        foreach ($active as $minimum) {
-            if ($minimum === null) {
-                continue;
-            }
-            // Project the minimum into the order currency once, then compare —
-            // the same projection the client-display gate uses, so enforce and
-            // display cannot disagree. A null projection means an active minimum
-            // we cannot convert (missing FX rate): fail CLOSED and reject, never
-            // delegate to the fail-soft isBelowMinimum(), which would let a
-            // below-minimum order through on the one path (Amasty + JS bypass)
-            // where this is the sole merchant-minimum enforcer.
-            $display = $this->minimumOrderGate->getMinimumForDisplay($minimum, $orderCurrency, $storeId);
+        if ($platform !== null) {
+            $display = $this->minimumOrderGate->getMinimumForDisplay($platform, $orderCurrency, $storeId);
             if ($display === null) {
+                // Unprojectable platform floor: fail CLOSED and reject, never
+                // delegate to the fail-soft isBelowMinimum(), which would let
+                // a below-minimum order through on the one path (Amasty + JS
+                // bypass) where this is the sole enforcer.
                 throw new LocalizedException(
                     __('Invoice purchase with %1 is not available for this order.', $this->brandRegistry->getProductName())
                 );
             }
+            $displays[] = $display;
+        }
+        $merchant = $this->buildMerchantMinimum($baseCurrency, $platform, $storeId);
+        if ($merchant !== null) {
+            $display = $this->minimumOrderGate->getMinimumForDisplay($merchant, $orderCurrency, $storeId);
+            if ($display !== null) {
+                $displays[] = $display;
+            }
+            // Unprojectable merchant minimum: fail open — skip this bar and
+            // let the order proceed (see docblock).
+        }
+
+        foreach ($displays as $display) {
             $orderValue = $display['basis'] === 'gross'
                 ? (float)$order->getGrandTotal()
                 : (float)$order->getGrandTotal() - (float)$order->getTaxAmount();
