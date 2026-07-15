@@ -163,6 +163,8 @@ class SupportedCompanyTypesTest extends TestCase
         // Within one request the failure is memoized (no second call)…
         $this->apiAdapter->expects($this->once())->method('execute')
             ->willReturn(['error_code' => 400, 'error_message' => 'timeout']);
+        // …and never persisted, so the next request retries.
+        $this->cache->expects($this->never())->method('save');
 
         $this->assertSame([], $this->service->getForCountry('GB'));
         $this->assertSame([], $this->service->getForCountry('GB'));
