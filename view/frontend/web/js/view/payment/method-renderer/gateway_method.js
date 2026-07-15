@@ -54,7 +54,6 @@ define([
         // (ABN, …) supply the string + its translations.
         twoSubtitleHtml: '',
         isPaymentTermsAccepted: ko.observable(false),
-        soleTraderCountryCodes: ['gb'],
         formSelector: 'form#two_gateway_form',
         companyNameSelector: 'input#company_name',
         companyIdSelector: 'input#company_id',
@@ -97,6 +96,16 @@ define([
             // their own subtree from window.checkoutConfig.payment.
             this._brandConfig = getBrandConfig(this.getCode());
             var config = this._brandConfig;
+
+            // Per-country memo of the registry's supported-company-types
+            // answer (lowercased ISO → string[]), seeded server-side with
+            // the quote's billing country via ConfigProvider and extended
+            // live through GET /V1/two/supported-company-types as the
+            // buyer edits the billing address. Drives the Business /
+            // Sole trader mode tab; fetch errors fail soft (treated as
+            // business-only) and are NOT memoized, so the next country
+            // change retries.
+            this.supportedCompanyTypes = config.supportedCompanyTypes || {};
 
             this.twoSubtitleHtml = config.subtitleHtml || '';
             this.paymentTermsMessage = config.paymentTermsMessage;
@@ -292,18 +301,53 @@ define([
             countryCode = typeof countryCode == 'string' ? countryCode : '';
             if (!countryCode) return;
             this.countryCode(countryCode);
-            if (this.soleTraderCountryCodes.includes(countryCode.toLowerCase())) {
-                this.showModeTab(true);
-                // Prefetch the autofill buyer for the entered email so a known
-                // sole trader is auto-selected and the chip click can open the
-                // signup popup synchronously. No-op when the email is unknown.
-                this.prefetchSoleTrader();
-            } else {
-                if (this.showSoleTrader()) {
-                    this.registeredOrganisationMode();
+            var self = this;
+            this.getSupportedCompanyTypes(countryCode).then(function (types) {
+                // Guard against a stale answer when the buyer switches
+                // country again before the lookup resolves.
+                if (self.countryCode() !== countryCode) return;
+                if (types.includes('SOLE_TRADER')) {
+                    self.showModeTab(true);
+                    // Prefetch the autofill buyer for the entered email so a known
+                    // sole trader is auto-selected and the chip click can open the
+                    // signup popup synchronously. No-op when the email is unknown.
+                    self.prefetchSoleTrader();
+                } else {
+                    if (self.showSoleTrader()) {
+                        self.registeredOrganisationMode();
+                    }
+                    self.showModeTab(false);
                 }
-                this.showModeTab(false);
+            });
+        },
+        // The registry's supported-company-types answer for a billing
+        // country, via the plugin's server-side relay (the merchant API
+        // key never reaches the browser; the server caches per country).
+        // Successful answers — including the legitimate empty list, which
+        // means business-only checkout — are memoized per country; errors
+        // resolve to [] (fail soft, no sole-trader option) but are NOT
+        // memoized so the next country change retries.
+        getSupportedCompanyTypes: function (countryCode) {
+            var key = countryCode.toLowerCase();
+            if (Object.prototype.hasOwnProperty.call(this.supportedCompanyTypes, key)) {
+                return Promise.resolve(this.supportedCompanyTypes[key]);
             }
+            var self = this;
+            var URL = url.build(`rest/V1/two/supported-company-types/${encodeURIComponent(key)}`);
+            return fetch(URL, { headers: { Accept: 'application/json' } })
+                .then(function (response) {
+                    if (!response.ok) throw new Error(`Error response from ${URL}.`);
+                    return response.json();
+                })
+                .then(function (types) {
+                    if (!Array.isArray(types)) throw new Error(`Malformed response from ${URL}.`);
+                    self.supportedCompanyTypes[key] = types;
+                    return types;
+                })
+                .catch(function (error) {
+                    console.error({ logger: 'twoPayment.getSupportedCompanyTypes', error });
+                    return [];
+                });
         },
         updateAddress: function (address) {
             if (!address) return;
