@@ -248,6 +248,28 @@ class MinimumOrderGateTest extends TestCase
         $this->assertTrue($this->gate->isSatisfied(self::EUR_250_NET, $this->quote(300.0, 'EUR'), $merchantMinimum));
     }
 
+    public function testMerchantMinimumFailsOpenWhenRateIsNan(): void
+    {
+        // A NaN rate is as unusable as a missing one, but NAN <= 0 is false
+        // in PHP: without an explicit finiteness guard it would fall through
+        // to the value comparison (always false) and BLOCK instead of
+        // failing open.
+        $this->ratesProvider->method('getRate')
+            ->with('EUR', 'NOK', 1)
+            ->willReturn(NAN);
+
+        $merchantMinimum = ['amount' => 5000.0, 'currency' => 'NOK', 'basis' => 'net'];
+
+        $this->assertTrue($this->gate->isSatisfied(self::EUR_250_NET, $this->quote(300.0, 'EUR'), $merchantMinimum));
+    }
+
+    public function testPlatformFloorFailsClosedWhenRateIsNan(): void
+    {
+        $this->ratesProvider->method('getRate')->willReturn(NAN);
+
+        $this->assertFalse($this->gate->isSatisfied(self::EUR_250_NET, $this->quote(10000.0, 'SEK')));
+    }
+
     public function testMerchantMinimumFailsOpenWhenBasketCurrencyUnresolvable(): void
     {
         // No quote currency and no store: with no platform floor in play the

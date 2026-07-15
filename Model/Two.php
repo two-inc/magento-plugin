@@ -794,9 +794,12 @@ class Two extends AbstractMethod
      * whether any active minimum could NOT be projected (missing FX rate).
      *
      * On `unresolved`, the renderer must HIDE the method rather than show it
-     * for want of a number: this mirrors MinimumOrderGate's fail-closed stance
-     * (a minimum we cannot prove satisfied hides the method) so the client gate
-     * does not fail OPEN where the server gate would fail closed.
+     * for want of a number. This mirrors MinimumOrderGate's split fail policy:
+     * only an unprojectable PLATFORM floor sets `unresolved` (fail closed — the
+     * client gate must not fail open where the server gate fails closed). An
+     * unprojectable MERCHANT minimum fails open instead: its bar is simply
+     * omitted from `minimums` — we cannot show that number, but a local
+     * preference must not hide the whole method.
      *
      * @return array{minimums: array<int, array{amount: float, basis: string}>, unresolved: bool}
      */
@@ -820,17 +823,23 @@ class Two extends AbstractMethod
         $minimums = [];
         $unresolved = false;
         $platform = $this->minimumOrderProvider->getMinimum($storeId);
-        $active = [$platform, $this->buildMerchantMinimum($baseCurrency, $platform, $storeId)];
-        foreach ($active as $minimum) {
-            if ($minimum === null) {
-                continue;
-            }
-            $shown = $this->minimumOrderGate->getMinimumForDisplay($minimum, $displayCurrency, $storeId);
+        if ($platform !== null) {
+            $shown = $this->minimumOrderGate->getMinimumForDisplay($platform, $displayCurrency, $storeId);
             if ($shown === null) {
+                // Unprojectable platform floor: fail closed (hide the method).
                 $unresolved = true;
-                continue;
+            } else {
+                $minimums[] = $shown;
             }
-            $minimums[] = $shown;
+        }
+        $merchant = $this->buildMerchantMinimum($baseCurrency, $platform, $storeId);
+        if ($merchant !== null) {
+            $shown = $this->minimumOrderGate->getMinimumForDisplay($merchant, $displayCurrency, $storeId);
+            if ($shown !== null) {
+                $minimums[] = $shown;
+            }
+            // Unprojectable merchant minimum: fail open — omit its bar rather
+            // than hide the method over a local preference (see docblock).
         }
 
         return ['minimums' => $minimums, 'unresolved' => $unresolved];
