@@ -25,6 +25,7 @@ use Magento\Sales\Model\Order\Invoice\Item as InvoiceItem;
 use Magento\Sales\Model\Order\Item as OrderItem;
 use Magento\Store\Model\App\Emulation;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 
 /**
  * Abstract order class
@@ -55,6 +56,10 @@ abstract class Order
      * @var OrderItemRepositoryInterface
      */
     private $orderItemRepository;
+    /**
+     * @var LogRepository
+     */
+    private $logRepository;
 
     /**
      * Order constructor.
@@ -65,6 +70,7 @@ abstract class Order
      * @param OrderItemRepositoryInterface $orderItemRepository
      * @param Emulation $appEmulation
      * @param Url $url
+     * @param LogRepository $logRepository
      */
     public function __construct(
         Image $imageHelper,
@@ -72,7 +78,8 @@ abstract class Order
         CategoryCollection $categoryCollectionFactory,
         OrderItemRepositoryInterface $orderItemRepository,
         Emulation $appEmulation,
-        Url $url
+        Url $url,
+        LogRepository $logRepository
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -80,6 +87,7 @@ abstract class Order
         $this->orderItemRepository = $orderItemRepository;
         $this->appEmulation = $appEmulation;
         $this->url = $url;
+        $this->logRepository = $logRepository;
     }
 
     /**
@@ -295,13 +303,42 @@ abstract class Order
     /**
      * Get discount amount before tax
      *
+     * Fails loud (log + throw) on a genuinely negative discount instead of
+     * letting a bad value from an upstream cart-rule bug flow silently into
+     * the Two API payload. Never clamps.
+     *
      * @param OrderItem|InvoiceItem|CreditmemoItem $item
      *
      * @return float
+     * @throws LocalizedException when the discount is negative at currency precision
      */
     public function getDiscountAmountItem($item): float
     {
-        return (float)$item->getDiscountAmount() - (float)$item->getDiscountTaxCompensationAmount();
+        // Compute at native float precision — never round the inputs first.
+        // Early per-component rounding is the phantom-negative trap hit on
+        // PrestaShop (TWO-24741). The returned value stays native so the
+        // payload boundary keeps its single roundAmt() call.
+        $discountAmount = (float)$item->getDiscountAmount()
+            - (float)$item->getDiscountTaxCompensationAmount();
+
+        // Sign-check at the currency precision the payload will actually
+        // send: sub-cent float residue is not a data error; a discount that
+        // is still negative after the boundary round is.
+        if (round($discountAmount, 2) < 0) {
+            $message = sprintf(
+                'Negative discount amount %.6F for order item %s (sku %s): '
+                . 'discount %.6F - discount tax compensation %.6F',
+                $discountAmount,
+                $item->getId(),
+                $item->getSku(),
+                (float)$item->getDiscountAmount(),
+                (float)$item->getDiscountTaxCompensationAmount()
+            );
+            $this->logRepository->addErrorLog('NegativeDiscountGuard', $message);
+            throw new LocalizedException(__($message));
+        }
+
+        return $discountAmount;
     }
 
     /**
@@ -397,12 +434,36 @@ abstract class Order
     }
 
     /**
+     * Get shipping discount amount before tax
+     *
+     * Fails loud (log + throw) on a genuinely negative shipping discount —
+     * same guard as getDiscountAmountItem(), parallel surface.
+     *
      * @param OrderModel|CreditmemoModel $entity
      * @return float
+     * @throws LocalizedException when the discount is negative at currency precision
      */
     public function getDiscountAmountShipping($entity): float
     {
-        return (float)$entity->getShippingDiscountAmount() - (float)$entity->getShippingDiscountTaxCompensationAmount();
+        // Native-precision compute, single round at the payload boundary —
+        // see getDiscountAmountItem() for the rounding-order rationale.
+        $discountAmount = (float)$entity->getShippingDiscountAmount()
+            - (float)$entity->getShippingDiscountTaxCompensationAmount();
+
+        if (round($discountAmount, 2) < 0) {
+            $message = sprintf(
+                'Negative shipping discount amount %.6F for entity %s: '
+                . 'shipping discount %.6F - shipping discount tax compensation %.6F',
+                $discountAmount,
+                $entity->getIncrementId(),
+                (float)$entity->getShippingDiscountAmount(),
+                (float)$entity->getShippingDiscountTaxCompensationAmount()
+            );
+            $this->logRepository->addErrorLog('NegativeDiscountGuard', $message);
+            throw new LocalizedException(__($message));
+        }
+
+        return $discountAmount;
     }
 
     /**

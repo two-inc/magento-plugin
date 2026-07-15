@@ -16,6 +16,7 @@ use Magento\Sales\Api\OrderItemRepositoryInterface;
 use Magento\Sales\Model\Order;
 use Magento\Store\Model\App\Emulation;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Order as OrderService;
 
 /**
@@ -35,9 +36,18 @@ class ComposeOrder extends OrderService
         OrderItemRepositoryInterface $orderItemRepository,
         Emulation $appEmulation,
         Url $url,
+        LogRepository $logRepository,
         CheckoutSession $checkoutSession
     ) {
-        parent::__construct($imageHelper, $configRepository, $categoryCollectionFactory, $orderItemRepository, $appEmulation, $url);
+        parent::__construct(
+            $imageHelper,
+            $configRepository,
+            $categoryCollectionFactory,
+            $orderItemRepository,
+            $appEmulation,
+            $url,
+            $logRepository
+        );
         $this->checkoutSession = $checkoutSession;
     }
 
