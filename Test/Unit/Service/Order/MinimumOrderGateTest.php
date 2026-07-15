@@ -210,6 +210,38 @@ class MinimumOrderGateTest extends TestCase
         $this->assertTrue($this->gate->isSatisfied(self::EUR_250_NET, $this->quote(400.0, 'EUR'), $merchantMinimum));
     }
 
+    // ── Conversion-failure posture (TWO-25103 spec) ──────────────────
+    // Platform floor fails CLOSED; merchant bar fails OPEN.
+
+    public function testMerchantBarFailsOpenWhenRateUnresolvable(): void
+    {
+        // The merchant's own bar is a preference, not a funding-partner
+        // requirement: an unresolvable rate skips the bar rather than
+        // hiding the payment method.
+        $this->ratesProvider->method('getRate')->willReturn(null);
+        $merchantMinimum = ['amount' => 500.0, 'currency' => 'EUR', 'basis' => 'gross'];
+
+        $this->assertTrue($this->gate->isSatisfied(null, $this->quote(10.0, 'SEK'), $merchantMinimum));
+    }
+
+    public function testSatisfiedPlatformFloorWithUnconvertibleMerchantBarStaysOpen(): void
+    {
+        // Platform floor satisfied in the basket currency; the merchant bar
+        // needs a conversion that fails — the bar is skipped, the floor's
+        // verdict stands.
+        $this->ratesProvider->method('getRate')->willReturn(null);
+        $merchantMinimum = ['amount' => 400.0, 'currency' => 'USD', 'basis' => 'net'];
+
+        $this->assertTrue($this->gate->isSatisfied(self::EUR_250_NET, $this->quote(300.0, 'EUR'), $merchantMinimum));
+    }
+
+    public function testMerchantBarFailsOpenWhenBasketCurrencyUnresolvable(): void
+    {
+        $merchantMinimum = ['amount' => 500.0, 'currency' => 'EUR', 'basis' => 'gross'];
+
+        $this->assertTrue($this->gate->isSatisfied(null, $this->quote(10.0, null), $merchantMinimum));
+    }
+
     public function testGrossBasisComparesGrandTotal(): void
     {
         $minimum = ['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'gross'];
