@@ -210,6 +210,65 @@ class MinimumOrderGateTest extends TestCase
         $this->assertTrue($this->gate->isSatisfied(self::EUR_250_NET, $this->quote(400.0, 'EUR'), $merchantMinimum));
     }
 
+    // ── Split fail policy: platform floor closed, merchant minimum open ─
+
+    public function testPlatformFloorFailsClosedEvenWhenMerchantMinimumSatisfied(): void
+    {
+        // No rate for the platform floor's currency: blocked regardless of
+        // the merchant minimum being absent or satisfiable.
+        $this->ratesProvider->method('getRate')->willReturn(null);
+
+        $merchantMinimum = ['amount' => 100.0, 'currency' => 'SEK', 'basis' => 'net'];
+
+        $this->assertFalse($this->gate->isSatisfied(self::EUR_250_NET, $this->quote(10000.0, 'SEK'), $merchantMinimum));
+    }
+
+    public function testMerchantMinimumFailsOpenWhenNoExchangeRateConfigured(): void
+    {
+        // Platform floor is same-currency and satisfied; the merchant's own
+        // minimum is in a currency with no configured rate. That is a local
+        // preference we cannot evaluate — it must not block checkout.
+        $this->ratesProvider->method('getRate')
+            ->with('EUR', 'NOK', 1)
+            ->willReturn(null);
+
+        $merchantMinimum = ['amount' => 5000.0, 'currency' => 'NOK', 'basis' => 'net'];
+
+        $this->assertTrue($this->gate->isSatisfied(self::EUR_250_NET, $this->quote(300.0, 'EUR'), $merchantMinimum));
+    }
+
+    public function testMerchantMinimumFailsOpenWhenRateIsZero(): void
+    {
+        $this->ratesProvider->method('getRate')
+            ->with('EUR', 'NOK', 1)
+            ->willReturn(0.0);
+
+        $merchantMinimum = ['amount' => 5000.0, 'currency' => 'NOK', 'basis' => 'net'];
+
+        $this->assertTrue($this->gate->isSatisfied(self::EUR_250_NET, $this->quote(300.0, 'EUR'), $merchantMinimum));
+    }
+
+    public function testMerchantMinimumFailsOpenWhenBasketCurrencyUnresolvable(): void
+    {
+        // No quote currency and no store: with no platform floor in play the
+        // merchant's own minimum cannot be evaluated — it fails open.
+        $merchantMinimum = ['amount' => 500.0, 'currency' => 'EUR', 'basis' => 'net'];
+
+        $this->assertTrue($this->gate->isSatisfied(null, $this->quote(300.0, null), $merchantMinimum));
+    }
+
+    public function testMerchantMinimumFailOpenLogsDebugNotError(): void
+    {
+        $this->ratesProvider->method('getRate')->willReturn(null);
+        $this->logRepository->expects($this->never())->method('addErrorLog');
+        $this->logRepository->expects($this->once())->method('addDebugLog');
+
+        $merchantMinimum = ['amount' => 5000.0, 'currency' => 'NOK', 'basis' => 'net'];
+
+        $this->gate->isSatisfied(null, $this->quote(300.0, 'EUR'), $merchantMinimum);
+        $this->gate->isSatisfied(null, $this->quote(400.0, 'EUR'), $merchantMinimum);
+    }
+
     public function testGrossBasisComparesGrandTotal(): void
     {
         $minimum = ['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'gross'];
