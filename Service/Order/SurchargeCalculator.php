@@ -175,7 +175,7 @@ class SurchargeCalculator
 
         return $this->responseCache[$cacheKey] = [
             'amount' => $surcharge,
-            'tax_rate' => $this->configRepository->getSurchargeTaxRate($storeId),
+            'tax_rate' => $this->configRepository->getCustomSurchargeTaxRate($storeId),
             'description' => (string)__($descriptionTemplate, $selectedTermDays),
         ];
     }

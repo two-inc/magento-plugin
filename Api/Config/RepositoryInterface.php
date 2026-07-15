@@ -44,7 +44,12 @@ interface RepositoryInterface
     public const XML_PATH_SURCHARGE_TYPE = 'payment/two_payment/surcharge_type';
     public const XML_PATH_SURCHARGE_DIFFERENTIAL = 'payment/two_payment/surcharge_differential';
     public const XML_PATH_SURCHARGE_LINE_DESCRIPTION = 'payment/two_payment/surcharge_line_description';
-    public const XML_PATH_SURCHARGE_TAX_RATE = 'payment/two_payment/surcharge_tax_rate';
+    /**
+     * Deprecated custom flat-rate field. Code-level name is
+     * custom_surcharge_tax_rate; the persisted config key deliberately
+     * stays `surcharge_tax_rate` (no data migration — pure BC).
+     */
+    public const XML_PATH_CUSTOM_SURCHARGE_TAX_RATE = 'payment/two_payment/surcharge_tax_rate';
     public const XML_PATH_SURCHARGE_TAX_CLASS_ID = 'payment/two_payment/surcharge_tax_class';
     public const XML_PATH_SURCHARGE_FIXED_CURRENCY = 'payment/two_payment/surcharge_fixed_currency';
     public const XML_PATH_DEFAULT_PRODUCT_TAX_CLASS = 'tax/classes/default_product_tax_class';
@@ -337,13 +342,33 @@ interface RepositoryInterface
     public function getSurchargeLineDescription(?int $storeId = null): string;
 
     /**
-     * Get surcharge tax rate (percentage)
+     * Get the custom (flat) surcharge tax rate percentage.
+     *
+     * DEPRECATED FIELD: initial attempt at tax support, superseded by
+     * the tax-rule-based configurable selector (getSurchargeTaxClassId),
+     * retained only for pre-existing merchants. The persisted config
+     * key remains `surcharge_tax_rate` — only the code-level name was
+     * renamed; migrating the core_config_data path would be pure risk
+     * for zero benefit.
      *
      * @param int|null $storeId
      *
      * @return float
      */
-    public function getSurchargeTaxRate(?int $storeId = null): float;
+    public function getCustomSurchargeTaxRate(?int $storeId = null): float;
+
+    /**
+     * Whether a custom (flat) surcharge tax rate value genuinely
+     * exists in config. Existence check, not truthiness: a configured
+     * rate of 0 / "0.00" is a real value and must return true. Gates
+     * the deprecated "Custom" option in the surcharge tax treatment
+     * selector — pre-existing merchants only.
+     *
+     * @param int|null $storeId
+     *
+     * @return bool
+     */
+    public function hasCustomSurchargeTaxRate(?int $storeId = null): bool;
 
     /**
      * Get the Product Tax Class id used to tax the surcharge via
@@ -351,9 +376,9 @@ interface RepositoryInterface
      * additive multi-rate).
      *
      * Returns null when the merchant has not opted into engine-driven
-     * surcharge tax (config unset, or explicitly set to the legacy
-     * flat-rate option) — callers must then fall back to
-     * getSurchargeTaxRate(). A value of 0 is a valid selection
+     * surcharge tax (config unset, or explicitly set to the deprecated
+     * "custom" flat-rate treatment) — callers must then fall back to
+     * getCustomSurchargeTaxRate(). A value of 0 is a valid selection
      * ("None"): no tax rule can match class id 0, so the surcharge is
      * untaxed everywhere.
      *

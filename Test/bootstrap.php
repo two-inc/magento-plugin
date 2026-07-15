@@ -95,6 +95,15 @@ if (!interface_exists(\Magento\Tax\Api\TaxCalculationInterface::class, false)) {
 if (!class_exists(\Magento\Quote\Model\Quote\Address\Total::class, false)) {
     require_once __DIR__ . '/Stubs/QuoteTotals.php';
 }
+// Config backend-model base class (Model/Config/Backend/* beforeSave
+// validation) — extends the DataObject stub, so loads after it.
+if (!class_exists(\Magento\Framework\App\Config\Value::class, false)) {
+    require_once __DIR__ . '/Stubs/ConfigValue.php';
+}
+// Admin scope-resolution collaborators for config source models
+// (request params, store manager, Product Tax Class option source);
+// per-symbol guards live inside the stub file.
+require_once __DIR__ . '/Stubs/AdminScope.php';
 
 // Catch-all autoloader for remaining Magento classes/interfaces.
 // Creates empty stubs so that type hints, extends, and implements resolve.

@@ -206,19 +206,29 @@
 
                 <field id="surcharge_tax_class" translate="label comment" type="select" sortOrder="80"
                        showInDefault="1" showInWebsite="1" showInStore="1">
-                    <label>Surcharge Tax Class</label>
-                    <comment><![CDATA[Product Tax Class applied to the surcharge. When a class is selected, surcharge tax is resolved through Magento's Tax Rules (destination-aware, supports combined rates such as US state + local); <strong>None</strong> means the surcharge is never taxed. The default keeps using the legacy flat Surcharge Tax Rate below.]]></comment>
+                    <label>Surcharge Tax Treatment</label>
+                    <comment><![CDATA[Product Tax Class applied to the surcharge. When a class is selected, surcharge tax is resolved through Magento's Tax Rules (destination-aware, supports combined rates such as US state + local); <strong>None</strong> means the surcharge is never taxed. This selection is never made automatically: while a surcharge method is enabled, the configuration cannot be saved until a treatment is chosen.]]></comment>
                     <source_model>Two\Gateway\Model\Config\Source\SurchargeTaxClass</source_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\SurchargeTaxClass</backend_model>
                     <config_path>payment/two_payment/surcharge_tax_class</config_path>
                 </field>
-                <field id="surcharge_tax_rate" translate="label comment" type="text" sortOrder="90" showInDefault="1"
+                <!-- Deprecated: initial attempt at tax support, superseded by the
+                     tax-rule-based Surcharge Tax Treatment selector above. Retained
+                     only for pre-existing merchants (the "Custom" treatment is only
+                     offered when a value already exists). Field id renamed at the
+                     code level only — the persisted config key deliberately stays
+                     payment/two_payment/surcharge_tax_rate (no data migration). -->
+                <field id="custom_surcharge_tax_rate" translate="label comment" type="text" sortOrder="90" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Surcharge Tax Rate (%)</label>
-                    <comment>Legacy flat tax rate. Only used when Surcharge Tax Class above is set to the legacy option.</comment>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeTaxRate</frontend_model>
+                    <label>Custom Surcharge Tax Rate (%)</label>
+                    <comment>Deprecated flat tax rate. Only used with the Custom surcharge tax treatment above.</comment>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\CustomSurchargeTaxRate</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\LocaleDecimal</backend_model>
                     <validate>validate-zero-or-greater</validate>
                     <config_path>payment/two_payment/surcharge_tax_rate</config_path>
+                    <depends>
+                        <field id="surcharge_tax_class">custom</field>
+                    </depends>
                 </field>
                 <!-- Per-term surcharge grid (fixed, percentage, limit per term) -->
                 <field id="surcharge_grid" translate="label comment" type="text" sortOrder="100" showInDefault="1"

@@ -296,21 +296,21 @@ class RepositoryPaymentTermsTest extends TestCase
         $this->assertEquals('Extended terms fee', $this->repository->getSurchargeLineDescription());
     }
 
-    // ── getSurchargeTaxRate ──────────────────────────────────────────
+    // ── getCustomSurchargeTaxRate (deprecated flat rate) ─────────────
 
-    public function testGetSurchargeTaxRateReturnsExplicitValue(): void
+    public function testGetCustomSurchargeTaxRateReturnsExplicitValue(): void
     {
         $this->stubConfig(['payment/two_payment/surcharge_tax_rate' => '21']);
-        $this->assertEquals(21.0, $this->repository->getSurchargeTaxRate());
+        $this->assertEquals(21.0, $this->repository->getCustomSurchargeTaxRate());
     }
 
-    public function testGetSurchargeTaxRateExplicitZeroMeansTaxExempt(): void
+    public function testGetCustomSurchargeTaxRateExplicitZeroMeansTaxExempt(): void
     {
         $this->stubConfig(['payment/two_payment/surcharge_tax_rate' => '0']);
-        $this->assertEquals(0.0, $this->repository->getSurchargeTaxRate());
+        $this->assertEquals(0.0, $this->repository->getCustomSurchargeTaxRate());
     }
 
-    public function testGetSurchargeTaxRateFallsBackToDefaultRate(): void
+    public function testGetCustomSurchargeTaxRateFallsBackToDefaultRate(): void
     {
         $this->stubConfig([
             'payment/two_payment/surcharge_tax_rate' => null,
@@ -324,16 +324,45 @@ class RepositoryPaymentTermsTest extends TestCase
             ->with($rateRequest)
             ->willReturn(25.0);
 
-        $this->assertEquals(25.0, $this->repository->getSurchargeTaxRate());
+        $this->assertEquals(25.0, $this->repository->getCustomSurchargeTaxRate());
     }
 
-    public function testGetSurchargeTaxRateReturnsZeroWhenNoTaxRulesConfigured(): void
+    public function testGetCustomSurchargeTaxRateReturnsZeroWhenNoTaxRulesConfigured(): void
     {
         $this->stubConfig([
             'payment/two_payment/surcharge_tax_rate' => null,
             'tax/classes/default_product_tax_class' => null,
         ]);
-        $this->assertEquals(0.0, $this->repository->getSurchargeTaxRate());
+        $this->assertEquals(0.0, $this->repository->getCustomSurchargeTaxRate());
+    }
+
+    // ── hasCustomSurchargeTaxRate ────────────────────────────────────
+
+    public function testHasCustomSurchargeTaxRateTrueForRealValue(): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_tax_rate' => '21.5']);
+        $this->assertTrue($this->repository->hasCustomSurchargeTaxRate());
+    }
+
+    public function testHasCustomSurchargeTaxRateTrueForConfiguredZero(): void
+    {
+        // Falsy-zero guard: a configured rate of 0 is still a real value.
+        $this->stubConfig(['payment/two_payment/surcharge_tax_rate' => '0']);
+        $this->assertTrue($this->repository->hasCustomSurchargeTaxRate());
+    }
+
+    public function testHasCustomSurchargeTaxRateFalseWhenUnset(): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_tax_rate' => null]);
+        $this->assertFalse($this->repository->hasCustomSurchargeTaxRate());
+    }
+
+    public function testHasCustomSurchargeTaxRateFalseForInitialEmptyString(): void
+    {
+        // etc/config.xml ships an empty <surcharge_tax_rate/> node, so an
+        // untouched install reads '' (not null) — that is NOT a real value.
+        $this->stubConfig(['payment/two_payment/surcharge_tax_rate' => '']);
+        $this->assertFalse($this->repository->hasCustomSurchargeTaxRate());
     }
 
     // ── getSurchargeTaxClassId ──────────────────────────────────────
@@ -356,10 +385,24 @@ class RepositoryPaymentTermsTest extends TestCase
         $this->assertNull($this->repository->getSurchargeTaxClassId());
     }
 
-    public function testGetSurchargeTaxClassIdNullOnExplicitLegacySelection(): void
+    public function testGetSurchargeTaxClassIdNullOnUnselectedPlaceholder(): void
     {
-        // The source model's legacy option saves an empty string.
+        // The source model's placeholder option saves an empty string.
         $this->stubConfig(['payment/two_payment/surcharge_tax_class' => '']);
+        $this->assertNull($this->repository->getSurchargeTaxClassId());
+    }
+
+    public function testGetSurchargeTaxClassIdNullOnDeprecatedCustomTreatment(): void
+    {
+        // "custom" routes to the deprecated flat-rate path — and must
+        // NEVER int-cast to 0, which would silently mean "None"/untaxed.
+        $this->stubConfig(['payment/two_payment/surcharge_tax_class' => 'custom']);
+        $this->assertNull($this->repository->getSurchargeTaxClassId());
+    }
+
+    public function testGetSurchargeTaxClassIdNullOnUnknownNonNumericToken(): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_tax_class' => 'garbage']);
         $this->assertNull($this->repository->getSurchargeTaxClassId());
     }
 

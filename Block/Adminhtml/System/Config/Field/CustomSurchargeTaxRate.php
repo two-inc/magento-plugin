@@ -13,7 +13,18 @@ use Magento\Framework\Data\Form\Element\AbstractElement;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\Locale\AdminDecimalFormatter;
 
-class SurchargeTaxRate extends Field
+/**
+ * Renderer for the deprecated custom (flat) surcharge tax rate field.
+ *
+ * DEPRECATED FIELD: initial attempt at tax support, superseded by the
+ * tax-rule-based configurable selector (Surcharge Tax Treatment),
+ * retained only for pre-existing merchants. The field is only shown
+ * when the deprecated "Custom" treatment is selected, which itself is
+ * only offered to merchants with a previously configured rate. The
+ * persisted config key stays `surcharge_tax_rate`; only the code-level
+ * name was renamed.
+ */
+class CustomSurchargeTaxRate extends Field
 {
     /**
      * @var ConfigRepository
