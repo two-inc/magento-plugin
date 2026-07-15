@@ -12,9 +12,10 @@ use Magento\Framework\Setup\Patch\DataPatchInterface;
 use Magento\Eav\Setup\EavSetupFactory;
 
 /**
- * InternationalTelephone EAV Patch
+ * Removes the orphaned two_telephone customer_address EAV attribute
+ * added by InternationalTelephone. Nothing reads or writes it. TWO-24868.
  */
-class InternationalTelephone implements DataPatchInterface
+class RemoveInternationalTelephone implements DataPatchInterface
 {
     /**
      * @var ModuleDataSetupInterface
@@ -47,23 +48,7 @@ class InternationalTelephone implements DataPatchInterface
 
         $eavSetup = $this->eavSetupFactory->create(['setup' => $this->moduleDataSetup]);
 
-        // Deprecated: two_telephone attribute removed by RemoveInternationalTelephone patch, see TWO-24868
-        $eavSetup->addAttribute(
-            'customer_address',
-            'two_telephone',
-            [
-                'type' => 'varchar',
-                'input' => 'text',
-                'label' => 'International Telephone',
-                'visible' => true,
-                'required' => false,
-                'user_defined' => true,
-                'system'=> false,
-                'group'=> 'General',
-                'global' => true,
-                'visible_on_front' => true,
-            ]
-        );
+        $eavSetup->removeAttribute('customer_address', 'two_telephone');
 
         $this->moduleDataSetup->getConnection()->endSetup();
         return $this;
@@ -74,7 +59,7 @@ class InternationalTelephone implements DataPatchInterface
      */
     public static function getDependencies(): array
     {
-        return [];
+        return [InternationalTelephone::class];
     }
 
     /**
