@@ -103,10 +103,13 @@ class SurchargeTaxClass extends Value
     private function getScopedSiblingValue(string $key)
     {
         $path = preg_replace('#/[^/]+$#', '/' . $key, (string)$this->getPath());
+        // scope_id, not scope_code: the admin form save sets both, but
+        // CLI config:set (PreparedValueFactory) only sets scope/scope_id,
+        // and ScopeConfigInterface::getValue resolves numeric ids fine.
         return $this->_config->getValue(
             $path,
             $this->getScope() ?: 'default',
-            $this->getScopeCode()
+            $this->getScopeId()
         );
     }
 }

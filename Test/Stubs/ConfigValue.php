@@ -45,9 +45,9 @@ class Value extends \Magento\Framework\DataObject
         return $this->getData('scope');
     }
 
-    public function getScopeCode()
+    public function getScopeId()
     {
-        return $this->getData('scope_code');
+        return $this->getData('scope_id');
     }
 
     public function getFieldsetDataValue($key)

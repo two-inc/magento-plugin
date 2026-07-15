@@ -304,6 +304,7 @@
                     <config_path>payment/{{code}}/surcharge_tax_rate</config_path>
                     <depends>
                         <field id="surcharge_tax_class">custom</field>
+                        <field id="surcharge_type" separator=",">percentage,fixed,fixed_and_percentage</field>
                     </depends>
                 </field>
                 <field id="surcharge_grid" translate="label" type="text" sortOrder="100"

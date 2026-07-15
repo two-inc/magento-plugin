@@ -182,7 +182,7 @@ class SurchargeTaxClassTest extends TestCase
             'value' => '',
             'path' => 'payment/abn_payment/surcharge_tax_class',
             'scope' => 'websites',
-            'scope_code' => 'base',
+            'scope_id' => 2,
         ]);
 
         try {

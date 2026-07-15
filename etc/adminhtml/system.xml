@@ -228,6 +228,7 @@
                     <config_path>payment/two_payment/surcharge_tax_rate</config_path>
                     <depends>
                         <field id="surcharge_tax_class">custom</field>
+                        <field id="surcharge_type" separator=",">percentage,fixed,fixed_and_percentage</field>
                     </depends>
                 </field>
                 <!-- Per-term surcharge grid (fixed, percentage, limit per term) -->
