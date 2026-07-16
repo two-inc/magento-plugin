@@ -22,9 +22,11 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
  * explicit, since funding-partner rules and platform country defaults
  * may differ. Baskets in a different currency are converted to the
  * minimum's currency via the store's exchange rates before comparing.
- * When no rate is configured the gate fails closed: the method is
- * hidden rather than offered on an order we cannot prove satisfies the
- * funding partner's product minimum.
+ * When no rate is configured the platform floor fails closed: the
+ * method is hidden rather than offered on an order we cannot prove
+ * satisfies the funding partner's product minimum. The merchant's own
+ * extra minimum (local admin config) fails open instead: a locally
+ * misconfigured preference must not block checkout.
  */
 class MinimumOrderGate
 {
@@ -39,10 +41,10 @@ class MinimumOrderGate
     private $logRepository;
 
     /**
-     * Currency pairs already reported this request. The fail-closed
-     * condition is a stable store misconfiguration, not a per-quote
-     * event, and isAvailable() fires many times per page view — one
-     * log line per pair is the correct cardinality.
+     * Currency pairs (per fail mode) already reported this request. An
+     * unconvertible pair is a stable store misconfiguration, not a
+     * per-quote event, and isAvailable() fires many times per page view
+     * — one log line per pair is the correct cardinality.
      *
      * @var array<string,true>
      */
@@ -69,9 +71,11 @@ class MinimumOrderGate
      *
      * @param array{amount: float, currency: string, basis: string}|null $platformMinimum
      * @param array{amount: float, currency: string, basis: string}|null $merchantMinimum
-     * @return bool false when the basket currency or an exchange rate
-     *              cannot be resolved for a cross-currency basket
-     *              (fail-closed).
+     * @return bool false when the quote is below an evaluable minimum, or
+     *              when the basket currency / exchange rate cannot be
+     *              resolved for the platform floor's currency (fail-closed;
+     *              the merchant minimum fails open instead — see the class
+     *              docblock for the rationale).
      */
     public function isSatisfied(
         ?array $platformMinimum,
@@ -82,13 +86,17 @@ class MinimumOrderGate
             return true;
         }
 
-        // The platform minimum is the funding-partner floor; the merchant
-        // minimum (admin setting, validated to meet or exceed the floor on save)
-        // may only raise the bar — both must be satisfied.
-        foreach ([$platformMinimum, $merchantMinimum] as $minimum) {
-            if ($minimum !== null && !$this->satisfiesMinimum($quote, $minimum)) {
-                return false;
-            }
+        // Both must be satisfied; only the platform floor fails closed on
+        // unconvertible FX (see class docblock).
+        if ($platformMinimum !== null
+            && !$this->satisfiesMinimum($quote, $platformMinimum, failClosedOnUnconvertible: true)
+        ) {
+            return false;
+        }
+        if ($merchantMinimum !== null
+            && !$this->satisfiesMinimum($quote, $merchantMinimum, failClosedOnUnconvertible: false)
+        ) {
+            return false;
         }
 
         return true;
@@ -96,17 +104,23 @@ class MinimumOrderGate
 
     /**
      * @param array{amount: float, currency: string, basis: string} $minimum
+     * @param bool $failClosedOnUnconvertible whether an unresolvable basket
+     *             currency or missing/invalid exchange rate blocks the
+     *             method (platform floor) or passes the check (merchant's
+     *             own extra minimum).
      */
-    private function satisfiesMinimum(Quote $quote, array $minimum): bool
-    {
+    private function satisfiesMinimum(
+        Quote $quote,
+        array $minimum,
+        bool $failClosedOnUnconvertible
+    ): bool {
         $basketValue = $this->basketValue($quote, $minimum['basis']);
         $store = $quote->getStore();
         $quoteCurrency = (string)($quote->getQuoteCurrencyCode()
             ?: ($store !== null ? $store->getBaseCurrencyCode() : ''));
 
         if ($quoteCurrency === '') {
-            $this->reportFailClosed('(unresolved)', $minimum['currency']);
-            return false;
+            return $this->handleUnconvertible('(unresolved)', $minimum['currency'], $failClosedOnUnconvertible);
         }
 
         if ($quoteCurrency === $minimum['currency']) {
@@ -118,9 +132,8 @@ class MinimumOrderGate
             $minimum['currency'],
             $quote->getStoreId() !== null ? (int)$quote->getStoreId() : null
         );
-        if ($rate === null || $rate <= 0) {
-            $this->reportFailClosed($quoteCurrency, $minimum['currency']);
-            return false;
+        if ($rate === null || $rate <= 0 || !is_finite($rate)) {
+            return $this->handleUnconvertible($quoteCurrency, $minimum['currency'], $failClosedOnUnconvertible);
         }
 
         // Compare at currency precision: full-precision arithmetic,
@@ -174,14 +187,25 @@ class MinimumOrderGate
 
     /**
      * The minimum expressed in $currency for buyer-facing display,
-     * or null when no minimum exists / no rate is available.
+     * or null when no minimum exists / no rate is available. This
+     * projection sits on the enforcement paths too — the client
+     * visibility gate and the placement backstop both apply the split
+     * fail policy to a null — so the unconvertible case is logged
+     * through the same channel as satisfiesMinimum(): a fail-closed
+     * null must be visible in the monitored error log, never silent.
      *
+     * @param array{amount: float, currency: string, basis: string}|null $minimumOrder
+     * @param bool $failClosedOnUnconvertible whether the caller treats an
+     *             unconvertible minimum as blocking (platform floor) or
+     *             skips it (merchant's own extra minimum). Controls the
+     *             log channel only; the return value is null either way.
      * @return array{amount: float, basis: string}|null
      */
     public function getMinimumForDisplay(
         ?array $minimumOrder,
         string $currency,
-        ?int $storeId
+        ?int $storeId,
+        bool $failClosedOnUnconvertible
     ): ?array {
         if ($minimumOrder === null) {
             return null;
@@ -189,7 +213,12 @@ class MinimumOrderGate
         $amount = $minimumOrder['amount'];
         if ($currency !== $minimumOrder['currency']) {
             $rate = $this->ratesProvider->getRate($minimumOrder['currency'], $currency, $storeId);
-            if ($rate === null || $rate <= 0) {
+            if ($rate === null || $rate <= 0 || !is_finite($rate)) {
+                $this->handleUnconvertible(
+                    $minimumOrder['currency'],
+                    $currency === '' ? '(unresolved)' : $currency,
+                    $failClosedOnUnconvertible
+                );
                 return null;
             }
             $amount = round($amount * $rate, 2);
@@ -198,20 +227,33 @@ class MinimumOrderGate
     }
 
     /**
-     * Failing closed hides the payment method outright — a revenue stop
-     * if the cause is a missing exchange rate on a live store — so it
-     * must land in the monitored error log, not the debug log.
+     * Log an unconvertible currency conversion (basket-to-minimum in
+     * satisfiesMinimum(), minimum-to-display in getMinimumForDisplay())
+     * and return the satisfiesMinimum() outcome for it: false (blocked)
+     * when failing closed, true (treated as satisfied) when failing
+     * open. Fail-closed hides the method or rejects the order — a
+     * revenue stop — so it lands in the monitored error log; fail-open
+     * blocks nothing and logs at debug level.
      */
-    private function reportFailClosed(string $from, string $to): void
+    private function handleUnconvertible(string $from, string $to, bool $failClosedOnUnconvertible): bool
     {
-        $pair = $from . '->' . $to;
-        if (isset($this->reportedPairs[$pair])) {
-            return;
+        $pair = ($failClosedOnUnconvertible ? 'closed:' : 'open:') . $from . '->' . $to;
+        if (!isset($this->reportedPairs[$pair])) {
+            $this->reportedPairs[$pair] = true;
+            if ($failClosedOnUnconvertible) {
+                $this->logRepository->addErrorLog(
+                    'MinimumOrderGate: cannot convert platform minimum for comparison, '
+                        . 'failing closed (method hidden or order rejected)',
+                    ['from' => $from, 'to' => $to]
+                );
+            } else {
+                $this->logRepository->addDebugLog(
+                    'MinimumOrderGate: cannot convert merchant minimum for comparison, '
+                        . 'failing open (merchant minimum skipped)',
+                    ['from' => $from, 'to' => $to]
+                );
+            }
         }
-        $this->reportedPairs[$pair] = true;
-        $this->logRepository->addErrorLog(
-            'MinimumOrderGate: cannot convert basket to minimum currency, hiding payment method',
-            ['from' => $from, 'to' => $to]
-        );
+        return !$failClosedOnUnconvertible;
     }
 }
