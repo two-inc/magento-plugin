@@ -112,4 +112,22 @@ class SettingsProvider
         }
         return (int)$due;
     }
+
+    /**
+     * Whether the merchant self-distributes their own invoices to the
+     * buyer (invoice_distributed_by_merchant on the merchant record).
+     * Absent, unresolvable, or malformed all degrade to false — the
+     * plugin only ever generates/uploads an invoice PDF when the
+     * merchant record explicitly says so. This is the sole gate: there
+     * is deliberately no admin-configurable override (TWO-25106,
+     * Option A).
+     */
+    public function isInvoiceDistributedByMerchant(?int $storeId = null): bool
+    {
+        $record = $this->recordProvider->getRecord($storeId);
+        if ($record === null) {
+            return false;
+        }
+        return ($record['invoice_distributed_by_merchant'] ?? false) === true;
+    }
 }
