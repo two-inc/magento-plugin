@@ -105,6 +105,12 @@ if (!class_exists(\Magento\Framework\App\Config\Value::class, false)) {
 // per-symbol guards live inside the stub file.
 require_once __DIR__ . '/Stubs/AdminScope.php';
 
+// Self-invoice-upload collaborators (Status\History/HistoryFactory,
+// OrderRepositoryInterface, SearchCriteriaBuilder, Pdf\Invoice) for
+// Service/Invoice/UploadService.php and Cron/ProcessInvoiceUploads.php;
+// per-symbol guards live inside the stub file.
+require_once __DIR__ . '/Stubs/InvoiceUpload.php';
+
 // Catch-all autoloader for remaining Magento classes/interfaces.
 // Creates empty stubs so that type hints, extends, and implements resolve.
 spl_autoload_register(function ($class) {

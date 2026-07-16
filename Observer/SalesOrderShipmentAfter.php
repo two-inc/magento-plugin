@@ -24,6 +24,8 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Invoice\UploadService;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Order\ComposeShipment;
 
 /**
@@ -84,6 +86,12 @@ class SalesOrderShipmentAfter implements ObserverInterface
     /** @var \Two\Gateway\Api\BrandOverlayRegistryInterface */
     private $overlayRegistry;
 
+    /** @var SettingsProvider */
+    private $settingsProvider;
+
+    /** @var UploadService */
+    private $invoiceUploadService;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -93,7 +101,9 @@ class SalesOrderShipmentAfter implements ObserverInterface
         ComposeShipment $composeShipment,
         InvoiceService $invoiceService,
         TransactionFactory $transactionFactory,
-        \Two\Gateway\Api\BrandOverlayRegistryInterface $overlayRegistry
+        \Two\Gateway\Api\BrandOverlayRegistryInterface $overlayRegistry,
+        SettingsProvider $settingsProvider,
+        UploadService $invoiceUploadService
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -104,6 +114,8 @@ class SalesOrderShipmentAfter implements ObserverInterface
         $this->invoiceService = $invoiceService;
         $this->transactionFactory = $transactionFactory;
         $this->overlayRegistry = $overlayRegistry;
+        $this->settingsProvider = $settingsProvider;
+        $this->invoiceUploadService = $invoiceUploadService;
     }
 
     /**
@@ -162,20 +174,37 @@ class SalesOrderShipmentAfter implements ObserverInterface
         // stand and create the Magento invoice on the final shipment.
         // CAPTURE_OFFLINE is critical — CAPTURE_ONLINE would route through
         // Two::capture() and post /fulfillments a second time.
-        if ($isWholeOrderShipped && !$order->hasInvoices()) {
-            $invoice = $this->invoiceService->prepareInvoice($order);
-            if ($invoice->getGrandTotal() > 0) {
-                $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
-                $invoice->register();
-                $invoice->pay();
-                $invoice->setTransactionId(
-                    $response['fulfilled_order']['id'] ?? $order->getPayment()->getLastTransId()
-                );
-                $this->transactionFactory->create()
-                    ->addObject($invoice)
-                    ->addObject($order)
-                    ->save();
+        if ($isWholeOrderShipped) {
+            if (!$order->hasInvoices()) {
+                $invoice = $this->invoiceService->prepareInvoice($order);
+                if ($invoice->getGrandTotal() > 0) {
+                    $invoice->setRequestedCaptureCase(Invoice::CAPTURE_OFFLINE);
+                    $invoice->register();
+                    $invoice->pay();
+                    $invoice->setTransactionId(
+                        $response['fulfilled_order']['id'] ?? $order->getPayment()->getLastTransId()
+                    );
+                    $this->transactionFactory->create()
+                        ->addObject($invoice)
+                        ->addObject($order)
+                        ->save();
+                }
             }
+
+            // Self-invoice upload: gated solely on invoice_distributed_by_merchant
+            // from GET /v1/merchant (TWO-25106, Option A — no admin toggle). Only
+            // reachable once the Magento invoice exists (whole-order shipment),
+            // since the upload renders that invoice's PDF. This only marks the
+            // order for upload; the actual render + 3-step upload runs
+            // out-of-band via the ProcessInvoiceUploads cron so it never blocks
+            // this request (see UploadService::queueForOrder).
+            $twoInvoiceId = $response['fulfilled_order']['invoice_details']['id']
+                ?? $response['invoice_details']['id']
+                ?? null;
+            $this->invoiceUploadService->queueForOrder(
+                $order,
+                is_string($twoInvoiceId) ? $twoInvoiceId : null
+            );
         }
     }
 
