@@ -36,6 +36,8 @@ class CurrencyRatesProvider implements CurrencyRatesProviderInterface
      */
     public function getRate(string $fromCurrency, string $toCurrency, ?int $storeId = null): ?float
     {
+        $fromCurrency = strtoupper($fromCurrency);
+        $toCurrency = strtoupper($toCurrency);
         if ($fromCurrency === $toCurrency) {
             return 1.0;
         }
@@ -45,6 +47,9 @@ class CurrencyRatesProvider implements CurrencyRatesProviderInterface
             return null;
         }
 
+        // Table keys are upper-cased on fetch (RateTableProvider::fetchTable);
+        // upper-case the query side too so a lowercase/mixed-case caller
+        // resolves instead of silently missing the table.
         $rates = $table['rates'];
         $fromInEur = $rates[$fromCurrency] ?? 0.0;
         $toInEur = $rates[$toCurrency] ?? 0.0;

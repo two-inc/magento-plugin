@@ -18,6 +18,7 @@
 "Add Order Note Field","Bestelnotitieveld toevoegen"
 "Add Project Field","Projectveld toevoegen"
 "Allowed Countries","Toegestane landen"
+"Cannot convert surcharge from %1 to %2: no exchange rate is currently available.","Kan de toeslag niet converteren van %1 naar %2: er is momenteel geen wisselkoers beschikbaar."
 "Choose whether to enable this payment method for all allowed countries or only specific ones.","Kies of je de betaalmethode voor alle toegestane of specifieke landen wilt inschakelen."
 "Country Availability","Beschikbaarheid per land"
 "Select the countries where this payment method should be available.","Selecteer de landen waar deze betaalmethode beschikbaar moet zijn."

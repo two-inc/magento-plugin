@@ -24,10 +24,14 @@ use Two\Gateway\Service\Api\Adapter;
  * merchant's API key and made server-side only (never from browser JS).
  *
  * Cache protocol (last-known-good):
- * - A fetched table is written to the cross-request cache with NO expiry.
- *   It is the last-known-good table and must survive until replaced — gate
+ * - A fetched table is written to the cross-request cache with NO expiry, so
+ *   it is never evicted by age alone and survives a refresh outage — gate
  *   conversions (minimum order) are specified to use last-known-good and
- *   fail closed only when no table has EVER been fetched.
+ *   fail closed only when no table has EVER been fetched. Note this is
+ *   "no TTL-based eviction", not an unconditional guarantee: a `cache:flush`
+ *   (part of this repo's standard deploy workflow — see AGENTS.md) clears
+ *   the entry like any other cache data, and the very next lookup then
+ *   fetches synchronously and falls closed if that fetch also fails.
  * - A table older than REFRESH_INTERVAL (6h) is refreshed in the background
  *   by cron ({@see \Two\Gateway\Cron\RefreshFxRates}); the read path also
  *   refreshes opportunistically when it sees a stale or missing table, so a

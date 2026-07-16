@@ -196,6 +196,7 @@
 "All Allowed Countries","Alla tillåtna länder"
 "Amounts are shown in %1.","Belopp visas i %1."
 "Cannot convert surcharge from %1 to %2.","Kan inte konvertera tillägg från %1 till %2."
+"Cannot convert surcharge from %1 to %2: no exchange rate is currently available.","Det går inte att konvertera tilläggsavgiften från %1 till %2: ingen växelkurs är tillgänglig just nu."
 "City is not valid.","Stad är inte giltig."
 "Country is not valid.","Land är inte giltigt."
 "Developed by Magmodules.","Utvecklad av Magmodules."
