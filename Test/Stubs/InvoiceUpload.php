@@ -77,10 +77,14 @@ if (!class_exists(SearchCriteria::class, false)) {
     }
 }
 
-if (!interface_exists(SearchResultsInterface::class, false)) {
-    interface SearchResultsInterface
+namespace Magento\Framework\Lock;
+
+if (!interface_exists(LockManagerInterface::class, false)) {
+    interface LockManagerInterface
     {
-        public function getItems();
+        public function lock(string $name, int $timeout = -1): bool;
+        public function unlock(string $name): bool;
+        public function isLocked(string $name): bool;
     }
 }
 

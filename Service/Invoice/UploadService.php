@@ -111,8 +111,14 @@ class UploadService
     {
         $currentStatus = (string)$order->getData('two_invoice_upload_status');
 
-        // Duplicate guard: never re-queue a terminal UPLOADED order.
-        if ($currentStatus === self::STATUS_UPLOADED) {
+        // Duplicate guard: never re-queue a terminal UPLOADED order, and
+        // never re-queue an order already UPLOADING — Magento is known to
+        // occasionally dispatch sales_order_shipment_save_after more than
+        // once for the same shipment, and a second call resetting
+        // two_invoice_upload_reference/error here would race the cron's
+        // upload() if it's already mid-flight for this order (TWO-24758
+        // review, Han/Vader).
+        if ($currentStatus === self::STATUS_UPLOADED || $currentStatus === self::STATUS_UPLOADING) {
             return;
         }
 
@@ -154,14 +160,40 @@ class UploadService
     public function upload($order, string $twoInvoiceId): void
     {
         $orderId = (int)$order->getEntityId();
+        $storeId = (int)$order->getStoreId();
 
         if ((string)$order->getData('two_invoice_upload_status') === self::STATUS_UPLOADED) {
             // Already completed by a previous run; nothing to do.
             return;
         }
 
+        // Re-check the gate at execution time, not just at queue time: the
+        // cron can run minutes after queueForOrder(), and the merchant may
+        // have flipped invoice_distributed_by_merchant to false in between
+        // (TWO-24758 review, Vader). A flip the other way (false -> true)
+        // is not retro-actively picked up for orders already resolved to
+        // NOT_APPLICABLE; that is an accepted limitation, not a bug fixed
+        // here.
+        if (!$this->settingsProvider->isInvoiceDistributedByMerchant($storeId)) {
+            $this->persistStatus($order, self::STATUS_NOT_APPLICABLE);
+            $order->setData('two_invoice_upload_error', null);
+            $this->orderRepository->save($order);
+            return;
+        }
+
         try {
             $pdfContent = $this->renderInvoicePdf($order);
+        } catch (NoInvoiceException $e) {
+            // Legitimately nothing to upload (e.g. a zero-grand-total
+            // order never gets a Magento invoice) — not a failure.
+            $this->persistStatus($order, self::STATUS_NOT_APPLICABLE);
+            $order->setData('two_invoice_upload_error', null);
+            $this->orderRepository->save($order);
+            $this->logRepository->addDebugLog(
+                'invoice-upload-not-applicable',
+                ['order_id' => $orderId, 'reason' => $e->getMessage()]
+            );
+            return;
         } catch (Throwable $e) {
             $this->fail($order, 'Failed to render invoice PDF: ' . $e->getMessage());
             return;
@@ -180,7 +212,7 @@ class UploadService
             return;
         }
 
-        $signedUrl = $this->requestSignedUploadUrl($twoInvoiceId);
+        $signedUrl = $this->requestSignedUploadUrl($twoInvoiceId, $storeId);
         if (!$signedUrl['success']) {
             $this->fail($order, $signedUrl['error']);
             return;
@@ -194,7 +226,7 @@ class UploadService
 
         $order->setData('two_invoice_upload_reference', $signedUrl['reference']);
 
-        $statusResult = $this->pollUploadStatus($signedUrl['reference'], $orderId);
+        $statusResult = $this->pollUploadStatus($signedUrl['reference'], $orderId, $storeId);
         if (!$statusResult['success']) {
             $this->fail($order, $statusResult['error']);
             return;
@@ -205,13 +237,21 @@ class UploadService
 
     /**
      * @return string Raw PDF bytes
+     * @throws NoInvoiceException When the order has no Magento invoice yet
+     *         (a legitimate NOT_APPLICABLE case, e.g. a zero-grand-total
+     *         order that never gets one) — distinct from a genuine render
+     *         failure so the caller doesn't mark it FAILED.
      */
     private function renderInvoicePdf($order): string
     {
         $invoices = $order->getInvoiceCollection();
-        $invoice = $invoices !== null ? $invoices->getFirstItem() : null;
+        // Most-recently-created invoice, not blindly the first: an order
+        // can already carry an earlier (e.g. partial/admin-created)
+        // invoice, and the one from this fulfilment is what should be
+        // uploaded (TWO-24758 review, Vader).
+        $invoice = $invoices !== null ? $invoices->getLastItem() : null;
         if ($invoice === null || !$invoice->getEntityId()) {
-            throw new \RuntimeException('No Magento invoice found for order');
+            throw new NoInvoiceException('No Magento invoice found for order');
         }
 
         $pdf = $this->invoicePdf->getPdf([$invoice]);
@@ -223,13 +263,24 @@ class UploadService
      *
      * @return array{success:bool,url?:string,headers?:array,reference?:string,error?:string}
      */
-    private function requestSignedUploadUrl(string $twoInvoiceId): array
+    private function requestSignedUploadUrl(string $twoInvoiceId, int $storeId): array
     {
         $endpoint = '/uploads/v1/invoice/' . rawurlencode($twoInvoiceId) . '/external_invoice/' . self::UPLOAD_INDEX;
-        $response = $this->apiAdapter->execute($endpoint, ['content_type' => 'application/pdf'], 'PUT');
+        $response = $this->apiAdapter->execute(
+            $endpoint,
+            ['content_type' => 'application/pdf'],
+            'PUT',
+            $storeId
+        );
 
+        // Adapter::execute() only ever injects http_status on its
+        // non-2xx branch; a bare presence check (rather than pinning to
+        // one literal success code) matches the >=400 idiom already used
+        // elsewhere in this codebase (Service/Order/SurchargeCalculator.php)
+        // and tolerates an endpoint that might echo http_status as benign
+        // response data on success (TWO-24758 review, Yoda).
         $httpStatus = isset($response['http_status']) ? (int)$response['http_status'] : 0;
-        if ($httpStatus !== 0 && $httpStatus !== 202) {
+        if ($httpStatus >= 400) {
             return ['success' => false, 'error' => $this->parseSignedUrlError($response, $httpStatus)];
         }
 
@@ -320,15 +371,20 @@ class UploadService
      *
      * @return array{success:bool,error?:string}
      */
-    private function pollUploadStatus(string $reference, int $orderId): array
+    private function pollUploadStatus(string $reference, int $orderId, int $storeId): array
     {
         $startTime = time();
 
         while ((time() - $startTime) < self::POLLING_TIMEOUT) {
-            $response = $this->apiAdapter->execute('/uploads/v1/status/' . rawurlencode($reference), [], 'GET');
+            $response = $this->apiAdapter->execute(
+                '/uploads/v1/status/' . rawurlencode($reference),
+                [],
+                'GET',
+                $storeId
+            );
             $httpStatus = isset($response['http_status']) ? (int)$response['http_status'] : 0;
 
-            if ($httpStatus !== 0 && $httpStatus !== 200) {
+            if ($httpStatus >= 400) {
                 return ['success' => false, 'error' => 'Failed to poll upload status (HTTP ' . $httpStatus . ')'];
             }
 

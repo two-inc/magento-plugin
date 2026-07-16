@@ -144,21 +144,58 @@ class UploadServiceTest extends TestCase
         $this->assertSame(UploadService::STATUS_UPLOADED, $order->getData('two_invoice_upload_status'));
     }
 
+    public function testQueueForOrderIsNoopWhenAlreadyUploading(): void
+    {
+        // A double-fired shipment observer (Magento is known to sometimes
+        // dispatch sales_order_shipment_save_after more than once) must not
+        // reset two_invoice_upload_reference/error while the cron's
+        // upload() might already be mid-flight for this order.
+        $order = $this->makeOrder([
+            'two_invoice_upload_status' => UploadService::STATUS_UPLOADING,
+            'two_invoice_upload_reference' => 'already-set-ref',
+        ]);
+        $this->settingsProvider->expects($this->never())->method('isInvoiceDistributedByMerchant');
+        $this->orderRepository->expects($this->never())->method('save');
+
+        $this->service->queueForOrder($order, 'inv-456');
+
+        $this->assertSame(UploadService::STATUS_UPLOADING, $order->getData('two_invoice_upload_status'));
+        $this->assertSame('already-set-ref', $order->getData('two_invoice_upload_reference'));
+    }
+
     // --- upload() ---
 
     public function testUploadIsNoopWhenAlreadyUploaded(): void
     {
         $order = $this->makeOrder(['two_invoice_upload_status' => UploadService::STATUS_UPLOADED]);
+        $this->settingsProvider->expects($this->never())->method('isInvoiceDistributedByMerchant');
         $this->apiAdapter->expects($this->never())->method('execute');
         $this->orderRepository->expects($this->never())->method('save');
 
         $this->service->upload($order, 'inv-123');
     }
 
+    public function testUploadMarksNotApplicableWhenFlagFalseAtExecutionTime(): void
+    {
+        // TOCTOU: the merchant may flip invoice_distributed_by_merchant to
+        // false between queueForOrder() (shipment time) and the cron
+        // draining this order minutes later — upload() must re-check, not
+        // trust the UPLOADING status alone.
+        $order = $this->makeOrder(['two_invoice_upload_status' => UploadService::STATUS_UPLOADING]);
+        $this->settingsProvider->method('isInvoiceDistributedByMerchant')->with(1)->willReturn(false);
+        $this->apiAdapter->expects($this->never())->method('execute');
+        $this->orderRepository->expects($this->once())->method('save')->with($order);
+
+        $this->service->upload($order, 'inv-123');
+
+        $this->assertSame(UploadService::STATUS_NOT_APPLICABLE, $order->getData('two_invoice_upload_status'));
+    }
+
     public function testUploadSucceedsThroughAllThreeSteps(): void
     {
         $order = $this->makeOrder();
         $order->setData('invoice_collection', $this->makeInvoiceCollection());
+        $this->settingsProvider->method('isInvoiceDistributedByMerchant')->willReturn(true);
 
         $this->invoicePdf->method('getPdf')->willReturn($this->makePdfDocument('PDF-BYTES'));
 
@@ -166,7 +203,8 @@ class UploadServiceTest extends TestCase
         $curl->method('getStatus')->willReturn(200);
         $this->curlFactory->method('create')->willReturn($curl);
 
-        $this->apiAdapter->method('execute')->willReturnCallback(function ($endpoint, $payload, $method) {
+        $this->apiAdapter->method('execute')->willReturnCallback(function ($endpoint, $payload, $method, $storeId) {
+            $this->assertSame(1, $storeId, 'store id must be threaded through to Adapter::execute()');
             if (strpos($endpoint, '/uploads/v1/invoice/') === 0) {
                 $this->assertSame('PUT', $method);
                 return [
@@ -192,23 +230,29 @@ class UploadServiceTest extends TestCase
         $this->assertSame('ref-456', $order->getData('two_invoice_upload_reference'));
     }
 
-    public function testUploadFailsWhenNoMagentoInvoiceExists(): void
+    public function testUploadMarksNotApplicableWhenNoMagentoInvoiceExists(): void
     {
+        // A zero-grand-total order never gets a Magento invoice — that is
+        // a legitimate NOT_APPLICABLE outcome, not a render failure; it
+        // must not produce a FAILED status + "upload failed" history noise.
         $order = $this->makeOrder();
         $order->setData('invoice_collection', $this->makeInvoiceCollection(false));
+        $this->settingsProvider->method('isInvoiceDistributedByMerchant')->willReturn(true);
 
-        $this->orderStatusHistoryRepository->expects($this->once())->method('save');
-        $this->logRepository->expects($this->once())->method('addErrorLog');
+        $this->orderRepository->expects($this->once())->method('save')->with($order);
+        $this->orderStatusHistoryRepository->expects($this->never())->method('save');
+        $this->logRepository->expects($this->never())->method('addErrorLog');
 
         $this->service->upload($order, 'inv-123');
 
-        $this->assertSame(UploadService::STATUS_FAILED, $order->getData('two_invoice_upload_status'));
+        $this->assertSame(UploadService::STATUS_NOT_APPLICABLE, $order->getData('two_invoice_upload_status'));
     }
 
     public function testUploadFailsWhenPdfEmpty(): void
     {
         $order = $this->makeOrder();
         $order->setData('invoice_collection', $this->makeInvoiceCollection());
+        $this->settingsProvider->method('isInvoiceDistributedByMerchant')->willReturn(true);
         $this->invoicePdf->method('getPdf')->willReturn($this->makePdfDocument(''));
 
         $this->service->upload($order, 'inv-123');
@@ -221,6 +265,7 @@ class UploadServiceTest extends TestCase
     {
         $order = $this->makeOrder();
         $order->setData('invoice_collection', $this->makeInvoiceCollection());
+        $this->settingsProvider->method('isInvoiceDistributedByMerchant')->willReturn(true);
         $this->invoicePdf->method('getPdf')->willReturn($this->makePdfDocument('PDF-BYTES'));
 
         $this->apiAdapter->method('execute')->willReturn(['http_status' => 403]);
@@ -238,6 +283,7 @@ class UploadServiceTest extends TestCase
     {
         $order = $this->makeOrder();
         $order->setData('invoice_collection', $this->makeInvoiceCollection());
+        $this->settingsProvider->method('isInvoiceDistributedByMerchant')->willReturn(true);
         $this->invoicePdf->method('getPdf')->willReturn($this->makePdfDocument('PDF-BYTES'));
 
         $failingCurl = $this->createMock(Curl::class);
@@ -269,6 +315,7 @@ class UploadServiceTest extends TestCase
     {
         $order = $this->makeOrder();
         $order->setData('invoice_collection', $this->makeInvoiceCollection());
+        $this->settingsProvider->method('isInvoiceDistributedByMerchant')->willReturn(true);
         $this->invoicePdf->method('getPdf')->willReturn($this->makePdfDocument('PDF-BYTES'));
 
         $curl = $this->createMock(Curl::class);
@@ -293,6 +340,7 @@ class UploadServiceTest extends TestCase
     {
         $order = $this->makeOrder();
         $order->setData('invoice_collection', $this->makeInvoiceCollection());
+        $this->settingsProvider->method('isInvoiceDistributedByMerchant')->willReturn(true);
         $this->invoicePdf->method('getPdf')->willReturn($this->makePdfDocument('PDF-BYTES'));
 
         $curl = $this->createMock(Curl::class);
@@ -335,7 +383,7 @@ class UploadServiceTest extends TestCase
             {
                 $this->invoice = $invoice;
             }
-            public function getFirstItem()
+            public function getLastItem()
             {
                 return $this->invoice;
             }

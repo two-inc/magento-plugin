@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Cron;
 
 use Magento\Framework\Api\SearchCriteriaBuilder;
+use Magento\Framework\Lock\LockManagerInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
 use PHPUnit\Framework\TestCase;
@@ -26,6 +27,9 @@ class ProcessInvoiceUploadsTest extends TestCase
     /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
     private $logRepository;
 
+    /** @var LockManagerInterface|\PHPUnit\Framework\MockObject\MockObject */
+    private $lockManager;
+
     /** @var ProcessInvoiceUploads */
     private $cron;
 
@@ -34,12 +38,15 @@ class ProcessInvoiceUploadsTest extends TestCase
         $this->orderRepository = $this->createMock(OrderRepositoryInterface::class);
         $this->uploadService = $this->createMock(UploadService::class);
         $this->logRepository = $this->createMock(LogRepository::class);
+        $this->lockManager = $this->createMock(LockManagerInterface::class);
+        $this->lockManager->method('lock')->willReturn(true);
 
         $this->cron = new ProcessInvoiceUploads(
             $this->orderRepository,
             new SearchCriteriaBuilder(),
             $this->uploadService,
-            $this->logRepository
+            $this->logRepository,
+            $this->lockManager
         );
     }
 
@@ -96,6 +103,41 @@ class ProcessInvoiceUploadsTest extends TestCase
                 }
             });
         $this->logRepository->expects($this->once())->method('addErrorLog');
+
+        $this->cron->execute();
+    }
+
+    public function testSkipsOrderAlreadyLockedByAnotherRun(): void
+    {
+        // A prior tick (or another replica) is still working this order —
+        // upload() must not be called a second time concurrently.
+        $order = $this->makeOrder(1, 'inv-a');
+        $this->stubSearchResults([$order]);
+        $this->lockManager = $this->createMock(LockManagerInterface::class);
+        $this->lockManager->method('lock')->willReturn(false);
+        $this->cron = new ProcessInvoiceUploads(
+            $this->orderRepository,
+            new SearchCriteriaBuilder(),
+            $this->uploadService,
+            $this->logRepository,
+            $this->lockManager
+        );
+
+        $this->uploadService->expects($this->never())->method('upload');
+        $this->lockManager->expects($this->never())->method('unlock');
+
+        $this->cron->execute();
+    }
+
+    public function testReleasesLockAfterProcessingEvenOnException(): void
+    {
+        $order = $this->makeOrder(1, 'inv-a');
+        $this->stubSearchResults([$order]);
+        $this->uploadService->method('upload')->willThrowException(new \RuntimeException('boom'));
+
+        $this->lockManager->expects($this->once())->method('lock')->with('two_gateway_invoice_upload_1', 0)
+            ->willReturn(true);
+        $this->lockManager->expects($this->once())->method('unlock')->with('two_gateway_invoice_upload_1');
 
         $this->cron->execute();
     }
