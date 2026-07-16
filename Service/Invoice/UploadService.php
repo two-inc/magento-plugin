@@ -245,11 +245,21 @@ class UploadService
     private function renderInvoicePdf($order): string
     {
         $invoices = $order->getInvoiceCollection();
-        // Most-recently-created invoice, not blindly the first: an order
-        // can already carry an earlier (e.g. partial/admin-created)
-        // invoice, and the one from this fulfilment is what should be
-        // uploaded (TWO-24758 review, Vader).
-        $invoice = $invoices !== null ? $invoices->getLastItem() : null;
+        $invoice = null;
+        if ($invoices !== null) {
+            // Explicitly sort on entity_id (creation order) rather than
+            // trusting the collection's implicit load order: an order can
+            // already carry an earlier (e.g. partial/admin-created)
+            // invoice, and only the one from this fulfilment — the most
+            // recently created — should be uploaded. getLastItem() alone
+            // is "less wrong", not guaranteed, since it depends on the
+            // collection's default load order matching creation order
+            // (TWO-24758 review round 2, Vader).
+            if (method_exists($invoices, 'setOrder')) {
+                $invoices->setOrder('entity_id', 'DESC');
+            }
+            $invoice = $invoices->getFirstItem();
+        }
         if ($invoice === null || !$invoice->getEntityId()) {
             throw new NoInvoiceException('No Magento invoice found for order');
         }

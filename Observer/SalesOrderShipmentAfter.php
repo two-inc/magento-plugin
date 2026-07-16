@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Observer;
 
 use Exception;
+use Throwable;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Exception\LocalizedException;
@@ -213,7 +214,12 @@ class SalesOrderShipmentAfter implements ObserverInterface
                     $order,
                     is_string($twoInvoiceId) ? $twoInvoiceId : null
                 );
-            } catch (Exception $e) {
+            } catch (Throwable $e) {
+                // Throwable, not Exception: matches the cron's own choice
+                // (Cron/ProcessInvoiceUploads.php) and the guarantee this
+                // comment claims — a TypeError/Error here must not surface
+                // as a shipment-creation failure either (TWO-24758 review
+                // round 2, Han).
                 $this->logRepository->addErrorLog(
                     'invoice-upload-queue-exception',
                     ['order_id' => $order->getEntityId(), 'error' => $e->getMessage()]

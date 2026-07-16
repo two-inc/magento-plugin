@@ -248,6 +248,32 @@ class UploadServiceTest extends TestCase
         $this->assertSame(UploadService::STATUS_NOT_APPLICABLE, $order->getData('two_invoice_upload_status'));
     }
 
+    public function testUploadSelectsMostRecentInvoiceWhenOrderHasMultiple(): void
+    {
+        // Order already carries an earlier, unrelated invoice (id 50,
+        // e.g. a prior partial/admin-created invoice) plus the one from
+        // this fulfilment (id 99, created later). Only the latter must be
+        // rendered/uploaded — this is a real regression test for the
+        // getLastItem()->explicit-sort fix (TWO-24758 review round 2,
+        // Vader): ids are given in creation (ascending) order so the test
+        // would fail if the code fell back to trusting insertion order.
+        $order = $this->makeOrder();
+        $order->setData('invoice_collection', $this->makeInvoiceCollectionWithIds([50, 99]));
+        $this->settingsProvider->method('isInvoiceDistributedByMerchant')->willReturn(true);
+
+        $renderedInvoiceIds = [];
+        $this->invoicePdf->method('getPdf')->willReturnCallback(function (array $invoices) use (&$renderedInvoiceIds) {
+            foreach ($invoices as $invoice) {
+                $renderedInvoiceIds[] = $invoice->getEntityId();
+            }
+            return $this->makePdfDocument('PDF-BYTES');
+        });
+
+        $this->service->upload($order, 'inv-123');
+
+        $this->assertSame([99], $renderedInvoiceIds);
+    }
+
     public function testUploadFailsWhenPdfEmpty(): void
     {
         $order = $this->makeOrder();
@@ -365,27 +391,50 @@ class UploadServiceTest extends TestCase
 
     private function makeInvoiceCollection(bool $hasInvoice = true)
     {
-        $invoice = new class ($hasInvoice) {
-            private $hasInvoice;
-            public function __construct(bool $hasInvoice)
-            {
-                $this->hasInvoice = $hasInvoice;
-            }
-            public function getEntityId()
-            {
-                return $this->hasInvoice ? 99 : null;
-            }
-        };
+        return $this->makeInvoiceCollectionWithIds($hasInvoice ? [99] : []);
+    }
 
-        return new class ($hasInvoice ? $invoice : null) {
-            private $invoice;
-            public function __construct($invoice)
+    /**
+     * Faithful enough re-implementation of the real collection's
+     * setOrder()/getFirstItem() interaction to prove renderInvoicePdf()
+     * actually sorts rather than trusting insertion order: $ids is given
+     * in creation order (ascending, oldest first), mirroring how an order
+     * with an earlier unrelated invoice plus this fulfilment's invoice
+     * would really load.
+     */
+    private function makeInvoiceCollectionWithIds(array $ids)
+    {
+        $invoices = array_map(static function (int $id) {
+            return new class ($id) {
+                private $id;
+                public function __construct(int $id)
+                {
+                    $this->id = $id;
+                }
+                public function getEntityId()
+                {
+                    return $this->id;
+                }
+            };
+        }, $ids);
+
+        return new class ($invoices) {
+            private $invoices;
+            public function __construct(array $invoices)
             {
-                $this->invoice = $invoice;
+                $this->invoices = $invoices;
             }
-            public function getLastItem()
+            public function setOrder(string $field, string $direction = 'ASC'): self
             {
-                return $this->invoice;
+                usort($this->invoices, static function ($a, $b) use ($direction) {
+                    $cmp = $a->getEntityId() <=> $b->getEntityId();
+                    return $direction === 'DESC' ? -$cmp : $cmp;
+                });
+                return $this;
+            }
+            public function getFirstItem()
+            {
+                return $this->invoices[0] ?? null;
             }
         };
     }
