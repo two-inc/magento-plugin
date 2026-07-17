@@ -126,4 +126,43 @@ class SettingsProviderTest extends TestCase
 
         $this->assertNull($this->provider->getDefaultTerm(1));
     }
+
+    // --- isInvoiceDistributedByMerchant (TWO-24758 / TWO-25106 Option A) ---
+
+    public function testInvoiceDistributedByMerchantTrue(): void
+    {
+        $this->stubRecord(['invoice_distributed_by_merchant' => true]);
+
+        $this->assertTrue($this->provider->isInvoiceDistributedByMerchant(1));
+    }
+
+    public function testInvoiceDistributedByMerchantFalse(): void
+    {
+        $this->stubRecord(['invoice_distributed_by_merchant' => false]);
+
+        $this->assertFalse($this->provider->isInvoiceDistributedByMerchant(1));
+    }
+
+    public function testInvoiceDistributedByMerchantFalseWhenFieldAbsent(): void
+    {
+        $this->stubRecord(['id' => 'abc-123']);
+
+        $this->assertFalse($this->provider->isInvoiceDistributedByMerchant(1));
+    }
+
+    public function testInvoiceDistributedByMerchantFalseWhenRecordUnresolved(): void
+    {
+        $this->stubRecord(null);
+
+        $this->assertFalse($this->provider->isInvoiceDistributedByMerchant(1));
+    }
+
+    public function testInvoiceDistributedByMerchantFalseWhenNotStrictlyTrue(): void
+    {
+        // Truthy-but-not-boolean-true values (e.g. a string "true" from a
+        // lenient JSON decode) must not accidentally gate the feature on.
+        $this->stubRecord(['invoice_distributed_by_merchant' => 'true']);
+
+        $this->assertFalse($this->provider->isInvoiceDistributedByMerchant(1));
+    }
 }

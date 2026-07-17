@@ -16,6 +16,9 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Total\Surcharge;
+use Two\Gateway\Service\Order\MerchantMinimumResolver;
+use Two\Gateway\Service\Order\MinimumOrderGate;
+use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Service\Order\SurchargeCalculator;
 use Two\Gateway\Service\Order\SurchargeTaxCalculator;
 
@@ -49,6 +52,15 @@ class SurchargeTest extends TestCase
     /** @var SurchargeTaxCalculator|\PHPUnit\Framework\MockObject\MockObject */
     private $taxCalculator;
 
+    /** @var MinimumOrderGate|\PHPUnit\Framework\MockObject\MockObject */
+    private $minimumOrderGate;
+
+    /** @var MinimumOrderProvider|\PHPUnit\Framework\MockObject\MockObject */
+    private $minimumOrderProvider;
+
+    /** @var MerchantMinimumResolver|\PHPUnit\Framework\MockObject\MockObject */
+    private $merchantMinimumResolver;
+
     /** @var Surcharge */
     private $collector;
 
@@ -58,13 +70,22 @@ class SurchargeTest extends TestCase
         $this->config = $this->createMock(ConfigRepository::class);
         $this->surchargeCalculator = $this->createMock(SurchargeCalculator::class);
         $this->taxCalculator = $this->createMock(SurchargeTaxCalculator::class);
+        $this->minimumOrderGate = $this->createMock(MinimumOrderGate::class);
+        // Existing tests exercise the tax-calculation branching; keep them
+        // unaffected by defaulting the min-order gate to satisfied.
+        $this->minimumOrderGate->method('isSatisfied')->willReturn(true);
+        $this->minimumOrderProvider = $this->createMock(MinimumOrderProvider::class);
+        $this->merchantMinimumResolver = $this->createMock(MerchantMinimumResolver::class);
 
         $this->collector = new Surcharge(
             $this->session,
             $this->config,
             $this->surchargeCalculator,
             $this->taxCalculator,
-            $this->createMock(LogRepository::class)
+            $this->createMock(LogRepository::class),
+            $this->minimumOrderGate,
+            $this->minimumOrderProvider,
+            $this->merchantMinimumResolver
         );
     }
 
@@ -79,6 +100,16 @@ class SurchargeTest extends TestCase
             public function getStoreId()
             {
                 return 1;
+            }
+
+            public function getStore()
+            {
+                return new class extends DataObject {
+                    public function getBaseCurrencyCode()
+                    {
+                        return 'USD';
+                    }
+                };
             }
 
             public function getQuoteCurrencyCode()
@@ -195,5 +226,42 @@ class SurchargeTest extends TestCase
         $this->assertEqualsWithDelta(21.0, $total->getData('two_surcharge_tax_rate'), 1e-9);
         $this->assertEqualsWithDelta(1121.0, $total->getGrandTotal(), 1e-9);
         $this->assertEqualsWithDelta(21.0, $this->session->getTwoSurchargeTax(), 1e-9);
+    }
+
+    /**
+     * ABN-463: a shipping-method change can drop the quote below the
+     * minimum order value without ever deselecting `two_payment` on the
+     * quote. The collector must clear the surcharge on that recollect
+     * pass rather than keep reapplying it because the method code alone
+     * still matches.
+     */
+    public function testSurchargeClearedWhenBelowMinimumOrderEvenWithPaymentMethodStillSelected(): void
+    {
+        $this->stubBaseline();
+        $this->config->method('getSurchargeTaxClassId')->willReturn(null);
+        $this->minimumOrderGate = $this->createMock(MinimumOrderGate::class);
+        $this->minimumOrderGate->method('isSatisfied')->willReturn(false);
+
+        $this->collector = new Surcharge(
+            $this->session,
+            $this->config,
+            $this->surchargeCalculator,
+            $this->taxCalculator,
+            $this->createMock(LogRepository::class),
+            $this->minimumOrderGate,
+            $this->minimumOrderProvider,
+            $this->merchantMinimumResolver
+        );
+
+        $this->session->setTwoSurchargeAmount(100.0);
+        $this->session->setTwoSurchargeTax(21.0);
+
+        $total = new Total(['grand_total' => 1000.0, 'base_grand_total' => 1000.0]);
+        $this->collector->collect($this->makeQuote(), $this->makeShippingAssignment(), $total);
+
+        $this->assertEqualsWithDelta(0.0, (float)$total->getData('two_surcharge_amount'), 1e-9);
+        $this->assertEqualsWithDelta(1000.0, $total->getGrandTotal(), 1e-9);
+        $this->assertEqualsWithDelta(0.0, (float)$this->session->getTwoSurchargeAmount(), 1e-9);
+        $this->assertEqualsWithDelta(0.0, (float)$this->session->getTwoSurchargeTax(), 1e-9);
     }
 }

@@ -210,36 +210,85 @@ class MinimumOrderGateTest extends TestCase
         $this->assertTrue($this->gate->isSatisfied(self::EUR_250_NET, $this->quote(400.0, 'EUR'), $merchantMinimum));
     }
 
-    // ── Conversion-failure posture (TWO-25103 spec) ──────────────────
-    // Platform floor fails CLOSED; merchant bar fails OPEN.
+    // ── Split fail policy: platform floor closed, merchant minimum open ─
 
-    public function testMerchantBarFailsOpenWhenRateUnresolvable(): void
+    public function testPlatformFloorFailsClosedEvenWhenMerchantMinimumSatisfied(): void
     {
-        // The merchant's own bar is a preference, not a funding-partner
-        // requirement: an unresolvable rate skips the bar rather than
-        // hiding the payment method.
+        // No rate for the platform floor's currency: blocked regardless of
+        // the merchant minimum being absent or satisfiable.
         $this->ratesProvider->method('getRate')->willReturn(null);
-        $merchantMinimum = ['amount' => 500.0, 'currency' => 'EUR', 'basis' => 'gross'];
 
-        $this->assertTrue($this->gate->isSatisfied(null, $this->quote(10.0, 'SEK'), $merchantMinimum));
+        $merchantMinimum = ['amount' => 100.0, 'currency' => 'SEK', 'basis' => 'net'];
+
+        $this->assertFalse($this->gate->isSatisfied(self::EUR_250_NET, $this->quote(10000.0, 'SEK'), $merchantMinimum));
     }
 
-    public function testSatisfiedPlatformFloorWithUnconvertibleMerchantBarStaysOpen(): void
+    public function testMerchantMinimumFailsOpenWhenNoExchangeRateConfigured(): void
     {
-        // Platform floor satisfied in the basket currency; the merchant bar
-        // needs a conversion that fails — the bar is skipped, the floor's
-        // verdict stands.
-        $this->ratesProvider->method('getRate')->willReturn(null);
-        $merchantMinimum = ['amount' => 400.0, 'currency' => 'USD', 'basis' => 'net'];
+        // Platform floor is same-currency and satisfied; the merchant's own
+        // minimum is in a currency with no configured rate. That is a local
+        // preference we cannot evaluate — it must not block checkout.
+        $this->ratesProvider->method('getRate')
+            ->with('EUR', 'NOK', 1)
+            ->willReturn(null);
+
+        $merchantMinimum = ['amount' => 5000.0, 'currency' => 'NOK', 'basis' => 'net'];
 
         $this->assertTrue($this->gate->isSatisfied(self::EUR_250_NET, $this->quote(300.0, 'EUR'), $merchantMinimum));
     }
 
-    public function testMerchantBarFailsOpenWhenBasketCurrencyUnresolvable(): void
+    public function testMerchantMinimumFailsOpenWhenRateIsZero(): void
     {
-        $merchantMinimum = ['amount' => 500.0, 'currency' => 'EUR', 'basis' => 'gross'];
+        $this->ratesProvider->method('getRate')
+            ->with('EUR', 'NOK', 1)
+            ->willReturn(0.0);
 
-        $this->assertTrue($this->gate->isSatisfied(null, $this->quote(10.0, null), $merchantMinimum));
+        $merchantMinimum = ['amount' => 5000.0, 'currency' => 'NOK', 'basis' => 'net'];
+
+        $this->assertTrue($this->gate->isSatisfied(self::EUR_250_NET, $this->quote(300.0, 'EUR'), $merchantMinimum));
+    }
+
+    public function testMerchantMinimumFailsOpenWhenRateIsNan(): void
+    {
+        // A NaN rate is as unusable as a missing one, but NAN <= 0 is false
+        // in PHP: without an explicit finiteness guard it would fall through
+        // to the value comparison (always false) and BLOCK instead of
+        // failing open.
+        $this->ratesProvider->method('getRate')
+            ->with('EUR', 'NOK', 1)
+            ->willReturn(NAN);
+
+        $merchantMinimum = ['amount' => 5000.0, 'currency' => 'NOK', 'basis' => 'net'];
+
+        $this->assertTrue($this->gate->isSatisfied(self::EUR_250_NET, $this->quote(300.0, 'EUR'), $merchantMinimum));
+    }
+
+    public function testPlatformFloorFailsClosedWhenRateIsNan(): void
+    {
+        $this->ratesProvider->method('getRate')->willReturn(NAN);
+
+        $this->assertFalse($this->gate->isSatisfied(self::EUR_250_NET, $this->quote(10000.0, 'SEK')));
+    }
+
+    public function testMerchantMinimumFailsOpenWhenBasketCurrencyUnresolvable(): void
+    {
+        // No quote currency and no store: with no platform floor in play the
+        // merchant's own minimum cannot be evaluated — it fails open.
+        $merchantMinimum = ['amount' => 500.0, 'currency' => 'EUR', 'basis' => 'net'];
+
+        $this->assertTrue($this->gate->isSatisfied(null, $this->quote(300.0, null), $merchantMinimum));
+    }
+
+    public function testMerchantMinimumFailOpenLogsDebugNotError(): void
+    {
+        $this->ratesProvider->method('getRate')->willReturn(null);
+        $this->logRepository->expects($this->never())->method('addErrorLog');
+        $this->logRepository->expects($this->once())->method('addDebugLog');
+
+        $merchantMinimum = ['amount' => 5000.0, 'currency' => 'NOK', 'basis' => 'net'];
+
+        $this->gate->isSatisfied(null, $this->quote(300.0, 'EUR'), $merchantMinimum);
+        $this->gate->isSatisfied(null, $this->quote(400.0, 'EUR'), $merchantMinimum);
     }
 
     public function testGrossBasisComparesGrandTotal(): void
@@ -260,11 +309,55 @@ class MinimumOrderGateTest extends TestCase
 
         $this->assertSame(
             ['amount' => 215.0, 'basis' => 'net'],
-            $this->gate->getMinimumForDisplay(self::EUR_250_NET, 'GBP', 1)
+            $this->gate->getMinimumForDisplay(self::EUR_250_NET, 'GBP', 1, failClosedOnUnconvertible: true)
         );
         // No rate: no display value (caller falls back to the generic message)
         $gate = new MinimumOrderGate($this->createMock(CurrencyRatesProviderInterface::class), $this->logRepository);
-        $this->assertNull($gate->getMinimumForDisplay(self::EUR_250_NET, 'SEK', 1));
+        $this->assertNull($gate->getMinimumForDisplay(self::EUR_250_NET, 'SEK', 1, failClosedOnUnconvertible: false));
+    }
+
+    public function testMinimumForDisplayReturnsNullOnNanRate(): void
+    {
+        // NAN <= 0 is false in PHP: without the finiteness guard a NaN rate
+        // would produce ['amount' => NAN] — non-null, so the placement
+        // backstop's below-minimum comparison (always false against NaN)
+        // would silently admit an order it could not verify.
+        $this->ratesProvider->method('getRate')->willReturn(NAN);
+
+        $this->assertNull(
+            $this->gate->getMinimumForDisplay(self::EUR_250_NET, 'SEK', 1, failClosedOnUnconvertible: true)
+        );
+    }
+
+    public function testMinimumForDisplayUnconvertibleLogsErrorWhenFailingClosed(): void
+    {
+        // The display projection sits on the enforcement paths (visibility
+        // gate, placement backstop): a fail-closed unconvertible platform
+        // floor must land in the monitored error log, once per pair.
+        $this->ratesProvider->method('getRate')->willReturn(null);
+        $this->logRepository->expects($this->once())->method('addErrorLog');
+        $this->logRepository->expects($this->never())->method('addDebugLog');
+
+        $this->assertNull(
+            $this->gate->getMinimumForDisplay(self::EUR_250_NET, 'SEK', 1, failClosedOnUnconvertible: true)
+        );
+        $this->assertNull(
+            $this->gate->getMinimumForDisplay(self::EUR_250_NET, 'SEK', 1, failClosedOnUnconvertible: true)
+        );
+    }
+
+    public function testMinimumForDisplayUnconvertibleLogsDebugWhenFailingOpen(): void
+    {
+        $this->ratesProvider->method('getRate')->willReturn(null);
+        $this->logRepository->expects($this->never())->method('addErrorLog');
+        $this->logRepository->expects($this->once())->method('addDebugLog');
+
+        $this->assertNull(
+            $this->gate->getMinimumForDisplay(self::EUR_250_NET, 'SEK', 1, failClosedOnUnconvertible: false)
+        );
+        $this->assertNull(
+            $this->gate->getMinimumForDisplay(self::EUR_250_NET, 'SEK', 1, failClosedOnUnconvertible: false)
+        );
     }
 
     public function testReportsMissingRateOncePerCurrencyPair(): void

@@ -28,6 +28,7 @@ use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
+use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Service\UrlCookie;
@@ -86,6 +87,7 @@ class GenericPaymentMethod extends Two
         LogRepository $logRepository,
         MinimumOrderGate $minimumOrderGate,
         MinimumOrderProvider $minimumOrderProvider,
+        MerchantMinimumResolver $merchantMinimumResolver,
         ConfigDataCollectionFactory $configDataCollectionFactory,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
@@ -113,6 +115,7 @@ class GenericPaymentMethod extends Two
             $logRepository,
             $minimumOrderGate,
             $minimumOrderProvider,
+            $merchantMinimumResolver,
             $configDataCollectionFactory,
             $resource,
             $resourceCollection,

@@ -35,6 +35,7 @@ use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
+use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Service\UrlCookie;
@@ -132,6 +133,10 @@ class Two extends AbstractMethod
      */
     private $minimumOrderProvider;
     /**
+     * @var MerchantMinimumResolver
+     */
+    private $merchantMinimumResolver;
+    /**
      * @var ConfigDataCollectionFactory
      */
     private $configDataCollectionFactory;
@@ -165,6 +170,7 @@ class Two extends AbstractMethod
      * @param LogRepository $logRepository
      * @param MinimumOrderGate $minimumOrderGate
      * @param MinimumOrderProvider $minimumOrderProvider
+     * @param MerchantMinimumResolver $merchantMinimumResolver
      * @param ConfigDataCollectionFactory $configDataCollectionFactory
      * @param AbstractResource|null $resource
      * @param AbstractDb|null $resourceCollection
@@ -192,6 +198,7 @@ class Two extends AbstractMethod
         LogRepository $logRepository,
         MinimumOrderGate $minimumOrderGate,
         MinimumOrderProvider $minimumOrderProvider,
+        MerchantMinimumResolver $merchantMinimumResolver,
         ConfigDataCollectionFactory $configDataCollectionFactory,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
@@ -223,6 +230,7 @@ class Two extends AbstractMethod
         $this->logRepository = $logRepository;
         $this->minimumOrderGate = $minimumOrderGate;
         $this->minimumOrderProvider = $minimumOrderProvider;
+        $this->merchantMinimumResolver = $merchantMinimumResolver;
         $this->configDataCollectionFactory = $configDataCollectionFactory;
     }
 
@@ -284,7 +292,14 @@ class Two extends AbstractMethod
                 );
             }
             if ($declinedOnMinimum && $minimumOrder !== null) {
-                $display = $this->minimumOrderGate->getMinimumForDisplay($minimumOrder, $orderCurrency, $storeId);
+                // Display-only decline hint: an unconvertible rate just falls
+                // back to the generic message, so log fail-open (debug).
+                $display = $this->minimumOrderGate->getMinimumForDisplay(
+                    $minimumOrder,
+                    $orderCurrency,
+                    $storeId,
+                    failClosedOnUnconvertible: false
+                );
                 if ($display !== null) {
                     throw new LocalizedException($this->minimumOrderMessage($display, $order));
                 }
@@ -794,9 +809,12 @@ class Two extends AbstractMethod
      * whether any active minimum could NOT be projected (missing FX rate).
      *
      * On `unresolved`, the renderer must HIDE the method rather than show it
-     * for want of a number: this mirrors MinimumOrderGate's fail-closed stance
-     * (a minimum we cannot prove satisfied hides the method) so the client gate
-     * does not fail OPEN where the server gate would fail closed.
+     * for want of a number. This mirrors MinimumOrderGate's split fail policy:
+     * only an unprojectable PLATFORM floor sets `unresolved` (fail closed — the
+     * client gate must not fail open where the server gate fails closed). An
+     * unprojectable MERCHANT minimum fails open instead: its bar is simply
+     * omitted from `minimums` — we cannot show that number, but a local
+     * preference must not hide the whole method.
      *
      * @return array{minimums: array<int, array{amount: float, basis: string}>, unresolved: bool}
      */
@@ -809,28 +827,43 @@ class Two extends AbstractMethod
         $storeId = $quote->getStoreId() !== null ? (int)$quote->getStoreId() : null;
         $store = $quote->getStore();
         $baseCurrency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
+        // An unresolvable display currency ('') is NOT short-circuited: it
+        // flows into each per-minimum projection below, exactly like
+        // assertOrderMeetsMinimum(), so the split fail policy applies —
+        // an active platform floor fails closed (unresolved = hide), while
+        // a merchant minimum alone fails open (method stays visible).
         $displayCurrency = (string)($quote->getQuoteCurrencyCode() ?: $baseCurrency);
-        if ($displayCurrency === '') {
-            // A real quote whose currency cannot be resolved: fail closed
-            // (hide), matching MinimumOrderGate's stance on an empty quote
-            // currency, rather than showing the method for want of a currency.
-            return ['minimums' => [], 'unresolved' => true];
-        }
 
         $minimums = [];
         $unresolved = false;
         $platform = $this->minimumOrderProvider->getMinimum($storeId);
-        $active = [$platform, $this->buildMerchantMinimum($baseCurrency, $platform, $storeId)];
-        foreach ($active as $minimum) {
-            if ($minimum === null) {
-                continue;
-            }
-            $shown = $this->minimumOrderGate->getMinimumForDisplay($minimum, $displayCurrency, $storeId);
+        if ($platform !== null) {
+            $shown = $this->minimumOrderGate->getMinimumForDisplay(
+                $platform,
+                $displayCurrency,
+                $storeId,
+                failClosedOnUnconvertible: true
+            );
             if ($shown === null) {
+                // Unprojectable platform floor: fail closed (hide the method).
                 $unresolved = true;
-                continue;
+            } else {
+                $minimums[] = $shown;
             }
-            $minimums[] = $shown;
+        }
+        $merchant = $this->buildMerchantMinimum($baseCurrency, $platform, $storeId);
+        if ($merchant !== null) {
+            $shown = $this->minimumOrderGate->getMinimumForDisplay(
+                $merchant,
+                $displayCurrency,
+                $storeId,
+                failClosedOnUnconvertible: false
+            );
+            if ($shown !== null) {
+                $minimums[] = $shown;
+            }
+            // Unprojectable merchant minimum: fail open — omit its bar rather
+            // than hide the method over a local preference (see docblock).
         }
 
         return ['minimums' => $minimums, 'unresolved' => $unresolved];
@@ -839,13 +872,13 @@ class Two extends AbstractMethod
     /**
      * The merchant's own optional minimum-order tuple, in the store BASE
      * currency, or null when unset (<= 0) or the base currency is unknown.
-     * Single source of truth shared by isAvailable()'s server gate,
-     * getMinimumOrderVisibility()'s client-display projection, and the
-     * authorize() placement backstop: they MUST agree on the constraint, so
-     * the construction lives in exactly one place. Amount is validated on save
-     * to meet/exceed the platform floor; basis falls back to the platform
-     * minimum's basis, then 'gross', when the admin value is neither 'net' nor
-     * 'gross'.
+     * Delegates to MerchantMinimumResolver — the single source of truth
+     * shared by isAvailable()'s server gate, getMinimumOrderVisibility()'s
+     * client-display projection, the authorize() placement backstop, and
+     * Total\Surcharge's totals-recollect gate: they MUST agree on the
+     * constraint. `$this->_code` is this instance's bound payment-method
+     * code (the resolver is parameterized by code so it can also serve
+     * Total\Surcharge, which is not bound to a single method instance).
      *
      * @param string $baseCurrency Store base currency the merchant amount is denominated in.
      * @param array<string, mixed>|null $platform Platform minimum, for basis fallback only.
@@ -854,18 +887,7 @@ class Two extends AbstractMethod
      */
     private function buildMerchantMinimum(string $baseCurrency, ?array $platform, ?int $storeId = null): ?array
     {
-        $merchantValue = (float)$this->getConfigData('merchant_minimum_order', $storeId);
-        if ($merchantValue <= 0 || $baseCurrency === '') {
-            return null;
-        }
-        $merchantBasis = (string)$this->getConfigData('merchant_minimum_order_basis', $storeId);
-        return [
-            'amount' => $merchantValue,
-            'currency' => $baseCurrency,
-            'basis' => in_array($merchantBasis, ['net', 'gross'], true)
-                ? $merchantBasis
-                : ($platform['basis'] ?? 'gross'),
-        ];
+        return $this->merchantMinimumResolver->resolve($this->_code, $baseCurrency, $platform, $storeId);
     }
 
     /**
@@ -880,7 +902,17 @@ class Two extends AbstractMethod
      * placement; checkout-api independently enforces the platform floor but
      * never receives the merchant's own admin minimum.
      *
-     * @throws LocalizedException when the finalised order is below a minimum.
+     * Split fail policy on an unprojectable minimum (missing FX rate), the
+     * same split the gate and the client-display projection apply: only the
+     * PLATFORM floor fails CLOSED (reject the order — the floor is a platform
+     * guarantee and must never be waived for want of a rate). The MERCHANT
+     * minimum fails OPEN: an unprojectable merchant bar is skipped and the
+     * order proceeds — a local preference must not block placement over a
+     * missing rate. When a minimum IS projectable, a below-minimum order is
+     * rejected for both.
+     *
+     * @throws LocalizedException when the finalised order is below a
+     *     projectable minimum, or when the platform floor cannot be projected.
      */
     private function assertOrderMeetsMinimum(Order $order): void
     {
@@ -888,25 +920,46 @@ class Two extends AbstractMethod
         $orderCurrency = (string)$order->getOrderCurrencyCode();
         $store = $order->getStore();
         $baseCurrency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
+
+        // Project each minimum into the order currency once, then compare —
+        // the same projection the client-display gate uses, so enforce and
+        // display cannot disagree.
+        $displays = [];
         $platform = $this->minimumOrderProvider->getMinimum($storeId);
-        $active = [$platform, $this->buildMerchantMinimum($baseCurrency, $platform, $storeId)];
-        foreach ($active as $minimum) {
-            if ($minimum === null) {
-                continue;
-            }
-            // Project the minimum into the order currency once, then compare —
-            // the same projection the client-display gate uses, so enforce and
-            // display cannot disagree. A null projection means an active minimum
-            // we cannot convert (missing FX rate): fail CLOSED and reject, never
-            // delegate to the fail-soft isBelowMinimum(), which would let a
-            // below-minimum order through on the one path (Amasty + JS bypass)
-            // where this is the sole merchant-minimum enforcer.
-            $display = $this->minimumOrderGate->getMinimumForDisplay($minimum, $orderCurrency, $storeId);
+        if ($platform !== null) {
+            $display = $this->minimumOrderGate->getMinimumForDisplay(
+                $platform,
+                $orderCurrency,
+                $storeId,
+                failClosedOnUnconvertible: true
+            );
             if ($display === null) {
+                // Unprojectable platform floor: fail CLOSED and reject, never
+                // delegate to the fail-soft isBelowMinimum(), which would let
+                // a below-minimum order through on the one path (Amasty + JS
+                // bypass) where this is the sole enforcer.
                 throw new LocalizedException(
                     __('Invoice purchase with %1 is not available for this order.', $this->brandRegistry->getProductName())
                 );
             }
+            $displays[] = $display;
+        }
+        $merchant = $this->buildMerchantMinimum($baseCurrency, $platform, $storeId);
+        if ($merchant !== null) {
+            $display = $this->minimumOrderGate->getMinimumForDisplay(
+                $merchant,
+                $orderCurrency,
+                $storeId,
+                failClosedOnUnconvertible: false
+            );
+            if ($display !== null) {
+                $displays[] = $display;
+            }
+            // Unprojectable merchant minimum: fail open — skip this bar and
+            // let the order proceed (see docblock).
+        }
+
+        foreach ($displays as $display) {
             $orderValue = $display['basis'] === 'gross'
                 ? (float)$order->getGrandTotal()
                 : (float)$order->getGrandTotal() - (float)$order->getTaxAmount();

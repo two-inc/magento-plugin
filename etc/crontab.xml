@@ -15,5 +15,10 @@
              method="execute">
             <schedule>0 */6 * * *</schedule>
         </job>
+        <job name="two_gateway_process_invoice_uploads"
+             instance="Two\Gateway\Cron\ProcessInvoiceUploads"
+             method="execute">
+            <schedule>* * * * *</schedule>
+        </job>
     </group>
 </config>
