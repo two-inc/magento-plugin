@@ -35,6 +35,7 @@ use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
+use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Service\UrlCookie;
@@ -132,6 +133,10 @@ class Two extends AbstractMethod
      */
     private $minimumOrderProvider;
     /**
+     * @var MerchantMinimumResolver
+     */
+    private $merchantMinimumResolver;
+    /**
      * @var ConfigDataCollectionFactory
      */
     private $configDataCollectionFactory;
@@ -165,6 +170,7 @@ class Two extends AbstractMethod
      * @param LogRepository $logRepository
      * @param MinimumOrderGate $minimumOrderGate
      * @param MinimumOrderProvider $minimumOrderProvider
+     * @param MerchantMinimumResolver $merchantMinimumResolver
      * @param ConfigDataCollectionFactory $configDataCollectionFactory
      * @param AbstractResource|null $resource
      * @param AbstractDb|null $resourceCollection
@@ -192,6 +198,7 @@ class Two extends AbstractMethod
         LogRepository $logRepository,
         MinimumOrderGate $minimumOrderGate,
         MinimumOrderProvider $minimumOrderProvider,
+        MerchantMinimumResolver $merchantMinimumResolver,
         ConfigDataCollectionFactory $configDataCollectionFactory,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
@@ -223,6 +230,7 @@ class Two extends AbstractMethod
         $this->logRepository = $logRepository;
         $this->minimumOrderGate = $minimumOrderGate;
         $this->minimumOrderProvider = $minimumOrderProvider;
+        $this->merchantMinimumResolver = $merchantMinimumResolver;
         $this->configDataCollectionFactory = $configDataCollectionFactory;
     }
 
@@ -864,13 +872,13 @@ class Two extends AbstractMethod
     /**
      * The merchant's own optional minimum-order tuple, in the store BASE
      * currency, or null when unset (<= 0) or the base currency is unknown.
-     * Single source of truth shared by isAvailable()'s server gate,
-     * getMinimumOrderVisibility()'s client-display projection, and the
-     * authorize() placement backstop: they MUST agree on the constraint, so
-     * the construction lives in exactly one place. Amount is validated on save
-     * to meet/exceed the platform floor; basis falls back to the platform
-     * minimum's basis, then 'gross', when the admin value is neither 'net' nor
-     * 'gross'.
+     * Delegates to MerchantMinimumResolver — the single source of truth
+     * shared by isAvailable()'s server gate, getMinimumOrderVisibility()'s
+     * client-display projection, the authorize() placement backstop, and
+     * Total\Surcharge's totals-recollect gate: they MUST agree on the
+     * constraint. `$this->_code` is this instance's bound payment-method
+     * code (the resolver is parameterized by code so it can also serve
+     * Total\Surcharge, which is not bound to a single method instance).
      *
      * @param string $baseCurrency Store base currency the merchant amount is denominated in.
      * @param array<string, mixed>|null $platform Platform minimum, for basis fallback only.
@@ -879,18 +887,7 @@ class Two extends AbstractMethod
      */
     private function buildMerchantMinimum(string $baseCurrency, ?array $platform, ?int $storeId = null): ?array
     {
-        $merchantValue = (float)$this->getConfigData('merchant_minimum_order', $storeId);
-        if ($merchantValue <= 0 || $baseCurrency === '') {
-            return null;
-        }
-        $merchantBasis = (string)$this->getConfigData('merchant_minimum_order_basis', $storeId);
-        return [
-            'amount' => $merchantValue,
-            'currency' => $baseCurrency,
-            'basis' => in_array($merchantBasis, ['net', 'gross'], true)
-                ? $merchantBasis
-                : ($platform['basis'] ?? 'gross'),
-        ];
+        return $this->merchantMinimumResolver->resolve($this->_code, $baseCurrency, $platform, $storeId);
     }
 
     /**

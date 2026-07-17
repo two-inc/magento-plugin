@@ -8,15 +8,14 @@ declare(strict_types=1);
 namespace Two\Gateway\Model\Total;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
-use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Quote\Api\Data\ShippingAssignmentInterface;
 use Magento\Quote\Model\Quote;
 use Magento\Quote\Model\Quote\Address\Total;
 use Magento\Quote\Model\Quote\Address\Total\AbstractTotal;
-use Magento\Store\Model\ScopeInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Source\SurchargeType;
+use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Service\Order\SurchargeCalculator;
@@ -70,9 +69,9 @@ class Surcharge extends AbstractTotal
     private $minimumOrderProvider;
 
     /**
-     * @var ScopeConfigInterface
+     * @var MerchantMinimumResolver
      */
-    private $scopeConfig;
+    private $merchantMinimumResolver;
 
     /**
      * @var array<string, true> set of payment-method codes (as keys) that
@@ -91,7 +90,7 @@ class Surcharge extends AbstractTotal
         LogRepository $logRepository,
         MinimumOrderGate $minimumOrderGate,
         MinimumOrderProvider $minimumOrderProvider,
-        ScopeConfigInterface $scopeConfig,
+        MerchantMinimumResolver $merchantMinimumResolver,
         array $allowedMethods = ['two_payment']
     ) {
         $this->checkoutSession = $checkoutSession;
@@ -101,7 +100,7 @@ class Surcharge extends AbstractTotal
         $this->logRepository = $logRepository;
         $this->minimumOrderGate = $minimumOrderGate;
         $this->minimumOrderProvider = $minimumOrderProvider;
-        $this->scopeConfig = $scopeConfig;
+        $this->merchantMinimumResolver = $merchantMinimumResolver;
         $this->allowedMethods = array_fill_keys($allowedMethods, true);
         $this->setCode('two_surcharge');
     }
@@ -153,8 +152,15 @@ class Surcharge extends AbstractTotal
         // while the surcharge it introduced keeps being recomputed and
         // re-applied against the still-selected (but now ineligible) method
         // on the quote, since nothing else deselects it.
+        $store = $quote->getStore();
+        $baseCurrency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
         $platformMinimum = $this->minimumOrderProvider->getMinimum($storeId);
-        $merchantMinimum = $this->buildMerchantMinimum($quote, $paymentMethod, $platformMinimum, $storeId);
+        $merchantMinimum = $this->merchantMinimumResolver->resolve(
+            $paymentMethod,
+            $baseCurrency,
+            $platformMinimum,
+            $storeId
+        );
         if (!$this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum)) {
             $this->logRepository->addDebugLog('TotalCollector: skipped (below minimum order)', []);
             $this->clearSessionSurcharge();
@@ -367,49 +373,6 @@ class Surcharge extends AbstractTotal
             return $sessionTerm;
         }
         return $this->configRepository->getDefaultPaymentTerm($storeId);
-    }
-
-    /**
-     * The merchant's own optional minimum-order tuple, in the store BASE
-     * currency, or null when unset (<= 0) or the base currency is unknown.
-     * Mirrors Two::buildMerchantMinimum() but keyed off the quote's live
-     * payment-method code (this collector may be shared across brand
-     * overlays) rather than a single bound method instance's `_code`.
-     *
-     * @param array<string, mixed>|null $platform Platform minimum, for basis fallback only.
-     * @return array{amount: float, currency: string, basis: string}|null
-     */
-    private function buildMerchantMinimum(
-        Quote $quote,
-        string $paymentMethod,
-        ?array $platform,
-        int $storeId
-    ): ?array {
-        $merchantValue = (float)$this->scopeConfig->getValue(
-            "payment/{$paymentMethod}/merchant_minimum_order",
-            ScopeInterface::SCOPE_STORE,
-            $storeId
-        );
-        if ($merchantValue <= 0) {
-            return null;
-        }
-        $store = $quote->getStore();
-        $baseCurrency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
-        if ($baseCurrency === '') {
-            return null;
-        }
-        $merchantBasis = (string)$this->scopeConfig->getValue(
-            "payment/{$paymentMethod}/merchant_minimum_order_basis",
-            ScopeInterface::SCOPE_STORE,
-            $storeId
-        );
-        return [
-            'amount' => $merchantValue,
-            'currency' => $baseCurrency,
-            'basis' => in_array($merchantBasis, ['net', 'gross'], true)
-                ? $merchantBasis
-                : ($platform['basis'] ?? 'gross'),
-        ];
     }
 
     /**

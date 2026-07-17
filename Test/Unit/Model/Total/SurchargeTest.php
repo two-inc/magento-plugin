@@ -16,11 +16,11 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Total\Surcharge;
+use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Service\Order\SurchargeCalculator;
 use Two\Gateway\Service\Order\SurchargeTaxCalculator;
-use Magento\Framework\App\Config\ScopeConfigInterface;
 
 /**
  * TWO-25072 coverage for the quote total collector's tax branching,
@@ -58,8 +58,8 @@ class SurchargeTest extends TestCase
     /** @var MinimumOrderProvider|\PHPUnit\Framework\MockObject\MockObject */
     private $minimumOrderProvider;
 
-    /** @var ScopeConfigInterface|\PHPUnit\Framework\MockObject\MockObject */
-    private $scopeConfig;
+    /** @var MerchantMinimumResolver|\PHPUnit\Framework\MockObject\MockObject */
+    private $merchantMinimumResolver;
 
     /** @var Surcharge */
     private $collector;
@@ -75,7 +75,7 @@ class SurchargeTest extends TestCase
         // unaffected by defaulting the min-order gate to satisfied.
         $this->minimumOrderGate->method('isSatisfied')->willReturn(true);
         $this->minimumOrderProvider = $this->createMock(MinimumOrderProvider::class);
-        $this->scopeConfig = $this->createMock(ScopeConfigInterface::class);
+        $this->merchantMinimumResolver = $this->createMock(MerchantMinimumResolver::class);
 
         $this->collector = new Surcharge(
             $this->session,
@@ -85,7 +85,7 @@ class SurchargeTest extends TestCase
             $this->createMock(LogRepository::class),
             $this->minimumOrderGate,
             $this->minimumOrderProvider,
-            $this->scopeConfig
+            $this->merchantMinimumResolver
         );
     }
 
@@ -100,6 +100,16 @@ class SurchargeTest extends TestCase
             public function getStoreId()
             {
                 return 1;
+            }
+
+            public function getStore()
+            {
+                return new class extends DataObject {
+                    public function getBaseCurrencyCode()
+                    {
+                        return 'USD';
+                    }
+                };
             }
 
             public function getQuoteCurrencyCode()
@@ -240,7 +250,7 @@ class SurchargeTest extends TestCase
             $this->createMock(LogRepository::class),
             $this->minimumOrderGate,
             $this->minimumOrderProvider,
-            $this->scopeConfig
+            $this->merchantMinimumResolver
         );
 
         $this->session->setTwoSurchargeAmount(100.0);
