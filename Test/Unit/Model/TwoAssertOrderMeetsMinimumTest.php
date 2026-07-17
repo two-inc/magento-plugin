@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Model;
 
 use Magento\Directory\Model\Currency;
+use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Sales\Model\Order;
 use Magento\Store\Model\Store;
@@ -12,6 +13,7 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Two;
+use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 
@@ -61,11 +63,26 @@ class TwoAssertOrderMeetsMinimumTest extends TestCase
             }
         };
 
+        // buildMerchantMinimum() now delegates to MerchantMinimumResolver;
+        // back it with a scope-config stub reading the same $configData the
+        // model's own getConfigData() override reads, so tests keep driving
+        // the admin-config values through one property.
+        $model = $this->model;
+        $scopeConfig = $this->createMock(ScopeConfigInterface::class);
+        $scopeConfig->method('getValue')->willReturnCallback(
+            static function (string $path) use ($model) {
+                $field = substr($path, strrpos($path, '/') + 1);
+                return $model->configData[$field] ?? null;
+            }
+        );
+        $merchantMinimumResolver = new MerchantMinimumResolver($scopeConfig);
+
         $ref = new \ReflectionClass(Two::class);
         $injected = [
             'minimumOrderGate' => $gate,
             'minimumOrderProvider' => $this->minimumOrderProvider,
             'brandRegistry' => $brandRegistry,
+            'merchantMinimumResolver' => $merchantMinimumResolver,
         ];
         foreach ($injected as $name => $value) {
             $ref->getProperty($name)->setValue($this->model, $value);
