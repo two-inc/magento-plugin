@@ -21,8 +21,8 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
  * total minus tax) or gross value per the declared basis — always
  * explicit, since funding-partner rules and platform country defaults
  * may differ. Baskets in a different currency are converted to the
- * minimum's currency via the store's exchange rates before comparing.
- * When no rate is configured the platform floor fails closed: the
+ * minimum's currency via Two's FX rate table before comparing.
+ * When no rate is resolvable the platform floor fails closed: the
  * method is hidden rather than offered on an order we cannot prove
  * satisfies the funding partner's product minimum. The merchant's own
  * extra minimum (local admin config) fails open instead: a locally

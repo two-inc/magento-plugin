@@ -295,7 +295,7 @@ class SurchargeGrid extends Field
 
         return (string)__(
             'Warning: The fixed fee limit of %1 %2 cannot be enforced correctly because no exchange rate is '
-            . 'configured from %3 to %4. Configure exchange rates in Stores → Currency → Currency Rates.',
+            . 'currently available from %3 to %4.',
             $limitCurrency,
             $limitAmount,
             $limitCurrency,
@@ -305,8 +305,8 @@ class SurchargeGrid extends Field
 
     /**
      * Convert an amount from one currency to another. Rate lookup is routed
-     * through the service contract so all cross-rates resolve via the base
-     * currency's rate table.
+     * through the service contract so all cross-rates resolve via Two's
+     * EUR-pivot FX rate table.
      */
     private function convertAmount(float $amount, string $from, string $to): float
     {

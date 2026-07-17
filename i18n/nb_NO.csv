@@ -199,6 +199,7 @@
 "All Allowed Countries","Alle tillatte land"
 "Amounts are shown in %1.","Beløpet vises i %1."
 "Cannot convert surcharge from %1 to %2.","Kan ikke konvertere gebyr fra %1 til %2."
+"Cannot convert surcharge from %1 to %2: no exchange rate is currently available.","Kan ikke konvertere tilleggsavgift fra %1 til %2: ingen valutakurs er tilgjengelig for øyeblikket."
 "City is not valid.","By er ikke gyldig."
 "Country is not valid.","Land er ikke gyldig."
 "Developed by Magmodules.","Utviklet av Magmodules."
@@ -230,7 +231,7 @@
 "Pay within 30 days","Betal innen 30 dager"
 "Refund Two Surcharge","Refunder tilleggsavgift"
 "Select the payment term(s) you want to offer.","Velg betalingsvilkår du vil tilby."
-"Warning: The fixed fee limit of %1 %2 cannot be enforced correctly because no exchange rate is configured from %3 to %4. Configure exchange rates in Stores → Currency → Currency Rates.","Advarsel: Den faste avgiftsgrensen %1 %2 kan ikke håndheves korrekt fordi ingen valutakurs er konfigurert fra %3 til %4. Konfigurer valutakurser i Stores → Currency → Currency Rates."
+"Warning: The fixed fee limit of %1 %2 cannot be enforced correctly because no exchange rate is currently available from %3 to %4.","Advarsel: Den faste avgiftsgrensen %1 %2 kan ikke håndheves korrekt fordi ingen valutakurs er tilgjengelig fra %3 til %4."
 
 "Surcharge Rounding","Avrunding av tillegg"
 "Rounding Step","Avrundingssteg"

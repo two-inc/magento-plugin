@@ -5,9 +5,19 @@
  * See COPYING.txt for license details.
  */
 -->
-<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Cron:etc/crontab.xsd">
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Cron:etc/crontab.xsd">
     <group id="default">
-        <job name="two_gateway_process_invoice_uploads" instance="Two\Gateway\Cron\ProcessInvoiceUploads" method="execute">
+        <!-- 6h background refresh of the FX rate table (TWO-25103); the
+             read path serves last-known-good between refreshes. -->
+        <job name="two_gateway_refresh_fx_rates"
+             instance="Two\Gateway\Cron\RefreshFxRates"
+             method="execute">
+            <schedule>0 */6 * * *</schedule>
+        </job>
+        <job name="two_gateway_process_invoice_uploads"
+             instance="Two\Gateway\Cron\ProcessInvoiceUploads"
+             method="execute">
             <schedule>* * * * *</schedule>
         </job>
     </group>

@@ -7,41 +7,28 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model;
 
-use Magento\Directory\Model\CurrencyFactory;
-use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
+use Two\Gateway\Service\Fx\RateTableProvider;
 
 /**
- * Reads currency exchange rates via the store's base-currency rate table.
+ * Resolves exchange rates from Two's EUR-pivot spot-rate table
+ * (GET /refdata/v1/fx-rates), replacing the retired Magento Directory
+ * rate-table source (TWO-25103).
  *
- * This is the single class in the plugin permitted to call
- * Currency::load(); the phpstan service-contract rule is suppressed here
- * and here only. All other callers depend on
- * {@see CurrencyRatesProviderInterface}.
+ * The table maps each currency to the EUR value of one unit, so any
+ * cross rate is computed through the EUR pivot without depending on the
+ * store's base currency or admin-maintained Directory rates. Fetching
+ * and caching (6h background refresh, last-known-good fallback) is owned
+ * by {@see RateTableProvider}.
  */
 class CurrencyRatesProvider implements CurrencyRatesProviderInterface
 {
-    /** @var CurrencyFactory */
-    private $currencyFactory;
+    /** @var RateTableProvider */
+    private $rateTableProvider;
 
-    /** @var StoreManagerInterface */
-    private $storeManager;
-
-    /**
-     * Rate-table loads memoised per base currency: getRate() sits on the
-     * payment-method isAvailable() hot path (many calls per page view)
-     * and the rate table is static within a request.
-     *
-     * @var array<string,\Magento\Directory\Model\Currency|null>
-     */
-    private $baseCurrencyCache = [];
-
-    public function __construct(
-        CurrencyFactory $currencyFactory,
-        StoreManagerInterface $storeManager
-    ) {
-        $this->currencyFactory = $currencyFactory;
-        $this->storeManager = $storeManager;
+    public function __construct(RateTableProvider $rateTableProvider)
+    {
+        $this->rateTableProvider = $rateTableProvider;
     }
 
     /**
@@ -49,57 +36,30 @@ class CurrencyRatesProvider implements CurrencyRatesProviderInterface
      */
     public function getRate(string $fromCurrency, string $toCurrency, ?int $storeId = null): ?float
     {
+        $fromCurrency = strtoupper($fromCurrency);
+        $toCurrency = strtoupper($toCurrency);
         if ($fromCurrency === $toCurrency) {
             return 1.0;
         }
 
-        $baseCurrency = $this->resolveBaseCurrency($storeId);
-        $base = $this->loadBaseCurrency($baseCurrency);
-        if ($base === null) {
+        $table = $this->rateTableProvider->getRateTable($storeId);
+        if ($table === null) {
             return null;
         }
 
-        if ($fromCurrency === $baseCurrency) {
-            $rate = (float)$base->getRate($toCurrency);
-            return $rate > 0 ? $rate : null;
-        }
-        if ($toCurrency === $baseCurrency) {
-            $rate = (float)$base->getRate($fromCurrency);
-            return $rate > 0 ? 1.0 / $rate : null;
-        }
-
-        $rateFrom = (float)$base->getRate($fromCurrency);
-        $rateTo = (float)$base->getRate($toCurrency);
-        return ($rateFrom > 0 && $rateTo > 0) ? ($rateTo / $rateFrom) : null;
-    }
-
-    private function resolveBaseCurrency(?int $storeId): string
-    {
-        try {
-            return (string)$this->storeManager->getStore($storeId)->getBaseCurrencyCode();
-        } catch (\Exception $e) {
-            return '';
-        }
-    }
-
-    /**
-     * Load the base currency's rate table. Confined to this method so the
-     * phpstan suppression scope stays minimal.
-     *
-     * @return \Magento\Directory\Model\Currency|null
-     */
-    private function loadBaseCurrency(string $baseCurrency)
-    {
-        if ($baseCurrency === '') {
+        // Table keys are upper-cased on fetch (RateTableProvider::fetchTable);
+        // upper-case the query side too so a lowercase/mixed-case caller
+        // resolves instead of silently missing the table.
+        $rates = $table['rates'];
+        $fromInEur = $rates[$fromCurrency] ?? 0.0;
+        $toInEur = $rates[$toCurrency] ?? 0.0;
+        if ($fromInEur <= 0 || $toInEur <= 0) {
             return null;
         }
-        if (array_key_exists($baseCurrency, $this->baseCurrencyCache)) {
-            return $this->baseCurrencyCache[$baseCurrency];
-        }
-        try {
-            return $this->baseCurrencyCache[$baseCurrency] = $this->currencyFactory->create()->load($baseCurrency);
-        } catch (\Exception $e) {
-            return $this->baseCurrencyCache[$baseCurrency] = null;
-        }
+
+        // rates[CCY] is the EUR value of 1 CCY, so units of `to` per one
+        // `from` is rate(from) / rate(to) — the same computation the
+        // endpoint performs for its single cross-rate form.
+        return $fromInEur / $toInEur;
     }
 }
