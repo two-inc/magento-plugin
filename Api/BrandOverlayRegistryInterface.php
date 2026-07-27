@@ -24,7 +24,7 @@ namespace Two\Gateway\Api;
  *     install. Admin shows `two_payment` as normal.
  *   - Non-empty registry = at least one overlay installed. Admin
  *     hides `two_payment` by default; merchant opts in to re-show
- *     via `payment/two_payment/hide_when_overlay_installed = 0`.
+ *     via `two_brand_synthesis/hide_payment_section/enabled = 0`.
  */
 interface BrandOverlayRegistryInterface
 {
