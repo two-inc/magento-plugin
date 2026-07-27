@@ -262,7 +262,7 @@ define([
 
             const isValid = emailArray.every((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
             if (!isValid && emails) {
-                this.showErrorMessage(this.invalidEmailListMessage, 3);
+                this.showErrorMessage(this.invalidEmailListMessage, 3000);
                 return false;
             }
             return true;
@@ -504,15 +504,21 @@ define([
                 return;
             }
 
-            if (
-                this.validate() &&
-                additionalValidators.validate() &&
-                this.isPaymentTermsAccepted() === true
-            ) {
-                if (!this.isPlaceOrderActionAllowed()) {
-                    // After the re-arm above, only reachable while one of our own
-                    // requests is genuinely in flight. Say so instead of
-                    // swallowing the click.
+            // No isPaymentTermsAccepted() conjunct here: acceptance is a
+            // precondition only when the checkbox is actually rendered, which is
+            // exactly the isPaymentTermsEnabled gate above. Requiring it
+            // unconditionally made the button silently dead whenever terms are
+            // disabled — nothing renders the checkbox, no JS writes the
+            // observable, so it stays false, placeOrderBackend never runs and no
+            // error is shown. Only ConfigProvider hardcoding the flag to true
+            // kept that unreachable.
+            if (this.validate() && additionalValidators.validate()) {
+                if (placeOrderInFlight) {
+                    // Keyed on our own in-flight flag rather than on
+                    // isPlaceOrderActionAllowed: that observable is shared and
+                    // core's quote.billingAddress subscription can set it back to
+                    // true while our request is still running, which would let a
+                    // second click through to a second order-create POST.
                     this.showErrorMessage($t('Your order is already being placed. Please wait.'));
                     return;
                 }
@@ -533,16 +539,23 @@ define([
                 this.isPlaceOrderActionAllowed(true);
                 throw error;
             }
+            // .always() is registered BEFORE .done() on purpose. jQuery fires a
+            // deferred's callbacks in registration order and a throw from one
+            // aborts the rest of the list, so with .done() first an
+            // afterPlaceOrder() throw would strand both the latch and the
+            // in-flight flag — the one failure mode the recovery in placeOrder()
+            // cannot rescue. Clearing first is safe: JS is single-threaded, so no
+            // click can land between the clear and afterPlaceOrder() running.
             return deferred
+                .always(function () {
+                    placeOrderInFlight = false;
+                    self.isPlaceOrderActionAllowed(true);
+                })
                 .done(function () {
                     self.afterPlaceOrder();
                     if (self.redirectAfterPlaceOrder) {
                         redirectOnSuccessAction.execute();
                     }
-                })
-                .always(function () {
-                    placeOrderInFlight = false;
-                    self.isPlaceOrderActionAllowed(true);
                 });
         },
         processOrderIntentSuccessResponse: function (response) {
@@ -925,10 +938,6 @@ define([
             const windowFeatures =
                 'location=yes,resizable=yes,scrollbars=yes,status=yes, height=805, width=610';
             return window.open(URL, '_blank', windowFeatures);
-        },
-
-        showErrorMessage(message) {
-            this.messageContainer.addErrorMessage({ message });
         },
 
         registeredOrganisationMode() {

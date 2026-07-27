@@ -26,34 +26,40 @@ function observable(initial) {
 /**
  * jQuery-deferred stand-in whose settlement the test drives explicitly, so a
  * request can be left permanently in flight.
+ *
+ * Callbacks are kept in one registration-ordered list, and a throw from any of
+ * them propagates and abandons the rest — which is what jQuery does (`always`
+ * is `.done(fn).fail(fn)`, appending to the same callback list, and
+ * Callbacks.fireWith invokes them synchronously). Registration order is
+ * therefore load-bearing behaviour, not an implementation detail, and the
+ * stand-in has to reproduce it for the .always()-before-.done() cover below to
+ * mean anything.
  */
 function makeDeferred() {
-    const doneCbs = [];
-    const alwaysCbs = [];
+    const cbs = [];
+    function fire(kinds) {
+        cbs.forEach(function (entry) {
+            if (kinds.indexOf(entry.kind) !== -1) entry.fn();
+        });
+    }
     const d = {
         done: function (fn) {
-            doneCbs.push(fn);
+            cbs.push({ kind: 'done', fn: fn });
             return d;
         },
-        fail: function () {
+        fail: function (fn) {
+            cbs.push({ kind: 'fail', fn: fn || function () {} });
             return d;
         },
         always: function (fn) {
-            alwaysCbs.push(fn);
+            cbs.push({ kind: 'always', fn: fn });
             return d;
         },
         resolve: function () {
-            doneCbs.forEach(function (fn) {
-                fn();
-            });
-            alwaysCbs.forEach(function (fn) {
-                fn();
-            });
+            fire(['done', 'always']);
         },
         reject: function () {
-            alwaysCbs.forEach(function (fn) {
-                fn();
-            });
+            fire(['fail', 'always']);
         }
     };
     return d;
@@ -96,15 +102,21 @@ function makeContext(component, opts) {
                 errors.push(m.message);
             }
         },
-        isPaymentTermsEnabled: true,
-        isPaymentTermsAccepted: observable(true),
+        isPaymentTermsEnabled: 'termsEnabled' in opts ? opts.termsEnabled : true,
+        isPaymentTermsAccepted: observable('termsAccepted' in opts ? opts.termsAccepted : true),
         isPlaceOrderActionAllowed: observable('allowed' in opts ? opts.allowed : true),
         isInvoiceEmailsEnabled: false,
         redirectAfterPlaceOrder: false,
         validate: function () {
             return true;
         },
-        afterPlaceOrder: function () {},
+        afterPlaceOrder: function () {
+            ctx.afterPlaceOrderCalls++;
+            if (opts.afterPlaceOrderThrows) {
+                throw new Error('afterPlaceOrder boom');
+            }
+        },
+        afterPlaceOrderCalls: 0,
         showErrorMessage: component.showErrorMessage,
         placeOrder: component.placeOrder,
         placeOrderBackend: component.placeOrderBackend,
@@ -197,5 +209,146 @@ describe('gateway_method place-order latch (TWO-24843)', () => {
         const ctx2 = makeContext(component, { allowed: false });
         ctx2.placeOrder.call(ctx2);
         expect(ctx2.placeOrderCalls).toBe(1);
+    });
+});
+
+describe('gateway_method renderer defects (TWO-25174)', () => {
+    test('places the order when payment terms are disabled and unaccepted', () => {
+        // No checkbox renders when the feature is off, so nothing ever writes the
+        // observable. Requiring acceptance anyway made the button silently dead.
+        const component = loadComponent({});
+        const ctx = makeContext(component, { termsEnabled: false, termsAccepted: false });
+
+        ctx.placeOrder.call(ctx);
+
+        expect(ctx.placeOrderCalls).toBe(1);
+        expect(ctx.errors).toEqual([]);
+    });
+
+    test('still refuses, with a message, when terms are enabled and unaccepted', () => {
+        const component = loadComponent({});
+        const ctx = makeContext(component, { termsEnabled: true, termsAccepted: false });
+        ctx.processTermsNotAcceptedErrorResponse = component.processTermsNotAcceptedErrorResponse;
+        ctx.termsNotAcceptedMessage = 'Please accept the payment terms';
+
+        ctx.placeOrder.call(ctx);
+
+        expect(ctx.placeOrderCalls).toBe(0);
+        expect(ctx.errors).toEqual(['Please accept the payment terms']);
+    });
+
+    test('two rapid clicks still yield exactly one place-order request', () => {
+        // The guarantee PR #262 established, re-asserted after re-keying the
+        // in-flight check off placeOrderInFlight.
+        const component = loadComponent({});
+        const ctx = makeContext(component, {});
+
+        ctx.placeOrder.call(ctx);
+        ctx.placeOrder.call(ctx);
+
+        expect(ctx.placeOrderCalls).toBe(1);
+        expect(ctx.errors.join(' ')).toMatch(/already being placed/i);
+    });
+
+    test('refuses a second click even if the shared latch is re-armed mid-request', () => {
+        // isPlaceOrderActionAllowed is prototype-shared and core's
+        // quote.billingAddress subscription can set it true while our request is
+        // still running. Keying the guard on that observable let the second click
+        // through to a second order-create POST; keying it on placeOrderInFlight
+        // does not.
+        const component = loadComponent({});
+        const ctx = makeContext(component, {});
+
+        ctx.placeOrder.call(ctx);
+        expect(ctx.placeOrderCalls).toBe(1);
+
+        ctx.isPlaceOrderActionAllowed(true); // core re-arms behind our back
+        ctx.placeOrder.call(ctx);
+
+        expect(ctx.placeOrderCalls).toBe(1);
+        expect(ctx.errors.join(' ')).toMatch(/already being placed/i);
+    });
+
+    test('clears the latch even when afterPlaceOrder() throws on success', () => {
+        const component = loadComponent({});
+        const ctx = makeContext(component, { afterPlaceOrderThrows: true });
+
+        ctx.placeOrder.call(ctx);
+        expect(ctx.isPlaceOrderActionAllowed()).toBe(false);
+
+        expect(() => ctx.deferred.resolve()).toThrow('afterPlaceOrder boom');
+
+        // .always() ran first, so both the observable and the module-scope
+        // in-flight flag are clear despite the throw...
+        expect(ctx.afterPlaceOrderCalls).toBe(1);
+        expect(ctx.isPlaceOrderActionAllowed()).toBe(true);
+
+        // ...and the next click is accepted rather than swallowed.
+        const ctx2 = makeContext(component, {});
+        ctx2.placeOrder.call(ctx2);
+        expect(ctx2.placeOrderCalls).toBe(1);
+        expect(ctx2.errors).toEqual([]);
+    });
+
+    test('showErrorMessage auto-dismisses after the requested duration', () => {
+        // Two definitions of showErrorMessage existed in the same object literal;
+        // the later, duration-less one won, so the auto-dismiss was dead code and
+        // validateEmails' timeout never fired.
+        jest.useFakeTimers();
+        try {
+            const component = loadComponent({});
+            const messages = [];
+            const ctx = {
+                messageContainer: {
+                    addErrorMessage: function (m) {
+                        messages.push(m.message);
+                    },
+                    errorMessages: {
+                        remove: function (predicate) {
+                            for (let i = messages.length - 1; i >= 0; i--) {
+                                if (predicate(messages[i])) messages.splice(i, 1);
+                            }
+                        }
+                    }
+                }
+            };
+
+            component.showErrorMessage.call(ctx, 'transient', 3000);
+            expect(messages).toEqual(['transient']);
+
+            jest.advanceTimersByTime(2999);
+            expect(messages).toEqual(['transient']);
+
+            jest.advanceTimersByTime(1);
+            expect(messages).toEqual([]);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test('showErrorMessage without a duration leaves the message in place', () => {
+        jest.useFakeTimers();
+        try {
+            const component = loadComponent({});
+            const messages = [];
+            const ctx = {
+                messageContainer: {
+                    addErrorMessage: function (m) {
+                        messages.push(m.message);
+                    },
+                    errorMessages: {
+                        remove: function () {
+                            throw new Error('must not be called');
+                        }
+                    }
+                }
+            };
+
+            component.showErrorMessage.call(ctx, 'sticky');
+            jest.advanceTimersByTime(60000);
+            expect(messages).toEqual(['sticky']);
+        } finally {
+            jest.useRealTimers();
+        }
     });
 });
