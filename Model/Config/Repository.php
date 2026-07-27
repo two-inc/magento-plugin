@@ -179,14 +179,6 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
-    public function getDueInDays(?int $storeId = null): int
-    {
-        return (int)$this->getConfig($this->path('days_on_invoice'), $storeId);
-    }
-
-    /**
-     * @inheritDoc
-     */
     public function getFulfillTrigger(?int $storeId = null): string
     {
         return (string)$this->getConfig($this->path('fulfill_trigger'), $storeId);
