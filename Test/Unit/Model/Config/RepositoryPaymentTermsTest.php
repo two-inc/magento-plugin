@@ -12,6 +12,7 @@ use Magento\Tax\Model\Calculation as TaxCalculation;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Config\Repository;
+use Two\Gateway\Model\Provenance;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 class RepositoryPaymentTermsTest extends TestCase
@@ -51,7 +52,8 @@ class RepositoryPaymentTermsTest extends TestCase
             $this->createMock(ProductMetadataInterface::class),
             $this->taxCalculation,
             $brandRegistry,
-            $this->settingsProvider
+            $this->settingsProvider,
+            $this->createMock(Provenance::class)
         );
     }
 

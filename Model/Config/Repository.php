@@ -16,6 +16,7 @@ use Magento\Tax\Model\Calculation as TaxCalculation;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface;
 use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource;
+use Two\Gateway\Model\Provenance;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
@@ -23,6 +24,13 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
  */
 class Repository implements RepositoryInterface
 {
+    /**
+     * Module whose deployed commit stamps the reported `client_v`. The
+     * base gateway runtime is what the API cares about; brand overlays
+     * ship on top of it and are surfaced per-module in the admin panel.
+     */
+    private const PROVENANCE_MODULE = 'Two_Gateway';
+
     /**
      * @var ScopeConfigInterface
      */
@@ -59,6 +67,14 @@ class Repository implements RepositoryInterface
     private $settingsProvider;
 
     /**
+     * @var Provenance Resolves the commit the deployed module was built
+     *                 from, so outbound telemetry (`client_v`) identifies
+     *                 the exact code running, not just the release line.
+     *                 Shared with the admin Version panel.
+     */
+    private $provenance;
+
+    /**
      * @var string|null Optional explicit override. Null = resolve
      *                  lazily from BrandRegistryInterface::getCode().
      *                  Kept as a ctor arg for unit-test injection and
@@ -84,6 +100,7 @@ class Repository implements RepositoryInterface
         TaxCalculation $taxCalculation,
         BrandRegistryInterface $brandRegistry,
         SettingsProvider $settingsProvider,
+        Provenance $provenance,
         ?string $code = null
     ) {
         $this->scopeConfig = $scopeConfig;
@@ -93,6 +110,7 @@ class Repository implements RepositoryInterface
         $this->taxCalculation = $taxCalculation;
         $this->brandRegistry = $brandRegistry;
         $this->settingsProvider = $settingsProvider;
+        $this->provenance = $provenance;
         $this->code = $code;
     }
 
@@ -401,6 +419,45 @@ class Repository implements RepositoryInterface
     }
 
     /**
+     * Extension version as recorded in config (`payment/<code>/version`),
+     * with no provenance suffix. This is the release line only.
+     */
+    private function getConfiguredVersion()
+    {
+        return $this->getConfig($this->path('version'));
+    }
+
+    /**
+     * Version string reported to the API: the configured release version
+     * suffixed with `+<sha7>` of the commit the deployed code was built
+     * from, e.g. `2.0.1+6f8534e` (TWO-25197).
+     *
+     * The suffix is appended ONLY when a SHA actually resolves — a bare
+     * trailing `+` would be worse than no provenance at all, since it
+     * reads as a truncated value rather than an absent one. An install
+     * with neither Composer metadata nor a git checkout reports the bare
+     * version, unchanged from before.
+     *
+     * `+` is not URL-safe in a query value (it decodes to a space), but
+     * addVersionDataInURL() emits this through http_build_query(), which
+     * percent-encodes it as `%2B`.
+     */
+    private function getReportedVersion(): ?string
+    {
+        $version = $this->getConfiguredVersion();
+        if ($version === null) {
+            return null;
+        }
+        $version = (string)$version;
+        if ($version === '') {
+            return '';
+        }
+        $commit = $this->provenance->commitForModule(self::PROVENANCE_MODULE);
+
+        return $commit === '' ? $version : $version . '+' . $commit;
+    }
+
+    /**
      * Returns extension version Array
      *
      * @return array
@@ -409,7 +466,7 @@ class Repository implements RepositoryInterface
     {
         return [
             'client' => 'Magento',
-            'client_v' => $this->getConfig($this->path('version'))
+            'client_v' => $this->getReportedVersion()
         ];
     }
 
@@ -418,12 +475,12 @@ class Repository implements RepositoryInterface
      */
     public function getExtensionDBVersion(): ?string
     {
-        $versionData = $this->getExtensionVersionData();
-        if (isset($versionData['client_v'])) {
-            return $versionData['client_v'];
-        }
+        // Deliberately the bare configured version, NOT the `+<sha>`
+        // provenance-stamped one: this is the DB/config schema version
+        // that callers compare against release numbers.
+        $version = $this->getConfiguredVersion();
 
-        return null;
+        return $version === null ? null : (string)$version;
     }
 
     /**

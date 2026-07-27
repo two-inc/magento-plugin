@@ -15,6 +15,7 @@ use Magento\Framework\Filesystem\DirectoryList;
 use Magento\Framework\Stdlib\DateTime\TimezoneInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Model\Provenance;
 
 /**
  * Renders the admin "Version" panel: one row per gateway-stack module
@@ -50,6 +51,16 @@ class Version extends Field
     private DirectoryList $directoryList;
     private TimezoneInterface $timezone;
     private BrandRegistryInterface $brandRegistry;
+
+    /**
+     * Commit-SHA resolution, shared with Model\Config\Repository (which
+     * stamps the same SHA onto the `client_v` telemetry parameter).
+     * Protected so a constructor-free test double can supply it.
+     *
+     * @var Provenance
+     */
+    protected $provenance;
+
     private string $moduleName;
 
     /**
@@ -64,6 +75,7 @@ class Version extends Field
      *        exposes it via `getModuleLabelChain()`. A partner overlay
      *        adds its own brand rows; vanilla Two ships only
      *        the parent-runtime rows.
+     * @param Provenance $provenance Shared commit-SHA resolver.
      * @param string $moduleName Primary module — used by getVersion() fallback
      *                           and for any caller still expecting a single
      *                           module identity. Defaults to Two_Gateway
@@ -79,6 +91,7 @@ class Version extends Field
         DirectoryList $directoryList,
         TimezoneInterface $timezone,
         BrandRegistryInterface $brandRegistry,
+        Provenance $provenance,
         string $moduleName = 'Two_Gateway',
         array $data = []
     ) {
@@ -87,6 +100,7 @@ class Version extends Field
         $this->directoryList = $directoryList;
         $this->timezone = $timezone;
         $this->brandRegistry = $brandRegistry;
+        $this->provenance = $provenance;
         $this->moduleName = $moduleName;
         parent::__construct($context, $data);
     }
@@ -256,93 +270,16 @@ class Version extends Field
     }
 
     /**
-     * 7-char SHA of the gitSync-pulled commit.
+     * 7-char SHA of the commit this module's code was built from, or ''.
      *
-     * gitSync v4 writes worktrees at `<root>/.git/worktrees/<sha>/` and
-     * names each worktree directory after the SHA it points at. The
-     * module's `.git` file (a single line `gitdir: <relpath>`) references
-     * that directory. Read it directly — robust whether the module path
-     * is a symlink straight to the worktree (older layout) or a real
-     * directory whose contents were copied/hardlinked at init (current
-     * Magento init job behaviour, which makes the realpath of
-     * registration.php contain no worktree segment).
+     * Delegates to the shared Provenance service, which owns both
+     * resolution paths (Composer installed-registry reference for
+     * Packagist deploys, gitlink worktree parse for gitSync dev installs).
+     * Kept as a protected method so subclasses/tests retain the seam.
      */
     protected function extractCommit(string $modulePath): string
     {
-        // Composer-installed deploys (Packagist/dist — the current 2.0
-        // distribution model) put the module under vendor/ with NO .git
-        // worktree, so the path-based resolution below finds nothing. The
-        // installed registry records the exact source/dist commit, which is
-        // authoritative and layout-independent — prefer it.
-        $fromComposer = $this->commitFromComposer($modulePath);
-        if ($fromComposer !== null) {
-            return $fromComposer;
-        }
-
-        $gitFile = $modulePath . '/.git';
-        if (is_file($gitFile)) {
-            // .git is always `gitdir: <relpath>\n`; cap the read defensively
-            // and trim before anchoring the regex to end-of-string so a
-            // worktrees/<sha> segment elsewhere in the path can't shadow
-            // the real SHA at the tail.
-            $content = @file_get_contents($gitFile, false, null, 0, 1024);
-            if ($content !== false
-                && preg_match('#worktrees/([a-f0-9]{7,40})/?$#', trim($content), $m)
-            ) {
-                return substr($m[1], 0, 7);
-            }
-        }
-        // Legacy fallback: module path is a symlink through the worktree.
-        $real = @realpath($modulePath . '/registration.php');
-        if ($real && preg_match('#\.worktrees/([a-f0-9]{7,40})/#', $real, $m)) {
-            return substr($m[1], 0, 7);
-        }
-        return '';
-    }
-
-    /**
-     * 7-char commit SHA from Composer's installed registry, or null when the
-     * module isn't composer-installed or carries no hex source reference.
-     *
-     * Reads the package name from composer.json (checking the module dir and
-     * one level up — monorepo sub-path modules keep composer.json a level up,
-     * mirroring readComposerVersion()), then asks the installed registry for
-     * that package's source/dist reference. A path-repo or branch install may
-     * carry a non-SHA reference; the hex guard rejects those so the caller
-     * falls back to the .git/worktree resolution.
-     */
-    protected function commitFromComposer(string $modulePath): ?string
-    {
-        foreach ([$modulePath, dirname($modulePath)] as $dir) {
-            $composer = @file_get_contents($dir . '/composer.json');
-            if ($composer === false) {
-                continue;
-            }
-            $data = json_decode($composer, true);
-            $name = is_array($data) ? ($data['name'] ?? null) : null;
-            if (!is_string($name) || $name === '') {
-                continue;
-            }
-            $ref = $this->composerReference($name);
-            if (is_string($ref) && preg_match('/^[a-f0-9]{7,40}$/', $ref)) {
-                return substr($ref, 0, 7);
-            }
-        }
-        return null;
-    }
-
-    /**
-     * The installed package's source/dist reference (commit SHA), or null.
-     * Wraps the static Composer registry as an override seam for testing.
-     */
-    protected function composerReference(string $packageName): ?string
-    {
-        if (!class_exists(\Composer\InstalledVersions::class)
-            || !\Composer\InstalledVersions::isInstalled($packageName)
-        ) {
-            return null;
-        }
-        return \Composer\InstalledVersions::getReference($packageName);
+        return $this->provenance->commitForPath($modulePath);
     }
 
     private function getCodeTs(string $modulePath): int
