@@ -481,9 +481,11 @@ define([
                 return;
             }
 
-            // Validate emails on the forward list
+            // Validate emails on the forward list. validateEmails() displays the
+            // message itself, as processTermsNotAcceptedErrorResponse() above does
+            // for its own failure, so the caller only reacts to the false return
+            // — showing invalidEmailListMessage here too rendered it twice.
             if (this.isInvoiceEmailsEnabled && !this.validateEmails()) {
-                this.showErrorMessage(this.invalidEmailListMessage);
                 return;
             }
 

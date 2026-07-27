@@ -100,6 +100,13 @@ function makeContext(component, opts) {
             },
             addErrorMessage: function (m) {
                 errors.push(m.message);
+            },
+            errorMessages: {
+                remove: function (predicate) {
+                    for (let i = errors.length - 1; i >= 0; i--) {
+                        if (predicate(errors[i])) errors.splice(i, 1);
+                    }
+                }
             }
         },
         isPaymentTermsEnabled: 'termsEnabled' in opts ? opts.termsEnabled : true,
@@ -288,6 +295,47 @@ describe('gateway_method renderer defects (TWO-25174)', () => {
         ctx2.placeOrder.call(ctx2);
         expect(ctx2.placeOrderCalls).toBe(1);
         expect(ctx2.errors).toEqual([]);
+    });
+
+    test('renders the invalid-email message exactly once per rejected click', () => {
+        // validateEmails() both validates and displays; placeOrder() used to
+        // display the same message again on the false return, so the buyer saw
+        // the error twice — once auto-dismissing, once sticky.
+        jest.useFakeTimers();
+        try {
+            const component = loadComponent({});
+            const ctx = makeContext(component, {});
+            ctx.isInvoiceEmailsEnabled = true;
+            ctx.invoiceEmails = observable('not-an-email');
+            ctx.invalidEmailListMessage = 'One or more emails are invalid';
+            ctx.validateEmails = component.validateEmails;
+
+            ctx.placeOrder.call(ctx);
+
+            expect(ctx.placeOrderCalls).toBe(0);
+            expect(ctx.errors).toEqual(['One or more emails are invalid']);
+
+            // And the single message is the auto-dismissing one, so nothing is
+            // left stuck on screen after the buyer fixes the address.
+            jest.advanceTimersByTime(3000);
+            expect(ctx.errors).toEqual([]);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test('places the order when the forward-email list is valid', () => {
+        const component = loadComponent({});
+        const ctx = makeContext(component, {});
+        ctx.isInvoiceEmailsEnabled = true;
+        ctx.invoiceEmails = observable('a@b.com, c@d.com');
+        ctx.invalidEmailListMessage = 'One or more emails are invalid';
+        ctx.validateEmails = component.validateEmails;
+
+        ctx.placeOrder.call(ctx);
+
+        expect(ctx.placeOrderCalls).toBe(1);
+        expect(ctx.errors).toEqual([]);
     });
 
     test('showErrorMessage auto-dismisses after the requested duration', () => {
