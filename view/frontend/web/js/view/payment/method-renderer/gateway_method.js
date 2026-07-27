@@ -18,6 +18,7 @@ define([
     'Magento_Catalog/js/price-utils',
     'Two_Gateway/js/model/surcharge',
     'Two_Gateway/js/model/brand-config',
+    'Two_Gateway/js/model/company-search',
     'Two_Gateway/js/model/minimum-order-visibility',
     'Magento_Ui/js/lib/view/utils/async',
     'mage/validation',
@@ -37,6 +38,7 @@ define([
     priceUtils,
     surchargeModel,
     getBrandConfig,
+    companySearch,
     isAboveMinimums
 ) {
     'use strict';
@@ -739,6 +741,14 @@ define([
                 }
             };
         },
+        /**
+         * Fill the billing address form from a picked company. No-op unless
+         * the merchant has both company search and address search enabled
+         * (ConfigProvider exposes the AND of the two as isAddressSearchEnabled).
+         */
+        addressLookup: function (selectedCompany) {
+            return companySearch.lookupCompanyAddress(this._brandConfig, selectedCompany);
+        },
         enableCompanySearch: function () {
             let self = this;
             require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
@@ -759,44 +769,12 @@ define([
                             templateSelection: function (data) {
                                 return data.text;
                             },
-                            ajax: {
-                                dataType: 'json',
-                                delay: 400,
-                                url: function (params) {
-                                    const queryParams = new URLSearchParams({
-                                        country: self.countryCode()?.toUpperCase(),
-                                        limit: self._brandConfig.companySearchLimit,
-                                        offset:
-                                            ((params.page || 1) - 1) *
-                                            self._brandConfig.companySearchLimit,
-                                        q: unescape(params.term)
-                                    });
-                                    return `${
-                                        self._brandConfig.checkoutApiUrl
-                                    }/companies/v2/company?${queryParams.toString()}`;
-                                },
-                                processResults: function (response, params) {
-                                    const items = [];
-                                    for (let i = 0; i < response.items.length; i++) {
-                                        const item = response.items[i];
-                                        items.push({
-                                            id: item.name,
-                                            text: item.name,
-                                            html: `${item.highlight} (${item.national_identifier.id})`,
-                                            companyId: item.national_identifier.id
-                                        });
-                                    }
-                                    return {
-                                        results: items,
-                                        pagination: {
-                                            more: false
-                                        }
-                                    };
-                                },
-                                data: function () {
-                                    return {};
+                            ajax: companySearch.buildSearchAjaxOptions({
+                                config: self._brandConfig,
+                                getCountryCode: function () {
+                                    return self.countryCode();
                                 }
-                            }
+                            })
                         })
                         .on('select2:open', function () {
                             if ($(self.enterDetailsManuallyButton).length == 0) {
@@ -819,6 +797,12 @@ define([
                             const companyId = selectedItem.companyId;
                             const companyName = selectedItem.text;
                             self.fillCompanyData({ companyId, companyName });
+                            // TWO-25193: the payment-step picker used to stop
+                            // here, leaving the billing address blank. Gate is
+                            // config.isAddressSearchEnabled, applied inside
+                            // lookupCompanyAddress — same one the shipping-step
+                            // picker uses.
+                            self.addressLookup(selectedItem);
                         });
                     $('#select2-company_name-container').text(self.companyName());
                     if ($(self.searchForCompanyButton).length == 0) {

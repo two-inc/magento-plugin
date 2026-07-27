@@ -108,6 +108,14 @@ function defaultMocks() {
         'Magento_Catalog/js/price-utils': { formatPrice: function (n) { return String(n); } },
         'Two_Gateway/js/model/surcharge': makeSurchargeMock(),
         'Two_Gateway/js/model/minimum-order-visibility': function () { return true; },
+        // Inert default. Tests that exercise the real company-search
+        // behaviour load the real module and pass it via extraMocks so
+        // they control the jQuery it closes over.
+        'Two_Gateway/js/model/company-search': {
+            buildSearchAjaxOptions: function () { return {}; },
+            lookupCompanyAddress: function () { return null; },
+            applyAddress: function () {}
+        },
         'Two_Gateway/js/model/brand-config': (function () {
             function getBrandConfig(code) {
                 return ((typeof window !== 'undefined' && window.checkoutConfig && window.checkoutConfig.payment) || {})[code] || {};
@@ -322,6 +330,11 @@ function loadAmdModule(relPath, extraMocks) {
         console: { log: function () {}, debug: function () {}, warn: function () {}, error: function () {} },
         setTimeout: setTimeout,
         clearTimeout: clearTimeout,
+        // Browser globals the module sources use directly.
+        URLSearchParams: URLSearchParams,
+        unescape: global.unescape,
+        Promise: Promise,
+        fetch: typeof fetch === 'function' ? fetch : function () { return Promise.resolve(); },
         // requirejs-config.js files just assign a top-level `var config`.
         // The harness loads them only to verify they parse; the assignment
         // is captured via the wider context.

@@ -10,8 +10,19 @@ define([
     'Magento_Customer/js/customer-data',
     'Magento_Checkout/js/model/step-navigator',
     'uiRegistry',
-    'Two_Gateway/js/model/brand-config'
-], function ($, $t, _, Component, customerData, stepNavigator, uiRegistry, brandConfig) {
+    'Two_Gateway/js/model/brand-config',
+    'Two_Gateway/js/model/company-search'
+], function (
+    $,
+    $t,
+    _,
+    Component,
+    customerData,
+    stepNavigator,
+    uiRegistry,
+    brandConfig,
+    companySearch
+) {
     'use strict';
 
     // Resolve the active Two-family brand subtree so overlays
@@ -67,26 +78,10 @@ define([
             $(this.companyIdSelector).val(companyId);
         },
         setAddressData: function (address) {
-            console.debug({ logger: 'addressAutocomplete.setAddressData', address });
-            $('input[name="city"]').val(address.city);
-            $('input[name="postcode"]').val(address.postal_code);
-            $('input[name="street[0]"]').val(address.street_address);
-            $('input[name="city"], input[name="postcode"], input[name="street[0]"]').trigger(
-                'change'
-            );
+            companySearch.applyAddress(address);
         },
-        addressLookup: function (selectedCompany, countryCode) {
-            const self = this;
-            const addressResponse = $.ajax({
-                dataType: 'json',
-                url: `${config.checkoutApiUrl}/companies/v2/company/${selectedCompany.lookupId}`
-            });
-            addressResponse.done(function (response) {
-                // Use new address lookup by default
-                if (response.addresses) {
-                    self.setAddressData(response.addresses[0]);
-                }
-            });
+        addressLookup: function (selectedCompany) {
+            return companySearch.lookupCompanyAddress(config, selectedCompany);
         },
         enableCompanySearch: function () {
             if (!config.isCompanySearchEnabled) return;
@@ -106,44 +101,12 @@ define([
                             templateSelection: function (data) {
                                 return data.text || self.companyNamePlaceholder;
                             },
-                            ajax: {
-                                dataType: 'json',
-                                delay: 400,
-                                url: function (params) {
-                                    const queryParams = new URLSearchParams({
-                                        country: $(self.countrySelector).val()?.toUpperCase(),
-                                        limit: config.companySearchLimit,
-                                        offset:
-                                            ((params.page || 1) - 1) * config.companySearchLimit,
-                                        q: unescape(params.term)
-                                    });
-                                    return `${
-                                        config.checkoutApiUrl
-                                    }/companies/v2/company?${queryParams.toString()}`;
-                                },
-                                processResults: function (response, params) {
-                                    const items = [];
-                                    for (let i = 0; i < response.items.length; i++) {
-                                        const item = response.items[i];
-                                        items.push({
-                                            id: item.name,
-                                            text: item.name,
-                                            html: `${item.highlight} (${item.national_identifier.id})`,
-                                            companyId: item.national_identifier.id,
-                                            lookupId: item.lookup_id
-                                        });
-                                    }
-                                    return {
-                                        results: items,
-                                        pagination: {
-                                            more: false
-                                        }
-                                    };
-                                },
-                                data: function () {
-                                    return {};
+                            ajax: companySearch.buildSearchAjaxOptions({
+                                config: config,
+                                getCountryCode: function () {
+                                    return $(self.countrySelector).val();
                                 }
-                            }
+                            })
                         })
                         .on('select2:open', function () {
                             if ($(self.enterDetailsManuallyButton).length == 0) {
@@ -168,10 +131,10 @@ define([
                             const selectedItem = e.params.data;
                             $('.select2-selection__rendered').text(selectedItem.id);
                             self.setCompanyData(selectedItem.companyId, selectedItem.text);
-                            if (config.isAddressSearchEnabled) {
-                                const countryCode = $(self.countrySelector).val()?.toLowerCase();
-                                self.addressLookup(selectedItem, countryCode);
-                            }
+                            // Gate lives in companySearch.lookupCompanyAddress
+                            // (config.isAddressSearchEnabled), shared with the
+                            // payment-step picker.
+                            self.addressLookup(selectedItem);
                         });
                     // Set initial placeholder text for the company search
                     if (!$(self.companyNameSelector).val()) {
