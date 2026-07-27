@@ -25,6 +25,12 @@ use Two\Gateway\Plugin\Magento\Config\Model\Config\Structure\Reader\SynthesiseBr
  * The fix removes the flag gate entirely. This test pins the
  * constructor signature so it can't grow a ScopeConfig dependency
  * again without an explicit decision.
+ *
+ * TWO-25191 additionally deleted the now-dead
+ * `two_brand_synthesis/admin_form/enabled` default from
+ * `etc/config.xml` — PR #181 left it behind, and its surviving
+ * comment told readers to "flip to 0 to debug" a gate that no longer
+ * existed. `testConfigXmlDeclaresNoAdminFormFlag` pins that removal.
  */
 class SynthesiseBrandAdminFormTest extends TestCase
 {
@@ -53,6 +59,21 @@ class SynthesiseBrandAdminFormTest extends TestCase
             $constants,
             'The FLAG_PATH constant was removed when the flag gate was dropped — '
             . 'its reappearance signals the regression has been reintroduced.'
+        );
+    }
+
+    public function testConfigXmlDeclaresNoAdminFormFlag(): void
+    {
+        $configXml = dirname(__DIR__, 6) . '/etc/config.xml';
+        self::assertFileExists($configXml);
+
+        $xml = simplexml_load_file($configXml);
+        self::assertNotFalse($xml, 'etc/config.xml must parse');
+
+        self::assertEmpty(
+            $xml->xpath('/config/default/two_brand_synthesis/admin_form'),
+            'etc/config.xml must not declare two_brand_synthesis/admin_form — '
+            . 'nothing reads it since the ABN-415 flag-gate removal (TWO-25191).'
         );
     }
 }
