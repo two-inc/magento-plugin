@@ -43,6 +43,14 @@ define([
 
     window.quote = quote;
 
+    // True while a place-order request started by this renderer is in flight.
+    // Deliberately module-scope rather than per-instance, because the
+    // isPlaceOrderActionAllowed observable it guards is itself shared: it is
+    // declared on the prototype of Magento_Checkout/js/view/payment/default, so
+    // one ko.observable backs every payment renderer in the page and survives
+    // every renderer Magento re-creates when the payment-method list refreshes.
+    var placeOrderInFlight = false;
+
     return Component.extend({
         defaults: {
             template: 'Two_Gateway/payment/gateway_method'
@@ -438,6 +446,36 @@ define([
             // resubmits don't render outdated messages (e.g. terms-not-accepted
             // lingering after the box has been ticked).
             this.messageContainer.clear();
+
+            // Recover a stale place-order latch.
+            //
+            // isPlaceOrderActionAllowed has only two writers: this renderer, which
+            // sets it false before a place-order request and re-arms it in that
+            // request's .always(), and core's quote.billingAddress subscription in
+            // Magento_Checkout/js/view/payment/default, which sets it to
+            // `address !== null`. The latter has no path back to true other than a
+            // further billing-address change, so a transient null billing address
+            // — routine while the buyer edits an address, and around the
+            // renderer re-creation Luma performs whenever the payment-method list
+            // refreshes after a shipping-method save — leaves the observable false
+            // indefinitely. It is shared, too (declared on the prototype), so
+            // re-rendering does not reset it, and the template only greys the
+            // button with a CSS class rather than disabling it. Clicks therefore
+            // kept arriving here and were swallowed in silence: checkout was
+            // unrecoverable without a page reload.
+            //
+            // Re-arming is safe exactly when no request of ours is in flight, so
+            // the double-submit protection the latch provides is preserved. The
+            // one case this cannot rescue is a request that never settles at all
+            // (a hung response, or an earlier-registered fail handler that throws
+            // and aborts the rest of jQuery's callback list before our .always()).
+            // Nothing client-side safely can: "hung" and "still working" are
+            // indistinguishable from here, and guessing wrong duplicates an order.
+            // Avoiding that state is what the shipping-method check below is for.
+            if (!this.isPlaceOrderActionAllowed() && !placeOrderInFlight) {
+                this.isPlaceOrderActionAllowed(true);
+            }
+
             if (this.isPaymentTermsEnabled && !this.isPaymentTermsAccepted()) {
                 this.processTermsNotAcceptedErrorResponse();
                 return;
@@ -449,18 +487,53 @@ define([
                 return;
             }
 
+            // Refuse a placement the server is certain to reject.
+            // QuoteValidator::validateBeforeSubmit raises "The shipping method is
+            // missing" before any payment authorize, so posting a shipping-less
+            // quote can only fail — but it still costs a place-order request that
+            // holds Magento's per-cart CartMutex lock and keeps the button latched
+            // for as long as it runs, which is how a single mistimed click used to
+            // end in "The cart is locked for processing" on the retry. Keeping the
+            // failure client-side gives the buyer a message they can act on and
+            // never takes the lock. Virtual quotes have no shipping method by
+            // design and must not be blocked.
+            if (!quote.isVirtual() && !quote.shippingMethod()) {
+                this.showErrorMessage(
+                    $t('The shipping method is missing. Select the shipping method and try again.')
+                );
+                return;
+            }
+
             if (
                 this.validate() &&
                 additionalValidators.validate() &&
-                this.isPaymentTermsAccepted() === true &&
-                this.isPlaceOrderActionAllowed() === true
-            )
+                this.isPaymentTermsAccepted() === true
+            ) {
+                if (!this.isPlaceOrderActionAllowed()) {
+                    // After the re-arm above, only reachable while one of our own
+                    // requests is genuinely in flight. Say so instead of
+                    // swallowing the click.
+                    this.showErrorMessage($t('Your order is already being placed. Please wait.'));
+                    return;
+                }
                 this.placeOrderBackend();
+            }
         },
         placeOrderBackend: function () {
             const self = this;
+            let deferred;
+            placeOrderInFlight = true;
             this.isPlaceOrderActionAllowed(false);
-            return this.getPlaceOrderDeferredObject()
+            try {
+                deferred = this.getPlaceOrderDeferredObject();
+            } catch (error) {
+                // A synchronous throw would otherwise leave the latch set with no
+                // .always() attached to ever clear it.
+                placeOrderInFlight = false;
+                this.isPlaceOrderActionAllowed(true);
+                throw error;
+            }
+            return deferred
                 .done(function () {
                     self.afterPlaceOrder();
                     if (self.redirectAfterPlaceOrder) {
@@ -468,6 +541,7 @@ define([
                     }
                 })
                 .always(function () {
+                    placeOrderInFlight = false;
                     self.isPlaceOrderActionAllowed(true);
                 });
         },

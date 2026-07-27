@@ -56,7 +56,9 @@ function defaultMocks() {
             billingAddress: makeObservable({}),
             getTotals: function () { return makeObservable({}); },
             getQuoteId: function () { return null; },
-            paymentMethod: makeObservable(null)
+            paymentMethod: makeObservable(null),
+            shippingMethod: makeObservable({ carrier_code: 'freeshipping' }),
+            isVirtual: function () { return false; }
         },
         'Magento_Customer/js/customer-data': {
             get: function () { return makeObservable({}); },
