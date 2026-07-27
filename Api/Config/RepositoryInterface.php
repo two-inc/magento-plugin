@@ -25,7 +25,6 @@ interface RepositoryInterface
     public const XML_PATH_TITLE = 'payment/two_payment/title';
     public const XML_PATH_MODE = 'payment/two_payment/mode';
     public const XML_PATH_API_KEY = 'payment/two_payment/api_key';
-    public const XML_PATH_DAYS_ON_INVOICE = 'payment/two_payment/days_on_invoice';
     public const XML_PATH_FULFILL_TRIGGER = 'payment/two_payment/fulfill_trigger';
     public const XML_PATH_FULFILL_ORDER_STATUS = 'payment/two_payment/fulfill_order_status';
     public const XML_PATH_ENABLE_COMPANY_SEARCH = 'payment/two_payment/enable_company_search';
@@ -98,15 +97,6 @@ interface RepositoryInterface
      * @return bool
      */
     public function isDebugMode(?int $storeId = null, ?string $scope = null): bool;
-
-    /**
-     * Get invoice due in days
-     *
-     * @param int|null $storeId
-     *
-     * @return int
-     */
-    public function getDueInDays(?int $storeId = null): int;
 
     /**
      * Get Fulfill Trigger (invoice or shipment or complete)
