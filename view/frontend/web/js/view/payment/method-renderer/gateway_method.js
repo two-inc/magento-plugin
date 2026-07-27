@@ -262,7 +262,10 @@ define([
 
             const isValid = emailArray.every((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
             if (!isValid && emails) {
-                this.showErrorMessage(this.invalidEmailListMessage, 3000);
+                // 15s, not 3s: 3s dismissed the message before a buyer who was
+                // still typing in the forward-email field had read it, and a sticky
+                // message stayed on screen long after the address was corrected.
+                this.showErrorMessage(this.invalidEmailListMessage, 15000);
                 return false;
             }
             return true;

@@ -316,8 +316,11 @@ describe('gateway_method renderer defects (TWO-25174)', () => {
             expect(ctx.errors).toEqual(['One or more emails are invalid']);
 
             // And the single message is the auto-dismissing one, so nothing is
-            // left stuck on screen after the buyer fixes the address.
+            // left stuck on screen after the buyer fixes the address — but it
+            // survives well past the old 3s window, which was too short to read.
             jest.advanceTimersByTime(3000);
+            expect(ctx.errors).toEqual(['One or more emails are invalid']);
+            jest.advanceTimersByTime(12000);
             expect(ctx.errors).toEqual([]);
         } finally {
             jest.useRealTimers();
