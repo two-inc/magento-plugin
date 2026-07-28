@@ -122,8 +122,7 @@ across modules). Elements may appear in any order (`xs:all`).
 | `sign_up_url`             | no       | string                      | Merchant signup link in admin.                                                                                          |
 | `documentation_url`       | no       | string                      | Docs link in admin.                                                                                                     |
 | `api_base_url`            | yes      | string                      | Two API base for this brand.                                                                                            |
-| `available_payment_terms` | yes      | `<term>` list               | Day counts offered (positive integers).                                                                                 |
-| `surcharge_fixed_max`     | no       | `amount` + `currency` attrs | Cap on the fixed surcharge component.                                                                                   |
+| `surcharge_rounding_steps` | no      | `<step>` list               | Narrows the admin "Rounding Step" dropdown (major units, each `> 0`). Absent or empty inherits the parent default set. Values are deduped and sorted ascending. |
 | `csp_origins`             | no       | `<origin>` list             | Extra CSP origins.                                                                                                      |
 | `admin_resource`          | yes      | string                      | ACL resource gating the admin section.                                                                                  |
 | `module_label_chain`      | no       | `<module label="…">` list   | Admin Version-panel rows; rows for missing modules silently skip.                                                       |
@@ -139,15 +138,11 @@ across modules). Elements may appear in any order (`xs:all`).
 
 The notice is a buyer-facing "order intent approved" reassurance line
 rendered inline in the checkout payment tile. It is controlled by **two
-independent keys**: whether it shows, and what it says.
-
-Historically (TWO-25213) there was one key with three states, where
-"present but empty" meant "off". That conflated two unrelated meanings,
-expressed a decision as the absence of content, and made an intentional
-off switch indistinguishable from an unfinished string — any tidy-up that
-deleted the "empty, unused" declaration silently turned the notice back
-on. TWO-25218 split them. **Do not overload one key with both meanings
-again.**
+independent keys**: whether it shows, and what it says. **Do not
+overload one key with both meanings** — an off switch expressed as the
+absence of content is indistinguishable from an unfinished string, and
+any tidy-up that deletes the "empty, unused" declaration silently turns
+the notice back on.
 
 #### `intent_approved_notice_enabled` — the on/off switch
 
@@ -181,7 +176,7 @@ and `0`, and this switch is meant to read as a decision.
 | brand.xml                                            | Behaviour                                                                                                              |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | element absent                                       | Platform default translated copy.                                                                                      |
-| empty or whitespace-only                             | **Inert** — same as absent. It does **not** mean "off" any more.                                                       |
+| empty or whitespace-only                             | **Inert** — same as absent. It does **not** mean "off".                                                                |
 | `<intent_approved_notice>…</intent_approved_notice>` | The content is used verbatim as the company-known copy template. `%1` = brand product name, `%2` = buyer company name. |
 
 `Descriptor::getIntentApprovedNotice()` returns `null` for the first two
@@ -189,33 +184,31 @@ rows and the template for the third; it never returns `''`. The switch
 above is what `Model\Ui\ConfigProvider` consults to decide whether to ship
 a payload to the renderer at all.
 
-#### Migration hazard: deploy order
+#### Deploy order
 
-A **new parent** plus a **stale overlay** — one that still carries an
-empty `<intent_approved_notice>` and no
-`<intent_approved_notice_enabled>` — resolves to notice **ON**. That is
-wrong for that brand, but not broken. Making an empty copy element a hard
-error would turn the deploy-order window from "wrong notice" into "broken
-store", which is worse, so empty stays inert and there is deliberately no
-legacy-compat path that resurrects empty-means-off.
+**Merge order is `magento-plugin` (parent, owns the parsing) → the brand
+overlay repo → `magento-hyva-extension`.** Out of order there is a window
+in which Hyvä renders the notice for a brand that asked for it off.
 
-The mitigation is **merge order**: `magento-plugin` (parent, owns the
-parsing) → the brand overlay repo → `magento-hyva-extension`. Out
-of order there is a window in which Hyvä renders the notice for a brand
-that asked for it off.
+An overlay that declares an empty `<intent_approved_notice>` and no
+`<intent_approved_notice_enabled>` resolves to notice **ON** — wrong for a
+brand that wants it off, but not broken. Empty deliberately stays inert
+rather than being a hard error: that would turn a wrong notice into a
+broken store. Declare the boolean.
 
-Hyvä additionally guards the reverse skew with `method_exists()` against
-an older parent that lacks the registry method — a missing method means
-"no brand opinion", i.e. notice ON.
+Hyvä guards the reverse skew with `method_exists()` against a parent that
+lacks the registry method — a missing method means "no brand opinion",
+i.e. notice ON.
 
 The company-unknown copy variant always stays on the platform default.
 In practice it is unreachable: an order intent is only ever placed once
 the buyer's company name **and** company number are known.
 
-The notice is rendered by both storefront renderers as a persistent
-inline element with class `two-order-intent-message approved`, inside the
-payment-method tile. The same class name is used on the WooCommerce and
-PrestaShop plugins, so the four checkout surfaces stay greppable.
+Both Magento storefront renderers (Luma and Hyvä) emit the notice as a
+persistent inline element with class `two-order-intent-message approved`
+inside the payment-method tile, as does PrestaShop. WooCommerce uses
+`twoinc-intent-approved` instead, so grep for both when sweeping the four
+checkout surfaces.
 
 ### A warning about validation
 
@@ -253,27 +246,28 @@ short-circuits the synthesised section ordering.
 
 ## Worked example: adding a brand-driven field
 
-`surcharge_fixed_max` is the recipe for extending
+`surcharge_rounding_steps` is the reference implementation for extending
 `BrandRegistryInterface` with a new brand-driven value. Six touch
 points, in dependency order:
 
 1. **Schema** — `etc/brand.xsd`: add the element to `brandType`
    (optional, `minOccurs="0"`, so existing brand.xml files stay valid)
-   plus its complexType (attribute-pair idiom:
-   `<surcharge_fixed_max amount="25.0" currency="EUR"/>`).
+   plus its type. Constrain what you can there
+   (`surchargeRoundingStepsType` → `positiveDecimalType`), and document
+   the accepted values in an XSD comment.
 
 2. **Loader** — `Model/Brand/Loader.php` `buildDescriptor()`: parse the
    element, **normalise and validate** — because nothing validates the
-   xsd at runtime, a typo'd amount would otherwise coerce to `0.0` and
-   silently disable whatever the value drives. Throw `DomainException`
-   on malformed input. Pass the value as a constructor argument to
-   `Descriptor`.
+   xsd at runtime, a typo'd value would otherwise coerce to `0.0` and
+   silently disable whatever it drives. Throw `DomainException` naming
+   the brand.xml path, the element and the bad value. Pass the result as
+   a constructor argument to `Descriptor`.
 
 3. **Value object** — `Model/Brand/Descriptor.php`: append a readonly
-   constructor property + getter. Mirror the same getter on the legacy
-   `Model/Brand.php` value object — both implement
-   `BrandRegistryInterface` and must stay in lockstep until the legacy
-   interface is deleted (see the deprecation note in
+   constructor property + getter. Mirror the same getter on the
+   deprecated `Model/Brand.php` value object — both implement
+   `BrandRegistryInterface` and must stay in lockstep while that class
+   exists (see the deprecation note in
    `Brand/DescriptorBackedBrandRegistry.php`).
 
 4. **Interface + adapter** — `Api/BrandRegistryInterface.php`: declare
@@ -294,14 +288,18 @@ warning above), so verify the feature's observable behaviour after
 deploy.
 
 **brand.xml or the API?** Reserve brand.xml for values that are
-intrinsically brand-static (URLs, labels, payment terms, CSP origins).
-A value the platform owns and may change per merchant — the minimum
-order value is the canonical case — belongs in the Two API instead:
-the gate reads `GET /v1/merchant`'s `min_order_amount/currency/basis`
-via `Service/Order/MinimumOrderProvider` (TWO-24775), so the storefront
-and checkout-api can never disagree on the threshold. The brand.xml
-`<minimum_order>` element that originally shipped with TWO-24743 was
-removed in favour of that lookup.
+intrinsically brand-static: URLs, labels, CSP origins, admin-form shape.
+
+Anything the platform owns and may change per merchant comes from
+`GET /v1/merchant`, never brand.xml, so the storefront and checkout-api
+can never disagree:
+
+-   minimum order value — `min_order_amount/currency/basis`, read via
+    `Service/Order/MinimumOrderProvider` and enforced by
+    `Service/Order/MinimumOrderGate`;
+-   offerable payment terms — `available_terms`, read via
+    `Service/Merchant/SettingsProvider`;
+-   buyer-surcharge cap — `surcharge_limit`, same provider.
 
 ## Local development
 
