@@ -25,7 +25,7 @@ use Magento\Framework\Component\ComponentRegistrar;
  *     installed registry records the exact source/dist reference —
  *     `Composer\InstalledVersions::getReference('two-inc/magento2')`
  *     returns the full release SHA.
- *  3. Zip drop. The ABN overlay ships as a release-asset / GCS zip that is
+ *  3. Zip drop. A branding overlay may ship as a release-asset / GCS zip that is
  *     unpacked straight into `app/code`, carrying neither a `.git` nor a
  *     Composer registry entry — so neither signal above exists. `make
  *     archive` stamps a `.two-deployed-commit` file into the zip at build
@@ -33,7 +33,7 @@ use Magento\Framework\Component\ComponentRegistrar;
  *
  * Resolution order is `.git` gitlink → Composer reference →
  * `.two-deployed-commit` stamp, one org-wide order shared by all six Two
- * plugin artifacts (Magento, Magento ABN, WooCommerce, WooCommerce ABN,
+ * plugin artifacts (Magento, Magento overlay, WooCommerce, WooCommerce overlay,
  * PrestaShop, OpenCart). The order is freshness-ranked, not
  * confidence-ranked: the gitlink is the only signal that reflects what is
  * checked out *right now*, the Composer reference is recorded once at
@@ -46,7 +46,7 @@ use Magento\Framework\Component\ComponentRegistrar;
  * bare version string and the admin panel still renders.
  *
  * Note the SHA is repo-wide, not module-unique: for a repo that ships two
- * modules from sub-paths (the ABN overlay's `plugin/` and `hyva/`) both
+ * modules from sub-paths (an overlay package's `plugin/` and `hyva/`) both
  * legitimately report the same commit.
  *
  * This class is the single owner of that logic. The admin Version block and
@@ -118,7 +118,7 @@ class Provenance
         //
         // The gitlink lives at the checkout root. For a top-level module
         // that IS the module directory; for a monorepo sub-path module
-        // (the ABN overlay ships its gateway at <repo>/plugin) it is one
+        // (an overlay package ships its gateway at <repo>/plugin) it is one
         // level up — same two-place lookup composer.json needs. It can also
         // sit INSIDE the module dir, hence checking both.
         foreach ([$modulePath, dirname($modulePath)] as $dir) {
@@ -147,7 +147,7 @@ class Provenance
             return $fromComposer;
         }
 
-        // THIRD: the build stamp. A zip-dropped module (the ABN overlay's
+        // THIRD: the build stamp. A zip-dropped module (an overlay package's
         // GCS/release-asset zips) has neither of the above; `make archive`
         // writes the build commit into the zip. Frozen at build time, hence
         // last of the three.
@@ -200,7 +200,7 @@ class Provenance
      * when absent, unreadable or malformed.
      *
      * `make archive` writes the build commit into the release zip, which is
-     * how a zip-dropped module (the ABN overlay's GCS zips) reports its
+     * how a zip-dropped module (an overlay package's GCS zips) reports its
      * provenance at all — it carries neither a `.git` nor a Composer
      * registry entry. Checks the module dir and one level up, mirroring the
      * gitlink and composer.json lookups: a sub-path module's stamp is written

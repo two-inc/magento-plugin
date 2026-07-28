@@ -15,7 +15,7 @@ use Two\Gateway\Model\Provenance;
  *    naming the worktree after its SHA.
  *  - Packagist/composer install: no .git at all; the installed registry
  *    carries the release SHA (the regression fixed in TWO-25020).
- *  - zip drop (the ABN overlay's GCS/release-asset zips): neither a .git nor
+ *  - zip drop (an overlay package's GCS/release-asset zips): neither a .git nor
  *    a Composer registry entry, only the `.two-deployed-commit` build stamp
  *    `make archive` injects (TWO-25205).
  *  - none of the three: bare '' with no exception.
@@ -111,7 +111,7 @@ class ProvenanceTest extends TestCase
 
     public function testStampResolvesWhenNeitherGitNorComposerPresent(): void
     {
-        // The zip-drop shape: the ABN overlay's GCS/release-asset zips carry
+        // The zip-drop shape: an overlay package's GCS/release-asset zips carry
         // no .git and no Composer registry entry, so the `make archive`
         // stamp is the only provenance signal that exists (TWO-25205).
         $this->writeStamp("fedcba9876543210fedcba9876543210fedcba98\n");
@@ -129,7 +129,7 @@ class ProvenanceTest extends TestCase
 
     public function testStampFoundOneLevelUpForSubPathModule(): void
     {
-        // A repo shipping modules from sub-paths (the ABN overlay's plugin/
+        // A repo shipping modules from sub-paths (an overlay package's plugin/
         // and hyva/) has the stamp at the archive root, one level up — the
         // same two-place lookup the gitlink and composer.json use.
         $sub = $this->tmpDir . '/plugin';
@@ -209,7 +209,7 @@ class ProvenanceTest extends TestCase
 
     public function testGitlinkFoundOneLevelUpForMonorepoSubpathModule(): void
     {
-        // The ABN overlay's gateway module sits at <repo>/plugin; the
+        // An overlay package's gateway module sits at <repo>/plugin; the
         // gitlink is at the checkout root, one level up. Without the
         // parent-dir lookup the overlay row on a gitSync install shows no
         // commit at all (TWO-25197).
@@ -257,11 +257,11 @@ class ProvenanceTest extends TestCase
 
     public function testPackageNameReadFromParentDirForMonorepoSubpath(): void
     {
-        // Monorepo sub-path modules (e.g. the ABN overlay at <repo>/plugin)
+        // Monorepo sub-path modules (e.g. a branding overlay at <repo>/plugin)
         // keep composer.json one level up.
         $sub = $this->tmpDir . '/plugin';
         mkdir($sub);
-        $this->writeComposerJson('abn-amro/magento-abn-plugin');
+        $this->writeComposerJson('example-partner/magento-overlay');
         $p = $this->provenance('0aa21947d6ed57bcf6b35f73a5ed192fc6a9a0dd');
 
         $this->assertSame('0aa2194', $p->commitFromComposer($sub));
