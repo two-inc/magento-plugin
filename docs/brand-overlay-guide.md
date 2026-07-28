@@ -14,15 +14,15 @@ brand for the install. Brand-aware code reads identity values through
 `Two\Gateway\Api\BrandRegistryInterface`, whose default DI binding
 (`Two\Gateway\Brand\DescriptorBackedBrandRegistry`) delegates to the
 resolved descriptor. An overlay therefore changes behaviour by
-*declaring data*, not by overriding classes.
+_declaring data_, not by overriding classes.
 
 ## The single-overlay invariant
 
 `ActiveBrandResolver` enforces **max one overlay brand atop Two**:
 
-- Two alone → Two is active.
-- Two + one overlay → the overlay is active.
-- Three or more brands → `DomainException` at first `resolve()`.
+-   Two alone → Two is active.
+-   Two + one overlay → the overlay is active.
+-   Three or more brands → `DomainException` at first `resolve()`.
 
 The resolver caches the active descriptor in-process. There is no
 per-store-view brand switching; one install, one brand.
@@ -101,37 +101,37 @@ across modules). Elements may appear in any order (`xs:all`).
 
 **`<brand>` attributes**
 
-| Attribute | Required | Controls |
-|---|---|---|
-| `code` | yes | Brand + payment-method code (`[a-z][a-z0-9_]*`). Keyed into `sales_order.payment.method` and `core_config_data` paths — frozen for live installs. |
-| `tab_sort_order` | yes | Admin Configuration tab ordering. |
-| `section_prefix` | no | Prefix for synthesised admin section ids (`{prefix}_general`, `{prefix}_payment`, …) and the tab id `{prefix}_gateway`. Defaults to `code` minus a trailing `_payment`. |
+| Attribute        | Required | Controls                                                                                                                                                                |
+| ---------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `code`           | yes      | Brand + payment-method code (`[a-z][a-z0-9_]*`). Keyed into `sales_order.payment.method` and `core_config_data` paths — frozen for live installs.                       |
+| `tab_sort_order` | yes      | Admin Configuration tab ordering.                                                                                                                                       |
+| `section_prefix` | no       | Prefix for synthesised admin section ids (`{prefix}_general`, `{prefix}_payment`, …) and the tab id `{prefix}_gateway`. Defaults to `code` minus a trailing `_payment`. |
 
 **Elements**
 
-| Element | Required | Type | Controls |
-|---|---|---|---|
-| `provider` | yes | string | Short provider name (admin/UI copy). |
-| `provider_full_name` | no | string | Legal entity name. |
-| `product_name` | yes | string | Customer-facing product name (checkout, emails, admin). |
-| `tab_label` | yes | string | Admin Configuration tab label. |
-| `tab_css_class` | no | string | CSS class on the admin tab. |
-| `checkout_subtitle` | no | string | Subtitle under the method title at checkout. |
-| `checkout_url_template` | yes | string | Hosted-checkout URL template (`https://%s.…`). |
-| `brand_tag` | no | string | Checkout-page URL query param (`?brand=<tag>`). **Never sent in order bodies.** |
-| `sign_up_url` | no | string | Merchant signup link in admin. |
-| `documentation_url` | no | string | Docs link in admin. |
-| `api_base_url` | yes | string | Two API base for this brand. |
-| `available_payment_terms` | yes | `<term>` list | Day counts offered (positive integers). |
-| `surcharge_fixed_max` | no | `amount` + `currency` attrs | Cap on the fixed surcharge component. |
-| `csp_origins` | no | `<origin>` list | Extra CSP origins. |
-| `admin_resource` | yes | string | ACL resource gating the admin section. |
-| `module_label_chain` | no | `<module label="…">` list | Admin Version-panel rows; rows for missing modules silently skip. |
-| `allowed_currencies` | no | `<currency>` list | Currency allow-list. |
-| `allowed_countries` | no | `<country>` list | Country allow-list. |
-| `extra_http_headers` | no | `<header name="…">` list | Extra headers on API calls. |
-| `suppressed_fields` | no | `<field path="…">` list | Hides admin controls for this brand (below). |
-| `inline_term_fees` | no | boolean | Show per-term merchant fee beside Payment Terms checkboxes in admin (default true). |
+| Element                   | Required | Type                        | Controls                                                                            |
+| ------------------------- | -------- | --------------------------- | ----------------------------------------------------------------------------------- |
+| `provider`                | yes      | string                      | Short provider name (admin/UI copy).                                                |
+| `provider_full_name`      | no       | string                      | Legal entity name.                                                                  |
+| `product_name`            | yes      | string                      | Customer-facing product name (checkout, emails, admin).                             |
+| `tab_label`               | yes      | string                      | Admin Configuration tab label.                                                      |
+| `tab_css_class`           | no       | string                      | CSS class on the admin tab.                                                         |
+| `checkout_subtitle`       | no       | string                      | Subtitle under the method title at checkout.                                        |
+| `checkout_url_template`   | yes      | string                      | Hosted-checkout URL template (`https://%s.…`).                                      |
+| `brand_tag`               | no       | string                      | Checkout-page URL query param (`?brand=<tag>`). **Never sent in order bodies.**     |
+| `sign_up_url`             | no       | string                      | Merchant signup link in admin.                                                      |
+| `documentation_url`       | no       | string                      | Docs link in admin.                                                                 |
+| `api_base_url`            | yes      | string                      | Two API base for this brand.                                                        |
+| `available_payment_terms` | yes      | `<term>` list               | Day counts offered (positive integers).                                             |
+| `surcharge_fixed_max`     | no       | `amount` + `currency` attrs | Cap on the fixed surcharge component.                                               |
+| `csp_origins`             | no       | `<origin>` list             | Extra CSP origins.                                                                  |
+| `admin_resource`          | yes      | string                      | ACL resource gating the admin section.                                              |
+| `module_label_chain`      | no       | `<module label="…">` list   | Admin Version-panel rows; rows for missing modules silently skip.                   |
+| `allowed_currencies`      | no       | `<currency>` list           | Currency allow-list.                                                                |
+| `allowed_countries`       | no       | `<country>` list            | Country allow-list.                                                                 |
+| `extra_http_headers`      | no       | `<header name="…">` list    | Extra headers on API calls.                                                         |
+| `suppressed_fields`       | no       | `<field path="…">` list     | Hides admin controls for this brand (below).                                        |
+| `inline_term_fees`        | no       | boolean                     | Show per-term merchant fee beside Payment Terms checkboxes in admin (default true). |
 
 ### A warning about validation
 
