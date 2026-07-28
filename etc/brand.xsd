@@ -54,23 +54,45 @@
             -->
             <xs:element name="surcharge_rounding_steps" type="surchargeRoundingStepsType" minOccurs="0"/>
             <!--
-                Buyer-facing "order intent approved" reassurance notice
-                rendered inline inside the checkout payment tile. Three
-                states, all meaningful:
+                On/off switch for the buyer-facing "order intent
+                approved" reassurance notice rendered inline inside the
+                checkout payment tile. Explicit boolean ONLY:
 
-                  absent            ⇒ platform default translated copy,
-                                      notice ON
-                  present, empty    ⇒ notice suppressed entirely; no
-                                      element is emitted into the DOM
-                  present, non-empty⇒ used verbatim as the
-                                      company-known copy template
-                                      (%1 = brand product name,
-                                      %2 = buyer company name)
+                  true    ⇒ notice ON
+                  false   ⇒ notice suppressed entirely; no element is
+                            emitted into the DOM, not an empty wrapper
+                  absent  ⇒ documented explicit default `true`, which is
+                            what keeps a third-party overlay that
+                            declares nothing on ON
+                  anything else ⇒ an error. The enumeration below fails
+                            config validation in developer mode, and
+                            Model\Brand\Loader additionally throws a
+                            \DomainException, because nothing validates
+                            brand.xsd in production mode.
 
-                Because empty is load-bearing, the element must NOT be
-                declared with a minLength restriction, and Loader must
-                use isset() rather than a truthiness test — see
-                Model/Brand/Loader.php.
+                Base plugins declare it explicitly `true`; brand
+                overlays that do not want the notice declare it
+                explicitly `false`.
+            -->
+            <xs:element name="intent_approved_notice_enabled" type="explicitBooleanType" minOccurs="0"/>
+            <!--
+                COPY OVERRIDE ONLY — this element does NOT switch the
+                notice off. That is <intent_approved_notice_enabled>
+                above.
+
+                  absent / empty / whitespace-only
+                          ⇒ INERT: platform default translated copy
+                  non-empty
+                          ⇒ used verbatim as the company-known copy
+                            template (%1 = brand product name,
+                            %2 = buyer company name)
+
+                An empty element used to mean "notice off" (TWO-25213).
+                It no longer does — it is inert (TWO-25218). A stale
+                overlay carrying an empty element against a new parent
+                therefore resolves to notice ON, which is wrong but not
+                broken; the documented merge order (parent first) is the
+                mitigation. Do not resurrect empty-means-off.
             -->
             <xs:element name="intent_approved_notice" type="xs:string" minOccurs="0"/>
             <xs:element name="csp_origins" type="cspOriginsType" minOccurs="0"/>
@@ -102,6 +124,19 @@
         -->
         <xs:attribute name="section_prefix" type="brandCodeType" use="optional"/>
     </xs:complexType>
+
+    <!--
+        A boolean that must be spelled out. Deliberately NOT xs:boolean:
+        xs:boolean also accepts `1` / `0`, and this switch is meant to
+        read as a decision in the brand.xml, not as a flag. Lowercase
+        `true` / `false` only.
+    -->
+    <xs:simpleType name="explicitBooleanType">
+        <xs:restriction base="xs:string">
+            <xs:enumeration value="true"/>
+            <xs:enumeration value="false"/>
+        </xs:restriction>
+    </xs:simpleType>
 
     <xs:simpleType name="brandCodeType">
         <xs:restriction base="xs:string">

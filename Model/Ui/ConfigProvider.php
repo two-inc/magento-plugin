@@ -248,18 +248,21 @@ class ConfigProvider implements ConfigProviderInterface
      *                    is resolved)
      *   withoutCompany — defensive fallback
      *
-     * A brand's non-empty <intent_approved_notice> overrides the
-     * company-known variant only; see
-     * Descriptor::getIntentApprovedNotice() for the three-state contract.
+     * Suppression is driven by the brand's
+     * <intent_approved_notice_enabled> switch. The copy override
+     * <intent_approved_notice> is wording only: non-empty replaces the
+     * company-known variant, absent/empty leaves the platform default.
+     * See BrandRegistryInterface for both contracts.
      *
      * @return array{withCompany:string,withoutCompany:string,companyNameToken:string}|null
      */
     private function getOrderIntentApprovedNotice(): ?array
     {
-        $override = $this->brandRegistry->getIntentApprovedNotice();
-        if ($override === '') {
+        if (!$this->brandRegistry->isIntentApprovedNoticeEnabled()) {
             return null;
         }
+
+        $override = $this->brandRegistry->getIntentApprovedNotice();
 
         $productName = $this->brandRegistry->getProductName();
 
