@@ -391,6 +391,24 @@
 }
 
 /*
+ * Theme specific css for fire checkout on the payment term chips.
+ *
+ * Fire Checkout lays every `.field` inside its one-page checkout form out as a
+ * label/control row rather than the stacked block layout Luma and Hyva use, so
+ * the chip container is pulled up onto the same line as the "Selected payment
+ * terms" label. Making the field itself a column flex container puts the
+ * container back below the label, and — because float is ignored on a flex
+ * item — it neutralises the row layout whether Fire achieves it by floating
+ * the label or by flexing the field. No `!important` needed: this changes the
+ * `.field` wrapper's own formatting context rather than fighting Fire's rules
+ * on the label.
+ */
+.firecheckout .two-term-chips {
+    display: flex;
+    flex-direction: column;
+}
+
+/*
  * Persistent "order intent approved" notice, rendered inline inside the
  * payment tile (see view/frontend/web/template/payment/gateway_method.html).
  * Replaces the transient checkout message-region treatment, which checkout
