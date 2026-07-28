@@ -15,8 +15,8 @@ use Two\Gateway\Model\Brand\Loader;
  * Focused on the brand.xml -> Descriptor mapping for elements whose
  * per-state behaviour is load-bearing:
  *
- *  - <surcharge_rounding_steps> — Rounding Step dropdown (ABN-457);
- *    absent and empty both fall back to the parent default set.
+ *  - <surcharge_rounding_steps> — admin Rounding Step dropdown; absent
+ *    and empty both fall back to the parent default set.
  *  - <intent_approved_notice> — buyer-facing intent-approved notice
  *    (TWO-25213); three distinct states, absent (default copy) must not
  *    collapse onto present-and-empty (suppressed).

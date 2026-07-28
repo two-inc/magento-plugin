@@ -68,6 +68,21 @@
             </div>
         </div>
         <!-- /ko -->
+        <!--
+            Persistent inline "order intent approved" notice, inside the
+            payment tile next to the term chips. Emitted only when non-empty,
+            so a brand that suppresses the notice (empty
+            <intent_approved_notice> in brand.xml) yields no element at all
+            rather than an empty wrapper. Class name matches the PrestaShop /
+            WooCommerce surfaces so the four platforms stay greppable.
+        -->
+        <!-- ko if: orderIntentApprovedNotice -->
+        <div
+            class="two-order-intent-message approved"
+            role="status"
+            data-bind="text: orderIntentApprovedNotice"
+        ></div>
+        <!-- /ko -->
         <!-- ko if: showModeTab -->
         <!-- ko ifnot: showSoleTrader -->
         <div class="mode_selector" data-element="popup-message">

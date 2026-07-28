@@ -109,29 +109,57 @@ across modules). Elements may appear in any order (`xs:all`).
 
 **Elements**
 
-| Element                   | Required | Type                        | Controls                                                                            |
-| ------------------------- | -------- | --------------------------- | ----------------------------------------------------------------------------------- |
-| `provider`                | yes      | string                      | Short provider name (admin/UI copy).                                                |
-| `provider_full_name`      | no       | string                      | Legal entity name.                                                                  |
-| `product_name`            | yes      | string                      | Customer-facing product name (checkout, emails, admin).                             |
-| `tab_label`               | yes      | string                      | Admin Configuration tab label.                                                      |
-| `tab_css_class`           | no       | string                      | CSS class on the admin tab.                                                         |
-| `checkout_subtitle`       | no       | string                      | Subtitle under the method title at checkout.                                        |
-| `checkout_url_template`   | yes      | string                      | Hosted-checkout URL template (`https://%s.…`).                                      |
-| `brand_tag`               | no       | string                      | Checkout-page URL query param (`?brand=<tag>`). **Never sent in order bodies.**     |
-| `sign_up_url`             | no       | string                      | Merchant signup link in admin.                                                      |
-| `documentation_url`       | no       | string                      | Docs link in admin.                                                                 |
-| `api_base_url`            | yes      | string                      | Two API base for this brand.                                                        |
-| `available_payment_terms` | yes      | `<term>` list               | Day counts offered (positive integers).                                             |
-| `surcharge_fixed_max`     | no       | `amount` + `currency` attrs | Cap on the fixed surcharge component.                                               |
-| `csp_origins`             | no       | `<origin>` list             | Extra CSP origins.                                                                  |
-| `admin_resource`          | yes      | string                      | ACL resource gating the admin section.                                              |
-| `module_label_chain`      | no       | `<module label="…">` list   | Admin Version-panel rows; rows for missing modules silently skip.                   |
-| `allowed_currencies`      | no       | `<currency>` list           | Currency allow-list.                                                                |
-| `allowed_countries`       | no       | `<country>` list            | Country allow-list.                                                                 |
-| `extra_http_headers`      | no       | `<header name="…">` list    | Extra headers on API calls.                                                         |
-| `suppressed_fields`       | no       | `<field path="…">` list     | Hides admin controls for this brand (below).                                        |
-| `inline_term_fees`        | no       | boolean                     | Show per-term merchant fee beside Payment Terms checkboxes in admin (default true). |
+| Element                   | Required | Type                        | Controls                                                                                                                |
+| ------------------------- | -------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `provider`                | yes      | string                      | Short provider name (admin/UI copy).                                                                                    |
+| `provider_full_name`      | no       | string                      | Legal entity name.                                                                                                      |
+| `product_name`            | yes      | string                      | Customer-facing product name (checkout, emails, admin).                                                                 |
+| `tab_label`               | yes      | string                      | Admin Configuration tab label.                                                                                          |
+| `tab_css_class`           | no       | string                      | CSS class on the admin tab.                                                                                             |
+| `checkout_subtitle`       | no       | string                      | Subtitle under the method title at checkout.                                                                            |
+| `checkout_url_template`   | yes      | string                      | Hosted-checkout URL template (`https://%s.…`).                                                                          |
+| `brand_tag`               | no       | string                      | Checkout-page URL query param (`?brand=<tag>`). **Never sent in order bodies.**                                         |
+| `sign_up_url`             | no       | string                      | Merchant signup link in admin.                                                                                          |
+| `documentation_url`       | no       | string                      | Docs link in admin.                                                                                                     |
+| `api_base_url`            | yes      | string                      | Two API base for this brand.                                                                                            |
+| `available_payment_terms` | yes      | `<term>` list               | Day counts offered (positive integers).                                                                                 |
+| `surcharge_fixed_max`     | no       | `amount` + `currency` attrs | Cap on the fixed surcharge component.                                                                                   |
+| `csp_origins`             | no       | `<origin>` list             | Extra CSP origins.                                                                                                      |
+| `admin_resource`          | yes      | string                      | ACL resource gating the admin section.                                                                                  |
+| `module_label_chain`      | no       | `<module label="…">` list   | Admin Version-panel rows; rows for missing modules silently skip.                                                       |
+| `allowed_currencies`      | no       | `<currency>` list           | Currency allow-list.                                                                                                    |
+| `allowed_countries`       | no       | `<country>` list            | Country allow-list.                                                                                                     |
+| `extra_http_headers`      | no       | `<header name="…">` list    | Extra headers on API calls.                                                                                             |
+| `suppressed_fields`       | no       | `<field path="…">` list     | Hides admin controls for this brand (below).                                                                            |
+| `inline_term_fees`        | no       | boolean                     | Show per-term merchant fee beside Payment Terms checkboxes in admin (default true).                                     |
+| `intent_approved_notice`  | no       | string                      | Buyer-facing "order intent approved" notice rendered inline in the checkout payment tile. **Three states — see below.** |
+
+### `intent_approved_notice` — a three-state switch
+
+Most optional elements have two states (absent ⇒ default, present ⇒
+override). This one has three, because "no notice at all" is a
+legitimate brand choice and cannot be expressed by omission:
+
+| brand.xml                                            | Behaviour                                                                                                              |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| element absent                                       | Platform default translated copy; notice **ON**.                                                                       |
+| `<intent_approved_notice></intent_approved_notice>`  | Notice **suppressed entirely** — no element is emitted into the DOM, not an empty wrapper.                             |
+| `<intent_approved_notice>…</intent_approved_notice>` | The content is used verbatim as the company-known copy template. `%1` = brand product name, `%2` = buyer company name. |
+
+Whitespace-only content counts as suppressed, so a pretty-printed empty
+element behaves as expected. `Loader` distinguishes absent from
+present-and-empty with `isset()`; `Descriptor::getIntentApprovedNotice()`
+returns `null` / `''` / the template respectively, and callers must not
+collapse the first two — doing so makes the off switch unreachable.
+
+The company-unknown copy variant always stays on the platform default.
+In practice it is unreachable: an order intent is only ever placed once
+the buyer's company name **and** company number are known.
+
+The notice is rendered by both storefront renderers as a persistent
+inline element with class `two-order-intent-message approved`, inside the
+payment-method tile. The same class name is used on the WooCommerce and
+PrestaShop plugins, so the four checkout surfaces stay greppable.
 
 ### A warning about validation
 
