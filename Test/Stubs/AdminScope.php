@@ -21,11 +21,15 @@ namespace Magento\Store\Api\Data {
         interface StoreInterface
         {
             public function getId();
+
+            public function getWebsiteId();
         }
     }
     if (!interface_exists(WebsiteInterface::class, false)) {
         interface WebsiteInterface
         {
+            public function getId();
+
             public function getDefaultGroupId();
         }
     }
@@ -46,6 +50,8 @@ namespace Magento\Store\Model {
             public function getStores($withDefault = false, $codeKey = false);
 
             public function getWebsite($websiteId = null);
+
+            public function getWebsites($withDefault = false, $codeKey = false);
 
             public function getGroup($groupId = null);
         }

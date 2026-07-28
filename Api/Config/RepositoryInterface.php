@@ -253,6 +253,11 @@ interface RepositoryInterface
     /**
      * Check if address autocomplete is enabled
      *
+     * Reads `enable_address_search` alone — it is the single toggle for
+     * address lookup on both the shipping and the payment step. It does
+     * NOT depend on `enable_company_search`, which gates only the
+     * shipping-step company-search widget (isCompanySearchEnabled).
+     *
      * @param int|null $storeId
      *
      * @return bool
