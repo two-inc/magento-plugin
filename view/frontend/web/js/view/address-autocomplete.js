@@ -88,6 +88,16 @@ define([
             const self = this;
             require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
                 $.async(self.companyNameSelector, function (companyNameField) {
+                    // `$.async` is a MutationObserver, and every call to
+                    // enableCompanySearch() adds another one. One-page
+                    // checkouts re-render the checkout on totals changes, so
+                    // this callback fires repeatedly for the same node.
+                    // Binding select2 twice to one node leaves a duplicate
+                    // widget whose in-flight XHR resolves into a dropdown the
+                    // buyer can no longer see. Bind each node exactly once;
+                    // the "Search for company" path destroys the widget first,
+                    // so it still gets a fresh bind.
+                    if ($(companyNameField).data('select2')) return;
                     $(companyNameField)
                         .select2({
                             minimumInputLength: 3,
@@ -105,6 +115,18 @@ define([
                                 config: config,
                                 getCountryCode: function () {
                                     return $(self.countrySelector).val();
+                                },
+                                onSearching: function (isSearching) {
+                                    companySearch.setSearching(
+                                        self.companyNameSelector,
+                                        isSearching
+                                    );
+                                },
+                                onUnavailable: function (isUnavailable) {
+                                    companySearch.setUnavailable(
+                                        self.companyNameSelector,
+                                        isUnavailable
+                                    );
                                 }
                             })
                         })

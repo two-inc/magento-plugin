@@ -238,3 +238,4 @@
 "Down","Nedåt"
 "Snap the buyer surcharge line item to a clean increment. Select None for standard two-decimal amounts.","Avrunda tilläggsraden till ett jämnt steg. Välj Ingen för vanliga belopp med två decimaler."
 "Increment the surcharge is rounded to (e.g. 1 = whole units, 0.50 = nearest half).","Steget som tillägget avrundas till (t.ex. 1 = hela enheter, 0,50 = närmaste halva)."
+"Company search is unavailable. Try again, or enter details manually.","Företagssökningen är inte tillgänglig. Försök igen, eller ange detaljer manuellt."

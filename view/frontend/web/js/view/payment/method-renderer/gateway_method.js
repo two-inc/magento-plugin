@@ -838,6 +838,17 @@ define([
                     $(companyIdField).prop('disabled', true);
                 });
                 $.async(self.companyNameSelector, function (companyNameField) {
+                    // `$.async` is a MutationObserver, and every call to
+                    // enableCompanySearch() adds another one. One-page
+                    // checkouts (Fire Checkout) re-render this payment
+                    // renderer on every totals/shipping change, so the
+                    // callback fires repeatedly for the same node. Binding
+                    // select2 twice to one node leaves a duplicate widget
+                    // whose in-flight XHR resolves into a dropdown the buyer
+                    // can no longer see. Bind each node exactly once;
+                    // clearCompany()/disableCompanySearch() destroys the
+                    // widget first, so re-enabling still gets a fresh bind.
+                    if ($(companyNameField).data('select2')) return;
                     $(companyNameField)
                         .select2({
                             minimumInputLength: 3,
@@ -855,6 +866,18 @@ define([
                                 config: self._brandConfig,
                                 getCountryCode: function () {
                                     return self.countryCode();
+                                },
+                                onSearching: function (isSearching) {
+                                    companySearch.setSearching(
+                                        self.companyNameSelector,
+                                        isSearching
+                                    );
+                                },
+                                onUnavailable: function (isUnavailable) {
+                                    companySearch.setUnavailable(
+                                        self.companyNameSelector,
+                                        isUnavailable
+                                    );
                                 }
                             })
                         })

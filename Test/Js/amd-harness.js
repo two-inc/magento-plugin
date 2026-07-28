@@ -112,9 +112,16 @@ function defaultMocks() {
         // behaviour load the real module and pass it via extraMocks so
         // they control the jQuery it closes over.
         'Two_Gateway/js/model/company-search': {
+            REQUEST_TIMEOUT_MS: 30000,
+            SEARCH_DEBOUNCE_MS: 300,
             buildSearchAjaxOptions: function () { return {}; },
             lookupCompanyAddress: function () { return null; },
-            applyAddress: function () {}
+            applyAddress: function () {},
+            isDegradedResponse: function () { return false; },
+            clearResultCache: function () {},
+            getSearchFieldContainer: function () { return null; },
+            setSearching: function () {},
+            setUnavailable: function () {}
         },
         'Two_Gateway/js/model/brand-config': (function () {
             function getBrandConfig(code) {
