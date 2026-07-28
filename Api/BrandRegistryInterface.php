@@ -52,6 +52,23 @@ interface BrandRegistryInterface
     public function getSurchargeRoundingSteps(): array;
 
     /**
+     * Per-brand override for the buyer-facing "order intent approved"
+     * reassurance notice rendered inline in the checkout payment tile.
+     * Sourced from brand.xml <intent_approved_notice>.
+     *
+     *  - `null`  — element absent: platform default translated copy,
+     *              notice ON.
+     *  - `''`    — element present and empty: notice suppressed
+     *              entirely, no DOM element emitted at all.
+     *  - non-''  — used verbatim as the company-known copy template
+     *              (%1 = brand product name, %2 = buyer company name).
+     *
+     * Callers MUST distinguish null from '' — treating them alike makes
+     * the per-brand off switch unreachable.
+     */
+    public function getIntentApprovedNotice(): ?string;
+
+    /**
      * Short brand tag used to decorate non-production checkout URLs
      * (e.g. `?brand=<tag>`). Empty string ('') means do not decorate
      * — the URL host already conveys the brand. Implementations may

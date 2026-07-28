@@ -35,6 +35,19 @@ use Two\Gateway\Model\Two;
  */
 class ConfigProvider implements ConfigProviderInterface
 {
+    /**
+     * Placeholder the renderer substitutes the buyer's company name into.
+     *
+     * The company name is only ever known client-side (the renderer's
+     * `companyName` observable, populated by company search or manual
+     * entry), so the %2 argument cannot be resolved here. Passing this
+     * sentinel rather than leaving %2 dangling keeps both placeholders in
+     * the msgid, so translators see the full sentence shape and the
+     * translated string round-trips through Magento's Phrase renderer
+     * unchanged.
+     */
+    public const COMPANY_NAME_TOKEN = '{{companyName}}';
+
     /** @var string */
     private $code;
 
@@ -189,10 +202,12 @@ class ConfigProvider implements ConfigProviderInterface
                     'subtitleHtml' => $this->getSubtitleHtml(),
                     'surchargeDescription' => $this->configRepository->getSurchargeLineDescription(),
                     'isPaymentTermsEnabled' => true,
-                    'orderIntentApprovedMessage' => __(
-                        'Your invoice purchase with %1 is likely to be accepted subject to additional checks.',
-                        $this->brandRegistry->getProductName()
-                    ),
+                    // null ⇒ the brand suppressed the notice; the renderer
+                    // emits no element at all. Replaces the former
+                    // `orderIntentApprovedMessage`, which the renderer fed to
+                    // the KO `messages` region — a surface checkout clears on
+                    // every update, so the notice was effectively invisible.
+                    'orderIntentApprovedNotice' => $this->getOrderIntentApprovedNotice(),
                     'orderIntentDeclinedMessage' => __(
                         'Your invoice purchase with %1 has been declined.',
                         $this->brandRegistry->getProductName()
@@ -216,6 +231,58 @@ class ConfigProvider implements ConfigProviderInterface
                     ),
                 ],
             ],
+        ];
+    }
+
+    /**
+     * Resolve the buyer-facing "order intent approved" notice for the
+     * storefront renderer.
+     *
+     * Returns null when the active brand suppressed the notice — the
+     * renderer then emits no DOM element at all, rather than an empty
+     * wrapper. Otherwise returns both resolved copy variants plus the
+     * token the renderer substitutes the company name into:
+     *
+     *   withCompany    — company name known (the normal case; an order
+     *                    intent is only placed once the buyer's company
+     *                    is resolved)
+     *   withoutCompany — defensive fallback
+     *
+     * A brand's non-empty <intent_approved_notice> overrides the
+     * company-known variant only; see
+     * Descriptor::getIntentApprovedNotice() for the three-state contract.
+     *
+     * @return array{withCompany:string,withoutCompany:string,companyNameToken:string}|null
+     */
+    private function getOrderIntentApprovedNotice(): ?array
+    {
+        $override = $this->brandRegistry->getIntentApprovedNotice();
+        if ($override === '') {
+            return null;
+        }
+
+        $productName = $this->brandRegistry->getProductName();
+
+        // The default is spelled as a literal __() argument, not routed
+        // through a variable, so `i18n:collect-phrases` and the overlay
+        // repos' i18n audit can both still see it. The override branch
+        // takes a variable by necessity — a brand's own copy is its own
+        // module's msgid and lives in that module's i18n CSV.
+        $withCompany = $override === null
+            ? __(
+                'Your invoice with %1 is likely to be accepted for %2, subject to additional checks.',
+                $productName,
+                self::COMPANY_NAME_TOKEN
+            )
+            : __($override, $productName, self::COMPANY_NAME_TOKEN);
+
+        return [
+            'withCompany' => (string)$withCompany,
+            'withoutCompany' => (string)__(
+                'Your invoice with %1 is likely to be accepted, subject to additional checks.',
+                $productName
+            ),
+            'companyNameToken' => self::COMPANY_NAME_TOKEN,
         ];
     }
 

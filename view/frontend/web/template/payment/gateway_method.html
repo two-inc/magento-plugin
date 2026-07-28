@@ -28,13 +28,17 @@
             </label>
             <div class="two-term-chips__container">
                 <!-- ko foreach: termOptions -->
-                <button type="button"
-                        class="two-term-chip"
-                        data-bind="click: function() { $parent.selectTerm(days) },
-                                   css: { 'two-term-chip--selected': days === $parent.selectedTerm() }">
+                <button
+                    type="button"
+                    class="two-term-chip"
+                    data-bind="click: function() { $parent.selectTerm(days) },
+                                   css: { 'two-term-chip--selected': days === $parent.selectedTerm() }"
+                >
                     <span class="two-term-chip__days" data-bind="text: daysLabel"></span>
                     <!-- ko if: isLoading -->
-                    <span class="two-term-chip__loading" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
+                    <span class="two-term-chip__loading" aria-hidden="true"
+                        ><span>.</span><span>.</span><span>.</span></span
+                    >
                     <!-- /ko -->
                     <!-- ko if: !isLoading && surchargeLabel -->
                     <span class="two-term-chip__surcharge" data-bind="text: surchargeLabel"></span>
@@ -50,14 +54,34 @@
                 <span class="two-term-chip two-term-chip--single">
                     <span class="two-term-chip__days" data-bind="text: singleTermLabel"></span>
                     <!-- ko if: singleTermSurchargeLabel() === null -->
-                    <span class="two-term-chip__loading" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
+                    <span class="two-term-chip__loading" aria-hidden="true"
+                        ><span>.</span><span>.</span><span>.</span></span
+                    >
                     <!-- /ko -->
                     <!-- ko if: singleTermSurchargeLabel() -->
-                    <span class="two-term-chip__surcharge" data-bind="text: singleTermSurchargeLabel"></span>
+                    <span
+                        class="two-term-chip__surcharge"
+                        data-bind="text: singleTermSurchargeLabel"
+                    ></span>
                     <!-- /ko -->
                 </span>
             </div>
         </div>
+        <!-- /ko -->
+        <!--
+            Persistent inline "order intent approved" notice, inside the
+            payment tile next to the term chips. Emitted only when non-empty,
+            so a brand that suppresses the notice (empty
+            <intent_approved_notice> in brand.xml) yields no element at all
+            rather than an empty wrapper. Class name matches the PrestaShop /
+            WooCommerce surfaces so the four platforms stay greppable.
+        -->
+        <!-- ko if: orderIntentApprovedNotice -->
+        <div
+            class="two-order-intent-message approved"
+            role="status"
+            data-bind="text: orderIntentApprovedNotice"
+        ></div>
         <!-- /ko -->
         <!-- ko if: showModeTab -->
         <!-- ko ifnot: showSoleTrader -->

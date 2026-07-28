@@ -12,10 +12,17 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Model\Brand\Loader;
 
 /**
- * Focused on the brand.xml -> Descriptor mapping for the
- * <surcharge_rounding_steps> element added for the Rounding Step
- * dropdown (ABN-457). Loader does no runtime XSD validation, so the
- * parse/validate guards here are the only safety net.
+ * Focused on the brand.xml -> Descriptor mapping for elements whose
+ * per-state behaviour is load-bearing:
+ *
+ *  - <surcharge_rounding_steps> — admin Rounding Step dropdown; absent
+ *    and empty both fall back to the parent default set.
+ *  - <intent_approved_notice> — buyer-facing intent-approved notice
+ *    (TWO-25213); three distinct states, absent (default copy) must not
+ *    collapse onto present-and-empty (suppressed).
+ *
+ * Loader does no runtime XSD validation, so the parse/validate guards
+ * here are the only safety net.
  */
 class LoaderTest extends TestCase
 {
@@ -73,6 +80,55 @@ class LoaderTest extends TestCase
         );
     }
 
+    public function testIntentApprovedNoticeIsNullWhenElementAbsent(): void
+    {
+        $loader = $this->loaderForBrandBody('');
+
+        // null, not '' — absent means "platform default copy, notice ON".
+        // Collapsing the two makes the per-brand off switch unreachable.
+        $this->assertNull($loader->load()['two_payment']->getIntentApprovedNotice());
+    }
+
+    public function testIntentApprovedNoticeIsEmptyStringWhenElementPresentAndEmpty(): void
+    {
+        $loader = $this->loaderForBrandBody(
+            '<intent_approved_notice></intent_approved_notice>'
+        );
+
+        // '' is the suppression signal: renderers emit no element at all.
+        $this->assertSame('', $loader->load()['two_payment']->getIntentApprovedNotice());
+    }
+
+    public function testIntentApprovedNoticeIsEmptyStringWhenElementSelfClosing(): void
+    {
+        $loader = $this->loaderForBrandBody('<intent_approved_notice/>');
+
+        $this->assertSame('', $loader->load()['two_payment']->getIntentApprovedNotice());
+    }
+
+    public function testIntentApprovedNoticeWhitespaceOnlyCountsAsSuppressed(): void
+    {
+        $loader = $this->loaderForBrandBody(
+            "<intent_approved_notice>\n            </intent_approved_notice>"
+        );
+
+        // A pretty-printed empty element must not become a whitespace
+        // template that renders as a blank notice.
+        $this->assertSame('', $loader->load()['two_payment']->getIntentApprovedNotice());
+    }
+
+    public function testIntentApprovedNoticeIsUsedVerbatimWhenNonEmpty(): void
+    {
+        $loader = $this->loaderForBrandBody(
+            '<intent_approved_notice>%1 says %2 looks fine.</intent_approved_notice>'
+        );
+
+        $this->assertSame(
+            '%1 says %2 looks fine.',
+            $loader->load()['two_payment']->getIntentApprovedNotice()
+        );
+    }
+
     /**
      * @dataProvider invalidStepProvider
      */
@@ -97,7 +153,11 @@ class LoaderTest extends TestCase
         ];
     }
 
-    private function loaderForBrandBody(string $roundingStepsXml): Loader
+    /**
+     * @param string $extraXml Optional element(s) spliced into the <brand>
+     *                         body under test.
+     */
+    private function loaderForBrandBody(string $extraXml): Loader
     {
         $dir = sys_get_temp_dir() . '/two_brand_test_' . uniqid('', true);
         mkdir($dir . '/etc', 0777, true);
@@ -110,7 +170,7 @@ class LoaderTest extends TestCase
             . '<checkout_url_template>https://%s.two.inc</checkout_url_template>'
             . '<api_base_url>https://api.two.inc</api_base_url>'
             . '<available_payment_terms><term>30</term></available_payment_terms>'
-            . $roundingStepsXml
+            . $extraXml
             . '<admin_resource>Magento_Sales::config_sales</admin_resource>'
             . '</brand></config>';
         file_put_contents($dir . '/etc/brand.xml', $xml);
