@@ -37,9 +37,24 @@ use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
  *
  * Nothing here runs on config page load — this is the save path only, and it
  * throws a LocalizedException, which Magento renders as an admin error
- * message on the section it was saving. The Surcharge Tax Treatment field
+ * message on the section it was saving. The save transaction rolls back as a
+ * whole, so a rejected save writes nothing. The Surcharge Tax Treatment field
  * lives in that same section, so a rejected merchant can always pick a
  * treatment and save again.
+ *
+ * Known write paths this does NOT cover (verified against Magento 2.4.6, not
+ * an oversight — a field backend model is the wrong hook for them):
+ *  - "Use Default" (inherit) at website/store scope. Magento routes inherited
+ *    fields through the delete transaction, so beforeDelete runs, not
+ *    beforeSave. Inheriting the treatment away while the inherited surcharge
+ *    method is enabled is therefore accepted.
+ *  - `bin/magento config:set`. It addresses fields by config path, and
+ *    Magento\Config\Model\Config::setDataByPath() reads that as
+ *    section/group/field — which does not resolve to a system.xml element for
+ *    these fields, so the generic Value backend model is used and no field
+ *    backend model of ours runs at all.
+ *  - Direct core_config_data / config writer writes, which bypass the config
+ *    model entirely by design.
  */
 abstract class AbstractSurchargeTreatmentGuard extends Value
 {
@@ -142,8 +157,9 @@ abstract class AbstractSurchargeTreatmentGuard extends Value
     {
         $path = preg_replace('#/[^/]+$#', '/' . $key, (string)$this->getPath());
         // scope_id, not scope_code: the admin form save sets both, but
-        // CLI config:set (PreparedValueFactory) only sets scope/scope_id,
-        // and ScopeConfigInterface::getValue resolves numeric ids fine.
+        // PreparedValueFactory-driven saves (app:config:import and friends)
+        // only set scope/scope_id, and ScopeConfigInterface::getValue
+        // resolves numeric ids fine.
         return $this->_config->getValue(
             $path,
             $this->getScope() ?: 'default',

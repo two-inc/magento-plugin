@@ -18,7 +18,9 @@ use Magento\Framework\Exception\LocalizedException;
  * section-save guard: the admin config save posts every visible field
  * in the group, so this model is instantiated on every save of the
  * payment section, which is what catches a shop already sitting in the
- * enabled-with-blank-treatment state (and `config:set` on this path).
+ * enabled-with-blank-treatment state. See
+ * {@see AbstractSurchargeTreatmentGuard} for the write paths that stay
+ * out of reach of a field backend model.
  */
 class SurchargeType extends AbstractSurchargeTreatmentGuard
 {
