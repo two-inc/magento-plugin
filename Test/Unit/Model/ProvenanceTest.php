@@ -8,14 +8,22 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Model\Provenance;
 
 /**
- * Commit-SHA resolution for the deployed module (TWO-25197).
+ * Commit-SHA resolution for the deployed module (TWO-25197, TWO-25205).
  *
- * Two deploy shapes must resolve, plus a third that must degrade quietly:
- *  - Packagist/composer install: no .git at all; the installed registry
- *    carries the release SHA (the regression fixed in TWO-25020).
+ * Three deploy shapes must resolve, plus a fourth that must degrade quietly:
  *  - gitSync dev install: no composer package; `.git` is a gitlink FILE
  *    naming the worktree after its SHA.
- *  - neither: bare '' with no exception.
+ *  - Packagist/composer install: no .git at all; the installed registry
+ *    carries the release SHA (the regression fixed in TWO-25020).
+ *  - zip drop (the ABN overlay's GCS/release-asset zips): neither a .git nor
+ *    a Composer registry entry, only the `.two-deployed-commit` build stamp
+ *    `make archive` injects (TWO-25205).
+ *  - none of the three: bare '' with no exception.
+ *
+ * Order is gitlink → composer → stamp, one org-wide order across all six Two
+ * plugin artifacts, ranked by freshness: the gitlink tracks what is checked
+ * out right now, the composer reference is fixed at install time, the stamp
+ * is frozen at build time. A malformed signal must fall THROUGH, not win.
  *
  * Logic previously lived in the admin Version block; this suite is its
  * home now that Model\Config\Repository consumes it too.
@@ -33,7 +41,7 @@ class ProvenanceTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (['/.git', '/composer.json', '/registration.php'] as $f) {
+        foreach (['/.git', '/composer.json', '/registration.php', '/.two-deployed-commit'] as $f) {
             @unlink($this->tmpDir . $f);
         }
         @rmdir($this->tmpDir);
@@ -45,6 +53,11 @@ class ProvenanceTest extends TestCase
             $this->tmpDir . '/composer.json',
             json_encode(['name' => $name])
         );
+    }
+
+    private function writeStamp(string $contents, ?string $dir = null): void
+    {
+        file_put_contents(($dir ?? $this->tmpDir) . '/.two-deployed-commit', $contents);
     }
 
     private function provenance(?string $stubRef): ProvenanceTestable
@@ -64,15 +77,112 @@ class ProvenanceTest extends TestCase
         $this->assertSame('6f8534e', $p->commitForPath($this->tmpDir));
     }
 
-    public function testComposerReferenceIsPreferredOverGitWorktree(): void
+    public function testGitlinkIsPreferredOverComposerReference(): void
     {
-        // Both signals present: composer wins (it's the authoritative,
-        // layout-independent source for a composer-installed module).
+        // Both signals present: the gitlink wins (TWO-25205). It reflects
+        // what is checked out right now; the composer reference was recorded
+        // once at install time and can be older.
         $this->writeComposerJson('two-inc/magento2');
         file_put_contents($this->tmpDir . '/.git', "gitdir: /repo/.git/worktrees/deadbeef1234\n");
         $p = $this->provenance('0aa21947d6ed57bcf6b35f73a5ed192fc6a9a0dd');
 
+        $this->assertSame('deadbee', $p->commitForPath($this->tmpDir));
+    }
+
+    public function testGitlinkIsPreferredOverStamp(): void
+    {
+        // Gitlink beats the build stamp: the stamp is frozen at build time
+        // and is the staler of the two after any gitSync pull.
+        file_put_contents($this->tmpDir . '/.git', "gitdir: /repo/.git/worktrees/deadbeef1234\n");
+        $this->writeStamp("fedcba9876543210fedcba9876543210fedcba98\n");
+
+        $this->assertSame('deadbee', $this->provenance(null)->commitForPath($this->tmpDir));
+    }
+
+    public function testComposerReferenceIsPreferredOverStamp(): void
+    {
+        // No gitlink, so composer (install time) beats the stamp (build time).
+        $this->writeComposerJson('two-inc/magento2');
+        $this->writeStamp("fedcba9876543210fedcba9876543210fedcba98\n");
+        $p = $this->provenance('0aa21947d6ed57bcf6b35f73a5ed192fc6a9a0dd');
+
         $this->assertSame('0aa2194', $p->commitForPath($this->tmpDir));
+    }
+
+    public function testStampResolvesWhenNeitherGitNorComposerPresent(): void
+    {
+        // The zip-drop shape: the ABN overlay's GCS/release-asset zips carry
+        // no .git and no Composer registry entry, so the `make archive`
+        // stamp is the only provenance signal that exists (TWO-25205).
+        $this->writeStamp("fedcba9876543210fedcba9876543210fedcba98\n");
+
+        $this->assertSame('fedcba9', $this->provenance(null)->commitForPath($this->tmpDir));
+    }
+
+    public function testStampAcceptsShortShaAsWrittenByMakeArchive(): void
+    {
+        // `make archive` writes `git rev-parse --short HEAD` — 7 chars, not 40.
+        $this->writeStamp("e26ee58\n");
+
+        $this->assertSame('e26ee58', $this->provenance(null)->commitForPath($this->tmpDir));
+    }
+
+    public function testStampFoundOneLevelUpForSubPathModule(): void
+    {
+        // A repo shipping modules from sub-paths (the ABN overlay's plugin/
+        // and hyva/) has the stamp at the archive root, one level up — the
+        // same two-place lookup the gitlink and composer.json use.
+        $sub = $this->tmpDir . '/plugin';
+        mkdir($sub);
+        $this->writeStamp("fedcba9876543210fedcba9876543210fedcba98\n");
+
+        $this->assertSame('fedcba9', $this->provenance(null)->commitForPath($sub));
+        @rmdir($sub);
+    }
+
+    /**
+     * @dataProvider malformedStampProvider
+     */
+    public function testMalformedStampFallsThroughRatherThanWinning(string $contents): void
+    {
+        // Junk must never surface as a commit, and must not block the
+        // remaining resolution: with no other signal the result is ''.
+        $this->writeStamp($contents);
+        $p = $this->provenance(null);
+
+        $this->assertNull($p->commitFromStamp($this->tmpDir));
+        $this->assertSame('', $p->commitForPath($this->tmpDir));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function malformedStampProvider(): array
+    {
+        return [
+            'empty' => [''],
+            'whitespace only' => ["  \n"],
+            'too short' => ["abc123\n"],
+            'non-hex' => ["not-a-sha\n"],
+            'branch ref' => ["dev-main\n"],
+            'too long' => [str_repeat('a', 41) . "\n"],
+            'trailing junk' => ["e26ee58 dirty\n"],
+        ];
+    }
+
+    public function testMalformedStampStillLetsComposerWin(): void
+    {
+        // A broken stamp must not shadow a good signal either.
+        $this->writeComposerJson('two-inc/magento2');
+        $this->writeStamp("not-a-sha\n");
+        $p = $this->provenance('0aa21947d6ed57bcf6b35f73a5ed192fc6a9a0dd');
+
+        $this->assertSame('0aa2194', $p->commitForPath($this->tmpDir));
+    }
+
+    public function testStampReadDoesNotThrowOnUnreadablePath(): void
+    {
+        $this->assertNull($this->provenance(null)->commitFromStamp('/nonexistent/two/module'));
     }
 
     public function testFallsBackToGitlinkWorktreeWhenNotComposerInstalled(): void
