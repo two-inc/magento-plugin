@@ -200,7 +200,7 @@ store", which is worse, so empty stays inert and there is deliberately no
 legacy-compat path that resurrects empty-means-off.
 
 The mitigation is **merge order**: `magento-plugin` (parent, owns the
-parsing) → `magento-abn-plugin` (overlay) → `magento-hyva-extension`. Out
+parsing) → the brand overlay repo → `magento-hyva-extension`. Out
 of order there is a window in which Hyvä renders the notice for a brand
 that asked for it off.
 
