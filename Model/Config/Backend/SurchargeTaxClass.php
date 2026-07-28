@@ -26,6 +26,12 @@ use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource
  * Custom option is a backward-compat carve-out for pre-existing
  * merchants only, and must not be creatable through a hand-crafted
  * POST. That check belongs to this field alone.
+ *
+ * Real coverage: every admin config-section save, at any scope. NOT
+ * `bin/magento config:set`, NOT "Use Default" / inherit, NOT direct
+ * core_config_data writes — an earlier comment here claimed CLI
+ * coverage and was wrong; {@see AbstractSurchargeTreatmentGuard} has
+ * the verified detail.
  */
 class SurchargeTaxClass extends AbstractSurchargeTreatmentGuard
 {
