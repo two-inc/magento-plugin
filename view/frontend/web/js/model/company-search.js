@@ -80,9 +80,9 @@ define(['jquery'], function ($) {
          * first address into the checkout address form.
          *
          * No-op unless `config.isAddressSearchEnabled` is true. That flag is
-         * server-side the AND of the company-search and address-search admin
-         * settings (Model\Config\Repository::isAddressSearchEnabled), so both
-         * pickers honour exactly one gate.
+         * server-side the single `enable_address_search` admin setting
+         * (Model\Config\Repository::isAddressSearchEnabled), so both pickers
+         * honour exactly one gate.
          *
          * @param {object} config brand config subtree
          * @param {object} selectedCompany select2 result item (needs lookupId)

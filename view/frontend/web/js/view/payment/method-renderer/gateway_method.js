@@ -743,8 +743,8 @@ define([
         },
         /**
          * Fill the billing address form from a picked company. No-op unless
-         * the merchant has both company search and address search enabled
-         * (ConfigProvider exposes the AND of the two as isAddressSearchEnabled).
+         * the merchant has address search enabled (ConfigProvider exposes
+         * `enable_address_search` as isAddressSearchEnabled).
          */
         addressLookup: function (selectedCompany) {
             return companySearch.lookupCompanyAddress(this._brandConfig, selectedCompany);

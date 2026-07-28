@@ -337,4 +337,87 @@ describe('shipping-step company picker (address-autocomplete.js)', () => {
             'https://api.example.test/companies/v2/company/lookup-abc-123'
         );
     });
+
+    /**
+     * TWO-25202 regression pin. Re-searching and picking a second company
+     * must overwrite the address AND the company-id field, matching the
+     * PrestaShop reference — never merge or keep the first company's data.
+     */
+    test('re-searching overwrites the previous address and company id', () => {
+        const recorder = makeRecorder();
+        const $ = makeSpyJQuery(recorder);
+        const companySearch = loadCompanySearch($);
+
+        const brandConfig = function () { return BASE_CONFIG; };
+        brandConfig.getActiveTwoBrandCode = function () { return 'two_payment'; };
+        brandConfig.getActiveTwoBrandConfig = function () { return BASE_CONFIG; };
+
+        const component = loadAmdModule('view/frontend/web/js/view/address-autocomplete.js', {
+            jquery: $,
+            'Magento_Customer/js/customer-data': { set: function () {}, get: function () { return function () {}; } },
+            'Two_Gateway/js/model/brand-config': brandConfig,
+            'Two_Gateway/js/model/company-search': companySearch
+        });
+
+        const companyIdSelector =
+            '#shipping-new-address-form input[name="custom_attributes[company_id]"]';
+        const ctx = Object.assign(Object.create(component.prototype || {}), {
+            countrySelector: '#shipping-new-address-form select[name="country_id"]',
+            companyNameSelector: '#shipping-new-address-form input[name="company"]',
+            companyIdSelector: companyIdSelector,
+            enterDetailsManuallyButton: '#shipping_enter_details_manually',
+            searchForCompanyButton: '#shipping_search_for_company',
+            enterDetailsManuallyText: 'Enter details manually',
+            searchForCompanyText: 'Search for company',
+            companyNamePlaceholder: 'Enter company name to search',
+            setCompanyData: component.setCompanyData,
+            addressLookup: component.addressLookup,
+            enableCompanySearch: component.enableCompanySearch
+        });
+
+        ctx.enableCompanySearch();
+        const pick = function (searchResponse, address) {
+            const mapped = recorder.select2Options.ajax.processResults(searchResponse).results[0];
+            recorder.handlers['select2:select']({ params: { data: mapped } });
+            recorder.doneCallbacks.forEach(function (cb) {
+                cb({ addresses: [address] });
+            });
+            recorder.doneCallbacks.length = 0;
+        };
+
+        pick(SEARCH_RESPONSE, {
+            city: 'London',
+            postal_code: 'EC1A 1BB',
+            street_address: '1 Example Street'
+        });
+        pick(
+            {
+                items: [
+                    {
+                        name: 'Second Company AB',
+                        highlight: 'Second Company AB',
+                        national_identifier: { id: '87654321' },
+                        lookup_id: 'lookup-def-456'
+                    }
+                ]
+            },
+            { city: 'Stockholm', postal_code: '111 22', street_address: '2 Second Street' }
+        );
+
+        // Both companies were looked up — the second pick is not skipped.
+        expect(recorder.ajax.map(function (call) { return call.url; })).toEqual([
+            'https://api.example.test/companies/v2/company/lookup-abc-123',
+            'https://api.example.test/companies/v2/company/lookup-def-456'
+        ]);
+
+        // Last write per field is the second company's data, unconditionally.
+        const lastWrite = function (selector) {
+            const writes = recorder.written.filter(function (w) { return w[0] === selector; });
+            return writes[writes.length - 1][1];
+        };
+        expect(lastWrite('input[name="city"]')).toBe('Stockholm');
+        expect(lastWrite('input[name="postcode"]')).toBe('111 22');
+        expect(lastWrite('input[name="street[0]"]')).toBe('2 Second Street');
+        expect(lastWrite(companyIdSelector)).toBe('87654321');
+    });
 });
