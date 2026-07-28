@@ -393,17 +393,24 @@
 /*
  * Theme specific css for fire checkout on the payment term chips.
  *
- * Fire Checkout lays every `.field` inside its one-page checkout form out as a
- * label/control row rather than the stacked block layout Luma and Hyva use, so
- * the chip container is pulled up onto the same line as the "Selected payment
- * terms" label. Making the field itself a column flex container puts the
- * container back below the label, and — because float is ignored on a flex
- * item — it neutralises the row layout whether Fire achieves it by floating
- * the label or by flexing the field. No `!important` needed: this changes the
- * `.field` wrapper's own formatting context rather than fighting Fire's rules
- * on the label.
+ * Fire Checkout's own stylesheet (Swissup_Firecheckout/css/firecheckout-light.css)
+ * lays out every field inside the payment tile as a label/control row:
+ *
+ *   .firecheckout .payment-method-content div.field       { display: inline-block; width: 100% }
+ *   .firecheckout .payment-method-content div.field > .label { float: left; width: auto }
+ *
+ * The floated label leaves the chip container beside it rather than under it.
+ * Making the field a column flex container puts the container back below the
+ * label, and float has no effect on a flex item so the label unfloats too.
+ *
+ * The selector has to carry `.payment-method-content div.field` as well: Fire's
+ * rule scores 0-3-1, so the shorter `.firecheckout .two-term-chips` (0-2-0) that
+ * this replaces lost on specificity and never applied. Adding the chip class on
+ * top of Fire's own selector scores 0-4-1 and wins without `!important`.
+ *
+ * Everything here stays inside `.firecheckout`, so Luma and Hyva are untouched.
  */
-.firecheckout .two-term-chips {
+.firecheckout .payment-method-content div.field.two-term-chips {
     display: flex;
     flex-direction: column;
 }
