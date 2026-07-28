@@ -51,6 +51,11 @@ class DescriptorBackedBrandRegistry implements BrandRegistryInterface
         return $this->activeBrandResolver->resolve()->getSurchargeRoundingSteps();
     }
 
+    public function getIntentApprovedNotice(): ?string
+    {
+        return $this->activeBrandResolver->resolve()->getIntentApprovedNotice();
+    }
+
     public function getSignUpUrl(): string
     {
         return $this->activeBrandResolver->resolve()->getSignUpUrl();
