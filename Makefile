@@ -64,7 +64,7 @@ install: clean
 	docker exec $(CONTAINER) php bin/magento deploy:mode:set developer
 	# di:compile resets Magento to production mode as a side effect, so
 	# deploy:mode:set developer must run AFTER it, or developer mode gets
-	# silently clobbered back to production. See magento-abn-plugin 66062d8.
+	# silently clobbered back to production. See overlay repo commit 66062d8.
 	# Local-dev perf: merge + minify JS/CSS so RequireJS doesn't fan out into
 	# ~200 individual file fetches. Stays in developer mode (no static deploy
 	# step), but the request count drops to ~20 and the storefront's KO
@@ -196,8 +196,19 @@ logs:
 # ==============================================================================
 
 ## Create a versioned zip archive
+# The zip carries a `.two-deployed-commit` build stamp: a zip-dropped
+# install (unpacked straight into app/code) has neither a .git gitlink nor a
+# Composer registry entry, so the stamp is the only provenance signal
+# Model/Provenance.php can find there. It is written into a mktemp dir OUTSIDE
+# the repo and injected with `git archive --add-file`, so the working tree is
+# never dirtied and the stamp can't accidentally get committed.
 archive:
-	eval $$(bumpver show --environ) && git archive --format zip HEAD > magento-plugin-$${CURRENT_VERSION}.zip
+	eval $$(bumpver show --environ) \
+	  && stampdir=$$(mktemp -d) \
+	  && trap 'rm -rf "$$stampdir"' EXIT \
+	  && git rev-parse --short HEAD > "$$stampdir/.two-deployed-commit" \
+	  && git archive --format zip --add-file="$$stampdir/.two-deployed-commit" HEAD \
+	       > magento-plugin-$${CURRENT_VERSION}.zip
 bumpver-%:
 	SKIP=commit-msg bumpver update --$*
 ## Bump patch version
