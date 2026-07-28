@@ -88,7 +88,15 @@ define([
             const self = this;
             require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
                 $.async(self.companyNameSelector, function (companyNameField) {
-                    $(companyNameField)
+                    // Re-binding on every `$.async` fire is intentional:
+                    // select2 4.1's constructor destroys any existing
+                    // instance on the same node, so re-init re-points the
+                    // widget and its handlers at the current component. An
+                    // early-return guard here would both keep a stale widget
+                    // alive and skip the placeholder / manual-entry
+                    // housekeeping below.
+                    const $companyNameField = $(companyNameField);
+                    $companyNameField
                         .select2({
                             minimumInputLength: 3,
                             width: '100%',
@@ -105,10 +113,23 @@ define([
                                 config: config,
                                 getCountryCode: function () {
                                     return $(self.countrySelector).val();
+                                },
+                                // Bound to THIS node, not to the selector, so
+                                // a destroyed widget's late response cannot
+                                // paint onto the live picker.
+                                onSearching: function (isSearching) {
+                                    companySearch.setSearching($companyNameField, isSearching);
+                                },
+                                onUnavailable: function (isUnavailable) {
+                                    companySearch.setUnavailable($companyNameField, isUnavailable);
                                 }
                             })
                         })
                         .on('select2:open', function () {
+                            // Nothing else removes what we appended into the
+                            // search box, so a reopened picker would show the
+                            // previous search's "unavailable" notice.
+                            companySearch.clearSearchChrome($companyNameField);
                             if ($(self.enterDetailsManuallyButton).length == 0) {
                                 $('.select2-results')
                                     .parent()
