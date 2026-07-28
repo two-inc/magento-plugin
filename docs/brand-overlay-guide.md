@@ -109,30 +109,30 @@ across modules). Elements may appear in any order (`xs:all`).
 
 **Elements**
 
-| Element                   | Required | Type                        | Controls                                                                                                                |
-| ------------------------- | -------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `provider`                | yes      | string                      | Short provider name (admin/UI copy).                                                                                    |
-| `provider_full_name`      | no       | string                      | Legal entity name.                                                                                                      |
-| `product_name`            | yes      | string                      | Customer-facing product name (checkout, emails, admin).                                                                 |
-| `tab_label`               | yes      | string                      | Admin Configuration tab label.                                                                                          |
-| `tab_css_class`           | no       | string                      | CSS class on the admin tab.                                                                                             |
-| `checkout_subtitle`       | no       | string                      | Subtitle under the method title at checkout.                                                                            |
-| `checkout_url_template`   | yes      | string                      | Hosted-checkout URL template (`https://%s.…`).                                                                          |
-| `brand_tag`               | no       | string                      | Checkout-page URL query param (`?brand=<tag>`). **Never sent in order bodies.**                                         |
-| `sign_up_url`             | no       | string                      | Merchant signup link in admin.                                                                                          |
-| `documentation_url`       | no       | string                      | Docs link in admin.                                                                                                     |
-| `api_base_url`            | yes      | string                      | Two API base for this brand.                                                                                            |
-| `surcharge_rounding_steps` | no      | `<step>` list               | Narrows the admin "Rounding Step" dropdown (major units, each `> 0`). Absent or empty inherits the parent default set. Values are deduped and sorted ascending. |
-| `csp_origins`             | no       | `<origin>` list             | Extra CSP origins.                                                                                                      |
-| `admin_resource`          | yes      | string                      | ACL resource gating the admin section.                                                                                  |
-| `module_label_chain`      | no       | `<module label="…">` list   | Admin Version-panel rows; rows for missing modules silently skip.                                                       |
-| `allowed_currencies`      | no       | `<currency>` list           | Currency allow-list.                                                                                                    |
-| `allowed_countries`       | no       | `<country>` list            | Country allow-list.                                                                                                     |
-| `extra_http_headers`      | no       | `<header name="…">` list    | Extra headers on API calls.                                                                                             |
-| `suppressed_fields`       | no       | `<field path="…">` list     | Hides admin controls for this brand (below).                                                                            |
-| `inline_term_fees`        | no       | boolean                     | Show per-term merchant fee beside Payment Terms checkboxes in admin (default true).                                     |
-| `intent_approved_notice_enabled` | no | `true` \| `false`      | On/off switch for the buyer-facing "order intent approved" notice. Default `true`. **See below.**                        |
-| `intent_approved_notice`  | no       | string                      | Copy override for that notice — wording only, **not** an off switch. **See below.**                                     |
+| Element                          | Required | Type                      | Controls                                                                                                                                                        |
+| -------------------------------- | -------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `provider`                       | yes      | string                    | Short provider name (admin/UI copy).                                                                                                                            |
+| `provider_full_name`             | no       | string                    | Legal entity name.                                                                                                                                              |
+| `product_name`                   | yes      | string                    | Customer-facing product name (checkout, emails, admin).                                                                                                         |
+| `tab_label`                      | yes      | string                    | Admin Configuration tab label.                                                                                                                                  |
+| `tab_css_class`                  | no       | string                    | CSS class on the admin tab.                                                                                                                                     |
+| `checkout_subtitle`              | no       | string                    | Subtitle under the method title at checkout.                                                                                                                    |
+| `checkout_url_template`          | yes      | string                    | Hosted-checkout URL template (`https://%s.…`).                                                                                                                  |
+| `brand_tag`                      | no       | string                    | Checkout-page URL query param (`?brand=<tag>`). **Never sent in order bodies.**                                                                                 |
+| `sign_up_url`                    | no       | string                    | Merchant signup link in admin.                                                                                                                                  |
+| `documentation_url`              | no       | string                    | Docs link in admin.                                                                                                                                             |
+| `api_base_url`                   | yes      | string                    | Two API base for this brand.                                                                                                                                    |
+| `surcharge_rounding_steps`       | no       | `<step>` list             | Narrows the admin "Rounding Step" dropdown (major units, each `> 0`). Absent or empty inherits the parent default set. Values are deduped and sorted ascending. |
+| `csp_origins`                    | no       | `<origin>` list           | Extra CSP origins.                                                                                                                                              |
+| `admin_resource`                 | yes      | string                    | ACL resource gating the admin section.                                                                                                                          |
+| `module_label_chain`             | no       | `<module label="…">` list | Admin Version-panel rows; rows for missing modules silently skip.                                                                                               |
+| `allowed_currencies`             | no       | `<currency>` list         | Currency allow-list.                                                                                                                                            |
+| `allowed_countries`              | no       | `<country>` list          | Country allow-list.                                                                                                                                             |
+| `extra_http_headers`             | no       | `<header name="…">` list  | Extra headers on API calls.                                                                                                                                     |
+| `suppressed_fields`              | no       | `<field path="…">` list   | Hides admin controls for this brand (below).                                                                                                                    |
+| `inline_term_fees`               | no       | boolean                   | Show per-term merchant fee beside Payment Terms checkboxes in admin (default true).                                                                             |
+| `intent_approved_notice_enabled` | no       | `true` \| `false`         | On/off switch for the buyer-facing "order intent approved" notice. Default `true`. **See below.**                                                               |
+| `intent_approved_notice`         | no       | string                    | Copy override for that notice — wording only, **not** an off switch. **See below.**                                                                             |
 
 ### The intent-approved notice — two keys, one each for on/off and wording
 
@@ -148,12 +148,12 @@ the notice back on.
 
 Explicit boolean only:
 
-| brand.xml                                                                | Behaviour                                                                                    |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| `<intent_approved_notice_enabled>true</intent_approved_notice_enabled>`   | Notice **ON**.                                                                               |
-| `<intent_approved_notice_enabled>false</intent_approved_notice_enabled>`  | Notice **suppressed entirely** — no element is emitted into the DOM, not an empty wrapper.   |
-| element absent                                                           | Documented explicit default **`true`** (notice ON).                                          |
-| anything else (`1`, `0`, `yes`, empty, whitespace)                        | **Error.** Never a silent third behaviour.                                                   |
+| brand.xml                                                                | Behaviour                                                                                  |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `<intent_approved_notice_enabled>true</intent_approved_notice_enabled>`  | Notice **ON**.                                                                             |
+| `<intent_approved_notice_enabled>false</intent_approved_notice_enabled>` | Notice **suppressed entirely** — no element is emitted into the DOM, not an empty wrapper. |
+| element absent                                                           | Documented explicit default **`true`** (notice ON).                                        |
+| anything else (`1`, `0`, `yes`, empty, whitespace)                       | **Error.** Never a silent third behaviour.                                                 |
 
 Absent-means-`true` is deliberate: it keeps a third-party overlay that
 declares nothing on ON. Base plugins declare `true` explicitly anyway, so
@@ -162,11 +162,11 @@ the file states its position rather than relying on omission.
 The invalid case is caught twice, because `brand.xsd` is not validated at
 runtime (see the validation warning below):
 
-* `brand.xsd` restricts the element to the enumeration `true|false`, so
-  developer-mode config validation fails loudly; and
-* `Model\Brand\Loader` throws a `\DomainException` naming the offending
-  `brand.xml` path, the element and the bad value — the same treatment
-  `<surcharge_rounding_steps>` gets in the same method.
+-   `brand.xsd` restricts the element to the enumeration `true|false`, so
+    developer-mode config validation fails loudly; and
+-   `Model\Brand\Loader` throws a `\DomainException` naming the offending
+    `brand.xml` path, the element and the bad value — the same treatment
+    `<surcharge_rounding_steps>` gets in the same method.
 
 Note `xs:boolean` is deliberately **not** used: it would also accept `1`
 and `0`, and this switch is meant to read as a decision.
