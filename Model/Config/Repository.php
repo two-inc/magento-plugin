@@ -505,8 +505,10 @@ class Repository implements RepositoryInterface
      */
     public function isAddressSearchEnabled(?int $storeId = null): bool
     {
-        return $this->isSetFlag($this->path('enable_company_search'), $storeId) &&
-            $this->isSetFlag($this->path('enable_address_search'), $storeId);
+        // Single source of truth (TWO-25202). `enable_company_search` is
+        // deliberately NOT part of this: it gates the shipping-step search
+        // widget only (isCompanySearchEnabled), not address lookup.
+        return $this->isSetFlag($this->path('enable_address_search'), $storeId);
     }
 
     /**

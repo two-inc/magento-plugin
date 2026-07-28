@@ -132,7 +132,8 @@ define([
                             $('.select2-selection__rendered').text(selectedItem.id);
                             self.setCompanyData(selectedItem.companyId, selectedItem.text);
                             // Gate lives in companySearch.lookupCompanyAddress
-                            // (config.isAddressSearchEnabled), shared with the
+                            // (config.isAddressSearchEnabled = the single
+                            // `enable_address_search` setting), shared with the
                             // payment-step picker.
                             self.addressLookup(selectedItem);
                         });

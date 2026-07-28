@@ -121,7 +121,7 @@ define([
             this.paymentTermsMessage = config.paymentTermsMessage;
             this.termsNotAcceptedMessage = config.termsNotAcceptedMessage;
             this.isPaymentTermsEnabled = config.isPaymentTermsEnabled;
-            this.orderIntentApprovedMessage = config.orderIntentApprovedMessage;
+            this.initOrderIntentApprovedNotice(config);
             this.orderIntentDeclinedMessage = config.orderIntentDeclinedMessage;
             this.generalErrorMessage = config.generalErrorMessage;
             this.invalidEmailListMessage = config.invalidEmailListMessage;
@@ -450,6 +450,15 @@ define([
             // Clear stale validation errors from a prior placeOrder attempt so
             // resubmits don't render outdated messages (e.g. terms-not-accepted
             // lingering after the box has been ticked).
+            //
+            // Deliberately does NOT clear orderIntentApprovedNotice. That
+            // notice reports a fact about the buyer's company that a local
+            // validation failure (unticked terms, invalid email list) does not
+            // invalidate, and being persistent across exactly this kind of
+            // event is the point of moving it out of messageContainer. It is
+            // cleared only when the company changes or a fresh intent
+            // declines/errors — see initialize() and
+            // processOrderIntent*Response().
             this.messageContainer.clear();
 
             // Recover a stale place-order latch.
@@ -565,18 +574,91 @@ define([
                     }
                 });
         },
+        /**
+         * Wire up the persistent inline "order intent approved" notice.
+         *
+         * @param {object} config the brand's window.checkoutConfig subtree
+         */
+        initOrderIntentApprovedNotice: function (config) {
+            // `null` means the active brand suppressed the notice (the
+            // three-state brand.xml <intent_approved_notice> switch) — the
+            // template then emits no element at all.
+            this.orderIntentApprovedNoticeCopy = config.orderIntentApprovedNotice || null;
+
+            // The observable is created here rather than declared in
+            // `defaults` on purpose. Entries in `defaults` are copied onto
+            // each instance by reference, so a ko.observable() declared there
+            // is SHARED across every renderer instance — the same footgun
+            // documented against isPlaceOrderActionAllowed in placeOrder().
+            // Luma re-creates this renderer whenever the payment-method list
+            // refreshes, and a shared observable would carry one quote's
+            // notice into the next.
+            this.orderIntentApprovedNotice = ko.observable('');
+
+            // The notice is *persistent* — unlike the message-region
+            // treatment it replaces, it survives checkout updates and a
+            // failed placeOrder validation (see the deliberate omission in
+            // placeOrder(), which clears messageContainer but not this). It
+            // must NOT survive the buyer's company changing, because the
+            // approval it reports was for the previous company.
+            // fillCompanyData() writes companyName / companyId before firing
+            // the intent, so these subscriptions clear first and
+            // processOrderIntentSuccessResponse re-sets afterwards; a company
+            // edited by hand in the input clears the notice and leaves it
+            // cleared, which is the correct fail-closed outcome.
+            var self = this;
+            this.companyName.subscribe(function () {
+                self.orderIntentApprovedNotice('');
+            });
+            this.companyId.subscribe(function () {
+                self.orderIntentApprovedNotice('');
+            });
+        },
+        /**
+         * Resolve the intent-approved notice text for the current buyer.
+         *
+         * Returns '' when the active brand suppressed the notice, so callers
+         * can assign the result unconditionally.
+         *
+         * The company name is substituted client-side because it is only
+         * known here; ConfigProvider ships both resolved copy variants plus
+         * the token to replace. A replacer *function* is used rather than a
+         * plain string so `$&` / `$1` sequences in a company name are taken
+         * literally instead of as replacement patterns.
+         */
+        resolveOrderIntentApprovedNotice: function () {
+            const copy = this.orderIntentApprovedNoticeCopy;
+            if (!copy) {
+                return '';
+            }
+            const companyName = (this.companyName() || '').trim();
+            if (!companyName) {
+                return copy.withoutCompany;
+            }
+            return copy.withCompany.replace(copy.companyNameToken, function () {
+                return companyName;
+            });
+        },
         processOrderIntentSuccessResponse: function (response) {
             if (response) {
                 if (response.approved) {
-                    this.messageContainer.addSuccessMessage({
-                        message: this.orderIntentApprovedMessage
-                    });
+                    // Persistent inline notice inside the payment tile, not
+                    // messageContainer.addSuccessMessage(): the KO
+                    // getRegion('messages') region this renderer used before
+                    // is cleared on every checkout update, so on Luma the
+                    // approval reassurance was effectively never seen.
+                    this.orderIntentApprovedNotice(this.resolveOrderIntentApprovedNotice());
                 } else {
+                    this.orderIntentApprovedNotice('');
                     this.showErrorMessage(this.orderIntentDeclinedMessage);
                 }
             }
         },
         processOrderIntentErrorResponse: function (response) {
+            // An intent that errored says nothing about approval; drop any
+            // notice from a previous, successful intent.
+            this.orderIntentApprovedNotice('');
+
             const message = this.generalErrorMessage,
                 self = this;
             if (response && response.responseJSON) {
@@ -743,8 +825,8 @@ define([
         },
         /**
          * Fill the billing address form from a picked company. No-op unless
-         * the merchant has both company search and address search enabled
-         * (ConfigProvider exposes the AND of the two as isAddressSearchEnabled).
+         * the merchant has address search enabled (ConfigProvider exposes
+         * `enable_address_search` as isAddressSearchEnabled).
          */
         addressLookup: function (selectedCompany) {
             return companySearch.lookupCompanyAddress(this._brandConfig, selectedCompany);

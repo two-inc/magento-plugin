@@ -10,24 +10,44 @@ namespace Two\Gateway\Model;
 use Magento\Framework\Component\ComponentRegistrar;
 
 /**
- * Resolves the commit a deployed Two module was built from.
+ * Resolves the commit a deployed Two module is running.
  *
- * Two deployment shapes exist in the wild and both must resolve:
+ * Three deployment shapes exist in the wild and all three must resolve:
  *
- *  1. Composer/Packagist install (the 2.0 merchant distribution). The
+ *  1. gitSync dev install. No composer package at all; `app/code/Two/Gateway`
+ *     is a symlink to the synced checkout, whose `.git` is a gitlink FILE
+ *     (`gitdir: ../../.git/worktrees/<sha>`) — gitSync v4 names each
+ *     worktree directory after the SHA it points at. The `gitdir:` target is
+ *     typically DANGLING inside the container, so the SHA is string-parsed
+ *     out of the gitlink; never shell out to `git`.
+ *  2. Composer/Packagist install (the 2.0 merchant distribution). The
  *     module lives under vendor/ with no .git of any kind; Composer's
  *     installed registry records the exact source/dist reference —
  *     `Composer\InstalledVersions::getReference('two-inc/magento2')`
- *     returns the full release SHA. Authoritative and layout-independent,
- *     so it is preferred.
- *  2. gitSync dev install. No composer package at all; `app/code/Two/Gateway`
- *     is a symlink to the synced checkout, whose `.git` is a gitlink FILE
- *     (`gitdir: ../../.git/worktrees/<sha>`) — gitSync v4 names each
- *     worktree directory after the SHA it points at.
+ *     returns the full release SHA.
+ *  3. Zip drop. A branding overlay may ship as a release-asset / GCS zip that is
+ *     unpacked straight into `app/code`, carrying neither a `.git` nor a
+ *     Composer registry entry — so neither signal above exists. `make
+ *     archive` stamps a `.two-deployed-commit` file into the zip at build
+ *     time to close that gap.
  *
- * Neither present (a plain source drop) is a legitimate state: every entry
- * point returns '' rather than throwing, so callers degrade to a bare
- * version string and the admin panel still renders.
+ * Resolution order is `.git` gitlink → Composer reference →
+ * `.two-deployed-commit` stamp, one org-wide order shared by all six Two
+ * plugin artifacts (Magento, Magento overlay, WooCommerce, WooCommerce overlay,
+ * PrestaShop, OpenCart). The order is freshness-ranked, not
+ * confidence-ranked: the gitlink is the only signal that reflects what is
+ * checked out *right now*, the Composer reference is recorded once at
+ * install time, and the build stamp is frozen at build time and so is the
+ * most likely of the three to be stale. Whichever is freshest and present
+ * wins; a malformed signal falls through to the next rather than winning.
+ *
+ * None present (a plain source drop with no stamp) is a legitimate state:
+ * every entry point returns '' rather than throwing, so callers degrade to a
+ * bare version string and the admin panel still renders.
+ *
+ * Note the SHA is repo-wide, not module-unique: for a repo that ships two
+ * modules from sub-paths (an overlay package's `plugin/` and `hyva/`) both
+ * legitimately report the same commit.
  *
  * This class is the single owner of that logic. The admin Version block and
  * the config Repository (which stamps the SHA onto the `client_v` telemetry
@@ -91,16 +111,11 @@ class Provenance
 
     private function resolve(string $modulePath): string
     {
-        // Composer-installed deploys (Packagist/dist — the current 2.0
-        // distribution model) put the module under vendor/ with NO .git
-        // worktree, so the path-based resolution below finds nothing. The
-        // installed registry records the exact source/dist commit, which is
-        // authoritative and layout-independent — prefer it.
-        $fromComposer = $this->commitFromComposer($modulePath);
-        if ($fromComposer !== null) {
-            return $fromComposer;
-        }
-
+        // FIRST: the gitlink. It is the only signal that tracks what is
+        // checked out right now — a gitSync pull moves it on every deploy,
+        // where the Composer reference is fixed at install time and the
+        // build stamp at build time.
+        //
         // The gitlink lives at the checkout root. For a top-level module
         // that IS the module directory; for a monorepo sub-path module
         // (an overlay package ships its gateway at <repo>/plugin) it is one
@@ -121,6 +136,25 @@ class Provenance
                 return substr($m[1], 0, 7);
             }
         }
+
+        // SECOND: Composer-installed deploys (Packagist/dist — the current
+        // 2.0 merchant distribution model) put the module under vendor/ with
+        // NO .git worktree. The installed registry records the exact
+        // source/dist commit, recorded once at install time.
+        $fromComposer = $this->commitFromComposer($modulePath);
+        if ($fromComposer !== null) {
+            return $fromComposer;
+        }
+
+        // THIRD: the build stamp. A zip-dropped module (an overlay package's
+        // GCS/release-asset zips) has neither of the above; `make archive`
+        // writes the build commit into the zip. Frozen at build time, hence
+        // last of the three.
+        $fromStamp = $this->commitFromStamp($modulePath);
+        if ($fromStamp !== null) {
+            return $fromStamp;
+        }
+
         // Legacy fallback: module path is a symlink through the worktree.
         $real = @realpath($modulePath . '/registration.php');
         if ($real && preg_match('#\.worktrees/([a-f0-9]{7,40})/#', $real, $m)) {
@@ -155,6 +189,38 @@ class Provenance
             $ref = $this->composerReference($name);
             if (is_string($ref) && preg_match('/^[a-f0-9]{7,40}$/', $ref)) {
                 return substr($ref, 0, 7);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 7-char commit SHA from the `.two-deployed-commit` build stamp, or null
+     * when absent, unreadable or malformed.
+     *
+     * `make archive` writes the build commit into the release zip, which is
+     * how a zip-dropped module (an overlay package's GCS zips) reports its
+     * provenance at all — it carries neither a `.git` nor a Composer
+     * registry entry. Checks the module dir and one level up, mirroring the
+     * gitlink and composer.json lookups: a sub-path module's stamp is written
+     * at the repo root the archive was taken from.
+     *
+     * Never throws, and a malformed or empty stamp returns null so the
+     * caller falls THROUGH to the remaining fallback rather than surfacing
+     * junk as a commit.
+     */
+    public function commitFromStamp(string $modulePath): ?string
+    {
+        foreach ([$modulePath, dirname($modulePath)] as $dir) {
+            // Cap the read: a legitimate stamp is one short hex line, and
+            // this runs on every outbound API URL build.
+            $raw = @file_get_contents($dir . '/.two-deployed-commit', false, null, 0, 128);
+            if ($raw === false) {
+                continue;
+            }
+            $candidate = trim($raw);
+            if (preg_match('/^[a-f0-9]{7,40}$/i', $candidate)) {
+                return strtolower(substr($candidate, 0, 7));
             }
         }
         return null;

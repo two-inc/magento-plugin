@@ -331,7 +331,7 @@
                 <field id="enable_company_search" translate="label comment" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Enable Company Search</label>
-                    <comment>Adds a searchable company name input field on shipping details page where the buyer can select their company from a dropdown menu.</comment>
+                    <comment>Show company search in the shipping address field. Company search on the payment method step is always available and is not affected by this setting.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <depends>
                         <field id="active">1</field>
@@ -341,11 +341,10 @@
                 <field id="enable_address_search" translate="label comment" type="select" sortOrder="20" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Enable Address Search</label>
-                    <comment>Autocomplete address based on selected country and company.</comment>
+                    <comment>Autocomplete address based on selected country and company. This setting alone controls address lookup, on both the shipping and the payment method step.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <depends>
                         <field id="active">1</field>
-                        <field id="enable_company_search">1</field>
                     </depends>
                     <config_path>payment/two_payment/enable_address_search</config_path>
                 </field>

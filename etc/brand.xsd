@@ -53,6 +53,26 @@
                 set; an empty element is treated as omitted.
             -->
             <xs:element name="surcharge_rounding_steps" type="surchargeRoundingStepsType" minOccurs="0"/>
+            <!--
+                Buyer-facing "order intent approved" reassurance notice
+                rendered inline inside the checkout payment tile. Three
+                states, all meaningful:
+
+                  absent            ⇒ platform default translated copy,
+                                      notice ON
+                  present, empty    ⇒ notice suppressed entirely; no
+                                      element is emitted into the DOM
+                  present, non-empty⇒ used verbatim as the
+                                      company-known copy template
+                                      (%1 = brand product name,
+                                      %2 = buyer company name)
+
+                Because empty is load-bearing, the element must NOT be
+                declared with a minLength restriction, and Loader must
+                use isset() rather than a truthiness test — see
+                Model/Brand/Loader.php.
+            -->
+            <xs:element name="intent_approved_notice" type="xs:string" minOccurs="0"/>
             <xs:element name="csp_origins" type="cspOriginsType" minOccurs="0"/>
             <xs:element name="admin_resource" type="xs:string"/>
             <xs:element name="module_label_chain" type="moduleLabelChainType" minOccurs="0"/>

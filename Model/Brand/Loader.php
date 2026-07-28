@@ -176,6 +176,19 @@ class Loader
             }
         }
 
+        // Three-state buyer-facing intent-approved notice. `null` (element
+        // absent) means "use the platform default copy"; '' (element present
+        // but empty) means "suppress the notice entirely". isset() is what
+        // separates the two — SimpleXML reports isset() === true for an
+        // empty element, so a truthiness test would collapse both states
+        // onto the default and make the off switch unreachable. Trimmed, so
+        // a pretty-printed `<intent_approved_notice>\n  </intent_approved_notice>`
+        // counts as the suppressed state rather than a whitespace template.
+        $intentApprovedNotice = null;
+        if (isset($brand->intent_approved_notice)) {
+            $intentApprovedNotice = trim((string)$brand->intent_approved_notice);
+        }
+
         $inlineTermFees = true;
         if (isset($brand->inline_term_fees)) {
             $inlineTermFees = filter_var(
@@ -208,7 +221,8 @@ class Loader
             $suppressedFields,
             $inlineTermFees,
             (string)($brand->checkout_subtitle ?? ''),
-            $roundingSteps
+            $roundingSteps,
+            $intentApprovedNotice
         );
     }
 }

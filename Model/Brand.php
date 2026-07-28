@@ -96,6 +96,19 @@ class Brand implements BrandRegistryInterface
         );
     }
 
+    /**
+     * @deprecated 2.0.0 See note on getCode().
+     */
+    public function getIntentApprovedNotice(): ?string
+    {
+        throw new \LogicException(
+            'Two\\Gateway\\Model\\Brand is deprecated; consume '
+            . 'BrandRegistryInterface via DescriptorBackedBrandRegistry instead. '
+            . 'The intent-approved notice override now comes from brand.xml '
+            . '`<intent_approved_notice>` via ActiveBrandResolver.'
+        );
+    }
+
     public function getSignUpUrl(): string
     {
         return $this->signUpUrl;

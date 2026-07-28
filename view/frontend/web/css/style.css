@@ -94,7 +94,6 @@
     font-weight: 500;
 }
 
-
 .terms-container {
     margin-top: 1.5rem;
     padding: 1rem;
@@ -276,7 +275,10 @@
     background: var(--color-white);
     color: var(--color-blue2);
     cursor: pointer;
-    transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+    transition:
+        border-color 0.15s ease,
+        background-color 0.15s ease,
+        color 0.15s ease;
     min-width: 80px;
     font-family: inherit;
     position: relative;
@@ -335,12 +337,22 @@
     animation: two-term-chip-dot 1.4s infinite ease-in-out both;
 }
 
-.two-term-chip__loading > span:nth-child(2) { animation-delay: 0.2s; }
-.two-term-chip__loading > span:nth-child(3) { animation-delay: 0.4s; }
+.two-term-chip__loading > span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+.two-term-chip__loading > span:nth-child(3) {
+    animation-delay: 0.4s;
+}
 
 @keyframes two-term-chip-dot {
-    0%, 80%, 100% { opacity: 0.2; }
-    40%          { opacity: 1; }
+    0%,
+    80%,
+    100% {
+        opacity: 0.2;
+    }
+    40% {
+        opacity: 1;
+    }
 }
 
 .two-term-chip--single {
@@ -376,4 +388,31 @@
     box-sizing: border-box;
     transition: all 100ms ease-in-out;
     width: 100%;
+}
+
+/*
+ * Persistent "order intent approved" notice, rendered inline inside the
+ * payment tile (see view/frontend/web/template/payment/gateway_method.html).
+ * Replaces the transient checkout message-region treatment, which checkout
+ * cleared on every update.
+ *
+ * Deliberately low-key: this is reassurance, not a call to action, and it
+ * sits directly under the term chips. Brand overlays that ship their own
+ * palette override these rules from their own style.css, which loads after
+ * this one.
+ */
+.two-order-intent-message {
+    margin: 0 0 1.5em;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--color-gray89);
+    background: #f4f6fd;
+    color: var(--color-brownie-vanilla);
+    font-size: 1.3rem;
+    line-height: 1.4;
+}
+
+.two-order-intent-message.approved {
+    border-color: #b7c0ee;
+    color: var(--color-blue2);
 }

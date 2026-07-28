@@ -44,6 +44,7 @@ final class Descriptor
      * @param string[] $suppressedFields `section_suffix/group/field` paths to hide in the synthesised admin form.
      * @param bool $inlineTermFees Whether to render the per-term merchant fee beside each Payment Terms checkbox in admin.
      * @param float[] $surchargeRoundingSteps Buyer-surcharge rounding steps offered in the admin Rounding Step dropdown, ascending.
+     * @param string|null $intentApprovedNotice Buyer-facing intent-approved notice override; null = brand.xml element absent, '' = suppressed. See getIntentApprovedNotice().
      */
     public function __construct(
         private readonly string $code,
@@ -68,8 +69,36 @@ final class Descriptor
         private readonly array $suppressedFields = [],
         private readonly bool $inlineTermFees = true,
         private readonly string $checkoutSubtitle = '',
-        private readonly array $surchargeRoundingSteps = []
+        private readonly array $surchargeRoundingSteps = [],
+        private readonly ?string $intentApprovedNotice = null
     ) {
+    }
+
+    /**
+     * Per-brand override for the buyer-facing "order intent approved"
+     * reassurance notice rendered inline in the checkout payment tile.
+     *
+     * Three states, all meaningful:
+     *
+     *  - `null`  — brand.xml declares no <intent_approved_notice>. The
+     *              renderers use the platform default translated copy and
+     *              the notice is ON. This is the Two-brand case.
+     *  - `''`    — brand.xml declares an empty <intent_approved_notice>.
+     *              The notice is suppressed ENTIRELY: no element is
+     *              emitted into the DOM, not an empty wrapper.
+     *  - non-''  — used verbatim as the company-known copy template, with
+     *              %1 = brand product name and %2 = buyer company name.
+     *              The company-unknown variant stays on the platform
+     *              default; in practice it is unreachable, because an
+     *              order intent is only ever placed once both company
+     *              name and company number are known.
+     *
+     * Callers MUST distinguish null from '' — collapsing them makes the
+     * off switch unreachable.
+     */
+    public function getIntentApprovedNotice(): ?string
+    {
+        return $this->intentApprovedNotice;
     }
 
     /**
