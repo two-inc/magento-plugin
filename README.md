@@ -199,25 +199,45 @@ make test-e2e TWO_API_KEY=<your-key>
 
 ## Releases
 
-Releases are cut automatically once CI passes on `main`.
+Version bumps happen automatically once CI passes on `staging` or `main`. Only `main` cuts a tag and a GitHub Release.
 
-### Tagging (automatic, gated on CI)
+### The version-bump convention
 
-`.github/workflows/release.yml` is triggered by the `CI` workflow completing on `main`. When CI's conclusion is `success`, it:
+The bump level is decided by the branch, not by the commits:
 
-1. Skips itself if the head commit is already a `chore: Bump version` commit, or if the SHA already carries a numeric tag.
-2. Reads conventional-commit types in `<previous-tag>..HEAD` to pick the bump level:
-   - `BREAKING CHANGE:` / `<type>!:` → **major**
-   - `feat:` → **minor**
-   - everything else → **patch**
+| Merge lands on | Bump | Also produces |
+|---|---|---|
+| `staging` | **patch** | nothing else — bump commit only |
+| `main` | **minor** | tag `X.Y.Z` + GitHub Release |
 
-   Linear ticket prefixes are supported (e.g. `INF-123/feat:`).
-3. Runs `bumpver update --<level> --no-tag-commit --no-push` to rewrite `composer.json`, `etc/config.xml`, and `bumpver.toml`.
-4. Tags `X.Y.Z` (bare numeric, matching the established tag convention), pushes the bump commit and tag under the org GitHub App identity, and creates a GitHub Release with a bucketed changelog (Breaking / Features / Fixes / Internals / Other) — so reading the Release page reveals at a glance why the bump was a major / minor / patch.
+A **major** is an explicit escape hatch, and overrides the branch rule on either branch. Two independent signals, the higher wins:
 
-`.github/workflows/merge-back.yml` keeps `develop` fast-forwarded to match `main` after each release. `.github/workflows/auto-pr.yml` keeps a rolling sync PR open from `develop` to `main` with a preview of the next release notes — the same bucketing the actual Release page uses.
+- **Declared** — a root `.next-major` file whose first whitespace-delimited token is the target major, with a short human reason on the same line:
 
-To trigger a release, merge the rolling sync PR into `main`. CI runs on the merged commit; once green, `release.yml` fires.
+  ```
+  3  # overlay migration, 3.0.0 release
+  ```
+
+  Reviewable in the PR that decides it, so a *planned* major with no single breaking commit still lands as a major. The file is never cleared by CI: it disarms itself once the current major reaches the declared one. A declaration that has fallen *below* the current major is a hard CI failure — delete or raise it.
+
+- **Discovered** — a `!` on a conventional-commit type (`feat!:`, `TWO-1/fix(scope)!:`) or a `BREAKING CHANGE:` footer in the commits under consideration.
+
+The new version for a major is exactly `<target>.0.0`, so a declaration may skip more than one major.
+
+`.github/scripts/decide-bump-level.sh` owns this decision and is shared byte-identically across the Magento plugin repos. It logs the full decision — inputs included — to the workflow log on every run.
+
+### Bumping and tagging (automatic, gated on CI)
+
+`.github/workflows/release.yml` is triggered by the `CI` workflow completing on `main` or `staging`. When CI's conclusion is `success`, it:
+
+1. Skips itself if the head commit is already a `chore: Bump version` commit, if the branch tip drifted from the SHA CI signed off on, or if the SHA already carries a numeric tag. (That last check is what makes the merge-back a no-op: after a `main` release fast-forwards into `staging`, staging's tip already carries the tag.)
+2. Calls `.github/scripts/decide-bump-level.sh "$BRANCH"` for the level.
+3. Runs `bumpver update --<level> --no-tag-commit --no-push` (or `--set-version <N>.0.0` for a major) to rewrite `composer.json`, `etc/config.xml`, and `bumpver.toml`, and pushes the bump commit under the org GitHub App identity.
+4. **`main` only:** tags `X.Y.Z` (bare numeric, matching the established tag convention), pushes the tag, and creates a GitHub Release with a bucketed changelog (Breaking / Features / Fixes / Internals / Other). The buckets are presentation only now — the level comes from step 2.
+
+`.github/workflows/merge-back.yml` keeps `staging` fast-forwarded to match `main` after each release (falling back to a sync PR if the two have diverged).
+
+To trigger a release, merge `staging` into `main`. CI runs on the merged commit; once green, `release.yml` fires.
 
 ## Links
 
