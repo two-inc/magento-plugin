@@ -189,6 +189,12 @@
                     <label>Surcharge Method</label>
                     <comment>Select a method to surcharge your customer.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\SurchargeType</source_model>
+                    <!-- Backend model guards the "surcharge enabled => tax treatment
+                         explicitly selected" invariant from this side of the pair.
+                         Needed because a field backend model only runs when its own
+                         field is in the save: this field is posted on every admin
+                         save of the section, the treatment field is not. -->
+                    <backend_model>Two\Gateway\Model\Config\Backend\SurchargeType</backend_model>
                     <config_path>payment/two_payment/surcharge_type</config_path>
                 </field>
                 <field id="surcharge_differential" translate="label comment" type="select" sortOrder="60" showInDefault="1"

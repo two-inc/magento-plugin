@@ -7,10 +7,8 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Config\Backend;
 
-use Magento\Framework\App\Config\Value;
 use Magento\Framework\Exception\LocalizedException;
 use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource;
-use Two\Gateway\Model\Config\Source\SurchargeType;
 
 /**
  * Server-side guard for the surcharge tax treatment selector.
@@ -18,21 +16,24 @@ use Two\Gateway\Model\Config\Source\SurchargeType;
  * The selector never auto-defaults (see the source model); this
  * backend model is the enforcement half: while surcharges are enabled
  * the config save is rejected until the merchant has explicitly picked
- * a treatment. Enforced here — not just in admin JS — so CLI
- * `config:set`, API-driven saves and any theme quirk hit the same
- * rule.
+ * a treatment. The shared invariant lives in
+ * {@see AbstractSurchargeTreatmentGuard} so the sibling guard on the
+ * Surcharge Method field enforces exactly the same rule — see that
+ * class for why one guard on this field alone is not enough.
  *
- * It also refuses the deprecated "Custom" treatment when no legacy
- * flat-rate value exists at the scope being saved: the Custom option
- * is a backward-compat carve-out for pre-existing merchants only, and
- * must not be creatable through a hand-crafted POST.
+ * This model additionally refuses the deprecated "Custom" treatment
+ * when no legacy flat-rate value exists at the scope being saved: the
+ * Custom option is a backward-compat carve-out for pre-existing
+ * merchants only, and must not be creatable through a hand-crafted
+ * POST. That check belongs to this field alone.
  *
- * Sibling config paths (surcharge_type / surcharge_tax_rate) are
- * derived from this field's own path so the rule is brand-aware —
- * synthesized brand forms save under payment/<brand_code>/ and get the
- * exact same enforcement.
+ * Real coverage: every admin config-section save, at any scope. NOT
+ * `bin/magento config:set`, NOT "Use Default" / inherit, NOT direct
+ * core_config_data writes — an earlier comment here claimed CLI
+ * coverage and was wrong; {@see AbstractSurchargeTreatmentGuard} has
+ * the verified detail.
  */
-class SurchargeTaxClass extends Value
+class SurchargeTaxClass extends AbstractSurchargeTreatmentGuard
 {
     /**
      * @inheritDoc
@@ -43,18 +44,9 @@ class SurchargeTaxClass extends Value
      */
     public function beforeSave()
     {
-        $value = (string)$this->getValue();
+        $this->assertTaxTreatmentSelected();
 
-        if ($value === '' && $this->isSurchargeEnabled()) {
-            throw new LocalizedException(
-                __(
-                    'Please select a surcharge tax treatment. A surcharge method is enabled, '
-                    . 'so the surcharge tax treatment must be chosen explicitly.'
-                )
-            );
-        }
-
-        if ($value === SurchargeTaxClassSource::CUSTOM && !$this->hasLegacyFlatRate()) {
+        if ((string)$this->getValue() === SurchargeTaxClassSource::CUSTOM && !$this->hasLegacyFlatRate()) {
             throw new LocalizedException(
                 __(
                     'The "Custom flat rate" surcharge tax treatment is deprecated and only '
@@ -68,48 +60,12 @@ class SurchargeTaxClass extends Value
     }
 
     /**
-     * Whether a surcharge method is enabled for the scope being saved.
-     * Prefers the value posted in the same save request (fieldset
-     * data); falls back to the stored config for partial saves.
+     * This field IS the treatment: its own submitted value wins outright,
+     * including an explicit blank, which must never fall back to whatever
+     * happens to be stored.
      */
-    private function isSurchargeEnabled(): bool
+    protected function getTaxTreatmentValue(): ?string
     {
-        $surchargeType = $this->getFieldsetDataValue('surcharge_type');
-        if ($surchargeType === null || $surchargeType === '') {
-            $surchargeType = $this->getScopedSiblingValue('surcharge_type');
-        }
-        return $surchargeType !== null
-            && $surchargeType !== ''
-            && $surchargeType !== SurchargeType::NONE;
-    }
-
-    /**
-     * Whether the deprecated flat rate genuinely exists at this scope.
-     * Deliberately null/'' checks, never truthy: a configured rate of
-     * 0 or "0.00" is still a real value (classic falsy-zero bug).
-     */
-    private function hasLegacyFlatRate(): bool
-    {
-        $rate = $this->getScopedSiblingValue('surcharge_tax_rate');
-        return $rate !== null && $rate !== '';
-    }
-
-    /**
-     * Read a sibling config key (same payment/<code>/ prefix as this
-     * field) at the scope being saved.
-     *
-     * @return mixed
-     */
-    private function getScopedSiblingValue(string $key)
-    {
-        $path = preg_replace('#/[^/]+$#', '/' . $key, (string)$this->getPath());
-        // scope_id, not scope_code: the admin form save sets both, but
-        // CLI config:set (PreparedValueFactory) only sets scope/scope_id,
-        // and ScopeConfigInterface::getValue resolves numeric ids fine.
-        return $this->_config->getValue(
-            $path,
-            $this->getScope() ?: 'default',
-            $this->getScopeId()
-        );
+        return (string)$this->getValue();
     }
 }

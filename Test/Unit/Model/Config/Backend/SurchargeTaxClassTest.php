@@ -60,7 +60,52 @@ class SurchargeTaxClassTest extends TestCase
         ]);
 
         $this->expectException(LocalizedException::class);
-        $this->expectExceptionMessage('select a surcharge tax treatment');
+        $this->expectExceptionMessage('Please select a Surcharge Tax Treatment');
+        $model->beforeSave();
+    }
+
+    public function testEmptyValueWithSurchargeEnabledIsAcceptedWhenLegacyRateExists(): void
+    {
+        // Legacy merchants configured before the selector existed HAVE made a
+        // choice; the guard must not lock them out of the section.
+        $this->stubStoredConfig(['payment/two_payment/surcharge_tax_rate' => '21']);
+        $model = $this->buildModel([
+            'value' => '',
+            'path' => 'payment/two_payment/surcharge_tax_class',
+            'scope' => 'default',
+            'fieldset_data' => ['surcharge_type' => 'percentage'],
+        ]);
+
+        $this->assertSame($model, $model->beforeSave());
+    }
+
+    public function testEmptyValueWithSurchargeEnabledIsAcceptedWhenLegacyRateIsZero(): void
+    {
+        // Falsy-zero guard: a configured rate of "0" is a real value.
+        $this->stubStoredConfig(['payment/two_payment/surcharge_tax_rate' => '0']);
+        $model = $this->buildModel([
+            'value' => '',
+            'path' => 'payment/two_payment/surcharge_tax_class',
+            'scope' => 'default',
+            'fieldset_data' => ['surcharge_type' => 'percentage'],
+        ]);
+
+        $this->assertSame($model, $model->beforeSave());
+    }
+
+    public function testExplicitBlankIsNotSatisfiedByStoredTaxClass(): void
+    {
+        // Clearing the selector must be rejected even though the stored value
+        // is still populated — the field's own submitted value wins.
+        $this->stubStoredConfig(['payment/two_payment/surcharge_tax_class' => '4']);
+        $model = $this->buildModel([
+            'value' => '',
+            'path' => 'payment/two_payment/surcharge_tax_class',
+            'scope' => 'default',
+            'fieldset_data' => ['surcharge_type' => 'percentage'],
+        ]);
+
+        $this->expectException(LocalizedException::class);
         $model->beforeSave();
     }
 
