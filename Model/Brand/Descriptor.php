@@ -44,7 +44,8 @@ final class Descriptor
      * @param string[] $suppressedFields `section_suffix/group/field` paths to hide in the synthesised admin form.
      * @param bool $inlineTermFees Whether to render the per-term merchant fee beside each Payment Terms checkbox in admin.
      * @param float[] $surchargeRoundingSteps Buyer-surcharge rounding steps offered in the admin Rounding Step dropdown, ascending.
-     * @param string|null $intentApprovedNotice Buyer-facing intent-approved notice override; null = brand.xml element absent, '' = suppressed. See getIntentApprovedNotice().
+     * @param string|null $intentApprovedNotice Copy override for the buyer-facing intent-approved notice; null = use the platform default copy. Never ''. See getIntentApprovedNotice().
+     * @param bool $intentApprovedNoticeEnabled Whether the buyer-facing intent-approved notice is rendered at all. Default true. See isIntentApprovedNoticeEnabled().
      */
     public function __construct(
         private readonly string $code,
@@ -70,31 +71,47 @@ final class Descriptor
         private readonly bool $inlineTermFees = true,
         private readonly string $checkoutSubtitle = '',
         private readonly array $surchargeRoundingSteps = [],
-        private readonly ?string $intentApprovedNotice = null
+        private readonly ?string $intentApprovedNotice = null,
+        private readonly bool $intentApprovedNoticeEnabled = true
     ) {
     }
 
     /**
-     * Per-brand override for the buyer-facing "order intent approved"
-     * reassurance notice rendered inline in the checkout payment tile.
+     * Whether the buyer-facing "order intent approved" reassurance notice
+     * is rendered at all, from brand.xml
+     * <intent_approved_notice_enabled>.
      *
-     * Three states, all meaningful:
+     *  - `true`  — notice ON. This is the documented default when the
+     *              brand.xml declares nothing, which is what keeps a
+     *              third-party overlay that says nothing on ON.
+     *  - `false` — notice suppressed ENTIRELY: no element is emitted into
+     *              the DOM, not an empty wrapper.
      *
-     *  - `null`  — brand.xml declares no <intent_approved_notice>. The
-     *              renderers use the platform default translated copy and
-     *              the notice is ON. This is the Two-brand case.
-     *  - `''`    — brand.xml declares an empty <intent_approved_notice>.
-     *              The notice is suppressed ENTIRELY: no element is
-     *              emitted into the DOM, not an empty wrapper.
+     * The switch is independent of the copy override below: a brand can
+     * suppress the notice, keep the default copy, or replace the wording,
+     * and those are three separate decisions.
+     */
+    public function isIntentApprovedNoticeEnabled(): bool
+    {
+        return $this->intentApprovedNoticeEnabled;
+    }
+
+    /**
+     * Per-brand COPY override for the buyer-facing "order intent
+     * approved" reassurance notice rendered inline in the checkout
+     * payment tile. Wording only — it does not turn the notice off; see
+     * isIntentApprovedNoticeEnabled() for that.
+     *
+     *  - `null`  — no override: the renderers use the platform default
+     *              translated copy. This is the Two-brand case, and also
+     *              what an absent, empty or whitespace-only
+     *              <intent_approved_notice> resolves to. Never ''.
      *  - non-''  — used verbatim as the company-known copy template, with
      *              %1 = brand product name and %2 = buyer company name.
      *              The company-unknown variant stays on the platform
      *              default; in practice it is unreachable, because an
      *              order intent is only ever placed once both company
      *              name and company number are known.
-     *
-     * Callers MUST distinguish null from '' — collapsing them makes the
-     * off switch unreachable.
      */
     public function getIntentApprovedNotice(): ?string
     {

@@ -100,9 +100,10 @@ describe('gateway_method intent-approved notice', () => {
     });
 
     test('emits nothing at all when the brand suppressed the notice', () => {
-        // ConfigProvider ships null for a brand whose brand.xml declares an
-        // empty <intent_approved_notice>. The observable stays '' so the
-        // template's `ko if` never emits an element.
+        // ConfigProvider ships null for a brand whose brand.xml declares
+        // <intent_approved_notice_enabled>false</intent_approved_notice_enabled>.
+        // The observable stays '' so the template's `ko if` never emits an
+        // element.
         const ctx = makeContext(null);
         ctx.companyName('Acme Widgets AS');
 

@@ -71,9 +71,10 @@
         <!--
             Persistent inline "order intent approved" notice, inside the
             payment tile next to the term chips. Emitted only when non-empty,
-            so a brand that suppresses the notice (empty
-            <intent_approved_notice> in brand.xml) yields no element at all
-            rather than an empty wrapper. Class name matches the PrestaShop /
+            so a brand that suppresses the notice
+            (<intent_approved_notice_enabled>false</intent_approved_notice_enabled>
+            in brand.xml) yields no element at all rather than an empty
+            wrapper. Class name matches the PrestaShop /
             WooCommerce surfaces so the four platforms stay greppable.
         -->
         <!-- ko if: orderIntentApprovedNotice -->

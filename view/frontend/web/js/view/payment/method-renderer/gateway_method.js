@@ -580,8 +580,8 @@ define([
          * @param {object} config the brand's window.checkoutConfig subtree
          */
         initOrderIntentApprovedNotice: function (config) {
-            // `null` means the active brand suppressed the notice (the
-            // three-state brand.xml <intent_approved_notice> switch) — the
+            // `null` means the active brand suppressed the notice
+            // (<intent_approved_notice_enabled>false</…> in brand.xml) — the
             // template then emits no element at all.
             this.orderIntentApprovedNoticeCopy = config.orderIntentApprovedNotice || null;
 

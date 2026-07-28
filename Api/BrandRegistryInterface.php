@@ -52,19 +52,28 @@ interface BrandRegistryInterface
     public function getSurchargeRoundingSteps(): array;
 
     /**
-     * Per-brand override for the buyer-facing "order intent approved"
-     * reassurance notice rendered inline in the checkout payment tile.
-     * Sourced from brand.xml <intent_approved_notice>.
+     * Whether the buyer-facing "order intent approved" reassurance
+     * notice is rendered at all. Sourced from brand.xml
+     * <intent_approved_notice_enabled>; absent means the documented
+     * default `true`, so a brand overlay that declares nothing keeps the
+     * notice ON.
      *
-     *  - `null`  — element absent: platform default translated copy,
-     *              notice ON.
-     *  - `''`    — element present and empty: notice suppressed
-     *              entirely, no DOM element emitted at all.
+     * `false` suppresses the notice entirely — no DOM element is emitted
+     * at all, not an empty wrapper.
+     */
+    public function isIntentApprovedNoticeEnabled(): bool;
+
+    /**
+     * Per-brand COPY override for the buyer-facing "order intent
+     * approved" reassurance notice rendered inline in the checkout
+     * payment tile. Sourced from brand.xml <intent_approved_notice>.
+     * Wording only — it is NOT an off switch; see
+     * isIntentApprovedNoticeEnabled() for that.
+     *
+     *  - `null`  — no override (element absent, empty or whitespace-only):
+     *              platform default translated copy. Never ''.
      *  - non-''  — used verbatim as the company-known copy template
      *              (%1 = brand product name, %2 = buyer company name).
-     *
-     * Callers MUST distinguish null from '' — treating them alike makes
-     * the per-brand off switch unreachable.
      */
     public function getIntentApprovedNotice(): ?string;
 

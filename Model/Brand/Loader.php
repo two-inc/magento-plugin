@@ -176,17 +176,36 @@ class Loader
             }
         }
 
-        // Three-state buyer-facing intent-approved notice. `null` (element
-        // absent) means "use the platform default copy"; '' (element present
-        // but empty) means "suppress the notice entirely". isset() is what
-        // separates the two — SimpleXML reports isset() === true for an
-        // empty element, so a truthiness test would collapse both states
-        // onto the default and make the off switch unreachable. Trimmed, so
-        // a pretty-printed `<intent_approved_notice>\n  </intent_approved_notice>`
-        // counts as the suppressed state rather than a whitespace template.
-        $intentApprovedNotice = null;
-        if (isset($brand->intent_approved_notice)) {
-            $intentApprovedNotice = trim((string)$brand->intent_approved_notice);
+        // On/off switch for the buyer-facing intent-approved notice.
+        // Explicit boolean only: absent is the documented default `true`
+        // (so a third-party overlay that declares nothing keeps the notice
+        // ON), and anything other than the exact strings 'true'/'false' is
+        // an error rather than a silent third behaviour. Validated here as
+        // well as in brand.xsd because nothing validates brand.xsd in
+        // production mode — same reasoning as the rounding-step guard above.
+        $intentApprovedNoticeEnabled = true;
+        if (isset($brand->intent_approved_notice_enabled)) {
+            $raw = trim((string)$brand->intent_approved_notice_enabled);
+            if ($raw !== 'true' && $raw !== 'false') {
+                throw new \DomainException(sprintf(
+                    'brand.xml at %s declares an invalid '
+                    . '<intent_approved_notice_enabled> value "%s"; it must be '
+                    . 'exactly "true" or "false".',
+                    $sourcePath,
+                    $raw
+                ));
+            }
+            $intentApprovedNoticeEnabled = $raw === 'true';
+        }
+
+        // Copy override ONLY — this is no longer an off switch (TWO-25218
+        // superseded the three-state contract). Absent, empty and
+        // whitespace-only all normalise to null, i.e. "use the platform
+        // default copy"; an empty element is inert. Suppression is
+        // <intent_approved_notice_enabled>false</…> above.
+        $intentApprovedNotice = trim((string)($brand->intent_approved_notice ?? ''));
+        if ($intentApprovedNotice === '') {
+            $intentApprovedNotice = null;
         }
 
         $inlineTermFees = true;
@@ -222,7 +241,8 @@ class Loader
             $inlineTermFees,
             (string)($brand->checkout_subtitle ?? ''),
             $roundingSteps,
-            $intentApprovedNotice
+            $intentApprovedNotice,
+            $intentApprovedNoticeEnabled
         );
     }
 }

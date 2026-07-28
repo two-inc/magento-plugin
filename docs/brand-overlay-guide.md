@@ -132,25 +132,81 @@ across modules). Elements may appear in any order (`xs:all`).
 | `extra_http_headers`      | no       | `<header name="…">` list    | Extra headers on API calls.                                                                                             |
 | `suppressed_fields`       | no       | `<field path="…">` list     | Hides admin controls for this brand (below).                                                                            |
 | `inline_term_fees`        | no       | boolean                     | Show per-term merchant fee beside Payment Terms checkboxes in admin (default true).                                     |
-| `intent_approved_notice`  | no       | string                      | Buyer-facing "order intent approved" notice rendered inline in the checkout payment tile. **Three states — see below.** |
+| `intent_approved_notice_enabled` | no | `true` \| `false`      | On/off switch for the buyer-facing "order intent approved" notice. Default `true`. **See below.**                        |
+| `intent_approved_notice`  | no       | string                      | Copy override for that notice — wording only, **not** an off switch. **See below.**                                     |
 
-### `intent_approved_notice` — a three-state switch
+### The intent-approved notice — two keys, one each for on/off and wording
 
-Most optional elements have two states (absent ⇒ default, present ⇒
-override). This one has three, because "no notice at all" is a
-legitimate brand choice and cannot be expressed by omission:
+The notice is a buyer-facing "order intent approved" reassurance line
+rendered inline in the checkout payment tile. It is controlled by **two
+independent keys**: whether it shows, and what it says.
+
+Historically (TWO-25213) there was one key with three states, where
+"present but empty" meant "off". That conflated two unrelated meanings,
+expressed a decision as the absence of content, and made an intentional
+off switch indistinguishable from an unfinished string — any tidy-up that
+deleted the "empty, unused" declaration silently turned the notice back
+on. TWO-25218 split them. **Do not overload one key with both meanings
+again.**
+
+#### `intent_approved_notice_enabled` — the on/off switch
+
+Explicit boolean only:
+
+| brand.xml                                                                | Behaviour                                                                                    |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| `<intent_approved_notice_enabled>true</intent_approved_notice_enabled>`   | Notice **ON**.                                                                               |
+| `<intent_approved_notice_enabled>false</intent_approved_notice_enabled>`  | Notice **suppressed entirely** — no element is emitted into the DOM, not an empty wrapper.   |
+| element absent                                                           | Documented explicit default **`true`** (notice ON).                                          |
+| anything else (`1`, `0`, `yes`, empty, whitespace)                        | **Error.** Never a silent third behaviour.                                                   |
+
+Absent-means-`true` is deliberate: it keeps a third-party overlay that
+declares nothing on ON. Base plugins declare `true` explicitly anyway, so
+the file states its position rather than relying on omission.
+
+The invalid case is caught twice, because `brand.xsd` is not validated at
+runtime (see the validation warning below):
+
+* `brand.xsd` restricts the element to the enumeration `true|false`, so
+  developer-mode config validation fails loudly; and
+* `Model\Brand\Loader` throws a `\DomainException` naming the offending
+  `brand.xml` path, the element and the bad value — the same treatment
+  `<surcharge_rounding_steps>` gets in the same method.
+
+Note `xs:boolean` is deliberately **not** used: it would also accept `1`
+and `0`, and this switch is meant to read as a decision.
+
+#### `intent_approved_notice` — the copy override
 
 | brand.xml                                            | Behaviour                                                                                                              |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| element absent                                       | Platform default translated copy; notice **ON**.                                                                       |
-| `<intent_approved_notice></intent_approved_notice>`  | Notice **suppressed entirely** — no element is emitted into the DOM, not an empty wrapper.                             |
+| element absent                                       | Platform default translated copy.                                                                                      |
+| empty or whitespace-only                             | **Inert** — same as absent. It does **not** mean "off" any more.                                                       |
 | `<intent_approved_notice>…</intent_approved_notice>` | The content is used verbatim as the company-known copy template. `%1` = brand product name, `%2` = buyer company name. |
 
-Whitespace-only content counts as suppressed, so a pretty-printed empty
-element behaves as expected. `Loader` distinguishes absent from
-present-and-empty with `isset()`; `Descriptor::getIntentApprovedNotice()`
-returns `null` / `''` / the template respectively, and callers must not
-collapse the first two — doing so makes the off switch unreachable.
+`Descriptor::getIntentApprovedNotice()` returns `null` for the first two
+rows and the template for the third; it never returns `''`. The switch
+above is what `Model\Ui\ConfigProvider` consults to decide whether to ship
+a payload to the renderer at all.
+
+#### Migration hazard: deploy order
+
+A **new parent** plus a **stale overlay** — one that still carries an
+empty `<intent_approved_notice>` and no
+`<intent_approved_notice_enabled>` — resolves to notice **ON**. That is
+wrong for that brand, but not broken. Making an empty copy element a hard
+error would turn the deploy-order window from "wrong notice" into "broken
+store", which is worse, so empty stays inert and there is deliberately no
+legacy-compat path that resurrects empty-means-off.
+
+The mitigation is **merge order**: `magento-plugin` (parent, owns the
+parsing) → the brand overlay repo → `magento-hyva-extension`. Out
+of order there is a window in which Hyvä renders the notice for a brand
+that asked for it off.
+
+Hyvä additionally guards the reverse skew with `method_exists()` against
+an older parent that lacks the registry method — a missing method means
+"no brand opinion", i.e. notice ON.
 
 The company-unknown copy variant always stays on the platform default.
 In practice it is unreachable: an order intent is only ever placed once
@@ -173,7 +229,8 @@ passive). Two consequences:
    parse it produces a silently-absent feature, not a deploy failure.
    Always verify the feature's observable behaviour after deploy.
 2. Where silent mis-parsing would be dangerous, `Loader` carries its own
-   guards (duplicate/empty `code`) that throw `DomainException` at load.
+   guards (duplicate/empty `code`, `<surcharge_rounding_steps>`,
+   `<intent_approved_notice_enabled>`) that throw `DomainException` at load.
    Follow that pattern when you add fields whose zero-value would
    silently disable a constraint.
 
