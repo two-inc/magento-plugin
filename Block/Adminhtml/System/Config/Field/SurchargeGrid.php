@@ -361,7 +361,8 @@ class SurchargeGrid extends Field
      * model's afterSave() always runs, so it can purge the per-term rows
      * itself. Magento's native field [inherit] flag would instead delete
      * the synthetic surcharge_grid path and skip the backend, leaving the
-     * flat surcharge_NN_* rows orphaned (the ABN-440 root cause).
+     * flat surcharge_NN_* rows orphaned (the store-scope orphaned-override
+     * root cause).
      */
     public function getInheritFieldName(): string
     {
@@ -465,7 +466,7 @@ class SurchargeGrid extends Field
      * getScope(), but the Data\Form object never carries scope, so it
      * always fell back to 'default' — the grid then rendered default-
      * scope values at every scope and never surfaced store/website
-     * overrides (ABN-440).
+     * overrides (the store-scope orphaned-override bug).
      */
     private function resolveScope(AbstractElement $element): void
     {
@@ -508,7 +509,7 @@ class SurchargeGrid extends Field
     /**
      * Build a fully-qualified config path under the active brand's
      * payment-method subtree (e.g. `payment/acme_payment/...` on an
-     * ABN install). The brand code is resolved at call time from
+     * overlay install). The brand code is resolved at call time from
      * BrandRegistryInterface, which routes through ActiveBrandResolver
      * to the active brand's brand.xml — no per-brand DI rebinding.
      */

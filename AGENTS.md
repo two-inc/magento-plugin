@@ -47,8 +47,8 @@ CLI-driven cache writes; the cache lands incomplete, and subsequent
 admin web requests read the broken cached Structure from
 `Scoped::_loadScopedData`.
 
-This is exactly how ABN-415 ("ABN admin tab vanishes after pod
-restart") happened — `SynthesiseBrandAdminForm` was originally
+This is exactly how the admin-tab-vanishes-after-pod-restart bug
+happened — `SynthesiseBrandAdminForm` was originally
 registered under adminhtml; every CLI command in the init/setup
 hooks repopulated the cache without invoking synthesis.
 

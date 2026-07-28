@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Model\Total\Invoice\Surcharge;
 
 /**
- * Regression coverage for ABN-443.
+ * Regression coverage for the surcharge-VAT double-count on refunds.
  *
  * The Two payment surcharge VAT is booked into the order's tax total at
  * quote/placement time. Magento's native invoice Tax collector then
@@ -92,7 +92,7 @@ class SurchargeTest extends TestCase
             (float)$invoice->getTaxAmount(),
             0.0001,
             'Invoice tax_amount must be unchanged: the surcharge VAT is already '
-            . 'present from native propagation of order.tax_amount (ABN-443).'
+            . 'present from native propagation of order.tax_amount (the surcharge-VAT double-count bug).'
         );
     }
 

@@ -99,7 +99,7 @@ class ProvenanceTest extends TestCase
 
     public function testGitlinkFoundOneLevelUpForMonorepoSubpathModule(): void
     {
-        // The ABN overlay's gateway module sits at <repo>/plugin; the
+        // An overlay package's gateway module sits at <repo>/plugin; the
         // gitlink is at the checkout root, one level up. Without the
         // parent-dir lookup the overlay row on a gitSync install shows no
         // commit at all (TWO-25197).
@@ -147,11 +147,11 @@ class ProvenanceTest extends TestCase
 
     public function testPackageNameReadFromParentDirForMonorepoSubpath(): void
     {
-        // Monorepo sub-path modules (e.g. the ABN overlay at <repo>/plugin)
+        // Monorepo sub-path modules (e.g. an overlay package at <repo>/plugin)
         // keep composer.json one level up.
         $sub = $this->tmpDir . '/plugin';
         mkdir($sub);
-        $this->writeComposerJson('abn-amro/magento-abn-plugin');
+        $this->writeComposerJson('example-partner/magento-overlay');
         $p = $this->provenance('0aa21947d6ed57bcf6b35f73a5ed192fc6a9a0dd');
 
         $this->assertSame('0aa2194', $p->commitFromComposer($sub));

@@ -36,11 +36,11 @@ use Two\Gateway\Model\Brand\Loader;
  * Synthesis is unconditional. The previous `system/two_brand_synthesis/
  * admin_form/enabled` flag-gate was a transition kill-switch from
  * before strip-down. It was removed in PR #181 because we suspected
- * a cold-cache race on the flag was the cause of ABN-415 (admin tab
- * vanishes post-restart). That fix closed a real race but the
+ * a cold-cache race on the flag was the cause of the admin-tab-
+ * vanishes-post-restart bug. That fix closed a real race but the
  * symptom kept recurring.
  *
- * Evidence-driven follow-up (ABN-423 diagnostic harness on staging)
+ * Evidence-driven follow-up (a diagnostic harness run on staging)
  * showed the actual root cause: this plugin used to be registered
  * in `etc/adminhtml/di.xml`. CLI invocations of bin/magento
  * (`config:set`, `app:config:import`, `deploy:mode:set`, and similar)
@@ -269,7 +269,7 @@ class SynthesiseBrandAdminForm
      *
      * @param array<string,mixed> $section
      * @param string $sectionId Full section id, e.g. `acme_payment`.
-     * @param string $sectionPrefix Brand's section prefix, e.g. `abn`.
+     * @param string $sectionPrefix Brand's section prefix, e.g. `acme`.
      * @param string[] $suppressedPaths `section_suffix/group/field` paths.
      * @return array<string,mixed>
      */

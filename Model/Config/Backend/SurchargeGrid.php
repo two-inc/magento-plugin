@@ -118,7 +118,8 @@ class SurchargeGrid extends Value
         // Grid-level "Use Website/Default": a single checkbox inherits the
         // whole grid. Purge every per-term cell row at this scope so none
         // is left orphaned — invisible to the admin grid but still read at
-        // runtime, which is the ABN-440 root cause. The flag rides inside
+        // runtime, which is the store-scope orphaned-override root cause.
+        // The flag rides inside
         // [value] (not Magento's native [inherit]) so this afterSave still
         // runs and can do the purge itself.
         if (!empty($gridValues['__inherit'])) {

@@ -190,7 +190,7 @@ class RepositoryPaymentTermsTest extends TestCase
 
     public function testGetDefaultPaymentTermPreselectsSingleAvailableTermDespiteStaleDefault(): void
     {
-        // ABN-439: with a single available term, that term must always be the
+        // With a single available term, that term must always be the
         // default (and therefore preselected), even if a stale
         // default_payment_term points at a term that's no longer available.
         $this->stubConfig([

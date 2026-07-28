@@ -25,7 +25,7 @@ class PaymentTermsType implements OptionSourceInterface
      *
      * Both options are always returned. Brands that don't offer
      * End-of-Month suppress the whole field via their brand.xml
-     * `<suppressed_fields>` (e.g. ABN), so per-brand filtering on
+     * `<suppressed_fields>` (e.g. a partner overlay), so per-brand filtering on
      * this list is unnecessary.
      */
     public function toOptionArray(): array

@@ -15,7 +15,7 @@ use Two\Gateway\Api\BrandOverlayRegistryInterface;
 /**
  * Hide every vanilla Two_Gateway admin config section (`two_general`,
  * `two_payment`, `two_search`, `two_version`) when:
- *   - At least one brand overlay (e.g. ABN_Gateway) is registered, AND
+ *   - At least one brand overlay (e.g. Overlay_Gateway) is registered, AND
  *   - `two_brand_synthesis/hide_payment_section/enabled` resolves to truthy.
  *
  * Both conditions default to true on overlay-installed merchants

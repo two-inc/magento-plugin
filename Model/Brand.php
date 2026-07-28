@@ -118,7 +118,7 @@ class Brand implements BrandRegistryInterface
 
     /**
      * @deprecated 2.0.0 This class is the virtualType base for the
-     *             legacy `AbnBrand` DI rebinding. After the brand-aware
+     *             legacy `OverlayBrand` DI rebinding. After the brand-aware
      *             runtime-resolution work landed (Two\Gateway\Brand\
      *             DescriptorBackedBrandRegistry wired as the
      *             BrandRegistryInterface preference), nothing consumes

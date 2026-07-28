@@ -61,7 +61,7 @@ define([
         // Brand-supplied checkout subtitle; populated in initialize() from
         // the brand's checkoutConfig subtree. Empty ('') for the vanilla
         // Two brand → the template renders no subtitle text. Brand overlays
-        // (ABN, …) supply the string + its translations.
+        // (partner editions, …) supply the string + its translations.
         twoSubtitleHtml: '',
         isPaymentTermsAccepted: ko.observable(false),
         formSelector: 'form#two_gateway_form',

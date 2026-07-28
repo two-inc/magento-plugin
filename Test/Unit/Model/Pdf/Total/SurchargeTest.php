@@ -14,7 +14,7 @@ use Two\Gateway\Model\Pdf\Total\Surcharge;
 /**
  * The invoice/credit-memo PDF surcharge row must show the NET surcharge —
  * its VAT belongs in the Tax line, matching the on-screen totals and the
- * grand total. (ABN-443 follow-up.)
+ * grand total. (Follow-up to the surcharge-VAT double-count bug.)
  */
 class SurchargeTest extends TestCase
 {

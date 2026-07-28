@@ -14,8 +14,9 @@ use Two\Gateway\Model\Brand\Loader;
 /**
  * Focused on the brand.xml -> Descriptor mapping for the
  * <surcharge_rounding_steps> element added for the Rounding Step
- * dropdown (ABN-457). Loader does no runtime XSD validation, so the
- * parse/validate guards here are the only safety net.
+ * dropdown for an overlay's rounding config. Loader does no runtime
+ * XSD validation, so the parse/validate guards here are the only
+ * safety net.
  */
 class LoaderTest extends TestCase
 {

@@ -229,7 +229,7 @@ class SurchargeTest extends TestCase
     }
 
     /**
-     * ABN-463: a shipping-method change can drop the quote below the
+     * A shipping-method change can drop the quote below the
      * minimum order value without ever deselecting `two_payment` on the
      * quote. The collector must clear the surcharge on that recollect
      * pass rather than keep reapplying it because the method code alone

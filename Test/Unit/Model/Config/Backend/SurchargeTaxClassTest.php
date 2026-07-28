@@ -175,12 +175,12 @@ class SurchargeTaxClassTest extends TestCase
         $this->scopeConfig->method('getValue')->willReturnCallback(
             function ($path) use (&$queried) {
                 $queried[] = $path;
-                return $path === 'payment/abn_payment/surcharge_type' ? 'fixed' : null;
+                return $path === 'payment/overlay_payment/surcharge_type' ? 'fixed' : null;
             }
         );
         $model = $this->buildModel([
             'value' => '',
-            'path' => 'payment/abn_payment/surcharge_tax_class',
+            'path' => 'payment/overlay_payment/surcharge_tax_class',
             'scope' => 'websites',
             'scope_id' => 2,
         ]);
@@ -189,7 +189,7 @@ class SurchargeTaxClassTest extends TestCase
             $model->beforeSave();
             $this->fail('Expected LocalizedException');
         } catch (LocalizedException $e) {
-            $this->assertContains('payment/abn_payment/surcharge_type', $queried);
+            $this->assertContains('payment/overlay_payment/surcharge_type', $queried);
         }
     }
 }

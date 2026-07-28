@@ -13,7 +13,7 @@ use Two\Gateway\Block\Adminhtml\Creditmemo\SurchargeOverride;
 /**
  * The editable surcharge override row on the credit-memo create form must sit
  * directly above the Tax line — same ordering as the read-only row elsewhere
- * (ABN-443 follow-up). The block removes the static row and re-adds an
+ * (follow-up to the surcharge-VAT double-count bug). The block removes the static row and re-adds an
  * editable placeholder; that re-add must anchor before `tax`, not
  * `grand_total`.
  */

@@ -64,7 +64,7 @@ install: clean
 	docker exec $(CONTAINER) php bin/magento deploy:mode:set developer
 	# di:compile resets Magento to production mode as a side effect, so
 	# deploy:mode:set developer must run AFTER it, or developer mode gets
-	# silently clobbered back to production. See magento-abn-plugin 66062d8.
+	# silently clobbered back to production. See the overlay repo's 66062d8.
 	# Local-dev perf: merge + minify JS/CSS so RequireJS doesn't fan out into
 	# ~200 individual file fetches. Stays in developer mode (no static deploy
 	# step), but the request count drops to ~20 and the storefront's KO
