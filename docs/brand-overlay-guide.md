@@ -210,6 +210,14 @@ inside the payment-method tile, as does PrestaShop. WooCommerce uses
 `twoinc-intent-approved` instead, so grep for both when sweeping the four
 checkout surfaces.
 
+The two keys carry the same names and the same semantics on WooCommerce
+and PrestaShop, where they are real PHP booleans rather than an XSD
+enumeration. **The failure mode differs:** an invalid value throws here
+and is a logged error plus the default `true` there, because those
+resolvers run while rendering a buyer-facing checkout, where a white
+screen is worse than a notice that stays on. Don't assume Magento's
+throw when working across platforms.
+
 ### A warning about validation
 
 `brand.xsd` is enforced by CI/IDE tooling only — **nothing validates
