@@ -1,5 +1,12 @@
 import { test, expect } from '@playwright/test';
-import { addToCart, availableMethods, fillCheckout, selectShipping, waitIdle } from './_helpers';
+import {
+    addToCart,
+    availableMethods,
+    fillCheckout,
+    goToPaymentStep,
+    selectShipping,
+    waitIdle
+} from './_helpers';
 
 const OUT = process.env.OUT_DIR || 'screenshots';
 
@@ -10,6 +17,7 @@ test('magento checkout journey', async ({ page }) => {
     await fillCheckout(page);
 
     await selectShipping(page, 'freeshipping');
+    await goToPaymentStep(page);
     await expect.poll(() => availableMethods(page), { timeout: 25_000 }).toContain('two_payment');
 
     // Select the Two method and wait for its expanded form to render.

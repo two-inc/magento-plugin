@@ -47,6 +47,49 @@ async function shippingAmount(page: Page): Promise<number> {
     );
 }
 
+// Whether the checkout has reached the payment step, per Magento's own
+// step-navigator (the authority the checkout renders from).
+async function onPaymentStep(page: Page): Promise<boolean> {
+    return page.evaluate(
+        () =>
+            new Promise<boolean>((resolve) => {
+                (window as any).require(
+                    ['Magento_Checkout/js/model/step-navigator'],
+                    (nav: any) => {
+                        resolve(
+                            (nav.steps() || []).some(
+                                (s: any) => s.code === 'payment' && s.isVisible()
+                            )
+                        );
+                    }
+                );
+            })
+    );
+}
+
+// Advance the Luma checkout from the shipping step to the payment step.
+//
+// This is a required step of the journey, not a convenience: on a non-virtual
+// quote Magento leaves `checkoutConfig.paymentMethods` empty on page load and
+// only populates payment-service from the shipping-information POST that this
+// button triggers. Reading availableMethods() while still on the shipping step
+// therefore returns [] no matter what the store offers.
+export async function goToPaymentStep(page: Page) {
+    if (await onPaymentStep(page)) {
+        return;
+    }
+    await waitIdle(page);
+    const next = page.locator(
+        '#shipping-method-buttons-container button[data-role="opc-continue"]'
+    );
+    await expect(next).toBeEnabled({ timeout: 20_000 });
+    await next.click();
+    // The step flips on the shipping-information response, a network round trip
+    // after the click, so poll the navigator rather than reading it once.
+    await expect.poll(() => onPaymentStep(page), { timeout: 30_000 }).toBe(true);
+    await waitIdle(page);
+}
+
 // Native click on the shipping radio — Playwright's .check()/.click() on the
 // styled input doesn't fire Magento's shipping-change handler that recalculates
 // totals, so wait for the radio to load, then drive it in-page like a real click.
