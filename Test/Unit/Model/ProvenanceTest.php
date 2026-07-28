@@ -257,7 +257,7 @@ class ProvenanceTest extends TestCase
 
     public function testPackageNameReadFromParentDirForMonorepoSubpath(): void
     {
-        // Monorepo sub-path modules (e.g. a branding overlay at <repo>/plugin)
+        // Monorepo sub-path modules (e.g. an overlay package at <repo>/plugin)
         // keep composer.json one level up.
         $sub = $this->tmpDir . '/plugin';
         mkdir($sub);

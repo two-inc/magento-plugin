@@ -50,11 +50,11 @@ use Two\Gateway\Service\UrlCookie;
  *
  * Example brand-overlay binding (legacy, still supported):
  *
- *   <virtualType name="ABN\Gateway\Model\AbnPayment"
+ *   <virtualType name="Overlay\Gateway\Model\OverlayPayment"
  *                type="Two\Gateway\Model\GenericPaymentMethod">
  *       <arguments>
  *           <argument name="code" xsi:type="string">acme_payment</argument>
- *           <argument name="brand" xsi:type="object">ABN\Gateway\Model\AbnBrand</argument>
+ *           <argument name="brand" xsi:type="object">Overlay\Gateway\Model\OverlayBrand</argument>
  *       </arguments>
  *   </virtualType>
  */

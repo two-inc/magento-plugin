@@ -89,7 +89,8 @@ class SurchargeGridTest extends TestCase
         // Grid-level inherit: the __inherit sentinel rides inside the value
         // array. Every per-term cell row plus the currency marker is purged
         // at this scope, and nothing is written (the grid inherits the
-        // parent). This is the ABN-440 fix — no orphaned override survives.
+        // parent). This is the store-scope orphaned-override fix — no
+        // orphaned override survives.
         $this->model->setTestValue([
             '__inherit' => '1',
             30 => ['fixed' => '10', 'percentage' => '25', 'limit' => '50'],

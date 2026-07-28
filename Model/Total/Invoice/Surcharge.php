@@ -62,7 +62,7 @@ class Surcharge extends AbstractTotal
         // collector propagates it onto the invoice before this collector runs,
         // so it is already present in tax_amount/grand_total. Adding it again
         // here double-counts the VAT, inflating the invoice (and the order's
-        // paid total) by one surcharge-VAT and breaking refunds (ABN-443).
+        // paid total) by one surcharge-VAT and breaking refunds.
         $invoice->setGrandTotal((float)$invoice->getGrandTotal() + $remaining);
         $invoice->setBaseGrandTotal((float)$invoice->getBaseGrandTotal() + $baseRemaining);
 

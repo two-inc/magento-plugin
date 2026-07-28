@@ -15,7 +15,7 @@ use Two\Gateway\Block\Sales\Total\Surcharge;
  * The order/invoice/creditmemo totals row for the surcharge must display the
  * NET surcharge — its VAT belongs in the Tax line (as on checkout). Showing
  * the gross value double-presents the VAT and stops the totals rows summing to
- * the grand total. (ABN-443 follow-up.)
+ * the grand total. (Follow-up to the surcharge-VAT double-count bug.)
  */
 class SurchargeTest extends TestCase
 {

@@ -114,7 +114,7 @@
 
     <!--
         Payment-method codes that engage the surcharge quote-total collector.
-        Brand overlays (e.g. ABN_Gateway) append their own code via a
+        Brand overlays (e.g. Overlay_Gateway) append their own code via a
         matching <type> entry in their own etc/di.xml — Magento merges
         named-array DI items across modules so the list grows additively.
     -->
@@ -166,8 +166,8 @@
         CLI invocations of bin/magento populate the adminhtml-scoped
         structure cache key using the CLI process's DI graph, which
         doesn't load adminhtml-area plugins. Cache then serves the
-        un-synthesised result to admin web requests and the ABN admin
-        tab vanishes (ABN-415). The plugin's `afterRead` is a no-op
+        un-synthesised result to admin web requests and the brand-overlay
+        admin tab vanishes. The plugin's `afterRead` is a no-op
         on non-Reader read paths; safe to register globally.
     -->
     <type name="Magento\Config\Model\Config\Structure\Reader">

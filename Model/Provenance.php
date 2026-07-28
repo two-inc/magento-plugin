@@ -119,8 +119,7 @@ class Provenance
         // The gitlink lives at the checkout root. For a top-level module
         // that IS the module directory; for a monorepo sub-path module
         // (an overlay package ships its gateway at <repo>/plugin) it is one
-        // level up — same two-place lookup composer.json needs. It can also
-        // sit INSIDE the module dir, hence checking both.
+        // level up — same two-place lookup composer.json needs.
         foreach ([$modulePath, dirname($modulePath)] as $dir) {
             $gitFile = $dir . '/.git';
             if (!is_file($gitFile)) {

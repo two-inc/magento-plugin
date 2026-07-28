@@ -88,7 +88,7 @@ class Repository implements RepositoryInterface
      *                      default) defers to the brand registry —
      *                      every `payment/<code>/<key>` path is
      *                      built against the active brand resolved
-     *                      from brand.xml at request time. ABN and
+     *                      from brand.xml at request time. Existing and
      *                      future overlays no longer need a virtualType
      *                      of this Repository.
      */
@@ -577,7 +577,7 @@ class Repository implements RepositoryInterface
         // Else the lowest available term, so the buyer always lands on a
         // real, selectable term — in particular a single available term is
         // always the default (and thus preselected), even if a stale
-        // default_payment_term points elsewhere (ABN-439).
+        // default_payment_term points elsewhere.
         return $terms ? min($terms) : 30;
     }
 

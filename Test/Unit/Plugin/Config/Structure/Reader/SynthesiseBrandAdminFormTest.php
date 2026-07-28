@@ -11,7 +11,8 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Plugin\Magento\Config\Model\Config\Structure\Reader\SynthesiseBrandAdminForm;
 
 /**
- * Regression coverage for ABN-415.
+ * Regression coverage for the admin-tab-vanishes-after-cold-start
+ * cache race.
  *
  * The pre-fix code gated synthesis on
  * `system/two_brand_synthesis/admin_form/enabled` via a ScopeConfig
@@ -19,7 +20,7 @@ use Two\Gateway\Plugin\Magento\Config\Model\Config\Structure\Reader\SynthesiseBr
  * config-cache could be mid-build at the first admin request, so
  * `isSetFlag` returned false even though `etc/config.xml` declared
  * the default as `1`. The plugin then no-op'd, the un-synthesised
- * Reader output got cached, and the ABN admin tab disappeared for
+ * Reader output got cached, and the brand-overlay admin tab disappeared for
  * the lifetime of the PHP-FPM worker.
  *
  * The fix removes the flag gate entirely. This test pins the
@@ -47,7 +48,7 @@ class SynthesiseBrandAdminFormTest extends TestCase
             \Magento\Framework\App\Config\ScopeConfigInterface::class,
             $paramTypes,
             'SynthesiseBrandAdminForm must not depend on ScopeConfigInterface — '
-            . 'the flag gate caused the ABN-415 cold-start cache race.'
+            . 'the flag gate caused the admin-tab cold-start cache race.'
         );
     }
 
@@ -73,7 +74,7 @@ class SynthesiseBrandAdminFormTest extends TestCase
         self::assertEmpty(
             $xml->xpath('/config/default/two_brand_synthesis/admin_form'),
             'etc/config.xml must not declare two_brand_synthesis/admin_form — '
-            . 'nothing reads it since the ABN-415 flag-gate removal (TWO-25191).'
+            . 'nothing reads it since the flag-gate removal (TWO-25191).'
         );
     }
 }

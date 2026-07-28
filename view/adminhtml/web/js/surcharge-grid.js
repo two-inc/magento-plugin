@@ -75,7 +75,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             // inherited Percentage type must still render the grid; returning
             // 'none' on inherit (the old behaviour) hid the grid at store
             // scope and stranded any store-scope override out of sight
-            // (ABN-440).
+            // (the store-scope orphaned-override bug).
             return $surchargeType.val() || 'none';
         }
 
@@ -269,7 +269,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             // state, overriding column/differential toggles when the whole
             // grid is inheriting.
             applyGridInherit();
-            // Fee-preview column removed (ABN-356 / ABN-401-F12); skip the
+            // Fee-preview column removed in a prior grid simplification; skip the
             // loadFees() AJAX whose response would have no cells to populate.
         }
 

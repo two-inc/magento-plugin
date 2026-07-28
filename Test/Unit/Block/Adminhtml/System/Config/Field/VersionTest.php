@@ -24,14 +24,14 @@ class VersionTest extends TestCase
         $provenance = $this->createMock(Provenance::class);
         $provenance->method('commitForPath')->willReturnMap([
             ['/app/code/Two/Gateway', '6f8534e'],
-            ['/app/code/ABN/Gateway', 'cd9edfb'],
+            ['/app/code/Overlay/Gateway', 'cd9edfb'],
         ]);
 
         $block = new VersionTestable();
         $block->setProvenance($provenance);
 
         $this->assertSame('6f8534e', $block->extractCommitPublic('/app/code/Two/Gateway'));
-        $this->assertSame('cd9edfb', $block->extractCommitPublic('/app/code/ABN/Gateway'));
+        $this->assertSame('cd9edfb', $block->extractCommitPublic('/app/code/Overlay/Gateway'));
     }
 
     public function testUnresolvableCommitIsEmptyNotAnException(): void

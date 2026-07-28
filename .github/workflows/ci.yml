@@ -226,8 +226,9 @@ jobs:
           docker exec magento-project-community-edition ./retry \
             "php bin/magento setup:di:compile"
 
-      # ABN-423 M3: install-time smoke test. Catches the full
-      # ABN-415-class regression surface in one sequence: DI scope
+      # Diagnostic-harness milestone 3: install-time smoke test. Catches
+      # the full admin-tab-vanishes-class regression surface in one
+      # sequence: DI scope
       # (compile picks up plugins from etc/di.xml, etc/adminhtml/di.xml,
       # etc/crontab/di.xml), Setup/Recurring.php firing (cache:flush
       # auto-runs as part of setup:upgrade), structure cache rebuild,
@@ -235,7 +236,7 @@ jobs:
       # two_payment/title` default from etc/config.xml. A regression
       # in any of these surfaces as an empty or error-containing
       # config:show output.
-      - name: Install-time smoke test (ABN-423 M3)
+      - name: Install-time smoke test (diagnostic-harness M3)
         run: |
           docker exec magento-project-community-edition ./retry \
             "php bin/magento module:enable Two_Gateway && php bin/magento setup:upgrade && php bin/magento cache:flush"
@@ -243,7 +244,7 @@ jobs:
           # config:set writes to core_config_data, which forces Structure
           # to resolve `payment/two_payment/title` end-to-end: DI-graph
           # bootstrap → Reader::read → SynthesiseBrandAdminForm (the
-          # ABN-415 regression surface) → Element resolution. A failure
+          # admin-tab-vanishes regression surface) → Element resolution. A failure
           # anywhere in that chain surfaces here as a non-zero exit or
           # an error/exception trace in stderr.
           set -o pipefail
@@ -254,7 +255,7 @@ jobs:
           echo "config:show output: $out"
           if echo "$out" | grep -qiE 'error|exception|fatal'; then
             echo "::error::Smoke test failed: config:show returned an error."
-            echo "Likely causes: DI scope drift (see ABN-415), Structure cache poisoning,"
+            echo "Likely causes: DI scope drift (see the admin-tab-vanishes bug), Structure cache poisoning,"
             echo "or Setup/Recurring.php failed to clear the config cache."
             exit 1
           fi
@@ -266,7 +267,7 @@ jobs:
   # Merchant-upgrade smoke: install the latest released version from the PREVIOUS
   # major (currently 1.16.2), then composer-require this branch's HEAD and re-run
   # di:compile — proves the cross-major vanilla merchant upgrade (1.x -> 2.x) lands
-  # cleanly on every PR. Unlike the ABN overlay (1.x -> 2.0 is a package rename +
+  # cleanly on every PR. Unlike an overlay package (1.x -> 2.0 is a package rename +
   # monorepo split, TWO-25001), vanilla two-inc/magento2 keeps the same package
   # name across majors, so this is a clean same-package upgrade and the right home
   # for real 1.x -> 2.0 coverage (TWO-25005).

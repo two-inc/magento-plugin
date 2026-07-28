@@ -18,9 +18,10 @@ use Magento\Store\Model\ScopeInterface;
  * merchant's minimum-order constraint: Two::isAvailable()'s server gate,
  * Two::getMinimumOrderVisibility()'s client-display projection,
  * Two::assertOrderMeetsMinimum()'s placement backstop, and
- * Total\Surcharge::collect()'s totals-recollect gate (ABN-463). A second ad
- * hoc copy of this construction is exactly how ABN-463 happened: the
- * totals-recollect gate silently diverged from the visibility gate because
+ * Total\Surcharge::collect()'s totals-recollect gate (the below-minimum
+ * surcharge-not-cleared bug). A second ad hoc copy of this construction is
+ * exactly how that bug happened: the totals-recollect gate silently
+ * diverged from the visibility gate because
  * nothing forced them to agree. Extend this class, not a private copy.
  */
 class MerchantMinimumResolver

@@ -64,7 +64,8 @@
             knobs, not a rollback mechanism.
 
             Admin-form synthesis deliberately has NO flag here: its
-            gate was removed in magento-plugin PR #181 (ABN-415) after
+            gate was removed in magento-plugin PR #181 (the admin-tab-
+            vanishes bug) after
             an `isSetFlag` read during a cold-cache admin request
             no-op'd the plugin and poisoned the Structure cache.
             Synthesis of the per-brand admin Configuration section is

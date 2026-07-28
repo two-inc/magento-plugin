@@ -22,7 +22,7 @@
  *
  *   code             Brand payment-method code, e.g. "two_payment".
  *                    Used in CCD config_path values.
- *   section_prefix   Short brand prefix, e.g. "two", "abn". Used
+ *   section_prefix   Short brand prefix, e.g. "two", "overlay". Used
  *                    for tab id (`{prefix}_gateway`) and section
  *                    ids (`{prefix}_general`/`_payment`/`_search`/
  *                    `_version`).

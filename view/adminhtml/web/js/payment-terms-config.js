@@ -49,7 +49,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             // still carries the inherited value, so read it directly. An
             // inherited Percentage type must still surface the surcharge
             // fields; returning 'none' on inherit (the old behaviour) hid
-            // them at store scope (ABN-440).
+            // them at store scope (the store-scope orphaned-override bug).
             return $surchargeType.val() || 'none';
         }
 
