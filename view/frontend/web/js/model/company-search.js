@@ -166,6 +166,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
 
                     onSearching(true);
                     const request = $.ajax(params);
+                    let wasAborted = false;
 
                     request.done(function (response) {
                         cacheSet(params.url, response);
@@ -181,11 +182,30 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                         // design. A timeout is NOT an abort and must be
                         // visible, otherwise the buyer reads a hung backend
                         // as "my company isn't accepted here".
-                        if (textStatus !== 'abort') onUnavailable(true);
-                        failure(jqXHR, textStatus);
+                        if (textStatus === 'abort') {
+                            wasAborted = true;
+                            failure(jqXHR, textStatus);
+                            return;
+                        }
+                        onUnavailable(true);
+                        // Deliberately select2's SUCCESS path with an empty
+                        // result set, not its failure path. jQuery reports a
+                        // timeout as status 0, and select2's own failure
+                        // handler treats status 0 as an abort: it never fires
+                        // `results:message`, so `hideLoading()` is never
+                        // reached and the dropdown is left showing
+                        // "Searching…" forever — under the very notice that
+                        // says the search failed. Feeding it an empty result
+                        // set gives select2 a terminal state to render.
+                        success({ items: [] });
                     });
                     request.always(function () {
-                        onSearching(false);
+                        // Not on abort: select2 aborts the in-flight request
+                        // synchronously at the top of the next query(), 300ms
+                        // before the replacement transport starts. Dropping
+                        // the spinner there would make it blink off on every
+                        // keystroke.
+                        if (!wasAborted) onSearching(false);
                     });
 
                     return request;
@@ -277,17 +297,38 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * the buyer is concerned, and it is where the spinner and the
          * unavailable notice belong.
          *
-         * Scoped through the widget instance rather than a document-wide
-         * selector: with two pickers in one checkout, a global lookup would
-         * decorate whichever dropdown happened to be in the DOM.
+         * Takes the BOUND ELEMENT, not a selector, and resolves through that
+         * element's own widget instance. This is what keeps a stale request
+         * from painting on a live widget: a search issued by a widget that
+         * has since been destroyed (select2 re-init destroys the previous
+         * instance on the same node) finds no instance on its old element
+         * and no-ops, instead of decorating whichever dropdown a
+         * document-wide selector happened to hit.
          *
-         * @param {string} fieldSelector the picker's input selector
+         * @param {object} $field jQuery-wrapped picker input
          * @returns {object} jQuery set — empty when the widget isn't bound
          */
-        getSearchFieldContainer: function (fieldSelector) {
-            const instance = $(fieldSelector).data('select2');
+        getSearchFieldContainer: function ($field) {
+            const instance = $field && $field.data ? $field.data('select2') : null;
             if (!instance || !instance.$dropdown) return $();
             return instance.$dropdown.find('.select2-search--dropdown');
+        },
+
+        /**
+         * Drop both the spinner and the unavailable notice.
+         *
+         * Needed on `select2:open`: select2 only detaches the dropdown on
+         * close and only clears the search input's value, so nothing removes
+         * children appended into `.select2-search--dropdown`. Without this,
+         * a buyer who hits a failed search, closes the picker and reopens it
+         * sees the stale "unavailable" notice above an empty search box —
+         * and it survives until three or more characters are retyped.
+         *
+         * @param {object} $field jQuery-wrapped picker input
+         */
+        clearSearchChrome: function ($field) {
+            this.setSearching($field, false);
+            this.setUnavailable($field, false);
         },
 
         /**
@@ -297,11 +338,11 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * (`.two-term-chip__loading`, `two-term-chip-dot` keyframes) rather
          * than introducing a second loading idiom.
          *
-         * @param {string} fieldSelector the picker's input selector
+         * @param {object} $field jQuery-wrapped picker input
          * @param {boolean} isSearching
          */
-        setSearching: function (fieldSelector, isSearching) {
-            const $container = this.getSearchFieldContainer(fieldSelector);
+        setSearching: function ($field, isSearching) {
+            const $container = this.getSearchFieldContainer($field);
             if (!$container.length) return;
 
             if (!isSearching) {
@@ -324,11 +365,11 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * shop won't take them. The copy points at manual entry, which both
          * pickers already offer.
          *
-         * @param {string} fieldSelector the picker's input selector
+         * @param {object} $field jQuery-wrapped picker input
          * @param {boolean} isUnavailable
          */
-        setUnavailable: function (fieldSelector, isUnavailable) {
-            const $container = this.getSearchFieldContainer(fieldSelector);
+        setUnavailable: function ($field, isUnavailable) {
+            const $container = this.getSearchFieldContainer($field);
             if (!$container.length) return;
 
             if (!isUnavailable) {
@@ -336,10 +377,14 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                 return;
             }
             if ($container.find(`.${UNAVAILABLE_CLASS}`).length) return;
+            // A <span>, not a <div>: select2 renders both `.select2-dropdown`
+            // and `.select2-search--dropdown` as <span>, and block-in-inline
+            // makes margin/padding/width behave inconsistently. The class
+            // sets `display: block`.
             $container.append(
-                `<div class="${UNAVAILABLE_CLASS}" role="alert">` +
+                `<span class="${UNAVAILABLE_CLASS}" role="alert">` +
                     $t('Company search is unavailable. Try again, or enter details manually.') +
-                    '</div>'
+                    '</span>'
             );
         }
     };

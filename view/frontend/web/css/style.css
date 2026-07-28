@@ -399,6 +399,7 @@
 }
 
 .two-company-search__unavailable {
+    display: block;
     margin-top: 6px;
     padding: 6px 8px;
     border-radius: 3px;

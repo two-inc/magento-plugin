@@ -229,6 +229,13 @@ define([
          * doesn't accumulate live subscriptions to the singleton quote totals.
          */
         dispose: function () {
+            // Destroy the company-search widget with the component that owns
+            // it. Without this a re-render that REUSES the input node (rather
+            // than recreating it) leaves the old widget bound, with handlers
+            // closed over this now-disposed renderer — picking a company
+            // would then write to dead observables and the order would go out
+            // with no company on it.
+            this.disableCompanySearch();
             if (this._twoVisibilitySub) {
                 this._twoVisibilitySub.dispose();
                 this._twoVisibilitySub = null;
@@ -839,17 +846,20 @@ define([
                 });
                 $.async(self.companyNameSelector, function (companyNameField) {
                     // `$.async` is a MutationObserver, and every call to
-                    // enableCompanySearch() adds another one. One-page
-                    // checkouts (Fire Checkout) re-render this payment
-                    // renderer on every totals/shipping change, so the
-                    // callback fires repeatedly for the same node. Binding
-                    // select2 twice to one node leaves a duplicate widget
-                    // whose in-flight XHR resolves into a dropdown the buyer
-                    // can no longer see. Bind each node exactly once;
-                    // clearCompany()/disableCompanySearch() destroys the
-                    // widget first, so re-enabling still gets a fresh bind.
-                    if ($(companyNameField).data('select2')) return;
-                    $(companyNameField)
+                    // enableCompanySearch() adds another one, so on a
+                    // one-page checkout (Fire Checkout) this fires
+                    // repeatedly. Re-binding is deliberately NOT guarded
+                    // against: select2 4.1's own constructor destroys any
+                    // existing instance on the same node
+                    // (`GetData(el, 'select2').destroy()`), so re-init is the
+                    // correct way to re-point the widget — and its handlers'
+                    // `self` closure — at the current component. Skipping the
+                    // re-init would leave the previous widget alive with
+                    // closures over a DISPOSED renderer, so picking a company
+                    // would write to dead observables. What re-render safety
+                    // needs instead is the teardown in dispose() below.
+                    const $companyNameField = $(companyNameField);
+                    $companyNameField
                         .select2({
                             minimumInputLength: 3,
                             width: '100%',
@@ -867,21 +877,27 @@ define([
                                 getCountryCode: function () {
                                     return self.countryCode();
                                 },
+                                // Bound to THIS node, not to the selector.
+                                // A search issued by a widget that has since
+                                // been destroyed then finds no instance on
+                                // its own element and no-ops, rather than
+                                // painting a stale failure onto whatever
+                                // picker is live now.
                                 onSearching: function (isSearching) {
-                                    companySearch.setSearching(
-                                        self.companyNameSelector,
-                                        isSearching
-                                    );
+                                    companySearch.setSearching($companyNameField, isSearching);
                                 },
                                 onUnavailable: function (isUnavailable) {
-                                    companySearch.setUnavailable(
-                                        self.companyNameSelector,
-                                        isUnavailable
-                                    );
+                                    companySearch.setUnavailable($companyNameField, isUnavailable);
                                 }
                             })
                         })
                         .on('select2:open', function () {
+                            // select2 only detaches the dropdown on close and
+                            // only blanks the search input, so anything we
+                            // appended into the search box survives. Clear it
+                            // here or a reopened picker still shows the last
+                            // search's "unavailable" notice.
+                            companySearch.clearSearchChrome($companyNameField);
                             if ($(self.enterDetailsManuallyButton).length == 0) {
                                 $('.select2-results')
                                     .parent()
