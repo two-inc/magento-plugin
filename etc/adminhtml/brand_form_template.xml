@@ -182,6 +182,18 @@
                     ORDER IS LOAD-BEARING and must stay in step with
                     etc/adminhtml/system.xml: invoice email, purchase order
                     number, project, department, order note LAST. TWO-25263.
+
+                    This file is NOT inert. Its fields merge into the same
+                    config structure as system.xml's, and where the two
+                    disagree the sortOrder here is what the admin pane
+                    renders. Verified on Magento 2.4.8 by dumping
+                    Magento\Config\Model\Config\Structure with the two files
+                    deliberately out of step: the pane followed THIS file and
+                    ignored system.xml's sortOrder entirely. So editing only
+                    system.xml looks like a fix and changes nothing — always
+                    change both, and check the rendered order rather than the
+                    sortOrder values. Test/Unit/Config/CheckoutFieldOrderTest
+                    asserts both files.
                 -->
                 <field id="enable_invoice_emails" translate="label" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1"
