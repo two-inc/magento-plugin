@@ -696,14 +696,26 @@ describe('processResults robustness', () => {
     });
 
     // `national_identifier` is optional in the search response and its `id`
-    // may be null or empty, so every one of these four shapes is reachable.
+    // may be null or empty, so every one of these five shapes is reachable.
     // A throw here would happen inside select2's query pipeline, taking the
     // whole result list down and leaving the dropdown on "Searching…" — so
     // the hit renders with whatever it has instead.
+    //
+    // `toEqual` treats `lookupId: undefined` as equal to the key being ABSENT,
+    // so on its own it let an implementation that dropped `lookupId`
+    // altogether pass. `toStrictEqual` is not the fix here — the harness runs
+    // the module inside a `vm` context, so its objects carry that realm's
+    // Object.prototype and every strict compare fails with "serializes to the
+    // same string". The key set is asserted explicitly instead, and the final
+    // row carries a real `lookup_id`: address autofill is the one thing that
+    // still works for an identifier-less hit (lookupCompanyAddress() keys on
+    // `lookupId`, not on the national identifier), so losing it would strip
+    // the remaining value in showing the hit at all.
     test.each([
         [
             'national_identifier absent',
-            { name: 'Example Trading Ltd', highlight: '<em>Example</em> Trading Ltd' }
+            { name: 'Example Trading Ltd', highlight: '<em>Example</em> Trading Ltd' },
+            undefined
         ],
         [
             'national_identifier null',
@@ -711,7 +723,8 @@ describe('processResults robustness', () => {
                 name: 'Example Trading Ltd',
                 highlight: '<em>Example</em> Trading Ltd',
                 national_identifier: null
-            }
+            },
+            undefined
         ],
         [
             'id null',
@@ -719,7 +732,8 @@ describe('processResults robustness', () => {
                 name: 'Example Trading Ltd',
                 highlight: '<em>Example</em> Trading Ltd',
                 national_identifier: { id: null }
-            }
+            },
+            undefined
         ],
         [
             'id empty',
@@ -727,27 +741,50 @@ describe('processResults robustness', () => {
                 name: 'Example Trading Ltd',
                 highlight: '<em>Example</em> Trading Ltd',
                 national_identifier: { id: '' }
-            }
-        ]
-    ])('%s renders the company without an identifier suffix', (_label, item) => {
-        const { $ } = makeQueryDouble();
-        const companySearch = loadCompanySearch($);
-        const ajaxOptions = buildOptions(companySearch, makeHooks());
-        const run = function () {
-            return ajaxOptions.processResults({ items: [item] });
-        };
-
-        expect(run).not.toThrow();
-        expect(run().results).toEqual([
+            },
+            undefined
+        ],
+        [
+            'no identifier but a lookup_id',
             {
-                id: 'Example Trading Ltd',
-                text: 'Example Trading Ltd',
-                html: '<em>Example</em> Trading Ltd',
-                companyId: '',
-                lookupId: undefined
-            }
-        ]);
-    });
+                name: 'Example Trading Ltd',
+                highlight: '<em>Example</em> Trading Ltd',
+                national_identifier: null,
+                lookup_id: 'lookup-abc-123'
+            },
+            'lookup-abc-123'
+        ]
+    ])(
+        '%s renders the company without an identifier suffix',
+        (_label, item, expectedLookupId) => {
+            const { $ } = makeQueryDouble();
+            const companySearch = loadCompanySearch($);
+            const ajaxOptions = buildOptions(companySearch, makeHooks());
+            const run = function () {
+                return ajaxOptions.processResults({ items: [item] });
+            };
+
+            expect(run).not.toThrow();
+            expect(run().results).toEqual([
+                {
+                    id: 'Example Trading Ltd',
+                    text: 'Example Trading Ltd',
+                    html: '<em>Example</em> Trading Ltd',
+                    companyId: '',
+                    lookupId: expectedLookupId
+                }
+            ]);
+            const result = run().results[0];
+            expect(Object.keys(result).sort()).toEqual([
+                'companyId',
+                'html',
+                'id',
+                'lookupId',
+                'text'
+            ]);
+            expect(result.lookupId).toBe(expectedLookupId);
+        }
+    );
 
     test('one unusable hit does not take the rest of the result list down', () => {
         // The point of the guard: one hit with no identifier must not cost

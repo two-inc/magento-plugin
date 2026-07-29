@@ -333,6 +333,74 @@ define([
                     });
             }
         },
+        /**
+         * True when the buyer has to supply the organisation number by hand:
+         * a company is selected, but the registry gave it no national
+         * identifier so there is nothing for the picker to fill in.
+         */
+        needsManualCompanyId: function () {
+            return !!this.companyName() && !this.companyId();
+        },
+        /**
+         * `company_id` is disabled while company search owns it — the
+         * identifier arrives with the picked company, so letting the buyer
+         * edit it would only let them contradict the registry. The one
+         * exception is a company that HAS no identifier: then typing it is
+         * the buyer's only route, and being enabled is also the only state in
+         * which the template's `required="true"` is enforced at all (jQuery
+         * Validation's `elements()` skips `:disabled`, so a disabled empty
+         * field passes validation silently).
+         */
+        syncCompanyIdEditable: function () {
+            $(this.companyIdSelector).prop('disabled', !this.needsManualCompanyId());
+        },
+        /**
+         * Apply a company the buyer (or a customer-data section) selected.
+         *
+         * Routes to fillCompanyData() for the normal case, and to
+         * selectCompanyWithoutIdentifier() when the company has a name but no
+         * identifier — a shape company search can now return, since the
+         * `national_identifier` guard in company-search.js renders those hits
+         * instead of taking the whole result list down.
+         *
+         * The split exists because fillCompanyData() early-returns on an
+         * empty companyId, which is right for its other callers (an empty
+         * customer-data section on init must not blank live state) but wrong
+         * for a selection: a selection is authoritative. Without this, picking
+         * an identifier-less company after a valid one left the PREVIOUS
+         * company's organisation number in `companyId()` while the picker
+         * displayed the new company's name, and getData()/placeOrderIntent()
+         * submitted the two mixed together.
+         */
+        applyCompanyData: function (companyData) {
+            const data = companyData || {};
+            const companyName =
+                typeof data.companyName == 'string' && data.companyName ? data.companyName : '';
+            const companyId = typeof data.companyId == 'string' ? data.companyId : '';
+            if (companyName && !companyId) {
+                this.selectCompanyWithoutIdentifier(companyName);
+                return;
+            }
+            this.fillCompanyData(data);
+        },
+        /**
+         * A selected company whose registry holds no national identifier.
+         * Writes the name, CLEARS any previously selected company's
+         * identifier, and re-enables `company_id` so the buyer can type the
+         * organisation number themselves.
+         *
+         * No order intent is placed: there is no identifier to place one for,
+         * and one will be placed when the buyer supplies it.
+         */
+        selectCompanyWithoutIdentifier: function (companyName) {
+            console.debug({ logger: 'twoPayment.selectCompanyWithoutIdentifier', companyName });
+            this.companyName(companyName);
+            $(this.companyNameSelector).val(companyName);
+            $('#select2-company_name-container')?.text(companyName);
+            this.companyId('');
+            $(this.companyIdSelector).val('');
+            this.syncCompanyIdEditable();
+        },
         fillTelephone: function (telephone) {
             console.debug({ logger: 'twoPayment.fillTelephone', telephone });
             telephone = typeof telephone == 'string' ? telephone : '';
@@ -438,8 +506,13 @@ define([
 
             customerData
                 .get('companyData')
-                .subscribe((companyData) => self.fillCompanyData(companyData));
-            this.fillCompanyData(customerData.get('companyData')());
+                // applyCompanyData(), not fillCompanyData(): the shipping-step
+                // picker writes this section, so an identifier-less company
+                // picked there must land here as "name set, id cleared, field
+                // editable" rather than being dropped by fillCompanyData()'s
+                // empty-id early return.
+                .subscribe((companyData) => self.applyCompanyData(companyData));
+            this.applyCompanyData(customerData.get('companyData')());
 
             customerData
                 .get('shippingTelephone')
@@ -865,7 +938,13 @@ define([
             let self = this;
             require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
                 $.async(self.companyIdSelector, function (companyIdField) {
-                    $(companyIdField).prop('disabled', true);
+                    // Not an unconditional disable: this `$.async` callback
+                    // resolves AFTER the synchronous fillCustomerData() that
+                    // follows it in registeredOrganisationMode(), so hard-coding
+                    // `true` here re-disabled the field for an already-selected
+                    // identifier-less company and stranded the buyer with an
+                    // empty, uneditable, required company number.
+                    $(companyIdField).prop('disabled', !self.needsManualCompanyId());
                 });
                 $.async(self.companyNameSelector, function (companyNameField) {
                     // `$.async` is a MutationObserver, and every call to
@@ -981,7 +1060,11 @@ define([
                             const selectedItem = e.params.data;
                             const companyId = selectedItem.companyId;
                             const companyName = selectedItem.text;
-                            self.fillCompanyData({ companyId, companyName });
+                            // applyCompanyData(), not fillCompanyData(): a pick
+                            // is authoritative and must overwrite the previous
+                            // company's identifier even when the new company
+                            // has none of its own.
+                            self.applyCompanyData({ companyId, companyName });
                             // TWO-25193: the payment-step picker used to stop
                             // here, leaving the billing address blank. Gate is
                             // config.isAddressSearchEnabled, applied inside

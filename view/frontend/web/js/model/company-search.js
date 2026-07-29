@@ -320,9 +320,19 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                          * identifier is only the buyer's disambiguator between
                          * two similarly-named companies; dropping the hit
                          * instead would remove a company they can no longer
-                         * select at all. Without one they see the name alone
-                         * and type the organisation number into the (still
-                         * required) company id field themselves.
+                         * select at all. Without one they see the name alone,
+                         * and selecting it is what gives them a route to the
+                         * organisation number: the pickers treat an empty
+                         * `companyId` as authoritative, clear any previously
+                         * selected company's identifier, and (on the payment
+                         * step, where company search disables the field)
+                         * re-enable `company_id` so the buyer can type it.
+                         * See applyCompanyData() /
+                         * selectCompanyWithoutIdentifier() in
+                         * view/payment/method-renderer/gateway_method.js —
+                         * WITHOUT that, an empty `companyId` here silently
+                         * kept the previous company's organisation number and
+                         * submitted it under this company's name.
                          */
                         const identifier =
                             item.national_identifier && item.national_identifier.id
