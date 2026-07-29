@@ -45,6 +45,13 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * search the buyer already waited for would be re-issued. Keyed by the
      * fully-qualified request URL, so country / paging / limit are all part
      * of the key.
+     *
+     * Entries never expire within the page's lifetime, so a company
+     * registered mid-session stays absent from an already-searched term
+     * until the buyer reloads. That is deliberate, not a bug: buyers search
+     * for their own company, which is already registered, so a TTL or
+     * cache-busting would spend API calls on a case that essentially never
+     * happens.
      */
     const resultCache = new Map();
 
