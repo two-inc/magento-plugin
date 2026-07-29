@@ -20,6 +20,22 @@
  * template's `required="true"` is NOT enforced on a disabled field. An
  * identifier-less pick therefore has to RE-ENABLE the field, or the buyer has
  * neither a way to supply the number nor a validation error telling them to.
+ *
+ * LIMITATION OF THE jQuery DOUBLE BELOW — read before trusting a passing test
+ * here. `node.on()` stores ONE handler per event name and `node.off()` is a
+ * no-op, so two handlers bound to the same event on the same node are
+ * unmodellable and the LAST bind silently wins. Nothing in this file can
+ * therefore say anything about handler ORDERING or handler COEXISTENCE.
+ *
+ * That is not academic: it is exactly how a `change` handler on `input#company_id`
+ * got here looking correct. In the browser the template binds `value: companyId`,
+ * so ko's `value` binding is already listening on that same `change` event and
+ * was registered first (at applyBindings, before `$.async` runs) — ko writes
+ * `companyId()` before any later handler sees the event, which made the later
+ * handler's "did the value change?" check trivially false. The double could not
+ * express the ko handler at all, so the test passed against a no-op. If a
+ * question depends on more than one listener for an event, make the double
+ * faithful (a real handler list plus a working `off()`) first.
  */
 
 'use strict';
@@ -62,6 +78,10 @@ function makeDom() {
                 n.textValue = next;
                 return n;
             },
+            // ONE handler per event name, and `off()` does nothing. See the
+            // "LIMITATION OF THE jQuery DOUBLE" note at the top of this file
+            // before writing anything that depends on handler ordering or on
+            // two handlers sharing an event.
             on: function (event, fn) {
                 // Strip the `.twoCompanySearch` namespace so tests can fire by
                 // plain event name.
@@ -400,6 +420,9 @@ describe('a company picked on the shipping step reaches the payment step', () =>
         });
 
         renderer.enableCompanySearch();
+        // Precondition, not the property under test — enableCompanySearch()
+        // disables the field itself with nothing selected, so this holds
+        // trivially (same as at 'applyCompanyData re-enables company_id').
         expect(dom.node(COMPANY_ID_FIELD).prop('disabled')).toBe(true);
 
         renderer.fillCustomerData();
@@ -482,11 +505,17 @@ describe('order intent for a company with no registry identifier', () => {
         expect(intent).not.toHaveBeenCalled();
     });
 
-    test('the number the buyer types places exactly one intent', () => {
-        // The hole this closes: nothing subscribed to `companyId` to re-fire
-        // the intent, and fillCompanyData() is never reached on this path, so
-        // an identifier-less company's order previously arrived at the API
-        // with no credit check behind it at all.
+    test('a hand-typed organisation number is never intent-checked', () => {
+        // Current, deliberate behaviour, stated so nobody reads the absence of
+        // a test as an oversight: nothing re-fires the intent once an
+        // identifier-less company is picked. The buyer can type the number and
+        // the order goes out carrying it, with no credit check behind it.
+        //
+        // The `change`-handler version of this does NOT work — see the
+        // "LIMITATION OF THE jQuery DOUBLE" note at the top of this file — and
+        // is split to its own ticket. Asserting on the renderer's own API here
+        // rather than through the DOM, because the double cannot model the ko
+        // `value` binding that shares the event.
         const { renderer, node, intent } = loadWithIntent();
 
         renderer.enableCompanySearch();
@@ -497,49 +526,93 @@ describe('order intent for a company with no registry identifier', () => {
         });
         expect(intent).not.toHaveBeenCalled();
 
-        const commit = node(COMPANY_ID_FIELD).handlers['change'];
-        expect(typeof commit).toBe('function');
-        node(COMPANY_ID_FIELD).val('  99999999  ');
-        commit();
+        // No handler is bound to the field's `change` at all any more.
+        expect(node(COMPANY_ID_FIELD).handlers['change']).toBeUndefined();
 
-        expect(renderer.companyId()).toBe('99999999');
-        expect(node(COMPANY_ID_FIELD).val()).toBe('99999999');
-        expect(intent).toHaveBeenCalledTimes(1);
-    });
-
-    test('re-committing the same number places no second intent', () => {
-        const { renderer, node, intent } = loadWithIntent();
-
-        renderer.enableCompanySearch();
-        node(COMPANY_NAME_FIELD).handlers['select2:select']({
-            params: {
-                data: { id: 'Second Example Ltd', text: 'Second Example Ltd', companyId: '' }
-            }
-        });
-        const commit = node(COMPANY_ID_FIELD).handlers['change'];
-        node(COMPANY_ID_FIELD).val('99999999');
-        commit();
-        expect(intent).toHaveBeenCalledTimes(1);
-
-        // A blur that commits nothing new, and an emptied field.
-        commit();
-        node(COMPANY_ID_FIELD).val('');
-        commit();
-
-        expect(intent).toHaveBeenCalledTimes(1);
-        expect(renderer.companyId()).toBe('99999999');
-    });
-
-    test('a number typed with no company selected places no intent', () => {
-        const { renderer, node, intent } = loadWithIntent();
-
-        renderer.enableCompanySearch();
-        const commit = node(COMPANY_ID_FIELD).handlers['change'];
-        node(COMPANY_ID_FIELD).val('99999999');
-        commit();
+        // What ko's `value` binding does when the buyer commits a number.
+        renderer.companyId('99999999');
 
         expect(intent).not.toHaveBeenCalled();
-        expect(renderer.companyId()).toBe('');
+    });
+});
+
+describe('company_id editability is derived, not set per caller', () => {
+    /**
+     * Same sections harness as above, so updateAddress() can be driven the way
+     * fillCustomerData() drives it — through a billing-address notification.
+     */
+    function observable(initial) {
+        let value = initial;
+        const subs = [];
+        function obs(next) {
+            if (!arguments.length) return value;
+            value = next;
+            subs.forEach((fn) => fn(value));
+            return obs;
+        }
+        obs.subscribe = function (fn) {
+            subs.push(fn);
+            return { dispose: function () {} };
+        };
+        return obs;
+    }
+
+    test('an address notify carrying company_id cannot leave a registry number in an enabled field', () => {
+        // The desync 7f243b5 argued could not happen. Its reasoning was that
+        // fillCompanyData()'s other callers "run in modes where company search
+        // does not own the field" — false for updateAddress(), which is
+        // subscribed inside fillCustomerData() and fires on every
+        // billing/shipping notification, i.e. in registered-organisation mode
+        // with the picker live. So: pick an identifier-less company (field
+        // enabled), then let one address notification arrive carrying a
+        // `company_id` custom attribute. Before the derived subscription the
+        // registry number landed in a still-ENABLED field — MAJOR 1's exact
+        // state, which the buyer can hand-overwrite.
+        const dom = makeDom();
+        const address = { getCacheKey: () => 'k', countryId: 'GB' };
+        const billingAddress = observable(address);
+        const renderer = loadAmdModule(RENDERER, {
+            jquery: dom.$,
+            'Magento_Customer/js/customer-data': {
+                get: function () {
+                    return observable('');
+                },
+                set: function () {},
+                reload: function () {}
+            },
+            'Magento_Checkout/js/model/quote': {
+                shippingAddress: observable(address),
+                billingAddress: billingAddress,
+                getTotals: () => observable({}),
+                getQuoteId: () => null,
+                paymentMethod: observable(null),
+                shippingMethod: observable({ carrier_code: 'freeshipping' }),
+                isVirtual: () => false
+            }
+        });
+        renderer.supportedCompanyTypes = { gb: [] };
+
+        renderer.enableCompanySearch();
+        renderer.fillCustomerData();
+
+        renderer.applyCompanyData(
+            { companyName: 'Second Example Ltd', companyId: '' },
+            AS_SELECTION
+        );
+        expect(dom.node(COMPANY_ID_FIELD).prop('disabled')).toBe(false);
+
+        // One billing-address notification, carrying a company_id attribute.
+        billingAddress({
+            getCacheKey: () => 'k2',
+            countryId: 'GB',
+            company: 'First Example Ltd',
+            customAttributes: [{ attribute_code: 'company_id', value: '12345678' }]
+        });
+
+        // Whatever the notification does to the selection, it must not leave a
+        // registry organisation number sitting in a hand-editable field.
+        expect(dom.node(COMPANY_ID_FIELD).prop('disabled')).toBe(true);
+        expect(renderer.companyId()).toBe('12345678');
     });
 });
 

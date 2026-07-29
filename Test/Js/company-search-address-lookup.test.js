@@ -241,7 +241,11 @@ describe('payment-step company picker (gateway_method.js)', () => {
             searchForCompanyText: 'Search for company',
             _brandConfig: config,
             countryCode: function () { return 'gb'; },
-            companyName: function () { return ''; },
+            // Carries `subscribe` because enableCompanySearch() derives
+            // company_id's editable state from this observable.
+            companyName: Object.assign(function () { return ''; }, {
+                subscribe: function () { return { dispose: function () {} }; }
+            }),
             fillCompanyData: function (data) { filled.push(data); },
             addressLookup: component.addressLookup,
             enableCompanySearch: component.enableCompanySearch
