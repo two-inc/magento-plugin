@@ -199,18 +199,19 @@ make test-e2e TWO_API_KEY=<your-key>
 
 ## Releases
 
-Version bumps happen automatically once CI passes on `staging` or `main`. Only `main` cuts a tag and a GitHub Release.
+The version is computed on the pull request that lands on `staging`, from that PR's own commits. `main` computes nothing — it tags the version already in the tree and cuts the GitHub Release.
 
 ### The version-bump convention
 
-The bump level is decided by the branch, not by the commits:
+| Change | What happens |
+|---|---|
+| PR into `staging` | the version is computed from that PR's own commits and committed onto the PR's branch (`.github/workflows/version-bump.yml`) |
+| merge into `staging` | nothing — the merge brings in the version its PR computed |
+| `staging` into `main` | nothing is computed; `main` tags the version already in the tree and cuts the GitHub Release |
 
-| Merge lands on | Bump | Also produces |
-|---|---|---|
-| `staging` | **patch** | nothing else — bump commit only |
-| `main` | **minor** | tag `X.Y.Z` + GitHub Release |
+With `M` the version on `origin/main` and `C` the version on the PR head, the PR's own commits (`origin/staging..HEAD`, `--no-merges`) decide the candidate: a `!` type or a `BREAKING CHANGE:` footer gives `(M.major + 1).0.0`, a `feat:` gives `M.major.(M.minor + 1).0`, and anything else — `fix` and `chore`/`docs`/`ci`/`test`/`refactor` alike — gives `M.major.M.minor.(M.patch + 1)`. The result is clamped with `max(C, candidate)`, which makes it idempotent (a re-run, the `synchronize` the bump commit itself fires, or a second fix commit on the same PR all write nothing) and means the version can never regress while `main` is behind `staging`.
 
-A **major** is an explicit escape hatch, and overrides the branch rule on either branch. Two independent signals, the higher wins:
+A **major** is an explicit escape hatch, and overrides the rule above. Two independent signals, the higher wins:
 
 - **Declared** — a root `.next-major` file whose first whitespace-delimited token is the target major, with a short human reason on the same line:
 
@@ -218,22 +219,28 @@ A **major** is an explicit escape hatch, and overrides the branch rule on either
   3  # overlay migration, 3.0.0 release
   ```
 
-  Reviewable in the PR that decides it, so a *planned* major with no single breaking commit still lands as a major. The file is never cleared by CI: it disarms itself once the current major reaches the declared one. A declaration that has fallen *below* the current major is a hard CI failure — delete or raise it.
+  Reviewable in the PR that decides it, so a *planned* major with no single breaking commit still lands as a major. The file is never cleared by CI: it disarms itself once the major it names has shipped. A declaration that has fallen *below the major on `main`* is a hard CI failure — delete or raise it.
 
-- **Discovered** — a `!` on a conventional-commit type (`feat!:`, `TWO-1/fix(scope)!:`) or a `BREAKING CHANGE:` footer in the commits under consideration.
+- **Discovered** — a `!` on a conventional-commit type (`feat!:`, `TWO-1/fix(scope)!:`) or a `BREAKING CHANGE:` footer in **this PR's own commits** only. Deliberately not the cumulative `main..staging` range: a break that already landed on `staging` must not be re-discovered by every later PR.
 
 The new version for a major is exactly `<target>.0.0`, so a declaration may skip more than one major.
 
-`.github/scripts/decide-bump-level.sh` owns this decision and is shared byte-identically across the Magento plugin repos. It logs the full decision — inputs included — to the workflow log on every run.
+`.github/scripts/decide-bump-level.sh` owns this decision, is unit-tested by `.github/scripts/test-decide-bump-level.sh`, and is shared byte-identically across the plugin repos. It logs the full decision — inputs included — to the workflow log on every run.
 
-### Bumping and tagging (automatic, gated on CI)
+### Bumping (on the PR) and tagging (on `main`)
 
-`.github/workflows/release.yml` is triggered by the `CI` workflow completing on `main` or `staging`. When CI's conclusion is `success`, it:
+`.github/workflows/version-bump.yml` runs on every `pull_request` into `staging`. It:
 
-1. Skips itself if the head commit is already a `chore: Bump version` commit, if the branch tip drifted from the SHA CI signed off on, or if the SHA already carries a numeric tag. (That last check is what makes the merge-back a no-op: after a `main` release fast-forwards into `staging`, staging's tip already carries the tag.)
-2. Calls `.github/scripts/decide-bump-level.sh "$BRANCH"` for the level.
-3. Runs `bumpver update --<level> --no-tag-commit --no-push` (or `--set-version <N>.0.0` for a major) to rewrite `composer.json`, `etc/config.xml`, and `bumpver.toml`, and pushes the bump commit under the org GitHub App identity.
-4. **`main` only:** tags `X.Y.Z` (bare numeric, matching the established tag convention), pushes the tag, and creates a GitHub Release with a bucketed changelog (Breaking / Features / Fixes / Internals / Other). The buckets are presentation only now — the level comes from step 2.
+1. Runs the unit tests for the computation, then computes an absolute version with `.github/scripts/decide-bump-level.sh origin/staging HEAD`.
+2. If that version differs from the one on the PR head, runs `bumpver update --set-version <X.Y.Z> --no-tag-commit --no-push` to rewrite `composer.json`, `etc/config.xml` and `bumpver.toml`, and pushes the commit onto the PR's own branch under the org GitHub App identity. Otherwise it writes nothing.
+
+The push goes out under the App token rather than `GITHUB_TOKEN` for two reasons: `GITHUB_TOKEN` pushes do not trigger workflows, so CI would never re-run on the bump SHA; and the App holds the ruleset bypass. Because the commit lands on a feature branch, it is outside `terraform-managed-branch-protection` (which targets only `refs/heads/{main,release,staging}`) entirely.
+
+`.github/workflows/release.yml` is triggered by the `CI` workflow completing on `main`. When CI's conclusion is `success`, it:
+
+1. Skips itself if the branch tip drifted from the SHA CI signed off on, or if the SHA already carries a numeric tag. (That last check is what makes the merge-back a no-op: after a `main` release fast-forwards into `staging`, staging's tip already carries the tag.)
+2. Reads the version out of `bumpver.toml` — it does not compute or bump one.
+3. Tags `X.Y.Z` (bare numeric, matching the established tag convention), pushes the tag, and creates a GitHub Release with a bucketed changelog (Breaking / Features / Fixes / Internals / Other).
 
 `.github/workflows/merge-back.yml` keeps `staging` fast-forwarded to match `main` after each release (falling back to a sync PR if the two have diverged).
 
