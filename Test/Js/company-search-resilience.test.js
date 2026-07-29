@@ -1071,9 +1071,18 @@ describe('re-render safety of the select2 binding', () => {
             countryCode: function () {
                 return 'gb';
             },
-            companyName: function () {
-                return '';
-            },
+            // Carries `subscribe` because enableCompanySearch() derives
+            // company_id's editable state from this observable.
+            companyName: Object.assign(
+                function () {
+                    return '';
+                },
+                {
+                    subscribe: function () {
+                        return { dispose: function () {} };
+                    }
+                }
+            ),
             fillCompanyData: function () {},
             addressLookup: component.addressLookup,
             enableCompanySearch: component.enableCompanySearch,

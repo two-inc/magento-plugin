@@ -263,6 +263,15 @@ define([
                 this._twoVisibilitySub.dispose();
                 this._twoVisibilitySub = null;
             }
+            // The company_id editable-state derivation (enableCompanySearch()).
+            // Closed over this renderer, so a re-render would otherwise leave
+            // it writing the field on behalf of a disposed component.
+            if (this._companyIdEditableSubs) {
+                this._companyIdEditableSubs.forEach(function (sub) {
+                    sub.dispose();
+                });
+                this._companyIdEditableSubs = null;
+            }
             if (this.isTwoVisible && this.isTwoVisible.dispose) {
                 this.isTwoVisible.dispose();
             }
@@ -318,32 +327,20 @@ define([
             $('#select2-company_name-container')?.text(companyName);
             this.companyId(companyId);
             $(this.companyIdSelector).val(companyId);
-            this.runOrderIntent();
-        },
-        /**
-         * Place an order intent for the company currently in
-         * companyName/companyId and reflect the answer. No-op when the
-         * merchant has order intents turned off.
-         *
-         * Extracted so there is exactly ONE place the intent is fired from:
-         * fillCompanyData() fires it for a picked company and
-         * applyManualCompanyId() for an organisation number the buyer typed
-         * because the registry had none, and the two must behave identically.
-         */
-        runOrderIntent: function () {
-            if (!this.isOrderIntentEnabled) return;
-            fullScreenLoader.startLoader();
-            const self = this;
-            this.placeOrderIntent()
-                .always(function () {
-                    fullScreenLoader.stopLoader();
-                })
-                .done(function (response) {
-                    self.processOrderIntentSuccessResponse(response);
-                })
-                .fail(function (response) {
-                    self.processOrderIntentErrorResponse(response);
-                });
+            if (this.isOrderIntentEnabled) {
+                fullScreenLoader.startLoader();
+                const self = this;
+                this.placeOrderIntent()
+                    .always(function () {
+                        fullScreenLoader.stopLoader();
+                    })
+                    .done(function (response) {
+                        self.processOrderIntentSuccessResponse(response);
+                    })
+                    .fail(function (response) {
+                        self.processOrderIntentErrorResponse(response);
+                    });
+            }
         },
         /**
          * True when the buyer has to supply the organisation number by hand:
@@ -395,12 +392,23 @@ define([
          * its organisation number. Before the routing existed that shape was a
          * harmless no-op on the read path, and it has to stay one.
          *
-         * The editable state of `company_id` is derived here, after BOTH
-         * branches, so one place decides it. Deriving it only inside
-         * selectCompanyWithoutIdentifier() left the field enabled after
-         * identifier-less pick → normal pick, which is precisely the state
-         * syncCompanyIdEditable()'s comment says must not exist: the buyer
-         * could hand-overwrite a registry organisation number.
+         * The editable state of `company_id` is re-derived here, after BOTH
+         * branches. The authoritative derivation is the companyName/companyId
+         * subscription in enableCompanySearch(), which catches every writer OF
+         * THE OBSERVABLES, including the ones that never come through a
+         * selection path. This call is not merely belt-and-braces; it is
+         * load-bearing for two cases the subscription cannot cover:
+         *
+         *  - a pick that writes values identical to the current ones, which ko
+         *    does not notify for;
+         *  - the window before `$.async('input#company_id')` has resolved. On
+         *    init, registeredOrganisationMode() calls enableCompanySearch() and
+         *    then fillCustomerData(), whose companyData notification fires
+         *    synchronously — possibly before the field node exists and
+         *    therefore before the subscription has been created at all.
+         *
+         * A writer that touches only the DOM field and never the observables is
+         * outside both mechanisms by construction — see clearCompany().
          */
         applyCompanyData: function (companyData, options) {
             const data = companyData || {};
@@ -425,14 +433,21 @@ define([
          * Writes the name and CLEARS any previously selected company's
          * identifier.
          *
-         * No order intent is placed here: there is no identifier to place one
-         * for. applyManualCompanyId() places it when the buyer supplies the
-         * organisation number by hand, which is the only route by which it
-         * becomes known for such a company.
+         * No order intent is placed here, and — stating the current behaviour
+         * plainly rather than promising a fix this change does not make — none
+         * is placed later either. An identifier-less company is never
+         * intent-checked: the buyer can type the organisation number into the
+         * re-enabled `company_id` field and the order goes out with it, but no
+         * credit check runs for it. Firing an intent on hand-typed input is
+         * its own ticket; the obvious `change`-handler version of it does not
+         * work, because the template binds `value: companyId` and ko's `value`
+         * binding is registered at applyBindings() on the SAME `change` event,
+         * so ko has already written `companyId()` by the time any later
+         * handler runs.
          *
-         * `company_id`'s editable state is NOT set here — applyCompanyData()
-         * derives it for this branch and the normal one alike, so a later
-         * normal pick cannot leave the field enabled.
+         * `company_id`'s editable state is NOT set here — it is derived from
+         * the companyName/companyId observables (see enableCompanySearch()),
+         * so a later normal pick cannot leave the field enabled.
          */
         selectCompanyWithoutIdentifier: function (companyName) {
             console.debug({ logger: 'twoPayment.selectCompanyWithoutIdentifier', companyName });
@@ -441,40 +456,6 @@ define([
             $('#select2-company_name-container')?.text(companyName);
             this.companyId('');
             $(this.companyIdSelector).val('');
-        },
-        /**
-         * The buyer typed the organisation number for a company the registry
-         * gave none for (see selectCompanyWithoutIdentifier). Accepting it
-         * here is what makes the order intent possible at all for such a
-         * company — nothing else re-fires it, so without this the order
-         * reached the API with no credit check behind it.
-         *
-         * Fires at most once per number the buyer settles on:
-         *  - bound to `change`, not `input`, so once on commit (blur/Enter),
-         *    not once per keystroke;
-         *  - returns on an empty value, and on a value equal to the one
-         *    already accepted, so a blur that commits nothing new does
-         *    nothing;
-         *  - returns when no company is selected, so it never runs on the
-         *    no-company path;
-         *  - never doubles up with the picker path: fillCompanyData() writes
-         *    this field with `.val()`, which fires no `change` event, and
-         *    places its own intent.
-         *
-         * The field is deliberately not re-disabled once a number is
-         * accepted — the buyer typed it, so they have to be able to correct a
-         * typo, and a correction re-checks. It goes back to disabled when a
-         * company that HAS a registry identifier is picked, which is
-         * applyCompanyData()/syncCompanyIdEditable()'s job.
-         */
-        applyManualCompanyId: function (value) {
-            const companyId = typeof value == 'string' ? value.trim() : '';
-            if (!companyId || companyId === this.companyId()) return;
-            if (!this.companyName()) return;
-            console.debug({ logger: 'twoPayment.applyManualCompanyId', companyId });
-            this.companyId(companyId);
-            $(this.companyIdSelector).val(companyId);
-            this.runOrderIntent();
         },
         fillTelephone: function (telephone) {
             console.debug({ logger: 'twoPayment.fillTelephone', telephone });
@@ -576,6 +557,15 @@ define([
             console.debug({ logger: 'twoPayment.updateBillingAddress', billingAddress });
             this.updateAddress(billingAddress);
         },
+        /**
+         * PRE-EXISTING, not introduced here, flagged so it is not mistaken for
+         * new: none of the subscriptions below are disposed, and
+         * fillCustomerData() is re-callable (registeredOrganisationMode(),
+         * reached from applyPrefetch()). N calls therefore leave N stacked
+         * subscriptions on each section, so one notification runs
+         * applyCompanyData() N times. Idempotent today, so it is waste rather
+         * than a bug — out of scope for this change.
+         */
         fillCustomerData: function () {
             const self = this;
 
@@ -586,6 +576,16 @@ define([
                 // company picked there must land here as "name set, id
                 // cleared, field editable" rather than being dropped by
                 // fillCompanyData()'s empty-id early return.
+                //
+                // "A notification IS the shipping-step picker" holds only
+                // because `companyData` has exactly one writer
+                // (address-autocomplete.js's setCompanyData()) and the repo
+                // ships no `sections.xml`, so the server never invalidates and
+                // repopulates the section either. Add a second writer, or a
+                // `sections.xml` entry, and this authoritative subscription
+                // becomes a path by which a non-selection can clobber a live
+                // payment-step pick — the exact thing the non-authoritative
+                // one-shot read below exists to prevent.
                 .subscribe((companyData) =>
                     self.applyCompanyData(companyData, { authoritative: true })
                 );
@@ -1033,18 +1033,39 @@ define([
                     // identifier-less one and stranded the buyer with an empty,
                     // uneditable, required company number. Derive it.
                     $companyIdField.prop('disabled', !self.needsManualCompanyId());
-                    // The buyer's typed organisation number is the only route
-                    // to an order intent for a company the registry gave no
-                    // identifier for. `change`, not `input`: once on commit,
-                    // not once per keystroke. `.off()` first for the same
-                    // handler-stacking reason as the company-name field below —
-                    // every enableCompanySearch() adds another observer, and
-                    // our handlers are not in select2's own namespace.
-                    $companyIdField
-                        .off('change' + companySearch.EVENT_NS)
-                        .on('change' + companySearch.EVENT_NS, function () {
-                            self.applyManualCompanyId($companyIdField.val());
-                        });
+                    // From here on the editable state is DERIVED from the two
+                    // observables, so it cannot desync per writer. Calling
+                    // syncCompanyIdEditable() from the selection paths alone
+                    // was not enough: updateAddress() is subscribed inside
+                    // fillCustomerData() and fires on every billing/shipping
+                    // notify — in registered-organisation mode, while the
+                    // picker owns the field — so an address attribute carrying
+                    // `company_id` reached fillCompanyData() and wrote a
+                    // registry organisation number into a field a previous
+                    // identifier-less pick had left ENABLED, i.e. hand-editable.
+                    //
+                    // Bound once per component: enableCompanySearch() re-runs
+                    // on every re-render (see the $.async note below) and each
+                    // run would otherwise stack another subscription.
+                    //
+                    // Once per COMPONENT, not once per page: `companyName` and
+                    // `companyId` are module-level observables shared by every
+                    // renderer instance (see the note where they are declared),
+                    // so N live brand renderers mean N subscriptions on one
+                    // observable, each writing the same document-wide
+                    // `input#company_id`. Harmless rather than wasteful-and-
+                    // wrong: syncCompanyIdEditable() is idempotent and derives
+                    // from those same shared observables, so every subscriber
+                    // computes the identical answer. dispose() clears them.
+                    if (!self._companyIdEditableSubs) {
+                        const sync = function () {
+                            self.syncCompanyIdEditable();
+                        };
+                        self._companyIdEditableSubs = [
+                            self.companyName.subscribe(sync),
+                            self.companyId.subscribe(sync)
+                        ];
+                    }
                 });
                 $.async(self.companyNameSelector, function (companyNameField) {
                     // `$.async` is a MutationObserver, and every call to
@@ -1231,6 +1252,16 @@ define([
                 });
             });
         },
+        /**
+         * PRE-EXISTING, flagged rather than changed: this writes the DOM fields
+         * only and never clears `companyName()` / `companyId()`. No notification
+         * therefore reaches the editability subscription, so after "Enter
+         * details manually" the field reads empty and enabled while the
+         * observables still hold the previously selected company's registry
+         * number. The derivation cannot desync per CALLER any more, but it can
+         * still be bypassed by a writer that skips the observables entirely.
+         * Out of scope here; noted so it is not mistaken for new behaviour.
+         */
         clearCompany: function (disableCompanyId = false) {
             const companyIdSelector = $(this.companyIdSelector);
             companyIdSelector.val('');
