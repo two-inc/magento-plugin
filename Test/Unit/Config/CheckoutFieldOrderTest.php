@@ -15,10 +15,12 @@ use PHPUnit\Framework\TestCase;
  *
  * These assertions are deliberately about RENDERED order, not source order:
  *
- *   - the admin pane is sorted by `sortOrder`, so the test sorts the parsed
- *     fields the way Magento's config Structure does and asserts on the
- *     result. Source order in the XML is irrelevant to what the merchant
- *     sees, which is exactly the trap this pins.
+ *   - the admin pane's field sequence comes from the `sortOrder` declared in
+ *     brand_form_template.xml — NOT from system.xml's, which supplies the
+ *     merged attribute values but reorders nothing (see the note in that
+ *     template). This test asserts the sortOrder sequence in BOTH files, and
+ *     their document order too, so the two cannot drift apart and leave a
+ *     renumbering that looks right in one file while the pane obeys the other.
  *   - the checkout tile has no sort key — knockout renders the template's
  *     markup top to bottom — so there the DOM order in the .html IS the
  *     rendered order, and the test reads it in document order.
@@ -95,8 +97,8 @@ class CheckoutFieldOrderTest extends TestCase
                 $sortOrder,
                 $bySortOrder,
                 sprintf(
-                    'fields "%s" and "%s" in %s share sortOrder %s, so their rendered '
-                    . 'order is not determined by the XML',
+                    'fields "%s" and "%s" in %s share sortOrder %s, so their relative '
+                    . 'sequence is ambiguous',
                     $bySortOrder[$sortOrder] ?? '',
                     (string)$field['id'],
                     $relativePath,
