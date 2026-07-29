@@ -20,7 +20,6 @@ define([
     'Two_Gateway/js/model/brand-config',
     'Two_Gateway/js/model/company-search',
     'Two_Gateway/js/model/minimum-order-visibility',
-    'Two_Gateway/js/model/order-note',
     'Magento_Ui/js/lib/view/utils/async',
     'mage/validation',
     'jquery/jquery-storageapi'
@@ -40,8 +39,7 @@ define([
     surchargeModel,
     getBrandConfig,
     companySearch,
-    isAboveMinimums,
-    orderNoteModel
+    isAboveMinimums
 ) {
     'use strict';
 
@@ -96,12 +94,7 @@ define([
         invoiceEmails: ko.observable(''),
         project: ko.observable(''),
         department: ko.observable(''),
-        // Shared with the shipping-step order-note component, which is where
-        // the buyer now types it. getData() still emits it as `orderNote` in
-        // the payment method's additional data, so the server-side relay
-        // (DataAssignObserver → ComposeOrder → API `order_note`) is unchanged.
-        // TWO-25263.
-        orderNote: orderNoteModel.orderNote,
+        orderNote: ko.observable(''),
         poNumber: ko.observable(''),
         selectedTerm: surchargeModel.selectedTerm,
         telephone: ko.observable(''),
@@ -155,16 +148,6 @@ define([
             this.isProjectFieldEnabled = config.isProjectFieldEnabled;
             this.isOrderNoteFieldEnabled = config.isOrderNoteFieldEnabled;
             this.isPONumberFieldEnabled = config.isPONumberFieldEnabled;
-
-            // Tile fallback for the order note, which normally renders in the
-            // shipping address area. A real ko.computed (not a plain method
-            // called from the binding) so the template's `if:` re-evaluates the
-            // moment the shipping component claims the field — the claim can
-            // land after this renderer initialises, since both components come
-            // from the same jsLayout tree. Per-instance rather than on the
-            // prototype because `isOrderNoteFieldEnabled` is read from this
-            // brand's own config subtree. TWO-25263.
-            this.isOrderNoteFieldInTile = ko.computed(this.orderNoteFallbackVisible, this);
 
             // Client-side minimum-order visibility gate. config.minimumOrder is
             // the server-resolved constraint(s) {amount, basis} already in the
@@ -291,13 +274,6 @@ define([
             }
             if (this.isTwoVisible && this.isTwoVisible.dispose) {
                 this.isTwoVisible.dispose();
-            }
-            // Order-note tile fallback (initialize()). Subscribes to a
-            // module-scope observable that outlives this renderer, and the
-            // renderer is re-created on every payment-method list refresh, so
-            // without this each refresh leaves another live computed behind.
-            if (this.isOrderNoteFieldInTile && this.isOrderNoteFieldInTile.dispose) {
-                this.isOrderNoteFieldInTile.dispose();
             }
             this._super();
         },
@@ -1013,30 +989,6 @@ define([
         },
         validate: function () {
             return $(this.formSelector).valid();
-        },
-        /**
-         * Whether the payment tile should render its own order-note field.
-         *
-         * The buyer normally types the note in the shipping address area
-         * (Two_Gateway/js/view/checkout/shipping/order-note). The tile keeps a
-         * fallback copy for the two cases where that component never mounts:
-         * virtual / downloadable-only carts, which skip the shipping step, and
-         * any checkout front-end whose jsLayout lacks the
-         * `shipping-address-fieldset` node. Without the fallback the field
-         * would silently disappear in those checkouts.
-         *
-         * The predicate itself, kept separate from the observable so it stays
-         * directly unit-testable. The template binds the `isOrderNoteFieldInTile`
-         * ko.computed built from it in initialize() — NOT this method — so the
-         * `if:` binding is reactive by construction rather than by relying on
-         * knockout's dependency tracking reaching into a plain function call.
-         * TWO-25263.
-         *
-         * @returns {boolean}
-         */
-        orderNoteFallbackVisible: function () {
-            return !!this.isOrderNoteFieldEnabled
-                && !orderNoteModel.renderedInShippingArea();
         },
         // getCode() is inherited from Magento_Checkout/js/view/payment/default
         // and returns this.item.method — the type pushed via rendererList,

@@ -37,16 +37,15 @@ class CheckoutFieldOrderTest extends TestCase
     ];
 
     /**
-     * The checkout tile's optional-field inputs, in canonical order. The
-     * order note is absent: it renders in the shipping address area
-     * (view/frontend/web/template/checkout/shipping/order-note.html) and only
-     * appears in the tile as a fallback, so it is asserted separately below.
+     * The checkout tile's optional-field inputs, in canonical order — the same
+     * sequence as the admin pane, with the order note last.
      */
     private const CANONICAL_CHECKOUT_ORDER = [
         'invoice_emails',
         'two_po_number',
         'two_project',
         'two_department',
+        'two_order_note',
     ];
 
     /**
@@ -150,81 +149,6 @@ class CheckoutFieldOrderTest extends TestCase
             'the checkout tile renders the optional fields out of canonical order '
             . '(knockout paints the template top to bottom, so markup order is what '
             . 'the buyer sees)'
-        );
-    }
-
-    public function testOrderNoteLivesInTheShippingAreaWithAFallbackInTheTile(): void
-    {
-        $shipping = dirname(__DIR__, 3)
-            . '/view/frontend/web/template/checkout/shipping/order-note.html';
-        self::assertFileExists(
-            $shipping,
-            'the shipping-area order-note template is missing; the field would have '
-            . 'nowhere to render outside the payment tile'
-        );
-
-        $shippingMarkup = file_get_contents($shipping);
-        self::assertNotFalse($shippingMarkup);
-        self::assertStringContainsString(
-            '<textarea',
-            $shippingMarkup,
-            'the order note is a multi-line note, so it must be a textarea'
-        );
-        self::assertStringContainsString(
-            'rows="2"',
-            $shippingMarkup,
-            'the order note field is double height'
-        );
-
-        $tile = file_get_contents(
-            dirname(__DIR__, 3) . '/view/frontend/web/template/payment/gateway_method.html'
-        );
-        self::assertNotFalse($tile);
-
-        // The fallback copy must still submit under the original key, or the
-        // relay through DataAssignObserver → ComposeOrder breaks.
-        self::assertStringContainsString(
-            'name="payment[orderNote]"',
-            $tile,
-            'the tile fallback must keep submitting the note as payment[orderNote]'
-        );
-        self::assertStringContainsString(
-            'isOrderNoteFieldInTile',
-            $tile,
-            'the tile copy must be gated on the fallback predicate, otherwise the '
-            . 'buyer sees two order-note fields'
-        );
-
-        // Distinct ids: both templates can be in the DOM at once (the tile's
-        // copy is only hidden, and knockout paints the shipping field whether
-        // or not the toggle shows it), so a shared id would be invalid HTML and
-        // would break `label for=`.
-        self::assertStringContainsString('id="two_order_note_payment"', $tile);
-        self::assertStringNotContainsString(
-            'id="two_order_note"',
-            $tile,
-            'the tile fallback must not reuse the shipping field id'
-        );
-        self::assertStringContainsString('id="two_order_note"', $shippingMarkup);
-
-        // The claim must come from afterRender, not construction — Magento
-        // builds every jsLayout component whether or not it renders, so a
-        // construction-time claim hides the tile fallback in exactly the cases
-        // it exists for and the buyer gets no order-note field at all.
-        $component = file_get_contents(
-            dirname(__DIR__, 3) . '/view/frontend/web/js/view/checkout/shipping/order-note.js'
-        );
-        self::assertNotFalse($component);
-        self::assertStringContainsString(
-            'afterRender: claimOrderNoteField',
-            $shippingMarkup,
-            'the shipping template must claim the field on render'
-        );
-        self::assertStringNotContainsString(
-            'renderedInShippingArea(true)',
-            substr($component, 0, (int)strpos($component, 'claimOrderNoteField')),
-            'nothing before claimOrderNoteField may set the claim — that would '
-            . 'be a construction-time claim again'
         );
     }
 }

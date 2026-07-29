@@ -204,13 +204,8 @@
                     Optional buyer fields. ORDER IS LOAD-BEARING: this markup
                     order is what the buyer sees, and it must match the admin
                     pane sequence in etc/adminhtml/system.xml — invoice email,
-                    purchase order number, project, department. TWO-25263.
-
-                    The order note is NOT in this list: it now renders in the
-                    shipping address area (Two_Gateway/js/view/checkout/shipping/
-                    order-note). The block below it is only a fallback for the
-                    cases that area is missing — see the `isOrderNoteFieldInTile`
-                    computed in the renderer.
+                    purchase order number, project, department, and the order
+                    note LAST. TWO-25263.
                 -->
                 <div class="field field-text" data-bind="visible: isInvoiceEmailsEnabled">
                     <label for="invoice_emails" class="label">
@@ -273,24 +268,22 @@
                         />
                     </div>
                 </div>
-                <!-- ko if: isOrderNoteFieldInTile -->
-                <div class="field field-text">
-                    <label for="two_order_note_payment" class="label">
+                <div class="field field-text" data-bind="visible: isOrderNoteFieldEnabled">
+                    <label for="two_order_note" class="label">
                         <span><!-- ko i18n: 'Order Note'--><!-- /ko --></span>
                     </label>
                     <div class="control">
-                        <textarea
-                            id="two_order_note_payment"
+                        <input
+                            type="text"
+                            id="two_order_note"
                             name="payment[orderNote]"
-                            rows="2"
                             data-bind='
                             attr: {title: $t("Order Note")},
                             value: orderNote'
                             class="input-text"
-                        ></textarea>
+                        />
                     </div>
                 </div>
-                <!-- /ko -->
                 <!-- ko if: isPaymentTermsEnabled -->
                 <div class="payment-method-content terms-container">
                     <input
