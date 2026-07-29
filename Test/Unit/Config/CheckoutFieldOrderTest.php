@@ -184,7 +184,7 @@ class CheckoutFieldOrderTest extends TestCase
             'the tile fallback must keep submitting the note as payment[orderNote]'
         );
         self::assertStringContainsString(
-            'isOrderNoteFieldInTile()',
+            'isOrderNoteFieldInTile',
             $tile,
             'the tile copy must be gated on the fallback predicate, otherwise the '
             . 'buyer sees two order-note fields'

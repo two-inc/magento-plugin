@@ -18,7 +18,23 @@
 
 'use strict';
 
-const { loadAmdModule } = require('./amd-harness');
+const fs = require('fs');
+const path = require('path');
+const { loadAmdModule, defaultMocks } = require('./amd-harness');
+
+// The same knockout mock the loaded modules receive. Its observables share one
+// module-level dependency-tracking stack, so a computed built here tracks
+// observables created inside a separately-loaded module.
+const ko = defaultMocks().ko;
+
+const RENDERER_SRC = fs.readFileSync(
+    path.resolve(__dirname, '../../view/frontend/web/js/view/payment/method-renderer/gateway_method.js'),
+    'utf8'
+);
+const TILE_TEMPLATE = fs.readFileSync(
+    path.resolve(__dirname, '../../view/frontend/web/template/payment/gateway_method.html'),
+    'utf8'
+);
 
 const MODEL = 'view/frontend/web/js/model/order-note.js';
 const SHIPPING_COMPONENT = 'view/frontend/web/js/view/checkout/shipping/order-note.js';
@@ -88,12 +104,12 @@ describe('order note collected in the shipping address area', () => {
         const tile = { isOrderNoteFieldEnabled: true };
 
         expect(model.renderedInShippingArea()).toBe(false);
-        expect(Renderer.isOrderNoteFieldInTile.call(tile)).toBe(true);
+        expect(Renderer.orderNoteFallbackVisible.call(tile)).toBe(true);
 
         new ShippingComponent();
 
         expect(model.renderedInShippingArea()).toBe(true);
-        expect(Renderer.isOrderNoteFieldInTile.call(tile)).toBe(false);
+        expect(Renderer.orderNoteFallbackVisible.call(tile)).toBe(false);
     });
 
     test('with no shipping area rendered the tile keeps the field as a fallback', () => {
@@ -102,8 +118,37 @@ describe('order note collected in the shipping address area', () => {
         // Nothing instantiated the shipping component — a virtual cart, or a
         // front-end without the shipping-address-fieldset node.
         expect(
-            Renderer.isOrderNoteFieldInTile.call({ isOrderNoteFieldEnabled: true })
+            Renderer.orderNoteFallbackVisible.call({ isOrderNoteFieldEnabled: true })
         ).toBe(true);
+    });
+
+    test('the tile computed re-evaluates when the shipping area claims the field', () => {
+        // The template binds the `isOrderNoteFieldInTile` ko.computed, so it has
+        // to flip on its own when renderedInShippingArea() changes. A one-shot
+        // snapshot would satisfy every other test in this file and still leave
+        // two order-note fields on screen, so assert the reactivity itself,
+        // driving the renderer's real predicate through ko exactly as
+        // initialize() wires it up.
+        const { model, Renderer } = loadWithSharedModel(true);
+        const owner = { isOrderNoteFieldEnabled: true };
+        const flag = ko.computed(Renderer.orderNoteFallbackVisible, owner);
+
+        expect(flag()).toBe(true);
+
+        model.renderedInShippingArea(true);
+
+        expect(flag()).toBe(false);
+    });
+
+    test('initialize builds that computed, and the template binds it', () => {
+        // Guards the wiring the test above assumes: a regression that bound the
+        // plain predicate (`if: orderNoteFallbackVisible`) would always be truthy
+        // — a function object — and the fallback would render unconditionally.
+        expect(RENDERER_SRC).toMatch(
+            /this\.isOrderNoteFieldInTile\s*=\s*ko\.computed\(\s*this\.orderNoteFallbackVisible\s*,\s*this\s*\)/
+        );
+        expect(TILE_TEMPLATE).toContain('<!-- ko if: isOrderNoteFieldInTile -->');
+        expect(TILE_TEMPLATE).not.toContain('orderNoteFallbackVisible');
     });
 
     test('the toggle still gates both surfaces when the merchant disables it', () => {
@@ -113,7 +158,7 @@ describe('order note collected in the shipping address area', () => {
         expect(shipping.isOrderNoteFieldEnabled).toBe(false);
         expect(model.renderedInShippingArea()).toBe(false);
         expect(
-            Renderer.isOrderNoteFieldInTile.call({ isOrderNoteFieldEnabled: false })
+            Renderer.orderNoteFallbackVisible.call({ isOrderNoteFieldEnabled: false })
         ).toBe(false);
     });
 });

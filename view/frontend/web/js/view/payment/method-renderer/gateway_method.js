@@ -156,6 +156,16 @@ define([
             this.isOrderNoteFieldEnabled = config.isOrderNoteFieldEnabled;
             this.isPONumberFieldEnabled = config.isPONumberFieldEnabled;
 
+            // Tile fallback for the order note, which normally renders in the
+            // shipping address area. A real ko.computed (not a plain method
+            // called from the binding) so the template's `if:` re-evaluates the
+            // moment the shipping component claims the field — the claim can
+            // land after this renderer initialises, since both components come
+            // from the same jsLayout tree. Per-instance rather than on the
+            // prototype because `isOrderNoteFieldEnabled` is read from this
+            // brand's own config subtree. TWO-25263.
+            this.isOrderNoteFieldInTile = ko.computed(this.orderNoteFallbackVisible, this);
+
             // Client-side minimum-order visibility gate. config.minimumOrder is
             // the server-resolved constraint(s) {amount, basis} already in the
             // display currency; we only compare against the live quote total.
@@ -1008,14 +1018,16 @@ define([
          * `shipping-address-fieldset` node. Without the fallback the field
          * would silently disappear in those checkouts.
          *
-         * Called as `isOrderNoteFieldInTile()` from the template rather than
-         * bound as a value, so the surrounding knockout binding takes a
-         * dependency on `renderedInShippingArea` and re-evaluates when the
-         * shipping component claims the field. TWO-25263.
+         * The predicate itself, kept separate from the observable so it stays
+         * directly unit-testable. The template binds the `isOrderNoteFieldInTile`
+         * ko.computed built from it in initialize() — NOT this method — so the
+         * `if:` binding is reactive by construction rather than by relying on
+         * knockout's dependency tracking reaching into a plain function call.
+         * TWO-25263.
          *
          * @returns {boolean}
          */
-        isOrderNoteFieldInTile: function () {
+        orderNoteFallbackVisible: function () {
             return !!this.isOrderNoteFieldEnabled
                 && !orderNoteModel.renderedInShippingArea();
         },

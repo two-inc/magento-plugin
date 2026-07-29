@@ -161,25 +161,71 @@ function defaultMocks() {
 }
 
 function makeKnockoutMock() {
-    function pureComputed(fn) {
-        const o = makeObservable(fn());
-        return o;
+    /**
+     * Reactive computed with real dependency tracking.
+     *
+     * Previously a one-shot snapshot (`makeObservable(fn())`), which meant a
+     * test could not tell a reactive computed from a dead one and the `owner`
+     * argument was silently dropped. Both mattered: gateway_method.js builds
+     * `isOrderNoteFieldInTile` as `ko.computed(this.orderNoteFallbackVisible, this)`
+     * and the template's `if:` binding depends on it re-evaluating when the
+     * shipping component claims the order-note field.
+     *
+     * Observables read during evaluation are recorded via the activeComputation
+     * stack in makeObservable and re-subscribed on each pass, so dependencies
+     * picked up on a later branch are tracked too.
+     */
+    function computed(fn, owner) {
+        const result = makeObservable(undefined);
+        const subscribed = new Set();
+
+        function recompute() {
+            const previous = activeComputation;
+            const seen = [];
+            activeComputation = seen;
+            let value;
+            try {
+                value = fn.call(owner);
+            } finally {
+                activeComputation = previous;
+            }
+            seen.forEach(function (dep) {
+                if (!subscribed.has(dep)) {
+                    subscribed.add(dep);
+                    dep.subscribe(recompute);
+                }
+            });
+            result(value);
+        }
+
+        recompute();
+        return result;
     }
+
     return {
         observable: makeObservable,
         observableArray: function (init) { return makeObservable(init || []); },
-        pureComputed: pureComputed,
-        computed: pureComputed,
+        pureComputed: computed,
+        computed: computed,
         applyBindings: function () {},
         bindingHandlers: {}
     };
 }
 
+// Set to an array while a ko.computed is evaluating; every observable read
+// during that window appends itself so the computed can subscribe to it.
+let activeComputation = null;
+
 function makeObservable(initial) {
     let value = initial;
     const subscribers = [];
     function obs(next) {
-        if (arguments.length === 0) return value;
+        if (arguments.length === 0) {
+            if (activeComputation && activeComputation.indexOf(obs) === -1) {
+                activeComputation.push(obs);
+            }
+            return value;
+        }
         value = next;
         subscribers.forEach(function (s) { s(value); });
         return obs;
