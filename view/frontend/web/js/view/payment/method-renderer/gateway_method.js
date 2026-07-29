@@ -70,7 +70,16 @@ define([
         enterDetailsManuallyText: $t('Enter details manually'),
         enterDetailsManuallyButton: '#billing_enter_details_manually',
         searchForCompanyText: $t('Search for company'),
-        searchForCompanyButton: '#billing_search_for_company',
+        // No `searchForCompanyButton` id selector here on purpose. The append
+        // guard is per-field, so this renderer — pushed once per Two-family
+        // brand — would otherwise mint duplicate ids and a document-wide
+        // lookup would hand brand A's link to brand B. Use
+        // searchForCompanyLink() instead.
+        searchForCompanyLink: function () {
+            const $field = this._$companyNameField;
+            if (!$field || !$field.closest) return $();
+            return $field.closest('.field').find('.search_for_company');
+        },
         delegationToken: '',
         autofillToken: '',
         companyName: ko.observable(''),
@@ -980,7 +989,7 @@ define([
                     const $field = $companyNameField.closest('.field');
                     if ($field.find('.search_for_company').length == 0) {
                         $field.append(
-                            `<div id="billing_search_for_company" class="search_for_company" title="${self.searchForCompanyText}">` +
+                            `<div class="search_for_company" title="${self.searchForCompanyText}">` +
                                 `<span>${self.searchForCompanyText}</span>` +
                                 '</div>'
                         );
@@ -1131,8 +1140,11 @@ define([
         // the email-driven prefetch and the chip-click handler.
         enterSoleTraderUi() {
             this.showSoleTrader(true);
+            // Resolve the link BEFORE clearCompany(), which tears the widget
+            // down and nulls _$companyNameField.
+            const $searchForCompany = this.searchForCompanyLink();
             this.clearCompany(true);
-            $(this.searchForCompanyButton).hide();
+            $searchForCompany.hide();
         },
 
         // Sole-trader chip click. Resolves against the prefetched autofill

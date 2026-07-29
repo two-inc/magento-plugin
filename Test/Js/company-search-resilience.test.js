@@ -166,6 +166,11 @@ function makeQueryDouble() {
                     };
                     recorder.searchFields.push(searchField);
                     store.select2 = {
+                        // select2's ajax data adapter holds the debounced
+                        // query in `_queryTimeout`; the below-minimum handler
+                        // has to clear it as well as abort the in-flight
+                        // request.
+                        dataAdapter: { _queryTimeout: null },
                         $dropdown: {
                             find: function (selector) {
                                 if (selector === '.select2-search--dropdown') return searchBox;
@@ -845,6 +850,30 @@ describe('in-field chrome', () => {
         expect(searchBoxOf(recorder).children).toHaveLength(0);
     });
 
+    test('dropping below the minimum input length clears the PENDING query', () => {
+        const { $, recorder } = makeQueryDouble();
+        const companySearch = loadCompanySearch($);
+        const $field = $(SEARCH_FIELD);
+        const token = {};
+
+        $field.select2({});
+        companySearch.markSearchBinding($field, token);
+
+        // select2 armed its 300ms debounce but has not fired the request yet.
+        // Its minimumInputLength decorator short-circuits query() before
+        // reaching the adapter, so select2 never clears this timer either:
+        // backspacing from 4 chars to 2 inside 300ms would otherwise fire a
+        // search for the abandoned term.
+        const dataAdapter = $field.data('select2').dataAdapter;
+        dataAdapter._queryTimeout = setTimeout(function () {}, 10000);
+
+        const searchField = recorder.searchFields[recorder.searchFields.length - 1];
+        searchField.value = 'ex';
+        searchField.__handlers['input' + companySearch.EVENT_NS].call(searchField);
+
+        expect(dataAdapter._queryTimeout).toBeNull();
+    });
+
     test('dropping below the minimum input length CANCELS the request', () => {
         const { $, recorder } = makeQueryDouble();
         const companySearch = loadCompanySearch($);
@@ -1042,7 +1071,7 @@ describe('re-render safety of the select2 binding', () => {
      * failed open on a missing token, every model-level token test still
      * passed and the bug shipped. This drives the real hooks.
      */
-    test('a stale widget\'s hooks cannot paint after a re-render', () => {
+    test("a stale widget's hooks cannot paint after a re-render", () => {
         const { $, recorder } = makeQueryDouble();
         const ctx = loadRenderer($);
 
@@ -1060,7 +1089,7 @@ describe('re-render safety of the select2 binding', () => {
         expect(liveBox.children).toHaveLength(0);
     });
 
-    test('the live widget\'s hooks DO paint', () => {
+    test("the live widget's hooks DO paint", () => {
         const { $, recorder } = makeQueryDouble();
         const ctx = loadRenderer($);
 

@@ -124,7 +124,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * @returns {boolean} true when a request was actually aborted
          */
         abortActiveRequest: function (token) {
-            const handle = token ? activeRequests.get(token) : null;
+            const handle = token && typeof token === 'object' ? activeRequests.get(token) : null;
             if (!handle) return false;
             activeRequests.delete(token);
             handle.abort();
@@ -271,8 +271,9 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                     // Guarded: WeakMap.set throws on a non-object key, and a
                     // crash here would take the whole picker down. Degrades to
                     // "no cancel-on-short-input" and says so, rather than
-                    // failing the buyer's search.
-                    if (token) {
+                    // failing the buyer's search. Checks the TYPE, not just
+                    // truthiness — a string token is truthy and still throws.
+                    if (token && typeof token === 'object') {
                         activeRequests.set(token, handle);
                     } else {
                         console.error(
