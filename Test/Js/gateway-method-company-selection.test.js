@@ -149,18 +149,30 @@ function loadRenderer() {
 }
 
 const COMPANY_ID_FIELD = 'input#company_id';
+/**
+ * What the two selection paths pass. Only a selection may clear a company that
+ * is already selected; the one-shot `companyData` section read on init may not
+ * (see 'a stale name-only section read does not clobber a live pick').
+ */
+const AS_SELECTION = { authoritative: true };
 const COMPANY_NAME_FIELD = 'input#company_name';
 
 describe('picking a company with no national identifier', () => {
     test('applyCompanyData overwrites a previously selected company id', () => {
         const { renderer, node } = loadRenderer();
 
-        renderer.applyCompanyData({ companyName: 'First Example Ltd', companyId: '12345678' });
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            AS_SELECTION
+        );
         expect(renderer.companyName()).toBe('First Example Ltd');
         expect(renderer.companyId()).toBe('12345678');
         expect(node(COMPANY_ID_FIELD).val()).toBe('12345678');
 
-        renderer.applyCompanyData({ companyName: 'Second Example Ltd', companyId: '' });
+        renderer.applyCompanyData(
+            { companyName: 'Second Example Ltd', companyId: '' },
+            AS_SELECTION
+        );
 
         // The name moved, so the id MUST have moved with it.
         expect(renderer.companyName()).toBe('Second Example Ltd');
@@ -172,33 +184,63 @@ describe('picking a company with no national identifier', () => {
     test('applyCompanyData re-enables company_id so the buyer can supply it', () => {
         const { renderer, node } = loadRenderer();
 
-        // Company search owns the field until then.
+        // Company search owns the field until then. This assertion is a
+        // precondition, not the property under test — enableCompanySearch()
+        // disables the field itself, so it holds trivially here.
         renderer.enableCompanySearch();
         expect(node(COMPANY_ID_FIELD).prop('disabled')).toBe(true);
 
-        renderer.applyCompanyData({ companyName: 'Second Example Ltd', companyId: '' });
+        renderer.applyCompanyData(
+            { companyName: 'Second Example Ltd', companyId: '' },
+            AS_SELECTION
+        );
 
         expect(node(COMPANY_ID_FIELD).prop('disabled')).toBe(false);
     });
 
-    test('a normal pick leaves company_id disabled', () => {
+    test('a normal pick after an identifier-less one re-disables company_id', () => {
+        // Driven through the real select2:select handler, with NO hand-call of
+        // syncCompanyIdEditable() — production has no such call on this path,
+        // and a test that made one asserted a property the code did not have.
+        // The state being ruled out is a registry organisation number sitting
+        // in an ENABLED field, which the buyer could overwrite by hand.
         const { renderer, node } = loadRenderer();
 
         renderer.enableCompanySearch();
-        renderer.applyCompanyData({ companyName: 'First Example Ltd', companyId: '12345678' });
-        renderer.syncCompanyIdEditable();
+        const select = node(COMPANY_NAME_FIELD).handlers['select2:select'];
 
+        select({
+            params: {
+                data: { id: 'Second Example Ltd', text: 'Second Example Ltd', companyId: '' }
+            }
+        });
+        expect(node(COMPANY_ID_FIELD).prop('disabled')).toBe(false);
+
+        select({
+            params: {
+                data: { id: 'First Example Ltd', text: 'First Example Ltd', companyId: '12345678' }
+            }
+        });
+
+        expect(renderer.companyId()).toBe('12345678');
         expect(node(COMPANY_ID_FIELD).prop('disabled')).toBe(true);
     });
 
     test('a later enableCompanySearch does not re-disable the field', () => {
-        // `$.async` resolves AFTER the synchronous fillCustomerData() that
-        // follows enableCompanySearch() in registeredOrganisationMode(), so an
-        // unconditional disable there stranded the buyer with an empty,
-        // uneditable, required company number.
+        // In the browser the `require()` wrapper puts enableCompanySearch()'s
+        // field handling after the synchronous fillCustomerData() that follows
+        // it in registeredOrganisationMode(). The harness's require() and
+        // $.async doubles are both SYNCHRONOUS, so this test does not model
+        // that ordering — what it pins is narrower and still worth pinning:
+        // enableCompanySearch() derives the disabled state from the selected
+        // company instead of hard-coding `true`, so a revert to the literal
+        // fails here.
         const { renderer, node } = loadRenderer();
 
-        renderer.applyCompanyData({ companyName: 'Second Example Ltd', companyId: '' });
+        renderer.applyCompanyData(
+            { companyName: 'Second Example Ltd', companyId: '' },
+            AS_SELECTION
+        );
         renderer.enableCompanySearch();
 
         expect(node(COMPANY_ID_FIELD).prop('disabled')).toBe(false);
@@ -214,18 +256,36 @@ describe('picking a company with no national identifier', () => {
         expect(typeof select).toBe('function');
 
         select({
-            params: { data: { id: 'First Example Ltd', text: 'First Example Ltd', companyId: '12345678' } }
+            params: {
+                data: { id: 'First Example Ltd', text: 'First Example Ltd', companyId: '12345678' }
+            }
         });
         expect(renderer.companyId()).toBe('12345678');
 
         select({
-            params: { data: { id: 'Second Example Ltd', text: 'Second Example Ltd', companyId: '' } }
+            params: {
+                data: { id: 'Second Example Ltd', text: 'Second Example Ltd', companyId: '' }
+            }
         });
 
         expect(renderer.companyName()).toBe('Second Example Ltd');
         expect(renderer.companyId()).toBe('');
         expect(node(COMPANY_ID_FIELD).val()).toBe('');
         expect(node(COMPANY_ID_FIELD).prop('disabled')).toBe(false);
+    });
+
+    test('a non-string companyId is kept, not treated as identifier-less', () => {
+        // The registry's `national_identifier.id` is not guaranteed to be a
+        // string. A typeof test coerced a numeric one to '' and routed a
+        // company that HAS an identifier down the identifier-less branch,
+        // actively CLEARING it.
+        const { renderer, node } = loadRenderer();
+
+        renderer.applyCompanyData({ companyName: 'First Example Ltd', companyId: 12345678 });
+
+        expect(renderer.companyId()).toBe('12345678');
+        expect(node(COMPANY_ID_FIELD).val()).toBe('12345678');
+        expect(node(COMPANY_ID_FIELD).prop('disabled')).toBe(true);
     });
 
     test('an empty customer-data section on init does not blank live state', () => {
@@ -348,6 +408,139 @@ describe('a company picked on the shipping step reaches the payment step', () =>
         expect(renderer.companyId()).toBe('');
         expect(dom.node(COMPANY_ID_FIELD).prop('disabled')).toBe(false);
     });
+
+    test('a stale name-only section read does not clobber a live pick', () => {
+        // `companyData` is a localStorage customer-data section, so a
+        // `{companyName, companyId: ''}` row outlives page loads and previous
+        // orders — and fillCustomerData() is re-callable (applyPrefetch() →
+        // registeredOrganisationMode()). Treating the one-shot READ as a
+        // selection therefore let a stale row overwrite a live payment-step
+        // pick's name and blank its organisation number. Before the routing
+        // existed this shape was a harmless no-op on the read path; it has to
+        // stay one. Only a change NOTIFICATION on the section is a selection.
+        const { renderer, dom } = loadWithSections({
+            companyName: 'Stale Example Ltd',
+            companyId: ''
+        });
+
+        renderer.applyCompanyData(
+            { companyName: 'Live Example Ltd', companyId: '99999999' },
+            { authoritative: true }
+        );
+
+        renderer.fillCustomerData();
+
+        expect(renderer.companyName()).toBe('Live Example Ltd');
+        expect(renderer.companyId()).toBe('99999999');
+        expect(dom.node(COMPANY_ID_FIELD).val()).toBe('99999999');
+        expect(dom.node(COMPANY_ID_FIELD).prop('disabled')).toBe(true);
+    });
+});
+
+describe('order intent for a company with no registry identifier', () => {
+    /**
+     * `initialize()` never runs under the harness's Component double, so
+     * `isOrderIntentEnabled` is undefined and the intent branch is dead in
+     * every test that does not set it explicitly. Set it, and count the calls.
+     */
+    function loadWithIntent() {
+        const dom = makeDom();
+        const renderer = loadAmdModule(RENDERER, { jquery: dom.$ });
+        renderer.isOrderIntentEnabled = true;
+        const chain = {
+            always: () => chain,
+            done: () => chain,
+            fail: () => chain
+        };
+        renderer.placeOrderIntent = jest.fn(() => chain);
+        return { renderer: renderer, node: dom.node, intent: renderer.placeOrderIntent };
+    }
+
+    test('a normal pick places exactly one intent', () => {
+        const { renderer, node, intent } = loadWithIntent();
+
+        renderer.enableCompanySearch();
+        node(COMPANY_NAME_FIELD).handlers['select2:select']({
+            params: {
+                data: { id: 'First Example Ltd', text: 'First Example Ltd', companyId: '12345678' }
+            }
+        });
+
+        expect(intent).toHaveBeenCalledTimes(1);
+    });
+
+    test('an identifier-less pick places no intent — there is no number yet', () => {
+        const { renderer, node, intent } = loadWithIntent();
+
+        renderer.enableCompanySearch();
+        node(COMPANY_NAME_FIELD).handlers['select2:select']({
+            params: {
+                data: { id: 'Second Example Ltd', text: 'Second Example Ltd', companyId: '' }
+            }
+        });
+
+        expect(intent).not.toHaveBeenCalled();
+    });
+
+    test('the number the buyer types places exactly one intent', () => {
+        // The hole this closes: nothing subscribed to `companyId` to re-fire
+        // the intent, and fillCompanyData() is never reached on this path, so
+        // an identifier-less company's order previously arrived at the API
+        // with no credit check behind it at all.
+        const { renderer, node, intent } = loadWithIntent();
+
+        renderer.enableCompanySearch();
+        node(COMPANY_NAME_FIELD).handlers['select2:select']({
+            params: {
+                data: { id: 'Second Example Ltd', text: 'Second Example Ltd', companyId: '' }
+            }
+        });
+        expect(intent).not.toHaveBeenCalled();
+
+        const commit = node(COMPANY_ID_FIELD).handlers['change'];
+        expect(typeof commit).toBe('function');
+        node(COMPANY_ID_FIELD).val('  99999999  ');
+        commit();
+
+        expect(renderer.companyId()).toBe('99999999');
+        expect(node(COMPANY_ID_FIELD).val()).toBe('99999999');
+        expect(intent).toHaveBeenCalledTimes(1);
+    });
+
+    test('re-committing the same number places no second intent', () => {
+        const { renderer, node, intent } = loadWithIntent();
+
+        renderer.enableCompanySearch();
+        node(COMPANY_NAME_FIELD).handlers['select2:select']({
+            params: {
+                data: { id: 'Second Example Ltd', text: 'Second Example Ltd', companyId: '' }
+            }
+        });
+        const commit = node(COMPANY_ID_FIELD).handlers['change'];
+        node(COMPANY_ID_FIELD).val('99999999');
+        commit();
+        expect(intent).toHaveBeenCalledTimes(1);
+
+        // A blur that commits nothing new, and an emptied field.
+        commit();
+        node(COMPANY_ID_FIELD).val('');
+        commit();
+
+        expect(intent).toHaveBeenCalledTimes(1);
+        expect(renderer.companyId()).toBe('99999999');
+    });
+
+    test('a number typed with no company selected places no intent', () => {
+        const { renderer, node, intent } = loadWithIntent();
+
+        renderer.enableCompanySearch();
+        const commit = node(COMPANY_ID_FIELD).handlers['change'];
+        node(COMPANY_ID_FIELD).val('99999999');
+        commit();
+
+        expect(intent).not.toHaveBeenCalled();
+        expect(renderer.companyId()).toBe('');
+    });
 });
 
 describe('the shipping-step picker agrees with the payment step', () => {
@@ -378,9 +571,16 @@ describe('the shipping-step picker agrees with the payment step', () => {
             companyId: '12345678',
             companyName: 'First Example Ltd'
         });
+        // `toEqual` treats a key holding `undefined` as equal to the key being
+        // absent, so it alone would pass if `companyId` stopped being written.
+        // `toStrictEqual` is not usable here — the harness runs modules in a
+        // `vm` context, so every strict compare fails cross-realm with
+        // "serializes to the same string". Assert the key set instead.
+        expect(Object.keys(sections.companyData).sort()).toEqual(['companyId', 'companyName']);
 
         autocomplete.setCompanyData('', 'Second Example Ltd');
         expect(sections.companyData).toEqual({ companyId: '', companyName: 'Second Example Ltd' });
+        expect(Object.keys(sections.companyData).sort()).toEqual(['companyId', 'companyName']);
         expect(dom.node(autocomplete.companyIdSelector).val()).toBe('');
     });
 });

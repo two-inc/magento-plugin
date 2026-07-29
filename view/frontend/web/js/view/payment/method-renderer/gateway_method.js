@@ -318,20 +318,32 @@ define([
             $('#select2-company_name-container')?.text(companyName);
             this.companyId(companyId);
             $(this.companyIdSelector).val(companyId);
-            if (this.isOrderIntentEnabled) {
-                fullScreenLoader.startLoader();
-                const self = this;
-                this.placeOrderIntent()
-                    .always(function () {
-                        fullScreenLoader.stopLoader();
-                    })
-                    .done(function (response) {
-                        self.processOrderIntentSuccessResponse(response);
-                    })
-                    .fail(function (response) {
-                        self.processOrderIntentErrorResponse(response);
-                    });
-            }
+            this.runOrderIntent();
+        },
+        /**
+         * Place an order intent for the company currently in
+         * companyName/companyId and reflect the answer. No-op when the
+         * merchant has order intents turned off.
+         *
+         * Extracted so there is exactly ONE place the intent is fired from:
+         * fillCompanyData() fires it for a picked company and
+         * applyManualCompanyId() for an organisation number the buyer typed
+         * because the registry had none, and the two must behave identically.
+         */
+        runOrderIntent: function () {
+            if (!this.isOrderIntentEnabled) return;
+            fullScreenLoader.startLoader();
+            const self = this;
+            this.placeOrderIntent()
+                .always(function () {
+                    fullScreenLoader.stopLoader();
+                })
+                .done(function (response) {
+                    self.processOrderIntentSuccessResponse(response);
+                })
+                .fail(function (response) {
+                    self.processOrderIntentErrorResponse(response);
+                });
         },
         /**
          * True when the buyer has to supply the organisation number by hand:
@@ -371,26 +383,56 @@ define([
          * company's organisation number in `companyId()` while the picker
          * displayed the new company's name, and getData()/placeOrderIntent()
          * submitted the two mixed together.
+         *
+         * `options.authoritative` says the name-set/id-empty shape came from
+         * an act of selection — one of the two pickers, or a live change
+         * notification on the `companyData` section, which is the shipping-step
+         * picker writing it. Only those may clear a company that is already
+         * selected. The one-shot section READ on init must not: `companyData`
+         * is a localStorage customer-data section, so it outlives page loads
+         * and previous orders, and a stale `{companyName, companyId: ''}` row
+         * would otherwise overwrite a live payment-step pick's name and blank
+         * its organisation number. Before the routing existed that shape was a
+         * harmless no-op on the read path, and it has to stay one.
+         *
+         * The editable state of `company_id` is derived here, after BOTH
+         * branches, so one place decides it. Deriving it only inside
+         * selectCompanyWithoutIdentifier() left the field enabled after
+         * identifier-less pick → normal pick, which is precisely the state
+         * syncCompanyIdEditable()'s comment says must not exist: the buyer
+         * could hand-overwrite a registry organisation number.
          */
-        applyCompanyData: function (companyData) {
+        applyCompanyData: function (companyData, options) {
             const data = companyData || {};
+            const authoritative = !!(options && options.authoritative);
             const companyName =
                 typeof data.companyName == 'string' && data.companyName ? data.companyName : '';
-            const companyId = typeof data.companyId == 'string' ? data.companyId : '';
+            // String(), not a typeof test: a non-string id (a numeric
+            // `national_identifier.id`, say) coerced to '' would route a
+            // company that HAS an identifier down the identifier-less branch
+            // and actively clear it.
+            const companyId = data.companyId == null ? '' : String(data.companyId);
             if (companyName && !companyId) {
+                if (!authoritative && (this.companyName() || this.companyId())) return;
                 this.selectCompanyWithoutIdentifier(companyName);
-                return;
+            } else {
+                this.fillCompanyData({ companyName: companyName, companyId: companyId });
             }
-            this.fillCompanyData(data);
+            this.syncCompanyIdEditable();
         },
         /**
          * A selected company whose registry holds no national identifier.
-         * Writes the name, CLEARS any previously selected company's
-         * identifier, and re-enables `company_id` so the buyer can type the
-         * organisation number themselves.
+         * Writes the name and CLEARS any previously selected company's
+         * identifier.
          *
-         * No order intent is placed: there is no identifier to place one for,
-         * and one will be placed when the buyer supplies it.
+         * No order intent is placed here: there is no identifier to place one
+         * for. applyManualCompanyId() places it when the buyer supplies the
+         * organisation number by hand, which is the only route by which it
+         * becomes known for such a company.
+         *
+         * `company_id`'s editable state is NOT set here — applyCompanyData()
+         * derives it for this branch and the normal one alike, so a later
+         * normal pick cannot leave the field enabled.
          */
         selectCompanyWithoutIdentifier: function (companyName) {
             console.debug({ logger: 'twoPayment.selectCompanyWithoutIdentifier', companyName });
@@ -399,7 +441,40 @@ define([
             $('#select2-company_name-container')?.text(companyName);
             this.companyId('');
             $(this.companyIdSelector).val('');
-            this.syncCompanyIdEditable();
+        },
+        /**
+         * The buyer typed the organisation number for a company the registry
+         * gave none for (see selectCompanyWithoutIdentifier). Accepting it
+         * here is what makes the order intent possible at all for such a
+         * company — nothing else re-fires it, so without this the order
+         * reached the API with no credit check behind it.
+         *
+         * Fires at most once per number the buyer settles on:
+         *  - bound to `change`, not `input`, so once on commit (blur/Enter),
+         *    not once per keystroke;
+         *  - returns on an empty value, and on a value equal to the one
+         *    already accepted, so a blur that commits nothing new does
+         *    nothing;
+         *  - returns when no company is selected, so it never runs on the
+         *    no-company path;
+         *  - never doubles up with the picker path: fillCompanyData() writes
+         *    this field with `.val()`, which fires no `change` event, and
+         *    places its own intent.
+         *
+         * The field is deliberately not re-disabled once a number is
+         * accepted — the buyer typed it, so they have to be able to correct a
+         * typo, and a correction re-checks. It goes back to disabled when a
+         * company that HAS a registry identifier is picked, which is
+         * applyCompanyData()/syncCompanyIdEditable()'s job.
+         */
+        applyManualCompanyId: function (value) {
+            const companyId = typeof value == 'string' ? value.trim() : '';
+            if (!companyId || companyId === this.companyId()) return;
+            if (!this.companyName()) return;
+            console.debug({ logger: 'twoPayment.applyManualCompanyId', companyId });
+            this.companyId(companyId);
+            $(this.companyIdSelector).val(companyId);
+            this.runOrderIntent();
         },
         fillTelephone: function (telephone) {
             console.debug({ logger: 'twoPayment.fillTelephone', telephone });
@@ -506,12 +581,19 @@ define([
 
             customerData
                 .get('companyData')
-                // applyCompanyData(), not fillCompanyData(): the shipping-step
-                // picker writes this section, so an identifier-less company
-                // picked there must land here as "name set, id cleared, field
-                // editable" rather than being dropped by fillCompanyData()'s
-                // empty-id early return.
-                .subscribe((companyData) => self.applyCompanyData(companyData));
+                // Authoritative: a change NOTIFICATION on this section is the
+                // shipping-step picker writing it, so an identifier-less
+                // company picked there must land here as "name set, id
+                // cleared, field editable" rather than being dropped by
+                // fillCompanyData()'s empty-id early return.
+                .subscribe((companyData) =>
+                    self.applyCompanyData(companyData, { authoritative: true })
+                );
+            // NOT authoritative: this is a one-shot read of a localStorage
+            // section that outlives page loads and previous orders, and
+            // fillCustomerData() is re-callable (registeredOrganisationMode(),
+            // reached from applyPrefetch()). A stale `{companyName,
+            // companyId: ''}` row must not overwrite a live payment-step pick.
             this.applyCompanyData(customerData.get('companyData')());
 
             customerData
@@ -938,13 +1020,31 @@ define([
             let self = this;
             require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
                 $.async(self.companyIdSelector, function (companyIdField) {
-                    // Not an unconditional disable: this `$.async` callback
-                    // resolves AFTER the synchronous fillCustomerData() that
-                    // follows it in registeredOrganisationMode(), so hard-coding
-                    // `true` here re-disabled the field for an already-selected
-                    // identifier-less company and stranded the buyer with an
-                    // empty, uneditable, required company number.
-                    $(companyIdField).prop('disabled', !self.needsManualCompanyId());
+                    const $companyIdField = $(companyIdField);
+                    // Not an unconditional disable. What puts this after the
+                    // synchronous fillCustomerData() that follows
+                    // enableCompanySearch() in registeredOrganisationMode() is
+                    // the wrapping `require()`, whose callback cannot run
+                    // before the caller returns — `$.async` itself resolves
+                    // immediately for a node that is already in the DOM, and
+                    // re-resolves on every enableCompanySearch(). Either way
+                    // this body runs with a company possibly already selected,
+                    // so hard-coding `true` re-disabled the field for an
+                    // identifier-less one and stranded the buyer with an empty,
+                    // uneditable, required company number. Derive it.
+                    $companyIdField.prop('disabled', !self.needsManualCompanyId());
+                    // The buyer's typed organisation number is the only route
+                    // to an order intent for a company the registry gave no
+                    // identifier for. `change`, not `input`: once on commit,
+                    // not once per keystroke. `.off()` first for the same
+                    // handler-stacking reason as the company-name field below —
+                    // every enableCompanySearch() adds another observer, and
+                    // our handlers are not in select2's own namespace.
+                    $companyIdField
+                        .off('change' + companySearch.EVENT_NS)
+                        .on('change' + companySearch.EVENT_NS, function () {
+                            self.applyManualCompanyId($companyIdField.val());
+                        });
                 });
                 $.async(self.companyNameSelector, function (companyNameField) {
                     // `$.async` is a MutationObserver, and every call to
@@ -1064,7 +1164,10 @@ define([
                             // is authoritative and must overwrite the previous
                             // company's identifier even when the new company
                             // has none of its own.
-                            self.applyCompanyData({ companyId, companyName });
+                            self.applyCompanyData(
+                                { companyId, companyName },
+                                { authoritative: true }
+                            );
                             // TWO-25193: the payment-step picker used to stop
                             // here, leaving the billing address blank. Gate is
                             // config.isAddressSearchEnabled, applied inside
