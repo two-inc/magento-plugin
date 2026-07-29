@@ -599,6 +599,10 @@ describe('company_id editability is derived, not set per caller', () => {
             { companyName: 'Second Example Ltd', companyId: '' },
             AS_SELECTION
         );
+        // Precondition, not the property under test: this is backed by
+        // applyCompanyData()'s own syncCompanyIdEditable() call, not by the
+        // subscription, so it survives all four mutations. The assertion after
+        // the notification below is the load-bearing one.
         expect(dom.node(COMPANY_ID_FIELD).prop('disabled')).toBe(false);
 
         // One billing-address notification, carrying a company_id attribute.

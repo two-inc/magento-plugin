@@ -393,11 +393,22 @@ define([
          * harmless no-op on the read path, and it has to stay one.
          *
          * The editable state of `company_id` is re-derived here, after BOTH
-         * branches. Belt-and-braces only: the authoritative derivation is the
-         * companyName/companyId subscription in enableCompanySearch(), which
-         * catches every writer including the ones that never come through a
-         * selection path. This call covers the case where a pick writes values
-         * identical to the current ones, which ko does not notify for.
+         * branches. The authoritative derivation is the companyName/companyId
+         * subscription in enableCompanySearch(), which catches every writer OF
+         * THE OBSERVABLES, including the ones that never come through a
+         * selection path. This call is not merely belt-and-braces; it is
+         * load-bearing for two cases the subscription cannot cover:
+         *
+         *  - a pick that writes values identical to the current ones, which ko
+         *    does not notify for;
+         *  - the window before `$.async('input#company_id')` has resolved. On
+         *    init, registeredOrganisationMode() calls enableCompanySearch() and
+         *    then fillCustomerData(), whose companyData notification fires
+         *    synchronously — possibly before the field node exists and
+         *    therefore before the subscription has been created at all.
+         *
+         * A writer that touches only the DOM field and never the observables is
+         * outside both mechanisms by construction — see clearCompany().
          */
         applyCompanyData: function (companyData, options) {
             const data = companyData || {};
@@ -1036,6 +1047,16 @@ define([
                     // Bound once per component: enableCompanySearch() re-runs
                     // on every re-render (see the $.async note below) and each
                     // run would otherwise stack another subscription.
+                    //
+                    // Once per COMPONENT, not once per page: `companyName` and
+                    // `companyId` are module-level observables shared by every
+                    // renderer instance (see the note where they are declared),
+                    // so N live brand renderers mean N subscriptions on one
+                    // observable, each writing the same document-wide
+                    // `input#company_id`. Harmless rather than wasteful-and-
+                    // wrong: syncCompanyIdEditable() is idempotent and derives
+                    // from those same shared observables, so every subscriber
+                    // computes the identical answer. dispose() clears them.
                     if (!self._companyIdEditableSubs) {
                         const sync = function () {
                             self.syncCompanyIdEditable();
@@ -1231,6 +1252,16 @@ define([
                 });
             });
         },
+        /**
+         * PRE-EXISTING, flagged rather than changed: this writes the DOM fields
+         * only and never clears `companyName()` / `companyId()`. No notification
+         * therefore reaches the editability subscription, so after "Enter
+         * details manually" the field reads empty and enabled while the
+         * observables still hold the previously selected company's registry
+         * number. The derivation cannot desync per CALLER any more, but it can
+         * still be bypassed by a writer that skips the observables entirely.
+         * Out of scope here; noted so it is not mistaken for new behaviour.
+         */
         clearCompany: function (disableCompanyId = false) {
             const companyIdSelector = $(this.companyIdSelector);
             companyIdSelector.val('');
