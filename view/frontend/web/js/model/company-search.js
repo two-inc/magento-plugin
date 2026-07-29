@@ -124,7 +124,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * @returns {boolean} true when a request was actually aborted
          */
         abortActiveRequest: function (token) {
-            const handle = activeRequests.get(token);
+            const handle = token ? activeRequests.get(token) : null;
             if (!handle) return false;
             activeRequests.delete(token);
             handle.abort();
@@ -268,9 +268,19 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                         onUnavailable(true);
                         failure();
                     });
-                    activeRequests.set(token, handle);
+                    // Guarded: WeakMap.set throws on a non-object key, and a
+                    // crash here would take the whole picker down. Degrades to
+                    // "no cancel-on-short-input" and says so, rather than
+                    // failing the buyer's search.
+                    if (token) {
+                        activeRequests.set(token, handle);
+                    } else {
+                        console.error(
+                            'companySearch: buildSearchAjaxOptions called without a bind token'
+                        );
+                    }
                     request.always(function () {
-                        if (activeRequests.get(token) === handle) {
+                        if (token && activeRequests.get(token) === handle) {
                             activeRequests.delete(token);
                         }
                         // Not on abort: select2 aborts the in-flight request
@@ -424,6 +434,22 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                 .off('input' + EVENT_NS)
                 .on('input' + EVENT_NS, function () {
                     if (this.value.length >= MIN_INPUT_LENGTH) return;
+                    // Two things to cancel, not one. Besides a request already
+                    // on the wire, select2's ajax adapter may be sitting on a
+                    // DEBOUNCED one (`_queryTimeout`, our 300ms `delay`) that
+                    // it has not fired yet — and because the
+                    // minimumInputLength decorator short-circuits `query()`
+                    // before reaching that adapter, it never clears the timer
+                    // either. Backspacing from 4 characters to 2 inside 300ms
+                    // (trivial on key-repeat) would otherwise fire a fresh
+                    // search for the abandoned term, bringing the spinner back
+                    // up under "Please enter 3 or more characters".
+                    const instance = $field.data('select2');
+                    const dataAdapter = instance && instance.dataAdapter;
+                    if (dataAdapter && dataAdapter._queryTimeout) {
+                        clearTimeout(dataAdapter._queryTimeout);
+                        dataAdapter._queryTimeout = null;
+                    }
                     self.abortActiveRequest(token);
                     self.clearSearchChrome($field, token);
                 });

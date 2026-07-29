@@ -948,7 +948,13 @@ define([
                                 .off('click' + companySearch.EVENT_NS)
                                 .on('click' + companySearch.EVENT_NS, function () {
                                     self.clearCompany();
-                                    $(self.searchForCompanyButton).show();
+                                    // Resolved here rather than closed over,
+                                    // and scoped to this bind's container for
+                                    // the same duplicate-id reason as below.
+                                    $companyNameField
+                                        .closest('.field')
+                                        .find('.search_for_company')
+                                        .show();
                                 });
                             document.querySelector('.select2-search__field').focus();
                         })
@@ -966,23 +972,30 @@ define([
                         });
                     companySearch.markSearchBinding($companyNameField, bindToken);
                     $('#select2-company_name-container').text(self.companyName());
-                    if ($(self.searchForCompanyButton).length == 0) {
-                        $(self.companyNameSelector)
-                            .closest('.field')
-                            .append(
-                                `<div id="billing_search_for_company" class="search_for_company" title="${self.searchForCompanyText}">` +
-                                    `<span>${self.searchForCompanyText}</span>` +
-                                    '</div>'
-                            );
+                    // Scoped to the container of the node THIS bind owns.
+                    // With two Two-family renderers there is one
+                    // `#billing_search_for_company` id in the page, so a
+                    // document-wide lookup would hand the link in brand A's
+                    // field to whichever component bound last.
+                    const $field = $companyNameField.closest('.field');
+                    if ($field.find('.search_for_company').length == 0) {
+                        $field.append(
+                            `<div id="billing_search_for_company" class="search_for_company" title="${self.searchForCompanyText}">` +
+                                `<span>${self.searchForCompanyText}</span>` +
+                                '</div>'
+                        );
                     }
-                    // Same reasoning as the manual-entry link above.
-                    $(self.searchForCompanyButton)
+                    // Re-bound unconditionally (the div survives a re-render,
+                    // so an append guard would leave this closed over a stale
+                    // component) and scoped to this bind's own container.
+                    const $searchForCompany = $field.find('.search_for_company');
+                    $searchForCompany
                         .off('click' + companySearch.EVENT_NS)
                         .on('click' + companySearch.EVENT_NS, function () {
                             self.enableCompanySearch();
-                            $(self.searchForCompanyButton).hide();
+                            $searchForCompany.hide();
                         });
-                    $(self.searchForCompanyButton).hide();
+                    $searchForCompany.hide();
                 });
             });
         },
