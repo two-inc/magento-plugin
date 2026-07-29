@@ -306,11 +306,43 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                     const responseItems = (response && response.items) || [];
                     for (let i = 0; i < responseItems.length; i++) {
                         const item = responseItems[i];
+                        /*
+                         * `national_identifier` is optional in the search
+                         * response — the company may have none in its home
+                         * registry, and the object itself may be absent, null,
+                         * or carry a null/empty `id`. Reading it unguarded
+                         * threw, and a throw here happens inside select2's
+                         * query pipeline: it takes the WHOLE result list down,
+                         * not just this hit, and leaves the dropdown stuck on
+                         * "Searching…" with no error the buyer can act on.
+                         *
+                         * So render the company with whatever it has. The
+                         * identifier is only the buyer's disambiguator between
+                         * two similarly-named companies; dropping the hit
+                         * instead would remove a company they can no longer
+                         * select at all. Without one they see the name alone,
+                         * and selecting it is what gives them a route to the
+                         * organisation number: the pickers treat an empty
+                         * `companyId` as authoritative, clear any previously
+                         * selected company's identifier, and (on the payment
+                         * step, where company search disables the field)
+                         * re-enable `company_id` so the buyer can type it.
+                         * See applyCompanyData() /
+                         * selectCompanyWithoutIdentifier() in
+                         * view/payment/method-renderer/gateway_method.js —
+                         * WITHOUT that, an empty `companyId` here silently
+                         * kept the previous company's organisation number and
+                         * submitted it under this company's name.
+                         */
+                        const identifier =
+                            item.national_identifier && item.national_identifier.id
+                                ? String(item.national_identifier.id)
+                                : '';
                         items.push({
                             id: item.name,
                             text: item.name,
-                            html: `${item.highlight} (${item.national_identifier.id})`,
-                            companyId: item.national_identifier.id,
+                            html: identifier ? `${item.highlight} (${identifier})` : item.highlight,
+                            companyId: identifier,
                             // Required by lookupCompanyAddress(); dropping it
                             // silently disables address autofill.
                             lookupId: item.lookup_id
