@@ -116,13 +116,14 @@ class CheckoutFieldOrderTest extends TestCase
             . 'invoice email, purchase order number, project, department, order note'
         );
 
-        // DOCUMENT order matters independently of sortOrder. Two_Gateway's
-        // SynthesiseBrandAdminForm is an afterRead plugin on the config
-        // Structure\Reader, so it re-imposes brand_form_template.xml's field
-        // order AFTER Magento has sorted — meaning document order, not
-        // sortOrder, is what the pane actually renders for this section.
-        // Asserting both in both files is what stops the two from diverging
-        // and makes the sortOrder edit meaningful rather than decorative.
+        // Document order is asserted as well as the sortOrder sequence.
+        // sortOrder is what actually orders the pane — and specifically
+        // brand_form_template.xml's, since Two_Gateway synthesises this
+        // section from that file (Converter-sorted) before deep-merging
+        // system.xml's scalars over it. Document order carries no weight at
+        // runtime; pinning it keeps both files readable and, more usefully,
+        // stops the two axes drifting apart, which is how a reordering ends up
+        // looking correct in one file and behaving from the other.
         $documentOrder = [];
         foreach ($fields as $field) {
             $documentOrder[] = (string)$field['id'];
@@ -151,7 +152,7 @@ class CheckoutFieldOrderTest extends TestCase
             // id mentioned in a comment or in prose cannot satisfy this.
             self::assertSame(
                 1,
-                preg_match('/<input\b[^>]*\bid="' . preg_quote($id, '/') . '"/s', $markup, $m, PREG_OFFSET_CAPTURE),
+                preg_match('/<input\b[^>]*\sid="' . preg_quote($id, '/') . '"/', $markup, $m, PREG_OFFSET_CAPTURE),
                 sprintf('no <input> with id="%s" in the checkout tile template', $id)
             );
             $offset = $m[0][1];

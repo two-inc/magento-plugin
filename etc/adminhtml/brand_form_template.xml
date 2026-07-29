@@ -179,37 +179,31 @@
                    brand_code="{{code}}">
                 <label>Checkout Fields</label>
                 <!--
-                    ORDER IS LOAD-BEARING and must stay in step with
-                    etc/adminhtml/system.xml: invoice email, purchase order
-                    number, project, department, order note LAST. TWO-25263.
+                    ORDER IS LOAD-BEARING: invoice email, purchase order
+                    number, project, department, order note LAST. This is the
+                    canonical cross-plugin order shared with prestashop-plugin
+                    and woocommerce-plugin. TWO-25263.
 
-                    This file is NOT inert, and the way it combines with
-                    system.xml is unintuitive. SynthesiseBrandAdminForm is an
-                    `afterRead` plugin on Magento\Config\Model\Config\Structure\Reader,
-                    so it runs AFTER Magento's own Sorting mapper has already
-                    ordered the fields by sortOrder. It then merges the static
-                    system.xml section into the section synthesised from this
-                    template via deepMergeOverlay($synthesised, $static), which
-                    means:
+                    THE sortOrder VALUES IN THIS FILE ARE WHAT ORDER THE ADMIN
+                    PANE. Not system.xml's — renumbering that file alone moves
+                    nothing. Two_Gateway's SynthesiseBrandAdminForm is an
+                    `afterRead` plugin on Magento's config Structure\Reader: it
+                    builds this section from this template (running it through
+                    Magento's own Converter, whose Sorting mapper orders the
+                    fields by the sortOrder set HERE), then deep-merges the
+                    static system.xml section over the result. That merge
+                    overwrites scalar attributes from system.xml — sortOrder
+                    included, so the numbers you READ in the merged structure
+                    are system.xml's — but it does not re-sort, because the
+                    sorting already happened. It also decides which fields
+                    exist at all: a field system.xml declares and this template
+                    does not is dropped.
 
-                      - the FIELD ORDER the admin pane renders is this file's
-                        document order, because the merged array keeps the
-                        synthesised array's key order and the sort has already
-                        happened;
-                      - scalar attributes, sortOrder included, are taken from
-                        system.xml, because the static section is the overlay
-                        and its scalars overwrite;
-                      - which fields exist at all is decided here — the
-                        $isChildrenList branch drops any field system.xml names
-                        that this template does not.
-
-                    The practical consequence: for the two_payment section,
-                    sortOrder does NOT determine the rendered order, so
-                    renumbering system.xml alone looks like a fix and changes
-                    nothing. Keep this file's document order and system.xml's
-                    sortOrder saying the same thing.
-                    Test/Unit/Config/CheckoutFieldOrderTest asserts both, in
-                    both files.
+                    Practically: keep the sortOrder sequence here and in
+                    system.xml identical, and keep both files' document order
+                    matching it too so they stay readable.
+                    Test/Unit/Config/CheckoutFieldOrderTest asserts both axes
+                    in both files, which is what stops them drifting apart.
                 -->
                 <field id="enable_invoice_emails" translate="label" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1"

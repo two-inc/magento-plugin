@@ -121,14 +121,12 @@
                     woocommerce-plugin: invoice email, purchase order number,
                     project, department, and the order note LAST. TWO-25263.
 
-                    Magento normally renders a group's fields by ascending
-                    sortOrder — but for this section it does not, and editing
-                    the numbers here alone will not move anything. Two_Gateway's
-                    SynthesiseBrandAdminForm plugin re-imposes the field order
-                    of etc/adminhtml/brand_form_template.xml after Magento has
-                    sorted; see the longer note in that file. So keep the
-                    sortOrder below and that template's document order saying
-                    the same thing, and change both together.
+                    CHANGING THE sortOrder VALUES BELOW DOES NOT, ON ITS OWN,
+                    REORDER THE ADMIN PANE. Two_Gateway synthesises this
+                    section from etc/adminhtml/brand_form_template.xml and it
+                    is THAT file's sortOrder which sets the sequence; the
+                    numbers here supply the merged values but do not re-sort.
+                    See the longer note in that file, and change both together.
 
                     Also keep this in step with the optional-field order in
                     view/frontend/web/template/payment/gateway_method.html.
