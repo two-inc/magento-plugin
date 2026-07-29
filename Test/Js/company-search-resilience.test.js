@@ -694,6 +694,81 @@ describe('processResults robustness', () => {
         expect(ajaxOptions.processResults({ items: [] }).results).toEqual([]);
         expect(ajaxOptions.processResults({ degraded: true }).results).toEqual([]);
     });
+
+    // `national_identifier` is optional in the search response and its `id`
+    // may be null or empty, so every one of these four shapes is reachable.
+    // A throw here would happen inside select2's query pipeline, taking the
+    // whole result list down and leaving the dropdown on "Searching…" — so
+    // the hit renders with whatever it has instead.
+    test.each([
+        [
+            'national_identifier absent',
+            { name: 'Example Trading Ltd', highlight: '<em>Example</em> Trading Ltd' }
+        ],
+        [
+            'national_identifier null',
+            {
+                name: 'Example Trading Ltd',
+                highlight: '<em>Example</em> Trading Ltd',
+                national_identifier: null
+            }
+        ],
+        [
+            'id null',
+            {
+                name: 'Example Trading Ltd',
+                highlight: '<em>Example</em> Trading Ltd',
+                national_identifier: { id: null }
+            }
+        ],
+        [
+            'id empty',
+            {
+                name: 'Example Trading Ltd',
+                highlight: '<em>Example</em> Trading Ltd',
+                national_identifier: { id: '' }
+            }
+        ]
+    ])('%s renders the company without an identifier suffix', (_label, item) => {
+        const { $ } = makeQueryDouble();
+        const companySearch = loadCompanySearch($);
+        const ajaxOptions = buildOptions(companySearch, makeHooks());
+        const run = function () {
+            return ajaxOptions.processResults({ items: [item] });
+        };
+
+        expect(run).not.toThrow();
+        expect(run().results).toEqual([
+            {
+                id: 'Example Trading Ltd',
+                text: 'Example Trading Ltd',
+                html: '<em>Example</em> Trading Ltd',
+                companyId: '',
+                lookupId: undefined
+            }
+        ]);
+    });
+
+    test('one unusable hit does not take the rest of the result list down', () => {
+        // The point of the guard: one hit with no identifier must not cost
+        // the buyer every other company that matched.
+        const { $ } = makeQueryDouble();
+        const companySearch = loadCompanySearch($);
+        const ajaxOptions = buildOptions(companySearch, makeHooks());
+
+        const out = ajaxOptions.processResults({
+            items: [
+                { name: 'Other Example Ltd', highlight: '<em>Other</em> Example Ltd' },
+                SEARCH_RESPONSE.items[0]
+            ]
+        });
+
+        expect(out.results.map((r) => r.text)).toEqual([
+            'Other Example Ltd',
+            'Example Trading Ltd'
+        ]);
+        expect(out.results.map((r) => r.companyId)).toEqual(['', '12345678']);
+    });
 });
 
 describe('in-field chrome', () => {
