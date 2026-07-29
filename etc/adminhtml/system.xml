@@ -157,7 +157,7 @@
                 <field id="enable_order_note" translate="label comment" type="select" sortOrder="50" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Show Order note field</label>
-                    <comment>Optional field which enables the buyer to register a note to the merchant. Rendered in the shipping address area of the Luma, Amasty and Fire checkouts. The information is eventually displayed on the invoice.</comment>
+                    <comment>Optional field which enables the buyer to register a note to the merchant. Shown in the shipping address area, or with the payment method when the checkout has no shipping address step. The information is eventually displayed on the invoice.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/enable_order_note</config_path>
                 </field>

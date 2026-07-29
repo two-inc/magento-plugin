@@ -24,17 +24,23 @@
  * payment-method list refreshes.
  *
  * `renderedInShippingArea` is a fallback signal, not decoration. The
- * shipping-step component sets it when it renders; the payment tile keeps
- * its own order-note field but only shows it while the flag is false. That
- * covers the two cases where the shipping area is absent or unreachable:
+ * shipping-step component sets it from its template's `afterRender` — on
+ * actual paint, NOT on construction, because Magento builds every jsLayout
+ * component whether or not it is ever rendered. The payment tile keeps its
+ * own order-note field but shows it only while this flag is false, which
+ * covers the cases where the shipping field never appears:
  *
- *   - virtual / downloadable-only carts, which skip the shipping step
- *     entirely, and
+ *   - virtual / downloadable-only carts, which never render the shipping
+ *     step,
+ *   - a returning customer with a saved address, where the shipping address
+ *     fieldset is only rendered inside the "New Address" flow, and
  *   - any checkout front-end whose jsLayout does not carry the
  *     `shipping-address-fieldset` node the component mounts into.
  *
- * Without it, either case would silently drop the field instead of falling
- * back to where it used to live.
+ * Without it, every one of those would silently drop the field instead of
+ * falling back to where it used to live. Claiming at construction time would
+ * be worse than not claiming at all: it suppresses the fallback in precisely
+ * the situations the fallback exists for.
  */
 define(['ko'], function (ko) {
     'use strict';

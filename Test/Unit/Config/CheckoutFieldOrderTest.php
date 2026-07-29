@@ -136,12 +136,17 @@ class CheckoutFieldOrderTest extends TestCase
             $positions[$id] = $offset;
         }
 
-        $rendered = array_keys($positions);
+        // Insertion order is the canonical order (CANONICAL_CHECKOUT_ORDER was
+        // iterated to build $positions); sorting by offset gives the order the
+        // markup actually paints in. Comparing the two is a real assertion —
+        // do not "simplify" it into comparing one of them with itself.
+        $canonical = array_keys($positions);
         asort($positions);
+        $rendered = array_keys($positions);
 
         self::assertSame(
+            $canonical,
             $rendered,
-            array_keys($positions),
             'the checkout tile renders the optional fields out of canonical order '
             . '(knockout paints the template top to bottom, so markup order is what '
             . 'the buyer sees)'
@@ -188,6 +193,38 @@ class CheckoutFieldOrderTest extends TestCase
             $tile,
             'the tile copy must be gated on the fallback predicate, otherwise the '
             . 'buyer sees two order-note fields'
+        );
+
+        // Distinct ids: both templates can be in the DOM at once (the tile's
+        // copy is only hidden, and knockout paints the shipping field whether
+        // or not the toggle shows it), so a shared id would be invalid HTML and
+        // would break `label for=`.
+        self::assertStringContainsString('id="two_order_note_payment"', $tile);
+        self::assertStringNotContainsString(
+            'id="two_order_note"',
+            $tile,
+            'the tile fallback must not reuse the shipping field id'
+        );
+        self::assertStringContainsString('id="two_order_note"', $shippingMarkup);
+
+        // The claim must come from afterRender, not construction — Magento
+        // builds every jsLayout component whether or not it renders, so a
+        // construction-time claim hides the tile fallback in exactly the cases
+        // it exists for and the buyer gets no order-note field at all.
+        $component = file_get_contents(
+            dirname(__DIR__, 3) . '/view/frontend/web/js/view/checkout/shipping/order-note.js'
+        );
+        self::assertNotFalse($component);
+        self::assertStringContainsString(
+            'afterRender: claimOrderNoteField',
+            $shippingMarkup,
+            'the shipping template must claim the field on render'
+        );
+        self::assertStringNotContainsString(
+            'renderedInShippingArea(true)',
+            substr($component, 0, (int)strpos($component, 'claimOrderNoteField')),
+            'nothing before claimOrderNoteField may set the claim — that would '
+            . 'be a construction-time claim again'
         );
     }
 }

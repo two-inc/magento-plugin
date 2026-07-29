@@ -68,6 +68,14 @@ function loadWithSharedModel(orderNoteEnabled) {
 }
 
 /**
+ * Stand-in for the rendered root node handed to `afterRender`. The harness's
+ * ko.utils.domNodeDisposal records dispose callbacks on the node itself.
+ */
+function makeNode() {
+    return {};
+}
+
+/**
  * getData() reads a handful of sibling observables. Build a `this` that
  * supplies them so the assertion is about `orderNote` and nothing else.
  */
@@ -99,24 +107,58 @@ describe('order note collected in the shipping address area', () => {
         expect(data.additional_data.orderNote).toBe('Deliver to the loading bay, ask for Sam');
     });
 
-    test('the shipping component claims the field, so the payment tile hides its copy', () => {
+    test('rendering the shipping field claims it, so the payment tile hides its copy', () => {
         const { model, ShippingComponent, Renderer } = loadWithSharedModel(true);
         const tile = { isOrderNoteFieldEnabled: true };
+        const shipping = new ShippingComponent();
 
         expect(model.renderedInShippingArea()).toBe(false);
         expect(Renderer.orderNoteFallbackVisible.call(tile)).toBe(true);
 
-        new ShippingComponent();
+        shipping.claimOrderNoteField(makeNode());
 
         expect(model.renderedInShippingArea()).toBe(true);
         expect(Renderer.orderNoteFallbackVisible.call(tile)).toBe(false);
     });
 
+    test('CONSTRUCTING the shipping component must not claim the field', () => {
+        // The regression this guards is the whole reason the claim moved to
+        // afterRender: Magento builds every component in the jsLayout tree
+        // whether or not it is ever painted. Claiming at construction
+        // suppressed the tile fallback in exactly the cases it exists for —
+        // virtual carts, and a returning customer with a saved address, where
+        // the shipping address fieldset only renders inside "New Address" — so
+        // the buyer got NO order-note field anywhere.
+        const { model, ShippingComponent, Renderer } = loadWithSharedModel(true);
+
+        new ShippingComponent();
+
+        expect(model.renderedInShippingArea()).toBe(false);
+        expect(
+            Renderer.orderNoteFallbackVisible.call({ isOrderNoteFieldEnabled: true })
+        ).toBe(true);
+    });
+
+    test('the claim is released when the rendered node is disposed', () => {
+        // Navigating away from a rendered shipping form must hand the field
+        // back to the tile rather than leave it claimed by a dead node.
+        const { model, ShippingComponent } = loadWithSharedModel(true);
+        const shipping = new ShippingComponent();
+        const node = makeNode();
+
+        shipping.claimOrderNoteField(node);
+        expect(model.renderedInShippingArea()).toBe(true);
+
+        node.__disposeCallbacks.forEach(function (cb) { cb(); });
+
+        expect(model.renderedInShippingArea()).toBe(false);
+    });
+
     test('with no shipping area rendered the tile keeps the field as a fallback', () => {
         const { Renderer } = loadWithSharedModel(true);
 
-        // Nothing instantiated the shipping component — a virtual cart, or a
-        // front-end without the shipping-address-fieldset node.
+        // Nothing rendered the shipping component — a virtual cart, a saved
+        // address, or a front-end without the shipping-address-fieldset node.
         expect(
             Renderer.orderNoteFallbackVisible.call({ isOrderNoteFieldEnabled: true })
         ).toBe(true);
@@ -154,6 +196,10 @@ describe('order note collected in the shipping address area', () => {
     test('the toggle still gates both surfaces when the merchant disables it', () => {
         const { model, ShippingComponent, Renderer } = loadWithSharedModel(false);
         const shipping = new ShippingComponent();
+
+        // Render it anyway — a disabled toggle must not claim the field, or the
+        // tile would hide a copy that the shipping side is not showing either.
+        shipping.claimOrderNoteField(makeNode());
 
         expect(shipping.isOrderNoteFieldEnabled).toBe(false);
         expect(model.renderedInShippingArea()).toBe(false);

@@ -4,7 +4,13 @@
  * See COPYING.txt for license details.
  */
 -->
-<div class="field field-text two-order-note" data-bind="visible: isOrderNoteFieldEnabled">
+<!--
+    `afterRender` is what claims the field from the payment tile, so it must
+    stay on this root node: it fires only when the field is really painted.
+    See the component for the cases that distinguishes.
+-->
+<div class="field field-text two-order-note"
+     data-bind="visible: isOrderNoteFieldEnabled, afterRender: claimOrderNoteField">
     <label for="two_order_note" class="label">
         <span><!-- ko i18n: 'Order Note'--><!-- /ko --></span>
     </label>

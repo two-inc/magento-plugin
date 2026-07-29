@@ -292,6 +292,13 @@ define([
             if (this.isTwoVisible && this.isTwoVisible.dispose) {
                 this.isTwoVisible.dispose();
             }
+            // Order-note tile fallback (initialize()). Subscribes to a
+            // module-scope observable that outlives this renderer, and the
+            // renderer is re-created on every payment-method list refresh, so
+            // without this each refresh leaves another live computed behind.
+            if (this.isOrderNoteFieldInTile && this.isOrderNoteFieldInTile.dispose) {
+                this.isOrderNoteFieldInTile.dispose();
+            }
             this._super();
         },
         selectTerm: function (days) {

@@ -30,6 +30,14 @@ const vm = require('vm');
  * override individual entries via the `extraMocks` parameter of
  * `loadAmdModule()`.
  */
+// Singleton, mirroring the real Two_Gateway/js/model/order-note module.
+// Declared out here so every defaultMocks() call hands back the SAME
+// observables; see the mock entry below for why that matters.
+const orderNoteMock = {
+    orderNote: makeObservable(''),
+    renderedInShippingArea: makeObservable(false)
+};
+
 function defaultMocks() {
     const ko = makeKnockoutMock();
     const $ = makeJQueryMock();
@@ -108,14 +116,12 @@ function defaultMocks() {
         'Magento_Catalog/js/price-utils': { formatPrice: function (n) { return String(n); } },
         'Two_Gateway/js/model/surcharge': makeSurchargeMock(),
         'Two_Gateway/js/model/minimum-order-visibility': function () { return true; },
-        // Shared order-note state. Mirrors the real module's shape (two
-        // observables on the harness's own ko) so the renderer's getData()
-        // and its isOrderNoteFieldInTile computed both behave. Defaults to
-        // "not claimed by the shipping area", i.e. the tile fallback is live.
-        'Two_Gateway/js/model/order-note': {
-            orderNote: ko.observable(''),
-            renderedInShippingArea: ko.observable(false)
-        },
+        // Shared order-note state. A module-level singleton, NOT rebuilt per
+        // defaultMocks() call, because the real module is a RequireJS
+        // singleton shared by the shipping component and the payment
+        // renderer — the whole point of it. A fresh pair per load would let a
+        // test pass while the two sides were silently unshared.
+        'Two_Gateway/js/model/order-note': orderNoteMock,
         // Inert default. Tests that exercise the real company-search
         // behaviour load the real module and pass it via extraMocks so
         // they control the jQuery it closes over.
@@ -172,14 +178,32 @@ function makeKnockoutMock() {
      * shipping component claims the order-note field.
      *
      * Observables read during evaluation are recorded via the activeComputation
-     * stack in makeObservable and re-subscribed on each pass, so dependencies
-     * picked up on a later branch are tracked too.
+     * stack in makeObservable. Each dependency is subscribed exactly once and
+     * never released, so dependencies first seen on a later branch do get
+     * tracked, but stale ones keep triggering recomputes — good enough for
+     * tests, and deliberately simpler than real knockout.
+     *
+     * Not modelled: `pureComputed`'s sleeping behaviour. Real ko.pureComputed
+     * drops its subscriptions when nothing observes it and re-evaluates on
+     * read; this always stays live and caches. gateway_method.js's
+     * `isTwoVisible` relies on those sleep semantics, so that aspect is
+     * unmodelled here rather than merely absent — a test cannot use this mock
+     * to reason about pureComputed lifetimes.
      */
     function computed(fn, owner) {
         const result = makeObservable(undefined);
         const subscribed = new Set();
+        let evaluating = false;
+        let disposed = false;
 
         function recompute() {
+            // A predicate that writes an observable it also reads would
+            // otherwise recurse until the stack blows, hanging the suite
+            // instead of failing it.
+            if (evaluating || disposed) {
+                return;
+            }
+            evaluating = true;
             const previous = activeComputation;
             const seen = [];
             activeComputation = seen;
@@ -188,6 +212,7 @@ function makeKnockoutMock() {
                 value = fn.call(owner);
             } finally {
                 activeComputation = previous;
+                evaluating = false;
             }
             seen.forEach(function (dep) {
                 if (!subscribed.has(dep)) {
@@ -197,6 +222,13 @@ function makeKnockoutMock() {
             });
             result(value);
         }
+
+        // Real computeds expose dispose(); production teardown is guarded as
+        // `x.dispose && x.dispose()`, so without this the guard is never
+        // exercised and a missing-dispose bug stays invisible to the suite.
+        result.dispose = function () {
+            disposed = true;
+        };
 
         recompute();
         return result;
@@ -208,7 +240,16 @@ function makeKnockoutMock() {
         pureComputed: computed,
         computed: computed,
         applyBindings: function () {},
-        bindingHandlers: {}
+        bindingHandlers: {},
+        utils: {
+            domNodeDisposal: {
+                addDisposeCallback: function (node, callback) {
+                    // Tests drive disposal explicitly; record it so a test can
+                    // fire it without a real DOM teardown.
+                    (node.__disposeCallbacks = node.__disposeCallbacks || []).push(callback);
+                }
+            }
+        }
     };
 }
 
