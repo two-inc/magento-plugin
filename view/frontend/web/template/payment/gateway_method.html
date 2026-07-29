@@ -200,6 +200,16 @@
                         />
                     </div>
                 </div>
+                <!--
+                    Optional buyer fields. ORDER IS LOAD-BEARING: this markup
+                    order is what the buyer sees, and it must match the admin
+                    pane sequence declared in etc/adminhtml/system.xml and
+                    etc/adminhtml/brand_form_template.xml (the latter's
+                    sortOrder is the one that actually orders the pane — see
+                    the note in that file): invoice email, purchase order
+                    number, project, department, and the order note LAST.
+                    TWO-25263.
+                -->
                 <div class="field field-text" data-bind="visible: isInvoiceEmailsEnabled">
                     <label for="invoice_emails" class="label">
                         <span data-bind="i18n: 'Invoice email address'"></span>
@@ -209,6 +219,22 @@
                             type="text"
                             id="invoice_emails"
                             data-bind="value: invoiceEmails, event: { change: validateEmails }"
+                            class="input-text"
+                        />
+                    </div>
+                </div>
+                <div class="field field-text" data-bind="visible: isPONumberFieldEnabled">
+                    <label for="two_po_number" class="label">
+                        <span><!-- ko i18n: 'PO Number'--><!-- /ko --></span>
+                    </label>
+                    <div class="control">
+                        <input
+                            type="text"
+                            id="two_po_number"
+                            name="payment[poNumber]"
+                            data-bind='
+                            attr: {title: $t("PO Number")},
+                            value: poNumber'
                             class="input-text"
                         />
                     </div>
@@ -257,22 +283,6 @@
                             data-bind='
                             attr: {title: $t("Order Note")},
                             value: orderNote'
-                            class="input-text"
-                        />
-                    </div>
-                </div>
-                <div class="field field-text" data-bind="visible: isPONumberFieldEnabled">
-                    <label for="two_po_number" class="label">
-                        <span><!-- ko i18n: 'PO Number'--><!-- /ko --></span>
-                    </label>
-                    <div class="control">
-                        <input
-                            type="text"
-                            id="two_po_number"
-                            name="payment[poNumber]"
-                            data-bind='
-                            attr: {title: $t("PO Number")},
-                            value: poNumber'
                             class="input-text"
                         />
                     </div>

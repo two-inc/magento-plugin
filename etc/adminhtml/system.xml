@@ -115,40 +115,56 @@
             <group id="checkout_fields" translate="label comment" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>Checkout Fields</label>
-                <field id="enable_department" translate="label comment" type="select" sortOrder="10" showInDefault="1"
+                <!--
+                    ORDER IS LOAD-BEARING. This sequence is the canonical
+                    cross-plugin order shared with prestashop-plugin and
+                    woocommerce-plugin: invoice email, purchase order number,
+                    project, department, and the order note LAST. TWO-25263.
+
+                    CHANGING THE sortOrder VALUES BELOW DOES NOT, ON ITS OWN,
+                    REORDER THE ADMIN PANE. Two_Gateway synthesises this
+                    section from etc/adminhtml/brand_form_template.xml and it
+                    is THAT file's sortOrder which sets the sequence; the
+                    numbers here supply the merged values but do not re-sort.
+                    See the longer note in that file, and change both together.
+
+                    Also keep this in step with the optional-field order in
+                    view/frontend/web/template/payment/gateway_method.html.
+                -->
+                <field id="enable_invoice_emails" translate="label comment" type="select" sortOrder="10" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Add Department Field</label>
-                    <comment>Optional field which enables the buyer to register the department the purchase is connected to. The information is eventually displayed on the invoice.</comment>
+                    <label>Show Invoice email field</label>
+                    <comment>Let your buyer input additional emails to forward the invoice to on order fulfilment.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/two_payment/enable_department</config_path>
+                    <config_path>payment/two_payment/enable_invoice_emails</config_path>
                 </field>
-                <field id="enable_order_note" translate="label comment" type="select" sortOrder="20" showInDefault="1"
+                <field id="enable_po_number" translate="label comment" type="select" sortOrder="20" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Add Order Note Field</label>
-                    <comment>Optional field which enables the buyer to register a note to the merchant. The information is eventually displayed on the invoice.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/two_payment/enable_order_note</config_path>
-                </field>
-                <field id="enable_project" translate="label comment" type="select" sortOrder="30" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Add Project Field</label>
-                    <comment>Optional field which enables the buyer to register the project the purchase is connected to. The information is eventually displayed on the invoice.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/two_payment/enable_project</config_path>
-                </field>
-                <field id="enable_po_number" translate="label comment" type="select" sortOrder="40" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Add PO Number Field</label>
+                    <label>Show Purchase order number field</label>
                     <comment>Optional field which enables the buyer to register their purchase order number.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/enable_po_number</config_path>
                 </field>
-                <field id="enable_invoice_emails" translate="label comment" type="select" sortOrder="50" showInDefault="1"
+                <field id="enable_project" translate="label comment" type="select" sortOrder="30" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Enable Invoice Emails</label>
-                    <comment>Let your buyer input additional emails to forward the invoice to on order fulfilment.</comment>
+                    <label>Show Project field</label>
+                    <comment>Optional field which enables the buyer to register the project the purchase is connected to. The information is eventually displayed on the invoice.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/two_payment/enable_invoice_emails</config_path>
+                    <config_path>payment/two_payment/enable_project</config_path>
+                </field>
+                <field id="enable_department" translate="label comment" type="select" sortOrder="40" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Show Department field</label>
+                    <comment>Optional field which enables the buyer to register the department the purchase is connected to. The information is eventually displayed on the invoice.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/two_payment/enable_department</config_path>
+                </field>
+                <field id="enable_order_note" translate="label comment" type="select" sortOrder="50" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Show Order note field</label>
+                    <comment>Optional field which enables the buyer to register a note to the merchant. The information is eventually displayed on the invoice.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/two_payment/enable_order_note</config_path>
                 </field>
             </group>
             <group id="payment_terms" translate="label comment" type="text" sortOrder="25" showInDefault="1" showInWebsite="1"
