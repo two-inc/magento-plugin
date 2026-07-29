@@ -142,6 +142,10 @@ class SurchargeCalculator
         }
 
         if (!isset($response['buyer_fee_share'])) {
+            $this->logRepository->addErrorLog('Pricing API response missing buyer_fee_share', [
+                'selected_term' => $selectedTermDays,
+                'order_currency' => $orderCurrency,
+            ]);
             throw new LocalizedException(
                 __('Pricing API response missing required field: buyer_fee_share')
             );
@@ -154,6 +158,11 @@ class SurchargeCalculator
         // applied to the order without FX, which is the API's job not ours.
         $respCurrency = isset($response['currency']) ? (string)$response['currency'] : $orderCurrency;
         if ($respCurrency !== $orderCurrency) {
+            $this->logRepository->addErrorLog('Pricing API returned a mismatched currency', [
+                'selected_term' => $selectedTermDays,
+                'response_currency' => $respCurrency,
+                'order_currency' => $orderCurrency,
+            ]);
             throw new LocalizedException(
                 __(
                     'Pricing API returned currency %1 but order currency is %2.',
@@ -186,14 +195,18 @@ class SurchargeCalculator
      * Maps merchant config to the API schema:
      *  - percentage types supply `percentage`
      *  - fixed types supply `surcharge` (FX-converted to order currency)
-     *  - limit > 0 supplies `cap` (FX-converted to order currency)
+     *  - a non-null limit supplies `cap` (FX-converted to order currency);
+     *    an ABSENT limit is a legitimate "no cap" configuration and sends an
+     *    uncapped percentage, while a limit that IS set but evaluates to zero
+     *    fails closed (see below)
      *  - a rounding basis + step supplies `rounding` (percentage modes only)
      *  - differential mode supplies `reference_terms` so the API computes
      *    the threshold itself — no delta math in the plugin
      *  - `surcharge_basis` is sent explicitly for clarity
      *
      * @return array<string, mixed>
-     * @throws LocalizedException when FX rate is missing
+     * @throws LocalizedException when the FX rate is missing, or when a
+     *         configured cap evaluates to zero
      */
     private function buildBuyerFeeShare(
         string $surchargeType,
@@ -219,7 +232,8 @@ class SurchargeCalculator
                 (float)$config['fixed'],
                 $fixedCurrency,
                 $orderCurrency,
-                $storeId
+                $storeId,
+                $selectedTermDays
             );
         }
 
@@ -228,13 +242,44 @@ class SurchargeCalculator
         // types only (a fixed-only fee is constant — there is nothing to clamp), so
         // a stored limit left over from a previous surcharge type must not leak into
         // a fixed-only request and clamp the fee.
+        //
+        // A cap that IS configured but evaluates to zero must never be sent:
+        // downstream, `cap => 0.0` is indistinguishable from NO cap at all, so
+        // the pricing API would apply the percentage UNCAPPED — the exact
+        // opposite of the merchant's intent, and an overcharge to the buyer.
+        // Fail closed instead. A limit of exactly 0 survives the admin grid
+        // (Model\Config\Backend\SurchargeGrid::validateValue only rejects
+        // negatives, and only the empty string deletes the row), so this is
+        // reachable from the UI, not just from a legacy DB write.
+        //
+        // An ABSENT limit (null) is NOT an error: "no cap" is a legitimate
+        // configuration and must keep sending an uncapped percentage.
         if ($hasPercentage && $config['limit'] !== null) {
-            $payload['cap'] = $this->convertAmount(
+            $cap = $this->convertAmount(
                 (float)$config['limit'],
                 $fixedCurrency,
                 $orderCurrency,
-                $storeId
+                $storeId,
+                $selectedTermDays
             );
+            if ($cap <= 0.0) {
+                $this->logRepository->addErrorLog('Surcharge cap is configured but resolves to zero', [
+                    'selected_term' => $selectedTermDays,
+                    'configured_limit' => (float)$config['limit'],
+                    'from_currency' => $fixedCurrency,
+                    'to_currency' => $orderCurrency,
+                    'converted_cap' => $cap,
+                    'store_id' => $storeId,
+                ]);
+                throw new LocalizedException(
+                    __(
+                        'The configured surcharge cap resolves to zero in %1 and cannot be applied. '
+                        . 'Please try another payment method or contact support.',
+                        $orderCurrency
+                    )
+                );
+            }
+            $payload['cap'] = $cap;
         }
 
         // `rounding` snaps the final buyer line item to a clean increment, computed
@@ -303,13 +348,23 @@ class SurchargeCalculator
     /**
      * Convert an amount between currencies if needed.
      *
+     * The result is deliberately NOT rounded — the pricing API is the only
+     * place surcharge figures get rounded (via the `rounding` block and its
+     * own money precision), so no FX conversion here can collapse a non-zero
+     * configured amount to zero. Combined with CurrencyRatesProvider returning
+     * null rather than a zero/negative rate, a zero `cap` can only ever come
+     * from a zero configured limit, never from the conversion itself.
+     *
+     * @param int|null $selectedTermDays term the conversion is being made for,
+     *                                   for the fail-closed diagnostic log only
      * @throws LocalizedException when no FX rate is resolvable for the pair
      */
     private function convertAmount(
         float $amount,
         string $fromCurrency,
         string $toCurrency,
-        ?int $storeId = null
+        ?int $storeId = null,
+        ?int $selectedTermDays = null
     ): float {
         if ($amount === 0.0 || $fromCurrency === '' || $fromCurrency === $toCurrency) {
             return $amount;
@@ -317,6 +372,16 @@ class SurchargeCalculator
 
         $rate = $this->ratesProvider->getRate($fromCurrency, $toCurrency, $storeId);
         if ($rate === null) {
+            // Fail closed — but never silently. Without this the buyer sees a
+            // checkout error while ops and the merchant see nothing at all, so
+            // a missing rate for a pair looks like an unexplained drop-off.
+            $this->logRepository->addErrorLog('Surcharge FX conversion failed: no rate available', [
+                'from_currency' => $fromCurrency,
+                'to_currency' => $toCurrency,
+                'selected_term' => $selectedTermDays,
+                'amount' => $amount,
+                'store_id' => $storeId,
+            ]);
             throw new LocalizedException(
                 __(
                     'Cannot convert surcharge from %1 to %2: no exchange rate is currently available.',
