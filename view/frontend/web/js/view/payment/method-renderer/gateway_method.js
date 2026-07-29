@@ -20,6 +20,7 @@ define([
     'Two_Gateway/js/model/brand-config',
     'Two_Gateway/js/model/company-search',
     'Two_Gateway/js/model/minimum-order-visibility',
+    'Two_Gateway/js/model/order-note',
     'Magento_Ui/js/lib/view/utils/async',
     'mage/validation',
     'jquery/jquery-storageapi'
@@ -39,7 +40,8 @@ define([
     surchargeModel,
     getBrandConfig,
     companySearch,
-    isAboveMinimums
+    isAboveMinimums,
+    orderNoteModel
 ) {
     'use strict';
 
@@ -94,7 +96,12 @@ define([
         invoiceEmails: ko.observable(''),
         project: ko.observable(''),
         department: ko.observable(''),
-        orderNote: ko.observable(''),
+        // Shared with the shipping-step order-note component, which is where
+        // the buyer now types it. getData() still emits it as `orderNote` in
+        // the payment method's additional data, so the server-side relay
+        // (DataAssignObserver → ComposeOrder → API `order_note`) is unchanged.
+        // TWO-25263.
+        orderNote: orderNoteModel.orderNote,
         poNumber: ko.observable(''),
         selectedTerm: surchargeModel.selectedTerm,
         telephone: ko.observable(''),
@@ -989,6 +996,28 @@ define([
         },
         validate: function () {
             return $(this.formSelector).valid();
+        },
+        /**
+         * Whether the payment tile should render its own order-note field.
+         *
+         * The buyer normally types the note in the shipping address area
+         * (Two_Gateway/js/view/checkout/shipping/order-note). The tile keeps a
+         * fallback copy for the two cases where that component never mounts:
+         * virtual / downloadable-only carts, which skip the shipping step, and
+         * any checkout front-end whose jsLayout lacks the
+         * `shipping-address-fieldset` node. Without the fallback the field
+         * would silently disappear in those checkouts.
+         *
+         * Called as `isOrderNoteFieldInTile()` from the template rather than
+         * bound as a value, so the surrounding knockout binding takes a
+         * dependency on `renderedInShippingArea` and re-evaluates when the
+         * shipping component claims the field. TWO-25263.
+         *
+         * @returns {boolean}
+         */
+        isOrderNoteFieldInTile: function () {
+            return !!this.isOrderNoteFieldEnabled
+                && !orderNoteModel.renderedInShippingArea();
         },
         // getCode() is inherited from Magento_Checkout/js/view/payment/default
         // and returns this.item.method — the type pushed via rendererList,

@@ -33,6 +33,19 @@
                                                                     <item name="component" xsi:type="string">Two_Gateway/js/view/address-autocomplete</item>
                                                                     <item name="sortOrder" xsi:type="string">53</item>
                                                                 </item>
+                                                                <!--
+                                                                    Order note (TWO-25263). Mounted in the shipping
+                                                                    address area rather than the payment tile, at a
+                                                                    sortOrder past the core address fields so it reads
+                                                                    as the last thing in the block. Value travels to
+                                                                    the server as `payment[orderNote]` via
+                                                                    Two_Gateway/js/model/order-note — see that model
+                                                                    for the relay and the fallback it guards.
+                                                                -->
+                                                                <item name="two_order_note" xsi:type="array">
+                                                                    <item name="component" xsi:type="string">Two_Gateway/js/view/checkout/shipping/order-note</item>
+                                                                    <item name="sortOrder" xsi:type="string">900</item>
+                                                                </item>
                                                             </item>
                                                         </item>
                                                     </item>

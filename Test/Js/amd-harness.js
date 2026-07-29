@@ -108,6 +108,14 @@ function defaultMocks() {
         'Magento_Catalog/js/price-utils': { formatPrice: function (n) { return String(n); } },
         'Two_Gateway/js/model/surcharge': makeSurchargeMock(),
         'Two_Gateway/js/model/minimum-order-visibility': function () { return true; },
+        // Shared order-note state. Mirrors the real module's shape (two
+        // observables on the harness's own ko) so the renderer's getData()
+        // and its isOrderNoteFieldInTile computed both behave. Defaults to
+        // "not claimed by the shipping area", i.e. the tile fallback is live.
+        'Two_Gateway/js/model/order-note': {
+            orderNote: ko.observable(''),
+            renderedInShippingArea: ko.observable(false)
+        },
         // Inert default. Tests that exercise the real company-search
         // behaviour load the real module and pass it via extraMocks so
         // they control the jQuery it closes over.

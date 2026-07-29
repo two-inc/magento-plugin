@@ -1,0 +1,28 @@
+<!--
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ */
+-->
+<div class="field field-text two-order-note" data-bind="visible: isOrderNoteFieldEnabled">
+    <label for="two_order_note" class="label">
+        <span><!-- ko i18n: 'Order Note'--><!-- /ko --></span>
+    </label>
+    <div class="control">
+        <!--
+            No `name` attribute: this input sits inside the shipping form but is
+            NOT a shipping-address field. The value reaches the server through
+            the Two payment method's additional data (`payment[orderNote]`, via
+            Two_Gateway/js/model/order-note), so giving it a name would only
+            risk it being serialised as part of the address payload.
+        -->
+        <textarea
+            id="two_order_note"
+            rows="2"
+            data-bind='
+            attr: {title: $t("Order Note")},
+            value: orderNote'
+            class="input-text"
+        ></textarea>
+    </div>
+</div>

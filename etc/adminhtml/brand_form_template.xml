@@ -178,45 +178,50 @@
                    showInDefault="1" showInWebsite="1" showInStore="1"
                    brand_code="{{code}}">
                 <label>Checkout Fields</label>
-                <field id="enable_department" translate="label" type="select" sortOrder="10"
+                <!--
+                    ORDER IS LOAD-BEARING and must stay in step with
+                    etc/adminhtml/system.xml: invoice email, purchase order
+                    number, project, department, order note LAST. TWO-25263.
+                -->
+                <field id="enable_invoice_emails" translate="label" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Add Department Field</label>
-                    <comment>Optional field which enables the buyer to register the department the purchase is connected to. The information is eventually displayed on the invoice.</comment>
+                    <label>Show Invoice email field</label>
+                    <comment>Let your buyer input additional emails to forward the invoice to on order fulfilment.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/{{code}}/enable_department</config_path>
+                    <config_path>payment/{{code}}/enable_invoice_emails</config_path>
                 </field>
-                <field id="enable_order_note" translate="label" type="select" sortOrder="20"
+                <field id="enable_po_number" translate="label" type="select" sortOrder="20"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Add Order Note Field</label>
-                    <comment>Optional field which enables the buyer to register a note to the merchant. The information is eventually displayed on the invoice.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/{{code}}/enable_order_note</config_path>
-                </field>
-                <field id="enable_project" translate="label" type="select" sortOrder="30"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Add Project Field</label>
-                    <comment>Optional field which enables the buyer to register the project the purchase is connected to. The information is eventually displayed on the invoice.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/{{code}}/enable_project</config_path>
-                </field>
-                <field id="enable_po_number" translate="label" type="select" sortOrder="40"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Add PO Number Field</label>
+                    <label>Show Purchase order number field</label>
                     <comment>Optional field which enables the buyer to register their purchase order number.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/{{code}}/enable_po_number</config_path>
                 </field>
-                <field id="enable_invoice_emails" translate="label" type="select" sortOrder="50"
+                <field id="enable_project" translate="label" type="select" sortOrder="30"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Enable Invoice Emails</label>
-                    <comment>Let your buyer input additional emails to forward the invoice to on order fulfilment.</comment>
+                    <label>Show Project field</label>
+                    <comment>Optional field which enables the buyer to register the project the purchase is connected to. The information is eventually displayed on the invoice.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/{{code}}/enable_invoice_emails</config_path>
+                    <config_path>payment/{{code}}/enable_project</config_path>
+                </field>
+                <field id="enable_department" translate="label" type="select" sortOrder="40"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Show Department field</label>
+                    <comment>Optional field which enables the buyer to register the department the purchase is connected to. The information is eventually displayed on the invoice.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/enable_department</config_path>
+                </field>
+                <field id="enable_order_note" translate="label" type="select" sortOrder="50"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Show Order note field</label>
+                    <comment>Optional field which enables the buyer to register a note to the merchant. Rendered in the shipping address area of the Luma, Amasty and Fire checkouts. The information is eventually displayed on the invoice.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/enable_order_note</config_path>
                 </field>
             </group>
             <group id="payment_terms" translate="label" type="text" sortOrder="25"
