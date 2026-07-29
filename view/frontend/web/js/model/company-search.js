@@ -51,6 +51,31 @@ define(['jquery', 'mage/translate'], function ($, $t) {
     /** Bound on the cache so a long typing session can't grow it forever. */
     const CACHE_LIMIT = 50;
 
+    /**
+     * The in-flight request per bind token.
+     *
+     * Needed because select2 does NOT abort when the buyer drops below
+     * `minimumInputLength`: its decorator's `query()` returns after firing
+     * `results:message` WITHOUT delegating to the ajax adapter, and
+     * `_request.abort()` lives inside that adapter. So the request stays on
+     * the wire; 30s later it resolves and repaints results — or the
+     * "unavailable" notice — for a term the buyer already abandoned.
+     *
+     * A WeakMap so a discarded bind token takes its entry with it.
+     */
+    const activeRequests = new WeakMap();
+
+    /**
+     * Mirrors the `minimumInputLength: 3` both call sites pass to select2.
+     * Below it select2's decorator short-circuits `query()` and never reaches
+     * the data adapter, so no transport runs — which the chrome has to know
+     * about, or nothing ever takes the spinner down.
+     */
+    const MIN_INPUT_LENGTH = 3;
+
+    /** jQuery event namespace for everything this module binds. */
+    const EVENT_NS = '.twoCompanySearch';
+
     const SPINNER_CLASS = 'two-company-search__spinner';
     const UNAVAILABLE_CLASS = 'two-company-search__unavailable';
 
@@ -88,7 +113,23 @@ define(['jquery', 'mage/translate'], function ($, $t) {
     return {
         REQUEST_TIMEOUT_MS: REQUEST_TIMEOUT_MS,
         SEARCH_DEBOUNCE_MS: SEARCH_DEBOUNCE_MS,
+        MIN_INPUT_LENGTH: MIN_INPUT_LENGTH,
+        EVENT_NS: EVENT_NS,
         isDegradedResponse: isDegradedResponse,
+
+        /**
+         * Cancel the in-flight search for a bind, if any.
+         *
+         * @param {object} token identity stamped by markSearchBinding()
+         * @returns {boolean} true when a request was actually aborted
+         */
+        abortActiveRequest: function (token) {
+            const handle = token && typeof token === 'object' ? activeRequests.get(token) : null;
+            if (!handle) return false;
+            activeRequests.delete(token);
+            handle.abort();
+            return true;
+        },
 
         /** Drop every cached search result. Exists for tests. */
         clearResultCache: function () {
@@ -116,6 +157,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             const getCountryCode = options.getCountryCode;
             const onSearching = options.onSearching || function () {};
             const onUnavailable = options.onUnavailable || function () {};
+            const token = options.token;
 
             return {
                 dataType: 'json',
@@ -154,6 +196,13 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                         let aborted = false;
                         const timer = setTimeout(function () {
                             if (aborted) return;
+                            // The spinner survives an abort (see below), so a
+                            // cache hit that follows one has to be what takes
+                            // it down. Otherwise: type `abc`, type `abcd`
+                            // (spinner up), backspace to `abc` — the abort
+                            // keeps the spinner, the cache answers, and the
+                            // dots spin forever over a full dropdown.
+                            onSearching(false);
                             success(cached);
                         }, 0);
                         return {
@@ -167,6 +216,34 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                     onSearching(true);
                     const request = $.ajax(params);
                     let wasAborted = false;
+
+                    /**
+                     * Our own request handle, deliberately NOT the jqXHR.
+                     *
+                     * select2's ajax adapter builds its failure closure as
+                     * `function () { 'status' in e && (0 === e.status || '0'
+                     * === e.status) || trigger('results:message', {message:
+                     * 'errorLoading'}) }` where `e` is the value the
+                     * TRANSPORT RETURNED — not the jqXHR it was handed. And
+                     * jQuery reports BOTH a user abort and a timeout as
+                     * `status === 0`, so returning the raw jqXHR makes the two
+                     * indistinguishable: select2 silently swallows a timeout,
+                     * never fires `results:message`, never reaches
+                     * `hideLoading()`, and leaves "Searching…" in the dropdown
+                     * forever — directly under our notice saying the search
+                     * failed.
+                     *
+                     * Owning the handle lets us set `status = 0` for a real
+                     * abort only. A genuine failure leaves `status` absent, so
+                     * select2 renders `errorLoading` — and `displayMessage()`
+                     * calls `hideLoading()`, which is the terminal state we
+                     * actually want.
+                     */
+                    const handle = {
+                        abort: function () {
+                            request.abort();
+                        }
+                    };
 
                     request.done(function (response) {
                         cacheSet(params.url, response);
@@ -184,22 +261,29 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                         // as "my company isn't accepted here".
                         if (textStatus === 'abort') {
                             wasAborted = true;
-                            failure(jqXHR, textStatus);
+                            handle.status = 0;
+                            failure();
                             return;
                         }
                         onUnavailable(true);
-                        // Deliberately select2's SUCCESS path with an empty
-                        // result set, not its failure path. jQuery reports a
-                        // timeout as status 0, and select2's own failure
-                        // handler treats status 0 as an abort: it never fires
-                        // `results:message`, so `hideLoading()` is never
-                        // reached and the dropdown is left showing
-                        // "Searching…" forever — under the very notice that
-                        // says the search failed. Feeding it an empty result
-                        // set gives select2 a terminal state to render.
-                        success({ items: [] });
+                        failure();
                     });
+                    // Guarded: WeakMap.set throws on a non-object key, and a
+                    // crash here would take the whole picker down. Degrades to
+                    // "no cancel-on-short-input" and says so, rather than
+                    // failing the buyer's search. Checks the TYPE, not just
+                    // truthiness — a string token is truthy and still throws.
+                    if (token && typeof token === 'object') {
+                        activeRequests.set(token, handle);
+                    } else {
+                        console.error(
+                            'companySearch: buildSearchAjaxOptions called without a bind token'
+                        );
+                    }
                     request.always(function () {
+                        if (token && activeRequests.get(token) === handle) {
+                            activeRequests.delete(token);
+                        }
                         // Not on abort: select2 aborts the in-flight request
                         // synchronously at the top of the next query(), 300ms
                         // before the replacement transport starts. Dropping
@@ -208,7 +292,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                         if (!wasAborted) onSearching(false);
                     });
 
-                    return request;
+                    return handle;
                 },
                 processResults: function (response) {
                     const items = [];
@@ -297,21 +381,79 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * the buyer is concerned, and it is where the spinner and the
          * unavailable notice belong.
          *
-         * Takes the BOUND ELEMENT, not a selector, and resolves through that
-         * element's own widget instance. This is what keeps a stale request
-         * from painting on a live widget: a search issued by a widget that
-         * has since been destroyed (select2 re-init destroys the previous
-         * instance on the same node) finds no instance on its old element
-         * and no-ops, instead of decorating whichever dropdown a
-         * document-wide selector happened to hit.
+         * Takes the BOUND ELEMENT plus the token stamped on it at bind time.
+         *
+         * The element alone is not enough. Both call sites re-init select2 on
+         * the SAME node across a re-render, so `$field.data('select2')` always
+         * resolves to the current instance — a request issued by the previous
+         * widget, still in flight for up to 30s, would paint its failure onto
+         * the live picker and its `onSearching(false)` would strip the live
+         * spinner. The token is re-stamped on every bind, so a stale closure's
+         * token no longer matches and it no-ops.
          *
          * @param {object} $field jQuery-wrapped picker input
-         * @returns {object} jQuery set — empty when the widget isn't bound
+         * @param {object} token identity stamped by markSearchBinding()
+         * @returns {object} jQuery set — empty when stale or not bound
          */
-        getSearchFieldContainer: function ($field) {
-            const instance = $field && $field.data ? $field.data('select2') : null;
+        getSearchFieldContainer: function ($field, token) {
+            if (!$field || !$field.data) return $();
+            // Fails CLOSED on a missing token. An earlier revision guarded
+            // with `if (token && ...)`, which meant any caller that forgot to
+            // pass one silently bypassed the staleness check — which is
+            // exactly how two call sites shipped with the guard inert.
+            if ($field.data('twoSearchBind') !== token) return $();
+            const instance = $field.data('select2');
             if (!instance || !instance.$dropdown) return $();
             return instance.$dropdown.find('.select2-search--dropdown');
+        },
+
+        /**
+         * Stamp a bind identity on the picker and wire the chrome resets that
+         * select2 gives us no other hook for. Call once, immediately after
+         * `.select2({...})`.
+         *
+         * @param {object} $field jQuery-wrapped picker input
+         * @param {object} token identity for this bind
+         */
+        markSearchBinding: function ($field, token) {
+            const self = this;
+            $field.data('twoSearchBind', token);
+
+            const instance = $field.data('select2');
+            if (!instance || !instance.$dropdown) return;
+
+            // Below `minimumInputLength` select2's decorator returns after
+            // firing `results:message` WITHOUT delegating to the ajax adapter,
+            // and `_request.abort()` lives inside that adapter. So dropping
+            // from three characters to two neither runs a new transport nor
+            // cancels the running one: nothing clears the spinner, and 30s
+            // later the abandoned request repaints results or the
+            // "unavailable" notice under "Please enter 3 or more characters".
+            // Cancel it ourselves, then clear the chrome.
+            instance.$dropdown
+                .find('.select2-search__field')
+                .off('input' + EVENT_NS)
+                .on('input' + EVENT_NS, function () {
+                    if (this.value.length >= MIN_INPUT_LENGTH) return;
+                    // Two things to cancel, not one. Besides a request already
+                    // on the wire, select2's ajax adapter may be sitting on a
+                    // DEBOUNCED one (`_queryTimeout`, our 300ms `delay`) that
+                    // it has not fired yet — and because the
+                    // minimumInputLength decorator short-circuits `query()`
+                    // before reaching that adapter, it never clears the timer
+                    // either. Backspacing from 4 characters to 2 inside 300ms
+                    // (trivial on key-repeat) would otherwise fire a fresh
+                    // search for the abandoned term, bringing the spinner back
+                    // up under "Please enter 3 or more characters".
+                    const instance = $field.data('select2');
+                    const dataAdapter = instance && instance.dataAdapter;
+                    if (dataAdapter && dataAdapter._queryTimeout) {
+                        clearTimeout(dataAdapter._queryTimeout);
+                        dataAdapter._queryTimeout = null;
+                    }
+                    self.abortActiveRequest(token);
+                    self.clearSearchChrome($field, token);
+                });
         },
 
         /**
@@ -325,10 +467,11 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * and it survives until three or more characters are retyped.
          *
          * @param {object} $field jQuery-wrapped picker input
+         * @param {object} token identity stamped by markSearchBinding()
          */
-        clearSearchChrome: function ($field) {
-            this.setSearching($field, false);
-            this.setUnavailable($field, false);
+        clearSearchChrome: function ($field, token) {
+            this.setSearching($field, false, token);
+            this.setUnavailable($field, false, token);
         },
 
         /**
@@ -340,9 +483,10 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          *
          * @param {object} $field jQuery-wrapped picker input
          * @param {boolean} isSearching
+         * @param {object} token identity stamped by markSearchBinding()
          */
-        setSearching: function ($field, isSearching) {
-            const $container = this.getSearchFieldContainer($field);
+        setSearching: function ($field, isSearching, token) {
+            const $container = this.getSearchFieldContainer($field, token);
             if (!$container.length) return;
 
             if (!isSearching) {
@@ -367,9 +511,10 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          *
          * @param {object} $field jQuery-wrapped picker input
          * @param {boolean} isUnavailable
+         * @param {object} token identity stamped by markSearchBinding()
          */
-        setUnavailable: function ($field, isUnavailable) {
-            const $container = this.getSearchFieldContainer($field);
+        setUnavailable: function ($field, isUnavailable, token) {
+            const $container = this.getSearchFieldContainer($field, token);
             if (!$container.length) return;
 
             if (!isUnavailable) {

@@ -96,6 +96,14 @@ define([
                     // alive and skip the placeholder / manual-entry
                     // housekeeping below.
                     const $companyNameField = $(companyNameField);
+                    // Identity for this bind, so a previous widget's late
+                    // response cannot paint chrome on its replacement.
+                    const bindToken = {};
+                    // select2's destroy() only clears its own `.select2`
+                    // namespace, so our handlers would stack one copy per
+                    // re-render and a single pick would fire N address
+                    // lookups. Clear ours before re-binding.
+                    $companyNameField.off(companySearch.EVENT_NS);
                     $companyNameField
                         .select2({
                             minimumInputLength: 3,
@@ -111,6 +119,7 @@ define([
                             },
                             ajax: companySearch.buildSearchAjaxOptions({
                                 config: config,
+                                token: bindToken,
                                 getCountryCode: function () {
                                     return $(self.countrySelector).val();
                                 },
@@ -118,18 +127,26 @@ define([
                                 // a destroyed widget's late response cannot
                                 // paint onto the live picker.
                                 onSearching: function (isSearching) {
-                                    companySearch.setSearching($companyNameField, isSearching);
+                                    companySearch.setSearching(
+                                        $companyNameField,
+                                        isSearching,
+                                        bindToken
+                                    );
                                 },
                                 onUnavailable: function (isUnavailable) {
-                                    companySearch.setUnavailable($companyNameField, isUnavailable);
+                                    companySearch.setUnavailable(
+                                        $companyNameField,
+                                        isUnavailable,
+                                        bindToken
+                                    );
                                 }
                             })
                         })
-                        .on('select2:open', function () {
+                        .on('select2:open' + companySearch.EVENT_NS, function () {
                             // Nothing else removes what we appended into the
                             // search box, so a reopened picker would show the
                             // previous search's "unavailable" notice.
-                            companySearch.clearSearchChrome($companyNameField);
+                            companySearch.clearSearchChrome($companyNameField, bindToken);
                             if ($(self.enterDetailsManuallyButton).length == 0) {
                                 $('.select2-results')
                                     .parent()
@@ -138,17 +155,26 @@ define([
                                             `<span>${self.enterDetailsManuallyText}</span>` +
                                             '</div>'
                                     );
-                                $(self.enterDetailsManuallyButton).on('click', function (e) {
+                            }
+                            // Re-bound unconditionally, OUTSIDE the append
+                            // guard: the div survives a re-render, so the
+                            // guard was false and this handler kept closing
+                            // over the first, stale component.
+                            $(self.enterDetailsManuallyButton)
+                                .off('click' + companySearch.EVENT_NS)
+                                .on('click' + companySearch.EVENT_NS, function () {
                                     self.setCompanyData();
-                                    $(self.companyNameSelector).select2('destroy');
-                                    $(self.companyNameSelector).attr('type', 'text');
-                                    $(self.companyNameSelector).val('');
+                                    // Scoped to the node this bind owns, not
+                                    // the document-wide selector.
+                                    $companyNameField.off(companySearch.EVENT_NS);
+                                    $companyNameField.select2('destroy');
+                                    $companyNameField.attr('type', 'text');
+                                    $companyNameField.val('');
                                     $(self.searchForCompanyButton).show();
                                 });
-                            }
                             document.querySelector('.select2-search__field').focus();
                         })
-                        .on('select2:select', function (e) {
+                        .on('select2:select' + companySearch.EVENT_NS, function (e) {
                             const selectedItem = e.params.data;
                             $('.select2-selection__rendered').text(selectedItem.id);
                             self.setCompanyData(selectedItem.companyId, selectedItem.text);
@@ -158,6 +184,7 @@ define([
                             // payment-step picker.
                             self.addressLookup(selectedItem);
                         });
+                    companySearch.markSearchBinding($companyNameField, bindToken);
                     // Set initial placeholder text for the company search
                     if (!$(self.companyNameSelector).val()) {
                         $(self.companyNameSelector)
@@ -177,11 +204,16 @@ define([
                                     `<span>${self.searchForCompanyText}</span>` +
                                     '</div>'
                             );
-                        $(self.searchForCompanyButton).on('click', function (e) {
+                    }
+                    // Re-bound unconditionally: the div survives a re-render,
+                    // so the append guard above was false and this handler kept
+                    // closing over the first, stale component.
+                    $(self.searchForCompanyButton)
+                        .off('click' + companySearch.EVENT_NS)
+                        .on('click' + companySearch.EVENT_NS, function () {
                             self.enableCompanySearch();
                             $(self.searchForCompanyButton).hide();
                         });
-                    }
                     $(self.searchForCompanyButton).hide();
                 });
             });
