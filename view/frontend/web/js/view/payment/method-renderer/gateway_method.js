@@ -896,6 +896,7 @@ define([
                             },
                             ajax: companySearch.buildSearchAjaxOptions({
                                 config: self._brandConfig,
+                                token: bindToken,
                                 getCountryCode: function () {
                                     return self.countryCode();
                                 },
@@ -906,10 +907,18 @@ define([
                                 // painting a stale failure onto whatever
                                 // picker is live now.
                                 onSearching: function (isSearching) {
-                                    companySearch.setSearching($companyNameField, isSearching);
+                                    companySearch.setSearching(
+                                        $companyNameField,
+                                        isSearching,
+                                        bindToken
+                                    );
                                 },
                                 onUnavailable: function (isUnavailable) {
-                                    companySearch.setUnavailable($companyNameField, isUnavailable);
+                                    companySearch.setUnavailable(
+                                        $companyNameField,
+                                        isUnavailable,
+                                        bindToken
+                                    );
                                 }
                             })
                         })
@@ -928,11 +937,19 @@ define([
                                             `<span>${self.enterDetailsManuallyText}</span>` +
                                             '</div>'
                                     );
-                                $(self.enterDetailsManuallyButton).on('click', function (e) {
+                            }
+                            // Re-bound unconditionally, OUTSIDE the append
+                            // guard: the div survives a re-render, so the
+                            // guard was false and this handler kept closing
+                            // over the FIRST, now-disposed renderer —
+                            // clearCompany() then ran against dead
+                            // observables.
+                            $(self.enterDetailsManuallyButton)
+                                .off('click' + companySearch.EVENT_NS)
+                                .on('click' + companySearch.EVENT_NS, function () {
                                     self.clearCompany();
                                     $(self.searchForCompanyButton).show();
                                 });
-                            }
                             document.querySelector('.select2-search__field').focus();
                         })
                         .on('select2:select' + companySearch.EVENT_NS, function (e) {
@@ -957,11 +974,14 @@ define([
                                     `<span>${self.searchForCompanyText}</span>` +
                                     '</div>'
                             );
-                        $(self.searchForCompanyButton).on('click', function (e) {
+                    }
+                    // Same reasoning as the manual-entry link above.
+                    $(self.searchForCompanyButton)
+                        .off('click' + companySearch.EVENT_NS)
+                        .on('click' + companySearch.EVENT_NS, function () {
                             self.enableCompanySearch();
                             $(self.searchForCompanyButton).hide();
                         });
-                    }
                     $(self.searchForCompanyButton).hide();
                 });
             });
@@ -1011,12 +1031,15 @@ define([
             $field.select2('destroy');
             $field.attr('type', 'text');
         },
+        /**
+         * Kept for its callers; delegates to the scoped teardown. The previous
+         * document-wide `$(this.companyNameSelector).select2('destroy')` had
+         * the same multi-brand hazard as dispose() did — the renderer is
+         * pushed once per Two-family brand, so it could destroy a sibling
+         * brand's live widget.
+         */
         disableCompanySearch: function () {
-            const companyNameSelector = $(this.companyNameSelector);
-            if (companyNameSelector.data('select2')) {
-                companyNameSelector.select2('destroy');
-                companyNameSelector.attr('type', 'text');
-            }
+            this.destroyCompanySearchWidget();
         },
         getTokens() {
             const URL = url.build('rest/V1/two/get-tokens');

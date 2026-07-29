@@ -119,6 +119,7 @@ define([
                             },
                             ajax: companySearch.buildSearchAjaxOptions({
                                 config: config,
+                                token: bindToken,
                                 getCountryCode: function () {
                                     return $(self.countrySelector).val();
                                 },
@@ -126,10 +127,18 @@ define([
                                 // a destroyed widget's late response cannot
                                 // paint onto the live picker.
                                 onSearching: function (isSearching) {
-                                    companySearch.setSearching($companyNameField, isSearching);
+                                    companySearch.setSearching(
+                                        $companyNameField,
+                                        isSearching,
+                                        bindToken
+                                    );
                                 },
                                 onUnavailable: function (isUnavailable) {
-                                    companySearch.setUnavailable($companyNameField, isUnavailable);
+                                    companySearch.setUnavailable(
+                                        $companyNameField,
+                                        isUnavailable,
+                                        bindToken
+                                    );
                                 }
                             })
                         })
@@ -146,14 +155,23 @@ define([
                                             `<span>${self.enterDetailsManuallyText}</span>` +
                                             '</div>'
                                     );
-                                $(self.enterDetailsManuallyButton).on('click', function (e) {
+                            }
+                            // Re-bound unconditionally, OUTSIDE the append
+                            // guard: the div survives a re-render, so the
+                            // guard was false and this handler kept closing
+                            // over the first, stale component.
+                            $(self.enterDetailsManuallyButton)
+                                .off('click' + companySearch.EVENT_NS)
+                                .on('click' + companySearch.EVENT_NS, function () {
                                     self.setCompanyData();
-                                    $(self.companyNameSelector).select2('destroy');
-                                    $(self.companyNameSelector).attr('type', 'text');
-                                    $(self.companyNameSelector).val('');
+                                    // Scoped to the node this bind owns, not
+                                    // the document-wide selector.
+                                    $companyNameField.off(companySearch.EVENT_NS);
+                                    $companyNameField.select2('destroy');
+                                    $companyNameField.attr('type', 'text');
+                                    $companyNameField.val('');
                                     $(self.searchForCompanyButton).show();
                                 });
-                            }
                             document.querySelector('.select2-search__field').focus();
                         })
                         .on('select2:select' + companySearch.EVENT_NS, function (e) {
@@ -186,11 +204,16 @@ define([
                                     `<span>${self.searchForCompanyText}</span>` +
                                     '</div>'
                             );
-                        $(self.searchForCompanyButton).on('click', function (e) {
+                    }
+                    // Re-bound unconditionally: the div survives a re-render,
+                    // so the append guard above was false and this handler kept
+                    // closing over the first, stale component.
+                    $(self.searchForCompanyButton)
+                        .off('click' + companySearch.EVENT_NS)
+                        .on('click' + companySearch.EVENT_NS, function () {
                             self.enableCompanySearch();
                             $(self.searchForCompanyButton).hide();
                         });
-                    }
                     $(self.searchForCompanyButton).hide();
                 });
             });

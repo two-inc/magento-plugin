@@ -52,6 +52,20 @@ define(['jquery', 'mage/translate'], function ($, $t) {
     const CACHE_LIMIT = 50;
 
     /**
+     * The in-flight request per bind token.
+     *
+     * Needed because select2 does NOT abort when the buyer drops below
+     * `minimumInputLength`: its decorator's `query()` returns after firing
+     * `results:message` WITHOUT delegating to the ajax adapter, and
+     * `_request.abort()` lives inside that adapter. So the request stays on
+     * the wire; 30s later it resolves and repaints results — or the
+     * "unavailable" notice — for a term the buyer already abandoned.
+     *
+     * A WeakMap so a discarded bind token takes its entry with it.
+     */
+    const activeRequests = new WeakMap();
+
+    /**
      * Mirrors the `minimumInputLength: 3` both call sites pass to select2.
      * Below it select2's decorator short-circuits `query()` and never reaches
      * the data adapter, so no transport runs — which the chrome has to know
@@ -103,6 +117,20 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         EVENT_NS: EVENT_NS,
         isDegradedResponse: isDegradedResponse,
 
+        /**
+         * Cancel the in-flight search for a bind, if any.
+         *
+         * @param {object} token identity stamped by markSearchBinding()
+         * @returns {boolean} true when a request was actually aborted
+         */
+        abortActiveRequest: function (token) {
+            const handle = activeRequests.get(token);
+            if (!handle) return false;
+            activeRequests.delete(token);
+            handle.abort();
+            return true;
+        },
+
         /** Drop every cached search result. Exists for tests. */
         clearResultCache: function () {
             resultCache.clear();
@@ -129,6 +157,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             const getCountryCode = options.getCountryCode;
             const onSearching = options.onSearching || function () {};
             const onUnavailable = options.onUnavailable || function () {};
+            const token = options.token;
 
             return {
                 dataType: 'json',
@@ -239,7 +268,11 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                         onUnavailable(true);
                         failure();
                     });
+                    activeRequests.set(token, handle);
                     request.always(function () {
+                        if (activeRequests.get(token) === handle) {
+                            activeRequests.delete(token);
+                        }
                         // Not on abort: select2 aborts the in-flight request
                         // synchronously at the top of the next query(), 300ms
                         // before the replacement transport starts. Dropping
@@ -353,7 +386,11 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          */
         getSearchFieldContainer: function ($field, token) {
             if (!$field || !$field.data) return $();
-            if (token && $field.data('twoSearchBind') !== token) return $();
+            // Fails CLOSED on a missing token. An earlier revision guarded
+            // with `if (token && ...)`, which meant any caller that forgot to
+            // pass one silently bypassed the staleness check — which is
+            // exactly how two call sites shipped with the guard inert.
+            if ($field.data('twoSearchBind') !== token) return $();
             const instance = $field.data('select2');
             if (!instance || !instance.$dropdown) return $();
             return instance.$dropdown.find('.select2-search--dropdown');
@@ -374,20 +411,21 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             const instance = $field.data('select2');
             if (!instance || !instance.$dropdown) return;
 
-            // Below `minimumInputLength` select2 short-circuits query() in its
-            // decorator and never calls the data adapter, so no transport runs
-            // and nothing clears the spinner. Type three characters, then
-            // delete one while the request is in flight: the request aborts
-            // (spinner deliberately kept), no replacement runs, and the dots
-            // spin under "Please enter 3 or more characters" until the picker
-            // is closed and reopened.
+            // Below `minimumInputLength` select2's decorator returns after
+            // firing `results:message` WITHOUT delegating to the ajax adapter,
+            // and `_request.abort()` lives inside that adapter. So dropping
+            // from three characters to two neither runs a new transport nor
+            // cancels the running one: nothing clears the spinner, and 30s
+            // later the abandoned request repaints results or the
+            // "unavailable" notice under "Please enter 3 or more characters".
+            // Cancel it ourselves, then clear the chrome.
             instance.$dropdown
                 .find('.select2-search__field')
                 .off('input' + EVENT_NS)
                 .on('input' + EVENT_NS, function () {
-                    if (this.value.length < MIN_INPUT_LENGTH) {
-                        self.clearSearchChrome($field, token);
-                    }
+                    if (this.value.length >= MIN_INPUT_LENGTH) return;
+                    self.abortActiveRequest(token);
+                    self.clearSearchChrome($field, token);
                 });
         },
 

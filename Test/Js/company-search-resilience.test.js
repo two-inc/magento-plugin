@@ -209,6 +209,10 @@ function makeQueryDouble() {
         return node;
     }
 
+    function asyncKey(selector) {
+        return selector + '::matched';
+    }
+
     function $(target) {
         if (target && target.__fake) return target;
         if (target === undefined) {
@@ -226,9 +230,17 @@ function makeQueryDouble() {
         return nodes[key];
     }
 
+    // `$.async` hands the callback the matched ELEMENT. Modelled as a node
+    // distinct from `$(selector)` on purpose: that is what makes a
+    // document-wide `$(companyNameSelector).select2('destroy')` provably miss
+    // the widget the component actually bound (the multi-brand hazard), rather
+    // than accidentally hitting the same memoised node.
     $.async = function (selector, fn) {
         recorder.asyncCallbacks.push(fn);
-        fn(selector);
+        fn(asyncKey(selector));
+    };
+    $.asyncNode = function (selector) {
+        return $(asyncKey(selector));
     };
     $.ajax = function (opts) {
         recorder.ajax.push(opts);
@@ -247,6 +259,11 @@ function makeQueryDouble() {
                 return jqxhr;
             },
             aborted: false,
+            // jQuery sets status 0 for BOTH a timeout and an abort. Present
+            // here on purpose: it is what makes `'status' in handle` a real
+            // assertion rather than a tautology, since returning this jqXHR
+            // straight through would satisfy select2's cancellation check.
+            status: 0,
             abort: function () {
                 jqxhr.aborted = true;
             },
@@ -322,9 +339,10 @@ function makeHooks() {
     };
 }
 
-function buildOptions(companySearch, hooks) {
+function buildOptions(companySearch, hooks, token) {
     return companySearch.buildSearchAjaxOptions({
         config: BASE_CONFIG,
+        token: token || {},
         getCountryCode: function () {
             return 'gb';
         },
@@ -827,6 +845,59 @@ describe('in-field chrome', () => {
         expect(searchBoxOf(recorder).children).toHaveLength(0);
     });
 
+    test('dropping below the minimum input length CANCELS the request', () => {
+        const { $, recorder } = makeQueryDouble();
+        const companySearch = loadCompanySearch($);
+        const $field = $(SEARCH_FIELD);
+        const token = {};
+
+        $field.select2({});
+        companySearch.markSearchBinding($field, token);
+
+        companySearch
+            .buildSearchAjaxOptions({
+                config: BASE_CONFIG,
+                token: token,
+                getCountryCode: function () {
+                    return 'gb';
+                }
+            })
+            .transport({ url: 'https://api.example.test/c?q=exa' }, jest.fn(), jest.fn());
+
+        // select2's minimumInputLength decorator returns BEFORE delegating to
+        // the ajax adapter, and `_request.abort()` lives inside that adapter —
+        // so select2 never cancels here. Left running, the request resolves
+        // 30s later and repaints results for an abandoned term.
+        const searchField = recorder.searchFields[recorder.searchFields.length - 1];
+        searchField.value = 'ex';
+        searchField.__handlers['input' + companySearch.EVENT_NS].call(searchField);
+
+        expect(recorder.requests[0].aborted).toBe(true);
+    });
+
+    test('abortActiveRequest reports whether there was anything to cancel', () => {
+        const { $, recorder } = makeQueryDouble();
+        const companySearch = loadCompanySearch($);
+        const token = {};
+
+        expect(companySearch.abortActiveRequest(token)).toBe(false);
+
+        companySearch
+            .buildSearchAjaxOptions({
+                config: BASE_CONFIG,
+                token: token,
+                getCountryCode: function () {
+                    return 'gb';
+                }
+            })
+            .transport({ url: 'https://api.example.test/c?q=exa' }, jest.fn(), jest.fn());
+
+        expect(companySearch.abortActiveRequest(token)).toBe(true);
+        expect(recorder.requests[0].aborted).toBe(true);
+        // Deregistered, so a second call is a no-op rather than a double abort.
+        expect(companySearch.abortActiveRequest(token)).toBe(false);
+    });
+
     test('chrome is a no-op before select2 binds', () => {
         const { $ } = makeQueryDouble();
         const companySearch = loadCompanySearch($);
@@ -897,14 +968,14 @@ describe('re-render safety of the select2 binding', () => {
         const ctx = loadRenderer($);
 
         ctx.enableCompanySearch();
-        expect($(SEARCH_FIELD).data('select2')).toBeDefined();
+        expect($.asyncNode(SEARCH_FIELD).data('select2')).toBeDefined();
 
         ctx.dispose();
 
         // Without this, a re-render that REUSES the input node leaves the old
         // widget bound with handlers closed over the disposed renderer.
         expect(recorder.destroyCalls).toBe(1);
-        expect($(SEARCH_FIELD).data('select2')).toBeUndefined();
+        expect($.asyncNode(SEARCH_FIELD).data('select2')).toBeUndefined();
     });
 
     /**
@@ -919,14 +990,17 @@ describe('re-render safety of the select2 binding', () => {
         const ctx = loadRenderer($);
 
         ctx.enableCompanySearch();
-        // A sibling renderer's widget, bound to a different node.
-        const $sibling = $('input#company_name_sibling');
+        // Another node that the component's own selector ALSO matches — the
+        // duplicate `#company_name` a second Two-family brand renders. A
+        // document-wide destroy would take this one out.
+        const $sibling = $(SEARCH_FIELD);
         $sibling.select2({});
 
         ctx.dispose();
 
         expect(recorder.destroyCalls).toBe(1);
         expect($sibling.data('select2')).toBeDefined();
+        expect($.asyncNode(SEARCH_FIELD).data('select2')).toBeUndefined();
     });
 
     test('dispose is safe when no widget was ever bound', () => {
@@ -948,7 +1022,7 @@ describe('re-render safety of the select2 binding', () => {
     test('re-render does not stack duplicate select2 handlers', () => {
         const { $ } = makeQueryDouble();
         const ctx = loadRenderer($);
-        const $field = $(SEARCH_FIELD);
+        const $field = $.asyncNode(SEARCH_FIELD);
 
         ctx.enableCompanySearch();
         expect($field.handlersFor('select2:select')).toHaveLength(1);
@@ -960,10 +1034,52 @@ describe('re-render safety of the select2 binding', () => {
         expect($field.handlersFor('select2:open')).toHaveLength(1);
     });
 
+    /**
+     * Covers the CALL SITES, not the model. An earlier revision threaded the
+     * bind token only into `clearSearchChrome` — which runs on `select2:open`
+     * and is by definition the live widget — while the two hooks that can
+     * actually paint from a stale widget passed none. Because the guard then
+     * failed open on a missing token, every model-level token test still
+     * passed and the bug shipped. This drives the real hooks.
+     */
+    test('a stale widget\'s hooks cannot paint after a re-render', () => {
+        const { $, recorder } = makeQueryDouble();
+        const ctx = loadRenderer($);
+
+        ctx.enableCompanySearch();
+        const staleOptions = recorder.select2Calls[0].ajax;
+
+        // Re-render: same node, fresh widget, fresh box.
+        ctx.enableCompanySearch();
+        const liveBox = recorder.searchBoxes[recorder.searchBoxes.length - 1];
+
+        // The stale widget's request finally times out.
+        staleOptions.transport({ url: 'https://api.example.test/x?q=exa' }, jest.fn(), jest.fn());
+        recorder.requests[recorder.requests.length - 1].settleFail('timeout');
+
+        expect(liveBox.children).toHaveLength(0);
+    });
+
+    test('the live widget\'s hooks DO paint', () => {
+        const { $, recorder } = makeQueryDouble();
+        const ctx = loadRenderer($);
+
+        ctx.enableCompanySearch();
+        const liveOptions = recorder.select2Calls[0].ajax;
+        const liveBox = recorder.searchBoxes[recorder.searchBoxes.length - 1];
+
+        liveOptions.transport({ url: 'https://api.example.test/x?q=exa' }, jest.fn(), jest.fn());
+        recorder.requests[recorder.requests.length - 1].settleFail('timeout');
+
+        // Guards against "fails closed" degenerating into "never works".
+        expect(liveBox.children).toHaveLength(1);
+        expect(liveBox.children[0]).toContain('two-company-search__unavailable');
+    });
+
     test('shipping-step picker does not stack handlers either', () => {
         const { $ } = makeQueryDouble();
         const ctx = loadShippingComponent($);
-        const $field = $(SEARCH_FIELD);
+        const $field = $.asyncNode(SEARCH_FIELD);
 
         ctx.enableCompanySearch();
         ctx.enableCompanySearch();
