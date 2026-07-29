@@ -186,7 +186,12 @@
 
                     THE sortOrder VALUES IN THIS FILE ARE WHAT ORDER THE ADMIN
                     PANE. Not system.xml's — renumbering that file alone moves
-                    nothing. Two_Gateway's SynthesiseBrandAdminForm is an
+                    nothing. (The exception is when synthesis is skipped
+                    entirely: if this template cannot be read, no brands load,
+                    or a brand fails to render, the plugin returns Magento's
+                    result untouched and system.xml's own order is what shows.
+                    See the error paths in SynthesiseBrandAdminForm. Keeping
+                    the two files identical, as below, makes that moot.) Two_Gateway's SynthesiseBrandAdminForm is an
                     `afterRead` plugin on Magento's config Structure\Reader: it
                     builds this section from this template (running it through
                     Magento's own Converter, whose Sorting mapper orders the

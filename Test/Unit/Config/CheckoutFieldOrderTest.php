@@ -133,8 +133,9 @@ class CheckoutFieldOrderTest extends TestCase
             self::CANONICAL_ADMIN_ORDER,
             $documentOrder,
             'the document order in ' . $relativePath . ' is not the canonical '
-            . 'order; for this section that is what the admin pane renders, so '
-            . 'renumbering sortOrder alone will not move anything'
+            . 'order; it is pinned for readability and to stop the two axes '
+            . 'drifting apart. brand_form_template.xml\'s sortOrder is what '
+            . 'actually orders the admin pane'
         );
     }
 
