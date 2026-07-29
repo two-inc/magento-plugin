@@ -76,9 +76,16 @@ define([
         // lookup would hand brand A's link to brand B. Use
         // searchForCompanyLink() instead.
         searchForCompanyLink: function () {
-            const $field = this._$companyNameField;
-            if (!$field || !$field.closest) return $();
-            return $field.closest('.field').find('.search_for_company');
+            // Resolved from the cached CONTAINER, not from
+            // `_$companyNameField`: the paths where this link is visible are
+            // exactly the paths that have already destroyed the widget and
+            // nulled that node ("Enter details manually" → clearCompany() →
+            // destroyCompanySearchWidget()). Keying on the node meant
+            // enterSoleTraderUi() silently hid nothing and the link stayed up
+            // in sole-trader mode.
+            const $container = this._$companyFieldContainer;
+            if (!$container || !$container.find) return $();
+            return $container.find('.search_for_company');
         },
         delegationToken: '',
         autofillToken: '',
@@ -879,6 +886,9 @@ define([
                     // THIS widget rather than whatever a document-wide
                     // selector happens to match.
                     self._$companyNameField = $companyNameField;
+                    // Survives the widget teardown on purpose — see
+                    // searchForCompanyLink().
+                    self._$companyFieldContainer = $companyNameField.closest('.field');
                     // Identity for this bind. Re-stamped below, so a previous
                     // widget's still-in-flight response can't paint chrome on
                     // the widget that replaced it.
@@ -1047,6 +1057,9 @@ define([
          */
         destroyCompanySearchWidget: function () {
             const $field = this._$companyNameField;
+            // `_$companyFieldContainer` is deliberately NOT cleared here: the
+            // re-enable link lives in that container and has to stay
+            // resolvable after the widget is gone.
             this._$companyNameField = null;
             if (!$field || !$field.data || !$field.data('select2')) return;
             $field.off(companySearch.EVENT_NS);

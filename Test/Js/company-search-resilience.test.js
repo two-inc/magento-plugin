@@ -1032,6 +1032,25 @@ describe('re-render safety of the select2 binding', () => {
         expect($.asyncNode(SEARCH_FIELD).data('select2')).toBeUndefined();
     });
 
+    /**
+     * The re-enable link is only visible on paths that have already destroyed
+     * the widget (manual entry → clearCompany → destroy), so resolving it from
+     * `_$companyNameField` found nothing and left the link up in sole-trader
+     * mode. It must resolve from the cached container instead.
+     */
+    test('the re-enable link stays resolvable after the widget is destroyed', () => {
+        const { $ } = makeQueryDouble();
+        const ctx = loadRenderer($);
+
+        ctx.enableCompanySearch();
+        expect(ctx.searchForCompanyLink().length).toBe(1);
+
+        ctx.destroyCompanySearchWidget();
+
+        expect(ctx._$companyNameField).toBeNull();
+        expect(ctx.searchForCompanyLink().length).toBe(1);
+    });
+
     test('dispose is safe when no widget was ever bound', () => {
         const { $ } = makeQueryDouble();
         const ctx = loadRenderer($);
