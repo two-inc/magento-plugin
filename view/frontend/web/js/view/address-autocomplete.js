@@ -96,6 +96,14 @@ define([
                     // alive and skip the placeholder / manual-entry
                     // housekeeping below.
                     const $companyNameField = $(companyNameField);
+                    // Identity for this bind, so a previous widget's late
+                    // response cannot paint chrome on its replacement.
+                    const bindToken = {};
+                    // select2's destroy() only clears its own `.select2`
+                    // namespace, so our handlers would stack one copy per
+                    // re-render and a single pick would fire N address
+                    // lookups. Clear ours before re-binding.
+                    $companyNameField.off(companySearch.EVENT_NS);
                     $companyNameField
                         .select2({
                             minimumInputLength: 3,
@@ -125,11 +133,11 @@ define([
                                 }
                             })
                         })
-                        .on('select2:open', function () {
+                        .on('select2:open' + companySearch.EVENT_NS, function () {
                             // Nothing else removes what we appended into the
                             // search box, so a reopened picker would show the
                             // previous search's "unavailable" notice.
-                            companySearch.clearSearchChrome($companyNameField);
+                            companySearch.clearSearchChrome($companyNameField, bindToken);
                             if ($(self.enterDetailsManuallyButton).length == 0) {
                                 $('.select2-results')
                                     .parent()
@@ -148,7 +156,7 @@ define([
                             }
                             document.querySelector('.select2-search__field').focus();
                         })
-                        .on('select2:select', function (e) {
+                        .on('select2:select' + companySearch.EVENT_NS, function (e) {
                             const selectedItem = e.params.data;
                             $('.select2-selection__rendered').text(selectedItem.id);
                             self.setCompanyData(selectedItem.companyId, selectedItem.text);
@@ -158,6 +166,7 @@ define([
                             // payment-step picker.
                             self.addressLookup(selectedItem);
                         });
+                    companySearch.markSearchBinding($companyNameField, bindToken);
                     // Set initial placeholder text for the company search
                     if (!$(self.companyNameSelector).val()) {
                         $(self.companyNameSelector)

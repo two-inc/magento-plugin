@@ -34,7 +34,14 @@ function makeSpyJQuery(recorder) {
             prop: function () { return obj; },
             text: function () { return obj; },
             attr: function () { return obj; },
-            data: function () { return undefined; },
+            off: function () { return obj; },
+            data: function (key, value) {
+                if (arguments.length > 1) {
+                    recorder.data[key] = value;
+                    return obj;
+                }
+                return recorder.data[key];
+            },
             closest: function () { return obj; },
             find: function () { return obj; },
             append: function () { return obj; },
@@ -47,7 +54,10 @@ function makeSpyJQuery(recorder) {
                 return obj;
             },
             on: function (evt, handler) {
-                recorder.handlers[evt] = handler;
+                // The module namespaces its bindings ('select2:select.twoCompanySearch')
+                // so it can clear only its own handlers on re-init; key on the
+                // bare event name.
+                recorder.handlers[evt.split('.')[0]] = handler;
                 return obj;
             }
         };
@@ -86,6 +96,7 @@ function makeRecorder() {
         written: [],
         triggered: [],
         values: {},
+        data: {},
         handlers: {},
         select2Options: null
     };

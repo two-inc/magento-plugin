@@ -235,7 +235,14 @@ define([
             // closed over this now-disposed renderer — picking a company
             // would then write to dead observables and the order would go out
             // with no company on it.
-            this.disableCompanySearch();
+            //
+            // Scoped to the node THIS component bound, not to
+            // `companyNameSelector`: the renderer is pushed once per
+            // Two-family brand, so a checkout offering two of them has two
+            // `#company_name` inputs and the document-wide destroy in
+            // disableCompanySearch() would tear down the sibling's live
+            // widget and leave it a plain text input.
+            this.destroyCompanySearchWidget();
             if (this._twoVisibilitySub) {
                 this._twoVisibilitySub.dispose();
                 this._twoVisibilitySub = null;
@@ -859,6 +866,21 @@ define([
                     // would write to dead observables. What re-render safety
                     // needs instead is the teardown in dispose() below.
                     const $companyNameField = $(companyNameField);
+                    // Remember the node we bound, so dispose() can destroy
+                    // THIS widget rather than whatever a document-wide
+                    // selector happens to match.
+                    self._$companyNameField = $companyNameField;
+                    // Identity for this bind. Re-stamped below, so a previous
+                    // widget's still-in-flight response can't paint chrome on
+                    // the widget that replaced it.
+                    const bindToken = {};
+                    // select2's destroy() only does `$element.off('.select2')`
+                    // — our own handlers are not in that namespace and would
+                    // survive every re-init, stacking one more copy per
+                    // re-render. N stacked `select2:select` handlers means one
+                    // company pick fires N address lookups, N-1 of them closed
+                    // over disposed renderers. Clear ours first.
+                    $companyNameField.off(companySearch.EVENT_NS);
                     $companyNameField
                         .select2({
                             minimumInputLength: 3,
@@ -891,13 +913,13 @@ define([
                                 }
                             })
                         })
-                        .on('select2:open', function () {
+                        .on('select2:open' + companySearch.EVENT_NS, function () {
                             // select2 only detaches the dropdown on close and
                             // only blanks the search input, so anything we
                             // appended into the search box survives. Clear it
                             // here or a reopened picker still shows the last
                             // search's "unavailable" notice.
-                            companySearch.clearSearchChrome($companyNameField);
+                            companySearch.clearSearchChrome($companyNameField, bindToken);
                             if ($(self.enterDetailsManuallyButton).length == 0) {
                                 $('.select2-results')
                                     .parent()
@@ -913,7 +935,7 @@ define([
                             }
                             document.querySelector('.select2-search__field').focus();
                         })
-                        .on('select2:select', function (e) {
+                        .on('select2:select' + companySearch.EVENT_NS, function (e) {
                             const selectedItem = e.params.data;
                             const companyId = selectedItem.companyId;
                             const companyName = selectedItem.text;
@@ -925,6 +947,7 @@ define([
                             // picker uses.
                             self.addressLookup(selectedItem);
                         });
+                    companySearch.markSearchBinding($companyNameField, bindToken);
                     $('#select2-company_name-container').text(self.companyName());
                     if ($(self.searchForCompanyButton).length == 0) {
                         $(self.companyNameSelector)
@@ -976,6 +999,17 @@ define([
             companyIdSelector.prop('disabled', disableCompanyId);
             $(this.companyNameSelector).val('');
             this.disableCompanySearch();
+        },
+        /**
+         * Destroy only the widget this component bound. Safe to call twice.
+         */
+        destroyCompanySearchWidget: function () {
+            const $field = this._$companyNameField;
+            this._$companyNameField = null;
+            if (!$field || !$field.data || !$field.data('select2')) return;
+            $field.off(companySearch.EVENT_NS);
+            $field.select2('destroy');
+            $field.attr('type', 'text');
         },
         disableCompanySearch: function () {
             const companyNameSelector = $(this.companyNameSelector);

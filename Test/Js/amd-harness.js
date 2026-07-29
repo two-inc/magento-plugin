@@ -119,7 +119,11 @@ function defaultMocks() {
             applyAddress: function () {},
             isDegradedResponse: function () { return false; },
             clearResultCache: function () {},
+            EVENT_NS: '.twoCompanySearch',
+            MIN_INPUT_LENGTH: 3,
             getSearchFieldContainer: function () { return null; },
+            markSearchBinding: function () {},
+            clearSearchChrome: function () {},
             setSearching: function () {},
             setUnavailable: function () {}
         },
