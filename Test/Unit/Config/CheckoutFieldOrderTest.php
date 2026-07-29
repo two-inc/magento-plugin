@@ -106,14 +106,34 @@ class CheckoutFieldOrderTest extends TestCase
             $bySortOrder[$sortOrder] = (string)$field['id'];
         }
 
-        // Sort the way Magento's config Structure does before rendering.
+        // Sort the way Magento's Sorting mapper does.
         ksort($bySortOrder, SORT_NUMERIC);
 
         self::assertSame(
             self::CANONICAL_ADMIN_ORDER,
             array_values($bySortOrder),
-            'the rendered admin order in ' . $relativePath . ' is not the canonical '
+            'the sortOrder sequence in ' . $relativePath . ' is not the canonical '
             . 'invoice email, purchase order number, project, department, order note'
+        );
+
+        // DOCUMENT order matters independently of sortOrder. Two_Gateway's
+        // SynthesiseBrandAdminForm is an afterRead plugin on the config
+        // Structure\Reader, so it re-imposes brand_form_template.xml's field
+        // order AFTER Magento has sorted — meaning document order, not
+        // sortOrder, is what the pane actually renders for this section.
+        // Asserting both in both files is what stops the two from diverging
+        // and makes the sortOrder edit meaningful rather than decorative.
+        $documentOrder = [];
+        foreach ($fields as $field) {
+            $documentOrder[] = (string)$field['id'];
+        }
+
+        self::assertSame(
+            self::CANONICAL_ADMIN_ORDER,
+            $documentOrder,
+            'the document order in ' . $relativePath . ' is not the canonical '
+            . 'order; for this section that is what the admin pane renders, so '
+            . 'renumbering sortOrder alone will not move anything'
         );
     }
 
@@ -127,11 +147,14 @@ class CheckoutFieldOrderTest extends TestCase
 
         $positions = [];
         foreach (self::CANONICAL_CHECKOUT_ORDER as $id) {
-            $offset = strpos($markup, 'id="' . $id . '"');
-            self::assertNotFalse(
-                $offset,
-                sprintf('no input with id="%s" in the checkout tile template', $id)
+            // Match the id only where it sits inside an <input> tag, so an
+            // id mentioned in a comment or in prose cannot satisfy this.
+            self::assertSame(
+                1,
+                preg_match('/<input\b[^>]*\bid="' . preg_quote($id, '/') . '"/s', $markup, $m, PREG_OFFSET_CAPTURE),
+                sprintf('no <input> with id="%s" in the checkout tile template', $id)
             );
+            $offset = $m[0][1];
             $positions[$id] = $offset;
         }
 

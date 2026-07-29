@@ -116,15 +116,22 @@
                    showInStore="1">
                 <label>Checkout Fields</label>
                 <!--
-                    ORDER IS LOAD-BEARING. Magento renders a group's fields by
-                    ascending sortOrder, and this sequence is the canonical
+                    ORDER IS LOAD-BEARING. This sequence is the canonical
                     cross-plugin order shared with prestashop-plugin and
                     woocommerce-plugin: invoice email, purchase order number,
-                    project, department, and the order note LAST. Keep it in
-                    step with etc/adminhtml/brand_form_template.xml (the overlay
-                    form is synthesised from that file) and with the checkout
-                    field order in view/frontend/web/template/payment/gateway_method.html.
-                    TWO-25263.
+                    project, department, and the order note LAST. TWO-25263.
+
+                    Magento normally renders a group's fields by ascending
+                    sortOrder — but for this section it does not, and editing
+                    the numbers here alone will not move anything. Two_Gateway's
+                    SynthesiseBrandAdminForm plugin re-imposes the field order
+                    of etc/adminhtml/brand_form_template.xml after Magento has
+                    sorted; see the longer note in that file. So keep the
+                    sortOrder below and that template's document order saying
+                    the same thing, and change both together.
+
+                    Also keep this in step with the optional-field order in
+                    view/frontend/web/template/payment/gateway_method.html.
                 -->
                 <field id="enable_invoice_emails" translate="label comment" type="select" sortOrder="10" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
