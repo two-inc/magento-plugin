@@ -121,12 +121,12 @@ class TwoOrganizationNumberGuardTest extends TestCase
         $this->assertNotFalse($guardAt, 'authorize() must call the company-number guard.');
         $this->assertSame(
             1,
-            preg_match('/assertOrganizationNumberPresent\(([^)]*)\)/', $source, $call),
+            preg_match_all('/assertOrganizationNumberPresent\(([^)]*)\)/', $source, $calls),
             'authorize() must call the company-number guard exactly once, with a simple argument.'
         );
         $this->assertSame(
             '$additionalInformation',
-            $call[1],
+            $calls[1][0],
             'The guard must be handed the checkout payload authorize() composes the order'
             . ' request from, not some other value.'
         );
