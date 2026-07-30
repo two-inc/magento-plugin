@@ -99,10 +99,19 @@ describe('the payment tile offers no company-number field', () => {
         expect(renderer.companyNameSelector).toBe('input#company_name');
     });
 
-    test('clearCompany takes no disable argument any more', () => {
+    test('clearCompany carries no disable argument and touches no number field', () => {
         const { renderer } = loadRendererOnly();
 
-        expect(renderer.clearCompany).toHaveLength(0);
+        // Asserting on the function's own SOURCE, not on `.length`. A default
+        // parameter (`function (disableCompanyId = false)`) does not count
+        // toward `Function.length`, so a length assertion cannot fail if the
+        // parameter comes back in the form it had before — which is exactly the
+        // form it had. Verified by mutation: the length version survived.
+        const source = String(renderer.clearCompany);
+
+        expect(source).not.toContain('disableCompanyId');
+        expect(source).not.toContain('companyIdSelector');
+        expect(source).not.toContain('company_id');
     });
 });
 
@@ -231,6 +240,27 @@ describe('an accepted organisation number still reaches the order', () => {
         expect(renderer.companyId()).toBe('ST-SYNTH-001');
         expect(renderer.getData().additional_data.companyId).toBe('ST-SYNTH-001');
         expect(renderer.getData().additional_data.companyName).toBe('Sole Trader Example');
+    });
+
+    test('the sole-trader synthetic number reaches getData() via the chip click', () => {
+        // soleTraderMode() is the SECOND route that lands a minted number, and
+        // it is a separate call site from applyPrefetch(). Verified by mutation
+        // that the applyPrefetch test above does not cover it.
+        const { renderer } = loadRendererOnly();
+
+        renderer.prefetched = {
+            ready: true,
+            matches: true,
+            buyer: {
+                organization_number: 'ST-SYNTH-003',
+                company_name: 'Chip Click Example'
+            }
+        };
+
+        renderer.soleTraderMode();
+
+        expect(renderer.companyId()).toBe('ST-SYNTH-003');
+        expect(renderer.getData().additional_data.companyId).toBe('ST-SYNTH-003');
     });
 
     test('the sole-trader number survives with no number input in the DOM', () => {
