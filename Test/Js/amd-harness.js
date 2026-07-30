@@ -388,10 +388,11 @@ function loadAmdModule(relPath, extraMocks, extraGlobals) {
         document: {
             addEventListener: function () {},
             createElement: function () { return {}; },
-            // Enough of a node for the focus call the address-step picker
-            // makes when its dropdown opens. Without it, any test that
-            // TRIGGERS `select2:open` dies inside the harness rather than
-            // exercising the handler.
+            // Enough of a node for the focus call the company-search
+            // pickers (address-step and payment-tile) make when their
+            // dropdown opens. Without it, any test that triggers
+            // `select2:open` dies inside the harness rather than exercising
+            // the handler.
             querySelector: function () { return { focus: function () {} }; }
         },
         // Passed through from the jsdom test environment so a module that
