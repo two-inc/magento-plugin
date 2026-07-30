@@ -902,9 +902,14 @@ describe('the vendored bundle still works the way the row depends on', () => {
     });
 
     test('aria-activedescendant is still taken from the payload result id', () => {
-        expect(readSource(BUNDLE)).toContain(
-            'e.data._resultId?s.$search.attr("aria-activedescendant",e.data._resultId)'
-        );
+        // Asserted over EVERY write of the attribute, not as one `toContain`:
+        // the bundle carries two copies of this expression, so pinning the
+        // string survived a mutation that renamed one of them.
+        const writes = readSource(BUNDLE).match(/attr\("aria-activedescendant",[^)]*\)/g) || [];
+        expect(writes.length).toBeGreaterThan(0);
+        writes.forEach((write) => {
+            expect(write).toContain('_resultId');
+        });
     });
 
     test('the bundle has no notion of a data-selected attribute', () => {
