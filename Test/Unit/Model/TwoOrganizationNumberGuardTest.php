@@ -100,6 +100,11 @@ class TwoOrganizationNumberGuardTest extends TestCase
      * has been built is the very thing this replaces. authorize() needs the
      * full framework to execute, so pin the wiring by reading the method's
      * own source rather than running it.
+     *
+     * Ordering alone is not enough: a call that hands the guard some other
+     * array — an empty literal, say — sits in the right place and refuses
+     * every order, so the argument is pinned too. It must be the same
+     * payload authorize() goes on to build the order request from.
      */
     public function testAuthorizeInvokesTheGuardBeforeComposingTheRequest(): void
     {
@@ -114,6 +119,17 @@ class TwoOrganizationNumberGuardTest extends TestCase
         $composeAt = strpos($source, 'compositeOrder->execute(');
 
         $this->assertNotFalse($guardAt, 'authorize() must call the company-number guard.');
+        $this->assertSame(
+            1,
+            preg_match('/assertOrganizationNumberPresent\(([^)]*)\)/', $source, $call),
+            'authorize() must call the company-number guard exactly once, with a simple argument.'
+        );
+        $this->assertSame(
+            '$additionalInformation',
+            $call[1],
+            'The guard must be handed the checkout payload authorize() composes the order'
+            . ' request from, not some other value.'
+        );
         $this->assertNotFalse($composeAt, 'authorize() must still compose the order request.');
         $this->assertLessThan(
             $composeAt,

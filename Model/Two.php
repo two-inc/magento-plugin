@@ -982,7 +982,10 @@ class Two extends AbstractMethod
      * no checkout variant can diverge from another.
      *
      * Whitespace counts as empty: a space-only value is not a company
-     * number and would be refused downstream just the same.
+     * number, so it is refused. The trim serves that decision only — the
+     * guard normalises nothing. A padded but non-empty number clears the
+     * guard and is sent downstream exactly as the checkout submitted it,
+     * padding included.
      *
      * @param array $additionalInformation payment additional information as
      *     submitted by the checkout
