@@ -89,7 +89,10 @@ class SurchargeCalculator
      * @param int|null $storeId
      *
      * @return array{amount: float, tax_rate: float, description: string}
-     * @throws LocalizedException when FX rate is missing or API response is malformed
+     * @throws LocalizedException when no FX rate is resolvable for the pair, when a
+     *         configured surcharge cap resolves to zero in the order currency (sending
+     *         it would relay an UNCAPPED percentage), or when the API response is
+     *         malformed or quotes a currency other than the order's
      */
     public function calculate(
         float $grossAmount,
