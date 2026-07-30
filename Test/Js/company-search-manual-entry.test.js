@@ -474,8 +474,18 @@ describe('when the row is shown', () => {
     test("a stale bind cannot paint a row onto the live picker", () => {
         const staleToken = dom.token;
         dom.search.value = 'example';
-        // Re-render: same node, fresh bind identity.
+
+        // Establish that this very call DOES paint while the bind is live, so
+        // the assertion below cannot pass merely because the list started
+        // empty — the vacuity trap in an "expect empty after" assertion.
+        model.renderManualEntryRow(dom.$field, staleToken);
+        expect(manualRows(dom)).toHaveLength(1);
+
+        // Re-render: same node, fresh bind identity, and select2 has emptied
+        // the list on its way through.
+        dom.results.innerHTML = '';
         dom.$field.data('twoSearchBind', {});
+
         model.renderManualEntryRow(dom.$field, staleToken);
         expect(manualRows(dom)).toHaveLength(0);
     });
@@ -518,6 +528,9 @@ describe('what drives the row', () => {
         // `$.ajax` throws in this double, so reaching the transport at all
         // fails the test: the row must not wait on a debounce or a search.
         model.attachManualEntryRow(dom.$field, dom.token);
+        // Attaching alone must not show the row — this one is falsifiable only
+        // by an always-show regression; the transitions below are what pin the
+        // threshold.
         expect(manualRows(dom)).toHaveLength(0);
 
         typeTerm(dom, 'examp');
@@ -827,6 +840,7 @@ describe('the address step wires the row up', () => {
         loadShippingSurface($, model);
 
         expect(typeof recorder.handlers['select2:close']).toBe('function');
+        // PRECONDITION, not evidence: nothing has closed the picker yet.
         expect(model.detachManualEntryObserver).not.toHaveBeenCalled();
 
         recorder.handlers['select2:close']();
