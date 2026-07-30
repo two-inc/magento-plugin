@@ -182,12 +182,8 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         SEARCH_DEBOUNCE_MS: SEARCH_DEBOUNCE_MS,
         MIN_INPUT_LENGTH: MIN_INPUT_LENGTH,
         EVENT_NS: EVENT_NS,
-        MANUAL_ENTRY_NS: MANUAL_ENTRY_NS,
-        MANUAL_ENTRY_ID: MANUAL_ENTRY_ID,
-        MANUAL_ENTRY_CLASS: MANUAL_ENTRY_CLASS,
         isDegradedResponse: isDegradedResponse,
         minInputLengthMessage: minInputLengthMessage,
-        manualEntryText: manualEntryText,
 
         /**
          * Cancel the in-flight search for a bind, if any.
@@ -670,7 +666,14 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             if ($field.data('twoSearchBind') !== token) return $();
             const instance = $field.data('select2');
             if (!instance || !instance.$dropdown) return $();
-            return instance.$dropdown.find('.select2-results__options');
+            // The nested lists select2 renders for grouped results carry the
+            // same class plus a modifier. Results are flat today, so matching
+            // them would be unreachable rather than wrong — but if grouping
+            // ever arrives, an unqualified selector puts a manual-entry row
+            // inside every group.
+            return instance.$dropdown.find(
+                '.select2-results__options:not(.select2-results__options--nested)'
+            );
         },
 
         /**
@@ -698,10 +701,9 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * Every attribute here is load-bearing:
          *  - the `--selectable` class is what the bundled select2 walks when
          *    the buyer presses the arrow keys, and what it highlights;
-         *  - `data-selected="false"` and the absence of a `--selected` class
-         *    keep activation routed to selection. Marking the row selected
-         *    instead routes Enter to "close the dropdown", and the row does
-         *    nothing at all;
+         *  - the absence of a `--selected` class keeps activation routed to
+         *    selection. Marking the row selected instead routes Enter to
+         *    "close the dropdown", and the row does nothing at all;
          *  - the payload needs an `id`, because select2 stringifies
          *    `data.id` for every selectable row while setting classes and
          *    throws on a payload without one — taking the whole render down,
@@ -727,20 +729,21 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                 .attr({
                     id: rowId,
                     role: 'option',
-                    'aria-selected': 'false',
-                    'data-selected': 'false'
+                    'aria-selected': 'false'
                 })
                 .addClass('select2-results__option')
                 .addClass('select2-results__option--selectable')
                 .addClass(MANUAL_ENTRY_CLASS)
                 .text(label);
+            // Deliberately NO `html` field, even though this picker's
+            // `templateResult` reads one. The only code that would consume it
+            // writes it through `innerHTML` after passing it to the escaper —
+            // which is the identity function here — so carrying the label in
+            // that field would hand back exactly the raw-markup sink the
+            // `.text()` write above exists to avoid.
             $option.data('data', {
                 id: MANUAL_ENTRY_ID,
                 text: label,
-                // Both pickers set `templateResult` to read `data.html`, so a
-                // row without one renders empty if select2 ever re-templates
-                // it.
-                html: label,
                 _resultId: rowId
             });
             return $option;

@@ -249,8 +249,15 @@ define([
          * @param {object} $companyNameField the node THIS bind owns — not the
          *        document-wide selector, so a re-rendered form's picker is
          *        never the one torn down
+         * @param {object} bindToken identity for this bind, so the search the
+         *        buyer has just given up on can be cancelled
          */
-        enterDetailsManually: function ($companyNameField) {
+        enterDetailsManually: function ($companyNameField, bindToken) {
+            // First, before anything else touches the widget. Cancelling the
+            // selection leaves the dropdown open, so a search still on the
+            // wire would come back up to 30s later and run select2's
+            // highlight and scroll bookkeeping over a torn-down picker.
+            companySearch.abortActiveRequest(bindToken);
             this.setCompanyData();
             companySearch.detachManualEntryObserver($companyNameField);
             $companyNameField.off(companySearch.EVENT_NS);
@@ -342,6 +349,15 @@ define([
                             companySearch.attachManualEntryRow($companyNameField, bindToken);
                             document.querySelector('.select2-search__field').focus();
                         })
+                        .on('select2:close' + companySearch.EVENT_NS, function () {
+                            // Every open re-attaches, so nothing is lost by
+                            // dropping the watcher here — and a checkout that
+                            // re-renders the form while the picker is closed
+                            // would otherwise leave this node's observer
+                            // pinning a detached results list for the life of
+                            // the page.
+                            companySearch.detachManualEntryObserver($companyNameField);
+                        })
                         /*
                          * `select2:selecting` is the PREVENTABLE pre-event for
                          * a selection, and the manual-entry row is not a
@@ -355,7 +371,7 @@ define([
                             const data = e.params && e.params.args && e.params.args.data;
                             if (!companySearch.isManualEntryOption(data)) return;
                             e.preventDefault();
-                            self.enterDetailsManually($companyNameField);
+                            self.enterDetailsManually($companyNameField, bindToken);
                         })
                         .on('select2:select' + companySearch.EVENT_NS, function (e) {
                             const selectedItem = e.params.data;

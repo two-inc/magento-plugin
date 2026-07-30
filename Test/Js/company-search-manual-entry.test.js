@@ -44,6 +44,16 @@ const MSGID = 'My company is not on the list';
 /** Nothing here is 3, so a surviving literal 3 cannot pass. */
 const WRONG_THRESHOLD = 5;
 
+/*
+ * Re-declared here rather than read off the model: these are private to it,
+ * the same way its spinner and notice class names are, and none has a
+ * production consumer outside the module. A test that read them from the
+ * module could not tell a renamed constant from a correct one.
+ */
+const MANUAL_ENTRY_ID = '__two_manual_entry__';
+const MANUAL_ENTRY_CLASS = 'two-company-search__manual-entry';
+const MANUAL_ENTRY_NS = '.twoManualEntry';
+
 const BASE_CONFIG = {
     checkoutApiUrl: 'https://api.example.test',
     companySearchLimit: 50,
@@ -310,7 +320,7 @@ function typeTerm(dom, term) {
 }
 
 function manualRows(dom) {
-    return dom.results.querySelectorAll('.two-company-search__manual-entry');
+    return dom.results.querySelectorAll('.' + MANUAL_ENTRY_CLASS);
 }
 
 function tick() {
@@ -339,12 +349,13 @@ describe('the manual-entry row is a real, keyboard-reachable option', () => {
         // without it the row is unreachable by arrow key.
         expect(row.classList.contains('select2-results__option')).toBe(true);
         expect(row.classList.contains('select2-results__option--selectable')).toBe(true);
-        expect(row.classList.contains('two-company-search__manual-entry')).toBe(true);
+        expect(row.classList.contains(MANUAL_ENTRY_CLASS)).toBe(true);
 
-        // Belt and braces for the other keyboard model in the family: the
-        // attribute form must say "selectable but not selected".
-        expect(row.getAttribute('data-selected')).toBe('false');
         expect(row.getAttribute('aria-selected')).toBe('false');
+        // NOT `data-selected`: the vendored bundle contains no such attribute,
+        // so writing one would only be a misleading claim about what select2
+        // reads.
+        expect(row.hasAttribute('data-selected')).toBe(false);
 
         // Marked selected — either way — activation routes to "close the
         // dropdown" and the row does nothing at all.
@@ -362,12 +373,21 @@ describe('the manual-entry row is a real, keyboard-reachable option', () => {
         // Absent, select2 throws while setting classes and takes the whole
         // render down rather than just this row.
         expect(typeof payload.id).toBe('string');
-        expect(payload.id).toBe(model.MANUAL_ENTRY_ID);
+        expect(payload.id).toBe(MANUAL_ENTRY_ID);
         // Must equal the row's own DOM id, or aria-activedescendant points at
         // nothing and the row is announced as the wrong one.
         expect(payload._resultId).toBe($row.get(0).getAttribute('id'));
+        // Derived from the list it goes into, so two pickers on one page
+        // cannot emit the same DOM id — which would make
+        // aria-activedescendant ambiguous.
+        expect($row.get(0).getAttribute('id')).toMatch(/^select2-company-results-/);
+        expect(model.buildManualEntryOption('select2-other-results').get(0).getAttribute('id')).toMatch(
+            /^select2-other-results-/
+        );
         expect(payload.text).toBe(MSGID);
-        expect(payload.html).toBe(MSGID);
+        // No `html`. The one path that would read it writes it through
+        // innerHTML after the identity escaper, undoing the .text() write.
+        expect('html' in payload).toBe(false);
     });
 
     test('the label is set as text, never as markup', () => {
@@ -380,13 +400,13 @@ describe('the manual-entry row is a real, keyboard-reachable option', () => {
     });
 
     test('isManualEntryOption tells the sentinel from a real company', () => {
-        expect(model.isManualEntryOption({ id: model.MANUAL_ENTRY_ID })).toBe(true);
+        expect(model.isManualEntryOption({ id: MANUAL_ENTRY_ID })).toBe(true);
         expect(model.isManualEntryOption({ id: 'Example Trading Ltd', companyId: '1' })).toBe(
             false
         );
         expect(model.isManualEntryOption(null)).toBe(false);
         expect(model.isManualEntryOption(undefined)).toBe(false);
-        expect(model.isManualEntryOption(model.MANUAL_ENTRY_ID)).toBe(false);
+        expect(model.isManualEntryOption(MANUAL_ENTRY_ID)).toBe(false);
     });
 });
 
@@ -425,7 +445,7 @@ describe('when the row is shown', () => {
 
         const rows = dom.results.children;
         expect(rows).toHaveLength(3);
-        expect(rows[2].classList.contains('two-company-search__manual-entry')).toBe(true);
+        expect(rows[2].classList.contains(MANUAL_ENTRY_CLASS)).toBe(true);
         // The defect this replaces: the affordance living outside the list.
         expect(manualRows(dom)).toHaveLength(1);
         expect(dom.results.getAttribute('role')).toBe('listbox');
@@ -439,7 +459,7 @@ describe('when the row is shown', () => {
 
         const rows = dom.results.children;
         expect(rows).toHaveLength(2);
-        expect(rows[1].classList.contains('two-company-search__manual-entry')).toBe(true);
+        expect(rows[1].classList.contains(MANUAL_ENTRY_CLASS)).toBe(true);
         expect(manualRows(dom)).toHaveLength(1);
     });
 
@@ -458,6 +478,28 @@ describe('when the row is shown', () => {
         dom.$field.data('twoSearchBind', {});
         model.renderManualEntryRow(dom.$field, staleToken);
         expect(manualRows(dom)).toHaveLength(0);
+    });
+
+    test('the results-list lookup itself fails closed on a stale bind', () => {
+        // Asserted DIRECTLY, not through renderManualEntryRow: that path also
+        // consults the search-box lookup, whose own staleness guard would keep
+        // it green with this one deleted — so the contract would be held by
+        // nothing.
+        const staleToken = dom.token;
+        expect(model.getResultsList(dom.$field, staleToken).length).toBe(1);
+
+        dom.$field.data('twoSearchBind', {});
+        expect(model.getResultsList(dom.$field, staleToken).length).toBe(0);
+    });
+
+    test('a nested group list is never mistaken for the results list', () => {
+        const nested = document.createElement('ul');
+        nested.className = 'select2-results__options select2-results__options--nested';
+        dom.results.appendChild(nested);
+
+        const $found = model.getResultsList(dom.$field, dom.token);
+        expect($found.length).toBe(1);
+        expect($found.get(0)).toBe(dom.results);
     });
 });
 
@@ -490,18 +532,18 @@ describe('what drives the row', () => {
         model.attachManualEntryRow(dom.$field, dom.token);
         model.attachManualEntryRow(dom.$field, dom.token);
 
-        expect($.boundHandlers(dom.search, 'input', '.twoManualEntry')).toHaveLength(1);
+        expect($.boundHandlers(dom.search, 'input', MANUAL_ENTRY_NS)).toHaveLength(1);
     });
 
     test('its namespace does not collide with the below-threshold cancel handler', () => {
         // Both bind `input` to the same node. One namespace and each one's
         // `.off()` silently unbinds the other.
-        expect(model.MANUAL_ENTRY_NS).not.toBe(model.EVENT_NS);
+        expect(MANUAL_ENTRY_NS).not.toBe(model.EVENT_NS);
         model.markSearchBinding(dom.$field, dom.token);
         model.attachManualEntryRow(dom.$field, dom.token);
 
         expect($.boundHandlers(dom.search, 'input', model.EVENT_NS)).toHaveLength(1);
-        expect($.boundHandlers(dom.search, 'input', model.MANUAL_ENTRY_NS)).toHaveLength(1);
+        expect($.boundHandlers(dom.search, 'input', MANUAL_ENTRY_NS)).toHaveLength(1);
     });
 
     test('it comes back after select2 empties the list for a new result set', async () => {
@@ -516,7 +558,7 @@ describe('what drives the row', () => {
 
         const rows = dom.results.children;
         expect(manualRows(dom)).toHaveLength(1);
-        expect(rows[rows.length - 1].classList.contains('two-company-search__manual-entry')).toBe(
+        expect(rows[rows.length - 1].classList.contains(MANUAL_ENTRY_CLASS)).toBe(
             true
         );
     });
@@ -660,17 +702,11 @@ function loadShippingSurface($, companySearch, overrides) {
 function makeModelSpy() {
     return {
         EVENT_NS: '.twoCompanySearch',
-        MANUAL_ENTRY_NS: '.twoManualEntry',
-        MANUAL_ENTRY_ID: '__two_manual_entry__',
-        MANUAL_ENTRY_CLASS: 'two-company-search__manual-entry',
         MIN_INPUT_LENGTH: 3,
         REQUEST_TIMEOUT_MS: 30000,
         SEARCH_DEBOUNCE_MS: 300,
         minInputLengthMessage: function () {
             return 'Please enter 3 or more characters';
-        },
-        manualEntryText: function () {
-            return MSGID;
         },
         buildSearchAjaxOptions: function () {
             return {};
@@ -686,8 +722,9 @@ function makeModelSpy() {
         clearSearchChrome: function () {},
         setSearching: function () {},
         setUnavailable: function () {},
+        abortActiveRequest: jest.fn(),
         isManualEntryOption: function (data) {
-            return Boolean(data) && typeof data === 'object' && data.id === '__two_manual_entry__';
+            return Boolean(data) && typeof data === 'object' && data.id === MANUAL_ENTRY_ID;
         },
         attachManualEntryRow: jest.fn(),
         detachManualEntryObserver: jest.fn()
@@ -741,7 +778,7 @@ describe('the address step wires the row up', () => {
         const preventDefault = jest.fn();
         const shownBefore = recorder.shown;
         selecting({
-            params: { args: { data: { id: model.MANUAL_ENTRY_ID, text: MSGID } } },
+            params: { args: { data: { id: MANUAL_ENTRY_ID, text: MSGID } } },
             preventDefault: preventDefault
         });
 
@@ -754,6 +791,43 @@ describe('the address step wires the row up', () => {
         expect(model.detachManualEntryObserver).toHaveBeenCalledTimes(1);
         expect(recorder.shown).toBe(shownBefore + 1);
         expect(recorder.attrWrites).toContainEqual(['type', 'text']);
+    });
+
+    test('activating the row cancels the search still on the wire, first', () => {
+        const recorder = newRecorder();
+        const $ = makeSurfaceQuery(recorder);
+        const model = makeModelSpy();
+        const { ctx } = loadShippingSurface($, model);
+
+        recorder.handlers['select2:open']();
+        const bindToken = model.attachManualEntryRow.mock.calls[0][1];
+
+        recorder.handlers['select2:selecting']({
+            params: { args: { data: { id: MANUAL_ENTRY_ID, text: MSGID } } },
+            preventDefault: jest.fn()
+        });
+
+        // Same bind, or it cancels somebody else's request — or nothing.
+        expect(model.abortActiveRequest).toHaveBeenCalledWith(bindToken);
+        // BEFORE the teardown: the dropdown is still open at this point
+        // (the selection was cancelled), so a late response would run select2's
+        // highlight and scroll bookkeeping over a torn-down picker.
+        expect(model.abortActiveRequest.mock.invocationCallOrder[0]).toBeLessThan(
+            ctx.setCompanyData.mock.invocationCallOrder[0]
+        );
+    });
+
+    test('closing the picker stops watching its results list', () => {
+        const recorder = newRecorder();
+        const $ = makeSurfaceQuery(recorder);
+        const model = makeModelSpy();
+        loadShippingSurface($, model);
+
+        expect(typeof recorder.handlers['select2:close']).toBe('function');
+        expect(model.detachManualEntryObserver).not.toHaveBeenCalled();
+
+        recorder.handlers['select2:close']();
+        expect(model.detachManualEntryObserver).toHaveBeenCalledTimes(1);
     });
 
     test('a real company selection is left completely alone', () => {
@@ -784,10 +858,43 @@ describe('the address step wires the row up', () => {
     });
 });
 
+describe('the vendored bundle still works the way the row depends on', () => {
+    // Pinned verbatim, the way this repo already pins the bundle's own
+    // below-threshold message: an upgrade that renames either of these keeps
+    // every behavioural test above green (they run against our own DOM) while
+    // silently making the row unreachable in a real browser.
+    const BUNDLE = 'view/frontend/web/select2-4.1.0/js/select2.min.js';
+
+    test('arrow-key navigation still walks the selectable class we set', () => {
+        expect(readSource(BUNDLE)).toContain(
+            '"results:next",function(){var e,t=i.getHighlightedResults(),' +
+                'n=i.$results.find(".select2-results__option--selectable")'
+        );
+    });
+
+    test('aria-activedescendant is still taken from the payload result id', () => {
+        expect(readSource(BUNDLE)).toContain(
+            'e.data._resultId?s.$search.attr("aria-activedescendant",e.data._resultId)'
+        );
+    });
+
+    test('the bundle has no notion of a data-selected attribute', () => {
+        expect(readSource(BUNDLE)).not.toContain('data-selected');
+    });
+});
+
 describe('translation', () => {
     test('the label is a translatable msgid, translated in every catalogue', () => {
         expect(readSource(MODEL_PATH)).toContain("$t('" + MSGID + "')");
-        ['nb_NO', 'nl_NL', 'sv_SE'].forEach((locale) => {
+        // Read off disk, not hardcoded: a fourth catalogue added later must not
+        // be able to ship this string untranslated and green.
+        const locales = fs
+            .readdirSync(path.resolve(__dirname, '..', '..', 'i18n'))
+            .filter((name) => name.endsWith('.csv'))
+            .map((name) => name.replace(/\.csv$/, ''));
+        expect(locales.length).toBeGreaterThanOrEqual(3);
+
+        locales.forEach((locale) => {
             const csv = readSource('i18n/' + locale + '.csv');
             expect(csv).toContain('"' + MSGID + '","');
             // Magento drops rows whose translation equals the msgid, so an

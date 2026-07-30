@@ -129,6 +129,10 @@ function defaultMocks() {
                 return 'Please enter ' + this.MIN_INPUT_LENGTH + ' or more characters';
             },
             getSearchFieldContainer: function () { return null; },
+            abortActiveRequest: function () { return false; },
+            isManualEntryOption: function () { return false; },
+            attachManualEntryRow: function () {},
+            detachManualEntryObserver: function () {},
             markSearchBinding: function () {},
             clearSearchChrome: function () {},
             setSearching: function () {},
