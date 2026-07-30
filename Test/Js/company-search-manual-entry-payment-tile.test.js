@@ -2,12 +2,13 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * Item follow-up from PR #305 (address-step manual-entry affordance): the
- * payment-tile company picker (`gateway_method.js`) still rendered its own
- * manual-entry affordance OUTSIDE the select2 results listbox — the same
- * accessibility defect #305 fixed on the address step, now diverged between
- * the two pickers. This file pins the shared-model fix and the payment-tile
- * surface's use of it.
+ * Follow-up from PR #305 (address-step manual-entry affordance, open and
+ * unmerged as of this writing): the payment-tile company picker
+ * (`gateway_method.js`) rendered its own manual-entry affordance OUTSIDE the
+ * select2 results listbox — the same accessibility defect #305 fixes on the
+ * address step, tackled here independently for the payment tile so the two
+ * pickers don't ship on opposite sides of the fix. This file pins the
+ * shared-model fix and the payment-tile surface's use of it.
  *
  * Load-bearing guarantees:
  *  - the manual-entry row is a REAL row INSIDE the results list (`<li>`,
