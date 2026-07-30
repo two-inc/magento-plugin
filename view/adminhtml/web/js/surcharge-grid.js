@@ -16,7 +16,13 @@ define(['jquery', 'mage/translate', 'mage/validation', 'domReady!'], function ($
     // configuration. Non-numeric input also passes here — that is
     // validate-zero-or-greater's job, and two rules reporting the same
     // typo is noise.
-    if ($.validator && !$.validator.methods['validate-two-nonzero-limit']) {
+    // NOT guarded on `$.validator` being truthy: `mage/validation` is a hard
+    // dependency above, so an absent validator is a broken build, and
+    // skipping registration silently would leave the rendered
+    // data-validate attribute naming a rule that does not exist — which makes
+    // jquery.validate throw on submit and kills validation of the WHOLE form.
+    // Fail at load instead of silently at submit.
+    if (!$.validator.methods['validate-two-nonzero-limit']) {
         $.validator.addMethod(
             'validate-two-nonzero-limit',
             function (value) {
@@ -27,12 +33,20 @@ define(['jquery', 'mage/translate', 'mage/validation', 'domReady!'], function ($
                 }
                 parsed = $.mage.parseNumber(value);
 
-                return isNaN(parsed) || parsed !== 0;
+                // Rounded, mirroring the backend: a sub-cent limit is sent as
+                // 0.00 and suppresses the whole fee, so it is refused too.
+                return isNaN(parsed) || Math.round(parsed * 100) !== 0;
             },
-            $t(
-                'A limit of 0 is not allowed. To charge nothing on this term, set the fixed amount'
-                + ' and percentage to 0 instead, and leave the limit empty.'
-            )
+            // A FUNCTION, not a resolved string: evaluated at define time,
+            // $t() can run before the translation dictionary is registered and
+            // would bake in the English text. And ONE unbroken literal,
+            // because Magento's JS phrase collector only harvests
+            // single-literal $t('…') calls — a `+`-concatenated argument never
+            // reaches js-translation.json, so the i18n rows for it would be
+            // dead and the message would stay English regardless.
+            function () {
+                return $t('A limit of 0 is not allowed. To charge nothing on this term, set the fixed amount and percentage to 0 instead, and leave the limit empty.');
+            }
         );
     }
 

@@ -280,3 +280,4 @@
 "A limit of 0 is not allowed. To charge nothing on this term, set the fixed amount and percentage to 0 instead, and leave the limit empty.","Een limiet van 0 is niet toegestaan. Als je voor deze termijn niets in rekening wilt brengen, stel dan het vaste bedrag en het percentage in op 0 en laat het limietveld leeg."
 "A limit of 0 is not allowed. To charge nothing on a term, set that term's fixed amount and percentage to 0 instead.","Een limiet van 0 is niet toegestaan. Als je voor een termijn niets in rekening wilt brengen, stel dan het vaste bedrag en het percentage van die termijn in op 0."
 "The limit applies to the whole fee: the percentage and the fixed amount together, not the percentage alone.","De limiet geldt voor de hele fee: het percentage en het vaste bedrag samen, niet alleen het percentage."
+"%1 days - %2: value must be a number.","%1 dagen - %2: waarde moet een getal zijn."

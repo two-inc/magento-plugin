@@ -27,8 +27,10 @@ use Two\Gateway\Service\Api\Adapter;
 class SurchargeCalculator
 {
     /**
-     * Decimal places every monetary value in the pricing request is rounded
-     * to. The API refuses anything finer rather than rounding it itself.
+     * Decimal places `cap` and `surcharge` are rounded to before the request.
+     * The API refuses anything finer rather than rounding it itself. Scoped
+     * to those two members deliberately — `gross_amount` and `rounding.step`
+     * are not rounded here.
      */
     private const MONEY_DECIMALS = 2;
 
@@ -346,19 +348,22 @@ class SurchargeCalculator
     /**
      * Convert an amount between currencies if needed.
      *
-     * The result is returned unrounded (`$amount * $rate`); no rounding is
-     * applied here. Since CurrencyRatesProvider returns null rather than a
-     * zero or negative rate, the conversion cannot turn a non-zero configured
-     * amount into zero.
-     *
      * The result is rounded to two decimal places (TWO-25289). The API
      * rejects monetary values finer than that rather than rounding them, so
      * an unrounded conversion (e.g. 349 * 0.0872) used to be refused
      * upstream and reach the buyer as the generic "temporarily unavailable"
-     * error. Plain half-up rounding is deliberate: sub-cent caps are not a
-     * case worth carrying code for, and the grid now refuses the one value
-     * where the rounding direction would have mattered — an explicit cap of
-     * 0 (Model\Config\Backend\SurchargeGrid::validateValue).
+     * error.
+     *
+     * Plain half-up rounding is deliberate. The grid refuses any limit a
+     * merchant could CONFIGURE that would round away — not just an explicit
+     * 0 but anything under half a cent
+     * (Model\Config\Backend\SurchargeGrid::validateValue) — so the rounding
+     * direction cannot decide whether a configured cap survives. What remains
+     * is an FX conversion landing under half a cent, which does collapse to
+     * 0.00 and therefore suppresses the fee. That is accepted, not
+     * overlooked: sub-cent caps and away-from-zero rounding are out of scope,
+     * and the case is pinned by
+     * testASubCentCapRoundsDownToZeroWhichIsAcceptedScope.
      *
      * @param int|null $selectedTermDays term the conversion is being made for,
      *                                   for the diagnostic log only

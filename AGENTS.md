@@ -79,8 +79,25 @@ generic "temporarily unavailable" error.
 
 Plain half-up rounding, deliberately. Sub-cent caps, away-from-zero
 rounding and zero-decimal currencies are all explicitly out of scope
-(TWO-25289) — the one value where the rounding direction would have
-mattered, an explicit cap of `0`, is refused by the grid instead.
+(TWO-25289).
+
+That is safe for anything a merchant can **configure**, because the
+grid refuses any limit that rounds away at 2dp — not just an explicit
+`0` but anything under half a cent. So the rounding direction never
+decides whether a configured cap survives.
+
+What it does **not** cover is an FX conversion landing under half a
+cent: that collapses to `0.00` and suppresses the fee. Accepted, not
+overlooked — pinned by
+`testASubCentCapRoundsDownToZeroWhichIsAcceptedScope` so it reads as a
+decision. Do not "fix" it with away-from-zero rounding without
+reopening the scope question.
+
+Also note the Limit column is **deleted rather than validated** when
+the surcharge type has no percentage component. The grid JS hides that
+column, but a hidden input still posts, so a limit stored under an
+earlier percentage type keeps arriving. Rejecting a zero there would
+fail the whole section save over a cell the admin cannot see or clear.
 
 ## DI registration scope for Structure / Config Reader plugins
 

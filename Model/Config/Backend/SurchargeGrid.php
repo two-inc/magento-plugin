@@ -21,6 +21,7 @@ use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
+use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
@@ -33,6 +34,14 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
 class SurchargeGrid extends Value
 {
     private const FIELDS = ['fixed', 'percentage', 'limit'];
+
+    /**
+     * Decimal places the pricing request is rounded to before it is sent
+     * (SurchargeCalculator::MONEY_DECIMALS). Mirrored here because a limit is
+     * refused when it rounds away at that precision, not merely when it is
+     * typed as an exact zero.
+     */
+    private const MONEY_DECIMALS = 2;
 
     /** @var WriterInterface */
     private $configWriter;
@@ -130,6 +139,16 @@ class SurchargeGrid extends Value
 
         $maxFixed = $this->getConvertedFixedMax($scope, $scopeId);
         $maxPercentage = ConfigRepository::SURCHARGE_PERCENTAGE_MAX;
+        // Whether the Limit column is live at all for the surcharge type being
+        // saved. It is offered only alongside a percentage, and the grid JS
+        // HIDES it otherwise — but a hidden input still posts, so a limit
+        // stored while the type was percentage keeps arriving after the
+        // merchant switches to fixed-only. Rejecting a zero there would fail
+        // the whole section save over a cell the admin can neither see nor
+        // clear, which is the dead end the funding-partner cap comment below
+        // already warns about. Inapplicable limits are DELETED instead, which
+        // also retires the legacy row rather than leaving it to resurface.
+        $hasPercentage = $this->savedSurchargeTypeHasPercentage($groups);
 
         foreach ($gridValues as $days => $fields) {
             if (!is_array($fields)) {
@@ -145,7 +164,7 @@ class SurchargeGrid extends Value
                 $path = sprintf('payment/%s/surcharge_%d_%s', $this->methodCode(), $days, $type);
 
                 $value = (string)$value;
-                if ($value === '') {
+                if ($value === '' || ($type === 'limit' && !$hasPercentage)) {
                     $this->configWriter->delete($path, $scope, $scopeId);
                     continue;
                 }
@@ -157,8 +176,7 @@ class SurchargeGrid extends Value
                 // the JS pass; normalise server-side too.
                 $value = str_replace(',', '.', $value);
 
-                $numericValue = (float)$value;
-                $this->validateValue($type, $numericValue, $days, $maxFixed, $maxPercentage);
+                $this->validateValue($type, $value, $days, $maxFixed, $maxPercentage);
 
                 $this->configWriter->save($path, $value, $scope, $scopeId);
             }
@@ -174,6 +192,28 @@ class SurchargeGrid extends Value
         );
 
         return parent::afterSave();
+    }
+
+    /**
+     * Whether the surcharge type being saved carries a percentage component,
+     * i.e. whether the grid's Limit column is live at all. Read from the
+     * POSTed group first — the type and the grid are saved in the same
+     * request, so the stored value is the PREVIOUS one and would misjudge a
+     * merchant switching type — and from config only when the field was not
+     * submitted (a partial `config:set`, for instance).
+     *
+     * @param array<string, mixed> $groups
+     */
+    private function savedSurchargeTypeHasPercentage(array $groups): bool
+    {
+        $posted = $groups['payment_terms']['fields']['surcharge_type']['value'] ?? null;
+        $type = is_string($posted) && $posted !== ''
+            ? $posted
+            : (string)$this->_config->getValue(
+                sprintf('payment/%s/surcharge_type', $this->methodCode())
+            );
+
+        return in_array($type, [SurchargeType::PERCENTAGE, SurchargeType::FIXED_AND_PERCENTAGE], true);
     }
 
     /**
@@ -249,7 +289,13 @@ class SurchargeGrid extends Value
     }
 
     /**
-     * Validate a surcharge field value.
+     * Validate one surcharge cell, as POSTed (a string).
+     *
+     * Takes the RAW string rather than a cast float so it can tell 'abc' —
+     * which casts to 0.0 — from a real zero, and report each on its own
+     * terms. Nothing checked numeric input server-side before: the grid JS
+     * does, but the direct-POST paths this backend exists to cover (curl,
+     * app:config:import, a scripted config:set chain) skip it entirely.
      *
      * Note the caller has already returned for an EMPTY cell (it deletes
      * the config row instead), so `limit` only reaches here when the admin
@@ -260,11 +306,17 @@ class SurchargeGrid extends Value
      */
     private function validateValue(
         string $type,
-        float $value,
+        string $rawValue,
         int $days,
         ?int $maxFixed,
         int $maxPercentage
     ): void {
+        if (!is_numeric($rawValue)) {
+            throw new LocalizedException(
+                __('%1 days - %2: value must be a number.', $days, $type)
+            );
+        }
+        $value = (float)$rawValue;
         if ($value < 0) {
             throw new LocalizedException(
                 __('%1 days - %2: value cannot be negative.', $days, $type)
@@ -279,7 +331,14 @@ class SurchargeGrid extends Value
         // entering 0 in both the fixed and percentage cells. An EMPTY limit
         // is a wholly legitimate configuration meaning "no limit" and is
         // never rejected — absence and zero are different values.
-        if ($type === 'limit' && $value === 0.0) {
+        //
+        // round() first, not `=== 0.0`: SurchargeCalculator::convertAmount()
+        // rounds the limit to 2dp before sending it, so a sub-cent limit
+        // (0.001) would pass an exact-zero check and then arrive as a hard
+        // cap of 0.00 — the very outcome being refused, one step later.
+        // Refusing everything that rounds away is what makes "the rounding
+        // direction cannot decide whether a configured cap survives" true.
+        if ($type === 'limit' && round($value, self::MONEY_DECIMALS) === 0.0) {
             throw new LocalizedException(
                 __(
                     '%1 days - limit: a limit of 0 is not allowed. To charge nothing on this term,'

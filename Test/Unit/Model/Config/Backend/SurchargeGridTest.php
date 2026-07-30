@@ -185,25 +185,124 @@ class SurchargeGridTest extends TestCase
      * the production method itself. validateValue() reads no injected
      * dependency, so an instance built without the constructor is enough.
      */
-    private function invokeValidateValue(string $type, float $value, int $days = 30): void
+    private function invokeValidateValue(string $type, string $rawValue, int $days = 30): void
     {
         $model = (new \ReflectionClass(SurchargeGrid::class))->newInstanceWithoutConstructor();
         $method = new \ReflectionMethod(SurchargeGrid::class, 'validateValue');
         $method->setAccessible(true);
-        $method->invoke($model, $type, $value, $days, 25, ConfigRepository::SURCHARGE_PERCENTAGE_MAX);
+        $method->invoke($model, $type, $rawValue, $days, 25, ConfigRepository::SURCHARGE_PERCENTAGE_MAX);
+    }
+
+    /**
+     * Invoke the REAL type-gate that decides whether the Limit column is live
+     * at all. Reads the POSTed group and returns before touching any injected
+     * dependency, so an instance built without the constructor is enough.
+     *
+     * @param array<string, mixed> $groups
+     */
+    private function invokeHasPercentage(array $groups): bool
+    {
+        $model = (new \ReflectionClass(SurchargeGrid::class))->newInstanceWithoutConstructor();
+        $method = new \ReflectionMethod(SurchargeGrid::class, 'savedSurchargeTypeHasPercentage');
+        $method->setAccessible(true);
+
+        return (bool)$method->invoke($model, $groups);
+    }
+
+    /**
+     * The type gate reads the POSTED surcharge type, not the stored one: the
+     * type and the grid are saved in the SAME request, so the stored value is
+     * the previous one and would misjudge a merchant switching type — exactly
+     * the case that decides whether a legacy zero limit blocks their save.
+     */
+    public function testProductionTypeGateReadsThePostedSurchargeType(): void
+    {
+        $post = static function (string $type): array {
+            return ['payment_terms' => ['fields' => ['surcharge_type' => ['value' => $type]]]];
+        };
+
+        $this->assertTrue($this->invokeHasPercentage($post('percentage')));
+        $this->assertTrue($this->invokeHasPercentage($post('fixed_and_percentage')));
+        $this->assertFalse($this->invokeHasPercentage($post('fixed')));
+        $this->assertFalse($this->invokeHasPercentage($post('none')));
     }
 
     public function testProductionValidatorRefusesAZeroLimit(): void
     {
         $this->expectException(LocalizedException::class);
         $this->expectExceptionMessage('a limit of 0 is not allowed');
-        $this->invokeValidateValue('limit', 0.0);
+        $this->invokeValidateValue('limit', '0');
     }
 
     public function testProductionValidatorAcceptsAPositiveLimit(): void
     {
         $this->expectNotToPerformAssertions();
-        $this->invokeValidateValue('limit', 0.01);
+        $this->invokeValidateValue('limit', '0.01');
+    }
+
+    /**
+     * A sub-cent limit is refused for the same reason an exact 0 is: the
+     * calculator rounds to 2dp before sending, so 0.001 arrives as a hard cap
+     * of 0.00 and suppresses the whole fee. Refusing it is what makes the
+     * "rounding direction cannot decide whether a configured cap survives"
+     * claim in AGENTS.md true rather than aspirational.
+     */
+    public function testProductionValidatorRefusesASubCentLimit(): void
+    {
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('a limit of 0 is not allowed');
+        $this->invokeValidateValue('limit', '0.004');
+    }
+
+    /**
+     * A limit that is inapplicable to the surcharge type is DELETED, not
+     * rejected. The grid JS hides the Limit column for a fixed-only type but a
+     * hidden input still posts, so a limit stored under an earlier percentage
+     * type keeps arriving; failing the section save over a cell the admin can
+     * neither see nor clear is a dead end.
+     */
+    public function testAnInapplicableLimitIsDeletedRatherThanRejected(): void
+    {
+        $this->model->setTestHasPercentage(false);
+        $this->model->setTestValue([
+            30 => ['fixed' => '10', 'percentage' => '', 'limit' => '0'],
+        ]);
+        $this->model->setTestScope('default', 0);
+
+        $deleted = [];
+        $this->configWriter->method('delete')->willReturnCallback(
+            function ($path) use (&$deleted) {
+                $deleted[] = $path;
+            }
+        );
+        $saved = [];
+        $this->configWriter->method('save')->willReturnCallback(
+            function ($path) use (&$saved) {
+                $saved[] = $path;
+            }
+        );
+
+        $this->model->callAfterSave();
+
+        $this->assertContains('payment/two_payment/surcharge_30_limit', $deleted);
+        $this->assertEquals(['payment/two_payment/surcharge_30_fixed'], $saved);
+    }
+
+    /**
+     * A non-numeric cell gets its own error. Cast to float it would be 0.0 and
+     * a limit would be reported as "a limit of 0 is not allowed", which is
+     * both wrong and unactionable. Nothing checked numeric input server-side
+     * before — the JS does, but the direct-POST paths this backend exists to
+     * cover skip it.
+     */
+    public function testProductionValidatorRejectsNonNumericOnItsOwnTerms(): void
+    {
+        // Cast to float 'abc' is 0.0, so without the raw-string check a
+        // non-numeric limit was reported as "a limit of 0 is not allowed" —
+        // both wrong and unactionable.
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('value must be a number');
+        $this->invokeValidateValue('limit', 'abc');
     }
 
     /**
@@ -214,8 +313,8 @@ class SurchargeGridTest extends TestCase
     public function testProductionValidatorAcceptsZeroFixedAndZeroPercentage(): void
     {
         $this->expectNotToPerformAssertions();
-        $this->invokeValidateValue('fixed', 0.0);
-        $this->invokeValidateValue('percentage', 0.0);
+        $this->invokeValidateValue('fixed', '0');
+        $this->invokeValidateValue('percentage', '0');
     }
 
     public function testNonArrayValueIsNoOp(): void
@@ -243,6 +342,7 @@ class SurchargeGridTestable
     private $value;
     private $scope = 'default';
     private $scopeId = 0;
+    private $hasPercentage = true;
 
     public function __construct(WriterInterface $configWriter)
     {
@@ -258,6 +358,11 @@ class SurchargeGridTestable
     {
         $this->scope = $scope;
         $this->scopeId = $scopeId;
+    }
+
+    public function setTestHasPercentage(bool $hasPercentage): void
+    {
+        $this->hasPercentage = $hasPercentage;
     }
 
     public function callAfterSave(): void
@@ -298,6 +403,9 @@ class SurchargeGridTestable
         // (the GET /v1/merchant surcharge_limit).
         $maxFixed = 25;
         $maxPercentage = ConfigRepository::SURCHARGE_PERCENTAGE_MAX;
+        // Mirrors savedSurchargeTypeHasPercentage(); injectable so a test can
+        // exercise the fixed-only path where the Limit column is not live.
+        $hasPercentage = $this->hasPercentage;
 
         foreach ($value as $days => $fields) {
             if (!is_array($fields)) {
@@ -313,9 +421,18 @@ class SurchargeGridTestable
                 $path = sprintf('payment/two_payment/surcharge_%d_%s', $days, $type);
 
                 $cellValue = (string)$cellValue;
-                if ($cellValue === '') {
+                if ($cellValue === '' || ($type === 'limit' && !$hasPercentage)) {
                     $this->configWriter->delete($path, $this->scope, $this->scopeId);
                     continue;
+                }
+
+                // Mirrors validateValue()'s raw-string checks; pinned for
+                // real against the production method by the
+                // testProductionValidator* cases above.
+                if (!is_numeric($cellValue)) {
+                    throw new LocalizedException(
+                        __('%1 days - %2: value must be a number.', $days, $type)
+                    );
                 }
 
                 $numericValue = (float)$cellValue;
@@ -328,7 +445,7 @@ class SurchargeGridTestable
                 // for real against the production method by
                 // testProductionValidatorRefusesAZeroLimit — this copy only
                 // keeps the flow tests above faithful to the real save.
-                if ($type === 'limit' && $numericValue === 0.0) {
+                if ($type === 'limit' && round($numericValue, 2) === 0.0) {
                     throw new LocalizedException(
                         __(
                             '%1 days - limit: a limit of 0 is not allowed. To charge nothing on this term,'
