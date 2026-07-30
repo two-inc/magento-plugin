@@ -112,8 +112,39 @@ define(['jquery', 'mage/translate'], function ($, $t) {
     /** jQuery event namespace for everything this module binds. */
     const EVENT_NS = '.twoCompanySearch';
 
+    /**
+     * A SECOND namespace, for the manual-entry row's own handlers.
+     *
+     * They bind to the same node as the below-threshold cancel handler in
+     * markSearchBinding(), and both listen for `input`. Sharing one namespace
+     * would make each one's `.off()` silently unbind the other.
+     */
+    const MANUAL_ENTRY_NS = '.twoManualEntry';
+
     const SPINNER_CLASS = 'two-company-search__spinner';
     const UNAVAILABLE_CLASS = 'two-company-search__unavailable';
+    const MANUAL_ENTRY_CLASS = 'two-company-search__manual-entry';
+
+    /**
+     * Sentinel `id` for the manual-entry pseudo-result.
+     *
+     * It travels on the payload object select2 reads back out of the row, so
+     * the call site can recognise its own row in `select2:selecting` and
+     * cancel the selection instead of treating it as a company. Namespaced and
+     * deliberately not a plausible company name, since select2 result ids for
+     * this search ARE company names.
+     */
+    const MANUAL_ENTRY_ID = '__two_manual_entry__';
+
+    /**
+     * The manual-entry row's label. Resolved per call, not once at module
+     * load: Magento's JS dictionary can arrive after this module is defined.
+     *
+     * @returns {string} translated label
+     */
+    function manualEntryText() {
+        return $t('My company is not on the list');
+    }
 
     /**
      * Does this response mean "the search backend could not answer
@@ -151,8 +182,12 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         SEARCH_DEBOUNCE_MS: SEARCH_DEBOUNCE_MS,
         MIN_INPUT_LENGTH: MIN_INPUT_LENGTH,
         EVENT_NS: EVENT_NS,
+        MANUAL_ENTRY_NS: MANUAL_ENTRY_NS,
+        MANUAL_ENTRY_ID: MANUAL_ENTRY_ID,
+        MANUAL_ENTRY_CLASS: MANUAL_ENTRY_CLASS,
         isDegradedResponse: isDegradedResponse,
         minInputLengthMessage: minInputLengthMessage,
+        manualEntryText: manualEntryText,
 
         /**
          * Cancel the in-flight search for a bind, if any.
@@ -603,6 +638,212 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                     $t('Company search is unavailable. Try again, or enter details manually.') +
                     '</span>'
             );
+        },
+
+        /**
+         * Is this the payload of the manual-entry row rather than a company?
+         *
+         * @param {*} data select2 result payload
+         * @returns {boolean}
+         */
+        isManualEntryOption: function (data) {
+            return Boolean(data) && typeof data === 'object' && data.id === MANUAL_ENTRY_ID;
+        },
+
+        /**
+         * Resolve the `<ul>` select2 renders its results into.
+         *
+         * Same staleness contract as getSearchFieldContainer(): fails closed on
+         * a token that no longer matches the bind stamped on the node, so a
+         * torn-down widget's handlers cannot paint onto its replacement.
+         *
+         * Found by class rather than through the internals of the results
+         * object, because the class is part of select2's public styling
+         * surface while the property name is not.
+         *
+         * @param {object} $field jQuery-wrapped picker input
+         * @param {object} token identity stamped by markSearchBinding()
+         * @returns {object} jQuery set — empty when stale or not bound
+         */
+        getResultsList: function ($field, token) {
+            if (!$field || !$field.data) return $();
+            if ($field.data('twoSearchBind') !== token) return $();
+            const instance = $field.data('select2');
+            if (!instance || !instance.$dropdown) return $();
+            return instance.$dropdown.find('.select2-results__options');
+        },
+
+        /**
+         * What the buyer has typed into the picker's search box right now.
+         *
+         * @param {object} $field jQuery-wrapped picker input
+         * @param {object} token identity stamped by markSearchBinding()
+         * @returns {string}
+         */
+        currentSearchTerm: function ($field, token) {
+            const $container = this.getSearchFieldContainer($field, token);
+            if (!$container.length) return '';
+            return $container.find('.select2-search__field').val() || '';
+        },
+
+        /**
+         * Build the manual-entry row as a REAL select2 result row.
+         *
+         * The alternative — a footer node outside the results list — is what
+         * this replaces: it sat outside the listbox that the combobox's
+         * `aria-owns` points at, so it was announced by nothing and reachable
+         * by no key. Inside the list it inherits select2's own keyboard model
+         * for free.
+         *
+         * Every attribute here is load-bearing:
+         *  - the `--selectable` class is what the bundled select2 walks when
+         *    the buyer presses the arrow keys, and what it highlights;
+         *  - `data-selected="false"` and the absence of a `--selected` class
+         *    keep activation routed to selection. Marking the row selected
+         *    instead routes Enter to "close the dropdown", and the row does
+         *    nothing at all;
+         *  - the payload needs an `id`, because select2 stringifies
+         *    `data.id` for every selectable row while setting classes and
+         *    throws on a payload without one — taking the whole render down,
+         *    not just this row;
+         *  - the payload's `_resultId` must equal the row's DOM id: that is
+         *    the value select2 copies into the listbox's
+         *    `aria-activedescendant`, so a screen reader announces the wrong
+         *    row (or none) if the two disagree.
+         *
+         * The label is written with `.text()`, never interpolated into markup:
+         * this picker sets select2's `escapeMarkup` to the identity function
+         * so that server-side result highlighting can render, which means a
+         * translation catalogue would otherwise be an HTML injection point.
+         *
+         * @param {string} [resultsId] DOM id of the results `<ul>`, used to
+         *        derive a row id unique to this picker
+         * @returns {object} jQuery-wrapped `<li>`
+         */
+        buildManualEntryOption: function (resultsId) {
+            const rowId = (resultsId || 'select2-two-company-search') + '-manual-entry';
+            const label = manualEntryText();
+            const $option = $('<li></li>')
+                .attr({
+                    id: rowId,
+                    role: 'option',
+                    'aria-selected': 'false',
+                    'data-selected': 'false'
+                })
+                .addClass('select2-results__option')
+                .addClass('select2-results__option--selectable')
+                .addClass(MANUAL_ENTRY_CLASS)
+                .text(label);
+            $option.data('data', {
+                id: MANUAL_ENTRY_ID,
+                text: label,
+                // Both pickers set `templateResult` to read `data.html`, so a
+                // row without one renders empty if select2 ever re-templates
+                // it.
+                html: label,
+                _resultId: rowId
+            });
+            return $option;
+        },
+
+        /**
+         * Bring the manual-entry row into line with the current search term:
+         * present and last while the term is at or above the threshold, absent
+         * below it.
+         *
+         * Idempotent, because it is called from a MutationObserver on the very
+         * list it mutates — the second call sees the row already there and
+         * stops, which is what terminates the loop.
+         *
+         * @param {object} $field jQuery-wrapped picker input
+         * @param {object} token identity stamped by markSearchBinding()
+         * @returns {object} jQuery set — the row, or empty when not shown
+         */
+        renderManualEntryRow: function ($field, token) {
+            const $results = this.getResultsList($field, token);
+            if (!$results.length) return $();
+
+            const term = this.currentSearchTerm($field, token);
+            const $existing = $results.children(`.${MANUAL_ENTRY_CLASS}`);
+
+            // Threshold, not "has searched". The buyer who cannot find their
+            // company is the one who most needs this row, and making them wait
+            // out a debounce and a request first is exactly the wrong order.
+            if (term.length < MIN_INPUT_LENGTH) {
+                $existing.remove();
+                return $();
+            }
+            if ($existing.length) {
+                // A fresh page of results appends after us; re-appending moves
+                // the row back to the end without rebuilding it.
+                if (!$existing.is(':last-child')) $results.append($existing);
+                return $existing;
+            }
+            const $row = this.buildManualEntryOption($results.attr('id'));
+            $results.append($row);
+            return $row;
+        },
+
+        /**
+         * Wire the manual-entry row up for a bind. Call on `select2:open`.
+         *
+         * Two triggers, because neither alone is enough:
+         *  - `input` on the search box, so the row appears as soon as the term
+         *    reaches the threshold and disappears when it drops below —
+         *    independently of the debounced request, and bound here rather
+         *    than inside any focus-wait callback so a fast typist cannot
+         *    outrun it;
+         *  - a MutationObserver on the results list, because select2 empties
+         *    that list on every new result set, which would take our row with
+         *    it.
+         *
+         * Rebinding is safe: the handler is namespaced and cleared first, and
+         * the previous observer is disconnected, so reopening the picker cannot
+         * accumulate duplicates.
+         *
+         * @param {object} $field jQuery-wrapped picker input
+         * @param {object} token identity stamped by markSearchBinding()
+         */
+        attachManualEntryRow: function ($field, token) {
+            const self = this;
+            const $results = this.getResultsList($field, token);
+            if (!$results.length) return;
+
+            this.getSearchFieldContainer($field, token)
+                .find('.select2-search__field')
+                .off('input' + MANUAL_ENTRY_NS)
+                .on('input' + MANUAL_ENTRY_NS, function () {
+                    self.renderManualEntryRow($field, token);
+                });
+
+            this.detachManualEntryObserver($field);
+            // Guarded rather than assumed: without an observer the row still
+            // works, it just needs the next keystroke to come back after a
+            // render, which beats the module throwing on load.
+            if (typeof MutationObserver === 'function' && $results.get(0)) {
+                const observer = new MutationObserver(function () {
+                    self.renderManualEntryRow($field, token);
+                });
+                observer.observe($results.get(0), { childList: true });
+                $field.data('twoManualEntryObserver', observer);
+            }
+
+            this.renderManualEntryRow($field, token);
+        },
+
+        /**
+         * Stop watching a picker's results list. Call when the widget is torn
+         * down — the observer holds the detached list alive otherwise.
+         *
+         * @param {object} $field jQuery-wrapped picker input
+         */
+        detachManualEntryObserver: function ($field) {
+            if (!$field || !$field.data) return;
+            const observer = $field.data('twoManualEntryObserver');
+            if (observer && typeof observer.disconnect === 'function') {
+                observer.disconnect();
+            }
+            $field.data('twoManualEntryObserver', null);
         }
     };
 });

@@ -45,8 +45,6 @@ define([
         companyIdSelector: '#shipping-new-address-form input[name="custom_attributes[company_id]"]',
         shippingTelephoneSelector: '#shipping-new-address-form input[name="telephone"]',
         companyNamePlaceholder: $t('Enter company name to search'),
-        enterDetailsManuallyText: $t('Enter details manually'),
-        enterDetailsManuallyButton: '#shipping_enter_details_manually',
         searchForCompanyText: $t('Search for company'),
         searchForCompanyButton: '#shipping_search_for_company',
         initialize: function () {
@@ -81,7 +79,7 @@ define([
          * THE single writer of the `companyData` customer-data section.
          *
          * Its own method so that every path which has to publish — a registry
-         * pick, "Enter details manually", and the company-number field the
+         * pick, the manual-entry row, and the company-number field the
          * buyer types into — shares one call site. The payment step treats a
          * change NOTIFICATION on this section as an act of selection, and that
          * reading is only sound while the section has exactly one writer.
@@ -218,7 +216,7 @@ define([
                 self.syncCompanyIdEditable();
             });
             $.async(this.companyNameSelector, function (companyNameField) {
-                // Only meaningful after "Enter details manually" has destroyed
+                // Only meaningful after the manual-entry row has destroyed
                 // the widget: until then the buyer cannot type here at all and
                 // picks arrive through setCompanyData(). ENABLES only — the
                 // buyer may come back to edit the name after typing a number,
@@ -240,6 +238,26 @@ define([
         },
         addressLookup: function (selectedCompany) {
             return companySearch.lookupCompanyAddress(config, selectedCompany);
+        },
+        /**
+         * Hand the company-name input back to the buyer.
+         *
+         * Clears the company in play first: whatever they type next is a
+         * different company from the one the picker had, and the published
+         * section is what the payment step credit-checks.
+         *
+         * @param {object} $companyNameField the node THIS bind owns — not the
+         *        document-wide selector, so a re-rendered form's picker is
+         *        never the one torn down
+         */
+        enterDetailsManually: function ($companyNameField) {
+            this.setCompanyData();
+            companySearch.detachManualEntryObserver($companyNameField);
+            $companyNameField.off(companySearch.EVENT_NS);
+            $companyNameField.select2('destroy');
+            $companyNameField.attr('type', 'text');
+            $companyNameField.val('');
+            $(this.searchForCompanyButton).show();
         },
         enableCompanySearch: function () {
             if (!config.isCompanySearchEnabled) return;
@@ -315,32 +333,29 @@ define([
                             // search box, so a reopened picker would show the
                             // previous search's "unavailable" notice.
                             companySearch.clearSearchChrome($companyNameField, bindToken);
-                            if ($(self.enterDetailsManuallyButton).length == 0) {
-                                $('.select2-results')
-                                    .parent()
-                                    .append(
-                                        `<div id="shipping_enter_details_manually" class="enter_details_manually" title="${self.enterDetailsManuallyText}">` +
-                                            `<span>${self.enterDetailsManuallyText}</span>` +
-                                            '</div>'
-                                    );
-                            }
-                            // Re-bound unconditionally, OUTSIDE the append
-                            // guard: the div survives a re-render, so the
-                            // guard was false and this handler kept closing
-                            // over the first, stale component.
-                            $(self.enterDetailsManuallyButton)
-                                .off('click' + companySearch.EVENT_NS)
-                                .on('click' + companySearch.EVENT_NS, function () {
-                                    self.setCompanyData();
-                                    // Scoped to the node this bind owns, not
-                                    // the document-wide selector.
-                                    $companyNameField.off(companySearch.EVENT_NS);
-                                    $companyNameField.select2('destroy');
-                                    $companyNameField.attr('type', 'text');
-                                    $companyNameField.val('');
-                                    $(self.searchForCompanyButton).show();
-                                });
+                            // The manual-entry affordance is a row INSIDE the
+                            // results list, so the model owns its whole
+                            // lifecycle (appear at the threshold, survive each
+                            // re-render). Bound to this node and this bind
+                            // token, so a stale widget cannot paint a row onto
+                            // its replacement.
+                            companySearch.attachManualEntryRow($companyNameField, bindToken);
                             document.querySelector('.select2-search__field').focus();
+                        })
+                        /*
+                         * `select2:selecting` is the PREVENTABLE pre-event for
+                         * a selection, and the manual-entry row is not a
+                         * company: letting it through would write the sentinel
+                         * id into the company name and fire an address lookup
+                         * for it. Cancelling here also covers mouse, Enter and
+                         * touch in one place, because all three arrive as a
+                         * selection.
+                         */
+                        .on('select2:selecting' + companySearch.EVENT_NS, function (e) {
+                            const data = e.params && e.params.args && e.params.args.data;
+                            if (!companySearch.isManualEntryOption(data)) return;
+                            e.preventDefault();
+                            self.enterDetailsManually($companyNameField);
                         })
                         .on('select2:select' + companySearch.EVENT_NS, function (e) {
                             const selectedItem = e.params.data;
