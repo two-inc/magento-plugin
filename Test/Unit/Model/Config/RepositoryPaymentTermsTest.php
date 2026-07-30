@@ -481,8 +481,36 @@ class RepositoryPaymentTermsTest extends TestCase
             'empty string means no limit' => [''],
             'whitespace-only means no limit' => ['   '],
             'non-finite breaks serialisation' => ['1e400'],
-            'an array cannot be cast to string' => [['50']],
         ];
+    }
+
+    /**
+     * A non-scalar stored limit reads as absent WITHOUT attempting a string
+     * cast. The same hand-edit and import routes that can store junk can store
+     * an array, and casting one to string is a PHP warning rather than an
+     * error — so the null result alone does not pin the guard (the cast yields
+     * "Array", which is non-numeric and lands on null anyway). The assertion
+     * that has to hold is that no diagnostic is raised at all.
+     */
+    public function testGetSurchargeConfigTreatsANonScalarStoredLimitAsAbsentWithoutADiagnostic(): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_30_limit' => ['50']]);
+
+        $raised = [];
+        set_error_handler(
+            static function ($severity, $message) use (&$raised) {
+                $raised[] = $message;
+                return true;
+            }
+        );
+        try {
+            $limit = $this->repository->getSurchargeConfig(30)['limit'];
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertNull($limit);
+        $this->assertSame([], $raised, 'a non-scalar limit must not be cast to string');
     }
 
     // ── getPaymentTermsType (retained) ──────────────────────────────
