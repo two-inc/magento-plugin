@@ -370,8 +370,10 @@ describe('the manual-entry row is a real, keyboard-reachable option', () => {
         const payload = $row.data('data');
 
         expect(payload).toBeTruthy();
-        // Absent, select2 throws while setting classes and takes the whole
-        // render down rather than just this row.
+        // Absent, select2 compares this row under the literal string
+        // "undefined" when it reconciles the list against the selection, so it
+        // matches any other id-less row. No crash — a real one, which is why
+        // it would have shipped unnoticed.
         expect(typeof payload.id).toBe('string');
         expect(payload.id).toBe(MANUAL_ENTRY_ID);
         // Must equal the row's own DOM id, or aria-activedescendant points at
@@ -586,6 +588,38 @@ describe('what drives the row', () => {
         expect(rows[rows.length - 1].classList.contains(MANUAL_ENTRY_CLASS)).toBe(
             true
         );
+    });
+
+    test('neither closure survives its own bind being superseded', async () => {
+        const staleToken = dom.token;
+        model.attachManualEntryRow(dom.$field, staleToken);
+
+        // Live first, so the zero-assertions below cannot pass on a list that
+        // was never going to get a row anyway.
+        typeTerm(dom, 'example');
+        expect(manualRows(dom)).toHaveLength(1);
+
+        // Re-render: select2 empties the list and the picker is re-bound on the
+        // same node under a FRESH identity. Every closure from the old bind is
+        // still attached, and each holds its own token.
+        dom.results.innerHTML = '';
+        dom.$field.data('twoSearchBind', {});
+
+        // The input closure must no longer paint. Reading the node's identity
+        // instead of its own token would match the new bind and paint onto the
+        // live picker.
+        typeTerm(dom, 'example ltd');
+        expect(manualRows(dom)).toHaveLength(0);
+
+        // Nor may the old observer paint when the new bind renders results.
+        addRealResult(dom, 'Example Trading Ltd');
+        await tick();
+        expect(manualRows(dom)).toHaveLength(0);
+
+        // And re-attaching under the stale token must be inert too.
+        model.attachManualEntryRow(dom.$field, staleToken);
+        typeTerm(dom, 'example holdings');
+        expect(manualRows(dom)).toHaveLength(0);
     });
 
     test('detaching stops the watcher, so a torn-down picker holds nothing', async () => {
@@ -894,10 +928,21 @@ describe('the vendored bundle still works the way the row depends on', () => {
     // silently making the row unreachable in a real browser.
     const BUNDLE = 'view/frontend/web/select2-4.1.0/js/select2.min.js';
 
-    test('arrow-key navigation still walks the selectable class we set', () => {
-        expect(readSource(BUNDLE)).toContain(
+    test('every activation path still walks the selectable class we set', () => {
+        // All three, not just arrow-down: the class occurs eight times in the
+        // bundle, so pinning one handler leaves a rename in either of the
+        // others green while the row stops being reachable that way.
+        const bundle = readSource(BUNDLE);
+        expect(bundle).toContain(
             '"results:next",function(){var e,t=i.getHighlightedResults(),' +
                 'n=i.$results.find(".select2-results__option--selectable")'
+        );
+        expect(bundle).toContain(
+            '"results:previous",function(){var e,t=i.getHighlightedResults(),' +
+                'n=i.$results.find(".select2-results__option--selectable")'
+        );
+        expect(bundle).toContain(
+            '$results.on("mouseup",".select2-results__option--selectable"'
         );
     });
 

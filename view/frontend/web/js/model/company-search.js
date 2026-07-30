@@ -704,10 +704,12 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          *  - the absence of a `--selected` class keeps activation routed to
          *    selection. Marking the row selected instead routes Enter to
          *    "close the dropdown", and the row does nothing at all;
-         *  - the payload needs an `id`, because select2 stringifies
-         *    `data.id` for every selectable row while setting classes and
-         *    throws on a payload without one — taking the whole render down,
-         *    not just this row;
+         *  - the payload needs an `id`, because select2 stringifies `data.id`
+         *    for every selectable row when it reconciles the rendered list
+         *    against the current selection. Without one the row is compared
+         *    under the literal string "undefined", so it matches any other
+         *    id-less row and can be marked selected on that basis. It does not
+         *    throw — the call that would is on a path this row bypasses;
          *  - the payload's `_resultId` must equal the row's DOM id: that is
          *    the value select2 copies into the listbox's
          *    `aria-activedescendant`, so a screen reader announces the wrong
