@@ -106,7 +106,17 @@ define([
                     $companyNameField.off(companySearch.EVENT_NS);
                     $companyNameField
                         .select2({
-                            minimumInputLength: 3,
+                            minimumInputLength: companySearch.MIN_INPUT_LENGTH,
+                            // Displaces select2's own built-in English
+                            // "input too short" text, which is baked into the
+                            // vendored bundle and counts down the REMAINING
+                            // characters. Ours is translatable and names the
+                            // threshold outright.
+                            language: {
+                                inputTooShort: function () {
+                                    return companySearch.minInputLengthMessage();
+                                }
+                            },
                             width: '100%',
                             escapeMarkup: function (markup) {
                                 return markup;

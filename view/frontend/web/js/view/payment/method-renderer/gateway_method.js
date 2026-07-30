@@ -1102,7 +1102,7 @@ define([
                     $companyNameField.off(companySearch.EVENT_NS);
                     $companyNameField
                         .select2({
-                            minimumInputLength: 3,
+                            minimumInputLength: companySearch.MIN_INPUT_LENGTH,
                             width: '100%',
                             escapeMarkup: function (markup) {
                                 return markup;

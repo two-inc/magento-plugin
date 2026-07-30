@@ -121,6 +121,7 @@ function defaultMocks() {
             clearResultCache: function () {},
             EVENT_NS: '.twoCompanySearch',
             MIN_INPUT_LENGTH: 3,
+            minInputLengthMessage: function () { return 'Please enter 3 or more characters'; },
             getSearchFieldContainer: function () { return null; },
             markSearchBinding: function () {},
             clearSearchChrome: function () {},

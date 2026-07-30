@@ -73,12 +73,36 @@ define(['jquery', 'mage/translate'], function ($, $t) {
     const activeRequests = new WeakMap();
 
     /**
-     * Mirrors the `minimumInputLength: 3` both call sites pass to select2.
+     * The `minimumInputLength` both call sites pass to select2 — they read
+     * this constant rather than repeating a literal, so the enforced
+     * threshold and the hint below can never drift apart.
+     *
      * Below it select2's decorator short-circuits `query()` and never reaches
      * the data adapter, so no transport runs — which the chrome has to know
      * about, or nothing ever takes the spinner down.
      */
     const MIN_INPUT_LENGTH = 3;
+
+    /**
+     * The "keep typing" hint shown while the term is below MIN_INPUT_LENGTH.
+     *
+     * select2 ships its own English `inputTooShort` message, hard-coded
+     * inside the vendored bundle and phrased as the REMAINING character
+     * count. Neither is acceptable: the vendored bundle is not ours to edit
+     * and its literals never reach Magento's translation dictionaries. Call
+     * sites override it via select2's `language.inputTooShort` option with
+     * this instead — a plugin-owned, translatable string quoting a FIXED
+     * threshold.
+     *
+     * Resolved per call, not once at module load, because Magento's JS
+     * dictionary can arrive after this module is defined. Magento's `$t`
+     * does not interpolate, hence the explicit replace.
+     *
+     * @returns {string} translated hint naming MIN_INPUT_LENGTH
+     */
+    function minInputLengthMessage() {
+        return $t('Please enter %1 or more characters').replace('%1', MIN_INPUT_LENGTH);
+    }
 
     /** jQuery event namespace for everything this module binds. */
     const EVENT_NS = '.twoCompanySearch';
@@ -123,6 +147,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         MIN_INPUT_LENGTH: MIN_INPUT_LENGTH,
         EVENT_NS: EVENT_NS,
         isDegradedResponse: isDegradedResponse,
+        minInputLengthMessage: minInputLengthMessage,
 
         /**
          * Cancel the in-flight search for a bind, if any.
