@@ -2,7 +2,8 @@ import { expect, Page } from '@playwright/test';
 
 // GB skip-verification test buyer (auto-approved, no SCA) — the staging store is
 // GBP, so a GB buyer keeps the order coherent and passes the order-intent.
-// Source: two-inc/e2e-tests e2e_tests/config.py GBSettings.TEST_BUYER_COMPANY_SKIP_VERIFICATION.
+// Value mirrors the shared GB skip-verification buyer used by the internal e2e
+// suite; override with COMPANY_QUERY if that fixture changes.
 export const COMPANY_QUERY = process.env.COMPANY_QUERY || 'RESTAURANT 53 LTD';
 export const COUNTRY = process.env.COUNTRY || 'GB';
 export const PRODUCT = process.env.PRODUCT || '/default/push-it-messenger-bag.html';
