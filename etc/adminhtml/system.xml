@@ -188,7 +188,7 @@
                 <field id="payment_terms_type" translate="label comment" type="select" sortOrder="30" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Payment Terms Type</label>
-                    <comment><![CDATA[<strong>Standard:</strong> Payment due after a fixed number of days from fulfillment.<br/><strong>End of Month:</strong> Payment due at the end of month plus additional days from fulfillment.]]></comment>
+                    <comment><![CDATA[<strong>Standard:</strong> Payment due after a fixed number of days from fulfilment.<br/><strong>End of Month:</strong> Payment due at the end of month plus additional days from fulfilment.]]></comment>
                     <source_model>Two\Gateway\Model\Config\Source\PaymentTermsType</source_model>
                     <config_path>payment/two_payment/payment_terms_type</config_path>
                 </field>
