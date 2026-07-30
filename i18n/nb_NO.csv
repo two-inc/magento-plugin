@@ -273,3 +273,4 @@
 "Invoice upload failed: %1","Fakturaopplasting mislyktes: %1"
 "⚠ deployment incomplete — code newer than compiled assets; run setup:static-content:deploy","⚠ distribusjon ufullstendig — koden er nyere enn de kompilerte ressursene; kjør setup:static-content:deploy"
 "Use Website Value","Bruk nettstedsverdi"
+"Invoice purchase with %1 requires a company number. Please add your company details and try again.","Fakturakjøp med %1 krever et organisasjonsnummer. Legg til firmaopplysningene dine og prøv igjen."

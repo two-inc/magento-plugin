@@ -269,3 +269,4 @@
 "Invoice upload failed: %1","Uploaden van factuur mislukt: %1"
 "⚠ deployment incomplete — code newer than compiled assets; run setup:static-content:deploy","⚠ implementatie onvolledig — code is nieuwer dan de gecompileerde assets; voer setup:static-content:deploy uit"
 "Use Website Value","Gebruik websitewaarde"
+"Invoice purchase with %1 requires a company number. Please add your company details and try again.","Aankoop op factuur met %1 vereist een KVK-nummer. Vul uw bedrijfsgegevens in en probeer het opnieuw."
