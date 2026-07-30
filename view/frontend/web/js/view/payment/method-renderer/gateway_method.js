@@ -361,11 +361,21 @@ define([
          * harmless no-op on the read path, and it has to stay one.
          *
          * No editable state is derived for the organisation number: the tile has
-         * no company-number input to derive one for (TWO-25288). `companyId()`
-         * is written only by a company-search pick, the sole-trader autofill
-         * response, or the address step's `companyData` notification — that
-         * last one being the only surviving route for a hand-typed number, and
-         * it is enabled only where the registry holds no identifier.
+         * no company-number input to derive one for (TWO-25288).
+         *
+         * Writers of `companyId()` — four paths, not three; the last two are
+         * easy to conflate and are NOT the same thing:
+         *
+         *  - a company-search pick on this step;
+         *  - the sole-trader autofill response (applyPrefetch(), soleTraderMode(),
+         *    and the postMessage handler);
+         *  - the address step's `companyData` customer-data notification, which
+         *    is the only surviving route for a HAND-TYPED number, and the address
+         *    step enables it only where the registry holds no identifier;
+         *  - updateAddress(), parsing a `company_id` custom attribute off the
+         *    quote's billing/shipping address. This fires from the quote
+         *    subscriptions with no address-step interaction at all — a saved
+         *    customer address already carrying the attribute is enough.
          *
          * Readers: getData(), placeOrderIntent(), the authoritative guard a few
          * lines below, and the notice-clearing subscription in initialize().

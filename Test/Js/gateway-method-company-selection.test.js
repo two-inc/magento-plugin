@@ -471,17 +471,42 @@ describe('order intent for a company with no registry identifier', () => {
         expect(intent).toHaveBeenCalledTimes(1);
     });
 
-    test('an identifier-less pick places no intent — there is no number yet', () => {
+    test('an identifier-less pick places no intent and clears the previous number', () => {
+        // The bare `expect(intent).not.toHaveBeenCalled()` this test used to end
+        // on could not fail for the regression it names. An intent is placed
+        // only inside fillCompanyData(), AFTER its
+        // `if (!companyName || !companyId) return;` guard, and
+        // selectCompanyWithoutIdentifier() has no intent call at all — so with
+        // an empty companyId NEITHER routing choice places one, and reverting
+        // the handler to fillCompanyData() left it green.
+        //
+        // Seed a real company first, so the intent count discriminates between
+        // the two routes, and assert the identifier was actually CLEARED —
+        // which is the property only selectCompanyWithoutIdentifier() has.
         const { renderer, node, intent } = loadWithIntent();
 
         renderer.enableCompanySearch();
-        node(COMPANY_NAME_FIELD).handlers['select2:select']({
+        const select = node(COMPANY_NAME_FIELD).handlers['select2:select'];
+
+        select({
+            params: {
+                data: { id: 'First Example Ltd', text: 'First Example Ltd', companyId: '12345678' }
+            }
+        });
+        expect(intent).toHaveBeenCalledTimes(1);
+        expect(renderer.companyId()).toBe('12345678');
+
+        select({
             params: {
                 data: { id: 'Second Example Ltd', text: 'Second Example Ltd', companyId: '' }
             }
         });
 
-        expect(intent).not.toHaveBeenCalled();
+        // No SECOND intent, and the previous company's number is gone rather
+        // than left behind under the new company's name.
+        expect(intent).toHaveBeenCalledTimes(1);
+        expect(renderer.companyName()).toBe('Second Example Ltd');
+        expect(renderer.companyId()).toBe('');
     });
 
 });

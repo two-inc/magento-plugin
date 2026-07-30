@@ -184,19 +184,19 @@
                 <!--
                     There is deliberately NO company-number input here.
 
-                    Three sources may supply the organisation number, and all
-                    three write the `companyId` observable rather than a field:
-                    a company-search pick, the sole-trader autofill response,
-                    and the address step's `companyData` notification. getData()
-                    reads that observable — never the DOM — so no input on this
-                    step is needed to carry the value.
+                    Every source that may supply the organisation number writes
+                    the `companyId` observable rather than a field, and
+                    getData() reads that observable — never the DOM — so no
+                    input on this step is needed to carry the value. See the
+                    writer list on applyCompanyData() in
+                    gateway_method.js for the current enumeration.
 
-                    The third of those is the only surviving route for a
-                    hand-typed number, and the address step enables it only
-                    where the registry holds no identifier for the picked
-                    company. Typing one HERE was unrestricted, which produced
-                    poor data quality and, worse, genuine buyers receiving
-                    invoices for orders they never placed.
+                    Exactly one of those routes is a HAND-TYPED number: the
+                    address step's own company-number field, which that step
+                    enables only where the registry holds no identifier for the
+                    picked company. Typing one HERE was unrestricted, which
+                    produced poor data quality and, worse, genuine buyers
+                    receiving invoices for orders they never placed.
 
                     Nothing client-side enforces the presence of an
                     identifier. Model/Two.php::authorize() refuses an order

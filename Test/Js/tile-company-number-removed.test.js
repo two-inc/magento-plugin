@@ -65,13 +65,23 @@ describe('the payment tile offers no company-number field', () => {
     test('the template declares no company_id input', () => {
         const markup = withoutComments(readTemplate());
 
-        // Regexes, not substrings. A reinstatement spelled with single quotes
-        // (`id='company_id'`) or through a ko attr binding
-        // (`attr: {id: 'company_id'}`) would slip past every plain
-        // `toContain` check except `value: companyId`.
-        expect(markup).not.toMatch(/\bid\s*=\s*["']company_id["']/);
-        expect(markup).not.toMatch(/\bname\s*=\s*["']payment\[company_id\]["']/);
-        expect(markup).not.toMatch(/company_id/);
+        // Scoped to <input> tags, not the whole document. A bare
+        // `not.toMatch(/company_id/)` over all the markup is the strongest pin
+        // but it also forbids a legitimate future reference — a `for="company_id"`
+        // label, a `data-*` marker — and would fail for the wrong reason.
+        //
+        // Regexes rather than substrings: a reinstatement spelled with single
+        // quotes (`id='company_id'`) or through a ko attr binding
+        // (`attr: {id: 'company_id'}`) slips past every plain `toContain` check.
+        const inputTags = markup.match(/<input\b[^>]*>/g) || [];
+        expect(inputTags.length).toBeGreaterThan(0);
+        inputTags.forEach(function (tag) {
+            expect(tag).not.toMatch(/company_id/);
+            expect(tag).not.toMatch(/companyId\b/);
+        });
+
+        // No ko binding anywhere in the template may write the observable back
+        // from a field, whatever tag it sits on.
         expect(markup).not.toMatch(/value:\s*companyId\b/);
     });
 
@@ -123,6 +133,12 @@ describe('the payment tile offers no company-number field', () => {
 
     test('clearCompany carries no disable argument and touches no number field', () => {
         const { renderer } = loadRendererOnly();
+
+        // Guard the subject first. `String(undefined)` is the string
+        // "undefined", which contains none of the substrings below, so a
+        // renamed or deleted clearCompany would make all three assertions pass
+        // vacuously.
+        expect(typeof renderer.clearCompany).toBe('function');
 
         // Asserting on the function's own SOURCE, not on `.length`. A default
         // parameter (`function (disableCompanyId = false)`) does not count

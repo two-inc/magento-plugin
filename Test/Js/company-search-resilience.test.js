@@ -1100,8 +1100,10 @@ describe('re-render safety of the select2 binding', () => {
             countryCode: function () {
                 return 'gb';
             },
-            // Carries `subscribe` because enableCompanySearch() derives
-            // company_id's editable state from this observable.
+            // Defensive `subscribe` stub. Nothing on this path subscribes to
+            // the observable any more — the company-number editable-state
+            // derivation that used to (TWO-25288) is gone — but the stub is
+            // cheap and keeps the fixture usable if a subscriber returns.
             companyName: Object.assign(
                 function () {
                     return '';
