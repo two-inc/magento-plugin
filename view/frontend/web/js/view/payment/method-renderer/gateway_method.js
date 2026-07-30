@@ -1020,6 +1020,16 @@ define([
                     // company pick fires N address lookups, N-1 of them closed
                     // over disposed renderers. Clear ours first.
                     $companyNameField.off(companySearch.EVENT_NS);
+                    // select2's destroy() doesn't disconnect it either (it
+                    // isn't select2's own state), and the same re-render that
+                    // makes the stale-handler comment above true can also
+                    // leave this the ONLY teardown point reached: a re-render
+                    // while the picker is open replaces the select2 instance
+                    // without necessarily emitting `select2:close` first, so
+                    // an observer from the PREVIOUS bind would otherwise pin
+                    // its now-detached results list alive until this node's
+                    // picker happens to be reopened again.
+                    companySearch.detachManualEntryObserver($companyNameField);
                     $companyNameField
                         .select2({
                             minimumInputLength: companySearch.MIN_INPUT_LENGTH,
@@ -1104,11 +1114,26 @@ define([
                             const data = e.params && e.params.args && e.params.args.data;
                             if (!companySearch.isManualEntryOption(data)) return;
                             e.preventDefault();
-                            self.clearCompany();
                             // Resolved here rather than closed over, and
                             // scoped to this bind's container for the same
                             // duplicate-id reason as below.
-                            $companyNameField.closest('.field').find('.search_for_company').show();
+                            const $searchForCompany = $companyNameField
+                                .closest('.field')
+                                .find('.search_for_company');
+                            // Deferred a tick, deliberately: `select2:selecting`
+                            // fires from INSIDE select2's own click/keydown
+                            // dispatch, and `clearCompany()` destroys the
+                            // select2 instance that dispatch is still running
+                            // on. Tearing the widget down synchronously here
+                            // would pull it out from under select2's own
+                            // post-preventDefault bookkeeping for this event.
+                            // A zero-delay defer runs after that dispatch has
+                            // fully unwound, once `e.preventDefault()` above
+                            // has already told select2 to skip the pick.
+                            setTimeout(function () {
+                                self.clearCompany();
+                                $searchForCompany.show();
+                            }, 0);
                         })
                         .on('select2:select' + companySearch.EVENT_NS, function (e) {
                             const selectedItem = e.params.data;

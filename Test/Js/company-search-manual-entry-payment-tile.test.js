@@ -372,9 +372,41 @@ describe('gateway_method.js payment-tile surface (structural fix)', function () 
         expect(src).toMatch(/companySearch\.detachManualEntryObserver\(\s*\$companyNameField\s*\)/);
     });
 
+    test('detaches the observer on the re-bind path too, not only on select2:close/dispose', function () {
+        // A re-render (Fire Checkout re-renders the payment renderer on
+        // totals/shipping changes) re-initialises select2 on the SAME node
+        // while the picker may still be open, which does not always emit
+        // `select2:close` first. Without this call the PREVIOUS bind's
+        // observer is orphaned until — if ever — this node's picker is
+        // reopened again. There must be a detach call BEFORE the
+        // `.select2({` re-init, in addition to the one in the close handler.
+        const reinitIndex = src.indexOf('.select2({');
+        expect(reinitIndex).toBeGreaterThan(-1);
+        const beforeReinit = src.slice(0, reinitIndex);
+        expect(beforeReinit).toMatch(/companySearch\.detachManualEntryObserver\(\s*\$companyNameField\s*\)/);
+
+        const detachCalls = src.match(/companySearch\.detachManualEntryObserver\(/g) || [];
+        // re-bind path, select2:close, and destroyCompanySearchWidget.
+        expect(detachCalls.length).toBeGreaterThanOrEqual(3);
+    });
+
     test('intercepts the sentinel row on select2:selecting instead of a click handler on a footer div', function () {
         expect(src).toMatch(/select2:selecting/);
         expect(src).toMatch(/companySearch\.isManualEntryOption\(/);
+    });
+
+    test("defers the widget teardown out of select2's own selecting dispatch", function () {
+        // select2:selecting fires from inside select2's own click/keydown
+        // handling; destroying the select2 instance synchronously in that
+        // handler would pull it out from under select2's own post-event
+        // bookkeeping. clearCompany() must run on a deferred tick, not
+        // inline in the handler.
+        const selectingStart = src.indexOf("on('select2:selecting");
+        expect(selectingStart).toBeGreaterThan(-1);
+        const selectStart = src.indexOf("on('select2:select' + companySearch.EVENT_NS", selectingStart);
+        expect(selectStart).toBeGreaterThan(selectingStart);
+        const block = src.slice(selectingStart, selectStart);
+        expect(block).toMatch(/setTimeout\(\s*function\s*\(\s*\)\s*\{[\s\S]*self\.clearCompany\(\)/);
     });
 
     test('the shared model exports the helpers the payment tile depends on', function () {
