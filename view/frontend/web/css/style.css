@@ -514,3 +514,37 @@
     border-color: #b7c0ee;
     color: var(--color-blue2);
 }
+
+/*
+ * TWO-25288. Grey inline hint showing the selected company's registry id
+ * beside the payment tile's company-name field, once a company has been
+ * picked. Purely cosmetic — carries no value of its own; `companyId()` in
+ * gateway_method.js remains the sole authoritative source read by getData().
+ */
+.two-company-name-control {
+    position: relative;
+}
+
+.two-company-id-hint {
+    position: absolute;
+    right: 24px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #dddddd;
+    font-size: 12px;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+/*
+ * TWO-25288. The address-step "Company Number" field (injected by
+ * Plugin/Model/Checkout/LayoutProcessorPlugin.php) stays in the UI-registry
+ * render tree — `visible: true` — because
+ * view/frontend/web/js/view/address-autocomplete.js resolves it through
+ * `uiRegistry.get()`. It is hidden purely visually here, so the DOM node and
+ * its value stay intact and still submit as
+ * shippingAddress.custom_attributes.company_id.
+ */
+.two-company-id-hidden {
+    display: none;
+}
