@@ -34,6 +34,13 @@ class LayoutProcessorPlugin
         LayoutProcessor $subject,
         array  $jsLayout
     ) {
+        // The field is `visible` now, so a merchant who merely has the module
+        // installed with the payment method switched off would otherwise get a
+        // company-number input on the address step for every buyer. Gated the
+        // same way the payment-method list plugin gates its own append.
+        if (!$this->repository->isActive()) {
+            return $jsLayout;
+        }
         $jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']['children']
         ['shippingAddress']['children']['shipping-address-fieldset']['children']['company_id'] = [
             'component' => 'Magento_Ui/js/form/element/abstract',
@@ -43,15 +50,26 @@ class LayoutProcessorPlugin
                 'template' => 'ui/form/field',
                 'elementTmpl' => 'ui/form/element/input',
                 'tooltip' => [
-                    'description' => 'Company Id',
+                    'description' => __('Company Number'),
                 ],
                 'options' => [],
                 'id' => 'company-id'
             ],
             'dataScope' => 'shippingAddress.custom_attributes.company_id',
-            'label' => 'Company Id',
+            'label' => __('Company Number'),
             'provider' => 'checkoutProvider',
-            'visible' => false,
+            // Rendered, and disabled until the buyer actually has to supply
+            // the number by hand. Company search fills it from the registry
+            // for a picked company, so an editable field would only let the
+            // buyer contradict the registry; the exception is a company the
+            // registry holds no identifier for, where typing it is the only
+            // route. The live derivation of that state — and the publishing of
+            // whatever the buyer types — belongs to
+            // view/frontend/web/js/view/address-autocomplete.js; `disabled`
+            // here is only the initial state for a freshly rendered form with
+            // no company selected yet.
+            'visible' => true,
+            'disabled' => true,
             'validation' => [
                 'required-entry' => false
             ],
