@@ -66,7 +66,6 @@ define([
         isPaymentTermsAccepted: ko.observable(false),
         formSelector: 'form#two_gateway_form',
         companyNameSelector: 'input#company_name',
-        companyIdSelector: 'input#company_id',
         enterDetailsManuallyText: $t('Enter details manually'),
         enterDetailsManuallyButton: '#billing_enter_details_manually',
         searchForCompanyText: $t('Search for company'),
@@ -263,15 +262,6 @@ define([
                 this._twoVisibilitySub.dispose();
                 this._twoVisibilitySub = null;
             }
-            // The company_id editable-state derivation (enableCompanySearch()).
-            // Closed over this renderer, so a re-render would otherwise leave
-            // it writing the field on behalf of a disposed component.
-            if (this._companyIdEditableSubs) {
-                this._companyIdEditableSubs.forEach(function (sub) {
-                    sub.dispose();
-                });
-                this._companyIdEditableSubs = null;
-            }
             if (this.isTwoVisible && this.isTwoVisible.dispose) {
                 this.isTwoVisible.dispose();
             }
@@ -326,7 +316,6 @@ define([
             $(this.companyNameSelector).val(companyName);
             $('#select2-company_name-container')?.text(companyName);
             this.companyId(companyId);
-            $(this.companyIdSelector).val(companyId);
             if (this.isOrderIntentEnabled) {
                 fullScreenLoader.startLoader();
                 const self = this;
@@ -341,27 +330,6 @@ define([
                         self.processOrderIntentErrorResponse(response);
                     });
             }
-        },
-        /**
-         * True when the buyer has to supply the organisation number by hand:
-         * a company is selected, but the registry gave it no national
-         * identifier so there is nothing for the picker to fill in.
-         */
-        needsManualCompanyId: function () {
-            return !!this.companyName() && !this.companyId();
-        },
-        /**
-         * `company_id` is disabled while company search owns it — the
-         * identifier arrives with the picked company, so letting the buyer
-         * edit it would only let them contradict the registry. The one
-         * exception is a company that HAS no identifier: then typing it is
-         * the buyer's only route, and being enabled is also the only state in
-         * which the template's `required="true"` is enforced at all (jQuery
-         * Validation's `elements()` skips `:disabled`, so a disabled empty
-         * field passes validation silently).
-         */
-        syncCompanyIdEditable: function () {
-            $(this.companyIdSelector).prop('disabled', !this.needsManualCompanyId());
         },
         /**
          * Apply a company the buyer (or a customer-data section) selected.
@@ -409,6 +377,13 @@ define([
          *
          * A writer that touches only the DOM field and never the observables is
          * outside both mechanisms by construction — see clearCompany().
+         *
+         * Nothing re-derives an editable state for the organisation number any
+         * more: the tile has no company-number input to derive one for
+         * (TWO-25288). `companyId()` is written only from a company-search
+         * pick, the sole-trader autofill response, or the address step's
+         * `companyData` notification, and read only by getData() and
+         * placeOrderIntent().
          */
         applyCompanyData: function (companyData, options) {
             const data = companyData || {};
@@ -426,30 +401,22 @@ define([
             } else {
                 this.fillCompanyData({ companyName: companyName, companyId: companyId });
             }
-            this.syncCompanyIdEditable();
         },
         /**
          * A selected company whose registry holds no national identifier.
          * Writes the name and CLEARS any previously selected company's
          * identifier.
          *
-         * No order intent is placed here. Whether one is placed later depends
-         * on WHICH company-number field the buyer then types into:
+         * No order intent is placed here, and the buyer has no way to supply
+         * the missing identifier on this step any more — the tile's
+         * company-number input is gone (TWO-25288). The one remaining manual
+         * route is the address step's field, which publishes what it is given
+         * to the `companyData` customer-data section; that arrives back here as
+         * an authoritative notification and reaches fillCompanyData(), so that
+         * route does get intent-checked.
          *
-         *  - the address step's field publishes what it is given to the
-         *    `companyData` customer-data section, which arrives back here as an
-         *    authoritative notification and reaches fillCompanyData() — so that
-         *    route does get intent-checked;
-         *  - this tile's own field does not. It binds `value: companyId`
-         *    directly, and ko's `value` binding is registered at
-         *    applyBindings() on the same `change` event, so ko has already
-         *    written `companyId()` before any later handler could see the edit
-         *    and fire an intent from it. Stating the current behaviour plainly
-         *    rather than promising a fix this change does not make.
-         *
-         * `company_id`'s editable state is NOT set here — it is derived from
-         * the companyName/companyId observables (see enableCompanySearch()),
-         * so a later normal pick cannot leave the field enabled.
+         * An order left in this state — company name set, identifier empty — is
+         * refused server-side by Model/Two.php::authorize().
          */
         selectCompanyWithoutIdentifier: function (companyName) {
             console.debug({ logger: 'twoPayment.selectCompanyWithoutIdentifier', companyName });
@@ -457,7 +424,6 @@ define([
             $(this.companyNameSelector).val(companyName);
             $('#select2-company_name-container')?.text(companyName);
             this.companyId('');
-            $(this.companyIdSelector).val('');
         },
         fillTelephone: function (telephone) {
             console.debug({ logger: 'twoPayment.fillTelephone', telephone });
@@ -1023,54 +989,11 @@ define([
         enableCompanySearch: function () {
             let self = this;
             require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
-                $.async(self.companyIdSelector, function (companyIdField) {
-                    const $companyIdField = $(companyIdField);
-                    // Not an unconditional disable. What puts this after the
-                    // synchronous fillCustomerData() that follows
-                    // enableCompanySearch() in registeredOrganisationMode() is
-                    // the wrapping `require()`, whose callback cannot run
-                    // before the caller returns — `$.async` itself resolves
-                    // immediately for a node that is already in the DOM, and
-                    // re-resolves on every enableCompanySearch(). Either way
-                    // this body runs with a company possibly already selected,
-                    // so hard-coding `true` re-disabled the field for an
-                    // identifier-less one and stranded the buyer with an empty,
-                    // uneditable, required company number. Derive it.
-                    $companyIdField.prop('disabled', !self.needsManualCompanyId());
-                    // From here on the editable state is DERIVED from the two
-                    // observables, so it cannot desync per writer. Calling
-                    // syncCompanyIdEditable() from the selection paths alone
-                    // was not enough: updateAddress() is subscribed inside
-                    // fillCustomerData() and fires on every billing/shipping
-                    // notify — in registered-organisation mode, while the
-                    // picker owns the field — so an address attribute carrying
-                    // `company_id` reached fillCompanyData() and wrote a
-                    // registry organisation number into a field a previous
-                    // identifier-less pick had left ENABLED, i.e. hand-editable.
-                    //
-                    // Bound once per component: enableCompanySearch() re-runs
-                    // on every re-render (see the $.async note below) and each
-                    // run would otherwise stack another subscription.
-                    //
-                    // Once per COMPONENT, not once per page: `companyName` and
-                    // `companyId` are module-level observables shared by every
-                    // renderer instance (see the note where they are declared),
-                    // so N live brand renderers mean N subscriptions on one
-                    // observable, each writing the same document-wide
-                    // `input#company_id`. Harmless rather than wasteful-and-
-                    // wrong: syncCompanyIdEditable() is idempotent and derives
-                    // from those same shared observables, so every subscriber
-                    // computes the identical answer. dispose() clears them.
-                    if (!self._companyIdEditableSubs) {
-                        const sync = function () {
-                            self.syncCompanyIdEditable();
-                        };
-                        self._companyIdEditableSubs = [
-                            self.companyName.subscribe(sync),
-                            self.companyId.subscribe(sync)
-                        ];
-                    }
-                });
+                // No `$.async('input#company_id')` block here. The tile has no
+                // company-number input to resolve, derive an editable state
+                // for, or subscribe the observables to — TWO-25288 removed it,
+                // because a hand-typeable organisation number is not an
+                // accepted source for one.
                 $.async(self.companyNameSelector, function (companyNameField) {
                     // `$.async` is a MutationObserver, and every call to
                     // enableCompanySearch() adds another one, so on a
@@ -1257,19 +1180,16 @@ define([
             });
         },
         /**
-         * PRE-EXISTING, flagged rather than changed: this writes the DOM fields
-         * only and never clears `companyName()` / `companyId()`. No notification
-         * therefore reaches the editability subscription, so after "Enter
-         * details manually" the field reads empty and enabled while the
-         * observables still hold the previously selected company's registry
-         * number. The derivation cannot desync per CALLER any more, but it can
-         * still be bypassed by a writer that skips the observables entirely.
-         * Out of scope here; noted so it is not mistaken for new behaviour.
+         * PRE-EXISTING, flagged rather than changed: this writes the DOM field
+         * only and never clears `companyName()` / `companyId()`, so after
+         * "Enter details manually" the name input reads empty while the
+         * observables still hold the previously selected company. Out of scope
+         * here; noted so it is not mistaken for new behaviour.
+         *
+         * The `disableCompanyId` parameter is gone with the company-number
+         * input it used to lock (TWO-25288).
          */
-        clearCompany: function (disableCompanyId = false) {
-            const companyIdSelector = $(this.companyIdSelector);
-            companyIdSelector.val('');
-            companyIdSelector.prop('disabled', disableCompanyId);
+        clearCompany: function () {
             $(this.companyNameSelector).val('');
             this.disableCompanySearch();
         },
@@ -1377,7 +1297,7 @@ define([
             // Resolve the link BEFORE clearCompany(), which tears the widget
             // down and nulls _$companyNameField.
             const $searchForCompany = this.searchForCompanyLink();
-            this.clearCompany(true);
+            this.clearCompany();
             $searchForCompany.hide();
         },
 

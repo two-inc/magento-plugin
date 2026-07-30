@@ -181,25 +181,27 @@
                         />
                     </div>
                 </div>
-                <div class="field field-text required">
-                    <label for="company_id" class="label">
-                        <span><!-- ko i18n: 'Company Number'--><!-- /ko --></span>
-                    </label>
-                    <div class="control">
-                        <input
-                            type="text"
-                            id="company_id"
-                            name="payment[company_id]"
-                            required="true"
-                            data-bind='
-                            attr: {
-                                title: $t("Company Number")
-                            },
-                            value: companyId'
-                            class="input-text"
-                        />
-                    </div>
-                </div>
+                <!--
+                    There is deliberately NO company-number input here.
+
+                    The organisation number is only ever captured from a
+                    source that can be trusted: a company-search pick, or the
+                    sole-trader autofill response. Both write the `companyId`
+                    observable directly, and getData() reads that observable —
+                    never the DOM — so no input is needed to carry the value.
+
+                    A hand-typed number is NOT an accepted source. Letting the
+                    buyer type one produced poor data quality and, worse,
+                    genuine buyers receiving invoices for orders they never
+                    placed. The address step owns the one remaining manual
+                    route, and it is enabled only where the registry holds no
+                    identifier for the picked company.
+
+                    Nothing client-side enforces the presence of an
+                    identifier. Model/Two.php::authorize() refuses an order
+                    with an empty organisation number server-side, and that
+                    refusal is the only enforcement. See TWO-25288.
+                -->
                 <!--
                     Optional buyer fields. ORDER IS LOAD-BEARING: this markup
                     order is what the buyer sees, and it must match the admin
