@@ -331,9 +331,13 @@ function makeSurchargeMock() {
  *
  * @param {string} relPath path relative to repo root
  * @param {object} extraMocks per-test overrides keyed by AMD dep name
+ * @param {object} extraGlobals sandbox globals to add or replace. The default
+ *        `document` is an inert stub with no query methods, so a test that
+ *        needs the module's direct DOM calls (`document.querySelector(...)`,
+ *        `.focus()`) to hit real nodes passes jsdom's own `document` here.
  * @returns {*} the factory's return value (KO component, mixin wrap, etc)
  */
-function loadAmdModule(relPath, extraMocks) {
+function loadAmdModule(relPath, extraMocks, extraGlobals) {
     const absPath = path.resolve(__dirname, '..', '..', relPath);
     const src = fs.readFileSync(absPath, 'utf8');
     const mocks = Object.assign({}, defaultMocks(), extraMocks || {});
@@ -409,6 +413,7 @@ function loadAmdModule(relPath, extraMocks) {
         // is captured via the wider context.
         config: undefined
     };
+    Object.assign(sandbox, extraGlobals || {});
     sandbox.global = sandbox;
 
     vm.createContext(sandbox);

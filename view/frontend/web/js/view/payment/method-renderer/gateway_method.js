@@ -981,8 +981,25 @@ define([
         addressLookup: function (selectedCompany) {
             return companySearch.lookupCompanyAddress(this._brandConfig, selectedCompany);
         },
-        enableCompanySearch: function () {
+        /**
+         * (Re-)bind the company-search picker to the company-name input.
+         *
+         * @param {object} [options]
+         * @param {boolean} [options.openDropdown] open the picker as soon as
+         *        the widget is bound. Set only by the "Search for company"
+         *        link: returning to search mode should land the buyer in the
+         *        search box, not on a closed picker they must click again.
+         *        Leave it off for the initial render, where popping a dropdown
+         *        open unasked would steal focus from the payment form.
+         */
+        enableCompanySearch: function (options) {
             let self = this;
+            // One-shot, and deliberately a local rather than a property on the
+            // renderer: `$.async` is a MutationObserver that fires again on
+            // every re-render (Fire Checkout re-renders a lot), so a flag that
+            // survived the first bind would pop the dropdown open under a
+            // buyer who has moved on to another field.
+            let pendingOpen = !!(options && options.openDropdown);
             require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
                 // No `$.async('input#company_id')` block here. The tile has no
                 // company-number input to resolve, derive an editable state
@@ -1140,10 +1157,17 @@ define([
                     $searchForCompany
                         .off('click' + companySearch.EVENT_NS)
                         .on('click' + companySearch.EVENT_NS, function () {
-                            self.enableCompanySearch();
+                            self.enableCompanySearch({ openDropdown: true });
                             $searchForCompany.hide();
                         });
                     $searchForCompany.hide();
+                    // Last, so every handler above — including `select2:open`,
+                    // which is what puts the caret in the search box — is
+                    // already bound when the dropdown opens.
+                    if (pendingOpen) {
+                        pendingOpen = false;
+                        $companyNameField.select2('open');
+                    }
                 });
             });
         },
