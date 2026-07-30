@@ -768,6 +768,10 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             const $results = this.getResultsList($field, token);
             if (!$results.length) return $();
 
+            // Passed the same token for consistency, not as a second gate: the
+            // lookup above has already refused a stale bind, so no test can
+            // distinguish this argument from the node's own identity. Stated
+            // outright rather than left looking like covered behaviour.
             const term = this.currentSearchTerm($field, token);
             const $existing = $results.children(`.${MANUAL_ENTRY_CLASS}`);
 
