@@ -254,7 +254,7 @@
 "Merchant ID:","Verkoper-ID:"
 "Refund %1","Terugbetaling %1"
 "Surcharge","Toeslag"
-"Amounts are shown in %1 unless otherwise stated.","Bedragen worden weergegeven in %1, tenzij anders vermeld."
+"Amounts are shown in %1 unless otherwise stated.","Bedragen worden getoond in %1, tenzij anders vermeld."
 "Select at least one payment term or enter a custom term.","Selecteer minimaal één betaaltermijn of voer een aangepaste termijn in."
 "Please select a Surcharge Tax Treatment. A surcharge method is enabled (see the Surcharge Method field), so the Surcharge Tax Treatment field must be chosen explicitly before this configuration can be saved.","Selecteer een BTW-behandeling voor de toeslag. Er is een toeslagmethode ingeschakeld (zie het veld Toeslagstrategie), dus het veld BTW-behandeling toeslag moet expliciet worden gekozen voordat deze configuratie kan worden opgeslagen."
 "Unable to calculate payment terms surcharge. Please try again in a moment.","Kan de toeslag voor betaaltermijnen niet berekenen. Probeer het over een moment opnieuw."
@@ -268,3 +268,4 @@
 "Invoice uploaded to Two successfully.","Factuur is succesvol geüpload naar Two."
 "Invoice upload failed: %1","Uploaden van factuur mislukt: %1"
 "⚠ deployment incomplete — code newer than compiled assets; run setup:static-content:deploy","⚠ implementatie onvolledig — code is nieuwer dan de gecompileerde assets; voer setup:static-content:deploy uit"
+"Use Website Value","Websitewaarde gebruiken"
