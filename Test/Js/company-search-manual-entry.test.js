@@ -622,6 +622,30 @@ describe('what drives the row', () => {
         expect(manualRows(dom)).toHaveLength(0);
     });
 
+    test('a stale re-attach cannot unhook the live picker', async () => {
+        // The consequence of attach not bailing on a stale token is not a
+        // stray row — every render it wires is gated by that same stale token —
+        // it is that it DETACHES the live bind's observer on its way past and
+        // replaces it with an inert one. The live picker then silently stops
+        // re-appending its row after each result set.
+        const staleToken = dom.token;
+        model.attachManualEntryRow(dom.$field, staleToken);
+
+        const liveToken = {};
+        dom.$field.data('twoSearchBind', liveToken);
+        model.attachManualEntryRow(dom.$field, liveToken);
+        typeTerm(dom, 'example');
+        expect(manualRows(dom)).toHaveLength(1);
+
+        model.attachManualEntryRow(dom.$field, staleToken);
+
+        // The live bind's observer must still be the one watching.
+        dom.results.innerHTML = '';
+        addRealResult(dom, 'Example Trading Ltd');
+        await tick();
+        expect(manualRows(dom)).toHaveLength(1);
+    });
+
     test('detaching stops the watcher, so a torn-down picker holds nothing', async () => {
         model.attachManualEntryRow(dom.$field, dom.token);
         typeTerm(dom, 'example');
