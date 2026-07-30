@@ -415,9 +415,13 @@ describe('a company picked on the shipping step reaches the payment step', () =>
     });
 
     test('an address notification carrying company_id reaches the observable', () => {
-        // updateAddress()'s custom-attribute parsing is the address step's route
-        // into `companyId()`, and it is one of the three accepted sources. Its
-        // only coverage used to live in a describe block about the editable
+        // updateAddress()'s custom-attribute parsing is one of the writer paths
+        // enumerated on applyCompanyData() — and the one most easily conflated
+        // with the `companyData` customer-data notification, which is a
+        // different route. This one fires from the quote subscriptions with no
+        // address-step interaction at all.
+        //
+        // Its only coverage used to live in a describe block about the editable
         // state of the tile's company-number field; that field is gone, but THIS
         // subject is not, so the assertion is restored here on its own terms.
         //

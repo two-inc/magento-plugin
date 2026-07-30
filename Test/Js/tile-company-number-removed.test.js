@@ -6,8 +6,9 @@
  *
  * A hand-typed organisation number is not an accepted source: it produces poor
  * data quality, and genuine buyers receive invoices for orders they never
- * placed. Only a company-search pick, the sole-trader autofill response, or the
- * address step's `companyData` notification may supply one.
+ * placed. For the accepted sources, see the writer enumeration on
+ * applyCompanyData() in the renderer — deliberately NOT restated here, because
+ * a second copy of that list has already drifted twice.
  *
  * Two groups of tests here, and they are NOT the same kind of test. Be honest
  * about which is which before trusting a green run:
@@ -15,15 +16,21 @@
  *  1. REMOVAL PINS — 'the payment tile offers no company-number field'. These
  *     fail if the change is reverted. They are what guards the removal.
  *
- *  2. ACCEPTED-SOURCE REGRESSION PINS — 'an accepted organisation number still
- *     reaches the order'. These pass against the PRE-change code too, because
- *     every accepted source already wrote the observable before the input was
- *     removed. They do NOT prove anything about the removal. They exist because
- *     the removal makes the observable the ONLY carrier, so a future change
- *     that breaks one of those three routes would now lose the number outright
- *     rather than fall back to a field — and the sole-trader routes are the
- *     ones most likely to break silently, their value being minted rather than
- *     picked.
+ *  2. ACCEPTED-SOURCE REGRESSION PINS — most of 'an accepted organisation
+ *     number still reaches the order'. These pass against the PRE-change code
+ *     too, because every accepted source already wrote the observable before
+ *     the input was removed. They do NOT prove anything about the removal. They
+ *     exist because the removal makes the observable the ONLY carrier, so a
+ *     future change that breaks one of those writer paths would now lose the
+ *     number outright rather than fall back to a field — and the sole-trader
+ *     routes are the ones most likely to break silently, their value being
+ *     minted rather than picked.
+ *
+ *     ONE EXCEPTION, and it belongs to group 1 despite living in group 2's
+ *     describe: 'the sole-trader number survives with no number input in the
+ *     DOM' asserts there are NO writes to `input#company_id`. Pre-change
+ *     fillCompanyData() did `$(this.companyIdSelector).val(companyId)`, so that
+ *     test FAILS against the old code and is a removal pin.
  *
  * Group 2 is deliberately asserted through `getData()` rather than the DOM.
  * That is the actual submit path (`Observer/DataAssignObserver.php` reads
