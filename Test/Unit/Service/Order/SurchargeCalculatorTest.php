@@ -26,6 +26,9 @@ class SurchargeCalculatorTest extends TestCase
     /** @var CurrencyRatesProviderInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $ratesProvider;
 
+    /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
+    private $log;
+
     /** @var SurchargeCalculator */
     private $calculator;
 
@@ -43,10 +46,15 @@ class SurchargeCalculatorTest extends TestCase
             ->onlyMethods(['execute'])
             ->getMock();
 
-        $log = $this->createMock(LogRepository::class);
+        $this->log = $this->createMock(LogRepository::class);
         $this->ratesProvider = $this->createMock(CurrencyRatesProviderInterface::class);
 
-        $this->calculator = new SurchargeCalculator($this->config, $this->adapter, $log, $this->ratesProvider);
+        $this->calculator = new SurchargeCalculator(
+            $this->config,
+            $this->adapter,
+            $this->log,
+            $this->ratesProvider
+        );
     }
 
     private function stubCommonConfig(string $type, bool $differential = false): void
@@ -691,6 +699,189 @@ class SurchargeCalculatorTest extends TestCase
         $this->expectExceptionMessage('Cannot convert surcharge from NOK to GBP');
 
         $this->calculator->calculate(1000.0, 30, 'NO', 'GBP');
+    }
+
+    public function testFailClosedFxErrorIsLoggedWithCurrencyPairAndTerm(): void
+    {
+        // The buyer sees a checkout error either way; without this log ops and
+        // the merchant see nothing at all and a bad currency pair reads as an
+        // unexplained drop-off.
+        $this->stubCommonConfig(SurchargeType::FIXED);
+        $this->stubSurchargeConfig(0, 10);
+        $this->stubFixedCurrency('NOK');
+        $this->ratesProvider->method('getRate')->willReturn(null);
+
+        $this->log->expects($this->once())
+            ->method('addErrorLog')
+            ->with(
+                'Surcharge FX conversion failed: no rate available',
+                $this->callback(function ($context) {
+                    return $context['from_currency'] === 'NOK'
+                        && $context['to_currency'] === 'GBP'
+                        && $context['selected_term'] === 45;
+                })
+            );
+
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+
+        $this->calculator->calculate(1000.0, 45, 'NO', 'GBP');
+    }
+
+    // ── Zero cap fails closed (a zero cap reads as NO cap downstream) ──
+
+    public function testThrowsWhenConfiguredCapIsZero(): void
+    {
+        // `cap => 0.0` is indistinguishable from an absent cap downstream, so
+        // sending it would apply the percentage UNCAPPED — an overcharge and the
+        // opposite of the merchant's configuration. A limit of exactly 0 reaches
+        // here from the admin grid (validateValue only rejects negatives).
+        $this->stubCommonConfig(SurchargeType::FIXED_AND_PERCENTAGE);
+        $this->stubSurchargeConfig(50, 5, 0.0);
+        $this->stubFixedCurrency('NOK');
+
+        $this->adapter->expects($this->never())->method('execute');
+
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+        $this->expectExceptionMessage('surcharge cap resolves to zero in NOK');
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+    }
+
+    public function testZeroCapFailClosedIsLoggedWithCurrencyPairAndTerm(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50, 0, 0.0);
+        $this->stubFixedCurrency('NOK');
+
+        $this->log->expects($this->once())
+            ->method('addErrorLog')
+            ->with(
+                'Surcharge cap is configured but resolves to zero',
+                $this->callback(function ($context) {
+                    return $context['from_currency'] === 'NOK'
+                        && $context['to_currency'] === 'SEK'
+                        && $context['selected_term'] === 90
+                        && $context['configured_limit'] === 0.0
+                        && $context['converted_cap'] === 0.0;
+                })
+            );
+
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+
+        $this->calculator->calculate(1000.0, 90, 'NO', 'SEK');
+    }
+
+    public function testZeroLimitInFixedOnlyModeDoesNotFailClosed(): void
+    {
+        // The zero-cap guard sits behind the same $hasPercentage gate as `cap`
+        // itself: a stale zero limit left over from a previous surcharge type
+        // must not break a fixed-only fee, which has no cap to send.
+        $this->stubCommonConfig(SurchargeType::FIXED);
+        $this->stubSurchargeConfig(0, 10, 0.0);
+        $this->stubFixedCurrency('NOK');
+
+        $this->log->expects($this->never())->method('addErrorLog');
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return !array_key_exists('cap', $payload['buyer_fee_share']);
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 10.0]);
+
+        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+
+        $this->assertEquals(10.0, $result['amount']);
+    }
+
+    // ── An ABSENT cap is legitimate: uncapped percentage must still charge ──
+
+    public function testAbsentLimitSendsUncappedPercentageSurcharge(): void
+    {
+        // REGRESSION GUARD. "No cap defined" is a valid, common configuration.
+        // The zero-cap guard above must never be widened to treat a null limit
+        // as a failure — an uncapped percentage surcharge has to keep being
+        // charged normally, with no `cap` key and no error.
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50, 0, null);
+        $this->stubFixedCurrency('NOK');
+
+        $this->log->expects($this->never())->method('addErrorLog');
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    $share = $payload['buyer_fee_share'];
+                    return !array_key_exists('cap', $share)
+                        && $share['percentage'] === 50.0;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 25.0]);
+
+        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+
+        $this->assertEquals(25.0, $result['amount']);
+    }
+
+    public function testAbsentLimitSendsUncappedFixedAndPercentageSurcharge(): void
+    {
+        // Same guard for the mixed type, where a `surcharge` FX conversion also
+        // runs — an absent cap must not disturb it.
+        $this->stubCommonConfig(SurchargeType::FIXED_AND_PERCENTAGE);
+        $this->stubSurchargeConfig(50, 5, null);
+        $this->stubFixedCurrency('NOK');
+        $this->stubFxRate('NOK', 1.1);
+
+        $this->log->expects($this->never())->method('addErrorLog');
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    $share = $payload['buyer_fee_share'];
+                    return !array_key_exists('cap', $share)
+                        && $share['percentage'] === 50.0
+                        && abs($share['surcharge'] - 5.5) < 0.0001;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 30.0]);
+
+        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'SEK');
+
+        $this->assertEquals(30.0, $result['amount']);
+    }
+
+    public function testNonZeroCapNeverCollapsesToZeroThroughFxConversion(): void
+    {
+        // convertAmount() does NO rounding (`$amount * $rate`) and
+        // CurrencyRatesProvider returns null rather than a zero/negative rate,
+        // so a tiny cap under a tiny rate stays non-zero and is sent as-is.
+        // The "converted cap rounds to 0.00" hazard other platforms guard
+        // against therefore cannot arise on Magento.
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50, 0, 0.01);
+        $this->stubFixedCurrency('NOK');
+        $this->stubFxRate('NOK', 0.0001);
+
+        $this->log->expects($this->never())->method('addErrorLog');
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return abs($payload['buyer_fee_share']['cap'] - 0.000001) < 1.0e-12;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0.000001]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'SEK');
     }
 
     public function testConversionForwardsStoreScopeToRateLookup(): void
