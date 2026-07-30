@@ -30,6 +30,28 @@ which includes the commands to re-enable PageBuilder for testing
 brand content that relies on it. Same applies to anything
 analytics-driven (e.g. NewRelic dashboards, GA events).
 
+## A surcharge cap of 0 is valid — never guard against it
+
+**A configured surcharge limit of `0` must be relayed to the pricing
+API as `cap => 0.0`. Do not throw, do not omit the key, and do not
+add admin validation rejecting a typed `0`.** A zero cap clamps the
+buyer fee to zero — no surcharge is applied — which is a legitimate
+merchant configuration.
+
+Only an *absent* (null) limit means "no cap"; that omits the `cap`
+key and applies the percentage uncapped. Absent and zero are
+different things and both must pass through faithfully.
+
+TWO-25269 briefly added a guard that threw on a zero cap, on the
+premise that a zero cap read as "no cap" downstream and would relay
+an uncapped percentage. **That premise was false and the guard was
+reverted** — a zero cap clamps the fee to zero, it never uncaps it.
+In `fixed_and_percentage` mode the cap bounds the combined fee, so
+`Limit = 0` suppresses the fixed component too, not just the
+percentage part.
+
+`Test/Unit/Service/Order/SurchargeCalculatorTest.php` pins this.
+
 ## DI registration scope for Structure / Config Reader plugins
 
 **Plugins that target `Magento\Config\Model\Config\Structure\Reader`

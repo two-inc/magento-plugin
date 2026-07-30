@@ -424,13 +424,17 @@ class RepositoryPaymentTermsTest extends TestCase
         $this->assertEquals(25.50, $config['limit']);
     }
 
-    public function testGetSurchargeConfigDefaultsToZero(): void
+    public function testGetSurchargeConfigDefaultsAmountsToZeroAndLimitToNull(): void
     {
         $this->stubConfig([]);
         $config = $this->repository->getSurchargeConfig(60);
         $this->assertEquals(0, $config['percentage']);
         $this->assertEquals(0, $config['fixed']);
-        $this->assertEquals(0.0, $config['limit']);
+        // `limit` defaults to NULL, not 0.0 — the two are not interchangeable:
+        // null means "no cap" (uncapped percentage) while 0.0 is a real cap of
+        // zero that suppresses the surcharge. The previous assertEquals(0.0, ...)
+        // passed only because PHP's loose comparison treats null == 0.0.
+        $this->assertNull($config['limit']);
     }
 
     // ── getPaymentTermsType (retained) ──────────────────────────────
