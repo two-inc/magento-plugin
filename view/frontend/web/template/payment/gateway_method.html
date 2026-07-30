@@ -166,7 +166,7 @@
                     <label for="company_name" class="label">
                         <span><!-- ko i18n: 'Company Name'--><!-- /ko --></span>
                     </label>
-                    <div class="control">
+                    <div class="control two-company-name-control">
                         <input
                             type="text"
                             id="company_name"
@@ -179,6 +179,18 @@
                             value: companyName'
                             class="input-text"
                         />
+                        <!--
+                            Cosmetic only — an inline hint of the registry id
+                            behind the picked company, shown once companyId()
+                            is non-empty and cleared with it. NOT an input:
+                            carries no value of its own, and getData() keeps
+                            reading the companyId observable directly. See
+                            TWO-25288.
+                        -->
+                        <span
+                            class="two-company-id-hint"
+                            data-bind="text: companyId, visible: companyId"
+                        ></span>
                     </div>
                 </div>
                 <!--

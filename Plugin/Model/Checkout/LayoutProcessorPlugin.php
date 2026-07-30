@@ -68,7 +68,19 @@ class LayoutProcessorPlugin
             // view/frontend/web/js/view/address-autocomplete.js; `disabled`
             // here is only the initial state for a freshly rendered form with
             // no company selected yet.
+            //
+            // `visible` stays true on purpose. Flipping it to false would pull
+            // the component out of the UI-registry render tree entirely, and
+            // view/frontend/web/js/view/address-autocomplete.js calls
+            // `uiRegistry.get(this.companyIdComponent)` on this field, so a
+            // registry-absent component would break that lookup, not just hide
+            // the input. The field is hidden visually instead, via
+            // `additionalClasses` + a CSS rule in
+            // view/frontend/web/css/style.css — the DOM node stays present and
+            // its value still submits as
+            // shippingAddress.custom_attributes.company_id. See TWO-25288.
             'visible' => true,
+            'additionalClasses' => 'two-company-id-hidden',
             'disabled' => true,
             'validation' => [
                 'required-entry' => false

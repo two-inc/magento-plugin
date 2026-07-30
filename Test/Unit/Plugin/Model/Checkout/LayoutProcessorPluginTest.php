@@ -172,4 +172,20 @@ class LayoutProcessorPluginTest extends TestCase
         $this->assertSame('shippingAddress.custom_attributes.company_id', $field['dataScope']);
         $this->assertSame('shippingAddress.custom_attributes', $field['config']['customScope']);
     }
+
+    /**
+     * TWO-25288. The field must stay `visible: true` — flipping it to false
+     * would pull it out of the UI-registry render tree, and
+     * address-autocomplete.js resolves it through `uiRegistry.get()`. It is
+     * hidden purely visually, through `additionalClasses` plus a CSS rule in
+     * view/frontend/web/css/style.css, so the DOM node and its value stay
+     * present.
+     */
+    public function testCompanyNumberFieldStaysUiRegistryVisibleButCssHidden(): void
+    {
+        $field = $this->companyIdField();
+
+        $this->assertTrue($field['visible']);
+        $this->assertSame('two-company-id-hidden', $field['additionalClasses']);
+    }
 }
