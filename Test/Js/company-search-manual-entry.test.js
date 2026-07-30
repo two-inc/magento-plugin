@@ -657,6 +657,78 @@ describe('what drives the row', () => {
 
         expect(manualRows(dom)).toHaveLength(0);
     });
+
+    test('attaching while the term is already at threshold renders immediately, without waiting for input', () => {
+        // Every other test in this file types AFTER attaching, so an initial
+        // render call at the end of attachManualEntryRow could be deleted and
+        // every one of them would still pass once the first keystroke landed.
+        // Set the term before attach ever runs, so ONLY that initial call —
+        // not the input handler, not the observer — can produce the row.
+        dom.search.value = 'example';
+        model.attachManualEntryRow(dom.$field, dom.token);
+        expect(manualRows(dom)).toHaveLength(1);
+    });
+
+    test('re-attaching cannot stack the mutation observer', async () => {
+        // Attaching twice must leave exactly one observer on the node.
+        // renderManualEntryRow is idempotent, so counting rows after a
+        // mutation cannot tell one observer from two firing on it — spy on
+        // the render call itself instead.
+        model.attachManualEntryRow(dom.$field, dom.token);
+        model.attachManualEntryRow(dom.$field, dom.token);
+
+        const renderSpy = jest.spyOn(model, 'renderManualEntryRow');
+        dom.search.value = 'example';
+        dom.results.innerHTML = '';
+        addRealResult(dom, 'Example Trading Ltd');
+        await tick();
+
+        // A single external mutation must produce a single observer-driven
+        // render call. Two observers on the same node would each fire once
+        // for it.
+        expect(renderSpy).toHaveBeenCalledTimes(1);
+        renderSpy.mockRestore();
+    });
+
+    test('a broken idempotency check cannot spin the observer forever', async () => {
+        // renderManualEntryRow's only defence against re-appending its own
+        // row is `$existing.is(':last-child')`. Sabotage exactly that check —
+        // the way the reviewed bug actually manifested — and prove the
+        // observer wiring bounds the damage on its own rather than depending
+        // on that check being correct. Without disconnect/reconnect around
+        // the self-triggered write, this spins as MutationObserver
+        // microtasks and never yields to the `tick()` below at all.
+        const proto = Object.getPrototypeOf(dom.$results);
+        const originalIs = proto.is;
+        const originalAppend = proto.append;
+        let appendCount = 0;
+        proto.append = function (other) {
+            appendCount += 1;
+            return originalAppend.call(this, other);
+        };
+        proto.is = function () {
+            return false; // pretend "never last", the way the bug did
+        };
+
+        try {
+            model.attachManualEntryRow(dom.$field, dom.token);
+            dom.search.value = 'example';
+            dom.results.innerHTML = '';
+            addRealResult(dom, 'Example Trading Ltd');
+
+            await tick();
+            await tick();
+            await tick();
+
+            // One append for the fresh row, at most one more from the
+            // observer noticing (per the sabotaged check) that it isn't
+            // last. An unbounded loop climbs past this on the first tick.
+            expect(appendCount).toBeLessThanOrEqual(2);
+        } finally {
+            proto.is = originalIs;
+            proto.append = originalAppend;
+        }
+    });
 });
 
 /* ------------------------------------------------------------------ *
@@ -666,7 +738,8 @@ function makeSurfaceQuery(recorder) {
     function $() {
         const obj = {
             length: 0,
-            val: function () {
+            val: function (value) {
+                if (arguments.length) recorder.valWrites.push(value);
                 return arguments.length ? obj : '';
             },
             trigger: function () {
@@ -682,7 +755,8 @@ function makeSurfaceQuery(recorder) {
                 if (arguments.length > 1) recorder.attrWrites.push([name, value]);
                 return obj;
             },
-            off: function () {
+            off: function (spec) {
+                recorder.offCalls.push(spec);
                 return obj;
             },
             on: function (spec, handler) {
@@ -819,6 +893,8 @@ function newRecorder() {
         handlers: {},
         appended: [],
         attrWrites: [],
+        offCalls: [],
+        valWrites: [],
         select2Options: null,
         select2Calls: 0,
         destroyCalls: 0,
@@ -860,6 +936,12 @@ describe('the address step wires the row up', () => {
 
         const preventDefault = jest.fn();
         const shownBefore = recorder.shown;
+        // Setup (enableCompanySearch's own rebind-clear) already issues an
+        // `.off(EVENT_NS)` before select2 is even initialized, so asserting
+        // membership alone would pass whether or not enterDetailsManually
+        // unbinds anything. Count from here.
+        const offCallsBefore = recorder.offCalls.length;
+        const valWritesBefore = recorder.valWrites.length;
         selecting({
             params: { args: { data: { id: MANUAL_ENTRY_ID, text: MSGID } } },
             preventDefault: preventDefault
@@ -874,6 +956,14 @@ describe('the address step wires the row up', () => {
         expect(model.detachManualEntryObserver).toHaveBeenCalledTimes(1);
         expect(recorder.shown).toBe(shownBefore + 1);
         expect(recorder.attrWrites).toContainEqual(['type', 'text']);
+        // Unbound before select2('destroy'), which only clears its OWN
+        // namespace — leaving these listeners on the plain text input would
+        // stack a duplicate copy the next time this node is re-initialized.
+        expect(recorder.offCalls.slice(offCallsBefore)).toContain(model.EVENT_NS);
+        // Handed back to the buyer empty: whatever they type next names a
+        // different company than the one the picker had, and the published
+        // section is what the payment step credit-checks.
+        expect(recorder.valWrites.slice(valWritesBefore)).toContain('');
     });
 
     test('activating the row cancels the search still on the wire, first', () => {
