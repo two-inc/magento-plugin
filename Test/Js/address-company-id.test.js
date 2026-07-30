@@ -27,6 +27,10 @@
  *     returns null). Nothing in this file covers real search behaviour, and a
  *     test that loaded the module and asserted on search results would be
  *     asserting against those stubs.
+ *  4. The harness's `uiRegistry.get()` returns undefined, so every assertion
+ *     below observes the DOM half of `setCompanyIdDisabled()`. The UI-component
+ *     half — the authoritative one, see that method's comment — is not
+ *     exercised here.
  */
 
 'use strict';
@@ -254,6 +258,29 @@ describe('address-step company-number field editability', () => {
         expect(node(ID_FIELD).prop('disabled')).toBe(true);
 
         node(NAME_FIELD).val('Hand Typed Ltd');
+        node(NAME_FIELD).handlers['input']();
+
+        expect(node(ID_FIELD).prop('disabled')).toBe(false);
+    });
+
+    test('editing the company name again does not disable a typed-in number', () => {
+        // Manual mode, and the buyer goes back to correct the company name
+        // after typing its number. The name handler must not re-derive from the
+        // number field's value: the number is non-empty by then, so the full
+        // derivation reads "no manual entry needed" and would lock the buyer
+        // out of the number they just typed, with nothing clearing it.
+        const { component, node } = load();
+        component.enableManualCompanyId();
+
+        component.setCompanyData();
+        node(NAME_FIELD).val('Hand Typed Ltd');
+        node(NAME_FIELD).handlers['input']();
+        expect(node(ID_FIELD).prop('disabled')).toBe(false);
+
+        node(ID_FIELD).val('87654321');
+        node(ID_FIELD).handlers['change']();
+
+        node(NAME_FIELD).val('Hand Typed Limited');
         node(NAME_FIELD).handlers['input']();
 
         expect(node(ID_FIELD).prop('disabled')).toBe(false);

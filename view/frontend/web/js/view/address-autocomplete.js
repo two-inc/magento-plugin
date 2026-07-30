@@ -98,19 +98,22 @@ define([
             this.syncCompanyIdEditable();
         },
         /**
-         * True while select2 owns the company-name input. The widget replaces
-         * the input's own value with its internal item id, so the company NAME
-         * can only be read off the input once it is a plain text field again.
+         * True while select2 owns the company-name input, i.e. while the buyer
+         * cannot type into it and every company that comes into play arrives
+         * through setCompanyData().
          */
         isCompanySearchActive: function () {
             const $field = $(this.companyNameSelector);
             return !!($field.length && $field.data('select2'));
         },
         /**
-         * The company name currently in play. Prefers the published section
-         * while the picker owns the input (see isCompanySearchActive), and the
-         * input's own value once the buyer has switched to manual entry — the
-         * one state in which the buyer's typing is the only record of it.
+         * The company name currently in play. While the picker owns the input,
+         * the published section is preferred: setCompanyData() writes the name
+         * to both, so the two agree and the section is the one the picker's own
+         * chrome cannot get in front of. Once the buyer has switched to manual
+         * entry the input wins — that is the one state in which their typing is
+         * the sole record of the name, because nothing publishes it per
+         * keystroke.
          */
         currentCompanyName: function () {
             const published = (customerData.get('companyData')() || {}).companyName || '';
@@ -128,24 +131,66 @@ define([
             return !!this.currentCompanyName() && !$(this.companyIdSelector).val();
         },
         /**
+         * uiRegistry name of the layout node the company-number input belongs
+         * to — the `company_id` child of the shipping-address fieldset declared
+         * in Plugin/Model/Checkout/LayoutProcessorPlugin.php. uiRegistry names
+         * are the layout's own `children` path with the `children` links
+         * dropped.
+         */
+        companyIdComponent:
+            'checkout.steps.shipping-step.shippingAddress.shipping-address-fieldset.company_id',
+        /**
+         * Set the company-number field's disabled state through the UI
+         * component, not only the DOM.
+         *
+         * The layout declares `disabled` as a component property and
+         * `ui/form/element/input` binds it inside a compound `attr: {...}`
+         * binding alongside `error`, `required` and friends. Knockout
+         * re-evaluates that whole binding when ANY observable it reads changes,
+         * so a raw `prop('disabled', …)` write survives only until the next
+         * such re-evaluation, which then reinstates the component's stale
+         * value. The component is therefore the authoritative one.
+         *
+         * The DOM write is kept as well, and deliberately: `uiRegistry.get()`
+         * yields nothing if this runs before the component registers, and the
+         * derivation below reads the field's own value off the DOM, so the two
+         * have to be written together to stay consistent within a tick.
+         */
+        setCompanyIdDisabled: function (isDisabled) {
+            const component = uiRegistry.get(this.companyIdComponent);
+            if (component && typeof component.disabled === 'function') {
+                component.disabled(isDisabled);
+            }
+            $(this.companyIdSelector).prop('disabled', isDisabled);
+        },
+        /**
          * Company search owns `company_id` while it can fill it: the number
          * arrives with the picked company, so an editable field would only let
-         * the buyer contradict the registry. Being enabled is also the state in
-         * which a `required` rule would be enforced at all — jQuery
-         * Validation's `elements()` skips `:disabled`.
+         * the buyer contradict the registry.
          *
          * Deliberately NOT called from the company-number field's own change
-         * handler. The derivation reads that field's value, so re-deriving on
-         * the buyer's own input would disable the field the instant they
-         * finished typing into it.
+         * handler, nor from the company-name one. The derivation reads the
+         * number field's value, so re-deriving after the buyer has typed into
+         * it would disable the field they are still using. Only the paths that
+         * learn a number from the registry — setCompanyData(), and the one-shot
+         * derivation on a pre-filled form — may disable.
          */
         syncCompanyIdEditable: function () {
-            $(this.companyIdSelector).prop('disabled', !this.needsManualCompanyId());
+            this.setCompanyIdDisabled(!this.needsManualCompanyId());
+        },
+        /**
+         * Enable-only half of the derivation, for events that can reveal a
+         * company with no number behind it but can never establish that a
+         * number came from the registry.
+         */
+        enableCompanyIdIfNeeded: function () {
+            if (this.needsManualCompanyId()) {
+                this.setCompanyIdDisabled(false);
+            }
         },
         /**
          * Make the company-number field usable: publish what the buyer types
-         * into it, and re-derive its editable state when a manually-typed
-         * company name appears.
+         * into it, and enable it once a manually-typed company name appears.
          *
          * `change`, never `keyup`: the payment step fires an order intent as
          * soon as it holds both a company name and a number, so publishing per
@@ -171,16 +216,19 @@ define([
             });
             $.async(this.companyNameSelector, function (companyNameField) {
                 // Only meaningful after "Enter details manually" has destroyed
-                // the widget: until then the input's value is select2's own
-                // item id, and picks arrive through setCompanyData(). Re-derives
-                // editability only — the manually typed NAME reaches the payment
-                // step through the quote's billing address, and publishing it
-                // from here on every keystroke would fire order intents.
+                // the widget: until then the buyer cannot type here at all and
+                // picks arrive through setCompanyData(). ENABLES only — the
+                // buyer may come back to edit the name after typing a number,
+                // and the full derivation reads that number, so re-deriving
+                // here would disable the field and lock them out of what they
+                // just typed. Nothing published either: the manually typed NAME
+                // reaches the payment step through the quote's billing address,
+                // and publishing per keystroke would fire order intents.
                 $(companyNameField)
                     .off('input' + EVENT_NS)
                     .on('input' + EVENT_NS, function () {
                         if (self.isCompanySearchActive()) return;
-                        self.syncCompanyIdEditable();
+                        self.enableCompanyIdIfNeeded();
                     });
             });
         },
