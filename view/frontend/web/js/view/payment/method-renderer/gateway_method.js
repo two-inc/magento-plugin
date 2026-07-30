@@ -363,8 +363,12 @@ define([
          * No editable state is derived for the organisation number: the tile has
          * no company-number input to derive one for (TWO-25288). `companyId()`
          * is written only by a company-search pick, the sole-trader autofill
-         * response, or the address step's `companyData` notification, and read
-         * only by getData() and placeOrderIntent().
+         * response, or the address step's `companyData` notification — that
+         * last one being the only surviving route for a hand-typed number, and
+         * it is enabled only where the registry holds no identifier.
+         *
+         * Readers: getData(), placeOrderIntent(), the authoritative guard a few
+         * lines below, and the notice-clearing subscription in initialize().
          */
         applyCompanyData: function (companyData, options) {
             const data = companyData || {};

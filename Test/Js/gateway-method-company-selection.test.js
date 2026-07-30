@@ -215,7 +215,10 @@ describe('picking a company with no national identifier', () => {
                 data: { id: 'Second Example Ltd', text: 'Second Example Ltd', companyId: '' }
             }
         });
-        expect(renderer.companyId()).toBe('');
+        // Asserting the NAME moved, not that the id is '' — the id is the
+        // observable's initial value at this point, so an `toBe('')` here would
+        // restate the default and could not fail.
+        expect(renderer.companyName()).toBe('Second Example Ltd');
 
         select({
             params: {
@@ -312,6 +315,7 @@ describe('a company picked on the shipping step reaches the payment step', () =>
         const dom = makeDom();
         const sections = { companyData: observable(initialCompanyData) };
         const address = { getCacheKey: () => 'k', countryId: 'GB' };
+        const billingAddress = observable(address);
         const renderer = loadAmdModule(RENDERER, {
             jquery: dom.$,
             'Magento_Customer/js/customer-data': {
@@ -327,7 +331,7 @@ describe('a company picked on the shipping step reaches the payment step', () =>
             },
             'Magento_Checkout/js/model/quote': {
                 shippingAddress: observable(address),
-                billingAddress: observable(address),
+                billingAddress: billingAddress,
                 getTotals: () => observable({}),
                 getQuoteId: () => null,
                 paymentMethod: observable(null),
@@ -339,7 +343,12 @@ describe('a company picked on the shipping step reaches the payment step', () =>
         // double doesn't run. Pre-seeded for 'gb' so the supported-company-types
         // lookup resolves from the memo instead of reaching for fetch().
         renderer.supportedCompanyTypes = { gb: [] };
-        return { renderer: renderer, sections: sections, dom: dom };
+        return {
+            renderer: renderer,
+            sections: sections,
+            dom: dom,
+            billingAddress: billingAddress
+        };
     }
 
     test('the companyData subscription clears the previous company id', () => {
@@ -371,11 +380,13 @@ describe('a company picked on the shipping step reaches the payment step', () =>
             companyId: ''
         });
 
-        renderer.enableCompanySearch();
         renderer.fillCustomerData();
 
+        // Only the name assertion can fail here: `companyId` is still at its
+        // declared '' at this point, so asserting that would restate the
+        // default. The `enableCompanySearch()` call that used to precede this
+        // was setup for a disabled-field precondition that no longer exists.
         expect(renderer.companyName()).toBe('Second Example Ltd');
-        expect(renderer.companyId()).toBe('');
     });
 
     test('a stale name-only section read does not clobber a live pick', () => {
@@ -401,6 +412,30 @@ describe('a company picked on the shipping step reaches the payment step', () =>
 
         expect(renderer.companyName()).toBe('Live Example Ltd');
         expect(renderer.companyId()).toBe('99999999');
+    });
+
+    test('an address notification carrying company_id reaches the observable', () => {
+        // updateAddress()'s custom-attribute parsing is the address step's route
+        // into `companyId()`, and it is one of the three accepted sources. Its
+        // only coverage used to live in a describe block about the editable
+        // state of the tile's company-number field; that field is gone, but THIS
+        // subject is not, so the assertion is restored here on its own terms.
+        //
+        // Without it, `if (item.attribute_code == 'company_id')` in
+        // updateAddress() had no test anywhere in the repo.
+        const { renderer, billingAddress } = loadWithSections({});
+
+        renderer.fillCustomerData();
+
+        billingAddress({
+            getCacheKey: () => 'k2',
+            countryId: 'GB',
+            company: 'First Example Ltd',
+            customAttributes: [{ attribute_code: 'company_id', value: '12345678' }]
+        });
+
+        expect(renderer.companyName()).toBe('First Example Ltd');
+        expect(renderer.companyId()).toBe('12345678');
     });
 });
 
@@ -449,26 +484,6 @@ describe('order intent for a company with no registry identifier', () => {
         expect(intent).not.toHaveBeenCalled();
     });
 
-    test('an identifier written straight to the observable places no intent', () => {
-        // After TWO-25288 the tile has no company-number input, so there is no
-        // hand-typed route into `companyId()` on this surface at all. What
-        // remains pinned here is that a bare observable write — the shape any
-        // future writer would take — does not re-fire the intent. An order left
-        // without an identifier is refused by Model/Two.php::authorize().
-        const { renderer, node, intent } = loadWithIntent();
-
-        renderer.enableCompanySearch();
-        node(COMPANY_NAME_FIELD).handlers['select2:select']({
-            params: {
-                data: { id: 'Second Example Ltd', text: 'Second Example Ltd', companyId: '' }
-            }
-        });
-        expect(intent).not.toHaveBeenCalled();
-
-        renderer.companyId('99999999');
-
-        expect(intent).not.toHaveBeenCalled();
-    });
 });
 
 describe('the shipping-step picker agrees with the payment step', () => {

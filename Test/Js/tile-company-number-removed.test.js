@@ -9,19 +9,26 @@
  * placed. Only a company-search pick, the sole-trader autofill response, or the
  * address step's `companyData` notification may supply one.
  *
- * Two properties are pinned here, and they fail for different reasons:
+ * Two groups of tests here, and they are NOT the same kind of test. Be honest
+ * about which is which before trusting a green run:
  *
- *  1. the MARKUP no longer offers the buyer a number field, and no dead
- *     apparatus is left behind in the renderer to serve one;
- *  2. the ORDER still carries an organisation number that arrived through an
- *     accepted source — most importantly the sole-trader autofill response,
- *     which is the path most likely to break silently, because it is the only
- *     one whose value is minted rather than picked.
+ *  1. REMOVAL PINS — 'the payment tile offers no company-number field'. These
+ *     fail if the change is reverted. They are what guards the removal.
  *
- * (2) is deliberately asserted through `getData()` rather than through the DOM.
+ *  2. ACCEPTED-SOURCE REGRESSION PINS — 'an accepted organisation number still
+ *     reaches the order'. These pass against the PRE-change code too, because
+ *     every accepted source already wrote the observable before the input was
+ *     removed. They do NOT prove anything about the removal. They exist because
+ *     the removal makes the observable the ONLY carrier, so a future change
+ *     that breaks one of those three routes would now lose the number outright
+ *     rather than fall back to a field — and the sole-trader routes are the
+ *     ones most likely to break silently, their value being minted rather than
+ *     picked.
+ *
+ * Group 2 is deliberately asserted through `getData()` rather than the DOM.
  * That is the actual submit path (`Observer/DataAssignObserver.php` reads
- * `additional_data.companyId`), and it reads the observable, so it stays true
- * with no input present. Asserting the DOM here would prove nothing.
+ * `additional_data`), and it reads the observable, so it stays true with no
+ * input present. Asserting the DOM there would prove nothing.
  */
 
 'use strict';
@@ -58,9 +65,14 @@ describe('the payment tile offers no company-number field', () => {
     test('the template declares no company_id input', () => {
         const markup = withoutComments(readTemplate());
 
-        expect(markup).not.toContain('id="company_id"');
-        expect(markup).not.toContain('name="payment[company_id]"');
-        expect(markup).not.toContain('value: companyId');
+        // Regexes, not substrings. A reinstatement spelled with single quotes
+        // (`id='company_id'`) or through a ko attr binding
+        // (`attr: {id: 'company_id'}`) would slip past every plain
+        // `toContain` check except `value: companyId`.
+        expect(markup).not.toMatch(/\bid\s*=\s*["']company_id["']/);
+        expect(markup).not.toMatch(/\bname\s*=\s*["']payment\[company_id\]["']/);
+        expect(markup).not.toMatch(/company_id/);
+        expect(markup).not.toMatch(/value:\s*companyId\b/);
     });
 
     test('the template still declares the required company_name input', () => {
@@ -81,12 +93,22 @@ describe('the payment tile offers no company-number field', () => {
         // says anything about the organisation number. Model/Two.php::authorize()
         // is the only enforcement for that.
         const markup = withoutComments(readTemplate());
-        const requiredAttrs = markup.match(/required="true"/g) || [];
 
-        expect(requiredAttrs).toHaveLength(1);
+        // Every spelling jQuery Validation would honour, not just
+        // `required="true"`: a bare `required`, `required="required"`, and the
+        // `data-validate` form all count.
+        const requiredInputs = (markup.match(/<input\b[^>]*>/g) || []).filter(function (tag) {
+            return (
+                /\brequired\b/.test(tag) ||
+                /data-validate\s*=\s*["'][^"']*required/.test(tag)
+            );
+        });
 
-        const beforeRequired = markup.slice(0, markup.indexOf('required="true"'));
-        expect(beforeRequired).toContain('id="company_name"');
+        expect(requiredInputs).toHaveLength(1);
+        // The one remaining required input must be the company NAME field —
+        // checking the tag itself rather than "what precedes the first match",
+        // which said nothing about a second required field added later.
+        expect(requiredInputs[0]).toMatch(/\bid\s*=\s*["']company_name["']/);
     });
 
     test('the renderer keeps no apparatus for a field that is gone', () => {

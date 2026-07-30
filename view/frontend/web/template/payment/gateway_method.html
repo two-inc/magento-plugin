@@ -184,18 +184,19 @@
                 <!--
                     There is deliberately NO company-number input here.
 
-                    The organisation number is only ever captured from a
-                    source that can be trusted: a company-search pick, or the
-                    sole-trader autofill response. Both write the `companyId`
-                    observable directly, and getData() reads that observable —
-                    never the DOM — so no input is needed to carry the value.
+                    Three sources may supply the organisation number, and all
+                    three write the `companyId` observable rather than a field:
+                    a company-search pick, the sole-trader autofill response,
+                    and the address step's `companyData` notification. getData()
+                    reads that observable — never the DOM — so no input on this
+                    step is needed to carry the value.
 
-                    A hand-typed number is NOT an accepted source. Letting the
-                    buyer type one produced poor data quality and, worse,
-                    genuine buyers receiving invoices for orders they never
-                    placed. The address step owns the one remaining manual
-                    route, and it is enabled only where the registry holds no
-                    identifier for the picked company.
+                    The third of those is the only surviving route for a
+                    hand-typed number, and the address step enables it only
+                    where the registry holds no identifier for the picked
+                    company. Typing one HERE was unrestricted, which produced
+                    poor data quality and, worse, genuine buyers receiving
+                    invoices for orders they never placed.
 
                     Nothing client-side enforces the presence of an
                     identifier. Model/Two.php::authorize() refuses an order
