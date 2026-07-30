@@ -502,6 +502,18 @@ describe('when the row is shown', () => {
         expect(model.getResultsList(dom.$field, staleToken).length).toBe(0);
     });
 
+    test('the search-term lookup fails closed on a stale bind too', () => {
+        // Same reason as the results-list case above, and found the same way:
+        // a mutation that made this helper read the bind token off the node
+        // instead of honouring the one it was handed survived the whole suite.
+        const staleToken = dom.token;
+        dom.search.value = 'example';
+        expect(model.currentSearchTerm(dom.$field, staleToken)).toBe('example');
+
+        dom.$field.data('twoSearchBind', {});
+        expect(model.currentSearchTerm(dom.$field, staleToken)).toBe('');
+    });
+
     test('a nested group list is never mistaken for the results list', () => {
         const nested = document.createElement('ul');
         nested.className = 'select2-results__options select2-results__options--nested';
