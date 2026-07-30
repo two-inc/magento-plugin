@@ -121,6 +121,13 @@ function defaultMocks() {
             clearResultCache: function () {},
             EVENT_NS: '.twoCompanySearch',
             MIN_INPUT_LENGTH: 3,
+            // Derived from this mock's own MIN_INPUT_LENGTH so the harness
+            // does not reintroduce the literal the real module centralises.
+            // Both production call sites invoke this as
+            // `companySearch.minInputLengthMessage()`, so `this` is the mock.
+            minInputLengthMessage: function () {
+                return 'Please enter ' + this.MIN_INPUT_LENGTH + ' or more characters';
+            },
             getSearchFieldContainer: function () { return null; },
             markSearchBinding: function () {},
             clearSearchChrome: function () {},
