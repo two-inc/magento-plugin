@@ -10,6 +10,7 @@ use Magento\Framework\Model\Context;
 use Magento\Framework\Registry;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Model\Config\Backend\SurchargeTaxClass;
+use Two\Gateway\Model\Config\NeverTaxedTreatment;
 
 /**
  * Tests the never-auto-default enforcement for the surcharge tax
@@ -17,17 +18,21 @@ use Two\Gateway\Model\Config\Backend\SurchargeTaxClass;
  * rejected until a treatment is explicitly selected, and the
  * deprecated "custom" treatment is only accepted when a legacy flat
  * rate genuinely exists (0 counts as existing — falsy-zero guard).
- * Core "None" (class id 0) is refused unless the scope being saved
- * already stores it.
+ * Never-taxed treatments are refused outright, with no already-stored
+ * exemption (TWO-25279).
  */
 class SurchargeTaxClassTest extends TestCase
 {
     /** @var ScopeConfigInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $scopeConfig;
 
+    /** @var NeverTaxedTreatment|\PHPUnit\Framework\MockObject\MockObject */
+    private $neverTaxedTreatment;
+
     protected function setUp(): void
     {
         $this->scopeConfig = $this->createMock(ScopeConfigInterface::class);
+        $this->neverTaxedTreatment = $this->createMock(NeverTaxedTreatment::class);
     }
 
     private function buildModel(array $data): SurchargeTaxClass
@@ -37,21 +42,17 @@ class SurchargeTaxClassTest extends TestCase
             $this->getMockBuilder(Registry::class)->disableOriginalConstructor()->getMock(),
             $this->scopeConfig,
             $this->createMock(TypeListInterface::class),
+            $this->neverTaxedTreatment,
             null,
             null,
             $data
         );
     }
 
-    /** @var array<int, array{0: string, 1: string|null, 2: mixed}> path/scope/scopeId of every read */
-    private $configReads = [];
-
     private function stubStoredConfig(array $map): void
     {
-        $this->configReads = [];
         $this->scopeConfig->method('getValue')->willReturnCallback(
-            function ($path, $scope = null, $scopeId = null) use ($map) {
-                $this->configReads[] = [$path, $scope, $scopeId];
+            function ($path) use ($map) {
                 return $map[$path] ?? null;
             }
         );
@@ -220,14 +221,14 @@ class SurchargeTaxClassTest extends TestCase
     }
 
     /**
-     * The suppressed "None" option is a UI rule; without a save-time check it
-     * would stay creatable by anyone crafting the POST (TWO-25279).
+     * Removing the never-taxed options from the dropdown is a UI rule only;
+     * without this the treatment stays creatable by anyone who crafts the
+     * POST. There is deliberately NO already-stored exemption — a scope
+     * sitting on such a value is failed loud on, not allowed to re-save it.
      */
-    public function testNewlySubmittedNoneIsRejected(): void
+    public function testANeverTaxedTreatmentIsRefused(): void
     {
-        $this->stubStoredConfig([
-            'payment/two_payment/surcharge_tax_class' => '4',
-        ]);
+        $this->neverTaxedTreatment->method('isNeverTaxed')->with('0')->willReturn(true);
         $model = $this->buildModel([
             'value' => '0',
             'path' => 'payment/two_payment/surcharge_tax_class',
@@ -236,15 +237,43 @@ class SurchargeTaxClassTest extends TestCase
         ]);
 
         $this->expectException(LocalizedException::class);
-        $this->expectExceptionMessageMatches('/no longer available/');
+        $this->expectExceptionMessageMatches('/untaxed in every jurisdiction/');
         $model->beforeSave();
     }
 
-    public function testNewlySubmittedNoneIsRejectedWhenNothingIsStored(): void
+    /**
+     * Refused even with surcharges DISABLED. The treatment is not a
+     * conditional rule: storing it would put the shop straight back into the
+     * failed-loud state the moment a surcharge is enabled.
+     */
+    public function testANeverTaxedTreatmentIsRefusedEvenWithSurchargesDisabled(): void
     {
-        $this->stubStoredConfig([]);
+        $this->neverTaxedTreatment->method('isNeverTaxed')->willReturn(true);
         $model = $this->buildModel([
             'value' => '0',
+            'path' => 'payment/two_payment/surcharge_tax_class',
+            'scope' => 'default',
+            'fieldset_data' => ['surcharge_type' => 'none'],
+        ]);
+
+        $this->expectException(LocalizedException::class);
+        $model->beforeSave();
+    }
+
+    /**
+     * The refusal delegates to the SHARED decision, so the guard refuses
+     * exactly the set the option source omits and the field renderer warns
+     * about — including the plugin-provisioned class, whose id is
+     * merchant-specific and cannot be hardcoded.
+     */
+    public function testTheRefusalDelegatesToTheSharedDecision(): void
+    {
+        $this->neverTaxedTreatment->expects($this->once())
+            ->method('isNeverTaxed')
+            ->with('4')
+            ->willReturn(true);
+        $model = $this->buildModel([
+            'value' => '4',
             'path' => 'payment/two_payment/surcharge_tax_class',
             'scope' => 'default',
             'fieldset_data' => ['surcharge_type' => 'percentage'],
@@ -254,64 +283,11 @@ class SurchargeTaxClassTest extends TestCase
         $model->beforeSave();
     }
 
-    /**
-     * ...but a scope that ALREADY stores "None" must be able to resubmit it,
-     * or the option the source model re-offers could never be saved and the
-     * whole payment section would become unsavable.
-     */
-    public function testStoredNoneCanBeResubmitted(): void
+    public function testARealTaxClassIsStillAccepted(): void
     {
-        $this->stubStoredConfig([
-            'payment/two_payment/surcharge_tax_class' => '0',
-        ]);
+        $this->neverTaxedTreatment->method('isNeverTaxed')->willReturn(false);
         $model = $this->buildModel([
-            'value' => '0',
-            'path' => 'payment/two_payment/surcharge_tax_class',
-            'scope' => 'default',
-            'fieldset_data' => ['surcharge_type' => 'percentage'],
-        ]);
-
-        $this->assertSame($model, $model->beforeSave());
-    }
-
-    /**
-     * Migrated and pre-existing scopes reach the stored value by inheritance
-     * too, so the check must read the sibling scope-anchored rather than
-     * demanding an own row.
-     */
-    public function testStoredNoneCanBeResubmittedAtABrandScope(): void
-    {
-        $this->stubStoredConfig([
-            'payment/overlay_payment/surcharge_tax_class' => '0',
-        ]);
-        $model = $this->buildModel([
-            'value' => '0',
-            'path' => 'payment/overlay_payment/surcharge_tax_class',
-            'scope' => 'websites',
-            'scope_id' => 2,
-            'fieldset_data' => ['surcharge_type' => 'fixed'],
-        ]);
-
-        $this->assertSame($model, $model->beforeSave());
-        // The scope actually reached ScopeConfigInterface — without this the
-        // test would pass whether or not the read was scope-anchored, which
-        // is precisely what it claims to prove.
-        $this->assertContains(
-            ['payment/overlay_payment/surcharge_tax_class', 'websites', 2],
-            $this->configReads
-        );
-    }
-
-    public function testStoredNoneInANumericVariantIsStillTreatedAsStored(): void
-    {
-        // The option source normalises numerically (Repository::
-        // getSurchargeTaxClassIdAtScope int-casts), so a stored '0.0' offers
-        // the option; this side must not then refuse it.
-        $this->stubStoredConfig([
-            'payment/two_payment/surcharge_tax_class' => '0.0',
-        ]);
-        $model = $this->buildModel([
-            'value' => '0',
+            'value' => '2',
             'path' => 'payment/two_payment/surcharge_tax_class',
             'scope' => 'default',
             'fieldset_data' => ['surcharge_type' => 'percentage'],

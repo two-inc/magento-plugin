@@ -8,6 +8,13 @@ declare(strict_types=1);
 namespace Two\Gateway\Model\Config\Backend;
 
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Model\Context;
+use Magento\Framework\Registry;
+use Magento\Framework\App\Cache\TypeListInterface;
+use Magento\Framework\App\Config\ScopeConfigInterface;
+use Magento\Framework\Model\ResourceModel\AbstractResource;
+use Magento\Framework\Data\Collection\AbstractDb;
+use Two\Gateway\Model\Config\NeverTaxedTreatment;
 use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource;
 
 /**
@@ -27,14 +34,14 @@ use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource
  * merchants only, and must not be creatable through a hand-crafted
  * POST. That check belongs to this field alone.
  *
- * It refuses a NEWLY submitted core "None" (class id 0) on exactly the
- * same reasoning (TWO-25279). The source model suppresses that option,
- * but a suppressed option is a UI rule only: without this check the
- * never-taxed treatment stays creatable by anyone who crafts the POST,
- * and the "an untaxed surcharge must be a tax rule the merchant
- * configured" rule would be advisory. A scope that ALREADY stores 0 can
- * still submit it, which is what lets a pre-existing or migrated scope
- * keep saving.
+ * It refuses any never-taxed treatment outright on the same reasoning
+ * (TWO-25279). Removing those options from the source model is a UI rule
+ * only; without this check the never-taxed treatment would stay
+ * creatable by anyone who crafts the POST, and "an untaxed surcharge
+ * must be a Tax Rule the merchant configured" would be advisory. There
+ * is no already-stored exemption: a scope sitting on such a value is
+ * told to fix it (see the field's frontend model), not allowed to
+ * re-save it.
  *
  * Real coverage: every admin config-section save, at any scope. NOT
  * `bin/magento config:set`, NOT "Use Default" / inherit, NOT direct
@@ -45,25 +52,42 @@ use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource
 class SurchargeTaxClass extends AbstractSurchargeTreatmentGuard
 {
     /**
+     * @var NeverTaxedTreatment
+     */
+    private $neverTaxedTreatment;
+
+    public function __construct(
+        Context $context,
+        Registry $registry,
+        ScopeConfigInterface $config,
+        TypeListInterface $cacheTypeList,
+        NeverTaxedTreatment $neverTaxedTreatment,
+        ?AbstractResource $resource = null,
+        ?AbstractDb $resourceCollection = null,
+        array $data = []
+    ) {
+        parent::__construct($context, $registry, $config, $cacheTypeList, $resource, $resourceCollection, $data);
+        $this->neverTaxedTreatment = $neverTaxedTreatment;
+    }
+
+    /**
      * @inheritDoc
      *
      * @throws LocalizedException when surcharges are enabled and no
-     *         tax treatment is selected, when "None" is newly submitted
-     *         at a scope that does not already store it, or when "Custom"
-     *         is submitted without a pre-existing legacy flat rate.
+     *         tax treatment is selected, when a never-taxed treatment is
+     *         submitted, or when "Custom" is submitted without a
+     *         pre-existing legacy flat rate.
      */
     public function beforeSave()
     {
         $this->assertTaxTreatmentSelected();
 
-        if ((string)$this->getValue() === SurchargeTaxClassSource::NEVER_TAXED_CLASS_ID
-            && !$this->neverTaxedIsAlreadyStored()
-        ) {
+        if ($this->neverTaxedTreatment->isNeverTaxed((string)$this->getValue())) {
             throw new LocalizedException(
                 __(
-                    'The "None" surcharge tax treatment is no longer available: an untaxed '
-                    . 'surcharge must be a tax rule you configured. Create a Tax Rule with a 0% '
-                    . 'rate and select its Product Tax Class instead.'
+                    'That surcharge tax treatment leaves the surcharge untaxed in every '
+                    . 'jurisdiction and is no longer available. Create a Tax Rule with a 0% rate '
+                    . 'and select its Product Tax Class instead.'
                 )
             );
         }
@@ -89,26 +113,5 @@ class SurchargeTaxClass extends AbstractSurchargeTreatmentGuard
     protected function getTaxTreatmentValue(): ?string
     {
         return (string)$this->getValue();
-    }
-
-    /**
-     * Whether core "None" is already the stored treatment at the scope being
-     * saved — read through the sibling helper so it is scope-anchored and
-     * inheritance-aware, matching what the source model offered.
-     */
-    private function neverTaxedIsAlreadyStored(): bool
-    {
-        $stored = $this->getScopedSiblingValue('surcharge_tax_class');
-
-        // Normalised the SAME way Repository::getSurchargeTaxClassIdAtScope()
-        // normalises for the option source: numeric, then int-cast. A raw
-        // string comparison would refuse a scope whose stored value is '0.0'
-        // or ' 0' — shapes an import or a hand-written config can produce —
-        // while the source model still offered the option, i.e. an option the
-        // save rejects.
-        return $stored !== null
-            && $stored !== ''
-            && is_numeric($stored)
-            && (int)$stored === (int)SurchargeTaxClassSource::NEVER_TAXED_CLASS_ID;
     }
 }

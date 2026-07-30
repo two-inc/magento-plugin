@@ -199,7 +199,7 @@ class SurchargeTest extends TestCase
     {
         $this->stubBaseline();
         $this->config->method('getSurchargeTaxClassId')->willReturn(99);
-        // No Tax Rule matches (e.g. a merchant 0%-rule class, or core "None").
+        // No Tax Rule matches (e.g. the provisioned no-tax class).
         $this->taxCalculator->method('calculateForQuote')
             ->willReturn(['tax_amount' => 0.0, 'base_tax_amount' => 0.0, 'tax_rate' => 0.0]);
 

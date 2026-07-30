@@ -105,6 +105,11 @@ if (!class_exists(\Magento\Framework\App\Config\Value::class, false)) {
 // per-symbol guards live inside the stub file.
 require_once __DIR__ . '/Stubs/AdminScope.php';
 
+// Admin system-config field renderer surface, so Block/Adminhtml/System/
+// Config/Field/* can be constructed and their real _getElementHtml() bodies
+// exercised. Loads after the DataObject stub, which the element extends.
+require_once __DIR__ . '/Stubs/AdminConfigField.php';
+
 // Self-invoice-upload collaborators (Status\History/HistoryFactory,
 // OrderRepositoryInterface, SearchCriteriaBuilder, Pdf\Invoice) for
 // Service/Invoice/UploadService.php and Cron/ProcessInvoiceUploads.php;
