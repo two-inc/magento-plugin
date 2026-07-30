@@ -1,5 +1,40 @@
-define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
+define(['jquery', 'mage/translate', 'mage/validation', 'domReady!'], function ($, $t) {
     'use strict';
+
+    // Browser-side mirror of the server-side refusal of a zero limit
+    // (Model\Config\Backend\SurchargeGrid::validateValue, TWO-25289). The
+    // backend is the authority; this only saves the admin a round trip.
+    //
+    // Registered rather than reusing Magento's own
+    // validate-greater-than-zero for the same reason validate-number is
+    // omitted from this grid's rules: that rule is locale-blind, and
+    // parseFloat('0,5') is 0 for a Dutch admin, so it would reject a
+    // legitimate half-unit limit as if it were zero. $.mage.parseNumber
+    // normalises the comma first.
+    //
+    // EMPTY passes: an absent limit means "no limit" and is a legitimate
+    // configuration. Non-numeric input also passes here — that is
+    // validate-zero-or-greater's job, and two rules reporting the same
+    // typo is noise.
+    if ($.validator && !$.validator.methods['validate-two-nonzero-limit']) {
+        $.validator.addMethod(
+            'validate-two-nonzero-limit',
+            function (value) {
+                var parsed;
+
+                if (value === undefined || value === null || String(value).trim() === '') {
+                    return true;
+                }
+                parsed = $.mage.parseNumber(value);
+
+                return isNaN(parsed) || parsed !== 0;
+            },
+            $t(
+                'A limit of 0 is not allowed. To charge nothing on this term, set the fixed amount'
+                + ' and percentage to 0 instead, and leave the limit empty.'
+            )
+        );
+    }
 
     return function (config, element) {
         var $container = $(element);
@@ -105,6 +140,10 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     validateRules.push('"validate-number-range":"0-' + maxFixed + '"');
                 } else if (col === 'percentage') {
                     validateRules.push('"validate-number-range":"0-' + maxPercentage + '"');
+                } else if (col === 'limit') {
+                    // Mirrors surcharge-grid.phtml — a row added live must
+                    // carry the same zero-limit refusal as a rendered one.
+                    validateRules.push('"validate-two-nonzero-limit":true');
                 }
                 var dataValidate = validateRules.join(',');
 

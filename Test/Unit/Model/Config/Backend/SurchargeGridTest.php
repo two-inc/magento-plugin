@@ -122,8 +122,11 @@ class SurchargeGridTest extends TestCase
 
     public function testRejectsNegativeValue(): void
     {
+        // The limit cell is EMPTY, not '0': a zero limit is itself rejected
+        // now (TWO-25289), and a fixture carrying one would let this test
+        // pass for the wrong reason.
         $this->model->setTestValue([
-            30 => ['fixed' => '-5', 'percentage' => '0', 'limit' => '0'],
+            30 => ['fixed' => '-5', 'percentage' => '0', 'limit' => ''],
         ]);
         $this->model->setTestScope('default', 0);
 
@@ -134,7 +137,7 @@ class SurchargeGridTest extends TestCase
     public function testRejectsFixedAboveMax(): void
     {
         $this->model->setTestValue([
-            30 => ['fixed' => '999', 'percentage' => '0', 'limit' => '0'],
+            30 => ['fixed' => '999', 'percentage' => '0', 'limit' => ''],
         ]);
         $this->model->setTestScope('default', 0);
 
@@ -145,7 +148,7 @@ class SurchargeGridTest extends TestCase
     public function testRejectsPercentageAboveMax(): void
     {
         $this->model->setTestValue([
-            30 => ['fixed' => '0', 'percentage' => '150', 'limit' => '0'],
+            30 => ['fixed' => '0', 'percentage' => '150', 'limit' => ''],
         ]);
         $this->model->setTestScope('default', 0);
 
@@ -170,6 +173,49 @@ class SurchargeGridTest extends TestCase
         $this->model->callAfterSave();
 
         $this->assertEquals(['payment/two_payment/surcharge_30_fixed'], $saved);
+    }
+
+    /**
+     * Invoke the REAL backend model's private validator.
+     *
+     * The SurchargeGridTestable stub below reimplements afterSave()'s flow
+     * (Value's lifecycle is awkward to construct), which makes it useless
+     * for pinning a validation RULE: breaking the production rule cannot
+     * turn a stub-only test red. So the rules below are asserted against
+     * the production method itself. validateValue() reads no injected
+     * dependency, so an instance built without the constructor is enough.
+     */
+    private function invokeValidateValue(string $type, float $value, int $days = 30): void
+    {
+        $model = (new \ReflectionClass(SurchargeGrid::class))->newInstanceWithoutConstructor();
+        $method = new \ReflectionMethod(SurchargeGrid::class, 'validateValue');
+        $method->setAccessible(true);
+        $method->invoke($model, $type, $value, $days, 25, ConfigRepository::SURCHARGE_PERCENTAGE_MAX);
+    }
+
+    public function testProductionValidatorRefusesAZeroLimit(): void
+    {
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('a limit of 0 is not allowed');
+        $this->invokeValidateValue('limit', 0.0);
+    }
+
+    public function testProductionValidatorAcceptsAPositiveLimit(): void
+    {
+        $this->expectNotToPerformAssertions();
+        $this->invokeValidateValue('limit', 0.01);
+    }
+
+    /**
+     * Zero on the fixed and percentage cells is the sanctioned way to say
+     * "charge nothing on this term" — it is precisely what the zero-limit
+     * error message tells the admin to do, so it must stay accepted.
+     */
+    public function testProductionValidatorAcceptsZeroFixedAndZeroPercentage(): void
+    {
+        $this->expectNotToPerformAssertions();
+        $this->invokeValidateValue('fixed', 0.0);
+        $this->invokeValidateValue('percentage', 0.0);
     }
 
     public function testNonArrayValueIsNoOp(): void
@@ -276,6 +322,19 @@ class SurchargeGridTestable
                 if ($numericValue < 0) {
                     throw new LocalizedException(
                         __('%1 days - %2: value cannot be negative.', $days, $type)
+                    );
+                }
+                // Mirrors SurchargeGrid::validateValue (TWO-25289). Pinned
+                // for real against the production method by
+                // testProductionValidatorRefusesAZeroLimit — this copy only
+                // keeps the flow tests above faithful to the real save.
+                if ($type === 'limit' && $numericValue === 0.0) {
+                    throw new LocalizedException(
+                        __(
+                            '%1 days - limit: a limit of 0 is not allowed. To charge nothing on this term,'
+                            . ' set the fixed amount and percentage to 0 instead, and leave the limit empty.',
+                            $days
+                        )
                     );
                 }
                 if ($type === 'fixed' && $numericValue > $maxFixed) {

@@ -251,6 +251,11 @@ class SurchargeGrid extends Value
     /**
      * Validate a surcharge field value.
      *
+     * Note the caller has already returned for an EMPTY cell (it deletes
+     * the config row instead), so `limit` only reaches here when the admin
+     * typed something. Empty and zero are therefore distinguishable: empty
+     * means "no limit", zero is refused outright (TWO-25289).
+     *
      * @throws LocalizedException
      */
     private function validateValue(
@@ -263,6 +268,24 @@ class SurchargeGrid extends Value
         if ($value < 0) {
             throw new LocalizedException(
                 __('%1 days - %2: value cannot be negative.', $days, $type)
+            );
+        }
+        // A limit of exactly 0 is refused at entry. It is never what an
+        // admin means: the limit bounds the WHOLE fee line — the percentage
+        // part and the fixed amount together, not the percentage alone — so
+        // a limit of 0 silently wipes the fixed amount as well, and nothing
+        // in the grid says so. The intent it is mistaken for
+        // ("charge nothing on this term") is expressible directly, by
+        // entering 0 in both the fixed and percentage cells. An EMPTY limit
+        // is a wholly legitimate configuration meaning "no limit" and is
+        // never rejected — absence and zero are different values.
+        if ($type === 'limit' && $value === 0.0) {
+            throw new LocalizedException(
+                __(
+                    '%1 days - limit: a limit of 0 is not allowed. To charge nothing on this term,'
+                    . ' set the fixed amount and percentage to 0 instead, and leave the limit empty.',
+                    $days
+                )
             );
         }
         if ($type === 'fixed' && $maxFixed !== null && $value > $maxFixed) {
