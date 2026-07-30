@@ -64,6 +64,18 @@ the sibling plugins a zero cap was being normalised to *absent* and
 relayed genuinely uncapped, overcharging the buyer. Refusing it at
 entry closes that consistently across all three plugins.
 
+**Read path — junk is absent, zero is not.**
+`Model\Config\Repository::getSurchargeConfig()` no longer casts the
+stored limit blindly. The admin grid refuses junk, but the stored value
+can still arrive from a hand-edited row, `config:set` or an import, and
+a bare `(float)` cast turned `abc` into a hard cap of 0 (suppressing
+the fee) and `-10` into a negative cap (refused upstream, so the buyer
+sees a generic failure). Non-scalar, empty, non-numeric, non-finite and
+negative all resolve to NULL — absent, i.e. no cap. A genuine `0` is
+still relayed verbatim, because a zero cap clamps the fee to zero and
+that is a different instruction from absence. Same shape as the sibling
+plugins.
+
 So: if you are asked to remove the admin validation, that is the
 runtime rule being misread. If you are asked to make the runtime
 throw on a zero cap, that is the reverted guard being reintroduced.
@@ -93,11 +105,23 @@ overlooked — pinned by
 decision. Do not "fix" it with away-from-zero rounding without
 reopening the scope question.
 
-Also note the Limit column is **deleted rather than validated** when
-the surcharge type has no percentage component. The grid JS hides that
-column, but a hidden input still posts, so a limit stored under an
-earlier percentage type keeps arriving. Rejecting a zero there would
-fail the whole section save over a cell the admin cannot see or clear.
+Also note the zero rule is **skipped, not applied and not deleted**, on
+the Limit column when the surcharge type has no percentage component.
+The grid JS hides that column, but a hidden input still posts, so a
+limit stored under an earlier percentage type keeps arriving. Rejecting
+a zero there would fail the whole section save over a cell the admin
+can neither see nor clear, so the rule is skipped and the cell is
+stored exactly as posted.
+
+Do not "tidy" that into deleting the cell. Deleting discards a VALID
+limit on any save made while the surcharge is fixed-only or off — a
+normal round trip — while the equally inapplicable percentage cell
+survives it; and at a non-default scope deleting an override does not
+retire a value at all, it re-exposes the parent's. A legacy zero simply
+surfaces again when the column comes back into view, which is where the
+admin can act on it. The visibility flag is threaded from `afterSave()`
+into `validateValue()` and pinned there by
+`testProductionAfterSaveWiresTheLimitColumnVisibilityIntoTheZeroRule`.
 
 ## DI registration scope for Structure / Config Reader plugins
 

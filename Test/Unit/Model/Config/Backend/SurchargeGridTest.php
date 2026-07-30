@@ -10,6 +10,7 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Model\Config\Backend\SurchargeGrid;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Order\SurchargeCalculator;
 
 /**
@@ -404,6 +405,122 @@ class SurchargeGridTest extends TestCase
         $this->expectNotToPerformAssertions();
         $this->invokeValidateValue('limit', '0', 30, false);
         $this->invokeValidateValue('limit', '0.001', 30, false);
+    }
+
+    /**
+     * Build the REAL backend model and run its REAL afterSave().
+     *
+     * Everything else in this file either drives the SurchargeGridTestable
+     * reimplementation or reaches into a single private method, so neither can
+     * see how afterSave() wires the two together. `validateValue()` defaults
+     * $limitColumnVisible to true, so dropping the argument at the call site —
+     * or dropping the `&& $limitColumnVisible` term from the rule — compiles
+     * and leaves every other test in this file green while reintroducing the
+     * failed-section-save regression. This helper exists to make that red.
+     *
+     * The model is built without its constructor and has only the
+     * dependencies this path touches injected: at the default scope with no
+     * merchant surcharge limit, the store manager and the FX rates provider
+     * are never reached, and the resource connection is only used by the
+     * inherit purge.
+     *
+     * @param array<int, array<string, string>> $grid
+     * @return list<array{0: string, 1: string}> the (path, value) pairs saved
+     */
+    private function runProductionAfterSave(string $postedType, array $grid): array
+    {
+        $config = $this->getMockBuilder(ScopeConfigInterface::class)->getMock();
+        $config->method('getValue')->willReturnCallback(
+            static function ($path) {
+                return $path === 'currency/options/base' ? 'EUR' : null;
+            }
+        );
+
+        $brand = $this->getMockBuilder(BrandRegistryInterface::class)->getMock();
+        $brand->method('getCode')->willReturn('two_payment');
+
+        // No merchant-side surcharge cap, so the fixed upper-bound check is
+        // skipped and the FX rates provider is never consulted.
+        $settings = $this->getMockBuilder(SettingsProvider::class)
+            ->disableOriginalConstructor()
+            ->getMock();
+        $settings->method('getSurchargeLimit')->willReturn(null);
+
+        $saved = [];
+        $writer = $this->getMockBuilder(WriterInterface::class)->getMock();
+        $writer->method('save')->willReturnCallback(
+            function ($path, $value) use (&$saved) {
+                $saved[] = [$path, $value];
+            }
+        );
+        $writer->method('delete')->willReturn(null);
+
+        $model = (new \ReflectionClass(SurchargeGrid::class))->newInstanceWithoutConstructor();
+        $inject = static function (string $class, string $property, $value) use ($model): void {
+            $reflected = new \ReflectionProperty($class, $property);
+            $reflected->setAccessible(true);
+            $reflected->setValue($model, $value);
+        };
+        $inject(\Magento\Framework\App\Config\Value::class, '_config', $config);
+        $inject(SurchargeGrid::class, 'brandRegistry', $brand);
+        $inject(SurchargeGrid::class, 'settingsProvider', $settings);
+        $inject(SurchargeGrid::class, 'configWriter', $writer);
+
+        $model->setData('scope', 'default');
+        $model->setData('scope_id', 0);
+        $model->setData('groups', [
+            'payment_terms' => [
+                'fields' => [
+                    'surcharge_type' => ['value' => $postedType],
+                    'surcharge_grid' => ['value' => $grid],
+                ],
+            ],
+        ]);
+
+        $model->afterSave();
+
+        return $saved;
+    }
+
+    /**
+     * afterSave() must thread the Limit column's REAL visibility into the zero
+     * rule. With the surcharge type posted as fixed-only the column is hidden,
+     * so a legacy zero must sail through the whole save — not throw, and not
+     * be deleted.
+     *
+     * Deleting the sixth argument at the call site, or the `&&
+     * $limitColumnVisible` term from the rule itself, turns this red: the
+     * parameter's `true` default means the zero rule fires on a cell the admin
+     * can neither see nor clear, and the merchant's entire payment section
+     * fails to save.
+     */
+    public function testProductionAfterSaveWiresTheLimitColumnVisibilityIntoTheZeroRule(): void
+    {
+        $saved = $this->runProductionAfterSave('fixed', [
+            30 => ['fixed' => '10', 'percentage' => '0', 'limit' => '0'],
+        ]);
+
+        $this->assertContains(
+            ['payment/two_payment/surcharge_30_limit', '0'],
+            $saved,
+            'a legacy zero limit must be stored as posted while the column is hidden'
+        );
+        $this->assertContains(['payment/two_payment/surcharge_30_fixed', '10'], $saved);
+    }
+
+    /**
+     * The mirror case, so the wiring cannot be satisfied by hardcoding the
+     * flag to false (which would silently drop the zero rule for everyone).
+     * With a percentage posted the column IS visible and a zero must be
+     * refused by the real afterSave() path.
+     */
+    public function testProductionAfterSaveStillRefusesAZeroLimitWhileTheColumnIsVisible(): void
+    {
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('a limit of 0 is not allowed');
+        $this->runProductionAfterSave('fixed_and_percentage', [
+            30 => ['fixed' => '10', 'percentage' => '25', 'limit' => '0'],
+        ]);
     }
 
     /**

@@ -685,12 +685,51 @@ class Repository implements RepositoryInterface
     public function getSurchargeConfig(int $days, ?int $storeId = null): array
     {
         $prefix = sprintf('payment/%s/surcharge_%d_', $this->code(), $days);
-        $limitValue = $this->getConfig($prefix . 'limit', $storeId);
         return [
             'percentage' => (float)$this->getConfig($prefix . 'percentage', $storeId),
             'fixed' => (float)$this->getConfig($prefix . 'fixed', $storeId),
-            'limit' => $limitValue !== null ? (float)$limitValue : null,
+            'limit' => $this->configuredLimit($this->getConfig($prefix . 'limit', $storeId)),
         ];
+    }
+
+    /**
+     * The surcharge limit stored for one grid row, or null when there is none.
+     *
+     * Only EMPTINESS means "no limit" as far as the admin is concerned, and a
+     * limit of exactly 0 is a real instruction that is relayed verbatim: a cap
+     * of zero clamps the buyer fee to zero, which is a different instruction
+     * from an ABSENT cap (absence is what means uncapped). So this boundary
+     * must not normalise a zero away.
+     *
+     * Everything that is not a usable number does resolve to absent. The admin
+     * grid refuses junk on save (TWO-25289), but the stored row can still be
+     * written by a hand edit, `bin/magento config:set` or a config import, and
+     * those are exactly the routes that justify relaying a stored zero — so
+     * they have to be handled here rather than assumed away. A bare `(float)`
+     * cast turned `abc` into a hard cap of 0 and suppressed the fee, and let a
+     * negative through as `cap => -10.0`, which is refused upstream and
+     * surfaces to the buyer as a generic failure. `1e400` casts to INF and
+     * would fail the pricing request at serialisation time instead. A
+     * non-scalar (an array, from the same hand-edit routes) is a warning when
+     * cast to string.
+     *
+     * @param mixed $stored
+     */
+    private function configuredLimit($stored): ?float
+    {
+        if ($stored === null || !is_scalar($stored)) {
+            return null;
+        }
+        $raw = trim((string)$stored);
+        if ($raw === '' || !is_numeric($raw)) {
+            return null;
+        }
+        $limit = (float)$raw;
+        if (!is_finite($limit) || $limit < 0) {
+            return null;
+        }
+
+        return $limit;
     }
 
     /**
