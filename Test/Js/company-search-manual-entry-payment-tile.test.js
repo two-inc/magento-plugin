@@ -410,6 +410,33 @@ describe('gateway_method.js payment-tile surface (structural fix)', function () 
         expect(block).toMatch(/setTimeout\(\s*function\s*\(\s*\)\s*\{[\s\S]*self\.clearCompany\(\)/);
     });
 
+    test('the deferred teardown re-checks the bind before acting, so a re-render in the gap cannot tear down the wrong widget', function () {
+        // Round-2 review finding: a checkout re-render (this component
+        // re-binds select2 on every totals/shipping change, deliberately
+        // un-guarded — see the re-bind comment near `.select2({`) can land in
+        // the gap between the buyer's click and the deferred callback firing,
+        // rebinding a NEW widget to the same node. Without a staleness check,
+        // the deferred call destroys whatever widget is live NOW rather than
+        // being a no-op for the bind it was scheduled from — exactly the
+        // class of bug every OTHER deferred/async path in this handler chain
+        // (onSearching, onUnavailable, clearSearchChrome, attachManualEntryRow)
+        // already guards against via the same bindToken check.
+        const selectingStart = src.indexOf("on('select2:selecting");
+        const selectStart = src.indexOf("on('select2:select' + companySearch.EVENT_NS", selectingStart);
+        const block = src.slice(selectingStart, selectStart);
+        const setTimeoutStart = block.indexOf('setTimeout(');
+        expect(setTimeoutStart).toBeGreaterThan(-1);
+        const deferredBody = block.slice(setTimeoutStart);
+        expect(deferredBody).toMatch(
+            /companySearch\.getSearchFieldContainer\(\s*\$companyNameField,\s*bindToken\s*\)\.length/
+        );
+        // The staleness check must run BEFORE clearCompany(), not after.
+        const gateIndex = deferredBody.indexOf('getSearchFieldContainer');
+        const clearIndex = deferredBody.indexOf('self.clearCompany()');
+        expect(gateIndex).toBeGreaterThan(-1);
+        expect(clearIndex).toBeGreaterThan(gateIndex);
+    });
+
     test('the shared model exports the helpers the payment tile depends on', function () {
         const modelSrc = readSource(MODEL_PATH);
         [

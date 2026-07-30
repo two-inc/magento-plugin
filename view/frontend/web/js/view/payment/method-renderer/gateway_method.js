@@ -1114,12 +1114,6 @@ define([
                             const data = e.params && e.params.args && e.params.args.data;
                             if (!companySearch.isManualEntryOption(data)) return;
                             e.preventDefault();
-                            // Resolved here rather than closed over, and
-                            // scoped to this bind's container for the same
-                            // duplicate-id reason as below.
-                            const $searchForCompany = $companyNameField
-                                .closest('.field')
-                                .find('.search_for_company');
                             // Deferred a tick, deliberately: `select2:selecting`
                             // fires from INSIDE select2's own click/keydown
                             // dispatch, and `clearCompany()` destroys the
@@ -1130,9 +1124,35 @@ define([
                             // A zero-delay defer runs after that dispatch has
                             // fully unwound, once `e.preventDefault()` above
                             // has already told select2 to skip the pick.
+                            //
+                            // That gap is exactly long enough for a checkout
+                            // re-render (Fire Checkout re-renders this
+                            // component on totals/shipping changes,
+                            // deliberately un-guarded — see the re-bind
+                            // comment above) to have already rebound a NEW
+                            // widget to this same node before the timer
+                            // fires. Every other deferred/async path in this
+                            // handler chain (onSearching, onUnavailable,
+                            // clearSearchChrome, attachManualEntryRow) gates
+                            // on the bind staying current; this one must too,
+                            // or it tears down whatever widget is live NOW —
+                            // not the one the buyer actually picked
+                            // manual-entry on.
                             setTimeout(function () {
+                                if (!companySearch.getSearchFieldContainer($companyNameField, bindToken).length) {
+                                    return;
+                                }
                                 self.clearCompany();
-                                $searchForCompany.show();
+                                // Resolved HERE, not before the defer: a
+                                // container captured at click time could be
+                                // replaced by the same re-render the
+                                // staleness check above guards against, and
+                                // `.show()` on a detached node would silently
+                                // no-op, leaving the real link hidden.
+                                $companyNameField
+                                    .closest('.field')
+                                    .find('.search_for_company')
+                                    .show();
                             }, 0);
                         })
                         .on('select2:select' + companySearch.EVENT_NS, function (e) {
