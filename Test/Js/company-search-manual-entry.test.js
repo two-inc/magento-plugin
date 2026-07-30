@@ -807,8 +807,11 @@ describe('the address step wires the row up', () => {
             preventDefault: jest.fn()
         });
 
-        // Same bind, or it cancels somebody else's request — or nothing.
-        expect(model.abortActiveRequest).toHaveBeenCalledWith(bindToken);
+        // Same bind, by IDENTITY. The token is an empty object, so a
+        // structural comparison passes against any other empty object and
+        // would prove nothing about which request gets cancelled.
+        expect(model.abortActiveRequest).toHaveBeenCalledTimes(1);
+        expect(model.abortActiveRequest.mock.calls[0][0]).toBe(bindToken);
         // BEFORE the teardown: the dropdown is still open at this point
         // (the selection was cancelled), so a late response would run select2's
         // highlight and scroll bookkeeping over a torn-down picker.
