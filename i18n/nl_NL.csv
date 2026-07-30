@@ -246,3 +246,8 @@
 "Platform minimum %1, %2 tax. A value here is interpreted in the store base currency on the tax basis selected below and must be at least this.","Platformminimum %1, %2 BTW. Een waarde hier wordt geïnterpreteerd in de basisvaluta van de winkel op de hieronder geselecteerde BTW-basis en moet minimaal dit bedrag zijn."
 "including","inclusief"
 "excluding","exclusief"
+"Minimum Order Value, %1","Minimale bestelwaarde, %1"
+"Including tax (gross)","Inclusief BTW (bruto)"
+"Excluding tax (net)","Exclusief BTW (netto)"
+"Invoice purchase with %1 is not available for this order. Minimum order value is %2 %3 tax.","Aankoop op factuur met %1 is niet beschikbaar voor deze bestelling. De minimale bestelwaarde is %2 %3 BTW."
+"Minimum Order Value must be at least the platform minimum of %1, %2 tax.","De minimale bestelwaarde moet minimaal het platformminimum van %1 zijn, %2 BTW."
