@@ -17,6 +17,8 @@ use Two\Gateway\Model\Config\Backend\SurchargeTaxClass;
  * rejected until a treatment is explicitly selected, and the
  * deprecated "custom" treatment is only accepted when a legacy flat
  * rate genuinely exists (0 counts as existing — falsy-zero guard).
+ * Core "None" (class id 0) is refused unless the scope being saved
+ * already stores it.
  */
 class SurchargeTaxClassTest extends TestCase
 {
@@ -207,6 +209,82 @@ class SurchargeTaxClassTest extends TestCase
             'path' => 'payment/two_payment/surcharge_tax_class',
             'scope' => 'default',
             'fieldset_data' => ['surcharge_type' => 'percentage'],
+        ]);
+
+        $this->assertSame($model, $model->beforeSave());
+    }
+
+    /**
+     * The suppressed "None" option is a UI rule; without a save-time check it
+     * would stay creatable by anyone crafting the POST (TWO-25279).
+     */
+    public function testNewlySubmittedNoneIsRejected(): void
+    {
+        $this->stubStoredConfig([
+            'payment/two_payment/surcharge_tax_class' => '4',
+        ]);
+        $model = $this->buildModel([
+            'value' => '0',
+            'path' => 'payment/two_payment/surcharge_tax_class',
+            'scope' => 'default',
+            'fieldset_data' => ['surcharge_type' => 'percentage'],
+        ]);
+
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessageMatches('/no longer available/');
+        $model->beforeSave();
+    }
+
+    public function testNewlySubmittedNoneIsRejectedWhenNothingIsStored(): void
+    {
+        $this->stubStoredConfig([]);
+        $model = $this->buildModel([
+            'value' => '0',
+            'path' => 'payment/two_payment/surcharge_tax_class',
+            'scope' => 'default',
+            'fieldset_data' => ['surcharge_type' => 'percentage'],
+        ]);
+
+        $this->expectException(LocalizedException::class);
+        $model->beforeSave();
+    }
+
+    /**
+     * ...but a scope that ALREADY stores "None" must be able to resubmit it,
+     * or the option the source model re-offers could never be saved and the
+     * whole payment section would become unsavable.
+     */
+    public function testStoredNoneCanBeResubmitted(): void
+    {
+        $this->stubStoredConfig([
+            'payment/two_payment/surcharge_tax_class' => '0',
+        ]);
+        $model = $this->buildModel([
+            'value' => '0',
+            'path' => 'payment/two_payment/surcharge_tax_class',
+            'scope' => 'default',
+            'fieldset_data' => ['surcharge_type' => 'percentage'],
+        ]);
+
+        $this->assertSame($model, $model->beforeSave());
+    }
+
+    /**
+     * Migrated and pre-existing scopes reach the stored value by inheritance
+     * too, so the check must read the sibling scope-anchored rather than
+     * demanding an own row.
+     */
+    public function testStoredNoneCanBeResubmittedAtABrandScope(): void
+    {
+        $this->stubStoredConfig([
+            'payment/overlay_payment/surcharge_tax_class' => '0',
+        ]);
+        $model = $this->buildModel([
+            'value' => '0',
+            'path' => 'payment/overlay_payment/surcharge_tax_class',
+            'scope' => 'websites',
+            'scope_id' => 2,
+            'fieldset_data' => ['surcharge_type' => 'fixed'],
         ]);
 
         $this->assertSame($model, $model->beforeSave());

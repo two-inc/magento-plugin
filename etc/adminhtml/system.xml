@@ -226,9 +226,16 @@
                     <config_path>payment/two_payment/surcharge_line_description</config_path>
                 </field>
 
-                <field id="surcharge_tax_class" translate="label" type="select" sortOrder="80"
+                <field id="surcharge_tax_class" translate="label comment" type="select" sortOrder="80"
                        showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Surcharge Tax Treatment</label>
+                    <!-- The never-taxed options this selector used to offer
+                         (core "None", and a tax class the plugin provisioned
+                         itself) are gone: an untaxed surcharge must be a tax
+                         rule the merchant configured, not one we hand them.
+                         This comment is the only in-admin signpost to the
+                         replacement route, so it is not optional copy. -->
+                    <comment>Product Tax Class applied to the surcharge. Country, region and combined rates resolve exactly as they do for a product. To leave the surcharge untaxed, create a Tax Rule with a 0% rate and select its Product Tax Class here.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\SurchargeTaxClass</source_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\SurchargeTaxClass</backend_model>
                     <config_path>payment/two_payment/surcharge_tax_class</config_path>

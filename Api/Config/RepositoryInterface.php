@@ -366,6 +366,23 @@ interface RepositoryInterface
     public function hasCustomSurchargeTaxRate(?int $storeId = null): bool;
 
     /**
+     * As hasCustomSurchargeTaxRate(), but anchored to an explicit config
+     * scope rather than a store view.
+     *
+     * The store-id form resolves through SCOPE_STORE, which cannot express
+     * "the value stored at website scope" or "the value stored at default
+     * scope" — passing null resolves the CURRENT store, not the default
+     * scope. The admin config form needs the value for the scope it is
+     * actually editing, so it uses this instead.
+     *
+     * @param string $scope 'default' | 'website' | 'store'
+     * @param int|string|null $scopeId
+     *
+     * @return bool
+     */
+    public function hasCustomSurchargeTaxRateAtScope(string $scope, $scopeId = null): bool;
+
+    /**
      * Get the Product Tax Class id used to tax the surcharge via
      * Magento's tax rules engine (destination-aware, rule-driven,
      * additive multi-rate).
@@ -382,6 +399,18 @@ interface RepositoryInterface
      * @return int|null
      */
     public function getSurchargeTaxClassId(?int $storeId = null): ?int;
+
+    /**
+     * As getSurchargeTaxClassId(), but anchored to an explicit config scope
+     * rather than a store view. See hasCustomSurchargeTaxRateAtScope() for
+     * why the store-id form is not sufficient for the admin config form.
+     *
+     * @param string $scope 'default' | 'website' | 'store'
+     * @param int|string|null $scopeId
+     *
+     * @return int|null
+     */
+    public function getSurchargeTaxClassIdAtScope(string $scope, $scopeId = null): ?int;
 
     /**
      * Get surcharge config for a specific term

@@ -11,3 +11,13 @@ interface ScopeConfigInterface
 
     public function isSetFlag($path, $scopeType = 'default', $scopeCode = null);
 }
+
+/**
+ * Real Magento's ReinitableConfigInterface extends ScopeConfigInterface and
+ * adds reinit(). Needed as a real interface (not the bootstrap's empty
+ * catch-all stub) so a mock of it can have reinit() configured.
+ */
+interface ReinitableConfigInterface extends ScopeConfigInterface
+{
+    public function reinit();
+}

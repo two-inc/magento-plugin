@@ -629,13 +629,21 @@ class Repository implements RepositoryInterface
      */
     public function hasCustomSurchargeTaxRate(?int $storeId = null): bool
     {
+        return $this->hasCustomSurchargeTaxRateAtScope(ScopeInterface::SCOPE_STORE, $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function hasCustomSurchargeTaxRateAtScope(string $scope, $scopeId = null): bool
+    {
         // Existence, not truthiness: a merchant-configured rate of 0 or
         // "0.00" is still a real value and must keep the deprecated
         // "Custom" treatment available (falsy-zero bug guard). '' is
         // excluded because etc/config.xml declares an empty
         // <surcharge_tax_rate/> initial node, so scopeConfig yields ''
         // (not null) even when no merchant ever touched the field.
-        $configured = $this->getConfig($this->path('surcharge_tax_rate'), $storeId);
+        $configured = $this->scopeConfig->getValue($this->path('surcharge_tax_rate'), $scope, $scopeId);
         return $configured !== null && $configured !== '';
     }
 
@@ -644,7 +652,15 @@ class Repository implements RepositoryInterface
      */
     public function getSurchargeTaxClassId(?int $storeId = null): ?int
     {
-        $configured = $this->getConfig($this->path('surcharge_tax_class'), $storeId);
+        return $this->getSurchargeTaxClassIdAtScope(ScopeInterface::SCOPE_STORE, $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getSurchargeTaxClassIdAtScope(string $scope, $scopeId = null): ?int
+    {
+        $configured = $this->scopeConfig->getValue($this->path('surcharge_tax_class'), $scope, $scopeId);
         // Unselected ('' / unset) or the deprecated "custom" flat-rate
         // treatment means the flat-rate path — upgrading merchants who
         // never re-save the config keep their existing behaviour, and

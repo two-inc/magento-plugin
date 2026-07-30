@@ -7,8 +7,10 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Config\Source;
 
+use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Data\OptionSourceInterface;
+use Magento\Store\Model\ScopeInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Magento\Tax\Model\TaxClass\Source\Product as ProductTaxClassSource;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
@@ -112,63 +114,92 @@ class SurchargeTaxClass implements OptionSourceInterface
     {
         // One resolution for the whole call: both carve-outs below must
         // reflect the same config scope the admin form is editing.
-        $storeId = $this->resolveStoreId();
+        [$scope, $scopeId] = $this->resolveConfigScope();
 
         $options = [
             ['value' => '', 'label' => __('-- Select surcharge tax treatment --')],
         ];
-        if ($this->configRepository->hasCustomSurchargeTaxRate($storeId)) {
+        if ($this->configRepository->hasCustomSurchargeTaxRateAtScope($scope, $scopeId)) {
             $options[] = ['value' => self::CUSTOM, 'label' => __('Custom flat rate (deprecated)')];
         }
 
-        // getSurchargeTaxClassId() maps '' / unset / 'custom' / any
+        // getSurchargeTaxClassIdAtScope() maps '' / unset / 'custom' / any
         // non-numeric token to null, so an identity check against 0 is
         // true only when core's "None" is genuinely the stored value.
-        $neverTaxedIsStored = $this->configRepository->getSurchargeTaxClassId($storeId) === 0;
+        $neverTaxedIsStored =
+            $this->configRepository->getSurchargeTaxClassIdAtScope($scope, $scopeId) === 0;
 
+        $classOptions = [];
+        $realClassCount = 0;
         foreach ($this->productTaxClassSource->getAllOptions(true) as $option) {
             $isNeverTaxed = isset($option['value'])
                 && (string)$option['value'] === self::NEVER_TAXED_CLASS_ID;
-            if ($isNeverTaxed && !$neverTaxedIsStored) {
+            if (!$isNeverTaxed) {
+                $realClassCount++;
+            }
+            // Emitted verbatim when it survives, so a re-offered "None"
+            // keeps core's own translated label rather than a second,
+            // divergent spelling of it.
+            $classOptions[] = [$isNeverTaxed, $option];
+        }
+
+        // Last-resort escape hatch: on a store with NO Product Tax Classes
+        // at all, suppressing "None" would leave the placeholder as the only
+        // option — and while a surcharge method is enabled the treatment
+        // guard rejects the placeholder, so there would be nothing the
+        // merchant could select to make the payment section savable again.
+        // Offer "None" rather than render an unusable form.
+        $keepNeverTaxed = $neverTaxedIsStored || $realClassCount === 0;
+
+        foreach ($classOptions as [$isNeverTaxed, $option]) {
+            if ($isNeverTaxed && !$keepNeverTaxed) {
                 continue;
             }
-            // Emitted verbatim when it IS the stored value, so the
-            // option keeps core's own translated "None" label rather
-            // than a second, divergent spelling of it.
             $options[] = $option;
         }
         return $options;
     }
 
     /**
-     * Resolve a store view representative of the config scope the
-     * admin form is editing, so the "Custom" and never-taxed carve-outs
-     * reflect the value the merchant would actually inherit at that
-     * scope — a store view that inherits "None" from the default scope
-     * must still render it. Website
-     * scope resolves through the website's default store view (which
-     * inherits website-scoped values); default scope (no scope params)
-     * resolves to null.
+     * Resolve the config scope the admin form is editing, so both carve-outs
+     * reflect the value that scope's select will actually render.
      *
-     * @return int|null
+     * Anchored to the scope, NOT to a representative store view. Resolving a
+     * website scope through its default store view reads the STORE row and
+     * so returns a deeper override — with `websites/1 = 0` and
+     * `stores/1 = 2` the website form would read 2, suppress "None", render
+     * the placeholder over a stored 0, and the next save would post '' and
+     * be rejected: exactly the lockout the carve-out exists to prevent.
+     * Likewise a store id of null does NOT mean default scope —
+     * ScopeConfigInterface resolves it as the CURRENT store — so the default
+     * scope has to be named explicitly.
+     *
+     * The reads stay inheritance-aware (a store view showing an inherited
+     * "None" must still offer it); they are merely anchored one level at a
+     * time rather than always at the bottom.
+     *
+     * @return array{0: string, 1: int|null} [scope type, scope id]
      */
-    private function resolveStoreId(): ?int
+    private function resolveConfigScope(): array
     {
         try {
             $storeCode = $this->request->getParam('store');
             if ($storeCode) {
-                return (int)$this->storeManager->getStore($storeCode)->getId();
+                return [
+                    ScopeInterface::SCOPE_STORE,
+                    (int)$this->storeManager->getStore($storeCode)->getId(),
+                ];
             }
             $websiteCode = $this->request->getParam('website');
             if ($websiteCode) {
-                $website = $this->storeManager->getWebsite($websiteCode);
-                $group = $this->storeManager->getGroup($website->getDefaultGroupId());
-                $storeId = (int)$group->getDefaultStoreId();
-                return $storeId > 0 ? $storeId : null;
+                return [
+                    ScopeInterface::SCOPE_WEBSITE,
+                    (int)$this->storeManager->getWebsite($websiteCode)->getId(),
+                ];
             }
         } catch (\Exception $e) {
-            return null;
+            return [ScopeConfigInterface::SCOPE_TYPE_DEFAULT, null];
         }
-        return null;
+        return [ScopeConfigInterface::SCOPE_TYPE_DEFAULT, null];
     }
 }

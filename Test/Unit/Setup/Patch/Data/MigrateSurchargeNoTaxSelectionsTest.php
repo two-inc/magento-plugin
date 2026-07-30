@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Setup\Patch\Data;
 
+use Magento\Framework\App\Config\ReinitableConfigInterface;
 use Magento\Framework\Setup\ModuleDataSetupInterface;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -23,6 +24,9 @@ class MigrateSurchargeNoTaxSelectionsTest extends TestCase
     /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
     private $log;
 
+    /** @var ReinitableConfigInterface|\PHPUnit\Framework\MockObject\MockObject */
+    private $reinitableConfig;
+
     /** @var MigrateSurchargeNoTaxSelections */
     private $patch;
 
@@ -30,6 +34,7 @@ class MigrateSurchargeNoTaxSelectionsTest extends TestCase
     {
         $this->connection = new MigrationFakeConnection();
         $this->log = $this->createMock(LogRepository::class);
+        $this->reinitableConfig = $this->createMock(ReinitableConfigInterface::class);
 
         $connection = $this->connection;
         $moduleDataSetup = new class($connection) implements ModuleDataSetupInterface {
@@ -52,7 +57,11 @@ class MigrateSurchargeNoTaxSelectionsTest extends TestCase
             }
         };
 
-        $this->patch = new MigrateSurchargeNoTaxSelections($moduleDataSetup, $this->log);
+        $this->patch = new MigrateSurchargeNoTaxSelections(
+            $moduleDataSetup,
+            $this->log,
+            $this->reinitableConfig
+        );
     }
 
     public function testRepointsStoredSelectionsAtCoreNone(): void
@@ -66,8 +75,33 @@ class MigrateSurchargeNoTaxSelectionsTest extends TestCase
         [$table, $bind, $where] = $this->connection->updates[0];
         $this->assertSame('prefix_core_config_data', $table);
         $this->assertSame(['value' => '0'], $bind);
-        $this->assertSame('payment/%/surcharge_tax_class', $where['path LIKE ?']);
+        // Exact pattern, not just "contains %": a looser 'payment/%' would
+        // rewrite every payment config row in the table.
+        $this->assertSame('payment/%/surcharge\_tax\_class', $where['path LIKE ?']);
         $this->assertSame('17', $where['value = ?']);
+    }
+
+    /**
+     * The class id arrives from fetchOne() and may be an int on some adapters.
+     * It must be bound as a string, because core_config_data.value is a text
+     * column and a numeric bind would rely on MySQL's coercion.
+     */
+    public function testClassIdIsBoundAsAStringEvenWhenTheAdapterReturnsAnInt(): void
+    {
+        $this->connection->existingClassId = 17;
+
+        $this->patch->apply();
+
+        [, , $where] = $this->connection->updates[0];
+        $this->assertSame('17', $where['value = ?']);
+    }
+
+    public function testConfigCacheIsReinitialisedAfterTheRewrite(): void
+    {
+        $this->connection->existingClassId = '17';
+        $this->reinitableConfig->expects($this->once())->method('reinit');
+
+        $this->patch->apply();
     }
 
     public function testMatchesEveryBrandCodeAndScopeViaPathWildcard(): void
@@ -83,7 +117,7 @@ class MigrateSurchargeNoTaxSelectionsTest extends TestCase
         $this->patch->apply();
 
         [, , $where] = $this->connection->updates[0];
-        $this->assertStringContainsString('%', $where['path LIKE ?']);
+        $this->assertStringStartsWith('payment/%/', $where['path LIKE ?']);
         $this->assertArrayNotHasKey('scope = ?', $where);
         $this->assertArrayNotHasKey('scope_id = ?', $where);
     }
@@ -152,7 +186,7 @@ class MigrateSurchargeNoTaxSelectionsTest extends TestCase
  */
 class MigrationFakeConnection
 {
-    /** @var string|false class_id returned for the tax_class lookup */
+    /** @var string|int|false class_id returned for the tax_class lookup */
     public $existingClassId = false;
 
     /** @var int rows reported affected by update() */

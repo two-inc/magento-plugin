@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Model\Config\Source;
 
 use Magento\Framework\App\RequestInterface;
-use Magento\Store\Api\Data\GroupInterface;
 use Magento\Store\Api\Data\StoreInterface;
 use Magento\Store\Api\Data\WebsiteInterface;
 use Magento\Store\Model\StoreManagerInterface;
@@ -64,7 +63,7 @@ class SurchargeTaxClassTest extends TestCase
 
     public function testFirstOptionIsAlwaysUnselectedPlaceholder(): void
     {
-        $this->configRepository->method('hasCustomSurchargeTaxRate')->willReturn(false);
+        $this->configRepository->method('hasCustomSurchargeTaxRateAtScope')->willReturn(false);
         $options = $this->source->toOptionArray();
 
         $this->assertSame('', $options[0]['value']);
@@ -73,7 +72,7 @@ class SurchargeTaxClassTest extends TestCase
 
     public function testCustomOptionHiddenWhenNoLegacyRateExists(): void
     {
-        $this->configRepository->method('hasCustomSurchargeTaxRate')->willReturn(false);
+        $this->configRepository->method('hasCustomSurchargeTaxRateAtScope')->willReturn(false);
         $values = array_column($this->source->toOptionArray(), 'value');
 
         $this->assertNotContains(SurchargeTaxClass::CUSTOM, $values);
@@ -82,7 +81,7 @@ class SurchargeTaxClassTest extends TestCase
 
     public function testCustomOptionShownWhenLegacyRateExists(): void
     {
-        $this->configRepository->method('hasCustomSurchargeTaxRate')->willReturn(true);
+        $this->configRepository->method('hasCustomSurchargeTaxRateAtScope')->willReturn(true);
         $values = array_column($this->source->toOptionArray(), 'value');
 
         $this->assertSame(['', SurchargeTaxClass::CUSTOM, '2'], $values);
@@ -92,7 +91,7 @@ class SurchargeTaxClassTest extends TestCase
     {
         // No stored value at this scope: "None" is a platform default,
         // not a merchant-configured tax rule, so it must not be offered.
-        $this->configRepository->method('getSurchargeTaxClassId')->willReturn(null);
+        $this->configRepository->method('getSurchargeTaxClassIdAtScope')->willReturn(null);
         $values = array_column($this->source->toOptionArray(), 'value');
 
         $this->assertNotContains('0', $values);
@@ -100,7 +99,7 @@ class SurchargeTaxClassTest extends TestCase
 
     public function testCoreNoneStaysSuppressedWhenAnotherClassIsStored(): void
     {
-        $this->configRepository->method('getSurchargeTaxClassId')->willReturn(2);
+        $this->configRepository->method('getSurchargeTaxClassIdAtScope')->willReturn(2);
         $values = array_column($this->source->toOptionArray(), 'value');
 
         $this->assertNotContains('0', $values);
@@ -113,7 +112,7 @@ class SurchargeTaxClassTest extends TestCase
         // its options, so it would fall back to the placeholder and the
         // next save would post '' — which the treatment guard rejects,
         // rolling back the whole payment-section save.
-        $this->configRepository->method('getSurchargeTaxClassId')->willReturn(0);
+        $this->configRepository->method('getSurchargeTaxClassIdAtScope')->willReturn(0);
         $values = array_column($this->source->toOptionArray(), 'value');
 
         $this->assertContains('0', $values);
@@ -122,7 +121,7 @@ class SurchargeTaxClassTest extends TestCase
 
     public function testReinjectedNoneKeepsCoreOwnLabel(): void
     {
-        $this->configRepository->method('getSurchargeTaxClassId')->willReturn(0);
+        $this->configRepository->method('getSurchargeTaxClassIdAtScope')->willReturn(0);
         $labels = [];
         foreach ($this->source->toOptionArray() as $option) {
             $labels[(string)$option['value']] = (string)$option['label'];
@@ -144,8 +143,8 @@ class SurchargeTaxClassTest extends TestCase
         $this->storeManager->method('getStore')->with('store_two')->willReturn($store);
 
         $this->configRepository->expects($this->once())
-            ->method('getSurchargeTaxClassId')
-            ->with(7)
+            ->method('getSurchargeTaxClassIdAtScope')
+            ->with('store', 7)
             ->willReturn(0);
 
         $values = array_column($this->source->toOptionArray(), 'value');
@@ -162,32 +161,97 @@ class SurchargeTaxClassTest extends TestCase
         $this->storeManager->method('getStore')->with('store_two')->willReturn($store);
 
         $this->configRepository->expects($this->once())
-            ->method('hasCustomSurchargeTaxRate')
-            ->with(7)
+            ->method('hasCustomSurchargeTaxRateAtScope')
+            ->with('store', 7)
             ->willReturn(true);
 
         $values = array_column($this->source->toOptionArray(), 'value');
         $this->assertContains(SurchargeTaxClass::CUSTOM, $values);
     }
 
-    public function testExistenceCheckResolvesWebsiteScopeViaDefaultStore(): void
+    /**
+     * Website scope reads the WEBSITE row, not the website's default store
+     * view. Resolving through a store view reads a deeper override, so a
+     * website storing "None" under a store view storing a real class would
+     * render the placeholder over its own stored value.
+     */
+    public function testExistenceCheckReadsTheWebsiteScopeItself(): void
     {
         $this->request->method('getParam')->willReturnCallback(
             fn ($key) => $key === 'website' ? 'base' : null
         );
         $website = $this->createMock(WebsiteInterface::class);
-        $website->method('getDefaultGroupId')->willReturn(3);
-        $group = $this->createMock(GroupInterface::class);
-        $group->method('getDefaultStoreId')->willReturn(9);
+        $website->method('getId')->willReturn(4);
         $this->storeManager->method('getWebsite')->with('base')->willReturn($website);
-        $this->storeManager->method('getGroup')->with(3)->willReturn($group);
+        $this->storeManager->expects($this->never())->method('getGroup');
 
         $this->configRepository->expects($this->once())
-            ->method('hasCustomSurchargeTaxRate')
-            ->with(9)
+            ->method('hasCustomSurchargeTaxRateAtScope')
+            ->with('website', 4)
             ->willReturn(true);
 
         $values = array_column($this->source->toOptionArray(), 'value');
         $this->assertContains(SurchargeTaxClass::CUSTOM, $values);
+    }
+
+    /**
+     * No scope params means the DEFAULT scope, named explicitly. A null store
+     * id would resolve the current store instead, so a default-scope form on
+     * a store that overrides the value would read the override.
+     */
+    public function testNoScopeParamsReadTheDefaultScopeExplicitly(): void
+    {
+        $this->configRepository->expects($this->once())
+            ->method('getSurchargeTaxClassIdAtScope')
+            ->with('default', null)
+            ->willReturn(0);
+
+        $values = array_column($this->source->toOptionArray(), 'value');
+        $this->assertContains('0', $values);
+    }
+
+    public function testNeverTaxedCarveOutIsReadAtTheWebsiteScope(): void
+    {
+        $this->request->method('getParam')->willReturnCallback(
+            fn ($key) => $key === 'website' ? 'base' : null
+        );
+        $website = $this->createMock(WebsiteInterface::class);
+        $website->method('getId')->willReturn(4);
+        $this->storeManager->method('getWebsite')->with('base')->willReturn($website);
+
+        $this->configRepository->expects($this->once())
+            ->method('getSurchargeTaxClassIdAtScope')
+            ->with('website', 4)
+            ->willReturn(0);
+
+        $values = array_column($this->source->toOptionArray(), 'value');
+        $this->assertContains('0', $values);
+    }
+
+    /**
+     * A store with NO Product Tax Classes at all: suppressing "None" would
+     * leave the placeholder as the only option, and the treatment guard
+     * rejects the placeholder while a surcharge is enabled — an unusable
+     * form with nothing selectable. Offer "None" instead.
+     */
+    public function testNeverTaxedSurvivesWhenThereAreNoRealTaxClasses(): void
+    {
+        $emptySource = $this->getMockBuilder(ProductTaxClassSource::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['getAllOptions'])
+            ->getMock();
+        $emptySource->method('getAllOptions')->with(true)->willReturn([
+            ['value' => '0', 'label' => 'None'],
+        ]);
+        $source = new SurchargeTaxClass(
+            $emptySource,
+            $this->configRepository,
+            $this->request,
+            $this->storeManager
+        );
+        $this->configRepository->method('getSurchargeTaxClassIdAtScope')->willReturn(null);
+
+        $values = array_column($source->toOptionArray(), 'value');
+        $this->assertSame(['', '0'], $values);
     }
 }

@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Setup\Patch\Data;
 
+use Magento\Framework\App\Config\ReinitableConfigInterface;
 use Magento\Framework\Setup\ModuleDataSetupInterface;
 use Magento\Framework\Setup\Patch\DataPatchInterface;
 use Magento\Tax\Api\TaxClassManagementInterface;
@@ -63,12 +64,19 @@ class MigrateSurchargeNoTaxSelections implements DataPatchInterface
      */
     private $logRepository;
 
+    /**
+     * @var ReinitableConfigInterface
+     */
+    private $reinitableConfig;
+
     public function __construct(
         ModuleDataSetupInterface $moduleDataSetup,
-        LogRepository $logRepository
+        LogRepository $logRepository,
+        ReinitableConfigInterface $reinitableConfig
     ) {
         $this->moduleDataSetup = $moduleDataSetup;
         $this->logRepository = $logRepository;
+        $this->reinitableConfig = $reinitableConfig;
     }
 
     /**
@@ -101,7 +109,11 @@ class MigrateSurchargeNoTaxSelections implements DataPatchInterface
             $configTable,
             ['value' => SurchargeTaxClassSource::NEVER_TAXED_CLASS_ID],
             [
-                'path LIKE ?' => 'payment/%/surcharge_tax_class',
+                // The `_` in the key name are LIKE single-character
+                // wildcards, so they are escaped: the pattern must mean the
+                // literal config key, with `%` standing in only for the
+                // brand's payment method code.
+                'path LIKE ?' => 'payment/%/surcharge\_tax\_class',
                 // Stored as varchar; bind the id as a string so the
                 // comparison cannot depend on MySQL's numeric coercion.
                 'value = ?' => (string)$classId,
@@ -127,6 +139,13 @@ class MigrateSurchargeNoTaxSelections implements DataPatchInterface
                 'attached_tax_rule_count' => $attachedRuleCount,
             ]
         );
+
+        // The config cache still holds the pre-migration value, so anything
+        // reading config in this same process — including the admin form, if
+        // the patch is applied programmatically rather than through
+        // `setup:upgrade` (which flushes on its own) — would keep serving the
+        // old class id and mis-render the selector.
+        $this->reinitableConfig->reinit();
 
         $this->moduleDataSetup->getConnection()->endSetup();
 
