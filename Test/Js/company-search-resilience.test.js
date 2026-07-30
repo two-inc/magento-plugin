@@ -844,6 +844,34 @@ describe('in-field chrome', () => {
         expect(searchBoxOf(recorder).children).toHaveLength(1);
     });
 
+    test('the spinner is a childless, aria-hidden element on its flat class hook', () => {
+        const { $, recorder } = makeQueryDouble();
+        const companySearch = loadCompanySearch($);
+        const $field = boundField($);
+
+        companySearch.setSearching($field, true);
+
+        const host = document.createElement('div');
+        host.innerHTML = searchBoxOf(recorder).children[0];
+        const spinner = host.querySelector('.two-company-search__spinner');
+
+        // TWO-25288. The indicator is drawn entirely by CSS (masked conic
+        // gradient + rotation), so it must stay a single childless element:
+        // re-introducing inner nodes is what the stylesheet no longer styles.
+        expect(spinner).not.toBeNull();
+        expect(spinner.children).toHaveLength(0);
+        expect(spinner.textContent).toBe('');
+
+        // Purely decorative — the "search unavailable" notice is the only
+        // company-search chrome that should reach a screen reader.
+        expect(spinner.getAttribute('aria-hidden')).toBe('true');
+
+        // Brand overlays recolour this from a flat single-class rule and win
+        // on load order alone, so the element must carry the hook class
+        // itself and nothing else may be relied on in its place.
+        expect(Array.from(spinner.classList)).toEqual(['two-company-search__spinner']);
+    });
+
     test('the notice is written as a span, not a div', () => {
         const { $, recorder } = makeQueryDouble();
         const companySearch = loadCompanySearch($);

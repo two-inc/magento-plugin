@@ -363,40 +363,82 @@
  * spinner reads as "this field is working" rather than "the page is busy",
  * and the unavailable notice sits with the field it describes.
  *
- * The spinner deliberately reuses the payment-term chips' three-dot
- * animation (`two-term-chip-dot`) — one loading idiom in the checkout, not
- * two.
+ * The spinner is a radial-spokes indicator drawn entirely in CSS: one
+ * childless element, no image asset, no inner markup (TWO-25288).
  */
 .select2-search--dropdown {
     position: relative;
 }
 
+/*
+ * THE SELECTOR MUST STAY A SINGLE FLAT CLASS.
+ *
+ * Brand overlays recolour this indicator from their own stylesheet with flat
+ * single-class rules, and win only because they load later at equal
+ * specificity. Qualifying this selector (e.g.
+ * `.select2-search--dropdown .two-company-search__spinner`) would outscore
+ * those overrides and silently kill branded recolouring, with nothing in CI
+ * failing to tell you.
+ *
+ * Vertical centring uses a negative margin rather than
+ * `transform: translateY(-50%)` on purpose: the spin animation owns
+ * `transform`, so a translate here would be overwritten mid-animation and
+ * drop the spinner half its own height out of the field.
+ */
 .two-company-search__spinner {
     position: absolute;
     top: 50%;
     right: 12px;
-    transform: translateY(-50%);
     display: inline-block;
-    letter-spacing: 2px;
-    color: currentColor;
-    font-size: 12px;
-    line-height: 1.3;
-    font-weight: 700;
+    width: 1em;
+    height: 1em;
+    margin-top: -0.5em;
+    vertical-align: middle;
+    border-radius: 50%;
     pointer-events: none;
+
+    /* An overlay sets --two-spinner-color once and is done. The fallback is
+       the inherited text colour, which is what the existing overlay `color:`
+       overrides already set. */
+    color: var(--two-spinner-color, currentColor);
+
+    /* 12 spokes: a 30deg period with 10deg of ink in each. */
+    background: repeating-conic-gradient(
+        from 0deg,
+        currentColor 0deg 10deg,
+        transparent 10deg 30deg
+    );
+
+    /* Punch the middle out so the spokes read as spokes, not as a pie. */
+    -webkit-mask: radial-gradient(farthest-side, transparent 38%, #000 40%);
+    mask: radial-gradient(farthest-side, transparent 38%, #000 40%);
+
+    /* steps() gives the classic mechanical spoke-by-spoke tick. */
+    animation: two-spinner-spin 1s steps(12, end) infinite;
 }
 
-.two-company-search__spinner > span {
-    display: inline-block;
-    animation: two-term-chip-dot 1.4s infinite ease-in-out both;
+@keyframes two-spinner-spin {
+    to {
+        transform: rotate(1turn);
+    }
 }
 
-.two-company-search__spinner > span:nth-child(2) {
-    animation-delay: 0.2s;
+/*
+ * A loading indicator has to keep indicating, so slow it down rather than
+ * stopping it — a frozen spinner reads as a hung page.
+ */
+@media (prefers-reduced-motion: reduce) {
+    .two-company-search__spinner {
+        animation-duration: 3s;
+    }
 }
 
-.two-company-search__spinner > span:nth-child(3) {
-    animation-delay: 0.4s;
-}
+/*
+ * Size and colour come from the surrounding text (1em, currentColor), so no
+ * per-theme sizing rule should be needed. A surface that wants a fixed size
+ * should set `font-size` on the spinner, never width/height, so the mask
+ * geometry stays proportional.
+ */
 
 .two-company-search__unavailable {
     display: block;
