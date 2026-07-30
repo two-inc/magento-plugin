@@ -89,10 +89,8 @@ class SurchargeCalculator
      * @param int|null $storeId
      *
      * @return array{amount: float, tax_rate: float, description: string}
-     * @throws LocalizedException when no FX rate is resolvable for the pair, when a
-     *         configured surcharge cap resolves to zero in the order currency (sending
-     *         it would relay an UNCAPPED percentage), or when the API response is
-     *         malformed or quotes a currency other than the order's
+     * @throws LocalizedException when no FX rate is resolvable for the pair, or when
+     *         the API response is malformed or quotes a currency other than the order's
      */
     public function calculate(
         float $grossAmount,
@@ -200,16 +198,14 @@ class SurchargeCalculator
      *  - fixed types supply `surcharge` (FX-converted to order currency)
      *  - a non-null limit supplies `cap` (FX-converted to order currency);
      *    an ABSENT limit is a legitimate "no cap" configuration and sends an
-     *    uncapped percentage, while a limit that IS set but evaluates to zero
-     *    fails closed (see below)
+     *    uncapped percentage
      *  - a rounding basis + step supplies `rounding` (percentage modes only)
      *  - differential mode supplies `reference_terms` so the API computes
      *    the threshold itself — no delta math in the plugin
      *  - `surcharge_basis` is sent explicitly for clarity
      *
      * @return array<string, mixed>
-     * @throws LocalizedException when the FX rate is missing, or when a
-     *         configured cap evaluates to zero
+     * @throws LocalizedException when the FX rate is missing
      */
     private function buildBuyerFeeShare(
         string $surchargeType,
@@ -246,43 +242,25 @@ class SurchargeCalculator
         // a stored limit left over from a previous surcharge type must not leak into
         // a fixed-only request and clamp the fee.
         //
-        // A cap that IS configured but evaluates to zero must never be sent:
-        // downstream, `cap => 0.0` is indistinguishable from NO cap at all, so
-        // the pricing API would apply the percentage UNCAPPED — the exact
-        // opposite of the merchant's intent, and an overcharge to the buyer.
-        // Fail closed instead. A limit of exactly 0 survives the admin grid
-        // (Model\Config\Backend\SurchargeGrid::validateValue only rejects
-        // negatives, and only the empty string deletes the row), so this is
-        // reachable from the UI, not just from a legacy DB write.
+        // Distinguish ABSENT from ZERO, and send both through faithfully:
+        //  - an ABSENT limit (null) is a legitimate "no cap" configuration: omit
+        //    `cap` entirely and the percentage is applied uncapped;
+        //  - a limit of exactly 0 caps the fee at nothing, i.e. no surcharge is
+        //    applied, and `cap => 0.0` is how the API is told that.
         //
-        // An ABSENT limit (null) is NOT an error: "no cap" is a legitimate
-        // configuration and must keep sending an uncapped percentage.
+        // TWO-25269 briefly threw here on a zero cap, on the premise that
+        // `cap => 0.0` read as "no cap" downstream and would relay an uncapped
+        // percentage. That premise was false: a zero cap clamps the fee to
+        // zero, it never uncaps it. Do not reintroduce the guard, and do not
+        // add admin validation rejecting a typed 0 — 0 is a valid setting.
         if ($hasPercentage && $config['limit'] !== null) {
-            $cap = $this->convertAmount(
+            $payload['cap'] = $this->convertAmount(
                 (float)$config['limit'],
                 $fixedCurrency,
                 $orderCurrency,
                 $storeId,
                 $selectedTermDays
             );
-            if ($cap <= 0.0) {
-                $this->logRepository->addErrorLog('Surcharge cap is configured but resolves to zero', [
-                    'selected_term' => $selectedTermDays,
-                    'configured_limit' => (float)$config['limit'],
-                    'from_currency' => $fixedCurrency,
-                    'to_currency' => $orderCurrency,
-                    'converted_cap' => $cap,
-                    'store_id' => $storeId,
-                ]);
-                throw new LocalizedException(
-                    __(
-                        'The configured surcharge cap resolves to zero in %1 and cannot be applied. '
-                        . 'Please try another payment method or contact support.',
-                        $orderCurrency
-                    )
-                );
-            }
-            $payload['cap'] = $cap;
         }
 
         // `rounding` snaps the final buyer line item to a clean increment, computed
@@ -351,15 +329,24 @@ class SurchargeCalculator
     /**
      * Convert an amount between currencies if needed.
      *
-     * The result is deliberately NOT rounded — the pricing API is the only
-     * place surcharge figures get rounded (via the `rounding` block and its
-     * own money precision), so no FX conversion here can collapse a non-zero
-     * configured amount to zero. Combined with CurrencyRatesProvider returning
-     * null rather than a zero/negative rate, a zero `cap` can only ever come
-     * from a zero configured limit, never from the conversion itself.
+     * The result is returned unrounded (`$amount * $rate`); no rounding is
+     * applied here. Since CurrencyRatesProvider returns null rather than a
+     * zero or negative rate, the conversion cannot turn a non-zero configured
+     * amount into zero.
+     *
+     * KNOWN PRE-EXISTING GAP (not introduced by, and not fixed by, the
+     * TWO-25269 revert): the unrounded result is sent as-is, but the API
+     * rejects monetary values finer than two decimal places rather than
+     * rounding them. A conversion landing on >2dp (e.g. 349 * 0.0872) is
+     * therefore refused upstream and surfaces to the buyer as the generic
+     * "temporarily unavailable" error. Both `cap` and `surcharge` need
+     * rounding to 2dp at this boundary. When that fix lands it must round a
+     * cap AWAY from zero (or special-case zero), because a `cap` of 0.0 is
+     * meaningful — it suppresses the surcharge — so a 0.004 cap must not be
+     * rounded down into it.
      *
      * @param int|null $selectedTermDays term the conversion is being made for,
-     *                                   for the fail-closed diagnostic log only
+     *                                   for the diagnostic log only
      * @throws LocalizedException when no FX rate is resolvable for the pair
      */
     private function convertAmount(
