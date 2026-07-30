@@ -6,13 +6,17 @@
  * (address) surface:
  *
  *  - the empty-field hint, painted through select2's `templateSelection`
- *    when the picker has nothing selected;
- *  - the below-threshold hint, which must be OUR translatable string naming
- *    a FIXED number, not select2's built-in English remaining-count text.
+ *    when the picker has nothing selected. This one PRE-DATES this change —
+ *    `templateSelection`, the placeholder property and its msgid all already
+ *    shipped. The cases below are regression pins on existing behaviour, not
+ *    coverage of anything introduced here;
+ *  - the below-threshold hint, which this change makes OUR translatable
+ *    string naming a FIXED number instead of select2's built-in English
+ *    remaining-count text.
  *
- * And the centralisation both hints depend on: neither surface may repeat a
- * literal minimum length. Each must read the shared constant, or the number
- * the hint claims and the number select2 enforces can drift apart.
+ * And the centralisation the below-threshold hint depends on: neither surface
+ * may repeat a literal minimum length. Each must read the shared constant, or
+ * the number the hint claims and the number select2 enforces can drift apart.
  *
  * Mutation-resistance notes, because this repo's AMD harness makes it easy
  * to write assertions that cannot fail:
@@ -147,8 +151,11 @@ function boundOptions(recorder) {
     return recorder.select2Options;
 }
 
-describe('empty-field hint (element 3)', () => {
-    test('shipping surface paints the placeholder when nothing is selected', () => {
+// Regression pins only — the empty-field placeholder hint already shipped
+// before this change. Kept so a later refactor of the picker options cannot
+// drop it silently.
+describe('empty-field hint (element 3) — pre-existing behaviour', () => {
+    test('regression: shipping surface still paints the placeholder when nothing is selected', () => {
         const recorder = { select2Options: null, select2Calls: 0 };
         const $ = makeJQuery(recorder);
         const companySearch = loadCompanySearchWithWrongThreshold($);
@@ -166,7 +173,7 @@ describe('empty-field hint (element 3)', () => {
         );
     });
 
-    test('the placeholder is a translatable msgid, present in every catalogue', () => {
+    test('regression: the placeholder is still a translatable msgid, present in every catalogue', () => {
         const msgid = 'Enter company name to search';
         expect(readSource('view/frontend/web/js/view/address-autocomplete.js')).toContain(
             "$t('" + msgid + "')"
@@ -215,7 +222,16 @@ describe('below-threshold hint (element 4)', () => {
     test('the vendored select2 bundle is left untouched', () => {
         const bundle = 'view/frontend/web/select2-4.1.0/js/select2.min.js';
         expect(fs.existsSync(path.resolve(__dirname, '..', '..', bundle))).toBe(true);
-        expect(readSource(bundle)).not.toContain('Please enter %1 or more characters');
+        // Asserting the ABSENCE of our placeholder form here would be
+        // vacuous: upstream never had a `%1` message, it concatenates the
+        // remaining count. So pin its own implementation verbatim instead —
+        // that fails the moment anyone edits the vendored bundle to localise
+        // the hint in place, which is the mistake this override exists to
+        // avoid.
+        expect(readSource(bundle)).toContain(
+            'inputTooShort:function(e){return"Please enter "'
+                + '+(e.minimum-e.input.length)+" or more characters"'
+        );
     });
 });
 

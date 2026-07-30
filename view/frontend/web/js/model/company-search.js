@@ -89,10 +89,15 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * select2 ships its own English `inputTooShort` message, hard-coded
      * inside the vendored bundle and phrased as the REMAINING character
      * count. Neither is acceptable: the vendored bundle is not ours to edit
-     * and its literals never reach Magento's translation dictionaries. Call
-     * sites override it via select2's `language.inputTooShort` option with
-     * this instead — a plugin-owned, translatable string quoting a FIXED
-     * threshold.
+     * and its literals never reach Magento's translation dictionaries. The
+     * address-step picker overrides it via select2's `language.inputTooShort`
+     * option with this instead — a plugin-owned, translatable string quoting
+     * a FIXED threshold.
+     *
+     * The payment-step picker does NOT. It passes `minimumInputLength` only,
+     * so it still renders select2's built-in English remaining-count text.
+     * That is deliberately out of scope here; this change covers the
+     * address-step surface only.
      *
      * Resolved per call, not once at module load, because Magento's JS
      * dictionary can arrive after this module is defined. Magento's `$t`
@@ -489,10 +494,10 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             // Below `minimumInputLength` select2's decorator returns after
             // firing `results:message` WITHOUT delegating to the ajax adapter,
             // and `_request.abort()` lives inside that adapter. So dropping
-            // from three characters to two neither runs a new transport nor
-            // cancels the running one: nothing clears the spinner, and 30s
-            // later the abandoned request repaints results or the
-            // "unavailable" notice under "Please enter 3 or more characters".
+            // from MIN_INPUT_LENGTH characters to one below it neither runs a
+            // new transport nor cancels the running one: nothing clears the
+            // spinner, and 30s later the abandoned request repaints results
+            // or the "unavailable" notice under the below-threshold hint.
             // Cancel it ourselves, then clear the chrome.
             instance.$dropdown
                 .find('.select2-search__field')
@@ -508,7 +513,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                     // either. Backspacing from 4 characters to 2 inside 300ms
                     // (trivial on key-repeat) would otherwise fire a fresh
                     // search for the abandoned term, bringing the spinner back
-                    // up under "Please enter 3 or more characters".
+                    // up under the below-threshold hint.
                     const instance = $field.data('select2');
                     const dataAdapter = instance && instance.dataAdapter;
                     if (dataAdapter && dataAdapter._queryTimeout) {
@@ -528,7 +533,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * children appended into `.select2-search--dropdown`. Without this,
          * a buyer who hits a failed search, closes the picker and reopens it
          * sees the stale "unavailable" notice above an empty search box —
-         * and it survives until three or more characters are retyped.
+         * and it survives until MIN_INPUT_LENGTH characters are retyped.
          *
          * @param {object} $field jQuery-wrapped picker input
          * @param {object} token identity stamped by markSearchBinding()
