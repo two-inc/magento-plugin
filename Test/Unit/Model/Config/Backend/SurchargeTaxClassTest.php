@@ -10,6 +10,7 @@ use Magento\Framework\Model\Context;
 use Magento\Framework\Registry;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Model\Config\Backend\SurchargeTaxClass;
+use Two\Gateway\Model\Config\NeverTaxedTreatment;
 
 /**
  * Tests the never-auto-default enforcement for the surcharge tax
@@ -17,15 +18,21 @@ use Two\Gateway\Model\Config\Backend\SurchargeTaxClass;
  * rejected until a treatment is explicitly selected, and the
  * deprecated "custom" treatment is only accepted when a legacy flat
  * rate genuinely exists (0 counts as existing — falsy-zero guard).
+ * Never-taxed treatments are refused outright, with no already-stored
+ * exemption (TWO-25279).
  */
 class SurchargeTaxClassTest extends TestCase
 {
     /** @var ScopeConfigInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $scopeConfig;
 
+    /** @var NeverTaxedTreatment|\PHPUnit\Framework\MockObject\MockObject */
+    private $neverTaxedTreatment;
+
     protected function setUp(): void
     {
         $this->scopeConfig = $this->createMock(ScopeConfigInterface::class);
+        $this->neverTaxedTreatment = $this->createMock(NeverTaxedTreatment::class);
     }
 
     private function buildModel(array $data): SurchargeTaxClass
@@ -35,6 +42,7 @@ class SurchargeTaxClassTest extends TestCase
             $this->getMockBuilder(Registry::class)->disableOriginalConstructor()->getMock(),
             $this->scopeConfig,
             $this->createMock(TypeListInterface::class),
+            $this->neverTaxedTreatment,
             null,
             null,
             $data
@@ -204,6 +212,82 @@ class SurchargeTaxClassTest extends TestCase
     {
         $model = $this->buildModel([
             'value' => '4',
+            'path' => 'payment/two_payment/surcharge_tax_class',
+            'scope' => 'default',
+            'fieldset_data' => ['surcharge_type' => 'percentage'],
+        ]);
+
+        $this->assertSame($model, $model->beforeSave());
+    }
+
+    /**
+     * Removing the never-taxed options from the dropdown is a UI rule only;
+     * without this the treatment stays creatable by anyone who crafts the
+     * POST. There is deliberately NO already-stored exemption — a scope
+     * sitting on such a value is failed loud on, not allowed to re-save it.
+     */
+    public function testANeverTaxedTreatmentIsRefused(): void
+    {
+        $this->neverTaxedTreatment->method('isNeverTaxed')->with('0')->willReturn(true);
+        $model = $this->buildModel([
+            'value' => '0',
+            'path' => 'payment/two_payment/surcharge_tax_class',
+            'scope' => 'default',
+            'fieldset_data' => ['surcharge_type' => 'percentage'],
+        ]);
+
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessageMatches('/untaxed in every jurisdiction/');
+        $model->beforeSave();
+    }
+
+    /**
+     * Refused even with surcharges DISABLED. The treatment is not a
+     * conditional rule: storing it would put the shop straight back into the
+     * failed-loud state the moment a surcharge is enabled.
+     */
+    public function testANeverTaxedTreatmentIsRefusedEvenWithSurchargesDisabled(): void
+    {
+        $this->neverTaxedTreatment->method('isNeverTaxed')->willReturn(true);
+        $model = $this->buildModel([
+            'value' => '0',
+            'path' => 'payment/two_payment/surcharge_tax_class',
+            'scope' => 'default',
+            'fieldset_data' => ['surcharge_type' => 'none'],
+        ]);
+
+        $this->expectException(LocalizedException::class);
+        $model->beforeSave();
+    }
+
+    /**
+     * The refusal delegates to the SHARED decision, so the guard refuses
+     * exactly the set the option source omits and the field renderer warns
+     * about — including the plugin-provisioned class, whose id is
+     * merchant-specific and cannot be hardcoded.
+     */
+    public function testTheRefusalDelegatesToTheSharedDecision(): void
+    {
+        $this->neverTaxedTreatment->expects($this->once())
+            ->method('isNeverTaxed')
+            ->with('4')
+            ->willReturn(true);
+        $model = $this->buildModel([
+            'value' => '4',
+            'path' => 'payment/two_payment/surcharge_tax_class',
+            'scope' => 'default',
+            'fieldset_data' => ['surcharge_type' => 'percentage'],
+        ]);
+
+        $this->expectException(LocalizedException::class);
+        $model->beforeSave();
+    }
+
+    public function testARealTaxClassIsStillAccepted(): void
+    {
+        $this->neverTaxedTreatment->method('isNeverTaxed')->willReturn(false);
+        $model = $this->buildModel([
+            'value' => '2',
             'path' => 'payment/two_payment/surcharge_tax_class',
             'scope' => 'default',
             'fieldset_data' => ['surcharge_type' => 'percentage'],

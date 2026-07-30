@@ -12,6 +12,7 @@ use Magento\Framework\Data\OptionSourceInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Magento\Tax\Model\TaxClass\Source\Product as ProductTaxClassSource;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Service\Order\SurchargeTaxCalculator;
 
 /**
  * Product Tax Class options for the surcharge tax treatment selector.
@@ -36,6 +37,23 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
  * The delegate's option list includes "None" (value 0) plus every
  * Product Tax Class; selecting a class routes surcharge tax through
  * TaxCalculationInterface with full destination/rule resolution.
+ *
+ * Never-taxed options are REMOVED from that list (TWO-25279): core's
+ * "None" (class id 0), and the "Payment Terms Surcharge - No Tax" class
+ * the plugin itself used to provision. Neither is a tax rule the
+ * merchant configured, and selecting either silently means "the
+ * surcharge is never taxed, in any jurisdiction" — a tax decision made
+ * by picking an option we handed them. Same rule across the WooCommerce
+ * / PrestaShop / Magento plugins: an untaxed surcharge must be a Tax
+ * Rule with a 0% rate that the merchant created.
+ *
+ * There is deliberately NO grandfathering. A scope that already stores a
+ * never-taxed value does not get the option back; instead
+ * Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeTaxClass
+ * renders a loud admin error on that field, and
+ * Two\Gateway\Model\Config\Backend\SurchargeTaxClass refuses to save
+ * the value. The merchant is told plainly to pick a real tax rule rather
+ * than being left on a silent zero.
  */
 class SurchargeTaxClass implements OptionSourceInterface
 {
@@ -46,6 +64,14 @@ class SurchargeTaxClass implements OptionSourceInterface
      * 0, which would silently mean "None" (untaxed).
      */
     public const CUSTOM = 'custom';
+
+    /**
+     * Core's never-taxed Product Tax Class ("None"), the value
+     * ProductTaxClassSource::getAllOptions(true) prepends. Compared as a
+     * string because the delegate emits it as the string '0' and PHP's
+     * loose comparison would equate it with any non-numeric label.
+     */
+    public const NEVER_TAXED_CLASS_ID = '0';
 
     /**
      * @var ProductTaxClassSource
@@ -91,9 +117,38 @@ class SurchargeTaxClass implements OptionSourceInterface
             $options[] = ['value' => self::CUSTOM, 'label' => __('Custom flat rate (deprecated)')];
         }
         foreach ($this->productTaxClassSource->getAllOptions(true) as $option) {
+            if (self::isNeverTaxedOption($option)) {
+                continue;
+            }
             $options[] = $option;
         }
         return $options;
+    }
+
+    /**
+     * Whether a delegate option is a never-taxed treatment.
+     *
+     * Two shapes, and both must be caught by VALUE or by NAME as
+     * appropriate, because they are different kinds of thing:
+     *  - core "None" is the fixed pseudo-id 0, so it is matched by value;
+     *  - the class the plugin used to provision has a merchant-specific
+     *    auto-increment id, so it can only be matched by its name.
+     *
+     * A merchant who happens to have named one of their own classes the
+     * same thing is also excluded, which is the safe direction: that name
+     * promises "no tax" and this plugin will not offer it as a treatment
+     * either way.
+     *
+     * @param array $option delegate option: ['value' => ..., 'label' => ...]
+     */
+    public static function isNeverTaxedOption(array $option): bool
+    {
+        if (isset($option['value']) && (string)$option['value'] === self::NEVER_TAXED_CLASS_ID) {
+            return true;
+        }
+
+        return isset($option['label'])
+            && (string)$option['label'] === SurchargeTaxCalculator::NO_TAX_CLASS_NAME;
     }
 
     /**
