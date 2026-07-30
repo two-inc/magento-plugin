@@ -3,11 +3,14 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Model\Config\Backend;
 
+use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\Config\Storage\WriterInterface;
 use Magento\Framework\Exception\LocalizedException;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Model\Config\Backend\SurchargeGrid;
+use Two\Gateway\Service\Order\SurchargeCalculator;
 
 /**
  * Tests the SurchargeGrid backend model's validation and write logic.
@@ -185,18 +188,35 @@ class SurchargeGridTest extends TestCase
      * the production method itself. validateValue() reads no injected
      * dependency, so an instance built without the constructor is enough.
      */
-    private function invokeValidateValue(string $type, string $rawValue, int $days = 30): void
-    {
+    private function invokeValidateValue(
+        string $type,
+        string $rawValue,
+        int $days = 30,
+        bool $limitColumnVisible = true
+    ): void {
         $model = (new \ReflectionClass(SurchargeGrid::class))->newInstanceWithoutConstructor();
         $method = new \ReflectionMethod(SurchargeGrid::class, 'validateValue');
         $method->setAccessible(true);
-        $method->invoke($model, $type, $rawValue, $days, 25, ConfigRepository::SURCHARGE_PERCENTAGE_MAX);
+        $method->invoke(
+            $model,
+            $type,
+            $rawValue,
+            $days,
+            25,
+            ConfigRepository::SURCHARGE_PERCENTAGE_MAX,
+            $limitColumnVisible
+        );
     }
 
     /**
-     * Invoke the REAL type-gate that decides whether the Limit column is live
-     * at all. Reads the POSTed group and returns before touching any injected
-     * dependency, so an instance built without the constructor is enough.
+     * Invoke the REAL type-gate that decides whether the Limit column is
+     * visible.
+     *
+     * Only exercises the POSTED branch: the config fallback dereferences the
+     * injected scope config, which an instance built without the constructor
+     * does not have. That branch is covered separately by
+     * testProductionTypeGateResolvesTheFallbackAtTheSavingScope, which injects
+     * a stub via reflection.
      *
      * @param array<string, mixed> $groups
      */
@@ -206,7 +226,7 @@ class SurchargeGridTest extends TestCase
         $method = new \ReflectionMethod(SurchargeGrid::class, 'savedSurchargeTypeHasPercentage');
         $method->setAccessible(true);
 
-        return (bool)$method->invoke($model, $groups);
+        return (bool)$method->invoke($model, $groups, 'default', 0);
     }
 
     /**
@@ -255,37 +275,33 @@ class SurchargeGridTest extends TestCase
     }
 
     /**
-     * A limit that is inapplicable to the surcharge type is DELETED, not
-     * rejected. The grid JS hides the Limit column for a fixed-only type but a
-     * hidden input still posts, so a limit stored under an earlier percentage
-     * type keeps arriving; failing the section save over a cell the admin can
-     * neither see nor clear is a dead end.
+     * With the Limit column hidden, a legacy zero neither blocks the save nor
+     * gets deleted — the whole row is stored as posted. Deleting it would
+     * discard a VALID limit on a normal fixed-only save while the equally
+     * inapplicable percentage cell survived, and at a non-default scope
+     * deleting an override re-exposes the parent's value rather than retiring
+     * anything.
      */
-    public function testAnInapplicableLimitIsDeletedRatherThanRejected(): void
+    public function testAHiddenLimitColumnNeitherBlocksTheSaveNorDeletesTheCell(): void
     {
         $this->model->setTestHasPercentage(false);
         $this->model->setTestValue([
             30 => ['fixed' => '10', 'percentage' => '', 'limit' => '0'],
+            60 => ['fixed' => '10', 'percentage' => '', 'limit' => '50'],
         ]);
         $this->model->setTestScope('default', 0);
 
-        $deleted = [];
-        $this->configWriter->method('delete')->willReturnCallback(
-            function ($path) use (&$deleted) {
-                $deleted[] = $path;
-            }
-        );
         $saved = [];
         $this->configWriter->method('save')->willReturnCallback(
-            function ($path) use (&$saved) {
-                $saved[] = $path;
+            function ($path, $value) use (&$saved) {
+                $saved[] = [$path, $value];
             }
         );
 
         $this->model->callAfterSave();
 
-        $this->assertContains('payment/two_payment/surcharge_30_limit', $deleted);
-        $this->assertEquals(['payment/two_payment/surcharge_30_fixed'], $saved);
+        $this->assertContains(['payment/two_payment/surcharge_30_limit', '0'], $saved);
+        $this->assertContains(['payment/two_payment/surcharge_60_limit', '50'], $saved);
     }
 
     /**
@@ -315,6 +331,97 @@ class SurchargeGridTest extends TestCase
         $this->expectNotToPerformAssertions();
         $this->invokeValidateValue('fixed', '0');
         $this->invokeValidateValue('percentage', '0');
+    }
+
+    /**
+     * The config fallback is the NORMAL path at a non-default scope: leaving
+     * the surcharge-type field on "Use Default Value" renders its select
+     * disabled, and browsers do not submit disabled inputs, so nothing is
+     * posted for it. An UNSCOPED read resolves the default scope's value,
+     * which is the wrong answer for exactly the store that inherits a
+     * different one — either deleting a store's real limits or blocking its
+     * whole section save.
+     */
+    public function testProductionTypeGateResolvesTheFallbackAtTheSavingScope(): void
+    {
+        $reads = [];
+        $config = $this->getMockBuilder(ScopeConfigInterface::class)->getMock();
+        $config->method('getValue')->willReturnCallback(
+            function ($path, $scope = 'default', $scopeId = null) use (&$reads) {
+                $reads[] = [$path, $scope, $scopeId];
+
+                // Default scope is fixed-only; the website overrides to
+                // percentage. An unscoped read would answer "fixed".
+                return $scope === 'websites' ? 'percentage' : 'fixed';
+            }
+        );
+
+        $model = (new \ReflectionClass(SurchargeGrid::class))->newInstanceWithoutConstructor();
+        $configProperty = new \ReflectionProperty(\Magento\Framework\App\Config\Value::class, '_config');
+        $configProperty->setAccessible(true);
+        $configProperty->setValue($model, $config);
+        $brand = $this->getMockBuilder(BrandRegistryInterface::class)->getMock();
+        $brand->method('getCode')->willReturn('two_payment');
+        $brandProperty = new \ReflectionProperty(SurchargeGrid::class, 'brandRegistry');
+        $brandProperty->setAccessible(true);
+        $brandProperty->setValue($model, $brand);
+
+        $method = new \ReflectionMethod(SurchargeGrid::class, 'savedSurchargeTypeHasPercentage');
+        $method->setAccessible(true);
+
+        $this->assertTrue(
+            (bool)$method->invoke($model, [], 'websites', 1),
+            'the website scope overrides to percentage, so the Limit column IS visible there'
+        );
+        $this->assertSame(
+            ['payment/two_payment/surcharge_type', 'websites', 1],
+            $reads[0],
+            'the fallback must read at the saving scope, not unscoped'
+        );
+    }
+
+    /**
+     * `is_numeric('1e400')` is true and the cast is INF. Limit is the one
+     * column with no upper bound, so INF would be stored and then fail the
+     * pricing request at serialisation time, a long way from the cause.
+     */
+    public function testProductionValidatorRefusesANonFiniteLimit(): void
+    {
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('value must be a number');
+        $this->invokeValidateValue('limit', '1e400');
+    }
+
+    /**
+     * While the Limit column is hidden the zero rule is SKIPPED, so a legacy
+     * zero cannot block a save over a cell the admin can neither see nor
+     * clear. The value is still stored — deleting it would discard a valid
+     * limit on a normal fixed-only save, and at a non-default scope deleting
+     * an override re-exposes the parent's value rather than retiring it.
+     */
+    public function testProductionValidatorSkipsTheZeroRuleWhileTheColumnIsHidden(): void
+    {
+        $this->expectNotToPerformAssertions();
+        $this->invokeValidateValue('limit', '0', 30, false);
+        $this->invokeValidateValue('limit', '0.001', 30, false);
+    }
+
+    /**
+     * The two MONEY_DECIMALS constants must agree: the whole correctness
+     * argument is that the grid refuses any limit that rounds away at the
+     * precision the request is rounded to. If they drift, a limit passes the
+     * grid and is then rounded into a fee-suppressing zero.
+     */
+    public function testTheGridAndTheCalculatorAgreeOnMoneyPrecision(): void
+    {
+        $grid = new \ReflectionClass(SurchargeGrid::class);
+        $calculator = new \ReflectionClass(SurchargeCalculator::class);
+
+        $this->assertSame(
+            $calculator->getConstant('MONEY_DECIMALS'),
+            $grid->getConstant('MONEY_DECIMALS'),
+            'the grid must refuse limits at the same precision the request is rounded to'
+        );
     }
 
     public function testNonArrayValueIsNoOp(): void
@@ -405,7 +512,7 @@ class SurchargeGridTestable
         $maxPercentage = ConfigRepository::SURCHARGE_PERCENTAGE_MAX;
         // Mirrors savedSurchargeTypeHasPercentage(); injectable so a test can
         // exercise the fixed-only path where the Limit column is not live.
-        $hasPercentage = $this->hasPercentage;
+        $limitColumnVisible = $this->hasPercentage;
 
         foreach ($value as $days => $fields) {
             if (!is_array($fields)) {
@@ -421,7 +528,7 @@ class SurchargeGridTestable
                 $path = sprintf('payment/two_payment/surcharge_%d_%s', $days, $type);
 
                 $cellValue = (string)$cellValue;
-                if ($cellValue === '' || ($type === 'limit' && !$hasPercentage)) {
+                if ($cellValue === '') {
                     $this->configWriter->delete($path, $this->scope, $this->scopeId);
                     continue;
                 }
@@ -445,7 +552,7 @@ class SurchargeGridTestable
                 // for real against the production method by
                 // testProductionValidatorRefusesAZeroLimit — this copy only
                 // keeps the flow tests above faithful to the real save.
-                if ($type === 'limit' && round($numericValue, 2) === 0.0) {
+                if ($type === 'limit' && $limitColumnVisible && round($numericValue, 2) === 0.0) {
                     throw new LocalizedException(
                         __(
                             '%1 days - limit: a limit of 0 is not allowed. To charge nothing on this term,'

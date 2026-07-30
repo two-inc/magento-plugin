@@ -57,6 +57,14 @@ describe('validate-two-nonzero-limit', () => {
         expect(rule('0,005')).toBe(true);
     });
 
+    it('reads the last separator as the decimal point, like the real parser', () => {
+        // '1.234,56' is 1234.56 to a Dutch admin, not 1.234. The rule only
+        // has to get zero-vs-non-zero right, but a mock that got this wrong
+        // would make the locale claim untested rather than tested.
+        expect(rule('1.234,56')).toBe(true);
+        expect(rule('0.000,00')).toBe(false);
+    });
+
     it('leaves non-numeric input to validate-zero-or-greater', () => {
         expect(rule('abc')).toBe(true);
     });

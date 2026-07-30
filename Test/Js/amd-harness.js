@@ -241,10 +241,25 @@ function makeJQueryMock() {
         cookies: { get: function () { return null; }, set: function () {} },
         redirect: function () {},
         // Locale-aware number parse: comma decimals normalise, so '0,5' is
-        // 0.5 rather than parseFloat's 0. Modules rely on exactly this
-        // difference, so the mock must reproduce it.
+        // 0.5 rather than parseFloat's 0. Modules rely on exactly that
+        // difference, so the mock must reproduce it — and reproduce the
+        // both-separators case too ('1.234,56' is 1234.56), or the mock buys
+        // false confidence in the locale behaviour it exists to cover.
         parseNumber: function (v) {
-            return parseFloat(String(v).replace(',', '.'));
+            var str = String(v).trim(),
+                lastComma = str.lastIndexOf(','),
+                lastDot = str.lastIndexOf('.'),
+                decimalAt = Math.max(lastComma, lastDot);
+
+            if (decimalAt === -1) {
+                return parseFloat(str);
+            }
+
+            // Whichever separator comes last is the decimal point; every
+            // earlier separator is a grouping mark and is stripped.
+            return parseFloat(
+                str.slice(0, decimalAt).replace(/[.,]/g, '') + '.' + str.slice(decimalAt + 1)
+            );
         }
     };
     // `mage/validation` decorates jQuery with the validator registry. Any

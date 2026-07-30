@@ -139,16 +139,23 @@ class SurchargeGrid extends Value
 
         $maxFixed = $this->getConvertedFixedMax($scope, $scopeId);
         $maxPercentage = ConfigRepository::SURCHARGE_PERCENTAGE_MAX;
-        // Whether the Limit column is live at all for the surcharge type being
-        // saved. It is offered only alongside a percentage, and the grid JS
-        // HIDES it otherwise — but a hidden input still posts, so a limit
-        // stored while the type was percentage keeps arriving after the
-        // merchant switches to fixed-only. Rejecting a zero there would fail
-        // the whole section save over a cell the admin can neither see nor
-        // clear, which is the dead end the funding-partner cap comment below
-        // already warns about. Inapplicable limits are DELETED instead, which
-        // also retires the legacy row rather than leaving it to resurface.
-        $hasPercentage = $this->savedSurchargeTypeHasPercentage($groups);
+        // Whether the Limit column is VISIBLE for the surcharge type being
+        // saved. It is shown only alongside a percentage, and the grid JS hides
+        // it otherwise — but a hidden input still posts, so a limit stored
+        // while the type was percentage keeps arriving after the merchant
+        // switches away. Rejecting a zero there would fail the whole section
+        // save over a cell the admin can neither see nor clear, which is the
+        // dead end the funding-partner cap comment below already warns about,
+        // so the zero rule is SKIPPED while the column is hidden.
+        //
+        // Skipped, not deleted. Deleting would discard a VALID limit on any
+        // save made while the surcharge is fixed-only or off — a normal round
+        // trip — while the equally inapplicable percentage cell survives it,
+        // and at a non-default scope deleting an override does not retire a
+        // value at all: it re-exposes the parent's. A legacy zero simply
+        // surfaces again when the column comes back into view, which is where
+        // the admin can act on it.
+        $limitColumnVisible = $this->savedSurchargeTypeHasPercentage($groups, $scope, $scopeId);
 
         foreach ($gridValues as $days => $fields) {
             if (!is_array($fields)) {
@@ -164,7 +171,7 @@ class SurchargeGrid extends Value
                 $path = sprintf('payment/%s/surcharge_%d_%s', $this->methodCode(), $days, $type);
 
                 $value = (string)$value;
-                if ($value === '' || ($type === 'limit' && !$hasPercentage)) {
+                if ($value === '') {
                     $this->configWriter->delete($path, $scope, $scopeId);
                     continue;
                 }
@@ -176,7 +183,7 @@ class SurchargeGrid extends Value
                 // the JS pass; normalise server-side too.
                 $value = str_replace(',', '.', $value);
 
-                $this->validateValue($type, $value, $days, $maxFixed, $maxPercentage);
+                $this->validateValue($type, $value, $days, $maxFixed, $maxPercentage, $limitColumnVisible);
 
                 $this->configWriter->save($path, $value, $scope, $scopeId);
             }
@@ -196,22 +203,31 @@ class SurchargeGrid extends Value
 
     /**
      * Whether the surcharge type being saved carries a percentage component,
-     * i.e. whether the grid's Limit column is live at all. Read from the
-     * POSTed group first — the type and the grid are saved in the same
-     * request, so the stored value is the PREVIOUS one and would misjudge a
-     * merchant switching type — and from config only when the field was not
-     * submitted (a partial `config:set`, for instance).
+     * i.e. whether the grid's Limit column is visible. Read from the POSTed
+     * group first — the type and the grid are saved in the same request, so
+     * the stored value is the PREVIOUS one and would misjudge a merchant
+     * switching type.
+     *
+     * The config fallback is NOT an edge case: when the type field is left on
+     * "Use Default Value" its `<select>` is rendered disabled, browsers do not
+     * submit disabled inputs, and so nothing is posted for it. It is therefore
+     * resolved AT THE SAVING SCOPE — an unscoped read returns the default
+     * scope's value, which is the wrong answer for exactly the store that
+     * inherits a different one.
      *
      * @param array<string, mixed> $groups
      */
-    private function savedSurchargeTypeHasPercentage(array $groups): bool
+    private function savedSurchargeTypeHasPercentage(array $groups, string $scope, int $scopeId): bool
     {
         $posted = $groups['payment_terms']['fields']['surcharge_type']['value'] ?? null;
-        $type = is_string($posted) && $posted !== ''
-            ? $posted
-            : (string)$this->_config->getValue(
-                sprintf('payment/%s/surcharge_type', $this->methodCode())
-            );
+        if (is_string($posted) && $posted !== '') {
+            $type = $posted;
+        } else {
+            $path = sprintf('payment/%s/surcharge_type', $this->methodCode());
+            $type = $scope === 'default'
+                ? (string)$this->_config->getValue($path)
+                : (string)$this->_config->getValue($path, $scope, $scopeId);
+        }
 
         return in_array($type, [SurchargeType::PERCENTAGE, SurchargeType::FIXED_AND_PERCENTAGE], true);
     }
@@ -309,9 +325,18 @@ class SurchargeGrid extends Value
         string $rawValue,
         int $days,
         ?int $maxFixed,
-        int $maxPercentage
+        int $maxPercentage,
+        bool $limitColumnVisible = true
     ): void {
         if (!is_numeric($rawValue)) {
+            throw new LocalizedException(
+                __('%1 days - %2: value must be a number.', $days, $type)
+            );
+        }
+        // is_numeric('1e400') is true and the cast is INF. `limit` is the one
+        // column with no upper bound, so INF would be stored and then fail the
+        // pricing request at json_encode time, far from the cause.
+        if (!is_finite((float)$rawValue)) {
             throw new LocalizedException(
                 __('%1 days - %2: value must be a number.', $days, $type)
             );
@@ -338,7 +363,7 @@ class SurchargeGrid extends Value
         // cap of 0.00 — the very outcome being refused, one step later.
         // Refusing everything that rounds away is what makes "the rounding
         // direction cannot decide whether a configured cap survives" true.
-        if ($type === 'limit' && round($value, self::MONEY_DECIMALS) === 0.0) {
+        if ($type === 'limit' && $limitColumnVisible && round($value, self::MONEY_DECIMALS) === 0.0) {
             throw new LocalizedException(
                 __(
                     '%1 days - limit: a limit of 0 is not allowed. To charge nothing on this term,'

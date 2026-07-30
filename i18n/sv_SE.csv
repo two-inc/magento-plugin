@@ -279,6 +279,6 @@
 "My company is not on the list","Mitt företag finns inte med i listan"
 "%1 days - limit: a limit of 0 is not allowed. To charge nothing on this term, set the fixed amount and percentage to 0 instead, and leave the limit empty.","%1 dagar - gräns: en gräns på 0 är inte tillåten. Om du inte vill debitera något för denna termin sätter du fast belopp och procent till 0 i stället och lämnar gränsen tom."
 "A limit of 0 is not allowed. To charge nothing on this term, set the fixed amount and percentage to 0 instead, and leave the limit empty.","En gräns på 0 är inte tillåten. Om du inte vill debitera något för denna termin sätter du fast belopp och procent till 0 i stället och lämnar gränsen tom."
-"A limit of 0 is not allowed. To charge nothing on a term, set that term's fixed amount and percentage to 0 instead.","En gräns på 0 är inte tillåten. Om du inte vill debitera något för en termin sätter du terminens fasta belopp och procent till 0 i stället."
+"A limit of 0 is not allowed. To charge nothing on a term, set the fixed amount and the percentage for that term to 0 instead.","En gräns på 0 är inte tillåten. Om du inte vill debitera något för en termin sätter du terminens fasta belopp och procent till 0 i stället."
 "The limit applies to the whole fee: the percentage and the fixed amount together, not the percentage alone.","Gränsen gäller hela avgiften: procenten och det fasta beloppet tillsammans, inte bara procenten."
 "%1 days - %2: value must be a number.","%1 dagar - %2: värdet måste vara ett tal."
