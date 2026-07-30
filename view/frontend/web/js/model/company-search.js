@@ -516,9 +516,11 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         /**
          * Show or hide the in-field searching spinner.
          *
-         * Reuses the three-dot loader already used by the payment-term chips
-         * (`.two-term-chip__loading`, `two-term-chip-dot` keyframes) rather
-         * than introducing a second loading idiom.
+         * The spinner is a single childless element: the animation it shows
+         * is a loading GIF painted by CSS as a background-image, so there is
+         * no inner markup to keep in sync and nothing for a translation or a
+         * sanitiser to mangle. See `two-company-search__spinner` in
+         * view/frontend/web/css/style.css.
          *
          * @param {object} $field jQuery-wrapped picker input
          * @param {boolean} isSearching
@@ -533,10 +535,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                 return;
             }
             if ($container.find(`.${SPINNER_CLASS}`).length) return;
-            $container.append(
-                `<span class="${SPINNER_CLASS}" aria-hidden="true"` +
-                    '><span>.</span><span>.</span><span>.</span></span>'
-            );
+            $container.append(`<span class="${SPINNER_CLASS}" aria-hidden="true"></span>`);
         },
 
         /**

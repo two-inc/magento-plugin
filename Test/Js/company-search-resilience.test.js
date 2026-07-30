@@ -654,8 +654,8 @@ describe('result cache', () => {
 
         // Type on (spinner up), then backspace back to the cached term. The
         // abort deliberately keeps the spinner, so the cache hit is the only
-        // thing that can take it down — otherwise the dots spin forever over
-        // a fully populated dropdown.
+        // thing that can take it down — otherwise the spinner runs forever
+        // over a fully populated dropdown.
         ajaxOptions.transport({ url: url + 'm' }, jest.fn(), jest.fn());
         recorder.requests[1].settleFail('abort');
         expect(hooks.calls.searching[hooks.calls.searching.length - 1]).toBe(true);
@@ -842,6 +842,36 @@ describe('in-field chrome', () => {
         companySearch.setSearching($field, true);
 
         expect(searchBoxOf(recorder).children).toHaveLength(1);
+    });
+
+    test('the spinner is a childless, aria-hidden element on its flat class hook', () => {
+        const { $, recorder } = makeQueryDouble();
+        const companySearch = loadCompanySearch($);
+        const $field = boundField($);
+
+        companySearch.setSearching($field, true);
+
+        const host = document.createElement('div');
+        host.innerHTML = searchBoxOf(recorder).children[0];
+        const spinner = host.querySelector('.two-company-search__spinner');
+
+        // TWO-25288. The indicator is a CSS background-image, so it must stay
+        // a single childless element: re-introducing inner nodes would paint
+        // content on top of the figure the stylesheet draws.
+        expect(spinner).not.toBeNull();
+        expect(spinner.children).toHaveLength(0);
+        expect(spinner.textContent).toBe('');
+
+        // Purely decorative — the "search unavailable" notice is the only
+        // company-search chrome that should reach a screen reader.
+        expect(spinner.getAttribute('aria-hidden')).toBe('true');
+
+        // Brand overlays override this rule with flat single-class rules of
+        // their own, winning on load order alone at equal specificity — which
+        // is why the selector must stay a single flat class. So the element
+        // must carry the hook class itself and nothing else may be relied on
+        // in its place.
+        expect(Array.from(spinner.classList)).toEqual(['two-company-search__spinner']);
     });
 
     test('the notice is written as a span, not a div', () => {

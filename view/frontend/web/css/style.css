@@ -363,39 +363,43 @@
  * spinner reads as "this field is working" rather than "the page is busy",
  * and the unavailable notice sits with the field it describes.
  *
- * The spinner deliberately reuses the payment-term chips' three-dot
- * animation (`two-term-chip-dot`) — one loading idiom in the checkout, not
- * two.
+ * The spinner is the same loading GIF the PrestaShop plugin already ships,
+ * painted as a `background-image` on one childless element (TWO-25288).
  */
 .select2-search--dropdown {
     position: relative;
 }
 
+/*
+ * THE SELECTOR MUST STAY A SINGLE FLAT CLASS.
+ *
+ * Overlay stylesheets hook this indicator with flat single-class rules, and
+ * win only because they load later at equal specificity. Qualifying this
+ * selector (e.g. `.select2-search--dropdown .two-company-search__spinner`)
+ * would outscore those overrides and silently kill them, with nothing in CI
+ * failing to tell you.
+ *
+ * The figure is a `background-image`, not an `<img>`: an `<img>` would need a
+ * resolved URL plumbed through Magento's asset helper into the markup, while
+ * a stylesheet `url()` resolves relative to the published stylesheet. Static
+ * content deploy puts `css/` and `images/` side by side under this module's
+ * directory, so `../images/` reaches the asset.
+ *
+ * Sizing is a fixed 16px because the asset is natively 16x16 and scaling it
+ * up only blurs it.
+ */
 .two-company-search__spinner {
     position: absolute;
-    top: 50%;
+    top: calc(50% - 8px);
     right: 12px;
-    transform: translateY(-50%);
     display: inline-block;
-    letter-spacing: 2px;
-    color: currentColor;
-    font-size: 12px;
-    line-height: 1.3;
-    font-weight: 700;
+    width: 16px;
+    height: 16px;
     pointer-events: none;
-}
-
-.two-company-search__spinner > span {
-    display: inline-block;
-    animation: two-term-chip-dot 1.4s infinite ease-in-out both;
-}
-
-.two-company-search__spinner > span:nth-child(2) {
-    animation-delay: 0.2s;
-}
-
-.two-company-search__spinner > span:nth-child(3) {
-    animation-delay: 0.4s;
+    background-image: url("../images/loader.gif");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 16px 16px;
 }
 
 .two-company-search__unavailable {
