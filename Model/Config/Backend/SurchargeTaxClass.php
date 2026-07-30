@@ -100,7 +100,15 @@ class SurchargeTaxClass extends AbstractSurchargeTreatmentGuard
     {
         $stored = $this->getScopedSiblingValue('surcharge_tax_class');
 
+        // Normalised the SAME way Repository::getSurchargeTaxClassIdAtScope()
+        // normalises for the option source: numeric, then int-cast. A raw
+        // string comparison would refuse a scope whose stored value is '0.0'
+        // or ' 0' — shapes an import or a hand-written config can produce —
+        // while the source model still offered the option, i.e. an option the
+        // save rejects.
         return $stored !== null
-            && (string)$stored === SurchargeTaxClassSource::NEVER_TAXED_CLASS_ID;
+            && $stored !== ''
+            && is_numeric($stored)
+            && (int)$stored === (int)SurchargeTaxClassSource::NEVER_TAXED_CLASS_ID;
     }
 }

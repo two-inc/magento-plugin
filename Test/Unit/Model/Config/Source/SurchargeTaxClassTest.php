@@ -229,12 +229,16 @@ class SurchargeTaxClassTest extends TestCase
     }
 
     /**
-     * A store with NO Product Tax Classes at all: suppressing "None" would
-     * leave the placeholder as the only option, and the treatment guard
-     * rejects the placeholder while a surcharge is enabled — an unusable
-     * form with nothing selectable. Offer "None" instead.
+     * A store with NO Product Tax Classes at all still does NOT get "None"
+     * offered. An earlier revision made it an escape hatch, which produced a
+     * worse bug: the option list offered '0' while
+     * Model\Config\Backend\SurchargeTaxClass refused it, so the only
+     * selectable option could not be saved and the payment section was
+     * unsavable either way. The two sides must offer and accept the same set;
+     * such a store disables the Surcharge Method, saves, and creates a Tax
+     * Rule.
      */
-    public function testNeverTaxedSurvivesWhenThereAreNoRealTaxClasses(): void
+    public function testNeverTaxedIsStillSuppressedWhenThereAreNoRealTaxClasses(): void
     {
         $emptySource = $this->getMockBuilder(ProductTaxClassSource::class)
             ->disableOriginalConstructor()
@@ -252,6 +256,31 @@ class SurchargeTaxClassTest extends TestCase
         $this->configRepository->method('getSurchargeTaxClassIdAtScope')->willReturn(null);
 
         $values = array_column($source->toOptionArray(), 'value');
-        $this->assertSame(['', '0'], $values);
+        $this->assertSame([''], $values);
+    }
+
+    /**
+     * ...but such a store that ALREADY stores "None" keeps it, so it can still
+     * save. This is the pair to the case above: suppression is driven purely
+     * by the stored value, never by how many classes exist.
+     */
+    public function testStoredNeverTaxedSurvivesWithNoRealTaxClasses(): void
+    {
+        $emptySource = $this->getMockBuilder(ProductTaxClassSource::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['getAllOptions'])
+            ->getMock();
+        $emptySource->method('getAllOptions')->with(true)->willReturn([
+            ['value' => '0', 'label' => 'None'],
+        ]);
+        $source = new SurchargeTaxClass(
+            $emptySource,
+            $this->configRepository,
+            $this->request,
+            $this->storeManager
+        );
+        $this->configRepository->method('getSurchargeTaxClassIdAtScope')->willReturn(0);
+
+        $this->assertSame(['', '0'], array_column($source->toOptionArray(), 'value'));
     }
 }

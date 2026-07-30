@@ -312,10 +312,11 @@
                     <comment><![CDATA[Description shown to the buyer for the surcharge line item. Use <strong>%1</strong> to insert the selected number of days (e.g. "Payment terms fee - %1 days"). If you leave the default, the word <em>days</em> is translated per locale.]]></comment>
                     <config_path>payment/{{code}}/surcharge_line_description</config_path>
                 </field>
-                <field id="surcharge_tax_class" translate="label" type="select" sortOrder="80"
+                <field id="surcharge_tax_class" translate="label comment" type="select" sortOrder="80"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        brand_code="{{code}}">
                     <label>Surcharge Tax Treatment</label>
+                    <comment>Product Tax Class applied to the surcharge. Country, region and combined rates resolve exactly as they do for a product. To leave the surcharge untaxed, create a Tax Rule with a 0% rate and select its Product Tax Class here.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\SurchargeTaxClass</source_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\SurchargeTaxClass</backend_model>
                     <config_path>payment/{{code}}/surcharge_tax_class</config_path>

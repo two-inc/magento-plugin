@@ -47,6 +47,15 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
  * Magento: a never-taxed treatment must be a tax rule the merchant
  * built, not an option we hand them.
  *
+ * The stored-value carve-out below is the ONLY reason "None" ever appears.
+ * There is deliberately no "but the store has no Product Tax Classes at
+ * all" exemption: this list and
+ * Two\Gateway\Model\Config\Backend\SurchargeTaxClass must offer and
+ * accept exactly the same set, or the form renders an option the save
+ * refuses. A store in that state disables the Surcharge Method, saves,
+ * creates a Tax Rule, and re-enables — the same route it takes to pick any
+ * treatment at all.
+ *
  * It is still offered when it is ALREADY the stored value at the scope
  * being edited, and that carve-out is load-bearing rather than
  * cosmetic: an HTML select cannot render a value that is absent from
@@ -129,32 +138,15 @@ class SurchargeTaxClass implements OptionSourceInterface
         $neverTaxedIsStored =
             $this->configRepository->getSurchargeTaxClassIdAtScope($scope, $scopeId) === 0;
 
-        $classOptions = [];
-        $realClassCount = 0;
         foreach ($this->productTaxClassSource->getAllOptions(true) as $option) {
             $isNeverTaxed = isset($option['value'])
                 && (string)$option['value'] === self::NEVER_TAXED_CLASS_ID;
-            if (!$isNeverTaxed) {
-                $realClassCount++;
+            if ($isNeverTaxed && !$neverTaxedIsStored) {
+                continue;
             }
             // Emitted verbatim when it survives, so a re-offered "None"
             // keeps core's own translated label rather than a second,
             // divergent spelling of it.
-            $classOptions[] = [$isNeverTaxed, $option];
-        }
-
-        // Last-resort escape hatch: on a store with NO Product Tax Classes
-        // at all, suppressing "None" would leave the placeholder as the only
-        // option — and while a surcharge method is enabled the treatment
-        // guard rejects the placeholder, so there would be nothing the
-        // merchant could select to make the payment section savable again.
-        // Offer "None" rather than render an unusable form.
-        $keepNeverTaxed = $neverTaxedIsStored || $realClassCount === 0;
-
-        foreach ($classOptions as [$isNeverTaxed, $option]) {
-            if ($isNeverTaxed && !$keepNeverTaxed) {
-                continue;
-            }
             $options[] = $option;
         }
         return $options;

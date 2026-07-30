@@ -43,10 +43,15 @@ class SurchargeTaxClassTest extends TestCase
         );
     }
 
+    /** @var array<int, array{0: string, 1: string|null, 2: mixed}> path/scope/scopeId of every read */
+    private $configReads = [];
+
     private function stubStoredConfig(array $map): void
     {
+        $this->configReads = [];
         $this->scopeConfig->method('getValue')->willReturnCallback(
-            function ($path) use ($map) {
+            function ($path, $scope = null, $scopeId = null) use ($map) {
+                $this->configReads[] = [$path, $scope, $scopeId];
                 return $map[$path] ?? null;
             }
         );
@@ -285,6 +290,31 @@ class SurchargeTaxClassTest extends TestCase
             'scope' => 'websites',
             'scope_id' => 2,
             'fieldset_data' => ['surcharge_type' => 'fixed'],
+        ]);
+
+        $this->assertSame($model, $model->beforeSave());
+        // The scope actually reached ScopeConfigInterface — without this the
+        // test would pass whether or not the read was scope-anchored, which
+        // is precisely what it claims to prove.
+        $this->assertContains(
+            ['payment/overlay_payment/surcharge_tax_class', 'websites', 2],
+            $this->configReads
+        );
+    }
+
+    public function testStoredNoneInANumericVariantIsStillTreatedAsStored(): void
+    {
+        // The option source normalises numerically (Repository::
+        // getSurchargeTaxClassIdAtScope int-casts), so a stored '0.0' offers
+        // the option; this side must not then refuse it.
+        $this->stubStoredConfig([
+            'payment/two_payment/surcharge_tax_class' => '0.0',
+        ]);
+        $model = $this->buildModel([
+            'value' => '0',
+            'path' => 'payment/two_payment/surcharge_tax_class',
+            'scope' => 'default',
+            'fieldset_data' => ['surcharge_type' => 'percentage'],
         ]);
 
         $this->assertSame($model, $model->beforeSave());
