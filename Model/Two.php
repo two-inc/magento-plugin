@@ -248,10 +248,10 @@ class Two extends AbstractMethod
     {
         $order = $payment->getOrder();
         $this->assertOrderMeetsMinimum($order);
+        $additionalInformation = $payment->getAdditionalInformation();
+        $this->assertOrganizationNumberPresent($additionalInformation);
         $this->urlCookie->delete();
         $orderReference = (string)rand();
-
-        $additionalInformation = $payment->getAdditionalInformation();
 
         $payload = $this->compositeOrder->execute(
             $order,
@@ -967,6 +967,37 @@ class Two extends AbstractMethod
             if ($orderValue + 0.0001 < $display['amount']) {
                 throw new LocalizedException($this->minimumOrderMessage($display, $order));
             }
+        }
+    }
+
+    /**
+     * Server-side floor for the buyer's company number.
+     *
+     * Until now the only thing stopping a placement with an empty company
+     * number was a client-side validator on the checkout field, so any
+     * checkout that does not render that field — or any client that skips
+     * it — reached the API with an empty value and was refused only after
+     * placement had begun. This guard declines before the order request is
+     * built, on the one path every storefront's placement runs through, so
+     * no checkout variant can diverge from another.
+     *
+     * Whitespace counts as empty: a space-only value is not a company
+     * number and would be refused downstream just the same.
+     *
+     * @param array $additionalInformation payment additional information as
+     *     submitted by the checkout
+     * @throws LocalizedException when no company number was supplied
+     */
+    private function assertOrganizationNumberPresent(array $additionalInformation): void
+    {
+        $companyId = $additionalInformation['companyId'] ?? '';
+
+        if (!is_scalar($companyId) || trim((string)$companyId) === '') {
+            $message = __(
+                'Invoice purchase with %1 requires a company number. Please add your company details and try again.',
+                $this->brandRegistry->getProductName()
+            );
+            throw new LocalizedException($message);
         }
     }
 
