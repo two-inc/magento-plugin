@@ -34,6 +34,13 @@ class LayoutProcessorPlugin
         LayoutProcessor $subject,
         array  $jsLayout
     ) {
+        // The field is `visible` now, so a merchant who merely has the module
+        // installed with the payment method switched off would otherwise get a
+        // company-number input on the address step for every buyer. Gated the
+        // same way the payment-method list plugin gates its own append.
+        if (!$this->repository->isActive()) {
+            return $jsLayout;
+        }
         $jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']['children']
         ['shippingAddress']['children']['shipping-address-fieldset']['children']['company_id'] = [
             'component' => 'Magento_Ui/js/form/element/abstract',
@@ -43,13 +50,13 @@ class LayoutProcessorPlugin
                 'template' => 'ui/form/field',
                 'elementTmpl' => 'ui/form/element/input',
                 'tooltip' => [
-                    'description' => 'Company Number',
+                    'description' => __('Company Number'),
                 ],
                 'options' => [],
                 'id' => 'company-id'
             ],
             'dataScope' => 'shippingAddress.custom_attributes.company_id',
-            'label' => 'Company Number',
+            'label' => __('Company Number'),
             'provider' => 'checkoutProvider',
             // Rendered, and disabled until the buyer actually has to supply
             // the number by hand. Company search fills it from the registry
