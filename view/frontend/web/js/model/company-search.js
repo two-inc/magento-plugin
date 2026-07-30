@@ -830,10 +830,29 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             // works, it just needs the next keystroke to come back after a
             // render, which beats the module throwing on load.
             if (typeof MutationObserver === 'function' && $results.get(0)) {
+                const resultsNode = $results.get(0);
+                // renderManualEntryRow's only protection against re-appending
+                // itself is the `$existing.is(':last-child')` idempotency
+                // check below. That check runs on every observer tick, so any
+                // bug in it — not hypothetical, this is how it was found —
+                // turns "append our row" into a mutation the observer watches
+                // itself, which re-invokes render, which mutates again,
+                // forever. MutationObserver callbacks are microtasks, so nothing
+                // macrotask-scheduled (a timer, a test's `await`) ever gets a
+                // turn to run: the tab locks up rather than throwing.
+                //
+                // Disconnecting for the duration of our OWN write closes that
+                // hole regardless of whether the idempotency check is correct:
+                // a mutation made while the observer isn't observing is never
+                // queued, so it can never re-trigger this callback. Re-observe
+                // synchronously once the write is done, so a genuine external
+                // repaint (a fresh page of results) is still caught.
                 const observer = new MutationObserver(function () {
+                    observer.disconnect();
                     self.renderManualEntryRow($field, token);
+                    observer.observe(resultsNode, { childList: true });
                 });
-                observer.observe($results.get(0), { childList: true });
+                observer.observe(resultsNode, { childList: true });
                 $field.data('twoManualEntryObserver', observer);
             }
 
