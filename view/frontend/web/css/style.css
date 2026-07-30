@@ -363,8 +363,8 @@
  * spinner reads as "this field is working" rather than "the page is busy",
  * and the unavailable notice sits with the field it describes.
  *
- * The spinner is a radial-spokes indicator drawn entirely in CSS: one
- * childless element, no image asset, no inner markup (TWO-25288).
+ * The spinner is the same loading GIF the PrestaShop plugin already ships,
+ * painted as a `background-image` on one childless element (TWO-25288).
  */
 .select2-search--dropdown {
     position: relative;
@@ -373,81 +373,34 @@
 /*
  * THE SELECTOR MUST STAY A SINGLE FLAT CLASS.
  *
- * Brand overlays recolour this indicator from their own stylesheet with flat
- * single-class rules, and win only because they load later at equal
- * specificity. Qualifying this selector (e.g.
- * `.select2-search--dropdown .two-company-search__spinner`) would outscore
- * those overrides and silently kill branded recolouring, with nothing in CI
+ * Overlay stylesheets hook this indicator with flat single-class rules, and
+ * win only because they load later at equal specificity. Qualifying this
+ * selector (e.g. `.select2-search--dropdown .two-company-search__spinner`)
+ * would outscore those overrides and silently kill them, with nothing in CI
  * failing to tell you.
  *
- * Vertical centring uses a negative margin rather than
- * `transform: translateY(-50%)` on purpose: the spin animation owns
- * `transform`, so a translate here would be overwritten mid-animation and
- * drop the spinner half its own height out of the field.
+ * The figure is a `background-image`, not an `<img>`: an `<img>` would need a
+ * resolved URL plumbed through Magento's asset helper into the markup, while
+ * a stylesheet `url()` resolves relative to the published stylesheet. Static
+ * content deploy puts `css/` and `images/` side by side under this module's
+ * directory, so `../images/` reaches the asset.
+ *
+ * Sizing is a fixed 16px because the asset is natively 16x16 and scaling it
+ * up only blurs it.
  */
 .two-company-search__spinner {
     position: absolute;
-    top: 50%;
+    top: calc(50% - 8px);
     right: 12px;
     display: inline-block;
-    width: 1em;
-    height: 1em;
-    margin-top: -0.5em;
-    vertical-align: middle;
-    border-radius: 50%;
+    width: 16px;
+    height: 16px;
     pointer-events: none;
-
-    /* An overlay sets --two-spinner-color once and is done. The fallback is
-       the inherited text colour, which is what the existing overlay `color:`
-       overrides already set. */
-    color: var(--two-spinner-color, currentColor);
-
-    /* 12 spokes: a 30deg period with 10deg of ink in each. */
-    background: repeating-conic-gradient(
-        from 0deg,
-        currentColor 0deg 10deg,
-        transparent 10deg 30deg
-    );
-
-    /* Punch the middle out so the spokes read as spokes, not as a pie. */
-    -webkit-mask: radial-gradient(farthest-side, transparent 38%, #000 40%);
-    mask: radial-gradient(farthest-side, transparent 38%, #000 40%);
-
-    /*
-     * Continuous rotation, NOT `steps(12, end)`.
-     *
-     * The spoke pattern above has a 30deg period, so it is unchanged by any
-     * rotation that is a multiple of 30deg. `steps(12, end)` over `1turn`
-     * advances in exactly 30deg increments, which maps the pattern onto
-     * itself at every step and renders a completely motionless spinner. Any
-     * step count whose increment is a multiple of the spoke period has the
-     * same problem.
-     */
-    animation: two-spinner-spin 1s linear infinite;
+    background-image: url("../images/loader.gif");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 16px 16px;
 }
-
-@keyframes two-spinner-spin {
-    to {
-        transform: rotate(1turn);
-    }
-}
-
-/*
- * A loading indicator has to keep indicating, so slow it down rather than
- * stopping it — a frozen spinner reads as a hung page.
- */
-@media (prefers-reduced-motion: reduce) {
-    .two-company-search__spinner {
-        animation-duration: 3s;
-    }
-}
-
-/*
- * Size and colour come from the surrounding text (1em, currentColor), so no
- * per-theme sizing rule should be needed. A surface that wants a fixed size
- * should set `font-size` on the spinner, never width/height, so the mask
- * geometry stays proportional.
- */
 
 .two-company-search__unavailable {
     display: block;

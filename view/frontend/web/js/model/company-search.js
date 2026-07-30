@@ -516,10 +516,10 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         /**
          * Show or hide the in-field searching spinner.
          *
-         * The spinner is a single childless element: everything it draws
-         * comes from CSS (a masked conic gradient plus a rotation), so there
-         * is no inner markup to keep in sync and nothing for a translation
-         * or a sanitiser to mangle. See `two-company-search__spinner` in
+         * The spinner is a single childless element: the animation it shows
+         * is a loading GIF painted by CSS as a background-image, so there is
+         * no inner markup to keep in sync and nothing for a translation or a
+         * sanitiser to mangle. See `two-company-search__spinner` in
          * view/frontend/web/css/style.css.
          *
          * @param {object} $field jQuery-wrapped picker input

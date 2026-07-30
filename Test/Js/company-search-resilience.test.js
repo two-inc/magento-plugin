@@ -654,8 +654,8 @@ describe('result cache', () => {
 
         // Type on (spinner up), then backspace back to the cached term. The
         // abort deliberately keeps the spinner, so the cache hit is the only
-        // thing that can take it down — otherwise the dots spin forever over
-        // a fully populated dropdown.
+        // thing that can take it down — otherwise the spinner runs forever
+        // over a fully populated dropdown.
         ajaxOptions.transport({ url: url + 'm' }, jest.fn(), jest.fn());
         recorder.requests[1].settleFail('abort');
         expect(hooks.calls.searching[hooks.calls.searching.length - 1]).toBe(true);
@@ -855,9 +855,9 @@ describe('in-field chrome', () => {
         host.innerHTML = searchBoxOf(recorder).children[0];
         const spinner = host.querySelector('.two-company-search__spinner');
 
-        // TWO-25288. The indicator is drawn entirely by CSS (masked conic
-        // gradient + rotation), so it must stay a single childless element:
-        // re-introducing inner nodes is what the stylesheet no longer styles.
+        // TWO-25288. The indicator is a CSS background-image, so it must stay
+        // a single childless element: re-introducing inner nodes would paint
+        // content on top of the figure the stylesheet draws.
         expect(spinner).not.toBeNull();
         expect(spinner.children).toHaveLength(0);
         expect(spinner.textContent).toBe('');
