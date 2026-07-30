@@ -112,6 +112,21 @@
     padding: 5px;
 }
 
+/*
+ * The manual-entry row in the company-search results list.
+ *
+ * A SINGLE FLAT CLASS: overlay stylesheets hook rows like this flat and win
+ * on load order, and qualifying the selector here would outscore them with
+ * nothing in CI to notice. It is a real select2 result row, so highlight and
+ * hover styling arrive from select2's own rules; only the separator and the
+ * link affordance are ours.
+ */
+.two-company-search__manual-entry {
+    border-top: 1px solid #e8e8e8;
+    color: var(--color-blue2);
+    cursor: pointer;
+}
+
 .search_for_company {
     text-align: right;
     cursor: pointer;
