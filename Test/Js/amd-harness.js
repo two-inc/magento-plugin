@@ -239,7 +239,25 @@ function makeJQueryMock() {
     $.ajax = function () { return { done: function () { return this; }, fail: function () { return this; }, always: function () { return this; } }; };
     $.mage = {
         cookies: { get: function () { return null; }, set: function () {} },
-        redirect: function () {}
+        redirect: function () {},
+        // Locale-aware number parse: comma decimals normalise, so '0,5' is
+        // 0.5 rather than parseFloat's 0. Modules rely on exactly this
+        // difference, so the mock must reproduce it.
+        parseNumber: function (v) {
+            return parseFloat(String(v).replace(',', '.'));
+        }
+    };
+    // `mage/validation` decorates jQuery with the validator registry. Any
+    // module that registers a rule depends on it being there, so the mock has
+    // to carry it — a jQuery without it is a shape no browser presents, and a
+    // smoke load failing on that tests the mock, not the module.
+    $.validator = {
+        methods: {},
+        addMethod: function (name, fn, message) {
+            $.validator.methods[name] = fn;
+            $.validator.messages = $.validator.messages || {};
+            $.validator.messages[name] = message;
+        }
     };
     $.Deferred = function () {
         return { resolve: function () { return this; }, reject: function () { return this; }, promise: function () { return this; }, done: function () { return this; }, fail: function () { return this; }, always: function () { return this; } };
