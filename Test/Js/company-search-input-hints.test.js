@@ -130,9 +130,7 @@ function loadShippingSurface($, companySearch) {
     const ctx = Object.assign(Object.create(component.prototype || {}), {
         countrySelector: '#shipping-new-address-form select[name="country_id"]',
         companyNameSelector: '#shipping-new-address-form input[name="company"]',
-        enterDetailsManuallyButton: '#shipping_enter_details_manually',
         searchForCompanyButton: '#shipping_search_for_company',
-        enterDetailsManuallyText: 'Enter details manually',
         searchForCompanyText: 'Search for company',
         companyNamePlaceholder: component.companyNamePlaceholder,
         setCompanyData: function () {},
@@ -258,8 +256,8 @@ describe('threshold centralisation', () => {
         const ctx = Object.assign(Object.create(component.prototype || {}), {
             companyNameSelector: 'input#company_name',
             enterDetailsManuallyButton: '#billing_enter_details_manually',
-            searchForCompanyButton: '#billing_search_for_company',
             enterDetailsManuallyText: 'Enter details manually',
+            searchForCompanyButton: '#billing_search_for_company',
             searchForCompanyText: 'Search for company',
             _brandConfig: BASE_CONFIG,
             countryCode: function () { return 'gb'; },

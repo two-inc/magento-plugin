@@ -129,6 +129,10 @@ function defaultMocks() {
                 return 'Please enter ' + this.MIN_INPUT_LENGTH + ' or more characters';
             },
             getSearchFieldContainer: function () { return null; },
+            abortActiveRequest: function () { return false; },
+            isManualEntryOption: function () { return false; },
+            attachManualEntryRow: function () {},
+            detachManualEntryObserver: function () {},
             markSearchBinding: function () {},
             clearSearchChrome: function () {},
             setSearching: function () {},
@@ -344,7 +348,21 @@ function loadAmdModule(relPath, extraMocks) {
         define: define,
         require: require,
         window: { checkoutConfig: { payment: {} } },
-        document: { addEventListener: function () {}, createElement: function () { return {}; } },
+        document: {
+            addEventListener: function () {},
+            createElement: function () { return {}; },
+            // Enough of a node for the focus call the address-step picker
+            // makes when its dropdown opens. Without it, any test that
+            // TRIGGERS `select2:open` dies inside the harness rather than
+            // exercising the handler.
+            querySelector: function () { return { focus: function () {} }; }
+        },
+        // Passed through from the jsdom test environment so a module that
+        // watches a results list can actually watch one. The sandbox is a
+        // separate vm context and does not inherit browser globals, so a
+        // module guarding on `typeof MutationObserver === 'function'` would
+        // otherwise take its no-observer fallback in every test.
+        MutationObserver: typeof MutationObserver === 'function' ? MutationObserver : undefined,
         console: { log: function () {}, debug: function () {}, warn: function () {}, error: function () {} },
         setTimeout: setTimeout,
         clearTimeout: clearTimeout,
