@@ -140,7 +140,7 @@
                 </field>
                 <field id="enable_po_number" translate="label comment" type="select" sortOrder="20" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Show Purchase order number field</label>
+                    <label>Show PO Number field</label>
                     <comment>Optional field which enables the buyer to register their purchase order number.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/enable_po_number</config_path>
