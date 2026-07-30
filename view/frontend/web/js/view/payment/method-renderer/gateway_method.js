@@ -360,30 +360,11 @@ define([
          * its organisation number. Before the routing existed that shape was a
          * harmless no-op on the read path, and it has to stay one.
          *
-         * The editable state of `company_id` is re-derived here, after BOTH
-         * branches. The authoritative derivation is the companyName/companyId
-         * subscription in enableCompanySearch(), which catches every writer OF
-         * THE OBSERVABLES, including the ones that never come through a
-         * selection path. This call is not merely belt-and-braces; it is
-         * load-bearing for two cases the subscription cannot cover:
-         *
-         *  - a pick that writes values identical to the current ones, which ko
-         *    does not notify for;
-         *  - the window before `$.async('input#company_id')` has resolved. On
-         *    init, registeredOrganisationMode() calls enableCompanySearch() and
-         *    then fillCustomerData(), whose companyData notification fires
-         *    synchronously — possibly before the field node exists and
-         *    therefore before the subscription has been created at all.
-         *
-         * A writer that touches only the DOM field and never the observables is
-         * outside both mechanisms by construction — see clearCompany().
-         *
-         * Nothing re-derives an editable state for the organisation number any
-         * more: the tile has no company-number input to derive one for
-         * (TWO-25288). `companyId()` is written only from a company-search
-         * pick, the sole-trader autofill response, or the address step's
-         * `companyData` notification, and read only by getData() and
-         * placeOrderIntent().
+         * No editable state is derived for the organisation number: the tile has
+         * no company-number input to derive one for (TWO-25288). `companyId()`
+         * is written only by a company-search pick, the sole-trader autofill
+         * response, or the address step's `companyData` notification, and read
+         * only by getData() and placeOrderIntent().
          */
         applyCompanyData: function (companyData, options) {
             const data = companyData || {};

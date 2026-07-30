@@ -209,7 +209,6 @@ test('PAYMENT surface: searching state reaches visible spinner markup', () => {
 
     const ctx = Object.assign(Object.create(component.prototype || {}), {
         companyNameSelector: 'input#company_name',
-        companyIdSelector: 'input#company_id',
         enterDetailsManuallyButton: '#billing_enter_details_manually',
         searchForCompanyButton: '#billing_search_for_company',
         enterDetailsManuallyText: 'Enter details manually',

@@ -234,15 +234,12 @@ describe('payment-step company picker (gateway_method.js)', () => {
     function makeRendererContext(component, config, filled) {
         return Object.assign(Object.create(component.prototype || {}), {
             companyNameSelector: 'input#company_name',
-            companyIdSelector: 'input#company_id',
             enterDetailsManuallyButton: '#billing_enter_details_manually',
             searchForCompanyButton: '#billing_search_for_company',
             enterDetailsManuallyText: 'Enter details manually',
             searchForCompanyText: 'Search for company',
             _brandConfig: config,
             countryCode: function () { return 'gb'; },
-            // Carries `subscribe` because enableCompanySearch() derives
-            // company_id's editable state from this observable.
             companyName: Object.assign(function () { return ''; }, {
                 subscribe: function () { return { dispose: function () {} }; }
             }),
