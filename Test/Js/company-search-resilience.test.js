@@ -1092,7 +1092,6 @@ describe('re-render safety of the select2 binding', () => {
         );
         return Object.assign(Object.create(component.prototype || {}), {
             companyNameSelector: SEARCH_FIELD,
-            companyIdSelector: 'input#company_id',
             enterDetailsManuallyButton: '#billing_enter_details_manually',
             searchForCompanyButton: '#billing_search_for_company',
             enterDetailsManuallyText: 'Enter details manually',
@@ -1101,8 +1100,10 @@ describe('re-render safety of the select2 binding', () => {
             countryCode: function () {
                 return 'gb';
             },
-            // Carries `subscribe` because enableCompanySearch() derives
-            // company_id's editable state from this observable.
+            // Defensive `subscribe` stub. Nothing on this path subscribes to
+            // the observable any more — the company-number editable-state
+            // derivation that used to (TWO-25288) is gone — but the stub is
+            // cheap and keeps the fixture usable if a subscriber returns.
             companyName: Object.assign(
                 function () {
                     return '';
@@ -1307,7 +1308,6 @@ describe('re-render safety of the select2 binding', () => {
         return Object.assign(Object.create(component.prototype || {}), {
             countrySelector: '#shipping-new-address-form select[name="country_id"]',
             companyNameSelector: SEARCH_FIELD,
-            companyIdSelector: 'input#company_id',
             enterDetailsManuallyButton: '#shipping_enter_details_manually',
             searchForCompanyButton: '#shipping_search_for_company',
             enterDetailsManuallyText: 'Enter details manually',

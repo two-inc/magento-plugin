@@ -353,16 +353,20 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                          * select at all. Without one they see the name alone,
                          * and selecting it is what gives them a route to the
                          * organisation number: the pickers treat an empty
-                         * `companyId` as authoritative, clear any previously
-                         * selected company's identifier, and (on the payment
-                         * step, where company search disables the field)
-                         * re-enable `company_id` so the buyer can type it.
-                         * See applyCompanyData() /
-                         * selectCompanyWithoutIdentifier() in
+                         * `companyId` as authoritative and clear any previously
+                         * selected company's identifier. See applyCompanyData()
+                         * / selectCompanyWithoutIdentifier() in
                          * view/payment/method-renderer/gateway_method.js —
                          * WITHOUT that, an empty `companyId` here silently
                          * kept the previous company's organisation number and
                          * submitted it under this company's name.
+                         *
+                         * Where the buyer can then TYPE that number is the
+                         * address step only. The payment tile used to re-enable
+                         * a company-number field of its own; TWO-25288 removed
+                         * that field, so on the payment step an empty
+                         * `companyId` now just stays empty and the order is
+                         * refused server-side by Model/Two.php::authorize().
                          */
                         const identifier =
                             item.national_identifier && item.national_identifier.id
