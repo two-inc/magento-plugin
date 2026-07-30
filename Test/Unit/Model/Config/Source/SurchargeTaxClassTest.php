@@ -18,6 +18,10 @@ use Two\Gateway\Model\Config\Source\SurchargeTaxClass;
  * option is always the unselected placeholder, and the deprecated
  * "Custom" flat-rate treatment only appears for merchants with a
  * genuinely pre-existing legacy rate value.
+ *
+ * Core's never-taxed "None" (class id 0) is suppressed for new
+ * selections and re-injected only for a scope that already stores it,
+ * so a merchant sitting on that stored value can still save.
  */
 class SurchargeTaxClassTest extends TestCase
 {
@@ -73,7 +77,7 @@ class SurchargeTaxClassTest extends TestCase
         $values = array_column($this->source->toOptionArray(), 'value');
 
         $this->assertNotContains(SurchargeTaxClass::CUSTOM, $values);
-        $this->assertSame(['', '0', '2'], $values);
+        $this->assertSame(['', '2'], $values);
     }
 
     public function testCustomOptionShownWhenLegacyRateExists(): void
@@ -81,7 +85,71 @@ class SurchargeTaxClassTest extends TestCase
         $this->configRepository->method('hasCustomSurchargeTaxRate')->willReturn(true);
         $values = array_column($this->source->toOptionArray(), 'value');
 
-        $this->assertSame(['', SurchargeTaxClass::CUSTOM, '0', '2'], $values);
+        $this->assertSame(['', SurchargeTaxClass::CUSTOM, '2'], $values);
+    }
+
+    public function testCoreNoneIsSuppressedForNewSelections(): void
+    {
+        // No stored value at this scope: "None" is a platform default,
+        // not a merchant-configured tax rule, so it must not be offered.
+        $this->configRepository->method('getSurchargeTaxClassId')->willReturn(null);
+        $values = array_column($this->source->toOptionArray(), 'value');
+
+        $this->assertNotContains('0', $values);
+    }
+
+    public function testCoreNoneStaysSuppressedWhenAnotherClassIsStored(): void
+    {
+        $this->configRepository->method('getSurchargeTaxClassId')->willReturn(2);
+        $values = array_column($this->source->toOptionArray(), 'value');
+
+        $this->assertNotContains('0', $values);
+        $this->assertSame(['', '2'], $values);
+    }
+
+    public function testCoreNoneIsOfferedWhenItIsAlreadyTheStoredValue(): void
+    {
+        // The lockout case: a select cannot render a value absent from
+        // its options, so it would fall back to the placeholder and the
+        // next save would post '' — which the treatment guard rejects,
+        // rolling back the whole payment-section save.
+        $this->configRepository->method('getSurchargeTaxClassId')->willReturn(0);
+        $values = array_column($this->source->toOptionArray(), 'value');
+
+        $this->assertContains('0', $values);
+        $this->assertSame(['', '0', '2'], $values);
+    }
+
+    public function testReinjectedNoneKeepsCoreOwnLabel(): void
+    {
+        $this->configRepository->method('getSurchargeTaxClassId')->willReturn(0);
+        $labels = [];
+        foreach ($this->source->toOptionArray() as $option) {
+            $labels[(string)$option['value']] = (string)$option['label'];
+        }
+
+        $this->assertSame('None', $labels['0']);
+    }
+
+    public function testStoredValueIsReadAtTheRequestedStoreScope(): void
+    {
+        // A store view that inherits "None" from the default scope must
+        // still render it; reading the stored value at the wrong scope
+        // is what would re-create the lockout for that store view.
+        $this->request->method('getParam')->willReturnCallback(
+            fn ($key) => $key === 'store' ? 'store_two' : null
+        );
+        $store = $this->createMock(StoreInterface::class);
+        $store->method('getId')->willReturn(7);
+        $this->storeManager->method('getStore')->with('store_two')->willReturn($store);
+
+        $this->configRepository->expects($this->once())
+            ->method('getSurchargeTaxClassId')
+            ->with(7)
+            ->willReturn(0);
+
+        $values = array_column($this->source->toOptionArray(), 'value');
+        $this->assertContains('0', $values);
     }
 
     public function testExistenceCheckUsesRequestedStoreScope(): void
