@@ -268,4 +268,4 @@
 "Invoice uploaded to Two successfully.","Factuur is succesvol geüpload naar Two."
 "Invoice upload failed: %1","Uploaden van factuur mislukt: %1"
 "⚠ deployment incomplete — code newer than compiled assets; run setup:static-content:deploy","⚠ implementatie onvolledig — code is nieuwer dan de gecompileerde assets; voer setup:static-content:deploy uit"
-"Use Website Value","Websitewaarde gebruiken"
+"Use Website Value","Gebruik websitewaarde"
