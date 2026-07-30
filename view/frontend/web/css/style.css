@@ -413,8 +413,17 @@
     -webkit-mask: radial-gradient(farthest-side, transparent 38%, #000 40%);
     mask: radial-gradient(farthest-side, transparent 38%, #000 40%);
 
-    /* steps() gives the classic mechanical spoke-by-spoke tick. */
-    animation: two-spinner-spin 1s steps(12, end) infinite;
+    /*
+     * Continuous rotation, NOT `steps(12, end)`.
+     *
+     * The spoke pattern above has a 30deg period, so it is unchanged by any
+     * rotation that is a multiple of 30deg. `steps(12, end)` over `1turn`
+     * advances in exactly 30deg increments, which maps the pattern onto
+     * itself at every step and renders a completely motionless spinner. Any
+     * step count whose increment is a multiple of the spoke period has the
+     * same problem.
+     */
+    animation: two-spinner-spin 1s linear infinite;
 }
 
 @keyframes two-spinner-spin {
