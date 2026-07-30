@@ -866,9 +866,11 @@ describe('in-field chrome', () => {
         // company-search chrome that should reach a screen reader.
         expect(spinner.getAttribute('aria-hidden')).toBe('true');
 
-        // Brand overlays recolour this from a flat single-class rule and win
-        // on load order alone, so the element must carry the hook class
-        // itself and nothing else may be relied on in its place.
+        // Brand overlays override this rule with flat single-class rules of
+        // their own, winning on load order alone at equal specificity — which
+        // is why the selector must stay a single flat class. So the element
+        // must carry the hook class itself and nothing else may be relied on
+        // in its place.
         expect(Array.from(spinner.classList)).toEqual(['two-company-search__spinner']);
     });
 
