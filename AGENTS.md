@@ -30,27 +30,57 @@ which includes the commands to re-enable PageBuilder for testing
 brand content that relies on it. Same applies to anything
 analytics-driven (e.g. NewRelic dashboards, GA events).
 
-## A surcharge cap of 0 is valid — never guard against it
+## A surcharge cap of 0: refused at entry, relayed faithfully at runtime
 
-**A configured surcharge limit of `0` must be relayed to the pricing
-API as `cap => 0.0`. Do not throw, do not omit the key, and do not
-add admin validation rejecting a typed `0`.** A zero cap clamps the
-buyer fee to zero — no surcharge is applied — which is a legitimate
-merchant configuration.
+Two rules that look contradictory and are not. Keep both.
 
-Only an *absent* (null) limit means "no cap"; that omits the `cap`
-key and applies the percentage uncapped. Absent and zero are
-different things and both must pass through faithfully.
+**Runtime — never guard.** A configured surcharge limit of `0` that
+somehow exists must be relayed to the pricing API as `cap => 0.0`.
+Do not throw, do not omit the key, do not turn it into "no cap".
+A zero cap bounds the buyer fee at zero — no surcharge is applied —
+and only an *absent* (null) limit means "no cap", which omits the
+`cap` key and applies the percentage uncapped. Absent and zero are
+different values and both pass through faithfully.
 
 TWO-25269 briefly added a guard that threw on a zero cap, on the
 premise that a zero cap read as "no cap" downstream and would relay
 an uncapped percentage. **That premise was false and the guard was
-reverted** — a zero cap clamps the fee to zero, it never uncaps it.
+reverted** — a zero cap bounds the fee at zero, it never uncaps it.
 In `fixed_and_percentage` mode the cap bounds the combined fee, so
 `Limit = 0` suppresses the fixed component too, not just the
 percentage part.
-
 `Test/Unit/Service/Order/SurchargeCalculatorTest.php` pins this.
+
+**Admin — refuse zero.** Separately, TWO-25289 stopped a zero limit
+being *configurable*: `Model\Config\Backend\SurchargeGrid` rejects
+`limit === 0` on save, and the grid refuses it in the browser too.
+An EMPTY limit stays valid and still means "no limit".
+
+This is not the reverted guard under another name. It is an
+admin-boundary decision rather than a runtime one, and the reason is
+different: a merchant who wants no fee on a term says so directly
+with 0% and 0 fixed, so a zero limit has no legitimate use — while on
+the sibling plugins a zero cap was being normalised to *absent* and
+relayed genuinely uncapped, overcharging the buyer. Refusing it at
+entry closes that consistently across all three plugins.
+
+So: if you are asked to remove the admin validation, that is the
+runtime rule being misread. If you are asked to make the runtime
+throw on a zero cap, that is the reverted guard being reintroduced.
+Neither follows from the other.
+
+## Monetary values in the pricing request are rounded to 2dp
+
+`SurchargeCalculator::convertAmount()` rounds `cap` and `surcharge` to
+two decimal places before they go on the wire. The API refuses
+anything finer rather than rounding it itself, so an unrounded FX
+conversion used to be rejected upstream and surface to the buyer as a
+generic "temporarily unavailable" error.
+
+Plain half-up rounding, deliberately. Sub-cent caps, away-from-zero
+rounding and zero-decimal currencies are all explicitly out of scope
+(TWO-25289) — the one value where the rounding direction would have
+mattered, an explicit cap of `0`, is refused by the grid instead.
 
 ## DI registration scope for Structure / Config Reader plugins
 

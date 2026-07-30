@@ -906,17 +906,77 @@ class SurchargeCalculatorTest extends TestCase
         $this->assertEquals(30.0, $result['amount']);
     }
 
-    public function testNonZeroCapNeverCollapsesToZeroThroughFxConversion(): void
+    public function testCapAndSurchargeAreRoundedToTwoDecimalPlacesOnTheWire(): void
     {
-        // convertAmount() applies no rounding (`$amount * $rate`) and
-        // CurrencyRatesProvider returns null rather than a zero/negative rate,
-        // so a tiny cap under a tiny rate stays non-zero and is sent as-is.
+        // The API refuses monetary values finer than two decimal places
+        // rather than rounding them, so an unrounded FX conversion was
+        // rejected upstream and reached the buyer as a generic
+        // "temporarily unavailable" error (TWO-25289).
         //
-        // This pins the plugin's current unrounded pass-through ONLY. The value
-        // asserted below (0.000001) exceeds the pricing API's two-decimal money
-        // precision and would in fact be rejected upstream — see the
-        // KNOWN PRE-EXISTING GAP note on convertAmount(). Do not read this test
-        // as evidence that the API accepts sub-cent figures; it does not.
+        // 349 * 0.0872 = 30.4328 → 30.43 for both components.
+        $this->stubCommonConfig(SurchargeType::FIXED_AND_PERCENTAGE);
+        $this->stubSurchargeConfig(50, 349, 349);
+        $this->stubFixedCurrency('NOK');
+        $this->stubFxRate('NOK', 0.0872);
+
+        $this->log->expects($this->never())->method('addErrorLog');
+
+        $sent = null;
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) use (&$sent) {
+                    $sent = $payload['buyer_fee_share'];
+
+                    return true;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 30.43]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'SEK');
+
+        $this->assertSame(30.43, $sent['cap']);
+        $this->assertSame(30.43, $sent['surcharge']);
+    }
+
+    public function testOverPreciseConfigIsRoundedEvenWithNoCurrencyConversion(): void
+    {
+        // No FX involved (config currency === order currency), but an admin
+        // can type more precision than the API accepts, so the
+        // no-conversion path needs the same 2dp gate (TWO-25289).
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50, 0, 10.999);
+        $this->stubFixedCurrency('SEK');
+
+        $this->log->expects($this->never())->method('addErrorLog');
+
+        $sent = null;
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) use (&$sent) {
+                    $sent = $payload['buyer_fee_share']['cap'];
+
+                    return true;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 11.0]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'SEK');
+
+        $this->assertSame(11.0, $sent);
+    }
+
+    public function testASubCentCapRoundsDownToZeroWhichIsAcceptedScope(): void
+    {
+        // 0.01 NOK under a 0.0001 rate is 0.000001, which rounds to 0.00 and
+        // therefore suppresses the fee entirely. Deliberate, and pinned so it
+        // is a decision rather than a surprise: sub-cent caps, away-from-zero
+        // rounding and zero-decimal currencies are all explicitly out of
+        // scope (TWO-25289). Rounding half-up beats the alternative of
+        // shipping a >2dp value the API rejects outright.
         $this->stubCommonConfig(SurchargeType::PERCENTAGE);
         $this->stubSurchargeConfig(50, 0, 0.01);
         $this->stubFixedCurrency('NOK');
@@ -924,17 +984,22 @@ class SurchargeCalculatorTest extends TestCase
 
         $this->log->expects($this->never())->method('addErrorLog');
 
+        $sent = null;
         $this->adapter->expects($this->once())
             ->method('execute')
             ->with(
                 '/v1/pricing/order/fee',
-                $this->callback(function ($payload) {
-                    return abs($payload['buyer_fee_share']['cap'] - 0.000001) < 1.0e-12;
+                $this->callback(function ($payload) use (&$sent) {
+                    $sent = $payload['buyer_fee_share']['cap'];
+
+                    return true;
                 })
             )
-            ->willReturn(['buyer_fee_share' => 0.000001]);
+            ->willReturn(['buyer_fee_share' => 0.0]);
 
         $this->calculator->calculate(1000.0, 60, 'NO', 'SEK');
+
+        $this->assertSame(0.0, $sent);
     }
 
     public function testConversionForwardsStoreScopeToRateLookup(): void
