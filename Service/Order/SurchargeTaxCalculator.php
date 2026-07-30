@@ -45,13 +45,19 @@ class SurchargeTaxCalculator
     public const ITEM_CODE = 'two_surcharge';
 
     /**
-     * Class name of the auto-provisioned always-zero Product Tax Class
-     * (created by Setup\Patch\Data\SurchargeNoTaxClass). Ships with no
-     * Tax Rule attached, so selecting it guarantees an untaxed
-     * surcharge for every destination. calculateForQuote() logs a
-     * warning if this class ever resolves non-zero tax — that means a
-     * merchant attached a Tax Rule to it and silently broke the
-     * guarantee.
+     * Class name of the always-zero Product Tax Class the plugin used to
+     * provision into the merchant's `tax_class` table. No longer created,
+     * and no longer selectable as a surcharge tax treatment (TWO-25279):
+     * a never-taxed treatment must be a tax rule the merchant configured,
+     * not one the plugin fabricated. Model\Config\NeverTaxedTreatment
+     * recognises it by this name, which is the only way to — its id is a
+     * merchant-side auto-increment.
+     *
+     * Stored selections are NOT migrated: the admin field fails loud and
+     * the save is refused, so a merchant on this class is told to pick a
+     * real tax rule. The row itself survives on pre-existing installs, so
+     * the guard in calculateForQuote() is kept for any scope whose config
+     * was written outside the admin form and still points at it.
      */
     public const NO_TAX_CLASS_NAME = 'Payment Terms Surcharge - No Tax';
 
@@ -307,7 +313,7 @@ class SurchargeTaxCalculator
      *    configured id no longer resolves, regardless of tax amount.
      *
      * 2. Always-zero guarantee: if the configured class is the
-     *    auto-provisioned no-tax class but the engine resolved real
+     *    formerly-provisioned no-tax class but the engine resolved real
      *    tax, a merchant has attached a Tax Rule to it.
      *
      * Both warn loudly (error log) but do NOT fail checkout — the

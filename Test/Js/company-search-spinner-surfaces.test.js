@@ -180,9 +180,7 @@ test('SHIPPING surface: searching state reaches visible spinner markup', () => {
         companyNameSelector: '#shipping-new-address-form input[name="company"]',
         companyIdSelector:
             '#shipping-new-address-form input[name="custom_attributes[company_id]"]',
-        enterDetailsManuallyButton: '#shipping_enter_details_manually',
         searchForCompanyButton: '#shipping_search_for_company',
-        enterDetailsManuallyText: 'Enter details manually',
         searchForCompanyText: 'Search for company',
         companyNamePlaceholder: 'Enter company name to search',
         setCompanyData: function () {},
@@ -210,8 +208,8 @@ test('PAYMENT surface: searching state reaches visible spinner markup', () => {
     const ctx = Object.assign(Object.create(component.prototype || {}), {
         companyNameSelector: 'input#company_name',
         enterDetailsManuallyButton: '#billing_enter_details_manually',
-        searchForCompanyButton: '#billing_search_for_company',
         enterDetailsManuallyText: 'Enter details manually',
+        searchForCompanyButton: '#billing_search_for_company',
         searchForCompanyText: 'Search for company',
         _brandConfig: BASE_CONFIG,
         countryCode: function () { return 'gb'; },

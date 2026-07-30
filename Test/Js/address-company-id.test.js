@@ -17,11 +17,12 @@
  *
  *  1. `node.on()` keeps ONE handler per event name and `off()` is a no-op, so
  *     nothing here can speak to handler ordering or coexistence.
- *  2. The AMD harness's sandbox `document` has no `querySelector`, so the
- *     `select2:open` handler (which calls it) cannot be driven. The
- *     "Enter details manually" affordance is therefore exercised through
- *     `setCompanyData()` — what that handler calls — and not through the click
- *     itself. A regression that unwired the click would NOT fail here.
+ *  2. Company search is left OFF in these tests, so the picker's own handlers
+ *     are never bound and cannot be driven from here. The manual-entry
+ *     affordance is therefore exercised through `setCompanyData()` — what
+ *     activating it calls — and not through the activation itself, so a
+ *     regression that unwired the row would NOT fail here. Its wiring is
+ *     covered in Test/Js/company-search-manual-entry.test.js instead.
  *  3. The shared harness mocks `Two_Gateway/js/model/company-search` to a set
  *     of no-ops (`buildSearchAjaxOptions` returns `{}`, `lookupCompanyAddress`
  *     returns null). Nothing in this file covers real search behaviour, and a
@@ -187,8 +188,7 @@ function load(options) {
         'Two_Gateway/js/model/brand-config': {
             // Company search off by default: enableCompanySearch() then
             // early-returns and these tests stay about the company-number
-            // field. The select2 paths need a `document.querySelector` the
-            // harness sandbox does not have (limitation 2).
+            // field, with none of the picker's handlers bound (limitation 2).
             getActiveTwoBrandConfig: function () {
                 return { isCompanySearchEnabled: !!opts.searchEnabled };
             }
@@ -247,7 +247,7 @@ describe('address-step company-number field editability', () => {
     });
 
     test('a manually typed company name enables the field', () => {
-        // "Enter details manually" calls setCompanyData() with no arguments and
+        // The manual-entry row calls setCompanyData() with no arguments and
         // destroys the picker; the buyer then types the name into a plain text
         // input. Without the re-derivation on that input the buyer is left with
         // a company and no way to supply its number.

@@ -1093,8 +1093,8 @@ describe('re-render safety of the select2 binding', () => {
         return Object.assign(Object.create(component.prototype || {}), {
             companyNameSelector: SEARCH_FIELD,
             enterDetailsManuallyButton: '#billing_enter_details_manually',
-            searchForCompanyButton: '#billing_search_for_company',
             enterDetailsManuallyText: 'Enter details manually',
+            searchForCompanyButton: '#billing_search_for_company',
             searchForCompanyText: 'Search for company',
             _brandConfig: BASE_CONFIG,
             countryCode: function () {
@@ -1308,9 +1308,7 @@ describe('re-render safety of the select2 binding', () => {
         return Object.assign(Object.create(component.prototype || {}), {
             countrySelector: '#shipping-new-address-form select[name="country_id"]',
             companyNameSelector: SEARCH_FIELD,
-            enterDetailsManuallyButton: '#shipping_enter_details_manually',
             searchForCompanyButton: '#shipping_search_for_company',
-            enterDetailsManuallyText: 'Enter details manually',
             searchForCompanyText: 'Search for company',
             companyNamePlaceholder: 'Enter company name to search',
             setCompanyData: function () {},

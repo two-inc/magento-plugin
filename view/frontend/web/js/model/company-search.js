@@ -115,10 +115,9 @@ define(['jquery', 'mage/translate'], function ($, $t) {
     /**
      * A SECOND namespace, for the manual-entry row's own handlers.
      *
-     * They bind to the same search-box node as markSearchBinding()'s
-     * below-threshold cancel handler, and both listen for `input`. Sharing
-     * one namespace would make each one's `.off()` silently unbind the
-     * other.
+     * They bind to the same node as the below-threshold cancel handler in
+     * markSearchBinding(), and both listen for `input`. Sharing one namespace
+     * would make each one's `.off()` silently unbind the other.
      */
     const MANUAL_ENTRY_NS = '.twoManualEntry';
 
@@ -130,10 +129,10 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * Sentinel `id` for the manual-entry pseudo-result.
      *
      * It travels on the payload object select2 reads back out of the row, so
-     * a `select2:selecting` handler can recognise its own row and cancel the
-     * selection instead of treating it as a company. Namespaced and
-     * deliberately not a plausible company name, since select2 result ids
-     * for this search ARE company names.
+     * the call site can recognise its own row in `select2:selecting` and
+     * cancel the selection instead of treating it as a company. Namespaced and
+     * deliberately not a plausible company name, since select2 result ids for
+     * this search ARE company names.
      */
     const MANUAL_ENTRY_ID = '__two_manual_entry__';
 
@@ -650,9 +649,9 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         /**
          * Resolve the `<ul>` select2 renders its results into.
          *
-         * Same staleness contract as getSearchFieldContainer(): fails closed
-         * on a token that no longer matches the bind stamped on the node, so
-         * a torn-down widget's handlers cannot paint onto its replacement.
+         * Same staleness contract as getSearchFieldContainer(): fails closed on
+         * a token that no longer matches the bind stamped on the node, so a
+         * torn-down widget's handlers cannot paint onto its replacement.
          *
          * Found by class rather than through the internals of the results
          * object, because the class is part of select2's public styling
@@ -668,10 +667,10 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             const instance = $field.data('select2');
             if (!instance || !instance.$dropdown) return $();
             // The nested lists select2 renders for grouped results carry the
-            // same class plus a modifier. Results are flat today, so
-            // matching them would be unreachable rather than wrong — but if
-            // grouping ever arrives, an unqualified selector puts a
-            // manual-entry row inside every group.
+            // same class plus a modifier. Results are flat today, so matching
+            // them would be unreachable rather than wrong — but if grouping
+            // ever arrives, an unqualified selector puts a manual-entry row
+            // inside every group.
             return instance.$dropdown.find(
                 '.select2-results__options:not(.select2-results__options--nested)'
             );
@@ -709,16 +708,17 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          *    for every selectable row when it reconciles the rendered list
          *    against the current selection. Without one the row is compared
          *    under the literal string "undefined", so it matches any other
-         *    id-less row and can be marked selected on that basis;
+         *    id-less row and can be marked selected on that basis. It does not
+         *    throw — the call that would is on a path this row bypasses;
          *  - the payload's `_resultId` must equal the row's DOM id: that is
          *    the value select2 copies into the listbox's
          *    `aria-activedescendant`, so a screen reader announces the wrong
          *    row (or none) if the two disagree.
          *
-         * The label is written with `.text()`, never interpolated into
-         * markup: both pickers set select2's `escapeMarkup` to the identity
-         * function so that server-side result highlighting can render, which
-         * makes a translation catalogue an HTML injection point otherwise.
+         * The label is written with `.text()`, never interpolated into markup:
+         * this picker sets select2's `escapeMarkup` to the identity function
+         * so that server-side result highlighting can render, which means a
+         * translation catalogue would otherwise be an HTML injection point.
          *
          * @param {string} [resultsId] DOM id of the results `<ul>`, used to
          *        derive a row id unique to this picker
@@ -737,6 +737,12 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                 .addClass('select2-results__option--selectable')
                 .addClass(MANUAL_ENTRY_CLASS)
                 .text(label);
+            // Deliberately NO `html` field, even though this picker's
+            // `templateResult` reads one. The only code that would consume it
+            // writes it through `innerHTML` after passing it to the escaper —
+            // which is the identity function here — so carrying the label in
+            // that field would hand back exactly the raw-markup sink the
+            // `.text()` write above exists to avoid.
             $option.data('data', {
                 id: MANUAL_ENTRY_ID,
                 text: label,
@@ -747,12 +753,12 @@ define(['jquery', 'mage/translate'], function ($, $t) {
 
         /**
          * Bring the manual-entry row into line with the current search term:
-         * present and last while the term is at or above MIN_INPUT_LENGTH,
-         * absent below it.
+         * present and last while the term is at or above the threshold, absent
+         * below it.
          *
-         * Idempotent, because it is called from a MutationObserver on the
-         * very list it mutates — the second call sees the row already there
-         * and stops, which is what terminates the loop.
+         * Idempotent, because it is called from a MutationObserver on the very
+         * list it mutates — the second call sees the row already there and
+         * stops, which is what terminates the loop.
          *
          * @param {object} $field jQuery-wrapped picker input
          * @param {object} token identity stamped by markSearchBinding()
@@ -762,20 +768,23 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             const $results = this.getResultsList($field, token);
             if (!$results.length) return $();
 
+            // Passed the same token for consistency, not as a second gate: the
+            // lookup above has already refused a stale bind, so no test can
+            // distinguish this argument from the node's own identity. Stated
+            // outright rather than left looking like covered behaviour.
             const term = this.currentSearchTerm($field, token);
             const $existing = $results.children(`.${MANUAL_ENTRY_CLASS}`);
 
             // Threshold, not "has searched". The buyer who cannot find their
-            // company is the one who most needs this row, and making them
-            // wait out a debounce and a request first is exactly the wrong
-            // order.
+            // company is the one who most needs this row, and making them wait
+            // out a debounce and a request first is exactly the wrong order.
             if (term.length < MIN_INPUT_LENGTH) {
                 $existing.remove();
                 return $();
             }
             if ($existing.length) {
-                // A fresh page of results appends after us; re-appending
-                // moves the row back to the end without rebuilding it.
+                // A fresh page of results appends after us; re-appending moves
+                // the row back to the end without rebuilding it.
                 if (!$existing.is(':last-child')) $results.append($existing);
                 return $existing;
             }
@@ -788,16 +797,18 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * Wire the manual-entry row up for a bind. Call on `select2:open`.
          *
          * Two triggers, because neither alone is enough:
-         *  - `input` on the search box, so the row appears as soon as the
-         *    term reaches MIN_INPUT_LENGTH and disappears when it drops
-         *    below — independently of the debounced request;
+         *  - `input` on the search box, so the row appears as soon as the term
+         *    reaches the threshold and disappears when it drops below —
+         *    independently of the debounced request, and bound here rather
+         *    than inside any focus-wait callback so a fast typist cannot
+         *    outrun it;
          *  - a MutationObserver on the results list, because select2 empties
-         *    that list on every new result set, which would take our row
-         *    with it.
+         *    that list on every new result set, which would take our row with
+         *    it.
          *
          * Rebinding is safe: the handler is namespaced and cleared first, and
-         * the previous observer is disconnected, so reopening the picker
-         * cannot accumulate duplicates.
+         * the previous observer is disconnected, so reopening the picker cannot
+         * accumulate duplicates.
          *
          * @param {object} $field jQuery-wrapped picker input
          * @param {object} token identity stamped by markSearchBinding()
@@ -819,10 +830,29 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             // works, it just needs the next keystroke to come back after a
             // render, which beats the module throwing on load.
             if (typeof MutationObserver === 'function' && $results.get(0)) {
+                const resultsNode = $results.get(0);
+                // renderManualEntryRow's only protection against re-appending
+                // itself is the `$existing.is(':last-child')` idempotency
+                // check below. That check runs on every observer tick, so any
+                // bug in it — not hypothetical, this is how it was found —
+                // turns "append our row" into a mutation the observer watches
+                // itself, which re-invokes render, which mutates again,
+                // forever. MutationObserver callbacks are microtasks, so nothing
+                // macrotask-scheduled (a timer, a test's `await`) ever gets a
+                // turn to run: the tab locks up rather than throwing.
+                //
+                // Disconnecting for the duration of our OWN write closes that
+                // hole regardless of whether the idempotency check is correct:
+                // a mutation made while the observer isn't observing is never
+                // queued, so it can never re-trigger this callback. Re-observe
+                // synchronously once the write is done, so a genuine external
+                // repaint (a fresh page of results) is still caught.
                 const observer = new MutationObserver(function () {
+                    observer.disconnect();
                     self.renderManualEntryRow($field, token);
+                    observer.observe(resultsNode, { childList: true });
                 });
-                observer.observe($results.get(0), { childList: true });
+                observer.observe(resultsNode, { childList: true });
                 $field.data('twoManualEntryObserver', observer);
             }
 
@@ -830,8 +860,8 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         },
 
         /**
-         * Stop watching a picker's results list. Call when the widget is
-         * torn down — the observer holds the detached list alive otherwise.
+         * Stop watching a picker's results list. Call when the widget is torn
+         * down — the observer holds the detached list alive otherwise.
          *
          * @param {object} $field jQuery-wrapped picker input
          */
