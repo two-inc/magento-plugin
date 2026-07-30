@@ -433,17 +433,19 @@ define([
          * Writes the name and CLEARS any previously selected company's
          * identifier.
          *
-         * No order intent is placed here, and — stating the current behaviour
-         * plainly rather than promising a fix this change does not make — none
-         * is placed later either. An identifier-less company is never
-         * intent-checked: the buyer can type the organisation number into the
-         * re-enabled `company_id` field and the order goes out with it, but no
-         * credit check runs for it. Firing an intent on hand-typed input is
-         * its own ticket; the obvious `change`-handler version of it does not
-         * work, because the template binds `value: companyId` and ko's `value`
-         * binding is registered at applyBindings() on the SAME `change` event,
-         * so ko has already written `companyId()` by the time any later
-         * handler runs.
+         * No order intent is placed here. Whether one is placed later depends
+         * on WHICH company-number field the buyer then types into:
+         *
+         *  - the address step's field publishes what it is given to the
+         *    `companyData` customer-data section, which arrives back here as an
+         *    authoritative notification and reaches fillCompanyData() — so that
+         *    route does get intent-checked;
+         *  - this tile's own field does not. It binds `value: companyId`
+         *    directly, and ko's `value` binding is registered at
+         *    applyBindings() on the same `change` event, so ko has already
+         *    written `companyId()` before any later handler could see the edit
+         *    and fire an intent from it. Stating the current behaviour plainly
+         *    rather than promising a fix this change does not make.
          *
          * `company_id`'s editable state is NOT set here — it is derived from
          * the companyName/companyId observables (see enableCompanySearch()),
@@ -579,7 +581,9 @@ define([
                 //
                 // "A notification IS the shipping-step picker" holds only
                 // because `companyData` has exactly one writer
-                // (address-autocomplete.js's setCompanyData()) and the repo
+                // (address-autocomplete.js's publishCompanyData(), the sole
+                // call site of `customerData.set('companyData', …)`) and the
+                // repo
                 // ships no `sections.xml`, so the server never invalidates and
                 // repopulates the section either. Add a second writer, or a
                 // `sections.xml` entry, and this authoritative subscription
