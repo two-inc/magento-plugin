@@ -255,3 +255,4 @@
 "Excluding tax (net)","Ekskludert MVA (netto)"
 "Invoice purchase with %1 is not available for this order. Minimum order value is %2 %3 tax.","Fakturakjøp med %1 er ikke tilgjengelig for denne bestillingen. Minimum bestillingsverdi er %2 %3 MVA."
 "Minimum Order Value must be at least the platform minimum of %1, %2 tax.","Minimum bestillingsverdi må være minst plattformminimumet på %1, %2 MVA."
+"Minimum Order Value must be a non-negative number.","Minimum bestillingsverdi må være et ikke-negativt tall."
