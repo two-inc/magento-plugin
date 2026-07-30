@@ -239,7 +239,40 @@ function makeJQueryMock() {
     $.ajax = function () { return { done: function () { return this; }, fail: function () { return this; }, always: function () { return this; } }; };
     $.mage = {
         cookies: { get: function () { return null; }, set: function () {} },
-        redirect: function () {}
+        redirect: function () {},
+        // Locale-aware number parse: comma decimals normalise, so '0,5' is
+        // 0.5 rather than parseFloat's 0. Modules rely on exactly that
+        // difference, so the mock must reproduce it — and reproduce the
+        // both-separators case too ('1.234,56' is 1234.56), or the mock buys
+        // false confidence in the locale behaviour it exists to cover.
+        parseNumber: function (v) {
+            var str = String(v).trim(),
+                lastComma = str.lastIndexOf(','),
+                lastDot = str.lastIndexOf('.'),
+                decimalAt = Math.max(lastComma, lastDot);
+
+            if (decimalAt === -1) {
+                return parseFloat(str);
+            }
+
+            // Whichever separator comes last is the decimal point; every
+            // earlier separator is a grouping mark and is stripped.
+            return parseFloat(
+                str.slice(0, decimalAt).replace(/[.,]/g, '') + '.' + str.slice(decimalAt + 1)
+            );
+        }
+    };
+    // `mage/validation` decorates jQuery with the validator registry. Any
+    // module that registers a rule depends on it being there, so the mock has
+    // to carry it — a jQuery without it is a shape no browser presents, and a
+    // smoke load failing on that tests the mock, not the module.
+    $.validator = {
+        methods: {},
+        addMethod: function (name, fn, message) {
+            $.validator.methods[name] = fn;
+            $.validator.messages = $.validator.messages || {};
+            $.validator.messages[name] = message;
+        }
     };
     $.Deferred = function () {
         return { resolve: function () { return this; }, reject: function () { return this; }, promise: function () { return this; }, done: function () { return this; }, fail: function () { return this; }, always: function () { return this; } };

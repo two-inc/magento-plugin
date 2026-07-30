@@ -21,6 +21,7 @@ use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
+use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
@@ -33,6 +34,14 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
 class SurchargeGrid extends Value
 {
     private const FIELDS = ['fixed', 'percentage', 'limit'];
+
+    /**
+     * Decimal places the pricing request is rounded to before it is sent
+     * (SurchargeCalculator::MONEY_DECIMALS). Mirrored here because a limit is
+     * refused when it rounds away at that precision, not merely when it is
+     * typed as an exact zero.
+     */
+    private const MONEY_DECIMALS = 2;
 
     /** @var WriterInterface */
     private $configWriter;
@@ -130,6 +139,23 @@ class SurchargeGrid extends Value
 
         $maxFixed = $this->getConvertedFixedMax($scope, $scopeId);
         $maxPercentage = ConfigRepository::SURCHARGE_PERCENTAGE_MAX;
+        // Whether the Limit column is VISIBLE for the surcharge type being
+        // saved. It is shown only alongside a percentage, and the grid JS hides
+        // it otherwise — but a hidden input still posts, so a limit stored
+        // while the type was percentage keeps arriving after the merchant
+        // switches away. Rejecting a zero there would fail the whole section
+        // save over a cell the admin can neither see nor clear, which is the
+        // dead end the funding-partner cap comment below already warns about,
+        // so the zero rule is SKIPPED while the column is hidden.
+        //
+        // Skipped, not deleted. Deleting would discard a VALID limit on any
+        // save made while the surcharge is fixed-only or off — a normal round
+        // trip — while the equally inapplicable percentage cell survives it,
+        // and at a non-default scope deleting an override does not retire a
+        // value at all: it re-exposes the parent's. A legacy zero simply
+        // surfaces again when the column comes back into view, which is where
+        // the admin can act on it.
+        $limitColumnVisible = $this->savedSurchargeTypeHasPercentage($groups, $scope, $scopeId);
 
         foreach ($gridValues as $days => $fields) {
             if (!is_array($fields)) {
@@ -157,8 +183,7 @@ class SurchargeGrid extends Value
                 // the JS pass; normalise server-side too.
                 $value = str_replace(',', '.', $value);
 
-                $numericValue = (float)$value;
-                $this->validateValue($type, $numericValue, $days, $maxFixed, $maxPercentage);
+                $this->validateValue($type, $value, $days, $maxFixed, $maxPercentage, $limitColumnVisible);
 
                 $this->configWriter->save($path, $value, $scope, $scopeId);
             }
@@ -174,6 +199,37 @@ class SurchargeGrid extends Value
         );
 
         return parent::afterSave();
+    }
+
+    /**
+     * Whether the surcharge type being saved carries a percentage component,
+     * i.e. whether the grid's Limit column is visible. Read from the POSTed
+     * group first — the type and the grid are saved in the same request, so
+     * the stored value is the PREVIOUS one and would misjudge a merchant
+     * switching type.
+     *
+     * The config fallback is NOT an edge case: when the type field is left on
+     * "Use Default Value" its `<select>` is rendered disabled, browsers do not
+     * submit disabled inputs, and so nothing is posted for it. It is therefore
+     * resolved AT THE SAVING SCOPE — an unscoped read returns the default
+     * scope's value, which is the wrong answer for exactly the store that
+     * inherits a different one.
+     *
+     * @param array<string, mixed> $groups
+     */
+    private function savedSurchargeTypeHasPercentage(array $groups, string $scope, int $scopeId): bool
+    {
+        $posted = $groups['payment_terms']['fields']['surcharge_type']['value'] ?? null;
+        if (is_string($posted) && $posted !== '') {
+            $type = $posted;
+        } else {
+            $path = sprintf('payment/%s/surcharge_type', $this->methodCode());
+            $type = $scope === 'default'
+                ? (string)$this->_config->getValue($path)
+                : (string)$this->_config->getValue($path, $scope, $scopeId);
+        }
+
+        return in_array($type, [SurchargeType::PERCENTAGE, SurchargeType::FIXED_AND_PERCENTAGE], true);
     }
 
     /**
@@ -249,20 +305,71 @@ class SurchargeGrid extends Value
     }
 
     /**
-     * Validate a surcharge field value.
+     * Validate one surcharge cell, as POSTed (a string).
+     *
+     * Takes the RAW string rather than a cast float so it can tell 'abc' —
+     * which casts to 0.0 — from a real zero, and report each on its own
+     * terms. Nothing checked numeric input server-side before: the grid JS
+     * does, but the direct-POST paths this backend exists to cover (curl,
+     * app:config:import, a scripted config:set chain) skip it entirely.
+     *
+     * Note the caller has already returned for an EMPTY cell (it deletes
+     * the config row instead), so `limit` only reaches here when the admin
+     * typed something. Empty and zero are therefore distinguishable: empty
+     * means "no limit", zero is refused outright (TWO-25289).
      *
      * @throws LocalizedException
      */
     private function validateValue(
         string $type,
-        float $value,
+        string $rawValue,
         int $days,
         ?int $maxFixed,
-        int $maxPercentage
+        int $maxPercentage,
+        bool $limitColumnVisible = true
     ): void {
+        if (!is_numeric($rawValue)) {
+            throw new LocalizedException(
+                __('%1 days - %2: value must be a number.', $days, $type)
+            );
+        }
+        // is_numeric('1e400') is true and the cast is INF. `limit` is the one
+        // column with no upper bound, so INF would be stored and then fail the
+        // pricing request at json_encode time, far from the cause.
+        if (!is_finite((float)$rawValue)) {
+            throw new LocalizedException(
+                __('%1 days - %2: value must be a number.', $days, $type)
+            );
+        }
+        $value = (float)$rawValue;
         if ($value < 0) {
             throw new LocalizedException(
                 __('%1 days - %2: value cannot be negative.', $days, $type)
+            );
+        }
+        // A limit of exactly 0 is refused at entry. It is never what an
+        // admin means: the limit bounds the WHOLE fee line — the percentage
+        // part and the fixed amount together, not the percentage alone — so
+        // a limit of 0 silently wipes the fixed amount as well, and nothing
+        // in the grid says so. The intent it is mistaken for
+        // ("charge nothing on this term") is expressible directly, by
+        // entering 0 in both the fixed and percentage cells. An EMPTY limit
+        // is a wholly legitimate configuration meaning "no limit" and is
+        // never rejected — absence and zero are different values.
+        //
+        // round() first, not `=== 0.0`: SurchargeCalculator::convertAmount()
+        // rounds the limit to 2dp before sending it, so a sub-cent limit
+        // (0.001) would pass an exact-zero check and then arrive as a hard
+        // cap of 0.00 — the very outcome being refused, one step later.
+        // Refusing everything that rounds away is what makes "the rounding
+        // direction cannot decide whether a configured cap survives" true.
+        if ($type === 'limit' && $limitColumnVisible && round($value, self::MONEY_DECIMALS) === 0.0) {
+            throw new LocalizedException(
+                __(
+                    '%1 days - limit: a limit of 0 is not allowed. To charge nothing on this term,'
+                    . ' set the fixed amount and percentage to 0 instead, and leave the limit empty.',
+                    $days
+                )
             );
         }
         if ($type === 'fixed' && $maxFixed !== null && $value > $maxFixed) {

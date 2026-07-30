@@ -27,6 +27,14 @@ use Two\Gateway\Service\Api\Adapter;
 class SurchargeCalculator
 {
     /**
+     * Decimal places `cap` and `surcharge` are rounded to before the request.
+     * The API refuses anything finer rather than rounding it itself. Scoped
+     * to those two members deliberately — `gross_amount` and `rounding.step`
+     * are not rounded here.
+     */
+    private const MONEY_DECIMALS = 2;
+
+    /**
      * Maps the merchant's rounding-basis config value to the pricing API's
      * rounding basis enum. A value absent from this map (i.e. "none") means
      * no rounding block is sent.
@@ -248,11 +256,22 @@ class SurchargeCalculator
         //  - a limit of exactly 0 caps the fee at nothing, i.e. no surcharge is
         //    applied, and `cap => 0.0` is how the API is told that.
         //
-        // TWO-25269 briefly threw here on a zero cap, on the premise that
-        // `cap => 0.0` read as "no cap" downstream and would relay an uncapped
-        // percentage. That premise was false: a zero cap clamps the fee to
-        // zero, it never uncaps it. Do not reintroduce the guard, and do not
-        // add admin validation rejecting a typed 0 — 0 is a valid setting.
+        // Do NOT reintroduce a runtime guard here. TWO-25269 briefly threw on
+        // a zero cap, on the premise that `cap => 0.0` read as "no cap"
+        // downstream and would relay an uncapped percentage. That premise was
+        // false — a zero cap bounds the fee at zero, it never uncaps it — and
+        // this path stays faithful to whatever is configured.
+        //
+        // Separately, TWO-25289 stopped a zero limit being CONFIGURABLE in
+        // the first place (Model\Config\Backend\SurchargeGrid::validateValue).
+        // That is not the reverted guard returning under another name: it is an
+        // admin-boundary decision, not a runtime one, and its reason is
+        // different. A merchant who wants no fee on a term says so directly
+        // with 0% and 0 fixed, so a zero limit has no legitimate use; and on
+        // the sibling plugins a zero cap was being normalised to ABSENT and
+        // relayed genuinely uncapped, which overcharges the buyer. Refusing it
+        // at entry closes that across all three plugins. Zero remains valid
+        // and faithfully relayed here for anything already stored.
         if ($hasPercentage && $config['limit'] !== null) {
             $payload['cap'] = $this->convertAmount(
                 (float)$config['limit'],
@@ -329,21 +348,22 @@ class SurchargeCalculator
     /**
      * Convert an amount between currencies if needed.
      *
-     * The result is returned unrounded (`$amount * $rate`); no rounding is
-     * applied here. Since CurrencyRatesProvider returns null rather than a
-     * zero or negative rate, the conversion cannot turn a non-zero configured
-     * amount into zero.
+     * The result is rounded to two decimal places (TWO-25289). The API
+     * rejects monetary values finer than that rather than rounding them, so
+     * an unrounded conversion (e.g. 349 * 0.0872) used to be refused
+     * upstream and reach the buyer as the generic "temporarily unavailable"
+     * error.
      *
-     * KNOWN PRE-EXISTING GAP (not introduced by, and not fixed by, the
-     * TWO-25269 revert): the unrounded result is sent as-is, but the API
-     * rejects monetary values finer than two decimal places rather than
-     * rounding them. A conversion landing on >2dp (e.g. 349 * 0.0872) is
-     * therefore refused upstream and surfaces to the buyer as the generic
-     * "temporarily unavailable" error. Both `cap` and `surcharge` need
-     * rounding to 2dp at this boundary. When that fix lands it must round a
-     * cap AWAY from zero (or special-case zero), because a `cap` of 0.0 is
-     * meaningful — it suppresses the surcharge — so a 0.004 cap must not be
-     * rounded down into it.
+     * Plain half-up rounding is deliberate. The grid refuses any limit a
+     * merchant could CONFIGURE that would round away — not just an explicit
+     * 0 but anything under half a cent
+     * (Model\Config\Backend\SurchargeGrid::validateValue) — so the rounding
+     * direction cannot decide whether a configured cap survives. What remains
+     * is an FX conversion landing under half a cent, which does collapse to
+     * 0.00 and therefore suppresses the fee. That is accepted, not
+     * overlooked: sub-cent caps and away-from-zero rounding are out of scope,
+     * and the case is pinned by
+     * testASubCentCapRoundsDownToZeroWhichIsAcceptedScope.
      *
      * @param int|null $selectedTermDays term the conversion is being made for,
      *                                   for the diagnostic log only
@@ -357,7 +377,10 @@ class SurchargeCalculator
         ?int $selectedTermDays = null
     ): float {
         if ($amount === 0.0 || $fromCurrency === '' || $fromCurrency === $toCurrency) {
-            return $amount;
+            // Still rounded: an admin can type more precision than the API
+            // accepts, so the no-conversion path needs the same 2dp gate as
+            // the converted one.
+            return round($amount, self::MONEY_DECIMALS);
         }
 
         $rate = $this->ratesProvider->getRate($fromCurrency, $toCurrency, $storeId);
@@ -381,6 +404,6 @@ class SurchargeCalculator
             );
         }
 
-        return $amount * $rate;
+        return round($amount * $rate, self::MONEY_DECIMALS);
     }
 }

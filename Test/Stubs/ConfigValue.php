@@ -60,4 +60,16 @@ class Value extends \Magento\Framework\DataObject
     {
         return $this;
     }
+
+    /**
+     * The real base class invalidates the config cache here and returns
+     * $this. A backend model's own afterSave() ends by delegating to it, so
+     * the stub needs it for that override to be callable at all — which is
+     * what lets a test exercise the production afterSave() rather than a
+     * reimplementation of it.
+     */
+    public function afterSave()
+    {
+        return $this;
+    }
 }

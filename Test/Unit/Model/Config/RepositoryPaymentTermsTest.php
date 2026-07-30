@@ -437,6 +437,82 @@ class RepositoryPaymentTermsTest extends TestCase
         $this->assertNull($config['limit']);
     }
 
+    /**
+     * A stored zero is a REAL cap and must survive the read verbatim. A cap of
+     * zero clamps the buyer fee to zero; absence is what means uncapped. This
+     * is the assertion that stops the junk guard below being "simplified" into
+     * a truthiness test, which would turn a zero cap into an uncapped
+     * percentage — the overcharge TWO-25289 exists to close.
+     */
+    public function testGetSurchargeConfigRelaysAStoredZeroLimitVerbatim(): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_30_limit' => '0']);
+        $config = $this->repository->getSurchargeConfig(30);
+        $this->assertNotNull($config['limit'], 'a stored zero is a cap, not an absent cap');
+        $this->assertSame(0.0, $config['limit']);
+    }
+
+    /**
+     * Junk in the stored limit reads as ABSENT, never as a cap.
+     *
+     * The admin grid refuses all of these on save, but the row can still be
+     * written by a hand edit, `bin/magento config:set` or a config import.
+     * Before the guard, `abc` cast to a hard cap of 0.0 and suppressed the fee
+     * outright, and `-10` was relayed as a negative cap that the pricing
+     * request is refused for.
+     *
+     * @dataProvider unusableStoredLimits
+     * @param mixed $stored
+     */
+    public function testGetSurchargeConfigTreatsAnUnusableStoredLimitAsAbsent($stored): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_30_limit' => $stored]);
+        $this->assertNull($this->repository->getSurchargeConfig(30)['limit']);
+    }
+
+    /**
+     * @return array<string, array{0: mixed}>
+     */
+    public static function unusableStoredLimits(): array
+    {
+        return [
+            'non-numeric casts to a fee-suppressing zero' => ['abc'],
+            'negative is refused upstream' => ['-10'],
+            'empty string means no limit' => [''],
+            'whitespace-only means no limit' => ['   '],
+            'non-finite breaks serialisation' => ['1e400'],
+        ];
+    }
+
+    /**
+     * A non-scalar stored limit reads as absent WITHOUT attempting a string
+     * cast. The same hand-edit and import routes that can store junk can store
+     * an array, and casting one to string is a PHP warning rather than an
+     * error — so the null result alone does not pin the guard (the cast yields
+     * "Array", which is non-numeric and lands on null anyway). The assertion
+     * that has to hold is that no diagnostic is raised at all.
+     */
+    public function testGetSurchargeConfigTreatsANonScalarStoredLimitAsAbsentWithoutADiagnostic(): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_30_limit' => ['50']]);
+
+        $raised = [];
+        set_error_handler(
+            static function ($severity, $message) use (&$raised) {
+                $raised[] = $message;
+                return true;
+            }
+        );
+        try {
+            $limit = $this->repository->getSurchargeConfig(30)['limit'];
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertNull($limit);
+        $this->assertSame([], $raised, 'a non-scalar limit must not be cast to string');
+    }
+
     // ── getPaymentTermsType (retained) ──────────────────────────────
 
     public function testGetPaymentTermsTypeDefaultsToStandard(): void
