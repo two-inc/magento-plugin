@@ -126,7 +126,8 @@ define([
          *
          * This is now the ONLY place that derivation exists. The payment tile
          * used to apply the same one to its own company-number field; TWO-25288
-         * removed that field, so this step is the sole hand-typed route.
+         * made that field read-only in every mode, so this step is the sole
+         * hand-typed route.
          */
         needsManualCompanyId: function () {
             return !!this.currentCompanyName() && !$(this.companyIdSelector).val();

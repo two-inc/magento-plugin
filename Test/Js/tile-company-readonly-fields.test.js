@@ -2,40 +2,52 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25288. The payment tile no longer carries a company-number input.
+ * TWO-25288. The payment tile shows the captured company NAME and NUMBER, and
+ * the buyer can neither edit nor remove what was captured.
  *
- * A hand-typed organisation number is not an accepted source: it produces poor
- * data quality, and genuine buyers receive invoices for orders they never
- * placed. For the accepted sources, see the writer enumeration on
+ * This SUPERSEDES the earlier removal of the number input. The reason that
+ * input went away holds — a hand-typed organisation number is not an accepted
+ * source; it produced poor data quality and genuine buyers receiving invoices
+ * for orders they never placed — but removing it also stopped the buyer seeing
+ * what the order would be invoiced against. Read-only keeps the first and
+ * restores the second. For the accepted sources, see the writer enumeration on
  * applyCompanyData() in the renderer — deliberately NOT restated here, because
  * a second copy of that list has already drifted twice.
  *
- * Two groups of tests here, and they are NOT the same kind of test. Be honest
+ * Three groups of tests here, and they are NOT the same kind of test. Be honest
  * about which is which before trusting a green run:
  *
- *  1. REMOVAL PINS — 'the payment tile offers no company-number field'. These
- *     fail if the change is reverted. They are what guards the removal.
+ *  1. READ-ONLY PINS — 'the payment tile shows both company fields, uneditable'.
+ *     These fail against BOTH the removal and any reinstatement as an editable
+ *     field. They are what guards the change.
  *
- *  2. ACCEPTED-SOURCE REGRESSION PINS — most of 'an accepted organisation
- *     number still reaches the order'. These pass against the PRE-change code
- *     too, because every accepted source already wrote the observable before
- *     the input was removed. They do NOT prove anything about the removal. They
- *     exist because the removal makes the observable the ONLY carrier, so a
- *     future change that breaks one of those writer paths would now lose the
- *     number outright rather than fall back to a field — and the sole-trader
- *     routes are the ones most likely to break silently, their value being
- *     minted rather than picked.
+ *  2. WHAT-THE-BUYER-SEES PINS — 'what each capture mode puts in front of the
+ *     buyer'. These do not restate the markup: they read the `value:` binding
+ *     target out of the template, then evaluate it against a renderer driven
+ *     through the real capture flow, so a field bound to the wrong observable
+ *     fails here even though the markup is present and correct.
  *
- *     ONE EXCEPTION, and it belongs to group 1 despite living in group 2's
- *     describe: 'the sole-trader number survives with no number input in the
- *     DOM' asserts there are NO writes to `input#company_id`. Pre-change
- *     fillCompanyData() did `$(this.companyIdSelector).val(companyId)`, so that
- *     test FAILS against the old code and is a removal pin.
+ *  3. ACCEPTED-SOURCE REGRESSION PINS — most of 'an accepted organisation
+ *     number still reaches the order'. These pass against the pre-change code
+ *     too, because every accepted source already wrote the observable. They do
+ *     NOT prove anything about the fields. They exist because the observable is
+ *     the ONLY carrier — the read-only input has no `name` and so submits
+ *     nothing — so a future change that breaks one of those writer paths loses
+ *     the number outright rather than falling back to a field, and the
+ *     sole-trader routes are the ones most likely to break silently, their
+ *     value being minted rather than picked.
  *
- * Group 2 is deliberately asserted through `getData()` rather than the DOM.
+ *     ONE EXCEPTION, and it belongs to group 1 despite living in group 3's
+ *     describe: 'the sole-trader number survives with no write to the number
+ *     field' asserts there are NO writes to `input#company_id`. The renderer
+ *     used to do `$(this.companyIdSelector).val(companyId)`; that must not come
+ *     back, because ko's `value: companyId` binding is now the only painter and
+ *     a second one would let the two desync.
+ *
+ * Group 3 is deliberately asserted through `getData()` rather than the DOM.
  * That is the actual submit path (`Observer/DataAssignObserver.php` reads
- * `additional_data`), and it reads the observable, so it stays true with no
- * input present. Asserting the DOM there would prove nothing.
+ * `additional_data`), and it reads the observable. Asserting the DOM there
+ * would prove nothing.
  */
 
 'use strict';
@@ -60,55 +72,146 @@ function readTemplate() {
 }
 
 /**
- * Strip HTML comments before asserting on markup. The removal left an
- * explanatory comment behind that names `company_id` on purpose, and a raw
- * substring search would match it and mask a real reinstatement.
+ * Strip HTML comments before asserting on markup. Both fields carry long
+ * explanatory comments that name `company_id`, `readonly` and `disabled` on
+ * purpose, and a raw substring search would match those and report a passing
+ * pin for prose.
  */
 function withoutComments(markup) {
     return markup.replace(/<!--[\s\S]*?-->/g, '');
 }
 
-describe('the payment tile offers no company-number field', () => {
-    test('the template declares no company_id input', () => {
-        const markup = withoutComments(readTemplate());
+/**
+ * The <input> tag for `id`, comments already stripped. Throws rather than
+ * returning null: every caller treats a missing field as a failure, and an
+ * `expect(undefined)` further down reports the wrong thing.
+ */
+function inputTag(id) {
+    const markup = withoutComments(readTemplate());
+    const tags = (markup.match(/<input\b[^>]*>/g) || []).filter(function (tag) {
+        return new RegExp('\\bid\\s*=\\s*["\']' + id + '["\']').test(tag);
+    });
+    if (tags.length !== 1) {
+        throw new Error('expected exactly one <input id="' + id + '">, found ' + tags.length);
+    }
+    return tags[0];
+}
 
-        // Scoped to <input> tags, not the whole document. A bare
-        // `not.toMatch(/company_id/)` over all the markup is the strongest pin
-        // but it also forbids a legitimate future reference — a `for="company_id"`
-        // label, a `data-*` marker — and would fail for the wrong reason.
-        //
-        // Regexes rather than substrings: a reinstatement spelled with single
-        // quotes (`id='company_id'`) or through a ko attr binding
-        // (`attr: {id: 'company_id'}`) slips past every plain `toContain` check.
-        const inputTags = markup.match(/<input\b[^>]*>/g) || [];
-        expect(inputTags.length).toBeGreaterThan(0);
-        inputTags.forEach(function (tag) {
-            expect(tag).not.toMatch(/company_id/);
-            expect(tag).not.toMatch(/companyId\b/);
-        });
+/**
+ * What ko would paint into `id`'s value, derived rather than restated: read the
+ * `value:` binding target out of the template, look that name up on a live
+ * renderer, and evaluate it. A field bound to the wrong observable — or to none
+ * — therefore fails here, which a markup substring check cannot catch.
+ */
+function renderedValue(id, renderer) {
+    const bound = inputTag(id).match(/value:\s*([A-Za-z_$][\w$]*)/);
+    if (!bound) {
+        throw new Error('<input id="' + id + '"> has no `value:` binding');
+    }
+    const target = renderer[bound[1]];
+    if (typeof target !== 'function') {
+        throw new Error(
+            '<input id="' + id + '"> is bound to `' + bound[1] + '`, which the renderer has not'
+        );
+    }
+    return target.call(renderer);
+}
 
-        // No ko binding anywhere in the template may write the observable back
-        // from a field, whatever tag it sits on.
-        expect(markup).not.toMatch(/value:\s*companyId\b/);
+/**
+ * Whether `tag` carries `name` as a real HTML ATTRIBUTE — preceded by
+ * whitespace and followed by `=`, `>`, `/` or more whitespace.
+ *
+ * Not `\bname\b`, and the difference is not pedantry: `\breadonly\b` matches
+ * inside the class name `two-company-id-readonly`, because `-` is a non-word
+ * character and therefore a word boundary. Every read-only assertion in this
+ * file passed against a template with the attribute DELETED until this was
+ * anchored — caught by mutation, not by review.
+ */
+function hasAttribute(tag, name) {
+    return new RegExp('\\s' + name + '(?=[\\s=>/])').test(tag);
+}
+
+/**
+ * Whether the buyer can type into `id`, in the state `renderer` is currently
+ * in. A static `readonly`/`disabled` attribute settles it outright; otherwise
+ * the ko `attr` binding's target is evaluated the same way renderedValue() does
+ * it, so a `readonly` bound to an observable is answered for THIS state rather
+ * than assumed.
+ */
+function isReadOnly(id, renderer) {
+    const tag = inputTag(id);
+    if (hasAttribute(tag, 'readonly') || hasAttribute(tag, 'disabled')) {
+        return true;
+    }
+    const bound = tag.match(/\breadonly:\s*([A-Za-z_$][\w$]*)/);
+    if (!bound) {
+        return false;
+    }
+    const target = renderer[bound[1]];
+    if (typeof target !== 'function') {
+        throw new Error(
+            '<input id="' + id + '"> binds readonly to `' + bound[1] + '`, not on the renderer'
+        );
+    }
+    return !!target.call(renderer);
+}
+
+describe('the payment tile shows both company fields, uneditable', () => {
+    test('the number field is declared, bound to companyId, and statically read-only', () => {
+        const tag = inputTag('company_id');
+
+        // `readonly`, NOT `disabled`. A disabled control is dropped from the
+        // submitted form and skipped by jQuery Validation's `elements()`; the
+        // distinction is what made the old editable-state derivation load-bearing
+        // and is exactly what must not come back.
+        expect(hasAttribute(tag, 'readonly')).toBe(true);
+        expect(hasAttribute(tag, 'disabled')).toBe(false);
+        expect(tag).toMatch(/value:\s*companyId\b/);
+
+        // Static, not bound: there is no mode in which this may be typed, so no
+        // observable may be able to turn it off. `readonly: <expr>` inside a
+        // data-bind would match the `\breadonly\b` above, so rule it out
+        // explicitly rather than relying on that assertion to have meant it.
+        expect(tag).not.toMatch(/\breadonly\s*:/);
     });
 
-    test('the template still declares the required company_name input', () => {
-        // The name field stays. Address-step name capture is Magento core's
-        // `company` attribute, gated on `customer/address/company_show`, which
-        // this module does not own — so removing this input could leave a shop
-        // with no company-name capture at all.
-        const markup = withoutComments(readTemplate());
-
-        expect(markup).toContain('id="company_name"');
-        expect(markup).toContain('name="payment[company_name]"');
-        expect(markup).toContain('value: companyName');
+    test('the number field carries no name, so it submits nothing', () => {
+        // getData() → `additional_data` is the submit path. A `name` here would
+        // add a SECOND carrier for the same value, free to disagree with the
+        // observable, which is how a stale number reaches an order.
+        expect(inputTag('company_id')).not.toMatch(/\sname\s*=/);
     });
 
-    test('company_name is the only required input left inside the payment form', () => {
-        // Pins what `$(formSelector).valid()` can still enforce. It is NOT
-        // trivially true — the name field keeps it meaningful — but it no longer
-        // says anything about the organisation number. Model/Two.php::authorize()
-        // is the only enforcement for that.
+    test('the name field is read-only exactly in sole-trader mode', () => {
+        // Not a static attribute, and the asymmetry is the point. Sole trader is
+        // the one mode where this node is a plain text box holding a captured
+        // name. In search mode select2 replaces it; in manual-entry mode the
+        // buyer MUST be able to type. A static `readonly` bricks manual entry.
+        const { renderer } = loadRendererOnly();
+
+        renderer.showSoleTrader(true);
+        expect(isReadOnly('company_name', renderer)).toBe(true);
+
+        renderer.showSoleTrader(false);
+        expect(isReadOnly('company_name', renderer)).toBe(false);
+    });
+
+    test('the name field keeps its required flag and its submit name', () => {
+        // Address-step name capture is Magento core's `company` attribute, gated
+        // on `customer/address/company_show`, which this module does not own — so
+        // weakening this input could leave a shop with no company-name capture.
+        const tag = inputTag('company_name');
+
+        expect(hasAttribute(tag, 'required')).toBe(true);
+        expect(tag).toMatch(/name="payment\[company_name\]"/);
+        expect(tag).toMatch(/value:\s*companyName\b/);
+    });
+
+    test('company_name is still the only required input in the payment form', () => {
+        // Pins what `$(formSelector).valid()` enforces. The number field is
+        // deliberately NOT required: a read-only empty required field fails
+        // validation with no way for the buyer to satisfy it.
+        // Model/Two.php::authorize() is the only enforcement for the number.
         const markup = withoutComments(readTemplate());
 
         // Every spelling jQuery Validation would honour, not just
@@ -116,19 +219,18 @@ describe('the payment tile offers no company-number field', () => {
         // `data-validate` form all count.
         const requiredInputs = (markup.match(/<input\b[^>]*>/g) || []).filter(function (tag) {
             return (
-                /\brequired\b/.test(tag) ||
+                hasAttribute(tag, 'required') ||
                 /data-validate\s*=\s*["'][^"']*required/.test(tag)
             );
         });
 
         expect(requiredInputs).toHaveLength(1);
-        // The one remaining required input must be the company NAME field —
-        // checking the tag itself rather than "what precedes the first match",
-        // which said nothing about a second required field added later.
         expect(requiredInputs[0]).toMatch(/\bid\s*=\s*["']company_name["']/);
     });
 
-    test('the renderer keeps no apparatus for a field that is gone', () => {
+    test('the renderer keeps no editable-state apparatus for the number', () => {
+        // The field is back but its editability derivation is not, and must not
+        // be: `readonly` is static, so nothing may compute it.
         const { renderer } = loadRendererOnly();
 
         expect(renderer.companyIdSelector).toBeUndefined();
@@ -138,7 +240,7 @@ describe('the payment tile offers no company-number field', () => {
         expect(renderer.companyNameSelector).toBe('input#company_name');
     });
 
-    test('clearCompany carries no disable argument and touches no number field', () => {
+    test('clearCompany takes no disable argument and touches no number field', () => {
         const { renderer } = loadRendererOnly();
 
         // Guard the subject first. `String(undefined)` is the string
@@ -157,6 +259,82 @@ describe('the payment tile offers no company-number field', () => {
         expect(source).not.toContain('disableCompanyId');
         expect(source).not.toContain('companyIdSelector');
         expect(source).not.toContain('company_id');
+    });
+});
+
+describe('what each capture mode puts in front of the buyer', () => {
+    test('search mode: the buyer sees the picked name AND its number', () => {
+        const { renderer } = loadRendererOnly();
+
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+
+        expect(renderedValue('company_name', renderer)).toBe('First Example Ltd');
+        expect(renderedValue('company_id', renderer)).toBe('12345678');
+        // Visible, and still not editable.
+        expect(isReadOnly('company_id', renderer)).toBe(true);
+    });
+
+    test('sole-trader mode: the minted name and number show, both uneditable', () => {
+        const { renderer } = loadRendererOnly();
+
+        renderer.prefetched = {
+            ready: true,
+            matches: true,
+            buyer: {
+                organization_number: 'ST-SYNTH-004',
+                company_name: 'Sole Trader Example'
+            }
+        };
+        renderer.soleTraderMode();
+
+        expect(renderedValue('company_name', renderer)).toBe('Sole Trader Example');
+        expect(renderedValue('company_id', renderer)).toBe('ST-SYNTH-004');
+        expect(isReadOnly('company_id', renderer)).toBe(true);
+        // The name too, on this mode only — see the asymmetry test above.
+        expect(isReadOnly('company_name', renderer)).toBe(true);
+    });
+
+    test('manual-entry mode: the number reads blank and stays read-only', () => {
+        // Driven through the real manual-entry path — clearCompany() is what the
+        // sentinel row's handler calls — not by poking the observable, so this
+        // fails if that path stops clearing the abandoned company's number.
+        const { renderer } = loadRendererOnly();
+
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+        expect(renderedValue('company_id', renderer)).toBe('12345678');
+
+        renderer.clearCompany();
+
+        expect(renderedValue('company_id', renderer)).toBe('');
+        expect(isReadOnly('company_id', renderer)).toBe(true);
+        // …and the name is typeable, which is the whole point of the mode.
+        expect(isReadOnly('company_name', renderer)).toBe(false);
+    });
+
+    test('an identifier-less pick shows the name with a blank number', () => {
+        // The other route to a blank number: the registry holds no identifier
+        // for the picked company. Distinct from manual entry — a company IS
+        // selected here.
+        const { renderer } = loadRendererOnly();
+
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+        renderer.applyCompanyData(
+            { companyName: 'Second Example Ltd', companyId: '' },
+            { authoritative: true }
+        );
+
+        expect(renderedValue('company_name', renderer)).toBe('Second Example Ltd');
+        expect(renderedValue('company_id', renderer)).toBe('');
+        expect(isReadOnly('company_id', renderer)).toBe(true);
     });
 });
 
@@ -308,10 +486,11 @@ describe('an accepted organisation number still reaches the order', () => {
         expect(renderer.getData().additional_data.companyId).toBe('ST-SYNTH-003');
     });
 
-    test('the sole-trader number survives with no number input in the DOM', () => {
-        // The point of the whole change: the value never needed a field. Prove
-        // the renderer wrote nothing to the old selector while still delivering
-        // the number to the submit path.
+    test('the sole-trader number survives with no write to the number field', () => {
+        // ko's `value: companyId` binding is the ONLY painter of the read-only
+        // input. Prove the renderer writes nothing to that selector itself while
+        // still delivering the number to the submit path — a second painter
+        // could disagree with the observable, and the observable is what ships.
         const { renderer, dom } = loadRendererOnly();
 
         renderer.fillCompanyData({
@@ -331,6 +510,39 @@ describe('an accepted organisation number still reaches the order', () => {
             return w[0] === 'input#company_name';
         });
         expect(nameFieldWrites).toEqual([['input#company_name', 'Sole Trader Example']]);
+    });
+
+    test('showing the number read-only does not change what the form submits', () => {
+        // The regression this guards: reinstating the input as a carrier — a
+        // `name`, or a DOM read in getData() — so the payload could come from
+        // the field instead of the observable. Asserted against the WHOLE
+        // additional_data payload rather than the two keys, because a new
+        // company key smuggled in beside them is the same defect.
+        const { renderer, dom } = loadRendererOnly();
+
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+
+        const additional = renderer.getData().additional_data;
+        expect(additional.companyName).toBe('First Example Ltd');
+        expect(additional.companyId).toBe('12345678');
+        expect(
+            Object.keys(additional).filter(function (key) {
+                return /company/i.test(key);
+            })
+        ).toEqual(['companyName', 'companyId']);
+
+        // getData() must not have consulted the DOM for either value: with a
+        // recording double every node reports an empty `val()`, so a DOM read
+        // would have produced '' above. Belt-and-braces on that, prove the
+        // renderer never wrote the number field either.
+        expect(
+            dom.writes.filter(function (w) {
+                return w[0] === 'input#company_id';
+            })
+        ).toEqual([]);
     });
 
     test('an identifier-less selection leaves the number empty for the server to refuse', () => {

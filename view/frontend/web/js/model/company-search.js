@@ -394,10 +394,11 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                          *
                          * Where the buyer can then TYPE that number is the
                          * address step only. The payment tile used to re-enable
-                         * a company-number field of its own; TWO-25288 removed
-                         * that field, so on the payment step an empty
-                         * `companyId` now just stays empty and the order is
-                         * refused server-side by Model/Two.php::authorize().
+                         * a company-number field of its own; TWO-25288 made
+                         * that field read-only, so on the payment step an empty
+                         * `companyId` stays empty — it is shown to the buyer,
+                         * not offered to them — and the order is refused
+                         * server-side by Model/Two.php::authorize().
                          */
                         const identifier =
                             item.national_identifier && item.national_identifier.id

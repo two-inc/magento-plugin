@@ -358,8 +358,10 @@ define([
          * its organisation number. Before the routing existed that shape was a
          * harmless no-op on the read path, and it has to stay one.
          *
-         * No editable state is derived for the organisation number: the tile has
-         * no company-number input to derive one for (TWO-25288).
+         * No editable state is derived for the organisation number. The tile
+         * does display it again (TWO-25288), but that input is `readonly`
+         * unconditionally, so there is no state to derive — and it carries no
+         * `name`, so it is a display of `companyId()` and never a writer of it.
          *
          * Writers of `companyId()` — four paths, not three; the last two are
          * easy to conflate and are NOT the same thing:
@@ -401,9 +403,11 @@ define([
          * identifier.
          *
          * No order intent is placed here, and the buyer has no way to supply
-         * the missing identifier on this step any more — the tile's
-         * company-number input is gone (TWO-25288). The one remaining manual
-         * route is the address step's field, which publishes what it is given
+         * the missing identifier on this step. The tile's company-number input
+         * is displayed again (TWO-25288) but is `readonly`, so it renders the
+         * empty number rather than offering a route to fill it. The one
+         * remaining manual route is the address step's field, which publishes
+         * what it is given
          * to the `companyData` customer-data section; that arrives back here as
          * an authoritative notification and reaches fillCompanyData(), so that
          * route does get intent-checked.
@@ -999,11 +1003,14 @@ define([
             // buyer who has moved on to another field.
             let pendingOpen = !!(options && options.openDropdown);
             require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
-                // No `$.async('input#company_id')` block here. The tile has no
-                // company-number input to resolve, derive an editable state
-                // for, or subscribe the observables to — TWO-25288 removed it,
-                // because a hand-typeable organisation number is not an
-                // accepted source for one.
+                // No `$.async('input#company_id')` block here. The tile does
+                // show a company-number input again (TWO-25288), but it is
+                // `readonly` in every mode and ko's `value: companyId` binding
+                // paints it — so there is no editable state to resolve the node
+                // for, derive, or subscribe the observables to. A
+                // hand-typeable organisation number is still not an accepted
+                // source; showing the captured one is not the same thing as
+                // offering to take a typed one.
                 $.async(self.companyNameSelector, function (companyNameField) {
                     // `$.async` is a MutationObserver, and every call to
                     // enableCompanySearch() adds another one, so on a
@@ -1255,17 +1262,34 @@ define([
             });
         },
         /**
-         * PRE-EXISTING, flagged rather than changed: this writes the DOM field
-         * only and never clears `companyName()` / `companyId()`, so after the
-         * manual-entry row is picked the name input reads empty while the
-         * observables still hold the previously selected company. Out of scope
-         * here; noted so it is not mistaken for new behaviour.
+         * Abandon the selected company: blank the name input and tear the
+         * search widget down. Callers are the manual-entry row and
+         * enterSoleTraderUi().
          *
-         * The `disableCompanyId` parameter is gone with the company-number
-         * input it used to lock (TWO-25288).
+         * `companyId()` IS cleared here, and that is a deliberate change
+         * (TWO-25288). While the tile had no company-number field the stale
+         * observable was invisible and was flagged as out of scope; now that
+         * the number is displayed read-only, leaving it set would show the
+         * buyer the ABANDONED company's registry number, uneditable, beside a
+         * name field they are being asked to retype — and getData() would
+         * submit that number under the new name. Submitting one company's
+         * organisation number under another company's name is precisely the
+         * bug the selection-authority half of this ticket fixed; the field
+         * becoming visible only made it observable.
+         *
+         * `companyName()` is deliberately NOT cleared. It is read after this
+         * call on the sole-trader path — getAutofillData() prefills the signup
+         * popup from it — and by the intent-approved notice. Leaving it is the
+         * PRE-EXISTING behaviour (the name INPUT reads empty while the
+         * observable still holds the previous company); clearing it is a
+         * separate question from the one this change forces.
+         *
+         * With the number empty and no client-side gate, an order placed from
+         * this state is refused by Model/Two.php::authorize().
          */
         clearCompany: function () {
             $(this.companyNameSelector).val('');
+            this.companyId('');
             this.disableCompanySearch();
         },
         /**

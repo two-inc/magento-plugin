@@ -531,24 +531,28 @@
 }
 
 /*
- * TWO-25288. Grey inline hint showing the selected company's registry id
- * beside the payment tile's company-name field, once a company has been
- * picked. Purely cosmetic — carries no value of its own; `companyId()` in
- * gateway_method.js remains the sole authoritative source read by getData().
+ * TWO-25288. The payment tile's read-only company-number input. It replaced the
+ * grey inline hint that briefly stood in for it: the number is now a labelled
+ * field of its own, shown to the buyer so they can check what the order will be
+ * invoiced against, and never editable on this step.
+ *
+ * Styled to READ as uneditable, because `readonly` alone renders identically to
+ * a normal input in most themes and an input the buyer cannot type into but
+ * which looks like they can is worse than either state on its own. The
+ * `readonly` attribute in the template is what actually enforces it; this is
+ * only the affordance.
+ *
+ * The second selector covers the company-NAME input, whose `readonly` is bound
+ * and true in sole-trader mode only. Scoped to this module's own form rather
+ * than written as a bare `input[readonly]`: this stylesheet is loaded for the
+ * whole storefront and an unscoped rule would repaint every read-only input on
+ * the page, none of which this module owns.
  */
-.two-company-name-control {
-    position: relative;
-}
-
-.two-company-id-hint {
-    position: absolute;
-    right: 24px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: #dddddd;
-    font-size: 12px;
-    white-space: nowrap;
-    pointer-events: none;
+.two-company-id-readonly,
+#two_gateway_form input.input-text[readonly] {
+    background-color: #f5f5f5;
+    color: #666666;
+    cursor: default;
 }
 
 /*
