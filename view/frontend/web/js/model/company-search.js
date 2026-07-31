@@ -392,13 +392,15 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                          * kept the previous company's organisation number and
                          * submitted it under this company's name.
                          *
-                         * Where the buyer can then TYPE that number is the
-                         * address step only. The payment tile used to re-enable
-                         * a company-number field of its own; TWO-25288 made
-                         * that field read-only, so on the payment step an empty
-                         * `companyId` stays empty — it is shown to the buyer,
-                         * not offered to them — and the order is refused
-                         * server-side by Model/Two.php::authorize().
+                         * The buyer cannot then TYPE that number ANYWHERE. The
+                         * payment tile used to re-enable a company-number field
+                         * of its own; TWO-25288 made that field read-only, so an
+                         * empty `companyId` stays empty — it is shown to the
+                         * buyer, not offered to them. The address step's field
+                         * is not a fallback either: it is CSS-hidden
+                         * unconditionally. An identifier-less company is
+                         * therefore refused server-side by
+                         * Model/Two.php::authorize().
                          */
                         const identifier =
                             item.national_identifier && item.national_identifier.id

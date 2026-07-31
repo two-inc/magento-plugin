@@ -265,6 +265,34 @@ define([
             }
             this._super();
         },
+        /**
+         * Whether the company-NAME input is locked against the buyer.
+         *
+         * A plain function, not a computed: the template calls it inside a ko
+         * `attr` binding, so ko tracks the two observables read here as
+         * dependencies of that binding and re-evaluates when either changes. No
+         * subscription to dispose, and — unlike a computed built in initialize()
+         * — it exists on renderers the unit tests load without booting.
+         *
+         * Gated on `companyId()`, NOT on sole-trader mode alone. Sole trader is
+         * the only mode where this node is a plain text box holding a captured
+         * name, but entering that mode does not guarantee a name has been
+         * captured: enterSoleTraderUi() blanks the input, and the autofill that
+         * refills it only lands when the prefetch matched a buyer. On the
+         * unmatched branch the buyer is sent to signup and may abandon it, and
+         * fillCompanyData() early-returns unless BOTH name and number are
+         * non-empty — so keying on the mode alone left a BLANK, `readonly`,
+         * `required` input that no buyer action could satisfy and that jQuery
+         * Validation still enforces (`elements()` skips `:disabled`, not
+         * `[readonly]`). Locking only once a number has actually been captured
+         * means every state where the field is empty is a state the buyer can
+         * type into.
+         *
+         * @returns {boolean}
+         */
+        isCompanyNameReadOnly: function () {
+            return this.showSoleTrader() && !!this.companyId();
+        },
         selectTerm: function (days) {
             surchargeModel.selectTerm(days);
         },
@@ -402,18 +430,22 @@ define([
          * Writes the name and CLEARS any previously selected company's
          * identifier.
          *
-         * No order intent is placed here, and the buyer has no way to supply
-         * the missing identifier on this step. The tile's company-number input
-         * is displayed again (TWO-25288) but is `readonly`, so it renders the
-         * empty number rather than offering a route to fill it. The one
-         * remaining manual route is the address step's field, which publishes
-         * what it is given
-         * to the `companyData` customer-data section; that arrives back here as
-         * an authoritative notification and reaches fillCompanyData(), so that
-         * route does get intent-checked.
+         * No order intent is placed here, and — read this before assuming an
+         * escape hatch exists — the buyer has NO way to supply the missing
+         * identifier, on this step or any other. The tile's company-number
+         * input is displayed again (TWO-25288) but is `readonly`. The address
+         * step's own company-number field is still in the DOM and still
+         * publishes to the `companyData` customer-data section if something
+         * fills it, but it is CSS-hidden unconditionally
+         * (`.two-company-id-hidden`, applied by
+         * Plugin/Model/Checkout/LayoutProcessorPlugin.php with nothing anywhere
+         * removing the class), so no buyer reaches it either.
          *
          * An order left in this state — company name set, identifier empty — is
-         * refused server-side by Model/Two.php::authorize().
+         * therefore a dead end by design: it is refused server-side by
+         * Model/Two.php::authorize(), and the buyer's only route forward is to
+         * pick a company the registry does hold an identifier for, or to use
+         * another payment method.
          */
         selectCompanyWithoutIdentifier: function (companyName) {
             console.debug({ logger: 'twoPayment.selectCompanyWithoutIdentifier', companyName });

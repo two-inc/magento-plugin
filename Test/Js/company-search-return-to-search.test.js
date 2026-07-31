@@ -474,8 +474,11 @@ function enterManualPayment($, ctx) {
     });
     // Guard: if the handler deferred nothing, the trigger never reached it and
     // every "widget is gone" assertion downstream would be checking a widget
-    // that was never asked to go.
-    expect(ctx.__flushDeferred()).toBeGreaterThan(0);
+    // that was never asked to go. EXACTLY one, not "at least one": the injected
+    // setTimeout catches every timer the module sets — showErrorMessage()'s
+    // dismissal timer is the other one — so a loose lower bound would be
+    // satisfied by a queued callback that has nothing to do with manual entry.
+    expect(ctx.__flushDeferred()).toBe(1);
 }
 
 /**

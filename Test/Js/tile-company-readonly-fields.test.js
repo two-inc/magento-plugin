@@ -182,7 +182,7 @@ describe('the payment tile shows both company fields, uneditable', () => {
         expect(inputTag('company_id')).not.toMatch(/\sname\s*=/);
     });
 
-    test('the name field is read-only exactly in sole-trader mode', () => {
+    test('the name field is read-only only once a company has been captured', () => {
         // Not a static attribute, and the asymmetry is the point. Sole trader is
         // the one mode where this node is a plain text box holding a captured
         // name. In search mode select2 replaces it; in manual-entry mode the
@@ -190,9 +190,58 @@ describe('the payment tile shows both company fields, uneditable', () => {
         const { renderer } = loadRendererOnly();
 
         renderer.showSoleTrader(true);
+        renderer.fillCompanyData({
+            companyName: 'Sole Trader Example',
+            companyId: 'ST-SYNTH-005'
+        });
         expect(isReadOnly('company_name', renderer)).toBe(true);
 
         renderer.showSoleTrader(false);
+        expect(isReadOnly('company_name', renderer)).toBe(false);
+    });
+
+    test('the name field is never both empty and locked', () => {
+        // THE REGRESSION THIS GUARDS, and it is not hypothetical — the first
+        // draft of this change shipped it. The input is `required`, and jQuery
+        // Validation enforces `required` on a `[readonly]` field (its
+        // `elements()` skips `:disabled` only). So a state that is both empty
+        // and locked is a validation error with no buyer action that clears it.
+        //
+        // Reached by entering sole-trader mode where the prefetch did NOT match
+        // a buyer: enterSoleTraderUi() blanks the input and the autofill never
+        // lands, because fillCompanyData() early-returns unless BOTH name and
+        // number are non-empty. Keying `readonly` on the mode alone stranded the
+        // buyer here.
+        //
+        // Driven through enterSoleTraderUi(), which is the sub-path
+        // soleTraderMode() runs FIRST on every branch. The rest of the unmatched
+        // branch is signup-popup plumbing — getAutofillData() needs `btoa` and
+        // openIframe() needs `window.open`, neither of which the AMD sandbox
+        // provides — and none of it touches the state under test.
+        const { renderer } = loadRendererOnly();
+
+        renderer.enterSoleTraderUi();
+
+        expect(renderer.showSoleTrader()).toBe(true);
+        expect(renderedValue('company_id', renderer)).toBe('');
+        // The name the buyer must now supply by hand — so the field cannot be
+        // locked, whatever mode says.
+        expect(isReadOnly('company_name', renderer)).toBe(false);
+    });
+
+    test('a prior search does not leave the name locked after switching to sole trader', () => {
+        // Same trap by a different route: a captured company, THEN the mode
+        // switch. enterSoleTraderUi() → clearCompany() blanks the input AND the
+        // number, and on the unmatched-prefetch branch nothing refills either.
+        const { renderer } = loadRendererOnly();
+
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+        renderer.enterSoleTraderUi();
+
+        expect(renderedValue('company_id', renderer)).toBe('');
         expect(isReadOnly('company_name', renderer)).toBe(false);
     });
 
@@ -293,7 +342,9 @@ describe('what each capture mode puts in front of the buyer', () => {
         expect(renderedValue('company_name', renderer)).toBe('Sole Trader Example');
         expect(renderedValue('company_id', renderer)).toBe('ST-SYNTH-004');
         expect(isReadOnly('company_id', renderer)).toBe(true);
-        // The name too, on this mode only — see the asymmetry test above.
+        // The name too, because a name AND number were actually captured — see
+        // the two "never both empty and locked" cases for the branch where they
+        // were not.
         expect(isReadOnly('company_name', renderer)).toBe(true);
     });
 
@@ -420,9 +471,12 @@ function makeRecordingDom() {
     return { $: $, node: node, writes: writes };
 }
 
-function loadRendererOnly() {
+function loadRendererOnly(extraMocks) {
     const dom = makeRecordingDom();
-    const renderer = loadAmdModule(RENDERER, { jquery: dom.$ });
+    const renderer = loadAmdModule(
+        RENDERER,
+        Object.assign({ jquery: dom.$ }, extraMocks || {})
+    );
     // `getCode()` comes from the Magento Component base class, which the
     // harness's Component double does not provide.
     renderer.getCode = function () {

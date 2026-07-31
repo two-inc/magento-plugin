@@ -15,13 +15,15 @@
  * sent company A's number under company B's name. A selection has to be
  * authoritative.
  *
- * The editability half of that fix is GONE, and so are the tests for it:
- * TWO-25288 removed the tile's company-number input outright, because a
- * hand-typed organisation number is not an accepted source. There is no field
- * to enable or disable on this surface any more, and an identifier-less
- * selection is refused server-side by Model/Two.php::authorize(). What is
- * pinned below is the observable state a selection leaves behind — see
- * tile-company-number-removed.test.js for the removal itself.
+ * The editability half of that fix is GONE, and so are the tests for it. The
+ * tile's company-number input was first removed outright and is now back but
+ * `readonly` in every mode (TWO-25288), because a hand-typed organisation
+ * number is not an accepted source — showing the captured one is not the same
+ * as offering to take a typed one. Either way there is no field to enable or
+ * disable on this surface, and an identifier-less selection is refused
+ * server-side by Model/Two.php::authorize(). What is pinned below is the
+ * observable state a selection leaves behind — see
+ * tile-company-readonly-fields.test.js for the fields themselves.
  *
  * LIMITATION OF THE jQuery DOUBLE BELOW — read before trusting a passing test
  * here. `node.on()` stores ONE handler per event name and `node.off()` is a
@@ -30,8 +32,9 @@
  * therefore say anything about handler ORDERING or handler COEXISTENCE.
  *
  * That is not academic: it is exactly how a `change` handler on the tile's
- * former company-number input got here looking correct. The template bound
- * `value: companyId`, so ko's `value` binding was already listening on that
+ * company-number input got here looking correct, back when that input was
+ * editable. The template binds `value: companyId`, so ko's `value` binding was
+ * already listening on that
  * same `change` event and was registered first (at applyBindings, before
  * `$.async` runs) — ko wrote `companyId()` before any later handler saw the
  * event, which made the later handler's "did the value change?" check trivially

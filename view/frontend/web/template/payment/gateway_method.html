@@ -169,16 +169,25 @@
                     <div class="control">
                         <!--
                             `readonly` is BOUND, not static, and the binding is
-                            what keeps manual entry usable. In sole-trader mode
-                            this input is a plain text box holding a name the
-                            autofill response captured, and the buyer must not
-                            be able to edit or clear it. In the other two modes
-                            it must stay writable: company search replaces this
-                            node with its own select2 chrome (so the buyer never
-                            types here anyway), and manual entry tears the
+                            what keeps this field satisfiable. In sole-trader
+                            mode this input is a plain text box holding a name
+                            the autofill response captured, and the buyer must
+                            not be able to edit or clear it. In the other two
+                            modes it must stay writable: company search replaces
+                            this node with its own select2 chrome (so the buyer
+                            never types here anyway), and manual entry tears the
                             widget down precisely so the buyer CAN type a name
-                            by hand. A static `readonly` here would brick that
-                            third mode outright. See TWO-25288.
+                            by hand. A static `readonly` here would brick manual
+                            entry outright.
+
+                            isCompanyNameReadOnly() is deliberately narrower
+                            than sole-trader mode — see its docblock in
+                            gateway_method.js. This input is `required`, and
+                            jQuery Validation enforces that on a `[readonly]`
+                            field (it skips only `:disabled`), so any state
+                            where the field can be both empty and locked is a
+                            validation error the buyer has no way to clear.
+                            See TWO-25288.
                         -->
                         <input
                             type="text"
@@ -188,7 +197,7 @@
                             data-bind='
                             attr: {
                                 title: $t("Company Name"),
-                                readonly: showSoleTrader
+                                readonly: isCompanyNameReadOnly()
                             },
                             value: companyName'
                             class="input-text"
