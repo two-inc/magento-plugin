@@ -40,13 +40,16 @@
 const { loadAmdModule, defaultMocks } = require('./amd-harness');
 
 /**
- * The shipping surface reaches manual entry through a row INSIDE the results
- * list, so the model decides what counts as that row. Sentinel-based override
- * of that one predicate, everything else inert.
+ * BOTH surfaces reach manual entry through a row INSIDE the results list, so
+ * the model decides what counts as that row. Sentinel-based override of that
+ * one predicate; `getSearchFieldContainer` answers "this bind is still current"
+ * (the default mock returns null, and the payment surface's deferred teardown
+ * reads `.length` off it), everything else inert.
  */
 function manualEntryAwareCompanySearch() {
     return Object.assign({}, defaultMocks()['Two_Gateway/js/model/company-search'], {
-        isManualEntryOption: function (data) { return !!(data && data.__manualEntry); }
+        isManualEntryOption: function (data) { return !!(data && data.__manualEntry); },
+        getSearchFieldContainer: function () { return { length: 1 }; }
     });
 }
 
@@ -380,10 +383,28 @@ function buildPaymentDom() {
 }
 
 function loadPayment($) {
+    // The manual-entry teardown is deliberately deferred out of select2's own
+    // dispatch, so the test has to be able to run that deferral. `jest.useFakeTimers()`
+    // cannot reach it: the AMD harness copies the REAL `setTimeout` into its vm
+    // sandbox when the module loads, so a later timer swap patches a binding the
+    // module never sees. Queue the callbacks and flush them explicitly instead —
+    // which also keeps the defer visible rather than collapsing it to a
+    // synchronous call and quietly changing what is under test.
+    const deferred = [];
     const component = loadAmdModule(
         'view/frontend/web/js/view/payment/method-renderer/gateway_method.js',
-        { jquery: $ },
-        { document: document, window: window }
+        {
+            jquery: $,
+            'Two_Gateway/js/model/company-search': manualEntryAwareCompanySearch()
+        },
+        {
+            document: document,
+            window: window,
+            setTimeout: function (fn) {
+                deferred.push(fn);
+                return deferred.length;
+            }
+        }
     );
 
     const ctx = Object.assign(Object.create(component.prototype || {}), {
@@ -397,23 +418,64 @@ function loadPayment($) {
         companyName: Object.assign(function () { return ''; }, {
             subscribe: function () { return { dispose: function () {} }; }
         }),
+        // clearCompany() blanks the abandoned company's number (TWO-25288), so
+        // the fixture has to carry a writable `companyId` — a bare read-only
+        // stub would throw inside the production path this file drives.
+        companyId: (function () {
+            let value = '';
+            const observable = function (next) {
+                if (!arguments.length) return value;
+                value = next;
+                return undefined;
+            };
+            observable.subscribe = function () { return { dispose: function () {} }; };
+            return observable;
+        })(),
         fillCompanyData: function () {},
         applyCompanyData: function () {},
         addressLookup: function () { return null; },
         clearCompany: component.clearCompany,
         disableCompanySearch: component.disableCompanySearch,
         destroyCompanySearchWidget: component.destroyCompanySearchWidget,
-        enableCompanySearch: component.enableCompanySearch
+        enableCompanySearch: component.enableCompanySearch,
+        // Test-only hook, prefixed so it cannot be mistaken for production
+        // surface. Runs whatever the module deferred, in order, and reports how
+        // many callbacks there were so a caller can refuse to trust a run in
+        // which nothing was deferred at all.
+        __flushDeferred: function () {
+            let ran = 0;
+            while (deferred.length) {
+                deferred.shift()();
+                ran += 1;
+            }
+            return ran;
+        }
     });
     return { component: component, ctx: ctx };
 }
 
 /**
- * Payment surface: manual entry is still a link appended below the results,
- * bound on `select2:open`.
+ * Payment surface: manual entry is a row in the results list here TOO, and has
+ * been since it stopped being a `#billing_enter_details_manually` link below
+ * them. This helper clicked that link until the two changes landed in the wrong
+ * order — the link's removal merged after this file did, so the click found no
+ * node and four cases failed on the shared base rather than on any branch.
+ *
+ * Two differences from the shipping route, both load-bearing:
+ *  - the teardown is DEFERRED out of select2's own dispatch (`setTimeout(…, 0)`),
+ *    so the timer has to be flushed or nothing has happened yet;
+ *  - it is gated on the bind still being current, which is what
+ *    `getSearchFieldContainer` answers in the mock above.
  */
 function enterManualPayment($, ctx) {
-    click($, ctx.enterDetailsManuallyButton);
+    $(ctx.companyNameSelector).trigger('select2:selecting', {
+        params: { args: { data: { __manualEntry: true } } },
+        preventDefault: function () {}
+    });
+    // Guard: if the handler deferred nothing, the trigger never reached it and
+    // every "widget is gone" assertion downstream would be checking a widget
+    // that was never asked to go.
+    expect(ctx.__flushDeferred()).toBeGreaterThan(0);
 }
 
 /**
