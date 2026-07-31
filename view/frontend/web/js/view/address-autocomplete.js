@@ -124,9 +124,15 @@ define([
          * The buyer has to supply the company number by hand exactly when a
          * company is in play but no registry identifier came with it.
          *
-         * This is now the ONLY place that derivation exists. The payment tile
-         * used to apply the same one to its own company-number field; TWO-25288
-         * removed that field, so this step is the sole hand-typed route.
+         * This is now the ONLY place that derivation exists — but read that as
+         * "the only surviving copy of the code", NOT as "the surviving route for
+         * the buyer". The payment tile used to apply the same derivation to its
+         * own company-number field; TWO-25288 made that field read-only in every
+         * mode. This step's field is no route either: it is CSS-hidden
+         * unconditionally (`.two-company-id-hidden`), so the derivation still
+         * runs and still gates a field nobody can see. Nothing in the plugin
+         * currently lets a buyer hand-type an organisation number; an
+         * identifier-less company is refused by Model/Two.php::authorize().
          */
         needsManualCompanyId: function () {
             return !!this.currentCompanyName() && !$(this.companyIdSelector).val();

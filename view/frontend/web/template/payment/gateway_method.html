@@ -166,7 +166,29 @@
                     <label for="company_name" class="label">
                         <span><!-- ko i18n: 'Company Name'--><!-- /ko --></span>
                     </label>
-                    <div class="control two-company-name-control">
+                    <div class="control">
+                        <!--
+                            `readonly` is BOUND, not static, and the binding is
+                            what keeps this field satisfiable. In sole-trader
+                            mode this input is a plain text box holding a name
+                            the autofill response captured, and the buyer must
+                            not be able to edit or clear it. In the other two
+                            modes it must stay writable: company search replaces
+                            this node with its own select2 chrome (so the buyer
+                            never types here anyway), and manual entry tears the
+                            widget down precisely so the buyer CAN type a name
+                            by hand. A static `readonly` here would brick manual
+                            entry outright.
+
+                            isCompanyNameReadOnly() is deliberately narrower
+                            than sole-trader mode — see its docblock in
+                            gateway_method.js. This input is `required`, and
+                            jQuery Validation enforces that on a `[readonly]`
+                            field (it skips only `:disabled`), so any state
+                            where the field can be both empty and locked is a
+                            validation error the buyer has no way to clear.
+                            See TWO-25288.
+                        -->
                         <input
                             type="text"
                             id="company_name"
@@ -174,47 +196,63 @@
                             required="true"
                             data-bind='
                             attr: {
-                                title: $t("Company Name")
+                                title: $t("Company Name"),
+                                readonly: isCompanyNameReadOnly()
                             },
                             value: companyName'
                             class="input-text"
                         />
-                        <!--
-                            Cosmetic only — an inline hint of the registry id
-                            behind the picked company, shown once companyId()
-                            is non-empty and cleared with it. NOT an input:
-                            carries no value of its own, and getData() keeps
-                            reading the companyId observable directly. See
-                            TWO-25288.
-                        -->
-                        <span
-                            class="two-company-id-hint"
-                            data-bind="text: companyId, visible: companyId"
-                        ></span>
                     </div>
                 </div>
                 <!--
-                    There is deliberately NO company-number input here.
+                    The captured organisation number, VISIBLE and never
+                    editable. TWO-25288 first removed this input outright; that
+                    hid the number from the buyer, who could then not check
+                    what the order would be invoiced against. Showing it
+                    read-only keeps the reason the input was removed — a
+                    hand-typed organisation number is not an accepted source,
+                    it produced poor data quality and genuine buyers receiving
+                    invoices for orders they never placed — while giving the
+                    buyer back the confirmation.
 
-                    Every source that may supply the organisation number writes
-                    the `companyId` observable rather than a field, and
-                    getData() reads that observable — never the DOM — so no
-                    input on this step is needed to carry the value. See the
-                    writer list on applyCompanyData() in
-                    gateway_method.js for the current enumeration.
+                    `readonly` is a STATIC attribute, unlike the name field
+                    above: there is no mode in which this number may be typed
+                    on this step. It is deliberately `readonly` rather than
+                    `disabled`, because a disabled control is dropped from the
+                    submitted form and skipped by jQuery Validation's
+                    `elements()` — this field must render and read like the
+                    others without changing what the form carries.
 
-                    Exactly one of those routes is a HAND-TYPED number: the
-                    address step's own company-number field, which that step
-                    enables only where the registry holds no identifier for the
-                    picked company. Typing one HERE was unrestricted, which
-                    produced poor data quality and, worse, genuine buyers
-                    receiving invoices for orders they never placed.
+                    Not `required`, and it carries no `name`: every accepted
+                    source writes the `companyId` observable and getData()
+                    reads that observable, never the DOM, so this input is a
+                    display of the value rather than a carrier of it. See the
+                    writer list on applyCompanyData() in gateway_method.js.
 
-                    Nothing client-side enforces the presence of an
-                    identifier. Model/Two.php::authorize() refuses an order
-                    with an empty organisation number server-side, and that
-                    refusal is the only enforcement. See TWO-25288.
+                    Blank in manual-entry mode, which is correct — there is no
+                    number to show. Nothing client-side enforces its presence;
+                    Model/Two.php::authorize() refuses an order with an empty
+                    organisation number server-side, and that refusal is the
+                    only enforcement.
                 -->
+                <div class="field field-text">
+                    <label for="company_id" class="label">
+                        <span><!-- ko i18n: 'Company Number'--><!-- /ko --></span>
+                    </label>
+                    <div class="control">
+                        <input
+                            type="text"
+                            id="company_id"
+                            readonly="readonly"
+                            data-bind='
+                            attr: {
+                                title: $t("Company Number")
+                            },
+                            value: companyId'
+                            class="input-text two-company-id-readonly"
+                        />
+                    </div>
+                </div>
                 <!--
                     Optional buyer fields. ORDER IS LOAD-BEARING: this markup
                     order is what the buyer sees, and it must match the admin
