@@ -583,4 +583,68 @@ describe.each([
         expect(openMarkerPresent()).toBe(false);
         expect(focusedSearchField()).toBeNull();
     });
+
+    /*
+     * Keyboard reachability. The "Search for company" control is a bare
+     * `<div>` with a click handler — no native semantics a keyboard user could
+     * exploit. `role="button"` + `tabindex="0"` on the markup make it focus-
+     * reachable; the Enter/Space keydown handler makes it activatable once
+     * focused. Both are load-bearing on their own: a focusable-but-inert div
+     * is as much a trap as a native-looking one a Tab skips entirely.
+     */
+    test('the control carries role="button" and tabindex="0"', () => {
+        reachManualMode($, ctx, enterManual, searchLink);
+
+        const $el = $(searchLink).first();
+        expect($el.attr('role')).toBe('button');
+        expect($el.attr('tabindex')).toBe('0');
+    });
+
+    test('pressing Enter activates it exactly like a click', () => {
+        reachManualMode($, ctx, enterManual, searchLink);
+
+        $(searchLink).first().trigger('keydown', { key: 'Enter', which: 13, preventDefault: function () {} });
+
+        expect(openMarkerPresent()).toBe(true);
+        expect(focusedSearchField()).not.toBeNull();
+        expect($(searchLink).first().get(0).style.display).toBe('none');
+    });
+
+    test('pressing Space activates it exactly like a click', () => {
+        reachManualMode($, ctx, enterManual, searchLink);
+
+        $(searchLink).first().trigger('keydown', { key: ' ', which: 32, preventDefault: function () {} });
+
+        expect(openMarkerPresent()).toBe(true);
+        expect(focusedSearchField()).not.toBeNull();
+        expect($(searchLink).first().get(0).style.display).toBe('none');
+    });
+
+    test('an unrelated key does nothing', () => {
+        reachManualMode($, ctx, enterManual, searchLink);
+
+        $(searchLink).first().trigger('keydown', { key: 'a', which: 65, preventDefault: function () {} });
+
+        expect(openMarkerPresent()).toBe(false);
+        expect($(searchLink).first().get(0).style.display).not.toBe('none');
+    });
+
+    /*
+     * This is `role="button"` on a plain div, not a native `<button>`, and
+     * some assistive-tech/browser combinations forward a synthetic `click`
+     * in addition to the Enter keydown for exactly that shape of widget.
+     * Without a guard, that would re-open a dropdown the buyer already
+     * opened and re-run whatever `enableCompanySearch()` does a second time.
+     */
+    test('a synthetic click right behind the Enter keydown does not re-activate', () => {
+        reachManualMode($, ctx, enterManual, searchLink);
+        ctx.enableCompanySearch = jest.fn(ctx.enableCompanySearch);
+
+        $(searchLink).first().trigger('keydown', { key: 'Enter', which: 13, preventDefault: function () {} });
+        expect(ctx.enableCompanySearch).toHaveBeenCalledTimes(1);
+
+        click($, searchLink);
+
+        expect(ctx.enableCompanySearch).toHaveBeenCalledTimes(1);
+    });
 });

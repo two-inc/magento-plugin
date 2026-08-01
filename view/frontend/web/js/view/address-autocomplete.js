@@ -421,7 +421,8 @@ define([
                         $(self.companyNameSelector)
                             .closest('.field')
                             .append(
-                                `<div id="shipping_search_for_company" class="search_for_company" title="${self.searchForCompanyText}">` +
+                                `<div id="shipping_search_for_company" class="search_for_company" ` +
+                                    `role="button" tabindex="0" title="${self.searchForCompanyText}">` +
                                     `<span>${self.searchForCompanyText}</span>` +
                                     '</div>'
                             );
@@ -429,11 +430,34 @@ define([
                     // Re-bound unconditionally: the div survives a re-render,
                     // so the append guard above was false and this handler kept
                     // closing over the first, stale component.
+                    const activateSearchForCompany = function () {
+                        // Guards against a double-activation: this is a
+                        // `role="button"` on a plain div, not a native
+                        // <button>, and some assistive-tech/browser
+                        // combinations forward a synthetic `click` in
+                        // addition to the Enter keydown for exactly that
+                        // shape of widget. Once hidden, a second call is a
+                        // no-op rather than re-opening a dropdown the buyer
+                        // already opened.
+                        const $button = $(self.searchForCompanyButton).first();
+                        if ($button.length && $button.get(0).style.display === 'none') return;
+                        self.enableCompanySearch({ openDropdown: true });
+                        $(self.searchForCompanyButton).hide();
+                    };
                     $(self.searchForCompanyButton)
                         .off('click' + companySearch.EVENT_NS)
-                        .on('click' + companySearch.EVENT_NS, function () {
-                            self.enableCompanySearch({ openDropdown: true });
-                            $(self.searchForCompanyButton).hide();
+                        .off('keydown' + companySearch.EVENT_NS)
+                        .on('click' + companySearch.EVENT_NS, activateSearchForCompany)
+                        // Keyboard reachability (TWO parity with WooCommerce /
+                        // Hyvä): this div has no native semantics, so Enter/
+                        // Space have to be wired up by hand to match the
+                        // role="button" contract set on the markup above.
+                        .on('keydown' + companySearch.EVENT_NS, function (e) {
+                            if (e.key !== 'Enter' && e.key !== ' ' && e.which !== 13 && e.which !== 32) {
+                                return;
+                            }
+                            e.preventDefault();
+                            activateSearchForCompany();
                         });
                     $(self.searchForCompanyButton).hide();
                     // Last, so every handler above — including `select2:open`,
