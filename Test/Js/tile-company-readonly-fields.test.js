@@ -2,47 +2,37 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25288. The payment tile shows the captured company NAME and NUMBER, and
- * the buyer can neither edit nor remove what was captured.
+ * TWO-25288 first showed the captured company NAME and NUMBER read-only, as a
+ * second `<input readonly>`. Doug's canonical-design ruling that followed
+ * (applies across all four platforms) replaced that input outright: the
+ * number is now a plain text LABEL, right-aligned immediately below the
+ * company-name field, visible only once a number has actually been captured.
  *
- * This SUPERSEDES the earlier removal of the number input. The reason that
- * input went away holds — a hand-typed organisation number is not an accepted
- * source; it produced poor data quality and genuine buyers receiving invoices
- * for orders they never placed — but removing it also stopped the buyer seeing
- * what the order would be invoiced against. Read-only keeps the first and
- * restores the second. For the accepted sources, see the writer enumeration on
- * applyCompanyData() in the renderer — deliberately NOT restated here, because
- * a second copy of that list has already drifted twice.
+ * This file pins the label-based version. Three groups, and they are NOT the
+ * same kind of test. Be honest about which is which before trusting a green
+ * run:
  *
- * Three groups of tests here, and they are NOT the same kind of test. Be honest
- * about which is which before trusting a green run:
- *
- *  1. READ-ONLY PINS — 'the payment tile shows both company fields, uneditable'.
- *     These fail against BOTH the removal and any reinstatement as an editable
- *     field. They are what guards the change.
+ *  1. READ-ONLY / NO-INPUT PINS — 'the payment tile shows the number as an
+ *     uneditable label, not a field'. These fail against BOTH the old
+ *     `<input readonly>` shape and any future reinstatement of an editable
+ *     field, because there is no `<input id="company_id">` left to satisfy
+ *     either shape.
  *
  *  2. WHAT-THE-BUYER-SEES PINS — 'what each capture mode puts in front of the
- *     buyer'. These do not restate the markup: they read the `value:` binding
+ *     buyer'. These do not restate the markup: they read the `text:` binding
  *     target out of the template, then evaluate it against a renderer driven
- *     through the real capture flow, so a field bound to the wrong observable
+ *     through the real capture flow, so a label bound to the wrong observable
  *     fails here even though the markup is present and correct.
  *
  *  3. ACCEPTED-SOURCE REGRESSION PINS — most of 'an accepted organisation
  *     number still reaches the order'. These pass against the pre-change code
- *     too, because every accepted source already wrote the observable. They do
- *     NOT prove anything about the fields. They exist because the observable is
- *     the ONLY carrier — the read-only input has no `name` and so submits
- *     nothing — so a future change that breaks one of those writer paths loses
- *     the number outright rather than falling back to a field, and the
+ *     too, because every accepted source already wrote the observable. They
+ *     do NOT prove anything about the label. They exist because the
+ *     observable is the ONLY carrier — the label has no `name` and submits
+ *     nothing — so a future change that breaks one of those writer paths
+ *     loses the number outright rather than falling back to a field, and the
  *     sole-trader routes are the ones most likely to break silently, their
  *     value being minted rather than picked.
- *
- *     ONE EXCEPTION, and it belongs to group 1 despite living in group 3's
- *     describe: 'the sole-trader number survives with no write to the number
- *     field' asserts there are NO writes to `input#company_id`. The renderer
- *     used to do `$(this.companyIdSelector).val(companyId)`; that must not come
- *     back, because ko's `value: companyId` binding is now the only painter and
- *     a second one would let the two desync.
  *
  * Group 3 is deliberately asserted through `getData()` rather than the DOM.
  * That is the actual submit path (`Observer/DataAssignObserver.php` reads
@@ -72,10 +62,10 @@ function readTemplate() {
 }
 
 /**
- * Strip HTML comments before asserting on markup. Both fields carry long
- * explanatory comments that name `company_id`, `readonly` and `disabled` on
- * purpose, and a raw substring search would match those and report a passing
- * pin for prose.
+ * Strip HTML comments before asserting on markup. The name field and the
+ * number label both carry long explanatory comments that name `company_id`,
+ * `readonly` and `input` on purpose, and a raw substring search would match
+ * those and report a passing pin for prose.
  */
 function withoutComments(markup) {
     return markup.replace(/<!--[\s\S]*?-->/g, '');
@@ -93,6 +83,19 @@ function inputTag(id) {
     });
     if (tags.length !== 1) {
         throw new Error('expected exactly one <input id="' + id + '">, found ' + tags.length);
+    }
+    return tags[0];
+}
+
+/**
+ * The `<div class="two-company-id-label">` tag, comments already stripped.
+ * Throws rather than returning null, same reasoning as inputTag() above.
+ */
+function companyIdLabelTag() {
+    const markup = withoutComments(readTemplate());
+    const tags = (markup.match(/<div\b[^>]*class="two-company-id-label"[^>]*><\/div>/g) || []);
+    if (tags.length !== 1) {
+        throw new Error('expected exactly one <div class="two-company-id-label">, found ' + tags.length);
     }
     return tags[0];
 }
@@ -118,6 +121,41 @@ function renderedValue(id, renderer) {
 }
 
 /**
+ * What ko would paint as the number label's text, derived the same way
+ * renderedValue() does for an input's `value:` binding, but for the label's
+ * `text:` binding.
+ */
+function renderedLabelText(renderer) {
+    const bound = companyIdLabelTag().match(/text:\s*([A-Za-z_$][\w$]*)/);
+    if (!bound) {
+        throw new Error('the number label has no `text:` binding');
+    }
+    const target = renderer[bound[1]];
+    if (typeof target !== 'function') {
+        throw new Error(
+            'the number label is bound to `' + bound[1] + '`, which the renderer has not'
+        );
+    }
+    return target.call(renderer);
+}
+
+/**
+ * Whether the number label would currently render, evaluated the same way
+ * renderedLabelText() does — read the `visible:` expression out of the
+ * template, PIN it to the exact `!!companyId()` shape (so a drift to some
+ * other observable or a always-true/always-false stub fails the string
+ * match), then evaluate the same observable directly against the live
+ * renderer for the actual truth value.
+ */
+function labelVisible(renderer) {
+    const tag = companyIdLabelTag();
+    if (!/visible:\s*!!companyId\(\)/.test(tag)) {
+        throw new Error('the number label\'s `visible:` binding is not the pinned `!!companyId()` shape');
+    }
+    return !!renderer.companyId();
+}
+
+/**
  * Whether `tag` carries `name` as a real HTML ATTRIBUTE — preceded by
  * whitespace and followed by `=`, `>`, `/` or more whitespace.
  *
@@ -134,9 +172,9 @@ function hasAttribute(tag, name) {
 /**
  * Whether the buyer can type into `id`, in the state `renderer` is currently
  * in. A static `readonly`/`disabled` attribute settles it outright; otherwise
- * the ko `attr` binding's target is evaluated the same way renderedValue() does
- * it, so a `readonly` bound to an observable is answered for THIS state rather
- * than assumed.
+ * the ko `attr` binding's target is evaluated the same way renderedValue()
+ * does it, so a `readonly` bound to an observable is answered for THIS state
+ * rather than assumed.
  */
 function isReadOnly(id, renderer) {
     const tag = inputTag(id);
@@ -156,30 +194,27 @@ function isReadOnly(id, renderer) {
     return !!target.call(renderer);
 }
 
-describe('the payment tile shows both company fields, uneditable', () => {
-    test('the number field is declared, bound to companyId, and statically read-only', () => {
-        const tag = inputTag('company_id');
-
-        // `readonly`, NOT `disabled`. A disabled control is dropped from the
-        // submitted form and skipped by jQuery Validation's `elements()`; the
-        // distinction is what made the old editable-state derivation load-bearing
-        // and is exactly what must not come back.
-        expect(hasAttribute(tag, 'readonly')).toBe(true);
-        expect(hasAttribute(tag, 'disabled')).toBe(false);
-        expect(tag).toMatch(/value:\s*companyId\b/);
-
-        // Static, not bound: there is no mode in which this may be typed, so no
-        // observable may be able to turn it off. `readonly: <expr>` inside a
-        // data-bind would match the `\breadonly\b` above, so rule it out
-        // explicitly rather than relying on that assertion to have meant it.
-        expect(tag).not.toMatch(/\breadonly\s*:/);
+describe('the payment tile shows the number as an uneditable label, not a field', () => {
+    test('there is no input#company_id left in the template', () => {
+        const markup = withoutComments(readTemplate());
+        expect(markup).not.toMatch(/<input\b[^>]*\bid\s*=\s*["']company_id["']/);
     });
 
-    test('the number field carries no name, so it submits nothing', () => {
-        // getData() → `additional_data` is the submit path. A `name` here would
-        // add a SECOND carrier for the same value, free to disagree with the
-        // observable, which is how a stale number reaches an order.
-        expect(inputTag('company_id')).not.toMatch(/\sname\s*=/);
+    test('the number label is a plain div, carries no name and no value binding to write to', () => {
+        const tag = companyIdLabelTag();
+
+        expect(tag).not.toMatch(/\sname\s*=/);
+        expect(tag).not.toMatch(/\svalue\s*=/);
+        // Not an input, not a button, not anything with default interactive
+        // semantics — a plain div reads unambiguously as non-editable.
+        expect(tag).toMatch(/^<div\b/);
+    });
+
+    test('the number label is bound to companyId and gated on it being present', () => {
+        const tag = companyIdLabelTag();
+
+        expect(tag).toMatch(/text:\s*companyId\b/);
+        expect(tag).toMatch(/visible:\s*!!companyId\(\)/);
     });
 
     test('the name field is read-only only once a company has been captured', () => {
@@ -201,9 +236,10 @@ describe('the payment tile shows both company fields, uneditable', () => {
     });
 
     test('the name field is never both empty and locked', () => {
-        // THE REGRESSION THIS GUARDS, and it is not hypothetical — the first
-        // draft of this change shipped it. The input is `required`, and jQuery
-        // Validation enforces `required` on a `[readonly]` field (its
+        // THE REGRESSION THIS GUARDS, and it is not hypothetical — an earlier
+        // draft of the read-only-input version shipped it, and nothing about
+        // the label change touches this path. The input is `required`, and
+        // jQuery Validation enforces `required` on a `[readonly]` field (its
         // `elements()` skips `:disabled` only). So a state that is both empty
         // and locked is a validation error with no buyer action that clears it.
         //
@@ -212,18 +248,12 @@ describe('the payment tile shows both company fields, uneditable', () => {
         // lands, because fillCompanyData() early-returns unless BOTH name and
         // number are non-empty. Keying `readonly` on the mode alone stranded the
         // buyer here.
-        //
-        // Driven through enterSoleTraderUi(), which is the sub-path
-        // soleTraderMode() runs FIRST on every branch. The rest of the unmatched
-        // branch is signup-popup plumbing — getAutofillData() needs `btoa` and
-        // openIframe() needs `window.open`, neither of which the AMD sandbox
-        // provides — and none of it touches the state under test.
         const { renderer } = loadRendererOnly();
 
         renderer.enterSoleTraderUi();
 
         expect(renderer.showSoleTrader()).toBe(true);
-        expect(renderedValue('company_id', renderer)).toBe('');
+        expect(renderer.companyId()).toBe('');
         // The name the buyer must now supply by hand — so the field cannot be
         // locked, whatever mode says.
         expect(isReadOnly('company_name', renderer)).toBe(false);
@@ -241,7 +271,7 @@ describe('the payment tile shows both company fields, uneditable', () => {
         );
         renderer.enterSoleTraderUi();
 
-        expect(renderedValue('company_id', renderer)).toBe('');
+        expect(renderer.companyId()).toBe('');
         expect(isReadOnly('company_name', renderer)).toBe(false);
     });
 
@@ -257,10 +287,8 @@ describe('the payment tile shows both company fields, uneditable', () => {
     });
 
     test('company_name is still the only required input in the payment form', () => {
-        // Pins what `$(formSelector).valid()` enforces. The number field is
-        // deliberately NOT required: a read-only empty required field fails
-        // validation with no way for the buyer to satisfy it.
-        // Model/Two.php::authorize() is the only enforcement for the number.
+        // Pins what `$(formSelector).valid()` enforces. The number is
+        // deliberately not a validatable input at all any more.
         const markup = withoutComments(readTemplate());
 
         // Every spelling jQuery Validation would honour, not just
@@ -278,8 +306,9 @@ describe('the payment tile shows both company fields, uneditable', () => {
     });
 
     test('the renderer keeps no editable-state apparatus for the number', () => {
-        // The field is back but its editability derivation is not, and must not
-        // be: `readonly` is static, so nothing may compute it.
+        // The number is shown but has no editability derivation of its own —
+        // it never had one to remove, and a label reinstating one would be a
+        // sign the label is on its way to becoming a field again.
         const { renderer } = loadRendererOnly();
 
         expect(renderer.companyIdSelector).toBeUndefined();
@@ -307,12 +336,12 @@ describe('the payment tile shows both company fields, uneditable', () => {
 
         expect(source).not.toContain('disableCompanyId');
         expect(source).not.toContain('companyIdSelector');
-        expect(source).not.toContain('company_id');
+        expect(source).not.toContain('input#company_id');
     });
 });
 
 describe('what each capture mode puts in front of the buyer', () => {
-    test('search mode: the buyer sees the picked name AND its number', () => {
+    test('search mode: the buyer sees the picked name AND its number label', () => {
         const { renderer } = loadRendererOnly();
 
         renderer.applyCompanyData(
@@ -321,12 +350,11 @@ describe('what each capture mode puts in front of the buyer', () => {
         );
 
         expect(renderedValue('company_name', renderer)).toBe('First Example Ltd');
-        expect(renderedValue('company_id', renderer)).toBe('12345678');
-        // Visible, and still not editable.
-        expect(isReadOnly('company_id', renderer)).toBe(true);
+        expect(renderedLabelText(renderer)).toBe('12345678');
+        expect(labelVisible(renderer)).toBe(true);
     });
 
-    test('sole-trader mode: the minted name and number show, both uneditable', () => {
+    test('sole-trader mode: the minted name shows locked, the number label shows', () => {
         const { renderer } = loadRendererOnly();
 
         renderer.prefetched = {
@@ -340,15 +368,15 @@ describe('what each capture mode puts in front of the buyer', () => {
         renderer.soleTraderMode();
 
         expect(renderedValue('company_name', renderer)).toBe('Sole Trader Example');
-        expect(renderedValue('company_id', renderer)).toBe('ST-SYNTH-004');
-        expect(isReadOnly('company_id', renderer)).toBe(true);
+        expect(renderedLabelText(renderer)).toBe('ST-SYNTH-004');
+        expect(labelVisible(renderer)).toBe(true);
         // The name too, because a name AND number were actually captured — see
         // the two "never both empty and locked" cases for the branch where they
         // were not.
         expect(isReadOnly('company_name', renderer)).toBe(true);
     });
 
-    test('manual-entry mode: the number reads blank and stays read-only', () => {
+    test('manual-entry mode: the number label disappears and stays gone', () => {
         // Driven through the real manual-entry path — clearCompany() is what the
         // sentinel row's handler calls — not by poking the observable, so this
         // fails if that path stops clearing the abandoned company's number.
@@ -358,17 +386,17 @@ describe('what each capture mode puts in front of the buyer', () => {
             { companyName: 'First Example Ltd', companyId: '12345678' },
             { authoritative: true }
         );
-        expect(renderedValue('company_id', renderer)).toBe('12345678');
+        expect(labelVisible(renderer)).toBe(true);
 
         renderer.clearCompany();
 
-        expect(renderedValue('company_id', renderer)).toBe('');
-        expect(isReadOnly('company_id', renderer)).toBe(true);
+        expect(renderer.companyId()).toBe('');
+        expect(labelVisible(renderer)).toBe(false);
         // …and the name is typeable, which is the whole point of the mode.
         expect(isReadOnly('company_name', renderer)).toBe(false);
     });
 
-    test('an identifier-less pick shows the name with a blank number', () => {
+    test('an identifier-less pick shows the name with no number label', () => {
         // The other route to a blank number: the registry holds no identifier
         // for the picked company. Distinct from manual entry — a company IS
         // selected here.
@@ -384,8 +412,7 @@ describe('what each capture mode puts in front of the buyer', () => {
         );
 
         expect(renderedValue('company_name', renderer)).toBe('Second Example Ltd');
-        expect(renderedValue('company_id', renderer)).toBe('');
-        expect(isReadOnly('company_id', renderer)).toBe(true);
+        expect(labelVisible(renderer)).toBe(false);
     });
 });
 
@@ -540,11 +567,12 @@ describe('an accepted organisation number still reaches the order', () => {
         expect(renderer.getData().additional_data.companyId).toBe('ST-SYNTH-003');
     });
 
-    test('the sole-trader number survives with no write to the number field', () => {
-        // ko's `value: companyId` binding is the ONLY painter of the read-only
-        // input. Prove the renderer writes nothing to that selector itself while
-        // still delivering the number to the submit path — a second painter
-        // could disagree with the observable, and the observable is what ships.
+    test('the sole-trader number survives with no write to any company_id node', () => {
+        // ko's `text: companyId` binding is the ONLY painter of the label.
+        // Prove the renderer writes nothing to a `company_id` selector itself
+        // while still delivering the number to the submit path — a second
+        // painter could disagree with the observable, and the observable is
+        // what ships.
         const { renderer, dom } = loadRendererOnly();
 
         renderer.fillCompanyData({
@@ -555,7 +583,7 @@ describe('an accepted organisation number still reaches the order', () => {
         expect(renderer.getData().additional_data.companyId).toBe('ST-SYNTH-002');
 
         const numberFieldWrites = dom.writes.filter(function (w) {
-            return w[0] === 'input#company_id';
+            return /company_id/.test(w[0]);
         });
         expect(numberFieldWrites).toEqual([]);
         // ...while the name field IS still written, so an inert double cannot
@@ -566,12 +594,12 @@ describe('an accepted organisation number still reaches the order', () => {
         expect(nameFieldWrites).toEqual([['input#company_name', 'Sole Trader Example']]);
     });
 
-    test('showing the number read-only does not change what the form submits', () => {
-        // The regression this guards: reinstating the input as a carrier — a
-        // `name`, or a DOM read in getData() — so the payload could come from
-        // the field instead of the observable. Asserted against the WHOLE
-        // additional_data payload rather than the two keys, because a new
-        // company key smuggled in beside them is the same defect.
+    test('showing the number does not change what the form submits', () => {
+        // The regression this guards: reinstating a carrier for the number
+        // beside the observable — a `name`, or a DOM read in getData() — so
+        // the payload could come from the DOM instead. Asserted against the
+        // WHOLE additional_data payload rather than the two keys, because a
+        // new company key smuggled in beside them is the same defect.
         const { renderer, dom } = loadRendererOnly();
 
         renderer.applyCompanyData(
@@ -591,10 +619,10 @@ describe('an accepted organisation number still reaches the order', () => {
         // getData() must not have consulted the DOM for either value: with a
         // recording double every node reports an empty `val()`, so a DOM read
         // would have produced '' above. Belt-and-braces on that, prove the
-        // renderer never wrote the number field either.
+        // renderer never wrote any company_id node either.
         expect(
             dom.writes.filter(function (w) {
-                return w[0] === 'input#company_id';
+                return /company_id/.test(w[0]);
             })
         ).toEqual([]);
     });

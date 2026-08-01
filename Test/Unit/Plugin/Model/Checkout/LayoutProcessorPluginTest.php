@@ -188,4 +188,103 @@ class LayoutProcessorPluginTest extends TestCase
         $this->assertTrue($field['visible']);
         $this->assertSame('two-company-id-hidden', $field['additionalClasses']);
     }
+
+    /**
+     * A `jsLayout` shaped like seededLayout(), but with `country_id` also
+     * already present carrying some sortOrder — i.e. the shape the fieldset
+     * is ACTUALLY in by the time this plugin's afterProcess runs, once
+     * Magento_Checkout's own `AttributeMerger::getFieldConfig()` has already
+     * resolved every core field's sortOrder from the store's live Customer
+     * Address Attributes configuration (or, for `country_id`, from this
+     * module's own checkout_index_index.xml layout-XML override, since
+     * `getFieldConfig()` prefers a layout-XML sortOrder over the EAV one when
+     * both exist).
+     *
+     * @param int|string $companySortOrder
+     * @param int|string $countrySortOrder
+     * @return array<string,mixed>
+     */
+    private function seededLayoutWithCountry($companySortOrder, $countrySortOrder): array
+    {
+        $seeded = $this->seededLayout();
+        $seeded['components']['checkout']['children']['steps']['children']['shipping-step']
+            ['children']['shippingAddress']['children']['shipping-address-fieldset']['children'] = [
+                'company' => ['label' => 'Company', 'sortOrder' => $companySortOrder],
+                'country_id' => ['label' => 'Country', 'sortOrder' => $countrySortOrder],
+            ];
+
+        return $seeded;
+    }
+
+    /**
+     * Country must come before company regardless of what the store's admin
+     * configuration (or this module's own static layout-XML number) put in
+     * `country_id`'s sortOrder — mirroring PrestaShop's
+     * `CustomerAddressFormatter::moveFieldBefore('id_country', 'company')`.
+     * Read `company`'s sortOrder back out of the array (already resolved by
+     * core by this point) rather than assume a fixed number, so this holds
+     * for any store configuration.
+     */
+    public function testCountrySortsBeforeCompanyRegardlessOfConfiguredSortOrder(): void
+    {
+        // country_id ALREADY has a lower sortOrder than company: nothing
+        // should change.
+        $jsLayout = $this->plugin(true)->afterProcess(
+            $this->createMock(LayoutProcessor::class),
+            $this->seededLayoutWithCountry(60, 50)
+        );
+        $fieldset = $this->fieldset($jsLayout);
+        $this->assertLessThan($fieldset['company']['sortOrder'], $fieldset['country_id']['sortOrder']);
+
+        // country_id's sortOrder is HIGHER than company's — the exact bug
+        // reported live (country rendering after street/company). Must be
+        // forced below company's.
+        $jsLayout = $this->plugin(true)->afterProcess(
+            $this->createMock(LayoutProcessor::class),
+            $this->seededLayoutWithCountry(60, 90)
+        );
+        $fieldset = $this->fieldset($jsLayout);
+        $this->assertLessThan($fieldset['company']['sortOrder'], $fieldset['country_id']['sortOrder']);
+        $this->assertSame(59, $fieldset['country_id']['sortOrder']);
+    }
+
+    /**
+     * Absent `country_id` (a store somehow without the field at all, or a
+     * jsLayout shape this plugin does not recognise) must not blow up or
+     * conjure a field that was never there.
+     */
+    public function testMissingCountryIdIsLeftAlone(): void
+    {
+        $jsLayout = $this->plugin(true)->afterProcess(
+            $this->createMock(LayoutProcessor::class),
+            $this->seededLayout()
+        );
+        $fieldset = $this->fieldset($jsLayout);
+
+        $this->assertArrayNotHasKey('country_id', $fieldset);
+    }
+
+    /**
+     * `company` present but with no numeric sortOrder yet resolved (a shape
+     * this plugin cannot safely reorder against) must leave country_id's
+     * sortOrder exactly as core/layout-XML left it, not corrupt it with
+     * `null - 1` or similar.
+     */
+    public function testCompanyWithoutASortOrderLeavesCountryIdUntouched(): void
+    {
+        $seeded = $this->seededLayout();
+        $seeded['components']['checkout']['children']['steps']['children']['shipping-step']
+            ['children']['shippingAddress']['children']['shipping-address-fieldset']['children'] = [
+                'company' => ['label' => 'Company'],
+                'country_id' => ['label' => 'Country', 'sortOrder' => 90],
+            ];
+
+        $jsLayout = $this->plugin(true)->afterProcess(
+            $this->createMock(LayoutProcessor::class),
+            $seeded
+        );
+        $fieldset = $this->fieldset($jsLayout);
+
+        $this->assertSame(90, $fieldset['country_id']['sortOrder']);
+    }
 }

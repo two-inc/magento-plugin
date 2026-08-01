@@ -127,12 +127,39 @@
     cursor: pointer;
 }
 
+/*
+ * The "Search for company" return-to-search control (`search_for_company` in
+ * address-autocomplete.js / gateway_method.js). It carries `role="button"
+ * tabindex="0"` and Enter/Space keydown handling in JS (a11y fix), but that
+ * only makes it FOCUSABLE and ACTIVATABLE — the CSS side of the same
+ * accessibility work never landed alongside it:
+ *
+ *  - `text-transform: none !important`: this is a plain `<div>`, not a native
+ *    element a host theme would normally style, but plenty of Luma themes
+ *    apply casing rules broadly enough (e.g. `.field ~ div, [role="button"]`)
+ *    to catch it anyway, and a theme's own rule is routinely `!important`
+ *    itself for exactly this kind of CTA-style text.
+ *  - the reserved-space dotted border + `:focus` colour gives Tab-users a
+ *    visible focus indicator, which a bare `role="button"` div otherwise has
+ *    none of by default (unlike a real `<button>`, which gets the browser's
+ *    native focus ring). The border is reserved (transparent) even when not
+ *    focused so gaining focus never changes this element's box size.
+ */
 .search_for_company {
     text-align: right;
     cursor: pointer;
     padding-top: 5px;
     color: var(--color-blue2);
     right: 4px;
+    text-transform: none !important;
+    border: 1px dotted transparent;
+    padding-left: 2px;
+    padding-right: 2px;
+}
+
+.search_for_company:focus {
+    outline: none;
+    border-color: #808080 !important;
 }
 
 .two-payment-method {
@@ -429,6 +456,64 @@
 }
 
 /*
+ * Company-search combobox: placeholder / selected-value text and result-row
+ * vertical alignment.
+ *
+ * `#select2-company-container` is the address-step field's rendered span —
+ * select2 4.1 gives it `id="select2-<original element id>-container"`, and
+ * the address input's own id is `company` (Magento core's native address
+ * attribute). `#select2-company_name-container` is the payment-tile
+ * equivalent, whose backing input is `input#company_name`.
+ *
+ * Some Luma themes apply a blanket `text-transform: uppercase` broad enough
+ * to catch select2's own rendered span, and give the selection box a custom
+ * height with no matching line-height on the rendered text, leaving it a few
+ * pixels off true vertical centre. `!important` because a theme's own
+ * form-control casing/height rules are routinely `!important` themselves.
+ *
+ * Flex + `align-items: center` on both the outer selection box AND the
+ * rendered span (not just the outer box) matters: centring only the outer
+ * box centres the BOX, not text sitting off-centre within it from a
+ * theme-supplied height with the wrong line-height.
+ */
+#select2-company-container,
+#select2-company_name-container {
+    text-transform: none !important;
+    line-height: normal;
+}
+
+#shipping-new-address-form input[name='company'] + .select2-container .select2-selection--single,
+#two_gateway_form input#company_name + .select2-container .select2-selection--single {
+    display: flex;
+    align-items: center;
+}
+
+#shipping-new-address-form input[name='company'] + .select2-container .select2-selection__rendered,
+#two_gateway_form input#company_name + .select2-container .select2-selection__rendered {
+    display: flex;
+    align-items: center;
+    height: 100%;
+}
+
+/*
+ * Result rows in the dropdown itself (company names picked from the search),
+ * same class of bug: a theme's list/option styling can apply uppercase and
+ * an icon/text baseline mismatch to `.select2-results__option`. select2
+ * detaches the dropdown to `<body>` on open (outside either form's own DOM
+ * subtree), so this cannot be scoped by ancestry from the field the way the
+ * selection-box rules above are — instead scoped by the results listbox's
+ * own id, which select2 derives from the backing element's id
+ * (`select2-<id>-results`), so this never touches an unrelated select2
+ * instance elsewhere on the page.
+ */
+#select2-company-results .select2-results__option,
+#select2-company_name-results .select2-results__option {
+    display: flex;
+    align-items: center;
+    text-transform: none !important;
+}
+
+/*
  * The manual-entry row in the company-search results list.
  *
  * A SINGLE FLAT CLASS, for the same reason as the spinner above: overlay
@@ -531,28 +616,40 @@
 }
 
 /*
- * TWO-25288. The payment tile's read-only company-number input. It replaced the
- * grey inline hint that briefly stood in for it: the number is now a labelled
- * field of its own, shown to the buyer so they can check what the order will be
- * invoiced against, and never editable on this step.
+ * The company-NAME input's read-only affordance. `readonly` is bound and true
+ * in sole-trader mode only (see gateway_method.html), and `readonly` alone
+ * renders identically to a normal input in most themes — an input the buyer
+ * cannot type into but which looks like they can is worse than either state
+ * on its own.
  *
- * Styled to READ as uneditable, because `readonly` alone renders identically to
- * a normal input in most themes and an input the buyer cannot type into but
- * which looks like they can is worse than either state on its own. The
- * `readonly` attribute in the template is what actually enforces it; this is
- * only the affordance.
- *
- * The second selector covers the company-NAME input, whose `readonly` is bound
- * and true in sole-trader mode only. Scoped to this module's own form rather
- * than written as a bare `input[readonly]`: this stylesheet is loaded for the
- * whole storefront and an unscoped rule would repaint every read-only input on
- * the page, none of which this module owns.
+ * Scoped to this module's own form rather than written as a bare
+ * `input[readonly]`: this stylesheet is loaded for the whole storefront and
+ * an unscoped rule would repaint every read-only input on the page, none of
+ * which this module owns.
  */
-.two-company-id-readonly,
 #two_gateway_form input.input-text[readonly] {
     background-color: #f5f5f5;
     color: #666666;
     cursor: default;
+}
+
+/*
+ * The captured organisation number, a plain text label rather than a field
+ * (canonical design across all four platforms — Doug's ruling). Positioned
+ * immediately below the company-name input and right-aligned to it:
+ * `text-align: right` inside `.control` lines it up against the input's own
+ * right edge, since `.control` is the input's own containing box.
+ *
+ * Grey, not the form's usual text colour, so it reads as a caption on the
+ * field above rather than as another piece of body copy — matching how the
+ * removed read-only input used to look (`#666666` on a light background).
+ */
+.two-company-id-label {
+    display: block;
+    text-align: right;
+    margin-top: 4px;
+    color: #666666;
+    font-size: 12px;
 }
 
 /*
