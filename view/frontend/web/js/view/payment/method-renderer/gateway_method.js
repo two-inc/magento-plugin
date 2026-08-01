@@ -1082,10 +1082,10 @@ define([
                     // leave this the ONLY teardown point reached: a re-render
                     // while the picker is open replaces the select2 instance
                     // without necessarily emitting `select2:close` first, so
-                    // an observer from the PREVIOUS bind would otherwise pin
-                    // its now-detached results list alive until this node's
-                    // picker happens to be reopened again.
-                    companySearch.detachManualEntryObserver($companyNameField);
+                    // a manual-entry button from the PREVIOUS bind would
+                    // otherwise survive, still wired to a disposed renderer,
+                    // until this node's picker happens to be reopened again.
+                    companySearch.detachManualEntryButton($companyNameField);
                     $companyNameField
                         .select2({
                             minimumInputLength: companySearch.MIN_INPUT_LENGTH,
@@ -1147,82 +1147,41 @@ define([
                             // here or a reopened picker still shows the last
                             // search's "unavailable" notice.
                             companySearch.clearSearchChrome($companyNameField, bindToken);
-                            // The manual-entry affordance is a row INSIDE the
-                            // results list, so the model owns its whole
-                            // lifecycle (appear at the threshold, survive
-                            // each re-render) — matching the address-step
-                            // picker's fix for the same defect: a footer
-                            // node outside the listbox sat outside the
-                            // combobox's `aria-owns`, unreachable by
-                            // keyboard and unannounced to a screen reader.
-                            // Bound to this node and this bind token, so a
-                            // stale widget cannot paint a row onto its
-                            // replacement.
-                            companySearch.attachManualEntryRow($companyNameField, bindToken);
+                            // The manual-entry button is a SIBLING of the
+                            // results list (#30.x.15), not a row inside it,
+                            // so it stays visible outside select2's own
+                            // scroll/clip and needs no selection-cancelling
+                            // dance: its own click handler below is the only
+                            // thing that activates it.
+                            companySearch.attachManualEntryButton(
+                                $companyNameField,
+                                bindToken,
+                                function () {
+                                    self.clearCompany();
+                                    // Resolved here, not earlier: a container
+                                    // captured before the widget teardown
+                                    // above could be replaced by the same
+                                    // checkout re-render the button's own
+                                    // staleness check guards against, and
+                                    // `.show()` on a detached node would
+                                    // silently no-op, leaving the real link
+                                    // hidden.
+                                    $companyNameField
+                                        .closest('.field')
+                                        .find('.search_for_company')
+                                        .show();
+                                }
+                            );
                             document.querySelector('.select2-search__field').focus();
                         })
                         .on('select2:close' + companySearch.EVENT_NS, function () {
                             // Every open re-attaches, so nothing is lost by
-                            // dropping the watcher here — and a checkout that
+                            // dropping the button here — and a checkout that
                             // re-renders the form while the picker is closed
-                            // would otherwise leave this node's observer
-                            // pinning a detached results list for the life of
+                            // would otherwise leave a button from this bind
+                            // wired to a disposed renderer for the life of
                             // the page.
-                            companySearch.detachManualEntryObserver($companyNameField);
-                        })
-                        /*
-                         * `select2:selecting` is the PREVENTABLE pre-event
-                         * for a selection, and the manual-entry row is not a
-                         * company: letting it through would write the
-                         * sentinel id into the company name and fire an
-                         * address lookup for it. Cancelling here also covers
-                         * mouse, Enter and touch in one place, because all
-                         * three arrive as a selection.
-                         */
-                        .on('select2:selecting' + companySearch.EVENT_NS, function (e) {
-                            const data = e.params && e.params.args && e.params.args.data;
-                            if (!companySearch.isManualEntryOption(data)) return;
-                            e.preventDefault();
-                            // Deferred a tick, deliberately: `select2:selecting`
-                            // fires from INSIDE select2's own click/keydown
-                            // dispatch, and `clearCompany()` destroys the
-                            // select2 instance that dispatch is still running
-                            // on. Tearing the widget down synchronously here
-                            // would pull it out from under select2's own
-                            // post-preventDefault bookkeeping for this event.
-                            // A zero-delay defer runs after that dispatch has
-                            // fully unwound, once `e.preventDefault()` above
-                            // has already told select2 to skip the pick.
-                            //
-                            // That gap is exactly long enough for a checkout
-                            // re-render (Fire Checkout re-renders this
-                            // component on totals/shipping changes,
-                            // deliberately un-guarded — see the re-bind
-                            // comment above) to have already rebound a NEW
-                            // widget to this same node before the timer
-                            // fires. Every other deferred/async path in this
-                            // handler chain (onSearching, onUnavailable,
-                            // clearSearchChrome, attachManualEntryRow) gates
-                            // on the bind staying current; this one must too,
-                            // or it tears down whatever widget is live NOW —
-                            // not the one the buyer actually picked
-                            // manual-entry on.
-                            setTimeout(function () {
-                                if (!companySearch.getSearchFieldContainer($companyNameField, bindToken).length) {
-                                    return;
-                                }
-                                self.clearCompany();
-                                // Resolved HERE, not before the defer: a
-                                // container captured at click time could be
-                                // replaced by the same re-render the
-                                // staleness check above guards against, and
-                                // `.show()` on a detached node would silently
-                                // no-op, leaving the real link hidden.
-                                $companyNameField
-                                    .closest('.field')
-                                    .find('.search_for_company')
-                                    .show();
-                            }, 0);
+                            companySearch.detachManualEntryButton($companyNameField);
                         })
                         .on('select2:select' + companySearch.EVENT_NS, function (e) {
                             const selectedItem = e.params.data;
@@ -1373,9 +1332,9 @@ define([
             if (!$field || !$field.data || !$field.data('select2')) return;
             // Belt-and-braces alongside the `select2:close` handler above:
             // destroy() does not always route through a `close` event first,
-            // and an undetached observer would keep the torn-down results
-            // list alive for the life of the page.
-            companySearch.detachManualEntryObserver($field);
+            // and an undetached button would stay wired to this disposed
+            // renderer for the life of the page.
+            companySearch.detachManualEntryButton($field);
             $field.off(companySearch.EVENT_NS);
             $field.select2('destroy');
             $field.attr('type', 'text');
