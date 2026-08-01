@@ -33,6 +33,8 @@
 "Click here to log in or sign up as a Sole Trader.","Klikk her for å logge inn eller registrere deg som eneforhandler."
 "Company Number","Organisasjonsnummer"
 "Company Name","Selskapsnavn"
+"Company number:","Organisasjonsnummer:"
+"Company name:","Selskapsnavn:"
 "Could not initiate capture with %1","Kunne ikke starte fangst med %1"
 "Could not initiate refund with %1","Kunne ikke starte refusjon med %1"
 "Could not update %1 order status to cancelled. Please contact support with order ID %2. Error: %3","Kunne ikke oppdatere %1 ordrestatus til kansellert. Ta kontakt med brukerstøtten med ordre-ID %2. Feil: %3"
