@@ -1089,6 +1089,16 @@ define([
                     $companyNameField
                         .select2({
                             minimumInputLength: companySearch.MIN_INPUT_LENGTH,
+                            // Same stable dropdown-row hook as the
+                            // address-step picker (address-autocomplete.js)
+                            // — this field's `input#company_name` id DOES
+                            // give select2 a stable `select2-company_name-*`
+                            // id already (confirmed by the existing
+                            // `#select2-company_name-container` references
+                            // below), but using the same explicit class here
+                            // too keeps both pickers' dropdown CSS keyed off
+                            // one mechanism rather than two.
+                            dropdownCssClass: 'two-company-search-dropdown',
                             width: '100%',
                             escapeMarkup: function (markup) {
                                 return markup;

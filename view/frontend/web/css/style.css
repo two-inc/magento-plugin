@@ -459,11 +459,17 @@
  * Company-search combobox: placeholder / selected-value text and result-row
  * vertical alignment.
  *
- * `#select2-company-container` is the address-step field's rendered span —
- * select2 4.1 gives it `id="select2-<original element id>-container"`, and
- * the address input's own id is `company` (Magento core's native address
- * attribute). `#select2-company_name-container` is the payment-tile
- * equivalent, whose backing input is `input#company_name`.
+ * Scoped by ADJACENT SIBLING from the backing input, not by select2's own
+ * generated element ids: select2 4.1 derives those from the backing
+ * element's `id` attribute when it has one, or `name + 2 random characters`
+ * when it doesn't (`generateId()` in the vendored select2.min.js) — the
+ * address-step company field carries no explicit `id` (only `name`), so an
+ * `#select2-company-container`-style selector is NOT a stable target for it
+ * (confirmed by review — flagged before this shipped as select2-id-scoped
+ * dead CSS with nothing to catch the drift). `input[name] + .select2-container`
+ * has no such dependency: select2 always inserts its container immediately
+ * after the original element (`insertAfter()`, confirmed in the vendored
+ * bundle), regardless of what id it ends up generating.
  *
  * Some Luma themes apply a blanket `text-transform: uppercase` broad enough
  * to catch select2's own rendered span, and give the selection box a custom
@@ -476,12 +482,6 @@
  * box centres the BOX, not text sitting off-centre within it from a
  * theme-supplied height with the wrong line-height.
  */
-#select2-company-container,
-#select2-company_name-container {
-    text-transform: none !important;
-    line-height: normal;
-}
-
 #shipping-new-address-form input[name='company'] + .select2-container .select2-selection--single,
 #two_gateway_form input#company_name + .select2-container .select2-selection--single {
     display: flex;
@@ -493,21 +493,23 @@
     display: flex;
     align-items: center;
     height: 100%;
+    text-transform: none !important;
+    line-height: normal;
 }
 
 /*
- * Result rows in the dropdown itself (company names picked from the search),
- * same class of bug: a theme's list/option styling can apply uppercase and
- * an icon/text baseline mismatch to `.select2-results__option`. select2
- * detaches the dropdown to `<body>` on open (outside either form's own DOM
- * subtree), so this cannot be scoped by ancestry from the field the way the
- * selection-box rules above are — instead scoped by the results listbox's
- * own id, which select2 derives from the backing element's id
- * (`select2-<id>-results`), so this never touches an unrelated select2
- * instance elsewhere on the page.
+ * Result rows in the dropdown itself (company names picked from the
+ * search), same class of bug: a theme's list/option styling can apply
+ * uppercase and an icon/text baseline mismatch to `.select2-results__option`.
+ * select2 detaches the dropdown to `<body>` on open (outside either form's
+ * own DOM subtree), so this cannot be scoped by ancestry from the field the
+ * way the selection-box rules above are. `dropdownCssClass:
+ * 'two-company-search-dropdown'` (set on BOTH pickers' `.select2({...})`
+ * init — address-autocomplete.js and gateway_method.js) is select2's own
+ * supported hook for exactly this, and — unlike an id — is not subject to
+ * select2's id-generation fallback at all.
  */
-#select2-company-results .select2-results__option,
-#select2-company_name-results .select2-results__option {
+.two-company-search-dropdown .select2-results__option {
     display: flex;
     align-items: center;
     text-transform: none !important;
@@ -650,6 +652,15 @@
     margin-top: 4px;
     color: #666666;
     font-size: 12px;
+}
+
+/*
+ * The "Company Number" caption inside the label above. Slightly bolder than
+ * the number itself so the line reads as "Company Number: 12345678" rather
+ * than two equally-weighted pieces of grey text.
+ */
+.two-company-id-label__caption {
+    font-weight: 500;
 }
 
 /*

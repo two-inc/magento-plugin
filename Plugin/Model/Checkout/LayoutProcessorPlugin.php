@@ -99,7 +99,8 @@ class LayoutProcessorPlugin
     }
 
     /**
-     * Force `country_id` to render before the native `company` field.
+     * Force `country_id` to render before the native `company` AND `street`
+     * fields on the SHIPPING address step, only when it does not already.
      *
      * `checkout_index_index.xml` declares `country_id`'s sortOrder as a
      * static 50, which DOES win over Magento core's EAV-derived default (90)
@@ -110,18 +111,34 @@ class LayoutProcessorPlugin
      * module, so THEIR position is whatever the store's Customer Address
      * Attributes admin screen has configured for those two attributes —
      * out of the box that is 60/70 (after our 50), but any store free to
-     * reconfigure it can push either below 50, and this staging store's
-     * live behaviour (country rendering after street) shows exactly that
-     * happening. A static number picked once cannot track an admin setting
-     * this module does not own.
+     * reconfigure EITHER below 50 reproduces "country after an address
+     * field", and this staging store's live behaviour (country after
+     * street specifically) is exactly that. A static number picked once
+     * cannot track an admin setting this module does not own. Anchoring to
+     * `company` alone is not enough — `street` is independently
+     * configurable and was the actual field reported live, so this anchors
+     * to whichever of the two currently sorts first.
      *
-     * Read `company`'s sortOrder back out of the array this plugin's own
+     * Read both sortOrders back out of the array this plugin's own
      * `afterProcess` runs AFTER — i.e. once the core merge has already
-     * resolved it against whatever the store's real config says — and
-     * place country immediately before it. Mirrors PrestaShop's
-     * `CustomerAddressFormatter::moveFieldBefore('id_country', 'company')`:
-     * dynamic relative-to-company positioning rather than a static number,
-     * so it holds regardless of admin configuration.
+     * resolved them against whatever the store's real config says — and
+     * place country immediately before the earlier of the two. Mirrors
+     * PrestaShop's `CustomerAddressFormatter::moveFieldBefore('id_country',
+     * 'company')`: dynamic relative positioning rather than a static
+     * number, so it holds regardless of admin configuration.
+     *
+     * Deliberately CONDITIONAL, not an unconditional overwrite: a store
+     * where country already sorts correctly is left untouched, so this
+     * cannot push country past some OTHER field (region, city, postcode, a
+     * custom EAV attribute) that happened to land between country's
+     * original position and `min(company, street) - 1`. Only a store that
+     * actually reproduces the reported bug gets reordered.
+     *
+     * Scoped to the SHIPPING address step only. The payment step's billing
+     * address form (when "same as shipping" is unchecked) is a separate
+     * jsLayout subtree this method does not touch — out of scope for this
+     * fix; the same live-config-dependent ordering issue can in principle
+     * reproduce there too and would need its own follow-up if reported.
      *
      * @param array $jsLayout
      * @return void
@@ -137,12 +154,30 @@ class LayoutProcessorPlugin
         $fieldset = &$jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']
             ['children']['shippingAddress']['children']['shipping-address-fieldset']['children'];
 
-        if (!isset($fieldset['country_id']) || !isset($fieldset['company']['sortOrder'])) {
+        if (!isset($fieldset['country_id']) || !is_array($fieldset['country_id'])
+            || !isset($fieldset['country_id']['sortOrder'])
+            || !is_numeric($fieldset['country_id']['sortOrder'])
+        ) {
             return;
         }
-        if (!is_numeric($fieldset['company']['sortOrder'])) {
+
+        $anchors = [];
+        foreach (['company', 'street'] as $fieldName) {
+            if (isset($fieldset[$fieldName]['sortOrder']) && is_numeric($fieldset[$fieldName]['sortOrder'])) {
+                $anchors[] = $fieldset[$fieldName]['sortOrder'];
+            }
+        }
+        if (empty($anchors)) {
             return;
         }
-        $fieldset['country_id']['sortOrder'] = $fieldset['company']['sortOrder'] - 1;
+        $target = min($anchors);
+
+        if ($fieldset['country_id']['sortOrder'] < $target) {
+            // Already correctly ordered — leave it exactly as core/XML set
+            // it, so this never shoves country past some third field that
+            // happens to sit between its current position and the target.
+            return;
+        }
+        $fieldset['country_id']['sortOrder'] = $target - 1;
     }
 }

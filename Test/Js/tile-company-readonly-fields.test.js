@@ -62,13 +62,20 @@ function readTemplate() {
 }
 
 /**
- * Strip HTML comments before asserting on markup. The name field and the
- * number label both carry long explanatory comments that name `company_id`,
- * `readonly` and `input` on purpose, and a raw substring search would match
- * those and report a passing pin for prose.
+ * Strip explanatory PROSE comments before asserting on markup — but NOT
+ * knockout's own `<!-- ko ... -->` / `<!-- /ko -->` virtual-element comments,
+ * which are real template syntax (e.g. the i18n macro around "Company
+ * Number") rather than developer prose. The name field and the number label
+ * both carry long explanatory comments that name `company_id`, `readonly`
+ * and `input` on purpose, and a raw substring search would match those and
+ * report a passing pin for prose; stripping ko's own comments too would
+ * instead make every i18n-wrapped string invisible to these assertions.
  */
 function withoutComments(markup) {
-    return markup.replace(/<!--[\s\S]*?-->/g, '');
+    return markup.replace(/<!--[\s\S]*?-->/g, function (comment) {
+        const inner = comment.slice(4, -3).trim();
+        return /^(ko\b|\/ko$)/.test(inner) ? comment : '';
+    });
 }
 
 /**
@@ -88,16 +95,37 @@ function inputTag(id) {
 }
 
 /**
- * The `<div class="two-company-id-label">` tag, comments already stripped.
- * Throws rather than returning null, same reasoning as inputTag() above.
+ * The `<div class="two-company-id-label">...</div>` block, comments already
+ * stripped, INCLUDING its children (the caption span and the number span).
+ * Non-greedy up to the first `</div>` — safe because this block's own
+ * content is two flat `<span>` elements with no nested `<div>`. Throws
+ * rather than returning null, same reasoning as inputTag() above.
  */
 function companyIdLabelTag() {
     const markup = withoutComments(readTemplate());
-    const tags = (markup.match(/<div\b[^>]*class="two-company-id-label"[^>]*><\/div>/g) || []);
+    const tags = (markup.match(/<div\b[^>]*class="two-company-id-label"[^>]*>[\s\S]*?<\/div>/g) || []);
     if (tags.length !== 1) {
         throw new Error('expected exactly one <div class="two-company-id-label">, found ' + tags.length);
     }
     return tags[0];
+}
+
+/**
+ * The `<span data-bind="text: companyId">` inside the number label — the
+ * element that actually paints the number, as opposed to the static
+ * "Company Number" caption span alongside it.
+ */
+function companyIdNumberSpanTag() {
+    const tag = companyIdLabelTag();
+    const spans = (tag.match(/<span\b[^>]*>/g) || []).filter(function (span) {
+        return /text:\s*companyId\b/.test(span);
+    });
+    if (spans.length !== 1) {
+        throw new Error(
+            'expected exactly one <span data-bind="text: companyId">, found ' + spans.length
+        );
+    }
+    return spans[0];
 }
 
 /**
@@ -126,7 +154,7 @@ function renderedValue(id, renderer) {
  * `text:` binding.
  */
 function renderedLabelText(renderer) {
-    const bound = companyIdLabelTag().match(/text:\s*([A-Za-z_$][\w$]*)/);
+    const bound = companyIdNumberSpanTag().match(/text:\s*([A-Za-z_$][\w$]*)/);
     if (!bound) {
         throw new Error('the number label has no `text:` binding');
     }
@@ -215,6 +243,22 @@ describe('the payment tile shows the number as an uneditable label, not a field'
 
         expect(tag).toMatch(/text:\s*companyId\b/);
         expect(tag).toMatch(/visible:\s*!!companyId\(\)/);
+    });
+
+    test('the label carries a visible "Company Number" caption, not a bare number', () => {
+        // Regression caught in adversarial review: the first draft dropped
+        // the old <label for="company_id"> along with the input it labelled,
+        // leaving a sighted buyer (and a screen reader) with an unexplained
+        // number and no indication of what it was. The caption text must
+        // actually be present in the markup, not just asserted by comment.
+        const tag = companyIdLabelTag();
+
+        expect(tag).toMatch(/Company Number/);
+        // Two spans: one static caption, one bound to the number. Not one
+        // span doing both jobs — that would make the caption unable to
+        // update independently were it ever translated per-request.
+        const spanCount = (tag.match(/<span\b/g) || []).length;
+        expect(spanCount).toBe(2);
     });
 
     test('the name field is read-only only once a company has been captured', () => {

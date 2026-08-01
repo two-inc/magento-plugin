@@ -322,6 +322,17 @@ define([
                                     return companySearch.minInputLengthMessage();
                                 }
                             },
+                            // A stable, non-generated hook for style.css's
+                            // dropdown-row CSS fixes (text-transform,
+                            // vertical alignment). select2 IDs its own
+                            // rendered/results elements off the backing
+                            // element's `id` attribute when present, or
+                            // `name + 2 random chars` when it isn't — this
+                            // company field carries no explicit `id`, so
+                            // that fallback is NOT a stable selector CSS
+                            // could target. `dropdownCssClass` is select2's
+                            // own supported hook for exactly this.
+                            dropdownCssClass: 'two-company-search-dropdown',
                             width: '100%',
                             escapeMarkup: function (markup) {
                                 return markup;

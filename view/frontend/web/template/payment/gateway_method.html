@@ -217,27 +217,41 @@
                             ambiguity — there is no control to mistake for
                             typeable.
 
+                            The "Company Number" CAPTION is deliberately kept
+                            (an adversarial review round caught its removal:
+                            the first draft of this change dropped the
+                            `<label for="company_id">` along with the input,
+                            leaving a bare number with no indication of what
+                            it was — a real regression for both sighted
+                            buyers and assistive tech, not just a style nit).
+                            A `<span>` rather than a `<label for=...>`: there
+                            is no control left for a `for` attribute to
+                            associate with, and an orphaned `for` pointing at
+                            a retired id is worse than no `for` at all.
+
                             `visible: !!companyId()` is why it is naturally
                             blank in manual-entry mode: there is no number to
                             show, same as the input version, but here that
-                            reads as the label simply not being there rather
-                            than as an empty box. Nothing client-side
+                            reads as the whole line simply not being there
+                            rather than as an empty box. Nothing client-side
                             enforces the number's presence either way;
                             Model/Two.php::authorize() refuses an order with
                             an empty organisation number server-side, and
                             that refusal remains the only enforcement.
 
-                            Bound straight to `companyId`, the same observable
-                            the removed input read — every accepted source
-                            still writes exactly one place, and getData()
-                            still reads that observable, never the DOM. See
-                            the writer list on applyCompanyData() in
-                            gateway_method.js.
+                            The number itself is bound straight to
+                            `companyId`, the same observable the removed
+                            input read — every accepted source still writes
+                            exactly one place, and getData() still reads that
+                            observable, never the DOM. See the writer list on
+                            applyCompanyData() in gateway_method.js.
                         -->
-                        <div
-                            class="two-company-id-label"
-                            data-bind="visible: !!companyId(), text: companyId"
-                        ></div>
+                        <div class="two-company-id-label" data-bind="visible: !!companyId()">
+                            <span class="two-company-id-label__caption">
+                                <!-- ko i18n: 'Company Number'--><!-- /ko -->:
+                            </span>
+                            <span data-bind="text: companyId"></span>
+                        </div>
                     </div>
                 </div>
                 <!--
