@@ -254,6 +254,14 @@ describe('the payment tile shows the number as an uneditable label, not a field'
         const tag = companyIdLabelTag();
 
         expect(tag).toMatch(/Company Number/);
+        // Specifically via the `ko i18n` macro, not hardcoded English text —
+        // a second adversarial round flagged that a bare `/Company Number/`
+        // match alone is satisfied equally by a hardcoded
+        // `<span>Company Number</span>` that lost translatability, since
+        // withoutComments() deliberately preserves `ko i18n` comments rather
+        // than stripping them. This pins the delivery mechanism, not just
+        // the string's presence.
+        expect(tag).toMatch(/<!--\s*ko i18n:\s*'Company Number'\s*--><!--\s*\/ko\s*-->/);
         // Two spans: one static caption, one bound to the number. Not one
         // span doing both jobs — that would make the caption unable to
         // update independently were it ever translated per-request.

@@ -284,6 +284,31 @@ class LayoutProcessorPluginTest extends TestCase
     }
 
     /**
+     * The symmetric case to testMissingStreetStillAnchorsOnCompany(): the
+     * anchor loop is `foreach (['company', 'street'] as $fieldName)`, so
+     * `company` missing entirely (a store somehow without that attribute, or
+     * a jsLayout shape without it) must still anchor correctly on `street`
+     * alone.
+     */
+    public function testMissingCompanyStillAnchorsOnStreet(): void
+    {
+        $seeded = $this->seededLayout();
+        $seeded['components']['checkout']['children']['steps']['children']['shipping-step']
+            ['children']['shippingAddress']['children']['shipping-address-fieldset']['children'] = [
+                'street' => ['label' => 'Street Address', 'sortOrder' => 70],
+                'country_id' => ['label' => 'Country', 'sortOrder' => 90],
+            ];
+
+        $jsLayout = $this->plugin(true)->afterProcess(
+            $this->createMock(LayoutProcessor::class),
+            $seeded
+        );
+        $fieldset = $this->fieldset($jsLayout);
+
+        $this->assertSame(69, $fieldset['country_id']['sortOrder']);
+    }
+
+    /**
      * Absent `country_id` (a store somehow without the field at all, or a
      * jsLayout shape this plugin does not recognise) must not blow up or
      * conjure a field that was never there.

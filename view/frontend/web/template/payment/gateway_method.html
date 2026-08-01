@@ -247,8 +247,25 @@
                             applyCompanyData() in gateway_method.js.
                         -->
                         <div class="two-company-id-label" data-bind="visible: !!companyId()">
+                            <!--
+                                No hardcoded punctuation joining the caption and
+                                the number (no colon, no dash): a literal ASCII
+                                separator glued outside the translated string is
+                                exactly the kind of thing that reads wrong in
+                                some locales (spacing/punctuation conventions
+                                around a label vary — see the org's active
+                                nb/nl/sv/es locale-parity work). Reusing the
+                                bare `'Company Number'` string (already
+                                translated everywhere else it's used — the
+                                payment-tile field label, the address-step
+                                tooltip) rather than minting a new
+                                colon-suffixed msgid that would start out
+                                untranslated. Visual separation between caption
+                                and number comes from CSS (stacked lines)
+                                instead of punctuation.
+                            -->
                             <span class="two-company-id-label__caption">
-                                <!-- ko i18n: 'Company Number'--><!-- /ko -->:
+                                <!-- ko i18n: 'Company Number'--><!-- /ko -->
                             </span>
                             <span data-bind="text: companyId"></span>
                         </div>

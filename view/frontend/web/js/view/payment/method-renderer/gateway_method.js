@@ -1097,8 +1097,11 @@ define([
                             // `#select2-company_name-container` references
                             // below), but using the same explicit class here
                             // too keeps both pickers' dropdown CSS keyed off
-                            // one mechanism rather than two.
-                            dropdownCssClass: 'two-company-search-dropdown',
+                            // one mechanism rather than two. Drawn from
+                            // companySearch.DROPDOWN_CSS_CLASS, same shared
+                            // constant address-autocomplete.js uses, so the
+                            // two call sites and style.css can't drift.
+                            dropdownCssClass: companySearch.DROPDOWN_CSS_CLASS,
                             width: '100%',
                             escapeMarkup: function (markup) {
                                 return markup;
