@@ -431,6 +431,16 @@ define([
                     // so the append guard above was false and this handler kept
                     // closing over the first, stale component.
                     const activateSearchForCompany = function () {
+                        // Guards against a double-activation: this is a
+                        // `role="button"` on a plain div, not a native
+                        // <button>, and some assistive-tech/browser
+                        // combinations forward a synthetic `click` in
+                        // addition to the Enter keydown for exactly that
+                        // shape of widget. Once hidden, a second call is a
+                        // no-op rather than re-opening a dropdown the buyer
+                        // already opened.
+                        const $button = $(self.searchForCompanyButton).first();
+                        if ($button.length && $button.get(0).style.display === 'none') return;
                         self.enableCompanySearch({ openDropdown: true });
                         $(self.searchForCompanyButton).hide();
                     };

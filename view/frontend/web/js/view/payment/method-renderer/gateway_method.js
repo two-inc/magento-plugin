@@ -1251,6 +1251,16 @@ define([
                     // component) and scoped to this bind's own container.
                     const $searchForCompany = $field.find('.search_for_company');
                     const activateSearchForCompany = function () {
+                        // Guards against a double-activation: this is a
+                        // `role="button"` on a plain div, not a native
+                        // <button>, and some assistive-tech/browser
+                        // combinations forward a synthetic `click` in
+                        // addition to the Enter keydown for exactly that
+                        // shape of widget. Once hidden, a second call is a
+                        // no-op rather than re-opening a dropdown the buyer
+                        // already opened.
+                        const $el = $searchForCompany.first();
+                        if ($el.length && $el.get(0).style.display === 'none') return;
                         self.enableCompanySearch({ openDropdown: true });
                         $searchForCompany.hide();
                     };

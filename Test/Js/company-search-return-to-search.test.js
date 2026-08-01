@@ -628,4 +628,23 @@ describe.each([
         expect(openMarkerPresent()).toBe(false);
         expect($(searchLink).first().get(0).style.display).not.toBe('none');
     });
+
+    /*
+     * This is `role="button"` on a plain div, not a native `<button>`, and
+     * some assistive-tech/browser combinations forward a synthetic `click`
+     * in addition to the Enter keydown for exactly that shape of widget.
+     * Without a guard, that would re-open a dropdown the buyer already
+     * opened and re-run whatever `enableCompanySearch()` does a second time.
+     */
+    test('a synthetic click right behind the Enter keydown does not re-activate', () => {
+        reachManualMode($, ctx, enterManual, searchLink);
+        ctx.enableCompanySearch = jest.fn(ctx.enableCompanySearch);
+
+        $(searchLink).first().trigger('keydown', { key: 'Enter', which: 13, preventDefault: function () {} });
+        expect(ctx.enableCompanySearch).toHaveBeenCalledTimes(1);
+
+        click($, searchLink);
+
+        expect(ctx.enableCompanySearch).toHaveBeenCalledTimes(1);
+    });
 });
