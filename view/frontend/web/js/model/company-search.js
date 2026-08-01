@@ -84,6 +84,16 @@ define(['jquery', 'mage/translate'], function ($, $t) {
     const MIN_INPUT_LENGTH = 3;
 
     /**
+     * select2's `dropdownCssClass` option for both company-search pickers
+     * (address step and payment tile). A single exported constant, same
+     * reason as MIN_INPUT_LENGTH above: the two call sites (`select2({...})`
+     * in address-autocomplete.js and gateway_method.js) must agree with
+     * style.css's dropdown-row selector, and a hardcoded literal at each
+     * site can drift silently if one is renamed without the others.
+     */
+    const DROPDOWN_CSS_CLASS = 'two-company-search-dropdown';
+
+    /**
      * The "keep typing" hint shown while the term is below MIN_INPUT_LENGTH.
      *
      * select2 ships its own English `inputTooShort` message, hard-coded
@@ -181,6 +191,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         REQUEST_TIMEOUT_MS: REQUEST_TIMEOUT_MS,
         SEARCH_DEBOUNCE_MS: SEARCH_DEBOUNCE_MS,
         MIN_INPUT_LENGTH: MIN_INPUT_LENGTH,
+        DROPDOWN_CSS_CLASS: DROPDOWN_CSS_CLASS,
         EVENT_NS: EVENT_NS,
         isDegradedResponse: isDegradedResponse,
         minInputLengthMessage: minInputLengthMessage,

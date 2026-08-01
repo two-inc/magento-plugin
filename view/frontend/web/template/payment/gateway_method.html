@@ -202,55 +202,73 @@
                             value: companyName'
                             class="input-text"
                         />
-                    </div>
-                </div>
-                <!--
-                    The captured organisation number, VISIBLE and never
-                    editable. TWO-25288 first removed this input outright; that
-                    hid the number from the buyer, who could then not check
-                    what the order would be invoiced against. Showing it
-                    read-only keeps the reason the input was removed — a
-                    hand-typed organisation number is not an accepted source,
-                    it produced poor data quality and genuine buyers receiving
-                    invoices for orders they never placed — while giving the
-                    buyer back the confirmation.
+                        <!--
+                            The captured organisation number. Canonical design
+                            across all four platforms (Doug's ruling): not a
+                            second input field of its own — a plain text label
+                            immediately below the company-name field,
+                            right-aligned to it, shown only once a number has
+                            actually been captured. This SUPERSEDES the
+                            earlier `<input id="company_id" readonly>` field
+                            (TWO-25288): that traded the field's original
+                            removal (which hid the number from the buyer
+                            entirely) for a control that looked editable-ish
+                            despite being locked. A label carries no such
+                            ambiguity — there is no control to mistake for
+                            typeable.
 
-                    `readonly` is a STATIC attribute, unlike the name field
-                    above: there is no mode in which this number may be typed
-                    on this step. It is deliberately `readonly` rather than
-                    `disabled`, because a disabled control is dropped from the
-                    submitted form and skipped by jQuery Validation's
-                    `elements()` — this field must render and read like the
-                    others without changing what the form carries.
+                            The "Company Number" CAPTION is deliberately kept
+                            (an adversarial review round caught its removal:
+                            the first draft of this change dropped the
+                            `<label for="company_id">` along with the input,
+                            leaving a bare number with no indication of what
+                            it was — a real regression for both sighted
+                            buyers and assistive tech, not just a style nit).
+                            A `<span>` rather than a `<label for=...>`: there
+                            is no control left for a `for` attribute to
+                            associate with, and an orphaned `for` pointing at
+                            a retired id is worse than no `for` at all.
 
-                    Not `required`, and it carries no `name`: every accepted
-                    source writes the `companyId` observable and getData()
-                    reads that observable, never the DOM, so this input is a
-                    display of the value rather than a carrier of it. See the
-                    writer list on applyCompanyData() in gateway_method.js.
+                            `visible: !!companyId()` is why it is naturally
+                            blank in manual-entry mode: there is no number to
+                            show, same as the input version, but here that
+                            reads as the whole line simply not being there
+                            rather than as an empty box. Nothing client-side
+                            enforces the number's presence either way;
+                            Model/Two.php::authorize() refuses an order with
+                            an empty organisation number server-side, and
+                            that refusal remains the only enforcement.
 
-                    Blank in manual-entry mode, which is correct — there is no
-                    number to show. Nothing client-side enforces its presence;
-                    Model/Two.php::authorize() refuses an order with an empty
-                    organisation number server-side, and that refusal is the
-                    only enforcement.
-                -->
-                <div class="field field-text">
-                    <label for="company_id" class="label">
-                        <span><!-- ko i18n: 'Company Number'--><!-- /ko --></span>
-                    </label>
-                    <div class="control">
-                        <input
-                            type="text"
-                            id="company_id"
-                            readonly="readonly"
-                            data-bind='
-                            attr: {
-                                title: $t("Company Number")
-                            },
-                            value: companyId'
-                            class="input-text two-company-id-readonly"
-                        />
+                            The number itself is bound straight to
+                            `companyId`, the same observable the removed
+                            input read — every accepted source still writes
+                            exactly one place, and getData() still reads that
+                            observable, never the DOM. See the writer list on
+                            applyCompanyData() in gateway_method.js.
+                        -->
+                        <div class="two-company-id-label" data-bind="visible: !!companyId()">
+                            <!--
+                                No hardcoded punctuation joining the caption and
+                                the number (no colon, no dash): a literal ASCII
+                                separator glued outside the translated string is
+                                exactly the kind of thing that reads wrong in
+                                some locales (spacing/punctuation conventions
+                                around a label vary — see the org's active
+                                nb/nl/sv/es locale-parity work). Reusing the
+                                bare `'Company Number'` string (already
+                                translated everywhere else it's used — the
+                                payment-tile field label, the address-step
+                                tooltip) rather than minting a new
+                                colon-suffixed msgid that would start out
+                                untranslated. Visual separation between caption
+                                and number comes from CSS (stacked lines)
+                                instead of punctuation.
+                            -->
+                            <span class="two-company-id-label__caption">
+                                <!-- ko i18n: 'Company Number'--><!-- /ko -->
+                            </span>
+                            <span data-bind="text: companyId"></span>
+                        </div>
                     </div>
                 </div>
                 <!--

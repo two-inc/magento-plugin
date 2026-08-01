@@ -322,6 +322,22 @@ define([
                                     return companySearch.minInputLengthMessage();
                                 }
                             },
+                            // A stable, non-generated hook for style.css's
+                            // dropdown-row CSS fixes (text-transform,
+                            // vertical alignment). select2 IDs its own
+                            // rendered/results elements off the backing
+                            // element's `id` attribute when present, or
+                            // `name + 2 random chars` when it isn't — this
+                            // company field carries no explicit `id`, so
+                            // that fallback is NOT a stable selector CSS
+                            // could target. `dropdownCssClass` is select2's
+                            // own supported hook for exactly this — the
+                            // literal class name lives once, on
+                            // companySearch.DROPDOWN_CSS_CLASS, same
+                            // convention as MIN_INPUT_LENGTH above, so this
+                            // and the payment-tile picker's init (and
+                            // style.css) can't drift apart on a rename.
+                            dropdownCssClass: companySearch.DROPDOWN_CSS_CLASS,
                             width: '100%',
                             escapeMarkup: function (markup) {
                                 return markup;
