@@ -1240,7 +1240,8 @@ define([
                     const $field = $companyNameField.closest('.field');
                     if ($field.find('.search_for_company').length == 0) {
                         $field.append(
-                            `<div class="search_for_company" title="${self.searchForCompanyText}">` +
+                            `<div class="search_for_company" role="button" tabindex="0" ` +
+                                `title="${self.searchForCompanyText}">` +
                                 `<span>${self.searchForCompanyText}</span>` +
                                 '</div>'
                         );
@@ -1249,11 +1250,24 @@ define([
                     // so an append guard would leave this closed over a stale
                     // component) and scoped to this bind's own container.
                     const $searchForCompany = $field.find('.search_for_company');
+                    const activateSearchForCompany = function () {
+                        self.enableCompanySearch({ openDropdown: true });
+                        $searchForCompany.hide();
+                    };
                     $searchForCompany
                         .off('click' + companySearch.EVENT_NS)
-                        .on('click' + companySearch.EVENT_NS, function () {
-                            self.enableCompanySearch({ openDropdown: true });
-                            $searchForCompany.hide();
+                        .off('keydown' + companySearch.EVENT_NS)
+                        .on('click' + companySearch.EVENT_NS, activateSearchForCompany)
+                        // Keyboard reachability (TWO parity with WooCommerce /
+                        // Hyvä): this div has no native semantics, so Enter/
+                        // Space have to be wired up by hand to match the
+                        // role="button" contract set on the markup above.
+                        .on('keydown' + companySearch.EVENT_NS, function (e) {
+                            if (e.key !== 'Enter' && e.key !== ' ' && e.which !== 13 && e.which !== 32) {
+                                return;
+                            }
+                            e.preventDefault();
+                            activateSearchForCompany();
                         });
                     $searchForCompany.hide();
                     // Last, so every handler above — including `select2:open`,
