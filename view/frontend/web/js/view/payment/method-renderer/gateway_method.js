@@ -510,7 +510,12 @@ define([
             this.companyName('');
             this.companyId('');
             $(this.companyNameSelector).val('');
-            $('#select2-company_name-container')?.text('');
+            // No `?.` here, unlike the two sibling writers of this node. A
+            // jQuery set is always truthy — empty or not — so the optional
+            // chain on those lines can never short-circuit, and reproducing it
+            // would imply a guard that does not exist. `.text()` on an empty
+            // set is already a no-op, which is the behaviour that was wanted.
+            $('#select2-company_name-container').text('');
         },
         fillCountryCode: function (countryCode) {
             console.debug({ logger: 'twoPayment.fillCountryCode', countryCode });
