@@ -229,6 +229,18 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      */
     const MANUAL_ENTRY_NS = '.twoManualEntry';
 
+    /**
+     * Attribute applyAddress() records its own write in, so a later revert can
+     * tell an autofilled value apart from one the buyer typed.
+     *
+     * A DOM attribute rather than module state on purpose: the checkout
+     * re-renders the address form (Fire Checkout does it on every totals
+     * change), and the recording has to survive exactly as long as the input
+     * it describes — no longer. A module-level Map would outlive the node and
+     * start describing its replacement.
+     */
+    const AUTOFILL_MARKER_ATTR = 'data-two-autofilled-value';
+
     const SPINNER_CLASS = 'two-company-search__spinner';
     const UNAVAILABLE_CLASS = 'two-company-search__unavailable';
     const MANUAL_ENTRY_CLASS = 'two-company-search__manual-entry';
@@ -431,6 +443,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         MIN_INPUT_LENGTH: MIN_INPUT_LENGTH,
         DROPDOWN_CSS_CLASS: DROPDOWN_CSS_CLASS,
         EVENT_NS: EVENT_NS,
+        AUTOFILL_MARKER_ATTR: AUTOFILL_MARKER_ATTR,
         isDegradedResponse: isDegradedResponse,
         minInputLengthMessage: minInputLengthMessage,
         noResultsMessage: noResultsMessage,
@@ -809,16 +822,82 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * `#billing-new-address-form`, and only one of them is present when a
          * company is picked from that step's search box.
          *
+         * Each field also records the value this wrote, in
+         * `AUTOFILL_MARKER_ATTR`. That recording is what makes the write
+         * REVERSIBLE on a country switch (revertAutofilledAddress() below)
+         * without ever discarding something the buyer typed: a buyer edit
+         * leaves the field's value and its recording different, and that
+         * difference IS the "buyer owns this now" signal.
+         *
+         * The marker is refreshed even when the incoming value already matches
+         * what is in the field. Otherwise two companies sharing a postcode
+         * would leave the second write unrecorded, and the field would read as
+         * buyer-typed for the rest of the page's life.
+         *
          * @param {object} address company address record from the API
          */
         applyAddress: function (address) {
             console.debug({ logger: 'companySearch.applyAddress', address });
-            $('input[name="city"]').val(address.city);
-            $('input[name="postcode"]').val(address.postal_code);
-            $('input[name="street[0]"]').val(address.street_address);
+            const values = {
+                city: address.city,
+                postcode: address.postal_code,
+                'street[0]': address.street_address
+            };
+            // No presence check: jQuery's `.val()` and `.attr()` are no-ops on
+            // an empty set, which is the pre-existing behaviour for a step
+            // whose form is not on screen, and a guard here would only make
+            // the two writes disagree about when they run.
+            Object.keys(values).forEach(function (name) {
+                const value = values[name] == null ? '' : String(values[name]);
+                $(`input[name="${name}"]`).val(value).attr(AUTOFILL_MARKER_ATTR, value);
+            });
             $('input[name="city"], input[name="postcode"], input[name="street[0]"]').trigger(
                 'change'
             );
+        },
+
+        /**
+         * Undo an applyAddress() write, field by field, and forget the
+         * recording.
+         *
+         * Called when the buyer switches country: an address autofilled from
+         * the previous country's registry is not a hint about the new one, it
+         * is a wrong address the buyer may well not re-read before placing the
+         * order.
+         *
+         * Only fields still holding EXACTLY what applyAddress() put there are
+         * cleared. Anything the buyer has since edited — and anything that was
+         * never autofilled at all, including a whole form they filled by hand —
+         * has no matching recording and is left alone. That asymmetry is the
+         * point: over-clearing here silently deletes buyer input on a keystroke
+         * they may have made minutes ago, which is worse than leaving a stale
+         * value they can see and correct.
+         *
+         * `change` is fired only for fields actually cleared, so Magento's
+         * address-form bookkeeping sees the same event shape it does for a
+         * buyer edit.
+         *
+         * @returns {number} how many fields were cleared — for tests, and so a
+         *          caller can tell "nothing was ours" from "reverted"
+         */
+        revertAutofilledAddress: function () {
+            let cleared = 0;
+            ['city', 'postcode', 'street[0]'].forEach(function (name) {
+                const $input = $(`input[name="${name}"]`);
+                const marker = $input.attr(AUTOFILL_MARKER_ATTR);
+                // `undefined` means never autofilled. An empty-string marker is
+                // a real recording (the registry had no value for this field)
+                // and must still be honoured, so this tests for absence rather
+                // than falsiness.
+                if (typeof marker === 'undefined') return;
+                $input.removeAttr(AUTOFILL_MARKER_ATTR);
+                if (($input.val() || '') !== marker) return;
+                $input.val('');
+                $input.trigger('change');
+                cleared += 1;
+            });
+            console.debug({ logger: 'companySearch.revertAutofilledAddress', cleared });
+            return cleared;
         },
 
         /**

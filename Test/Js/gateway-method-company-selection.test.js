@@ -555,18 +555,34 @@ describe('the shipping-step picker agrees with the payment step', () => {
         autocomplete.setCompanyData('12345678', 'First Example Ltd');
         expect(sections.companyData).toEqual({
             companyId: '12345678',
-            companyName: 'First Example Ltd'
+            companyName: 'First Example Ltd',
+            // TWO-24867. The double's country select is empty, so the stamp is
+            // '' here; what it says under a real country is pinned in
+            // Test/Js/company-search-country-switch.test.js.
+            companyCountry: ''
         });
         // `toEqual` treats a key holding `undefined` as equal to the key being
         // absent, so it alone would pass if `companyId` stopped being written.
         // `toStrictEqual` is not usable here — the harness runs modules in a
         // `vm` context, so every strict compare fails cross-realm with
         // "serializes to the same string". Assert the key set instead.
-        expect(Object.keys(sections.companyData).sort()).toEqual(['companyId', 'companyName']);
+        expect(Object.keys(sections.companyData).sort()).toEqual([
+            'companyCountry',
+            'companyId',
+            'companyName'
+        ]);
 
         autocomplete.setCompanyData('', 'Second Example Ltd');
-        expect(sections.companyData).toEqual({ companyId: '', companyName: 'Second Example Ltd' });
-        expect(Object.keys(sections.companyData).sort()).toEqual(['companyId', 'companyName']);
+        expect(sections.companyData).toEqual({
+            companyId: '',
+            companyName: 'Second Example Ltd',
+            companyCountry: ''
+        });
+        expect(Object.keys(sections.companyData).sort()).toEqual([
+            'companyCountry',
+            'companyId',
+            'companyName'
+        ]);
         expect(dom.node(autocomplete.companyIdSelector).val()).toBe('');
     });
 });
