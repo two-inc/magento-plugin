@@ -315,16 +315,18 @@ function makeMiniQuery() {
         // `nudgeSelect2Resize()` targets `$(window)` — real jQuery always
         // resolves that to a real, triggerable set. The AMD harness runs
         // company-search.js in an isolated vm sandbox whose `window` is a
-        // plain stub object (`amd-harness.js`'s `sandbox.window`), NOT the
-        // outer jsdom `window` this file's `window.addEventListener` calls
-        // use — so an identity check (`arg === window`) never matches
-        // across that realm boundary. Anything reaching here is neither a
-        // wrapped set, a string, nor a real DOM node, so it can only be
-        // that opaque cross-realm window stand-in; route it to the REAL
-        // window so a `.trigger()` on it is actually observable. Without
-        // this every resize nudge silently no-opped, which is exactly what
-        // hid the round-3 nudge-ordering bug from the whole suite.
-        if (arg && typeof arg === 'object') return wrap([window]);
+        // plain stub object (`amd-harness.js`'s `sandbox.window`, shaped
+        // like `{ checkoutConfig: {...} }`), NOT the outer jsdom `window`
+        // this file's `window.addEventListener` calls use — so an identity
+        // check (`arg === window`) never matches across that realm
+        // boundary. Duck-typed on `checkoutConfig` rather than "any plain
+        // object reaching here", so a future `$()` call on some other
+        // opaque object in this module can't be silently misrouted to
+        // `window` — it would fall through to the empty set below instead,
+        // same as it always has. Without SOME form of this patch every
+        // resize nudge silently no-opped, which is exactly what hid the
+        // round-3 nudge-ordering bug from the whole suite.
+        if (arg && typeof arg === 'object' && 'checkoutConfig' in arg) return wrap([window]);
         return wrap([]);
     }
     $.fn = {};
@@ -754,6 +756,34 @@ describe('keyboard reachability (round 2 — Tab is not free)', () => {
         });
         dom.search.dispatchEvent(shiftTab);
         expect(shiftTab.defaultPrevented).toBe(false);
+        expect(dom.$field.select2).not.toHaveBeenCalled();
+    });
+
+    test('the Tab handler fails closed on a stale bind, same as every other lookup in this module', () => {
+        dom.$field.select2 = jest.fn();
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        typeTerm(dom, 'example');
+        expect(manualButtons(dom)).toHaveLength(1);
+
+        // Supersede the bind WITHOUT detaching — the exact gap the
+        // staleness guard exists to close (a re-render can rebind a new
+        // widget to this same node before the old one's listener is torn
+        // down). The stamped token no longer matches what this handler
+        // closed over, so `getSearchFieldContainer($field, token)` must now
+        // resolve empty and the handler must act as if it isn't bound at
+        // all — not fall through to the button (which still physically
+        // exists in the DOM) or to select2('close').
+        dom.$field.data('twoSearchBind', {});
+
+        const event = new window.KeyboardEvent('keydown', {
+            key: 'Tab',
+            bubbles: true,
+            cancelable: true
+        });
+        dom.search.dispatchEvent(event);
+
+        expect(event.defaultPrevented).toBe(false);
+        expect(document.activeElement).not.toBe(manualButtons(dom)[0]);
         expect(dom.$field.select2).not.toHaveBeenCalled();
     });
 
