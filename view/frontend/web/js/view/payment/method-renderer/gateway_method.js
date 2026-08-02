@@ -1512,8 +1512,34 @@ define([
         },
 
         registeredOrganisationMode() {
+            // Read BEFORE the flag is flipped: this method is both the
+            // "leave sole trader" action and the tile's own initialiser
+            // (initObservable() calls it), and those two need different
+            // behaviour below.
+            const wasSoleTrader = this.showSoleTrader();
             this.showSoleTrader(false);
             this.showPopupMessage(false);
+            if (wasSoleTrader) {
+                // Leaving sole trader discards the sole-trader identity, the
+                // mirror of enterSoleTraderUi() clearing on the way in. A
+                // sole trader's minted name and synthetic number are not a
+                // registered organisation, so carrying them across the mode
+                // switch would submit one identity under the other's mode.
+                //
+                // Load-bearing since TWO-25326 §7 made the tile's company
+                // control HIDE once a company is captured. Before that the
+                // stale identity was untidy but recoverable — the search box
+                // was still on screen, and picking a company overwrote it.
+                // Now it is not: isCompanyCaptured() would still be true, so
+                // the control would stay hidden and the buyer would be
+                // stranded in registered-organisation mode looking at a
+                // sole-trader label with no way to search.
+                //
+                // Before enableCompanySearch(), not after: clearCompany()
+                // ends in destroyCompanySearchWidget(), which would otherwise
+                // tear down the widget that call had just rebuilt.
+                this.clearCompany();
+            }
             this.enableCompanySearch();
             this.fillCustomerData();
         },

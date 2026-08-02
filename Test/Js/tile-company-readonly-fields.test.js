@@ -557,6 +557,113 @@ describe('what each capture mode puts in front of the buyer', () => {
         expect(isReadOnly('company_name', renderer)).toBe(false);
     });
 
+    /**
+     * The regression §7's swap introduces if nothing is done about it, caught
+     * in adversarial review rather than by the original test set.
+     *
+     * registeredOrganisationMode() did not clear the captured company. While
+     * the tile's control was always visible that was untidy but recoverable —
+     * the buyer could just search, and the pick overwrote the stale identity.
+     * Once the control HIDES on capture it is not recoverable: a buyer
+     * leaving sole-trader mode would face a sole-trader label, no search box,
+     * and no way back.
+     */
+    test('leaving sole-trader mode brings the capture control back', () => {
+        const { renderer } = loadRendererOnly();
+
+        renderer.prefetched = {
+            ready: true,
+            matches: true,
+            buyer: {
+                organization_number: 'ST-SYNTH-004',
+                company_name: 'Sole Trader Example'
+            }
+        };
+        renderer.soleTraderMode();
+        expect(labelVisible(renderer)).toBe(true);
+        expect(nameFieldVisible(renderer)).toBe(false);
+
+        // fillCustomerData() reaches into the quote's address objects
+        // (getCacheKey()), which this file's renderer-only harness does not
+        // model. Stubbed rather than worked around, and asserted below so the
+        // stub cannot quietly hide the call disappearing from the path.
+        const fillCustomerData = jest.fn();
+        renderer.fillCustomerData = fillCustomerData;
+
+        renderer.registeredOrganisationMode();
+
+        expect(fillCustomerData).toHaveBeenCalled();
+
+        expect(renderer.showSoleTrader()).toBe(false);
+        // The sole-trader identity does not survive the mode switch...
+        expect(renderer.companyId()).toBe('');
+        expect(renderer.isCompanyCaptured()).toBe(false);
+        // ...so the buyer gets the search box back.
+        expect(nameFieldVisible(renderer)).toBe(true);
+        expect(labelVisible(renderer)).toBe(false);
+    });
+
+    /**
+     * The other half of that fix: registeredOrganisationMode() is ALSO the
+     * tile's own initialiser (initObservable() calls it), and clearing
+     * unconditionally would wipe a company captured on the ADDRESS step
+     * before the tile ever rendered — silently turning a completed capture
+     * into an unpayable order. The clear is therefore guarded on having
+     * actually been in sole-trader mode, and this pins that guard.
+     */
+    test('initialising the tile does not wipe a company captured upstream', () => {
+        const { renderer } = loadRendererOnly();
+
+        renderer.applyCompanyData(
+            { companyName: 'Captured Upstream Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+        expect(renderer.showSoleTrader()).toBe(false);
+
+        // fillCustomerData() reaches into the quote's address objects
+        // (getCacheKey()), which this file's renderer-only harness does not
+        // model. Stubbed rather than worked around, and asserted below so the
+        // stub cannot quietly hide the call disappearing from the path.
+        const fillCustomerData = jest.fn();
+        renderer.fillCustomerData = fillCustomerData;
+
+        // The init-path call, with sole trader never having been entered.
+        renderer.registeredOrganisationMode();
+
+        expect(fillCustomerData).toHaveBeenCalled();
+
+        expect(renderer.companyId()).toBe('12345678');
+        expect(renderer.isCompanyCaptured()).toBe(true);
+        expect(labelVisible(renderer)).toBe(true);
+        expect(nameFieldVisible(renderer)).toBe(false);
+    });
+
+    /**
+     * Hiding rather than removing means select2 can be initialised against a
+     * node that is already `display: none` (a company captured on the address
+     * step before the tile rendered). select2 measures a width at init, and
+     * `_resolveWidth` returns anything that is not `resolve`/`element`/
+     * `style`/`computedstyle` VERBATIM — so the literal `'100%'` this picker
+     * passes is a CSS percentage that resolves whenever the node is shown,
+     * not a pixel count frozen at zero.
+     *
+     * Switching that option to `'resolve'` or `'element'` would measure
+     * `outerWidth()` at init instead, which is 0 on a hidden node, and the
+     * buyer who returns to manual entry would get a zero-width search box.
+     * Pinned as an option value because there is no way to observe the
+     * consequence in jsdom (no layout), and the failure is invisible until a
+     * real browser renders it.
+     */
+    test('the picker takes a percentage width, so a hidden init cannot freeze it at zero', () => {
+        const source = fs.readFileSync(path.join(__dirname, '..', '..', RENDERER), 'utf8');
+        const widths = source.match(/width:\s*'([^']*)'/g) || [];
+
+        expect(widths.length).toBeGreaterThan(0);
+        widths.forEach(function (width) {
+            expect(width).toMatch(/width:\s*'\d+%'/);
+        });
+    });
+
     test('an identifier-less pick keeps the control up, with no label', () => {
         // The other route to a blank number: the registry holds no identifier
         // for the picked company. Distinct from manual entry — a company IS
