@@ -53,9 +53,12 @@ define([
 
             $.async(this.countrySelector, function (countrySelector) {
                 self.toggleCompanyVisibility();
-                $(countrySelector).on('change', function () {
-                    self.toggleCompanyVisibility();
-                });
+                self._lastCountryCode = self.currentCountryCode();
+                $(countrySelector)
+                    .off('change' + EVENT_NS)
+                    .on('change' + EVENT_NS, function () {
+                        self.onCountryChanged();
+                    });
             });
             this.enableCompanySearch();
             this.enableManualCompanyId();
@@ -66,8 +69,73 @@ define([
                 customerData.set('shippingTelephone', telephone);
             });
         },
+        /**
+         * The address form's currently selected country, lower-cased, or ''
+         * when the select is absent or has no value.
+         *
+         * Guarded rather than `.val().toLowerCase()`: jQuery's `.val()` on an
+         * empty set is `undefined`, and this runs from a `$.async` callback
+         * whose node can be replaced by a re-render between resolve and call.
+         *
+         * @returns {string}
+         */
+        currentCountryCode: function () {
+            const value = $(this.countrySelector).val();
+            return typeof value === 'string' ? value.toLowerCase() : '';
+        },
+        /**
+         * The buyer changed the address country mid-checkout (TWO-24867).
+         *
+         * Everything the company search produced belongs to the country it was
+         * searched in: the company itself, its organisation number, and the
+         * address autofilled from the registry entry. None of it describes the
+         * new country, and none of it is re-derivable — so a switch has to
+         * retract it rather than leave it on screen looking chosen.
+         *
+         * The concrete failure this closes is not cosmetic. `companyData` is a
+         * localStorage customer-data section and the payment tile credit-checks
+         * whatever is in it, so a GB organisation number survived a switch to
+         * ES and was submitted under an ES billing address — refused upstream,
+         * and surfaced to the buyer as a generic failure with nothing on screen
+         * explaining which field was wrong.
+         *
+         * What this deliberately does NOT do is re-bind the picker. The
+         * PrestaShop equivalent recreates its autocomplete here because that
+         * widget captures the country at construction; this one does not —
+         * `getCountryCode` (enableCompanySearch() below) reads the select on
+         * every request, so the next search already carries the new country.
+         * Re-binding would tear down and rebuild select2 for no behavioural
+         * gain, and would drag a buyer sitting in manual-entry mode back into
+         * search mode. Pinned by the "search after a switch uses the new
+         * country" test rather than left as a claim.
+         */
+        onCountryChanged: function () {
+            const countryCode = this.currentCountryCode();
+            const previous = this._lastCountryCode;
+            this._lastCountryCode = countryCode;
+            // `change` also fires for a re-render that re-selects the same
+            // country, and Magento fires it once as the form initialises. Only
+            // an actual change is a reason to discard a company — doing this on
+            // a no-op would blank a returning customer's prefilled address the
+            // moment their form loads.
+            if (previous === countryCode) {
+                this.toggleCompanyVisibility();
+                return;
+            }
+            // First, before the state it might repaint is cleared: a search
+            // issued under the OLD country is still on the wire for up to 30s,
+            // and its results would populate a dropdown the buyer reads as
+            // results for the new one.
+            companySearch.abortActiveRequest(this._bindToken);
+            companySearch.revertAutofilledAddress();
+            // Clears the name input, the number field, and the published
+            // `companyData` section the payment tile reads — every surviving
+            // copy of the previous country's company.
+            this.setCompanyData();
+            this.toggleCompanyVisibility();
+        },
         toggleCompanyVisibility: function () {
-            const countryCode = $(this.countrySelector).val().toLowerCase();
+            const countryCode = this.currentCountryCode();
             customerData.set('countryCode', countryCode);
             let field = $(this.companyNameSelector).closest('.field');
             field.show();
@@ -85,7 +153,21 @@ define([
          * reading is only sound while the section has exactly one writer.
          */
         publishCompanyData: function (companyId, companyName) {
-            customerData.set('companyData', { companyId: companyId, companyName: companyName });
+            customerData.set('companyData', {
+                companyId: companyId,
+                companyName: companyName,
+                // The country this company was captured in (TWO-24867).
+                //
+                // `companyData` is a localStorage section, so it outlives the
+                // page and the order: a buyer who searched a GB company, left,
+                // and came back to a checkout now sitting on an ES address
+                // would otherwise have the GB organisation number read back and
+                // credit-checked under ES. The in-page country-change reset
+                // cannot reach that case — nothing changed in THIS page — so
+                // the record has to say which country it belongs to and the
+                // reader has to check.
+                companyCountry: this.currentCountryCode()
+            });
         },
         setCompanyData: function (companyId = '', companyName = '') {
             console.debug({ logger: 'addressAutocomplete.setCompanyData', companyId, companyName });
@@ -368,6 +450,13 @@ define([
                     // Identity for this bind, so a previous widget's late
                     // response cannot paint chrome on its replacement.
                     const bindToken = {};
+                    // Also held on the component, so the country-change handler
+                    // — which is bound to the country select, not to this node,
+                    // and therefore closes over no bind of its own — can cancel
+                    // the search the CURRENT picker has in flight. Overwritten
+                    // on every re-bind, which is correct: only the live bind
+                    // can have a request worth cancelling.
+                    self._bindToken = bindToken;
                     // select2's destroy() only clears its own `.select2`
                     // namespace, so our handlers would stack one copy per
                     // re-render and a single pick would fire N address

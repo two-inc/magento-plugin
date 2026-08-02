@@ -340,7 +340,13 @@ describe('what the buyer types reaches the payment step', () => {
 
         const last = writes[writes.length - 1];
         expect(last.key).toBe('companyData');
-        expect(last.value).toEqual({ companyId: '87654321', companyName: 'Second Example Ltd' });
+        // `companyCountry` is TWO-24867's capture stamp — the payment tile
+        // refuses a company whose stamp names a country the buyer has left.
+        expect(last.value).toEqual({
+            companyId: '87654321',
+            companyName: 'Second Example Ltd',
+            companyCountry: 'gb'
+        });
     });
 
     test('a manually typed name and number publish together', () => {
@@ -354,7 +360,11 @@ describe('what the buyer types reaches the payment step', () => {
         node(ID_FIELD).handlers['change']();
 
         const last = writes[writes.length - 1];
-        expect(last.value).toEqual({ companyId: '87654321', companyName: 'Hand Typed Ltd' });
+        expect(last.value).toEqual({
+            companyId: '87654321',
+            companyName: 'Hand Typed Ltd',
+            companyCountry: 'gb'
+        });
     });
 
     test('every companyData write goes through publishCompanyData', () => {

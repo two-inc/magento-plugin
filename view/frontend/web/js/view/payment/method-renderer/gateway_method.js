@@ -411,6 +411,34 @@ define([
         applyCompanyData: function (companyData, options) {
             const data = companyData || {};
             const authoritative = !!(options && options.authoritative);
+            // Refuse a company captured in a different country (TWO-24867).
+            //
+            // Applies to the authoritative path too: `companyData` is a
+            // localStorage section that outlives the page, so "a change
+            // notification is the shipping-step picker writing it" is only true
+            // WITHIN a page load. A record restored from a previous visit is
+            // indistinguishable from a live pick at this end, and a GB
+            // organisation number applied under an ES billing address is
+            // refused upstream as a generic failure the buyer cannot act on.
+            //
+            // Fails OPEN on an absent stamp, not closed: records written before
+            // this field existed carry no country, and treating "unstamped" as
+            // "wrong country" would drop a legitimate company on the first load
+            // after an upgrade. They gain the stamp on the next write.
+            const capturedCountry = data.companyCountry ? String(data.companyCountry) : '';
+            const currentCountry = this.countryCode();
+            if (
+                capturedCountry &&
+                currentCountry &&
+                capturedCountry.toLowerCase() !== currentCountry.toLowerCase()
+            ) {
+                console.debug({
+                    logger: 'twoPayment.applyCompanyData.countryMismatch',
+                    capturedCountry,
+                    currentCountry
+                });
+                return;
+            }
             const companyName =
                 typeof data.companyName == 'string' && data.companyName ? data.companyName : '';
             // String(), not a typeof test: a non-string id (a numeric
@@ -460,10 +488,43 @@ define([
             if (!telephone) return;
             this.telephone(telephone);
         },
+        /**
+         * Forget the company currently in play, because it belongs to a
+         * country the buyer has just left (TWO-24867).
+         *
+         * Name AND number, unlike clearCompany(), which leaves `companyName()`
+         * standing for the sole-trader signup prefill. There is no such reader
+         * here: the name came out of the previous country's registry, so
+         * carrying it into a signup popup or an intent-approved notice for the
+         * new country would be asserting a company the buyer has not chosen
+         * there.
+         *
+         * The widget is deliberately left bound. disableCompanySearch() would
+         * destroy it and force the buyer to click "Search for company" again to
+         * do the very thing the switch implies they are about to do; the picker
+         * reads `countryCode()` per request (see its `getCountryCode`), so the
+         * bound widget already searches the new country.
+         */
+        clearCompanyForCountryChange: function () {
+            console.debug({ logger: 'twoPayment.clearCompanyForCountryChange' });
+            this.companyName('');
+            this.companyId('');
+            $(this.companyNameSelector).val('');
+            $('#select2-company_name-container')?.text('');
+        },
         fillCountryCode: function (countryCode) {
             console.debug({ logger: 'twoPayment.fillCountryCode', countryCode });
             countryCode = typeof countryCode == 'string' ? countryCode : '';
             if (!countryCode) return;
+            const previousCountryCode = this.countryCode();
+            // A CHANGE, not the first resolution. `countryCode()` starts empty
+            // and is filled from the quote on load, and that first fill must
+            // not discard a company the quote's own address already carries —
+            // updateAddress() calls this immediately before fillCompanyData()
+            // with both values off the SAME address.
+            if (previousCountryCode && previousCountryCode !== countryCode) {
+                this.clearCompanyForCountryChange();
+            }
             this.countryCode(countryCode);
             var self = this;
             this.getSupportedCompanyTypes(countryCode).then(function (types) {
