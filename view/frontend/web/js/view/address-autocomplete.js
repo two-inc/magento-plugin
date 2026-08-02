@@ -265,12 +265,20 @@ define([
             // highlight and scroll bookkeeping over a torn-down picker.
             companySearch.abortActiveRequest(bindToken);
             this.setCompanyData();
-            companySearch.detachManualEntryObserver($companyNameField);
+            companySearch.detachManualEntryButton($companyNameField);
             $companyNameField.off(companySearch.EVENT_NS);
             $companyNameField.select2('destroy');
             $companyNameField.attr('type', 'text');
             $companyNameField.val('');
             $(this.searchForCompanyButton).show();
+            // select2('destroy') removes the manual-entry button — the
+            // element that had focus when the buyer activated it — from the
+            // document, and destroy() does not route through select2's own
+            // `close` handler (which is what normally refocuses the
+            // combobox). Left alone, focus falls back to `<body>` with
+            // nothing visible focused; land it on the plain-text field this
+            // just became instead.
+            $companyNameField.trigger('focus');
         },
         /**
          * (Re-)bind the company-search picker to the company-name input.
@@ -378,38 +386,29 @@ define([
                             // search box, so a reopened picker would show the
                             // previous search's "unavailable" notice.
                             companySearch.clearSearchChrome($companyNameField, bindToken);
-                            // The manual-entry affordance is a row INSIDE the
-                            // results list, so the model owns its whole
-                            // lifecycle (appear at the threshold, survive each
-                            // re-render). Bound to this node and this bind
-                            // token, so a stale widget cannot paint a row onto
-                            // its replacement.
-                            companySearch.attachManualEntryRow($companyNameField, bindToken);
+                            // The manual-entry button is a SIBLING of the
+                            // results list (#30.x.15), not a row inside it,
+                            // so it stays visible outside select2's own
+                            // scroll/clip and needs no selection-cancelling
+                            // dance: its own click handler below is the only
+                            // thing that activates it.
+                            companySearch.attachManualEntryButton(
+                                $companyNameField,
+                                bindToken,
+                                function () {
+                                    self.enterDetailsManually($companyNameField, bindToken);
+                                }
+                            );
                             document.querySelector('.select2-search__field').focus();
                         })
                         .on('select2:close' + companySearch.EVENT_NS, function () {
                             // Every open re-attaches, so nothing is lost by
-                            // dropping the watcher here — and a checkout that
+                            // dropping the button here — and a checkout that
                             // re-renders the form while the picker is closed
-                            // would otherwise leave this node's observer
-                            // pinning a detached results list for the life of
+                            // would otherwise leave a button from this bind
+                            // wired to a disposed renderer for the life of
                             // the page.
-                            companySearch.detachManualEntryObserver($companyNameField);
-                        })
-                        /*
-                         * `select2:selecting` is the PREVENTABLE pre-event for
-                         * a selection, and the manual-entry row is not a
-                         * company: letting it through would write the sentinel
-                         * id into the company name and fire an address lookup
-                         * for it. Cancelling here also covers mouse, Enter and
-                         * touch in one place, because all three arrive as a
-                         * selection.
-                         */
-                        .on('select2:selecting' + companySearch.EVENT_NS, function (e) {
-                            const data = e.params && e.params.args && e.params.args.data;
-                            if (!companySearch.isManualEntryOption(data)) return;
-                            e.preventDefault();
-                            self.enterDetailsManually($companyNameField, bindToken);
+                            companySearch.detachManualEntryButton($companyNameField);
                         })
                         .on('select2:select' + companySearch.EVENT_NS, function (e) {
                             const selectedItem = e.params.data;

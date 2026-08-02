@@ -113,18 +113,60 @@
 }
 
 /*
- * The manual-entry row in the company-search results list.
+ * The manual-entry button (#30.x.15), a SIBLING of the company-search
+ * results list rather than a row inside it — see buildManualEntryButton() in
+ * company-search.js for why. It is a real `<button>`, so full-width/
+ * left-aligned/appearance-reset styling here is what makes it read as a
+ * plain-text row of its own rather than as a form control.
  *
  * A SINGLE FLAT CLASS: overlay stylesheets hook rows like this flat and win
  * on load order, and qualifying the selector here would outscore them with
- * nothing in CI to notice. It is a real select2 result row, so highlight and
- * hover styling arrive from select2's own rules; only the separator and the
- * link affordance are ours.
+ * nothing in CI to notice.
  */
 .two-company-search__manual-entry {
+    display: block;
+    width: 100%;
+    border: none;
     border-top: 1px solid #e8e8e8;
+    background: none;
+    margin: 0;
+    padding: 8px 12px;
+    text-align: left;
     color: var(--color-blue2);
+    font: inherit;
     cursor: pointer;
+    /*
+     * This repo has already fixed this exact bug twice on other elements
+     * (`.search_for_company` below, the dropdown-row selectors further down
+     * this file): Luma themes routinely apply a blanket uppercase
+     * `text-transform`, broad enough to catch a bare `<button>`, and
+     * frequently `!important` itself for CTA-style text. Unlike the old
+     * `<li role="option">` this replaces, this IS a real `<button>` now, so
+     * it is squarely inside that broad-selector blast radius.
+     */
+    text-transform: none !important;
+}
+
+.two-company-search__manual-entry:hover {
+    background-color: #f5f5f5;
+}
+
+/*
+ * Native `<button>` focus indicator. Stated as a positive rule rather than
+ * left to the UA default outline: this single flat class is deliberately
+ * unscoped (see the class-level comment above) so an overlay/theme
+ * `button:focus { outline: none }` — which this stylesheet itself applies to
+ * two OTHER controls just below — can win on load order alone, silently
+ * leaving the only keyboard-reachable affordance in this dropdown with no
+ * focus indicator at all. `:focus-visible` keeps it out of the way for a
+ * mouse click while still showing it for Tab. The offset keeps the ring
+ * inside the button's own edges, which sit flush with the dropdown border at
+ * `width: 100%`.
+ */
+.two-company-search__manual-entry:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: -2px;
+    background-color: #f5f5f5;
 }
 
 /*
@@ -513,21 +555,6 @@
     display: flex;
     align-items: center;
     text-transform: none !important;
-}
-
-/*
- * The manual-entry row in the company-search results list.
- *
- * A SINGLE FLAT CLASS, for the same reason as the spinner above: overlay
- * stylesheets hook these rows flat and win on load order, and qualifying the
- * selector here would outscore them with nothing in CI to notice. It is a real
- * select2 result row, so highlight and hover styling arrive from select2's own
- * rules; only the separator and the link affordance are ours.
- */
-.two-company-search__manual-entry {
-    border-top: 1px solid #e8e8e8;
-    color: var(--color-blue2);
-    cursor: pointer;
 }
 
 .two-term-chip--single {

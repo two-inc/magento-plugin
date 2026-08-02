@@ -41,16 +41,23 @@ const { loadAmdModule, defaultMocks } = require('./amd-harness');
 
 /**
  * BOTH surfaces reach manual entry through a row INSIDE the results list, so
- * the model decides what counts as that row. Sentinel-based override of that
- * one predicate; `getSearchFieldContainer` answers "this bind is still current"
- * (the default mock returns null, and the payment surface's deferred teardown
- * reads `.length` off it), everything else inert.
+ * the model decides how to reach it. `attachManualEntryButton` here captures
+ * the surface's own activation callback (the third argument, invoked in
+ * production by the shared model's real button once the buyer clicks it —
+ * or presses Enter/Space, since it is a native `<button>`) so a test can
+ * fire it directly, the same way `getSearchFieldContainer` answers "this
+ * bind is still current" (the default mock returns null, and the payment
+ * surface's deferred teardown reads `.length` off it), everything else
+ * inert.
  */
 function manualEntryAwareCompanySearch() {
-    return Object.assign({}, defaultMocks()['Two_Gateway/js/model/company-search'], {
-        isManualEntryOption: function (data) { return !!(data && data.__manualEntry); },
+    const mock = Object.assign({}, defaultMocks()['Two_Gateway/js/model/company-search'], {
+        attachManualEntryButton: function ($field, token, onActivate) {
+            mock.__lastOnActivate = onActivate;
+        },
         getSearchFieldContainer: function () { return { length: 1 }; }
     });
+    return mock;
 }
 
 const BASE_CONFIG = {
@@ -332,12 +339,13 @@ function loadShipping($) {
     brandConfig.getActiveTwoBrandCode = function () { return 'two_payment'; };
     brandConfig.getActiveTwoBrandConfig = function () { return BASE_CONFIG; };
 
+    const companySearchMock = manualEntryAwareCompanySearch();
     const component = loadAmdModule(
         'view/frontend/web/js/view/address-autocomplete.js',
         {
             jquery: $,
             'Two_Gateway/js/model/brand-config': brandConfig,
-            'Two_Gateway/js/model/company-search': manualEntryAwareCompanySearch()
+            'Two_Gateway/js/model/company-search': companySearchMock
         },
         { document: document, window: window }
     );
@@ -353,22 +361,23 @@ function loadShipping($) {
         setCompanyData: function () {},
         addressLookup: function () { return null; },
         enterDetailsManually: component.enterDetailsManually,
-        enableCompanySearch: component.enableCompanySearch
+        enableCompanySearch: component.enableCompanySearch,
+        __companySearchMock: companySearchMock
     });
     return { component: component, ctx: ctx };
 }
 
 /**
- * Shipping surface: manual entry is a row in the results list, cancelled
- * through select2's preventable `select2:selecting` pre-event. Driving the
- * real handler rather than calling enterDetailsManually() directly keeps the
- * production route in the test.
+ * Shipping surface: manual entry is reached through the shared model's real
+ * `<button>` — a native element outside the results list (#30.x.15), not a
+ * cancellable select2 row any more. The mocked `attachManualEntryButton`
+ * above captures the surface's own activation callback; firing it directly
+ * is the mock-level equivalent of the buyer clicking (or Entering/
+ * Spacing) that real button.
  */
 function enterManualShipping($, ctx) {
-    $(ctx.companyNameSelector).trigger('select2:selecting', {
-        params: { args: { data: { __manualEntry: true } } },
-        preventDefault: function () {}
-    });
+    expect(typeof ctx.__companySearchMock.__lastOnActivate).toBe('function');
+    ctx.__companySearchMock.__lastOnActivate();
 }
 
 /* ------------------------------------------------------------------ *
@@ -391,11 +400,12 @@ function loadPayment($) {
     // which also keeps the defer visible rather than collapsing it to a
     // synchronous call and quietly changing what is under test.
     const deferred = [];
+    const companySearchMock = manualEntryAwareCompanySearch();
     const component = loadAmdModule(
         'view/frontend/web/js/view/payment/method-renderer/gateway_method.js',
         {
             jquery: $,
-            'Two_Gateway/js/model/company-search': manualEntryAwareCompanySearch()
+            'Two_Gateway/js/model/company-search': companySearchMock
         },
         {
             document: document,
@@ -449,36 +459,29 @@ function loadPayment($) {
                 ran += 1;
             }
             return ran;
-        }
+        },
+        __companySearchMock: companySearchMock
     });
     return { component: component, ctx: ctx };
 }
 
 /**
- * Payment surface: manual entry is a row in the results list here TOO, and has
- * been since it stopped being a `#billing_enter_details_manually` link below
- * them. This helper clicked that link until the two changes landed in the wrong
- * order — the link's removal merged after this file did, so the click found no
- * node and four cases failed on the shared base rather than on any branch.
- *
- * Two differences from the shipping route, both load-bearing:
- *  - the teardown is DEFERRED out of select2's own dispatch (`setTimeout(…, 0)`),
- *    so the timer has to be flushed or nothing has happened yet;
- *  - it is gated on the bind still being current, which is what
- *    `getSearchFieldContainer` answers in the mock above.
+ * Payment surface: manual entry is reached through the shared model's real
+ * `<button>` (#30.x.15), the same as the shipping route. The staleness-gated
+ * `setTimeout(…, 0)` defer this file used to have to flush lives inside the
+ * shared model's own `buildManualEntryButton` now — entirely mocked out here
+ * via `attachManualEntryButton` above — so the surface's activation callback
+ * itself runs synchronously when fired directly, with nothing left to flush.
  */
 function enterManualPayment($, ctx) {
-    $(ctx.companyNameSelector).trigger('select2:selecting', {
-        params: { args: { data: { __manualEntry: true } } },
-        preventDefault: function () {}
-    });
-    // Guard: if the handler deferred nothing, the trigger never reached it and
-    // every "widget is gone" assertion downstream would be checking a widget
-    // that was never asked to go. EXACTLY one, not "at least one": the injected
-    // setTimeout catches every timer the module sets — showErrorMessage()'s
-    // dismissal timer is the other one — so a loose lower bound would be
-    // satisfied by a queued callback that has nothing to do with manual entry.
-    expect(ctx.__flushDeferred()).toBe(1);
+    expect(typeof ctx.__companySearchMock.__lastOnActivate).toBe('function');
+    ctx.__companySearchMock.__lastOnActivate();
+    // No deferred callback to flush any more: the defer this helper used to
+    // trigger lived in the surface's own select2:selecting handler, which is
+    // gone. Nothing queued here means the callback ran synchronously, not
+    // that it never ran — the widget-gone assertions in reachManualMode()
+    // are what actually prove it fired.
+    expect(ctx.__flushDeferred()).toBe(0);
 }
 
 /**

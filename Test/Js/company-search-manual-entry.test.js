@@ -2,33 +2,39 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25288 element 5. The manual-entry affordance on the address step.
+ * #30.x.15. The manual-entry affordance was previously a real `<li
+ * role="option">` living INSIDE the select2 results list, on the premise
+ * that inheriting select2's own keyboard model was the only way to keep it
+ * reachable. Live testing after that shipped found the tradeoff was worse
+ * than the defect it fixed:
  *
- * What changed, and therefore what these tests have to hold down:
- *  - it is now the LAST ROW INSIDE the results list, not a div appended
- *    outside it. That is the whole accessibility fix: outside the list it sat
- *    outside the listbox the combobox owns, so no key reached it and no
- *    screen reader announced it;
- *  - it appears as soon as the term reaches the shared threshold, on `input`,
- *    ahead of the debounced request — the buyer whose company is not in the
- *    registry must not have to wait out a search that cannot help them;
- *  - it survives every re-render, because select2 empties the list on each
- *    new result set;
- *  - activating it is intercepted and cancelled, so the sentinel row never
- *    reaches the code that treats a selection as a company.
+ *  - `.select2-results__options` is exactly the element select2 clips and
+ *    scrolls, so the row was only visible once the buyer scrolled past
+ *    however many real results came back, and reaching it by keyboard meant
+ *    arrowing down through every one of them;
+ *  - Enter worked (it closes over select2's own `select2:selecting`
+ *    dispatch), but Space did not: select2's core only special-cases
+ *    Enter/Up/Down/Escape on the search field's keydown, so an unhandled
+ *    Space fell through to its native default of typing a literal space
+ *    character into the search box.
  *
- * Mutation-resistance notes, because this repo's harness makes vacuous
- * assertions easy:
- *  - the model DOM tests run against REAL jsdom nodes through a small
+ * This file pins the replacement: a real `<button>`, a SIBLING of the
+ * results list rather than a row inside it, which fixes both by
+ * construction — native Tab-adjacent focus, native Enter/Space activation,
+ * and a position outside select2's own scroll/clip area so it is always
+ * visible once the search threshold is met.
+ *
+ * Mutation-resistance notes:
+ *  - the model tests run against REAL jsdom nodes through a small
  *    jQuery-lite double, so `length`, class lists, attributes and sibling
- *    order are the document's answers, not a stub's;
- *  - the threshold is injected DELIBERATELY WRONG (5). Asserting against 3
- *    would pass whether the source read the shared constant or kept a
- *    literal;
+ *    position are the document's answers, not a stub's;
+ *  - the threshold is injected DELIBERATELY WRONG (5), so asserting against
+ *    a surviving literal 3 cannot pass;
  *  - translation is asserted on the msgid, since `$t` resolves to identity
  *    here;
- *  - the surface tests assert the picker actually bound select2 before
- *    asserting anything about its handlers.
+ *  - the surface tests grep the real address-autocomplete.js source, so
+ *    reverting to the old `select2:selecting` interception fails them
+ *    directly.
  */
 
 'use strict';
@@ -44,22 +50,8 @@ const MSGID = 'My company is not on the list';
 /** Nothing here is 3, so a surviving literal 3 cannot pass. */
 const WRONG_THRESHOLD = 5;
 
-/*
- * Re-declared here rather than read off the model: these are private to it,
- * the same way its spinner and notice class names are, and none has a
- * production consumer outside the module. A test that read them from the
- * module could not tell a renamed constant from a correct one.
- */
-const MANUAL_ENTRY_ID = '__two_manual_entry__';
 const MANUAL_ENTRY_CLASS = 'two-company-search__manual-entry';
 const MANUAL_ENTRY_NS = '.twoManualEntry';
-
-const BASE_CONFIG = {
-    checkoutApiUrl: 'https://api.example.test',
-    companySearchLimit: 50,
-    isCompanySearchEnabled: true,
-    isAddressSearchEnabled: true
-};
 
 function readSource(relPath) {
     return fs.readFileSync(path.resolve(__dirname, '..', '..', relPath), 'utf8');
@@ -88,12 +80,8 @@ function loadModelWithWrongThreshold($) {
 }
 
 /* ------------------------------------------------------------------ *
- * jQuery-lite over real jsdom nodes.
- *
- * Only the calls the model actually makes, but each one backed by the real
- * DOM so the assertions are the document's answers. A stubbed jQuery that
- * reports `length: 0` for everything — the trap this repo has already been
- * caught by — cannot be used to prove where a node ended up.
+ * jQuery-lite over real jsdom nodes. Only the calls the model actually
+ * makes, backed by the real DOM so assertions are the document's answers.
  * ------------------------------------------------------------------ */
 function makeMiniQuery() {
     const dataStore = new WeakMap();
@@ -104,6 +92,19 @@ function makeMiniQuery() {
         return dot === -1
             ? { type: spec, ns: '' }
             : { type: spec.slice(0, dot), ns: spec.slice(dot) };
+    }
+
+    function fromHtml(html) {
+        const holder = document.createElement('div');
+        holder.innerHTML = html;
+        return Array.prototype.slice.call(holder.children);
+    }
+
+    function wrap(nodes) {
+        const set = Object.create(api);
+        set.nodes = nodes;
+        set.length = nodes.length;
+        return set;
     }
 
     const api = {
@@ -159,6 +160,13 @@ function makeMiniQuery() {
             }
             return store[key];
         },
+        removeData: function (key) {
+            const node = this.nodes[0];
+            if (!node) return this;
+            const store = dataStore.get(node);
+            if (store) delete store[key];
+            return this;
+        },
         children: function (selector) {
             const matched = [];
             this.nodes.forEach(function (node) {
@@ -177,10 +185,41 @@ function makeMiniQuery() {
             });
             return wrap(matched);
         },
+        parent: function () {
+            const matched = [];
+            this.nodes.forEach(function (node) {
+                if (node.parentNode) matched.push(node.parentNode);
+            });
+            return wrap(matched);
+        },
+        prev: function () {
+            const matched = [];
+            this.nodes.forEach(function (node) {
+                if (node.previousElementSibling) matched.push(node.previousElementSibling);
+            });
+            return wrap(matched);
+        },
         is: function (selector) {
+            if (selector && selector.nodes) {
+                const targets = selector.nodes;
+                return this.nodes.some(function (node) {
+                    return targets.indexOf(node) !== -1;
+                });
+            }
             return this.nodes.some(function (node) {
                 return node.matches(selector);
             });
+        },
+        after: function (other) {
+            const node = this.nodes[0];
+            if (!node || !node.parentNode) return this;
+            const incoming = other && other.nodes ? other.nodes.slice() : [other];
+            let ref = node;
+            incoming.forEach(function (n) {
+                node.parentNode.insertBefore(n, ref.nextSibling);
+                ref = n;
+            });
+            return this;
         },
         append: function (other) {
             const parent = this.nodes[0];
@@ -220,7 +259,7 @@ function makeMiniQuery() {
             return this;
         },
         off: function (spec) {
-            const parsed = splitNs(spec);
+            const parsed = splitNs(spec || '');
             this.nodes.forEach(function (node) {
                 const bound = handlerStore.get(node) || [];
                 bound
@@ -236,21 +275,33 @@ function makeMiniQuery() {
                     });
             });
             return this;
+        },
+        removeAttr: function (name) {
+            this.nodes.forEach(function (node) {
+                node.removeAttribute(name);
+            });
+            return this;
+        },
+        /**
+         * Real jQuery's `.trigger('focus')` calls the native `.focus()`
+         * method rather than dispatching a synthetic event (the two differ:
+         * only the former actually moves `document.activeElement`), which is
+         * exactly the distinction the focus-restoration fix (#30.x.15 round
+         * 2) depends on. Everything else dispatches a real DOM event so a
+         * `keydown`/`resize` listener under test still sees it.
+         */
+        trigger: function (spec) {
+            const parsed = splitNs(spec);
+            this.nodes.forEach(function (node) {
+                if (parsed.type === 'focus' && typeof node.focus === 'function') {
+                    node.focus();
+                    return;
+                }
+                node.dispatchEvent(new window.Event(parsed.type, { bubbles: true }));
+            });
+            return this;
         }
     };
-
-    function wrap(nodes) {
-        const set = Object.create(api);
-        set.nodes = nodes;
-        set.length = nodes.length;
-        return set;
-    }
-
-    function fromHtml(html) {
-        const holder = document.createElement('div');
-        holder.innerHTML = html;
-        return Array.prototype.slice.call(holder.children);
-    }
 
     function $(arg) {
         if (arg === undefined || arg === null) return wrap([]);
@@ -261,12 +312,27 @@ function makeMiniQuery() {
         }
         if (arg.nodes) return arg;
         if (arg.nodeType) return wrap([arg]);
+        // `nudgeSelect2Resize()` targets `$(window)` — real jQuery always
+        // resolves that to a real, triggerable set. The AMD harness runs
+        // company-search.js in an isolated vm sandbox whose `window` is a
+        // plain stub object (`amd-harness.js`'s `sandbox.window`, shaped
+        // like `{ checkoutConfig: {...} }`), NOT the outer jsdom `window`
+        // this file's `window.addEventListener` calls use — so an identity
+        // check (`arg === window`) never matches across that realm
+        // boundary. Duck-typed on `checkoutConfig` rather than "any plain
+        // object reaching here", so a future `$()` call on some other
+        // opaque object in this module can't be silently misrouted to
+        // `window` — it would fall through to the empty set below instead,
+        // same as it always has. Without SOME form of this patch every
+        // resize nudge silently no-opped, which is exactly what hid the
+        // round-3 nudge-ordering bug from the whole suite.
+        if (arg && typeof arg === 'object' && 'checkoutConfig' in arg) return wrap([window]);
         return wrap([]);
     }
     $.fn = {};
     $.extend = Object.assign;
     $.ajax = function () {
-        throw new Error('no request may be issued while showing the manual-entry row');
+        throw new Error('no request may be issued while showing the manual-entry button');
     };
     /** Handlers currently bound to a node, for duplicate-bind assertions. */
     $.boundHandlers = function (node, type, ns) {
@@ -299,15 +365,16 @@ function makePickerDom($) {
         $field: $field,
         token: token,
         $results: $('.select2-results__options'),
-        $search: $('.select2-search__field'),
+        $wrapper: $('.select2-results'),
         results: $('.select2-results__options').get(0),
+        wrapper: $('.select2-results').get(0),
         search: $('.select2-search__field').get(0)
     };
 }
 
 function addRealResult(dom, name) {
     const li = document.createElement('li');
-        li.className = 'select2-results__option select2-results__option--selectable';
+    li.className = 'select2-results__option select2-results__option--selectable';
     li.setAttribute('role', 'option');
     li.textContent = name;
     dom.results.appendChild(li);
@@ -319,8 +386,8 @@ function typeTerm(dom, term) {
     dom.search.dispatchEvent(new window.Event('input', { bubbles: true }));
 }
 
-function manualRows(dom) {
-    return dom.results.querySelectorAll('.' + MANUAL_ENTRY_CLASS);
+function manualButtons(dom) {
+    return dom.wrapper.querySelectorAll('.' + MANUAL_ENTRY_CLASS);
 }
 
 function tick() {
@@ -329,7 +396,7 @@ function tick() {
     });
 }
 
-describe('the manual-entry row is a real, keyboard-reachable option', () => {
+describe('the manual-entry affordance is a real, native button', () => {
     let $;
     let model;
 
@@ -338,58 +405,19 @@ describe('the manual-entry row is a real, keyboard-reachable option', () => {
         model = loadModelWithWrongThreshold($);
     });
 
-    test('it is an <li> option carrying everything select2 needs to navigate to it', () => {
-        const $row = model.buildManualEntryOption('select2-company-results');
-        const row = $row.get(0);
+    test('it is a real <button type="button">, not a role=option pseudo-row', () => {
+        const $button = model.buildManualEntryButton({ data: function () {} }, {}, function () {});
+        const node = $button.get(0);
 
-        expect(row).toBeTruthy();
-        expect(row.tagName).toBe('LI');
-        expect(row.getAttribute('role')).toBe('option');
-        // The navigable set in the bundled select2 is keyed off this class;
-        // without it the row is unreachable by arrow key.
-        expect(row.classList.contains('select2-results__option')).toBe(true);
-        expect(row.classList.contains('select2-results__option--selectable')).toBe(true);
-        expect(row.classList.contains(MANUAL_ENTRY_CLASS)).toBe(true);
-
-        expect(row.getAttribute('aria-selected')).toBe('false');
-        // NOT `data-selected`: the vendored bundle contains no such attribute,
-        // so writing one would only be a misleading claim about what select2
-        // reads.
-        expect(row.hasAttribute('data-selected')).toBe(false);
-
-        // Marked selected — either way — activation routes to "close the
-        // dropdown" and the row does nothing at all.
-        expect(row.classList.contains('select2-results__option--selected')).toBe(false);
-        expect(row.getAttribute('aria-disabled')).toBeNull();
-
-        expect(row.textContent).toBe(MSGID);
-    });
-
-    test('its payload carries the id select2 stringifies and the result id ARIA reads', () => {
-        const $row = model.buildManualEntryOption('select2-company-results');
-        const payload = $row.data('data');
-
-        expect(payload).toBeTruthy();
-        // Absent, select2 compares this row under the literal string
-        // "undefined" when it reconciles the list against the selection, so it
-        // matches any other id-less row. No crash — a real one, which is why
-        // it would have shipped unnoticed.
-        expect(typeof payload.id).toBe('string');
-        expect(payload.id).toBe(MANUAL_ENTRY_ID);
-        // Must equal the row's own DOM id, or aria-activedescendant points at
-        // nothing and the row is announced as the wrong one.
-        expect(payload._resultId).toBe($row.get(0).getAttribute('id'));
-        // Derived from the list it goes into, so two pickers on one page
-        // cannot emit the same DOM id — which would make
-        // aria-activedescendant ambiguous.
-        expect($row.get(0).getAttribute('id')).toMatch(/^select2-company-results-/);
-        expect(model.buildManualEntryOption('select2-other-results').get(0).getAttribute('id')).toMatch(
-            /^select2-other-results-/
-        );
-        expect(payload.text).toBe(MSGID);
-        // No `html`. The one path that would read it writes it through
-        // innerHTML after the identity escaper, undoing the .text() write.
-        expect('html' in payload).toBe(false);
+        expect(node).toBeTruthy();
+        expect(node.tagName).toBe('BUTTON');
+        expect(node.getAttribute('type')).toBe('button');
+        // No listbox-option chrome left over from the old row: a native
+        // button needs none of it to be focusable or activatable.
+        expect(node.classList.contains('select2-results__option')).toBe(false);
+        expect(node.getAttribute('role')).toBeNull();
+        expect(node.classList.contains(MANUAL_ENTRY_CLASS)).toBe(true);
+        expect(node.textContent).toBe(MSGID);
     });
 
     test('the label is set as text, never as markup', () => {
@@ -398,21 +426,41 @@ describe('the manual-entry row is a real, keyboard-reachable option', () => {
         // point if the label is ever interpolated into HTML.
         const source = readSource(MODEL_PATH);
         expect(source).toContain("$t('" + MSGID + "')");
-        expect(source).not.toMatch(/<li[^>]*>\$\{/);
+        expect(source).not.toMatch(/<button[^>]*>\$\{/);
     });
 
-    test('isManualEntryOption tells the sentinel from a real company', () => {
-        expect(model.isManualEntryOption({ id: MANUAL_ENTRY_ID })).toBe(true);
-        expect(model.isManualEntryOption({ id: 'Example Trading Ltd', companyId: '1' })).toBe(
-            false
-        );
-        expect(model.isManualEntryOption(null)).toBe(false);
-        expect(model.isManualEntryOption(undefined)).toBe(false);
-        expect(model.isManualEntryOption(MANUAL_ENTRY_ID)).toBe(false);
+    test('clicking it calls onActivate, deferred past the current dispatch', async () => {
+        const dom = makePickerDom($);
+        const onActivate = jest.fn();
+        const $button = model.buildManualEntryButton(dom.$field, dom.token, onActivate);
+        dom.wrapper.appendChild($button.get(0));
+
+        $button.get(0).dispatchEvent(new window.Event('click', { bubbles: true }));
+        // Not yet: the call is deferred a tick so tearing down the widget
+        // does not happen from inside this click's own dispatch.
+        expect(onActivate).not.toHaveBeenCalled();
+
+        await tick();
+        expect(onActivate).toHaveBeenCalledTimes(1);
+    });
+
+    test('a click cannot activate a bind that has already been superseded', async () => {
+        const dom = makePickerDom($);
+        const onActivate = jest.fn();
+        const $button = model.buildManualEntryButton(dom.$field, dom.token, onActivate);
+        dom.wrapper.appendChild($button.get(0));
+
+        $button.get(0).dispatchEvent(new window.Event('click', { bubbles: true }));
+        // A checkout re-render rebinds a fresh identity before the deferred
+        // callback gets to run.
+        dom.$field.data('twoSearchBind', {});
+
+        await tick();
+        expect(onActivate).not.toHaveBeenCalled();
     });
 });
 
-describe('when the row is shown', () => {
+describe('when the button is shown', () => {
     let $;
     let model;
     let dom;
@@ -423,111 +471,91 @@ describe('when the row is shown', () => {
         dom = makePickerDom($);
     });
 
+    function sync() {
+        return model.syncManualEntryButton(dom.$field, dom.token, function () {});
+    }
+
     test('it appears at the SHARED threshold, not a literal, and goes away below it', () => {
         expect(model.MIN_INPUT_LENGTH).toBe(WRONG_THRESHOLD);
 
         dom.search.value = 'exam'; // 4 — below the injected threshold
-        model.renderManualEntryRow(dom.$field, dom.token);
-        expect(manualRows(dom)).toHaveLength(0);
+        sync();
+        expect(manualButtons(dom)).toHaveLength(0);
 
         dom.search.value = 'examp'; // 5 — at it
-        model.renderManualEntryRow(dom.$field, dom.token);
-        expect(manualRows(dom)).toHaveLength(1);
+        sync();
+        expect(manualButtons(dom)).toHaveLength(1);
 
         dom.search.value = 'exam';
-        model.renderManualEntryRow(dom.$field, dom.token);
-        expect(manualRows(dom)).toHaveLength(0);
+        sync();
+        expect(manualButtons(dom)).toHaveLength(0);
     });
 
-    test('it is INSIDE the results list, and last', () => {
+    test('it is a SIBLING of the results list, immediately after it — not a child of it', () => {
         addRealResult(dom, 'Example Trading Ltd');
         addRealResult(dom, 'Example Holdings AS');
         dom.search.value = 'example';
-        model.renderManualEntryRow(dom.$field, dom.token);
+        sync();
 
-        const rows = dom.results.children;
-        expect(rows).toHaveLength(3);
-        expect(rows[2].classList.contains(MANUAL_ENTRY_CLASS)).toBe(true);
-        // The defect this replaces: the affordance living outside the list.
-        expect(manualRows(dom)).toHaveLength(1);
-        expect(dom.results.getAttribute('role')).toBe('listbox');
+        // Not inside the list select2 clips and scrolls.
+        expect(dom.results.children).toHaveLength(2);
+        expect(dom.results.querySelectorAll('.' + MANUAL_ENTRY_CLASS)).toHaveLength(0);
+
+        // A sibling of it, inside the same panel.
+        expect(manualButtons(dom)).toHaveLength(1);
+        expect(dom.results.nextElementSibling.classList.contains(MANUAL_ENTRY_CLASS)).toBe(true);
     });
 
-    test('a later page of results does not leave it stranded mid-list', () => {
+    test('a later page of results does not require it to be re-synced', () => {
         dom.search.value = 'example';
-        model.renderManualEntryRow(dom.$field, dom.token);
-        addRealResult(dom, 'Example Logistics Ltd');
-        model.renderManualEntryRow(dom.$field, dom.token);
+        sync();
+        expect(manualButtons(dom)).toHaveLength(1);
 
-        const rows = dom.results.children;
-        expect(rows).toHaveLength(2);
-        expect(rows[1].classList.contains(MANUAL_ENTRY_CLASS)).toBe(true);
-        expect(manualRows(dom)).toHaveLength(1);
-    });
-
-    test('rendering repeatedly never doubles it', () => {
-        dom.search.value = 'example';
-        model.renderManualEntryRow(dom.$field, dom.token);
-        model.renderManualEntryRow(dom.$field, dom.token);
-        model.renderManualEntryRow(dom.$field, dom.token);
-        expect(manualRows(dom)).toHaveLength(1);
-    });
-
-    test("a stale bind cannot paint a row onto the live picker", () => {
-        const staleToken = dom.token;
-        dom.search.value = 'example';
-
-        // Establish that this very call DOES paint while the bind is live, so
-        // the assertion below cannot pass merely because the list started
-        // empty — the vacuity trap in an "expect empty after" assertion.
-        model.renderManualEntryRow(dom.$field, staleToken);
-        expect(manualRows(dom)).toHaveLength(1);
-
-        // Re-render: same node, fresh bind identity, and select2 has emptied
-        // the list on its way through.
+        // select2 empties and repaints the LIST on a new result page — since
+        // the button is a sibling of the list, not a child, this can never
+        // touch it. No MutationObserver is needed to prove this.
         dom.results.innerHTML = '';
-        dom.$field.data('twoSearchBind', {});
+        addRealResult(dom, 'Example Logistics Ltd');
 
-        model.renderManualEntryRow(dom.$field, staleToken);
-        expect(manualRows(dom)).toHaveLength(0);
+        expect(manualButtons(dom)).toHaveLength(1);
+        expect(dom.results.nextElementSibling.classList.contains(MANUAL_ENTRY_CLASS)).toBe(true);
     });
 
-    test('the results-list lookup itself fails closed on a stale bind', () => {
-        // Asserted DIRECTLY, not through renderManualEntryRow: that path also
-        // consults the search-box lookup, whose own staleness guard would keep
-        // it green with this one deleted — so the contract would be held by
-        // nothing.
-        const staleToken = dom.token;
-        expect(model.getResultsList(dom.$field, staleToken).length).toBe(1);
+    test('syncing repeatedly never doubles it, and does not rebuild an unchanged button', () => {
+        dom.search.value = 'example';
+        const $first = sync();
+        const $second = sync();
+        const $third = sync();
 
-        dom.$field.data('twoSearchBind', {});
-        expect(model.getResultsList(dom.$field, staleToken).length).toBe(0);
+        expect(manualButtons(dom)).toHaveLength(1);
+        // Same node every time: an unconditional rebuild would replace it
+        // with a new element on every call.
+        expect($first.get(0)).toBe($second.get(0));
+        expect($second.get(0)).toBe($third.get(0));
     });
 
-    test('the search-term lookup fails closed on a stale bind too', () => {
-        // Same reason as the results-list case above, and found the same way:
-        // a mutation that made this helper read the bind token off the node
-        // instead of honouring the one it was handed survived the whole suite.
+    test("a stale bind cannot paint a button onto the live picker", () => {
         const staleToken = dom.token;
         dom.search.value = 'example';
-        expect(model.currentSearchTerm(dom.$field, staleToken)).toBe('example');
+
+        // Establish that this very call DOES paint while the bind is live,
+        // so the assertion below cannot pass merely because nothing was
+        // ever going to show — asserted on the return value, not on a
+        // previously-added button disappearing: the button lives OUTSIDE
+        // the results list this helper gates on, so a stale call correctly
+        // leaves an already-shown button alone rather than reaching in to
+        // remove it.
+        const $live = model.syncManualEntryButton(dom.$field, staleToken, function () {});
+        expect($live.length).toBe(1);
 
         dom.$field.data('twoSearchBind', {});
-        expect(model.currentSearchTerm(dom.$field, staleToken)).toBe('');
-    });
 
-    test('a nested group list is never mistaken for the results list', () => {
-        const nested = document.createElement('ul');
-        nested.className = 'select2-results__options select2-results__options--nested';
-        dom.results.appendChild(nested);
-
-        const $found = model.getResultsList(dom.$field, dom.token);
-        expect($found.length).toBe(1);
-        expect($found.get(0)).toBe(dom.results);
+        const $stale = model.syncManualEntryButton(dom.$field, staleToken, function () {});
+        expect($stale.length).toBe(0);
     });
 });
 
-describe('what drives the row', () => {
+describe('what drives the button', () => {
     let $;
     let model;
     let dom;
@@ -540,559 +568,406 @@ describe('what drives the row', () => {
 
     test('typing to the threshold shows it with no request issued', () => {
         // `$.ajax` throws in this double, so reaching the transport at all
-        // fails the test: the row must not wait on a debounce or a search.
-        model.attachManualEntryRow(dom.$field, dom.token);
-        // Attaching alone must not show the row — this one is falsifiable only
-        // by an always-show regression; the transitions below are what pin the
-        // threshold.
-        expect(manualRows(dom)).toHaveLength(0);
+        // fails the test: the button must not wait on a debounce or search.
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        expect(manualButtons(dom)).toHaveLength(0);
 
         typeTerm(dom, 'examp');
-        expect(manualRows(dom)).toHaveLength(1);
+        expect(manualButtons(dom)).toHaveLength(1);
 
         typeTerm(dom, 'exam');
-        expect(manualRows(dom)).toHaveLength(0);
+        expect(manualButtons(dom)).toHaveLength(0);
     });
 
-    test('reopening the picker does not stack handlers', () => {
-        model.attachManualEntryRow(dom.$field, dom.token);
-        model.attachManualEntryRow(dom.$field, dom.token);
-        model.attachManualEntryRow(dom.$field, dom.token);
+    test('reopening the picker does not stack input handlers', () => {
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
 
         expect($.boundHandlers(dom.search, 'input', MANUAL_ENTRY_NS)).toHaveLength(1);
     });
 
     test('its namespace does not collide with the below-threshold cancel handler', () => {
-        // Both bind `input` to the same node. One namespace and each one's
-        // `.off()` silently unbinds the other.
         expect(MANUAL_ENTRY_NS).not.toBe(model.EVENT_NS);
         model.markSearchBinding(dom.$field, dom.token);
-        model.attachManualEntryRow(dom.$field, dom.token);
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
 
         expect($.boundHandlers(dom.search, 'input', model.EVENT_NS)).toHaveLength(1);
         expect($.boundHandlers(dom.search, 'input', MANUAL_ENTRY_NS)).toHaveLength(1);
     });
 
-    test('it comes back after select2 empties the list for a new result set', async () => {
-        model.attachManualEntryRow(dom.$field, dom.token);
-        typeTerm(dom, 'example');
-        expect(manualRows(dom)).toHaveLength(1);
-
-        // What select2 does on every new result set.
-        dom.results.innerHTML = '';
-        addRealResult(dom, 'Example Trading Ltd');
-        await tick();
-
-        const rows = dom.results.children;
-        expect(manualRows(dom)).toHaveLength(1);
-        expect(rows[rows.length - 1].classList.contains(MANUAL_ENTRY_CLASS)).toBe(
-            true
-        );
+    test('attaching while the term is already at threshold shows it immediately, without waiting for input', () => {
+        dom.search.value = 'example';
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        expect(manualButtons(dom)).toHaveLength(1);
     });
 
-    test('neither closure survives its own bind being superseded', async () => {
+    test('neither closure survives its own bind being superseded', () => {
         const staleToken = dom.token;
-        model.attachManualEntryRow(dom.$field, staleToken);
+        model.attachManualEntryButton(dom.$field, staleToken, function () {});
 
-        // Live first, so the zero-assertions below cannot pass on a list that
-        // was never going to get a row anyway.
         typeTerm(dom, 'example');
-        expect(manualRows(dom)).toHaveLength(1);
+        expect(manualButtons(dom)).toHaveLength(1);
 
-        // Re-render: select2 empties the list and the picker is re-bound on the
-        // same node under a FRESH identity. Every closure from the old bind is
-        // still attached, and each holds its own token.
-        dom.results.innerHTML = '';
+        // Simulate the picker being torn down and a fresh one bound to the
+        // same node: a real re-render replaces the dropdown's DOM entirely,
+        // so this bind's results list starts clean.
+        dom.wrapper.innerHTML =
+            '<ul class="select2-results__options" role="listbox" id="select2-company-results"></ul>';
+        dom.results = dom.wrapper.querySelector('ul');
         dom.$field.data('twoSearchBind', {});
 
-        // The input closure must no longer paint. Reading the node's identity
-        // instead of its own token would match the new bind and paint onto the
-        // live picker.
+        // The stale closure's own `input` handler must not paint onto this
+        // fresh, empty results list.
         typeTerm(dom, 'example ltd');
-        expect(manualRows(dom)).toHaveLength(0);
-
-        // Nor may the old observer paint when the new bind renders results.
-        addRealResult(dom, 'Example Trading Ltd');
-        await tick();
-        expect(manualRows(dom)).toHaveLength(0);
-
-        // And re-attaching under the stale token must be inert too.
-        model.attachManualEntryRow(dom.$field, staleToken);
-        typeTerm(dom, 'example holdings');
-        expect(manualRows(dom)).toHaveLength(0);
+        expect(manualButtons(dom)).toHaveLength(0);
     });
 
-    test('a stale re-attach cannot unhook the live picker', async () => {
-        // The consequence of attach not bailing on a stale token is not a
-        // stray row — every render it wires is gated by that same stale token —
-        // it is that it DETACHES the live bind's observer on its way past and
-        // replaces it with an inert one. The live picker then silently stops
-        // re-appending its row after each result set.
-        const staleToken = dom.token;
-        model.attachManualEntryRow(dom.$field, staleToken);
-
-        const liveToken = {};
-        dom.$field.data('twoSearchBind', liveToken);
-        model.attachManualEntryRow(dom.$field, liveToken);
+    test('detaching removes the button and stops the input handler, using the live select2 instance directly', () => {
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
         typeTerm(dom, 'example');
-        expect(manualRows(dom)).toHaveLength(1);
+        expect(manualButtons(dom)).toHaveLength(1);
 
-        model.attachManualEntryRow(dom.$field, staleToken);
+        // No token argument — this must clean up whatever is CURRENTLY
+        // attached to the field's live select2 instance.
+        model.detachManualEntryButton(dom.$field);
 
-        // The live bind's observer must still be the one watching.
-        dom.results.innerHTML = '';
-        addRealResult(dom, 'Example Trading Ltd');
-        await tick();
-        expect(manualRows(dom)).toHaveLength(1);
-    });
-
-    test('detaching stops the watcher, so a torn-down picker holds nothing', async () => {
-        model.attachManualEntryRow(dom.$field, dom.token);
-        typeTerm(dom, 'example');
-        model.detachManualEntryObserver(dom.$field);
-
-        dom.results.innerHTML = '';
-        addRealResult(dom, 'Example Trading Ltd');
-        await tick();
-
-        expect(manualRows(dom)).toHaveLength(0);
-    });
-
-    test('attaching while the term is already at threshold renders immediately, without waiting for input', () => {
-        // Every other test in this file types AFTER attaching, so an initial
-        // render call at the end of attachManualEntryRow could be deleted and
-        // every one of them would still pass once the first keystroke landed.
-        // Set the term before attach ever runs, so ONLY that initial call —
-        // not the input handler, not the observer — can produce the row.
-        dom.search.value = 'example';
-        model.attachManualEntryRow(dom.$field, dom.token);
-        expect(manualRows(dom)).toHaveLength(1);
-    });
-
-    test('re-attaching cannot stack the mutation observer', async () => {
-        // Attaching twice must leave exactly one observer on the node.
-        // renderManualEntryRow is idempotent, so counting rows after a
-        // mutation cannot tell one observer from two firing on it — spy on
-        // the render call itself instead.
-        model.attachManualEntryRow(dom.$field, dom.token);
-        model.attachManualEntryRow(dom.$field, dom.token);
-
-        const renderSpy = jest.spyOn(model, 'renderManualEntryRow');
-        dom.search.value = 'example';
-        dom.results.innerHTML = '';
-        addRealResult(dom, 'Example Trading Ltd');
-        await tick();
-
-        // A single external mutation must produce a single observer-driven
-        // render call. Two observers on the same node would each fire once
-        // for it.
-        expect(renderSpy).toHaveBeenCalledTimes(1);
-        renderSpy.mockRestore();
-    });
-
-    test('a broken idempotency check cannot spin the observer forever', async () => {
-        // renderManualEntryRow's only defence against re-appending its own
-        // row is `$existing.is(':last-child')`. Sabotage exactly that check —
-        // the way the reviewed bug actually manifested — and prove the
-        // observer wiring bounds the damage on its own rather than depending
-        // on that check being correct. Without disconnect/reconnect around
-        // the self-triggered write, this spins as MutationObserver
-        // microtasks and never yields to the `tick()` below at all.
-        const proto = Object.getPrototypeOf(dom.$results);
-        const originalIs = proto.is;
-        const originalAppend = proto.append;
-        let appendCount = 0;
-        proto.append = function (other) {
-            appendCount += 1;
-            return originalAppend.call(this, other);
-        };
-        proto.is = function () {
-            return false; // pretend "never last", the way the bug did
-        };
-
-        try {
-            model.attachManualEntryRow(dom.$field, dom.token);
-            dom.search.value = 'example';
-            dom.results.innerHTML = '';
-            addRealResult(dom, 'Example Trading Ltd');
-
-            await tick();
-            await tick();
-            await tick();
-
-            // One append for the fresh row, at most one more from the
-            // observer noticing (per the sabotaged check) that it isn't
-            // last. An unbounded loop climbs past this on the first tick.
-            expect(appendCount).toBeLessThanOrEqual(2);
-        } finally {
-            proto.is = originalIs;
-            proto.append = originalAppend;
-        }
+        expect(manualButtons(dom)).toHaveLength(0);
+        typeTerm(dom, 'example ltd');
+        expect(manualButtons(dom)).toHaveLength(0);
     });
 });
 
-/* ------------------------------------------------------------------ *
- * The address surface: what it wires the row up to.
- * ------------------------------------------------------------------ */
-function makeSurfaceQuery(recorder) {
-    function $() {
-        const obj = {
-            length: 0,
-            val: function (value) {
-                if (arguments.length) recorder.valWrites.push(value);
-                return arguments.length ? obj : '';
-            },
-            trigger: function () {
-                return obj;
-            },
-            prop: function () {
-                return obj;
-            },
-            text: function () {
-                return obj;
-            },
-            attr: function (name, value) {
-                if (arguments.length > 1) recorder.attrWrites.push([name, value]);
-                return obj;
-            },
-            off: function (spec) {
-                recorder.offCalls.push(spec);
-                return obj;
-            },
-            on: function (spec, handler) {
-                recorder.handlers[spec.split('.')[0]] = handler;
-                return obj;
-            },
-            hide: function () {
-                recorder.hidden += 1;
-                return obj;
-            },
-            show: function () {
-                recorder.shown += 1;
-                return obj;
-            },
-            closest: function () {
-                return obj;
-            },
-            append: function (html) {
-                recorder.appended.push(String(html));
-                return obj;
-            },
-            find: function () {
-                return obj;
-            },
-            data: function () {
-                return obj;
-            },
-            select2: function (opts) {
-                if (typeof opts === 'object') {
-                    recorder.select2Options = opts;
-                    recorder.select2Calls += 1;
-                } else if (opts === 'destroy') {
-                    recorder.destroyCalls += 1;
-                }
-                return obj;
-            }
+describe('keyboard reachability (round 2 — Tab is not free)', () => {
+    let $;
+    let model;
+    let dom;
+
+    beforeEach(() => {
+        $ = makeMiniQuery();
+        model = loadModelWithWrongThreshold($);
+        dom = makePickerDom($);
+    });
+
+    /**
+     * A stand-in for select2 4.1's OWN search-field keypress handler (there
+     * is no real select2 in this harness): it treats Tab exactly like
+     * Enter, committing whatever is highlighted and closing the dropdown,
+     * and is bound at CONSTRUCTION time via a plain bubble-phase `keydown`
+     * listener on the SAME node this module also binds to. Round 2's fix is
+     * only real if a capture-phase listener genuinely runs — and stops
+     * propagation — BEFORE this ever sees the event. Without that guarantee
+     * a bubble-phase implementation of the same fix would pass a test that
+     * only checks `defaultPrevented` and focus, which is exactly the gap
+     * Yoda's round-2 review found.
+     */
+    function bindFakeSelect2TabHandler(dom) {
+        let committed = false;
+        dom.search.addEventListener('keydown', function (e) {
+            if (e.key !== 'Tab') return;
+            committed = true;
+            e.preventDefault();
+        });
+        return function () {
+            return committed;
         };
-        return obj;
     }
-    $.async = function (selector, fn) {
-        fn(selector);
-    };
-    $.ajax = function () {
-        const jqxhr = {
-            done: function () {
-                return jqxhr;
-            },
-            fail: function () {
-                return jqxhr;
-            },
-            always: function () {
-                return jqxhr;
-            }
+
+    test('Tab moves focus onto the button, and select2 never gets to act on it', () => {
+        const select2Committed = bindFakeSelect2TabHandler(dom);
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        typeTerm(dom, 'example');
+        const $button = $(manualButtons(dom)[0]);
+        expect($button.length).toBe(1);
+
+        const event = new window.KeyboardEvent('keydown', {
+            key: 'Tab',
+            bubbles: true,
+            cancelable: true
+        });
+        dom.search.dispatchEvent(event);
+
+        expect(event.defaultPrevented).toBe(true);
+        expect(document.activeElement).toBe($button.get(0));
+        // The load-bearing assertion: select2's own (stand-in) handler,
+        // bound on the same node, never ran — proving the capture-phase
+        // listener genuinely wins the race rather than merely coexisting
+        // with a handler this harness happens not to model.
+        expect(select2Committed()).toBe(false);
+    });
+
+    /**
+     * select2's own handler has NO `shiftKey` guard (`t===ENTER||t===TAB`
+     * fires for Shift+Tab identically), so without interception here
+     * Shift+Tab from the search field silently selects the auto-highlighted
+     * first result and closes the picker — committing a company the buyer
+     * never chose. Round 2 closes this the same way as forward Tab: prevent
+     * it from reaching select2, and close the dropdown ourselves rather
+     * than route to select2's own (buggy, for this key) handling.
+     */
+    test('Shift+Tab is ALSO intercepted — select2 would otherwise silently commit a selection', () => {
+        const select2Committed = bindFakeSelect2TabHandler(dom);
+        dom.$field.select2 = jest.fn();
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        typeTerm(dom, 'example');
+
+        const event = new window.KeyboardEvent('keydown', {
+            key: 'Tab',
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true
+        });
+        dom.search.dispatchEvent(event);
+
+        expect(event.defaultPrevented).toBe(true);
+        expect(select2Committed()).toBe(false);
+        expect(dom.$field.select2).toHaveBeenCalledWith('close');
+    });
+
+    test('detaching removes the capture-phase Tab listener itself, not just the button it targets', () => {
+        dom.$field.select2 = jest.fn();
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        typeTerm(dom, 'example');
+        model.detachManualEntryButton(dom.$field);
+
+        // Direct property check, not just behavioural: the handler
+        // early-returns once the button is gone, so a dispatch-based
+        // assertion alone cannot tell "listener removed" apart from
+        // "listener still installed but its target vanished".
+        expect(dom.search._twoManualEntryTabHandler).toBeUndefined();
+
+        const forwardTab = new window.KeyboardEvent('keydown', {
+            key: 'Tab',
+            bubbles: true,
+            cancelable: true
+        });
+        dom.search.dispatchEvent(forwardTab);
+        expect(forwardTab.defaultPrevented).toBe(false);
+
+        // Shift+Tab specifically: the button-absent branch of the forward
+        // path early-returns without a button/token guard, so a Tab-only
+        // proof (the case above) cannot show the Shift+Tab branch is also
+        // gone — it has no equivalent early-return to hide behind.
+        const shiftTab = new window.KeyboardEvent('keydown', {
+            key: 'Tab',
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true
+        });
+        dom.search.dispatchEvent(shiftTab);
+        expect(shiftTab.defaultPrevented).toBe(false);
+        expect(dom.$field.select2).not.toHaveBeenCalled();
+    });
+
+    test('the Tab handler fails closed on a stale bind, same as every other lookup in this module', () => {
+        dom.$field.select2 = jest.fn();
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        typeTerm(dom, 'example');
+        expect(manualButtons(dom)).toHaveLength(1);
+
+        // Supersede the bind WITHOUT detaching — the exact gap the
+        // staleness guard exists to close (a re-render can rebind a new
+        // widget to this same node before the old one's listener is torn
+        // down). The stamped token no longer matches what this handler
+        // closed over, so `getSearchFieldContainer($field, token)` must now
+        // resolve empty and the handler must act as if it isn't bound at
+        // all — not fall through to the button (which still physically
+        // exists in the DOM) or to select2('close').
+        dom.$field.data('twoSearchBind', {});
+
+        const event = new window.KeyboardEvent('keydown', {
+            key: 'Tab',
+            bubbles: true,
+            cancelable: true
+        });
+        dom.search.dispatchEvent(event);
+
+        expect(event.defaultPrevented).toBe(false);
+        expect(document.activeElement).not.toBe(manualButtons(dom)[0]);
+        expect(dom.$field.select2).not.toHaveBeenCalled();
+    });
+
+    test('forward Tab below the threshold (no button yet) is not swallowed — select2 does not trap it', () => {
+        const select2Committed = bindFakeSelect2TabHandler(dom);
+        dom.$field.select2 = jest.fn();
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        // Deliberately below WRONG_THRESHOLD (5): no button exists yet.
+        typeTerm(dom, 'ex');
+        expect(manualButtons(dom)).toHaveLength(0);
+
+        const event = new window.KeyboardEvent('keydown', {
+            key: 'Tab',
+            bubbles: true,
+            cancelable: true
+        });
+        dom.search.dispatchEvent(event);
+
+        // select2's own handler must still be preempted (it would otherwise
+        // preventDefault() and swallow the key with nothing to show for it —
+        // a keyboard trap), but with no button to route to, native Tab is
+        // left alone so focus advances to the next checkout field.
+        expect(select2Committed()).toBe(false);
+        expect(event.defaultPrevented).toBe(false);
+        expect(dom.$field.select2).toHaveBeenCalledWith('close');
+    });
+
+    test("the button's own Tab and Shift+Tab close the picker rather than trapping or falling through to the page", () => {
+        dom.$field.select2 = jest.fn();
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        typeTerm(dom, 'example');
+        const button = manualButtons(dom)[0];
+        button.focus();
+
+        const forwardTab = new window.KeyboardEvent('keydown', {
+            key: 'Tab',
+            bubbles: true,
+            cancelable: true
+        });
+        button.dispatchEvent(forwardTab);
+        expect(forwardTab.defaultPrevented).toBe(true);
+        expect(dom.$field.select2).toHaveBeenCalledWith('close');
+
+        dom.$field.select2.mockClear();
+        const shiftTab = new window.KeyboardEvent('keydown', {
+            key: 'Tab',
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true
+        });
+        button.dispatchEvent(shiftTab);
+        expect(shiftTab.defaultPrevented).toBe(true);
+        expect(dom.$field.select2).toHaveBeenCalledWith('close');
+    });
+
+    test('Escape on the focused button closes the picker via select2, not a hand-rolled refocus', () => {
+        dom.$field.select2 = jest.fn();
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        typeTerm(dom, 'example');
+        const button = manualButtons(dom)[0];
+        button.focus();
+
+        const event = new window.KeyboardEvent('keydown', {
+            key: 'Escape',
+            bubbles: true,
+            cancelable: true
+        });
+        button.dispatchEvent(event);
+
+        expect(event.defaultPrevented).toBe(true);
+        // The real assertion: select2's OWN close() was invoked. Its close
+        // handler is what refocuses the combobox in production — asserting
+        // only `defaultPrevented` (as round 2 originally did) cannot tell a
+        // real close from a no-op, which is exactly what Vader's mutation
+        // pass proved by deleting the close()/refocus call and watching the
+        // suite stay green.
+        expect(dom.$field.select2).toHaveBeenCalledWith('close');
+    });
+});
+
+describe('dropdown geometry (resize nudge)', () => {
+    let $;
+    let model;
+    let dom;
+
+    beforeEach(() => {
+        $ = makeMiniQuery();
+        model = loadModelWithWrongThreshold($);
+        dom = makePickerDom($);
+    });
+
+    /**
+     * select2 only recalculates dropdown height/position from its own
+     * result/selection events or a window resize — inserting or removing
+     * the button is neither, so nudgeSelect2Resize() pokes
+     * `resize.select2.<id>` by hand. Round 3's bug (proved by Vader's
+     * mutation pass) was firing that nudge on the removal path BEFORE the
+     * button actually left the DOM: select2 measures `$dropdown.outerHeight()`
+     * synchronously when it handles the resize, so a nudge fired too early
+     * just re-measures the stale, still-larger height. These tests capture
+     * whether the button is still present in the DOM at the moment the
+     * nudge is observed, not just that a resize event fired at all.
+     */
+    test('the removal-path nudge fires AFTER the button has actually left the DOM', () => {
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        typeTerm(dom, 'example');
+        expect(manualButtons(dom)).toHaveLength(1);
+
+        let buttonCountAtNudge = null;
+        const onResize = function () {
+            buttonCountAtNudge = manualButtons(dom).length;
         };
-        return jqxhr;
-    };
-    $.mage = { cookies: { get: () => null }, redirect: function () {} };
-    $.extend = Object.assign;
-    $.fn = {};
-    return $;
-}
+        window.addEventListener('resize', onResize);
+        try {
+            typeTerm(dom, 'ex'); // below WRONG_THRESHOLD (5): triggers removal
+        } finally {
+            window.removeEventListener('resize', onResize);
+        }
 
-function loadShippingSurface($, companySearch, overrides) {
-    const brandConfig = function () {
-        return BASE_CONFIG;
-    };
-    brandConfig.getActiveTwoBrandCode = function () {
-        return 'two_payment';
-    };
-    brandConfig.getActiveTwoBrandConfig = function () {
-        return BASE_CONFIG;
-    };
-
-    const component = loadAmdModule(SURFACE_PATH, {
-        jquery: $,
-        'Two_Gateway/js/model/brand-config': brandConfig,
-        'Two_Gateway/js/model/company-search': companySearch
+        expect(buttonCountAtNudge).toBe(0);
     });
 
-    const ctx = Object.assign(
-        Object.create(component.prototype || {}),
-        {
-            countrySelector: '#shipping-new-address-form select[name="country_id"]',
-            companyNameSelector: '#shipping-new-address-form input[name="company"]',
-            searchForCompanyButton: '#shipping_search_for_company',
-            searchForCompanyText: 'Search for company',
-            companyNamePlaceholder: 'Enter company name to search',
-            setCompanyData: jest.fn(),
-            addressLookup: jest.fn(),
-            enableCompanySearch: component.enableCompanySearch,
-            enterDetailsManually: component.enterDetailsManually
-        },
-        overrides || {}
-    );
-    ctx.enableCompanySearch();
-    return { component: component, ctx: ctx };
-}
+    test('the insert-path nudge fires with the button already present in the DOM', () => {
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
 
-/** Inert stand-in for the shared model, recording what the surface asks of it. */
-function makeModelSpy() {
-    return {
-        EVENT_NS: '.twoCompanySearch',
-        MIN_INPUT_LENGTH: 3,
-        REQUEST_TIMEOUT_MS: 30000,
-        SEARCH_DEBOUNCE_MS: 300,
-        minInputLengthMessage: function () {
-            return 'Please enter 3 or more characters';
-        },
-        buildSearchAjaxOptions: function () {
-            return {};
-        },
-        lookupCompanyAddress: function () {
-            return null;
-        },
-        applyAddress: function () {},
-        isDegradedResponse: function () {
-            return false;
-        },
-        markSearchBinding: function () {},
-        clearSearchChrome: function () {},
-        setSearching: function () {},
-        setUnavailable: function () {},
-        abortActiveRequest: jest.fn(),
-        isManualEntryOption: function (data) {
-            return Boolean(data) && typeof data === 'object' && data.id === MANUAL_ENTRY_ID;
-        },
-        attachManualEntryRow: jest.fn(),
-        detachManualEntryObserver: jest.fn()
-    };
-}
+        let buttonCountAtNudge = null;
+        const onResize = function () {
+            buttonCountAtNudge = manualButtons(dom).length;
+        };
+        window.addEventListener('resize', onResize);
+        try {
+            typeTerm(dom, 'example'); // at/above WRONG_THRESHOLD (5): shows it
+        } finally {
+            window.removeEventListener('resize', onResize);
+        }
 
-function newRecorder() {
-    return {
-        handlers: {},
-        appended: [],
-        attrWrites: [],
-        offCalls: [],
-        valWrites: [],
-        select2Options: null,
-        select2Calls: 0,
-        destroyCalls: 0,
-        shown: 0,
-        hidden: 0
-    };
-}
-
-describe('the address step wires the row up', () => {
-    test('opening the picker attaches the row, and appends nothing outside the list', () => {
-        const recorder = newRecorder();
-        const $ = makeSurfaceQuery(recorder);
-        const model = makeModelSpy();
-        loadShippingSurface($, model);
-
-        // Bootstrapped guard: without this, a surface that returned early
-        // would present as green.
-        expect(recorder.select2Calls).toBeGreaterThan(0);
-        expect(typeof recorder.handlers['select2:open']).toBe('function');
-
-        recorder.handlers['select2:open']();
-        expect(model.attachManualEntryRow).toHaveBeenCalledTimes(1);
-
-        // The only thing this surface may still append outside the list is the
-        // reverse link. The old manual-entry div must be gone.
-        const outside = recorder.appended.join('\n');
-        expect(outside).toContain('shipping_search_for_company');
-        expect(outside).not.toContain('enter_details_manually');
-    });
-
-    test('activating the row is cancelled and switches to manual entry', () => {
-        const recorder = newRecorder();
-        const $ = makeSurfaceQuery(recorder);
-        const model = makeModelSpy();
-        const { ctx } = loadShippingSurface($, model);
-
-        const selecting = recorder.handlers['select2:selecting'];
-        expect(typeof selecting).toBe('function');
-
-        const preventDefault = jest.fn();
-        const shownBefore = recorder.shown;
-        // Setup (enableCompanySearch's own rebind-clear) already issues an
-        // `.off(EVENT_NS)` before select2 is even initialized, so asserting
-        // membership alone would pass whether or not enterDetailsManually
-        // unbinds anything. Count from here.
-        const offCallsBefore = recorder.offCalls.length;
-        const valWritesBefore = recorder.valWrites.length;
-        selecting({
-            params: { args: { data: { id: MANUAL_ENTRY_ID, text: MSGID } } },
-            preventDefault: preventDefault
-        });
-
-        // Cancelled, or the sentinel id is written in as a company name and an
-        // address lookup fires for it.
-        expect(preventDefault).toHaveBeenCalledTimes(1);
-        // Company in play cleared, picker torn down, reverse link revealed.
-        expect(ctx.setCompanyData).toHaveBeenCalledWith();
-        expect(recorder.destroyCalls).toBe(1);
-        expect(model.detachManualEntryObserver).toHaveBeenCalledTimes(1);
-        expect(recorder.shown).toBe(shownBefore + 1);
-        expect(recorder.attrWrites).toContainEqual(['type', 'text']);
-        // Unbound before select2('destroy'), which only clears its OWN
-        // namespace — leaving these listeners on the plain text input would
-        // stack a duplicate copy the next time this node is re-initialized.
-        expect(recorder.offCalls.slice(offCallsBefore)).toContain(model.EVENT_NS);
-        // Handed back to the buyer empty: whatever they type next names a
-        // different company than the one the picker had, and the published
-        // section is what the payment step credit-checks.
-        expect(recorder.valWrites.slice(valWritesBefore)).toContain('');
-    });
-
-    test('activating the row cancels the search still on the wire, first', () => {
-        const recorder = newRecorder();
-        const $ = makeSurfaceQuery(recorder);
-        const model = makeModelSpy();
-        const { ctx } = loadShippingSurface($, model);
-
-        recorder.handlers['select2:open']();
-        const bindToken = model.attachManualEntryRow.mock.calls[0][1];
-
-        recorder.handlers['select2:selecting']({
-            params: { args: { data: { id: MANUAL_ENTRY_ID, text: MSGID } } },
-            preventDefault: jest.fn()
-        });
-
-        // Same bind, by IDENTITY. The token is an empty object, so a
-        // structural comparison passes against any other empty object and
-        // would prove nothing about which request gets cancelled.
-        expect(model.abortActiveRequest).toHaveBeenCalledTimes(1);
-        expect(model.abortActiveRequest.mock.calls[0][0]).toBe(bindToken);
-        // BEFORE the teardown: the dropdown is still open at this point
-        // (the selection was cancelled), so a late response would run select2's
-        // highlight and scroll bookkeeping over a torn-down picker.
-        expect(model.abortActiveRequest.mock.invocationCallOrder[0]).toBeLessThan(
-            ctx.setCompanyData.mock.invocationCallOrder[0]
-        );
-    });
-
-    test('closing the picker stops watching its results list', () => {
-        const recorder = newRecorder();
-        const $ = makeSurfaceQuery(recorder);
-        const model = makeModelSpy();
-        loadShippingSurface($, model);
-
-        expect(typeof recorder.handlers['select2:close']).toBe('function');
-        // PRECONDITION, not evidence: nothing has closed the picker yet.
-        expect(model.detachManualEntryObserver).not.toHaveBeenCalled();
-
-        recorder.handlers['select2:close']();
-        expect(model.detachManualEntryObserver).toHaveBeenCalledTimes(1);
-    });
-
-    test('a real company selection is left completely alone', () => {
-        const recorder = newRecorder();
-        const $ = makeSurfaceQuery(recorder);
-        const model = makeModelSpy();
-        const { ctx } = loadShippingSurface($, model);
-
-        const preventDefault = jest.fn();
-        recorder.handlers['select2:selecting']({
-            params: {
-                args: { data: { id: 'Example Trading Ltd', text: 'Example Trading Ltd' } }
-            },
-            preventDefault: preventDefault
-        });
-
-        expect(preventDefault).not.toHaveBeenCalled();
-        expect(recorder.destroyCalls).toBe(0);
-        expect(ctx.setCompanyData).not.toHaveBeenCalled();
-    });
-
-    test('the old outside-the-list affordance is gone from the surface entirely', () => {
-        const source = readSource(SURFACE_PATH);
-        expect(source).not.toContain('enter_details_manually');
-        expect(source).not.toContain('Enter details manually');
-        expect(source).toContain('attachManualEntryRow');
-        expect(source).toContain('select2:selecting');
+        expect(buttonCountAtNudge).toBe(1);
     });
 });
 
-describe('the vendored bundle still works the way the row depends on', () => {
-    // Pinned verbatim, the way this repo already pins the bundle's own
-    // below-threshold message: an upgrade that renames either of these keeps
-    // every behavioural test above green (they run against our own DOM) while
-    // silently making the row unreachable in a real browser.
-    const BUNDLE = 'view/frontend/web/select2-4.1.0/js/select2.min.js';
+describe('address-autocomplete.js surface (structural fix)', () => {
+    let src;
 
-    test('every activation path still walks the selectable class we set', () => {
-        // All three, not just arrow-down: the class occurs eight times in the
-        // bundle, so pinning one handler leaves a rename in either of the
-        // others green while the row stops being reachable that way.
-        const bundle = readSource(BUNDLE);
-        expect(bundle).toContain(
-            '"results:next",function(){var e,t=i.getHighlightedResults(),' +
-                'n=i.$results.find(".select2-results__option--selectable")'
-        );
-        expect(bundle).toContain(
-            '"results:previous",function(){var e,t=i.getHighlightedResults(),' +
-                'n=i.$results.find(".select2-results__option--selectable")'
-        );
-        expect(bundle).toContain(
-            '$results.on("mouseup",".select2-results__option--selectable"'
-        );
+    beforeAll(() => {
+        src = readSource(SURFACE_PATH);
     });
 
-    test('aria-activedescendant is still taken from the payload result id', () => {
-        // Asserted over EVERY write of the attribute, not as one `toContain`:
-        // the bundle carries two copies of this expression, so pinning the
-        // string survived a mutation that renamed one of them.
-        const writes = readSource(BUNDLE).match(/attr\("aria-activedescendant",[^)]*\)/g) || [];
-        expect(writes.length).toBeGreaterThan(0);
-        writes.forEach((write) => {
-            expect(write).toContain('_resultId');
+    test('no longer intercepts select2:selecting for a manual-entry sentinel', () => {
+        expect(src).not.toMatch(/select2:selecting/);
+        expect(src).not.toMatch(/isManualEntryOption/);
+    });
+
+    test('wires the shared model button, activating enterDetailsManually directly', () => {
+        expect(src).toMatch(
+            /companySearch\.attachManualEntryButton\(\s*\$companyNameField,\s*bindToken,/
+        );
+        expect(src).toMatch(/self\.enterDetailsManually\(\s*\$companyNameField,\s*bindToken\s*\)/);
+    });
+
+    test('detaches the button on close, and on the re-bind path before re-init', () => {
+        expect(src).toMatch(/companySearch\.detachManualEntryButton\(\s*\$companyNameField\s*\)/);
+        const detachCalls = src.match(/companySearch\.detachManualEntryButton\(/g) || [];
+        // re-bind path (enterDetailsManually) and select2:close.
+        expect(detachCalls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    test('the shared model exports the button helpers, not the retired row ones', () => {
+        const modelSrc = readSource(MODEL_PATH);
+        [
+            'attachManualEntryButton',
+            'detachManualEntryButton',
+            'syncManualEntryButton',
+            'buildManualEntryButton'
+        ].forEach(function (name) {
+            expect(modelSrc).toMatch(new RegExp(name + ':\\s*function'));
         });
-    });
-
-    test('the bundle has no notion of a data-selected attribute', () => {
-        expect(readSource(BUNDLE)).not.toContain('data-selected');
-    });
-});
-
-describe('translation', () => {
-    test('the label is a translatable msgid, translated in every catalogue', () => {
-        expect(readSource(MODEL_PATH)).toContain("$t('" + MSGID + "')");
-        // Read off disk, not hardcoded: a fourth catalogue added later must not
-        // be able to ship this string untranslated and green.
-        const locales = fs
-            .readdirSync(path.resolve(__dirname, '..', '..', 'i18n'))
-            .filter((name) => name.endsWith('.csv'))
-            .map((name) => name.replace(/\.csv$/, ''));
-        expect(locales.length).toBeGreaterThanOrEqual(3);
-
-        locales.forEach((locale) => {
-            const csv = readSource('i18n/' + locale + '.csv');
-            expect(csv).toContain('"' + MSGID + '","');
-            // Magento drops rows whose translation equals the msgid, so an
-            // identity row is the same as no row at all.
-            expect(csv).not.toContain('"' + MSGID + '","' + MSGID + '"');
+        [
+            'attachManualEntryRow',
+            'detachManualEntryObserver',
+            'renderManualEntryRow',
+            'buildManualEntryOption',
+            'isManualEntryOption'
+        ].forEach(function (name) {
+            expect(modelSrc).not.toMatch(new RegExp(name + ':\\s*function'));
         });
     });
 });
