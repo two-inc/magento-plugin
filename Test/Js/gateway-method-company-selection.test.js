@@ -110,6 +110,17 @@ function makeDom() {
             attr: function () {
                 return n;
             },
+            // TWO-25326 §5's company-number text label builds and tears
+            // itself down through these; this file only needs them not to
+            // throw while it exercises setCompanyData's id/name write.
+            addClass: function (cls) {
+                n.classes = (n.classes || []).concat(cls);
+                return n;
+            },
+            remove: function () {
+                n.removed = true;
+                return n;
+            },
             data: function () {
                 return null;
             },

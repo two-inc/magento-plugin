@@ -94,6 +94,58 @@ define([
             $(this.companyNameSelector).val(companyName);
             $(this.companyIdSelector).val(companyId);
             this.syncCompanyIdEditable();
+            this.renderCompanyIdText();
+        },
+        /**
+         * Class on the address-step company-number text label. Also the hook
+         * style.css aligns it against the name field's end edge.
+         */
+        companyIdTextClass: 'two-company-id-text',
+        /**
+         * Render the captured company number as PLAIN TEXT under the
+         * company-name field (TWO-25326 §5), replacing whatever was there.
+         *
+         * Not an input, and not a second copy of the hidden
+         * `custom_attributes[company_id]` field: that input still exists and
+         * still submits, but it is display:none'd outright
+         * (`.two-company-id-hidden`) precisely because a visible box implies
+         * the number is typeable, and it is not — an identifier-less company
+         * is refused by Model/Two.php::authorize() rather than hand-filled.
+         *
+         * Three states, and only one of them shows anything:
+         *
+         *  - search mode, a result selected -> the number, right-aligned;
+         *  - search mode, nothing selected yet -> nothing (§5: "not visible
+         *    before a result is selected");
+         *  - manual-entry mode -> nothing, ever, whatever the number field
+         *    happens to still hold. Manual entry is name-only capture per the
+         *    three-mode model, so a number rendered here would be claiming a
+         *    registry identity the buyer never picked.
+         *
+         * Rebuilt from scratch on each call rather than toggled: the label is
+         * a single text node with no state worth preserving, and a `.remove()`
+         * first means the manual-entry and pre-selection cases share the exact
+         * same code path as "hide it".
+         *
+         * The caption is an `aria-label`, not visible text: §7 forbids any
+         * additional visible text label in the address area, but a bare number
+         * with no accessible name is unreadable to a screen reader.
+         */
+        renderCompanyIdText: function () {
+            const $field = $(this.companyNameSelector);
+            if (!$field.length) return;
+            const $control = $field.closest('.control');
+            if (!$control.length) return;
+            $control.find('.' + this.companyIdTextClass).remove();
+            if (!this.isCompanySearchActive()) return;
+            const companyId = $(this.companyIdSelector).val();
+            if (!companyId) return;
+            $control.append(
+                $('<div></div>')
+                    .addClass(this.companyIdTextClass)
+                    .attr('aria-label', $t('Company Number'))
+                    .text(companyId)
+            );
         },
         /**
          * True while select2 owns the company-name input, i.e. while the buyer
@@ -271,6 +323,10 @@ define([
             $companyNameField.attr('type', 'text');
             $companyNameField.val('');
             $(this.searchForCompanyButton).show();
+            // After the destroy above, not before: renderCompanyIdText()
+            // decides on isCompanySearchActive(), which only reports
+            // manual-entry once select2 is actually gone from the node.
+            this.renderCompanyIdText();
             // select2('destroy') removes the manual-entry button — the
             // element that had focus when the buyer activated it — from the
             // document, and destroy() does not route through select2's own
@@ -321,15 +377,13 @@ define([
                         .select2({
                             minimumInputLength: companySearch.MIN_INPUT_LENGTH,
                             // Displaces select2's own built-in English
-                            // "input too short" text, which is baked into the
-                            // vendored bundle and counts down the REMAINING
-                            // characters. Ours is translatable and names the
-                            // threshold outright.
-                            language: {
-                                inputTooShort: function () {
-                                    return companySearch.minInputLengthMessage();
-                                }
-                            },
+                            // "input too short" and "No results found" text,
+                            // both baked into the vendored bundle. Ours are
+                            // translatable, name the threshold outright, and
+                            // use the cross-platform "No matches found"
+                            // wording pinned by TWO-25326 §1. Shared with the
+                            // payment-tile picker so the two cannot drift.
+                            language: companySearch.buildLanguageOptions(),
                             // A stable, non-generated hook for style.css's
                             // dropdown-row CSS fixes (text-transform,
                             // vertical alignment). select2 IDs its own
@@ -421,6 +475,14 @@ define([
                             self.addressLookup(selectedItem);
                         });
                     companySearch.markSearchBinding($companyNameField, bindToken);
+                    // TWO-25326 §1: typing any character (not just Space or
+                    // Enter, which is all select2 4.1 handles) opens the
+                    // dropdown and starts the search.
+                    companySearch.attachOpenOnType($companyNameField, bindToken);
+                    // Re-derive on every bind: a re-render rebuilds the
+                    // `.control` this label lives in, so a label written on a
+                    // previous bind is gone by now.
+                    self.renderCompanyIdText();
                     // Set initial placeholder text for the company search
                     if (!$(self.companyNameSelector).val()) {
                         $(self.companyNameSelector)
