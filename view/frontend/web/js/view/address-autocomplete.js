@@ -271,6 +271,14 @@ define([
             $companyNameField.attr('type', 'text');
             $companyNameField.val('');
             $(this.searchForCompanyButton).show();
+            // select2('destroy') removes the manual-entry button — the
+            // element that had focus when the buyer activated it — from the
+            // document, and destroy() does not route through select2's own
+            // `close` handler (which is what normally refocuses the
+            // combobox). Left alone, focus falls back to `<body>` with
+            // nothing visible focused; land it on the plain-text field this
+            // just became instead.
+            $companyNameField.trigger('focus');
         },
         /**
          * (Re-)bind the company-search picker to the company-name input.

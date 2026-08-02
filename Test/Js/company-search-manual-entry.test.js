@@ -160,6 +160,13 @@ function makeMiniQuery() {
             }
             return store[key];
         },
+        removeData: function (key) {
+            const node = this.nodes[0];
+            if (!node) return this;
+            const store = dataStore.get(node);
+            if (store) delete store[key];
+            return this;
+        },
         children: function (selector) {
             const matched = [];
             this.nodes.forEach(function (node) {
@@ -266,6 +273,31 @@ function makeMiniQuery() {
                         node.removeEventListener(entry.type, entry.handler);
                         bound.splice(bound.indexOf(entry), 1);
                     });
+            });
+            return this;
+        },
+        removeAttr: function (name) {
+            this.nodes.forEach(function (node) {
+                node.removeAttribute(name);
+            });
+            return this;
+        },
+        /**
+         * Real jQuery's `.trigger('focus')` calls the native `.focus()`
+         * method rather than dispatching a synthetic event (the two differ:
+         * only the former actually moves `document.activeElement`), which is
+         * exactly the distinction the focus-restoration fix (#30.x.15 round
+         * 2) depends on. Everything else dispatches a real DOM event so a
+         * `keydown`/`resize` listener under test still sees it.
+         */
+        trigger: function (spec) {
+            const parsed = splitNs(spec);
+            this.nodes.forEach(function (node) {
+                if (parsed.type === 'focus' && typeof node.focus === 'function') {
+                    node.focus();
+                    return;
+                }
+                node.dispatchEvent(new window.Event(parsed.type, { bubbles: true }));
             });
             return this;
         }
@@ -588,6 +620,93 @@ describe('what drives the button', () => {
         expect(manualButtons(dom)).toHaveLength(0);
         typeTerm(dom, 'example ltd');
         expect(manualButtons(dom)).toHaveLength(0);
+    });
+});
+
+describe('keyboard reachability (round 2 — Tab is not free)', () => {
+    let $;
+    let model;
+    let dom;
+
+    beforeEach(() => {
+        $ = makeMiniQuery();
+        model = loadModelWithWrongThreshold($);
+        dom = makePickerDom($);
+    });
+
+    /**
+     * select2 4.1's OWN search-field keypress handler treats Tab exactly
+     * like Enter (`t===ENTER||t===TAB` both trigger `results:select` and
+     * `preventDefault()`), bound at construction time — before this module
+     * gets a chance to touch the field. A jQuery bubble-phase listener
+     * added later (e.g. on `select2:open`) cannot win that race; only a
+     * capture-phase listener, installed by attachManualEntryButton(), runs
+     * ahead of it. This test does not stub select2's own handler (there is
+     * none in this harness) — it only proves OUR handler intercepts Tab
+     * and moves focus, which is the fix; select2 racing it is covered by
+     * Yoda's static review of the vendored bundle, not re-derivable here.
+     */
+    test('Tab moves focus onto the button and is not left for select2 to also act on', () => {
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        typeTerm(dom, 'example');
+        const $button = $(manualButtons(dom)[0]);
+        expect($button.length).toBe(1);
+
+        const event = new window.KeyboardEvent('keydown', {
+            key: 'Tab',
+            bubbles: true,
+            cancelable: true
+        });
+        dom.search.dispatchEvent(event);
+
+        expect(event.defaultPrevented).toBe(true);
+        expect(document.activeElement).toBe($button.get(0));
+    });
+
+    test('Shift+Tab is left alone — only forward Tab is intercepted', () => {
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        typeTerm(dom, 'example');
+
+        const event = new window.KeyboardEvent('keydown', {
+            key: 'Tab',
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true
+        });
+        dom.search.dispatchEvent(event);
+
+        expect(event.defaultPrevented).toBe(false);
+    });
+
+    test('detaching removes the capture-phase Tab listener, so it does not survive teardown', () => {
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        typeTerm(dom, 'example');
+        model.detachManualEntryButton(dom.$field);
+
+        const event = new window.KeyboardEvent('keydown', {
+            key: 'Tab',
+            bubbles: true,
+            cancelable: true
+        });
+        dom.search.dispatchEvent(event);
+
+        expect(event.defaultPrevented).toBe(false);
+    });
+
+    test('Escape on the focused button closes the picker without leaving a stray click/keydown handler', () => {
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        typeTerm(dom, 'example');
+        const button = manualButtons(dom)[0];
+        button.focus();
+
+        const event = new window.KeyboardEvent('keydown', {
+            key: 'Escape',
+            bubbles: true,
+            cancelable: true
+        });
+        button.dispatchEvent(event);
+
+        expect(event.defaultPrevented).toBe(true);
     });
 });
 

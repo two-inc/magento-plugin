@@ -76,7 +76,7 @@ define([
             // Resolved from the cached CONTAINER, not from
             // `_$companyNameField`: the paths where this link is visible are
             // exactly the paths that have already destroyed the widget and
-            // nulled that node (the manual-entry row → clearCompany() →
+            // nulled that node (the manual-entry button → clearCompany() →
             // destroyCompanySearchWidget()). Keying on the node meant
             // enterSoleTraderUi() silently hid nothing and the link stayed up
             // in sole-trader mode.
@@ -1166,10 +1166,22 @@ define([
                                     // `.show()` on a detached node would
                                     // silently no-op, leaving the real link
                                     // hidden.
+                                    //
+                                    // Focused too, not just shown: clearCompany()
+                                    // tears the select2 widget down through
+                                    // destroyCompanySearchWidget(), which removes
+                                    // the manual-entry button — the element that
+                                    // had focus — from the document. Nothing
+                                    // else in that teardown path refocuses
+                                    // anything, so a buyer who reached the
+                                    // button by keyboard is otherwise dropped
+                                    // back to `<body>` with no visible focus at
+                                    // all.
                                     $companyNameField
                                         .closest('.field')
                                         .find('.search_for_company')
-                                        .show();
+                                        .show()
+                                        .trigger('focus');
                                 }
                             );
                             document.querySelector('.select2-search__field').focus();

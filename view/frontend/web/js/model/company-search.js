@@ -161,6 +161,49 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         return Boolean(response) && response.degraded === true;
     }
 
+    /**
+     * Append `id` to a space-separated IDREF attribute (`aria-owns`,
+     * `aria-controls`) if it is not already present.
+     *
+     * The manual-entry button sits OUTSIDE `.select2-results__options` —
+     * that is the whole point of the sibling-not-child fix — so select2's
+     * own `aria-owns`/`aria-controls` wiring on the search field (which only
+     * ever names the listbox `<ul>`) never mentions it. Without this a
+     * screen reader has no accessible relationship between the combobox and
+     * the button at all, even though native keyboard focus now reaches it.
+     *
+     * @param {object} $el jQuery set — no-op if empty
+     * @param {string} attr attribute name
+     * @param {string} id id to add
+     */
+    function appendToIdrefList($el, attr, id) {
+        if (!$el || !$el.length || !id) return;
+        const ids = ($el.attr(attr) || '').split(/\s+/).filter(Boolean);
+        if (ids.indexOf(id) !== -1) return;
+        ids.push(id);
+        $el.attr(attr, ids.join(' '));
+    }
+
+    /**
+     * Inverse of appendToIdrefList() — strips `id` back out, called when the
+     * button it names is removed (below-threshold, or teardown).
+     *
+     * @param {object} $el jQuery set — no-op if empty
+     * @param {string} attr attribute name
+     * @param {string} id id to remove
+     */
+    function removeFromIdrefList($el, attr, id) {
+        if (!$el || !$el.length || !id) return;
+        const ids = ($el.attr(attr) || '').split(/\s+/).filter(Boolean).filter(function (existing) {
+            return existing !== id;
+        });
+        if (ids.length) {
+            $el.attr(attr, ids.join(' '));
+        } else {
+            $el.removeAttr(attr);
+        }
+    }
+
     function cacheGet(key) {
         return resultCache.has(key) ? resultCache.get(key) : null;
     }
@@ -704,10 +747,16 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          *    literal space character into the search box — rather than
          *    activating the highlighted row.
          *
-         * A real `<button>` fixes both at once: native Tab-adjacent focus
-         * order, native Enter AND Space activation (nothing here has to
-         * special-case either key), and a `click` handler that only ever
-         * fires for the primary mouse button. No bespoke keydown bridge.
+         * A real `<button>` fixes Enter AND Space activation for free —
+         * nothing here has to special-case either key. Tab is NOT free,
+         * though: select2 4.1's own search-field keypress handler treats Tab
+         * exactly like Enter (`t===ENTER||t===TAB`, both trigger
+         * `results:select` and `preventDefault()`), so without help Tab can
+         * never leave the search field to reach a sibling button. attachManualEntryButton()
+         * installs a capture-phase listener on the search field to win that
+         * race — see its own doc comment. Escape is handled here, on the
+         * button itself, for the same reason: once focus has moved off the
+         * search field select2 never sees the keypress.
          *
          * @param {object} $field jQuery-wrapped picker input
          * @param {object} token identity stamped by markSearchBinding()
@@ -719,31 +768,62 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         buildManualEntryButton: function ($field, token, onActivate) {
             const self = this;
             const label = manualEntryText();
-            return $('<button></button>')
+
+            /**
+             * Run onActivate() once, deferred a tick — same reason as the old
+             * `select2:selecting` interception it replaces: `onActivate()`
+             * tears the select2 widget down (it switches the field into
+             * manual-entry / plain-text mode), and doing that synchronously
+             * from inside the dispatching event's own handler would pull the
+             * button's own DOM out from under an event that is still
+             * unwinding on it.
+             *
+             * The timer is stashed on the button (`twoManualEntryTimer`) so
+             * detachManualEntryButton() can cancel it: without that, closing
+             * the dropdown in the gap between activation and the deferred
+             * tick still fires onActivate() a moment later, against a picker
+             * the buyer has already left.
+             */
+            function activate() {
+                const timer = setTimeout(function () {
+                    $button.removeData('twoManualEntryTimer');
+                    if (!self.getSearchFieldContainer($field, token).length) return;
+                    onActivate();
+                }, 0);
+                $button.data('twoManualEntryTimer', timer);
+            }
+
+            const $button = $('<button></button>')
                 .attr({ type: 'button' })
                 .addClass(MANUAL_ENTRY_CLASS)
                 .text(label)
-                .on('click' + MANUAL_ENTRY_NS, function () {
-                    // Deferred a tick, same reason as the old
-                    // `select2:selecting` interception it replaces:
-                    // `onActivate()` tears the select2 widget down (it
-                    // switches the field into manual-entry / plain-text mode),
-                    // and doing that synchronously from inside THIS click's
-                    // own dispatch would pull the button's own DOM out from
-                    // under the event that is still unwinding on it.
-                    //
-                    // Staleness-checked for the same reason every other
-                    // deferred callback in this module is: a checkout
-                    // re-render (Fire Checkout re-renders on totals/shipping
-                    // changes, deliberately un-guarded — see the re-bind
-                    // comment at the call sites) can rebind a NEW widget to
-                    // this same field before the timer fires, and this must
-                    // not act on behalf of a button the buyer no longer sees.
-                    setTimeout(function () {
-                        if (!self.getSearchFieldContainer($field, token).length) return;
-                        onActivate();
-                    }, 0);
+                .on('click' + MANUAL_ENTRY_NS, activate)
+                .on('keydown' + MANUAL_ENTRY_NS, function (e) {
+                    // Escape is select2's own "close the dropdown" key, but
+                    // once focus has moved onto this button (a sibling of the
+                    // listbox, outside select2's own keydown delegation) select2
+                    // never sees the keypress. Close the picker ourselves and
+                    // hand focus back to the combobox, matching what select2
+                    // does for Escape pressed inside the search field.
+                    if (e.key !== 'Escape' && e.which !== 27) return;
+                    e.preventDefault();
+                    if (
+                        $field &&
+                        $field.length &&
+                        $field.data('select2') &&
+                        typeof $field.select2 === 'function'
+                    ) {
+                        $field.select2('close');
+                    }
+                    const $selection = self.getSearchFieldContainer($field, token);
+                    const instance = $field && $field.data && $field.data('select2');
+                    if (instance && instance.$container) {
+                        instance.$container.find('.select2-selection').trigger('focus');
+                    } else if ($selection && $selection.length) {
+                        $selection.trigger('focus');
+                    }
                 });
+            return $button;
         },
 
         /**
@@ -777,6 +857,18 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             // wait out a debounce and a request first is exactly the wrong
             // order.
             if (term.length < MIN_INPUT_LENGTH) {
+                if ($existing.length) {
+                    removeFromIdrefList(
+                        this.getSearchFieldContainer($field, token).find('.select2-search__field'),
+                        'aria-owns',
+                        $existing.attr('id')
+                    );
+                    removeFromIdrefList(
+                        this.getSearchFieldContainer($field, token).find('.select2-search__field'),
+                        'aria-controls',
+                        $existing.attr('id')
+                    );
+                }
                 $existing.remove();
                 return $();
             }
@@ -789,7 +881,36 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             }
             $existing.remove();
             const $button = this.buildManualEntryButton($field, token, onActivate);
+            // A stable id, not a generated one: it is what gets appended to
+            // the search field's `aria-owns`/`aria-controls` below, so a
+            // screen reader can resolve it back to this exact button rather
+            // than a dangling reference on the next repaint.
+            $button.attr('id', ($results.attr('id') || 'select2-two-company-search') + '-manual-entry');
             $results.after($button);
+
+            // select2 only recalculates the dropdown's height/position from
+            // its OWN mutations (`results:all`, `results:append`,
+            // `results:message`, `select`, `unselect`) or a window
+            // scroll/resize. Appending or removing this button is neither —
+            // it runs synchronously from the search field's `input` handler,
+            // ahead of the ajax debounce, which is the whole point of the
+            // threshold-not-has-searched design. Without a nudge the dropdown
+            // keeps whatever height it was measured at before the button
+            // existed, so the panel can grow past the viewport edge or
+            // overlap the field above it for the entire pre-results window —
+            // exactly the "always visible without scroll" property this
+            // button exists to guarantee. `resize.select2.<id>` is the same
+            // namespaced event `_attachPositioningHandler` binds, so this
+            // reaches select2's own repositioning and nothing else.
+            const instance = $field.data('select2');
+            if (instance) $(window).trigger('resize.select2.' + instance.id);
+
+            const $searchField = this.getSearchFieldContainer($field, token).find(
+                '.select2-search__field'
+            );
+            appendToIdrefList($searchField, 'aria-owns', $button.attr('id'));
+            appendToIdrefList($searchField, 'aria-controls', $button.attr('id'));
+
             return $button;
         },
 
@@ -807,6 +928,18 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * Rebinding is safe: the handler is namespaced and cleared first, so
          * reopening the picker cannot accumulate duplicates.
          *
+         * Also installs a CAPTURE-phase native `keydown` listener for Tab on
+         * the search field. select2 4.1's own `_registerEvents` binds a
+         * keypress handler on this same field at CONSTRUCTION time that
+         * treats Tab exactly like Enter (`t===ENTER||t===TAB` both trigger
+         * `results:select` and call `preventDefault()`), so without this Tab
+         * either selects the highlighted result and closes the dropdown, or
+         * no-ops with `preventDefault()` still firing — either way, focus
+         * never leaves the search field to reach the button. A jQuery
+         * bubble-phase binding added here (or on `select2:open`, later than
+         * select2's own constructor-time bind) cannot win that race; only a
+         * capture-phase listener runs before select2 sees the event at all.
+         *
          * @param {object} $field jQuery-wrapped picker input
          * @param {object} token identity stamped by markSearchBinding()
          * @param {function} onActivate see buildManualEntryButton()
@@ -816,20 +949,48 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             const $results = this.getResultsList($field, token);
             if (!$results.length) return;
 
-            this.getSearchFieldContainer($field, token)
-                .find('.select2-search__field')
+            const $searchField = this.getSearchFieldContainer($field, token).find(
+                '.select2-search__field'
+            );
+
+            $searchField
                 .off('input' + MANUAL_ENTRY_NS)
                 .on('input' + MANUAL_ENTRY_NS, function () {
                     self.syncManualEntryButton($field, token, onActivate);
                 });
+
+            const searchFieldNode = $searchField.get(0);
+            if (searchFieldNode) {
+                // Detached first: rebinding must not stack a second capture
+                // listener on the same node across a re-open.
+                if (searchFieldNode._twoManualEntryTabHandler) {
+                    searchFieldNode.removeEventListener(
+                        'keydown',
+                        searchFieldNode._twoManualEntryTabHandler,
+                        true
+                    );
+                }
+                const tabHandler = function (e) {
+                    if (e.key !== 'Tab' || e.shiftKey) return;
+                    const $wrapper = self.getResultsList($field, token).parent();
+                    const $button = $wrapper.children(`.${MANUAL_ENTRY_CLASS}`);
+                    if (!$button.length) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    $button.trigger('focus');
+                };
+                searchFieldNode.addEventListener('keydown', tabHandler, true);
+                searchFieldNode._twoManualEntryTabHandler = tabHandler;
+            }
 
             this.syncManualEntryButton($field, token, onActivate);
         },
 
         /**
          * Stop watching a picker's search field for the manual-entry
-         * button's `input` handler, and drop the button itself. Call when
-         * the widget is torn down or closed.
+         * button's `input` handler and its capture-phase Tab handler, cancel
+         * any pending activation timer, and drop the button itself. Call
+         * when the widget is torn down or closed.
          *
          * Deliberately takes only `$field`, no token — same signature as the
          * `detachManualEntryObserver()` this replaces. Teardown must clean up
@@ -861,17 +1022,43 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                 if ($searchField && typeof $searchField.off === 'function') {
                     $searchField.off('input' + MANUAL_ENTRY_NS);
                 }
+                const searchFieldNode = $searchField && $searchField.get && $searchField.get(0);
+                if (searchFieldNode && searchFieldNode._twoManualEntryTabHandler) {
+                    searchFieldNode.removeEventListener(
+                        'keydown',
+                        searchFieldNode._twoManualEntryTabHandler,
+                        true
+                    );
+                    delete searchFieldNode._twoManualEntryTabHandler;
+                }
             }
 
-            const $results = instance.$dropdown.find(
-                '.select2-results__options:not(.select2-results__options--nested)'
-            );
-            if ($results && $results.length && typeof $results.parent === 'function') {
-                const $button = $results.parent().children(`.${MANUAL_ENTRY_CLASS}`);
-                if ($button && typeof $button.off === 'function') {
-                    $button.off('click' + MANUAL_ENTRY_NS);
+            // Found by class directly, scoped to the dropdown — not via the
+            // results `<ul>`'s parent. That indirection is fragile for
+            // teardown specifically: if the `<ul>` can't be resolved for any
+            // reason, the lookup used to fail open and leave the button (and
+            // its bound `click`/`keydown` handlers, and its pending
+            // activation timer) wired to a renderer that is about to be
+            // disposed — the exact leak this method exists to prevent. A
+            // class lookup scoped to the dropdown cannot miss for that
+            // reason, and doesn't care whether nested result groups exist.
+            const $dropdown = instance.$dropdown;
+            const $button =
+                $dropdown && typeof $dropdown.find === 'function'
+                    ? $dropdown.find(`.${MANUAL_ENTRY_CLASS}`)
+                    : $();
+            if ($button && $button.length) {
+                const timer = $button.data && $button.data('twoManualEntryTimer');
+                if (timer) clearTimeout(timer);
+                if (typeof $button.off === 'function') {
+                    $button.off('click' + MANUAL_ENTRY_NS).off('keydown' + MANUAL_ENTRY_NS);
                 }
-                if ($button && typeof $button.remove === 'function') {
+                const $searchField2 = $searchBox && $searchBox.find
+                    ? $searchBox.find('.select2-search__field')
+                    : $();
+                removeFromIdrefList($searchField2, 'aria-owns', $button.attr && $button.attr('id'));
+                removeFromIdrefList($searchField2, 'aria-controls', $button.attr && $button.attr('id'));
+                if (typeof $button.remove === 'function') {
                     $button.remove();
                 }
             }
