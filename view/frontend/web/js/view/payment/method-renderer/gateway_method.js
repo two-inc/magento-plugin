@@ -293,6 +293,80 @@ define([
         isCompanyNameReadOnly: function () {
             return this.showSoleTrader() && !!this.companyId();
         },
+        /**
+         * Has a company actually been CAPTURED — name plus organisation
+         * number — as opposed to merely named?
+         *
+         * This is the switch TWO-25326 §7 turns on. When it is true the tile
+         * shows the captured company as one line of plain text and hides its
+         * own company controls; when it is false those controls stay visible
+         * and fully functional, because they are the buyer's route to
+         * capturing a company in the first place.
+         *
+         * Keeping the controls rather than deleting them is deliberate and
+         * load-bearing. The tile's picker is not a duplicate of the address
+         * step's: address-autocomplete.js binds only
+         * `#shipping-new-address-form`, so a buyer who selects a SAVED
+         * address (no new-address form is rendered) or checks out a VIRTUAL
+         * cart (no shipping step exists at all) has no company search
+         * anywhere else. Removing this surface outright would leave those two
+         * flows with no way to supply a company, and
+         * Model/Two.php::authorize() then refuses the order server-side — an
+         * order-blocking regression, not a cosmetic one.
+         *
+         * Gated on the NUMBER, not on the name alone, and that is the whole
+         * distinction:
+         *
+         *  - a registry pick and sole-trader autofill both yield a number, so
+         *    capture is complete and there is nothing left for the buyer to
+         *    do here — show the label;
+         *  - manual entry yields a name and no number. §6 says name-only must
+         *    NOT make the payment method usable, so capture is precisely NOT
+         *    complete, and swapping the controls for a label at that point
+         *    would take away the search box while telling the buyer they were
+         *    finished. The controls stay.
+         *
+         * A plain function, not a computed — same reasoning as
+         * isCompanyNameReadOnly() above: the template reads it inside `visible`
+         * bindings, so ko tracks both observables as dependencies of those
+         * bindings and re-evaluates when either changes. Nothing to dispose,
+         * and it exists on renderers the unit tests load without booting.
+         *
+         * @returns {boolean}
+         */
+        isCompanyCaptured: function () {
+            return !!(this.companyName() || '').trim() && !!(this.companyId() || '').trim();
+        },
+        /**
+         * The captured company as one line of display text for the payment
+         * tile (TWO-25326 §7): `Name (12345678)`.
+         *
+         * Only ever rendered while isCompanyCaptured() is true, so both parts
+         * are present by construction; the name-only guard below is a
+         * belt-and-braces against a future caller, not a state the template
+         * can reach. Returns '' rather than a bare parenthesised number if a
+         * number ever arrived without a name — nothing to attach it to reads
+         * worse than nothing at all.
+         *
+         * The parentheses are the format the ticket specifies literally, and
+         * they wrap a VALUE rather than a translated caption. That is why
+         * this does not repeat the locale hazard that kept the superseded
+         * "Company Number" caption and its number on separate lines: there is
+         * no caption here for punctuation to be glued to.
+         *
+         * READ-ONLY. Never writes either observable, and the element it feeds
+         * carries no `name`, so it submits nothing. getData() reads
+         * `companyName()`/`companyId()` directly and remains the only path to
+         * the order.
+         *
+         * @returns {string}
+         */
+        companyDisplayLabel: function () {
+            const companyName = (this.companyName() || '').trim();
+            if (!companyName) return '';
+            const companyId = (this.companyId() || '').trim();
+            return companyId ? companyName + ' (' + companyId + ')' : companyName;
+        },
         selectTerm: function (days) {
             surchargeModel.selectTerm(days);
         },

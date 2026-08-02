@@ -2,29 +2,44 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25288 first showed the captured company NAME and NUMBER read-only, as a
- * second `<input readonly>`. Doug's canonical-design ruling that followed
- * (applies across all four platforms) replaced that input outright: the
- * number is now a plain text LABEL, right-aligned immediately below the
- * company-name field, visible only once a number has actually been captured.
+ * The payment tile's company display, as TWO-25326 §7 defines it: ONE line of
+ * plain text, "Name (12345678)", between the term chips and the order-intent
+ * notice — and the tile's own company controls hidden while it shows.
  *
- * This file pins the label-based version. Three groups, and they are NOT the
- * same kind of test. Be honest about which is which before trusting a green
- * run:
+ * This supersedes two earlier shapes in turn. TWO-25288 first made the
+ * captured number a read-only `<input>`; the ruling after that replaced the
+ * input with a "Company Number" caption plus a separately-rendered value.
+ * §7 removes that pair too: a caption and a number below an editable
+ * company-name box is three renderings of one company in one tile.
  *
- *  1. READ-ONLY / NO-INPUT PINS — 'the payment tile shows the number as an
- *     uneditable label, not a field'. These fail against BOTH the old
- *     `<input readonly>` shape and any future reinstatement of an editable
- *     field, because there is no `<input id="company_id">` left to satisfy
- *     either shape.
+ * The control is HIDDEN, not deleted, and that distinction is pinned here
+ * deliberately. The tile's picker is the only company-capture surface for a
+ * buyer on a saved address (no `#shipping-new-address-form` exists, and that
+ * is the only selector address-autocomplete.js binds) or on a virtual cart
+ * (no shipping step at all). Deleting it would block those orders outright.
  *
- *  2. WHAT-THE-BUYER-SEES PINS — 'what each capture mode puts in front of the
+ * Four groups, and they are NOT the same kind of test. Be honest about which
+ * is which before trusting a green run:
+ *
+ *  1. NO-INPUT PINS — 'the payment tile shows the number as an uneditable
+ *     label, not a field'. These fail against the old `<input readonly>`
+ *     shape and against any future reinstatement of an editable NUMBER field,
+ *     because there is no `<input id="company_id">` left to satisfy either.
+ *
+ *  2. SWAP PINS — the capture control and the label are gated on the same
+ *     predicate, in opposite directions, so no state can show both or
+ *     neither. Both `visible:` expressions are read out of the template and
+ *     pinned to an exact shape before being evaluated, so a drift to some
+ *     other predicate (or an always-true stub) fails the string match rather
+ *     than passing on a coincidence.
+ *
+ *  3. WHAT-THE-BUYER-SEES PINS — 'what each capture mode puts in front of the
  *     buyer'. These do not restate the markup: they read the `text:` binding
  *     target out of the template, then evaluate it against a renderer driven
- *     through the real capture flow, so a label bound to the wrong observable
+ *     through the real capture flow, so a label bound to the wrong method
  *     fails here even though the markup is present and correct.
  *
- *  3. ACCEPTED-SOURCE REGRESSION PINS — most of 'an accepted organisation
+ *  4. ACCEPTED-SOURCE REGRESSION PINS — most of 'an accepted organisation
  *     number still reaches the order'. These pass against the pre-change code
  *     too, because every accepted source already wrote the observable. They
  *     do NOT prove anything about the label. They exist because the
@@ -34,7 +49,7 @@
  *     sole-trader routes are the ones most likely to break silently, their
  *     value being minted rather than picked.
  *
- * Group 3 is deliberately asserted through `getData()` rather than the DOM.
+ * Group 4 is deliberately asserted through `getData()` rather than the DOM.
  * That is the actual submit path (`Observer/DataAssignObserver.php` reads
  * `additional_data`), and it reads the observable. Asserting the DOM there
  * would prove nothing.
@@ -101,38 +116,22 @@ function inputTag(id) {
  * content is two flat `<span>` elements with no nested `<div>`. Throws
  * rather than returning null, same reasoning as inputTag() above.
  */
-function companyIdLabelTag() {
+function companyLabelTag() {
     const markup = withoutComments(readTemplate());
-    const tags = (markup.match(/<div\b[^>]*class="two-company-id-label"[^>]*>[\s\S]*?<\/div>/g) || []);
+    const tags = markup.match(/<div\b[^>]*class="two-company-label"[^>]*>[\s\S]*?<\/div>/g) || [];
     if (tags.length !== 1) {
-        throw new Error('expected exactly one <div class="two-company-id-label">, found ' + tags.length);
-    }
-    return tags[0];
-}
-
-/**
- * The `<span data-bind="text: companyId">` inside the number label — the
- * element that actually paints the number, as opposed to the static
- * "Company Number" caption span alongside it.
- */
-function companyIdNumberSpanTag() {
-    const tag = companyIdLabelTag();
-    const spans = (tag.match(/<span\b[^>]*>/g) || []).filter(function (span) {
-        return /text:\s*companyId\b/.test(span);
-    });
-    if (spans.length !== 1) {
         throw new Error(
-            'expected exactly one <span data-bind="text: companyId">, found ' + spans.length
+            'expected exactly one <div class="two-company-label">, found ' + tags.length
         );
     }
-    return spans[0];
+    return tags[0];
 }
 
 /**
  * What ko would paint into `id`'s value, derived rather than restated: read the
  * `value:` binding target out of the template, look that name up on a live
  * renderer, and evaluate it. A field bound to the wrong observable — or to none
- * — therefore fails here, which a markup substring check cannot catch.
+ * at all — fails here rather than passing on a restated expectation.
  */
 function renderedValue(id, renderer) {
     const bound = inputTag(id).match(/value:\s*([A-Za-z_$][\w$]*)/);
@@ -149,38 +148,65 @@ function renderedValue(id, renderer) {
 }
 
 /**
- * What ko would paint as the number label's text, derived the same way
- * renderedValue() does for an input's `value:` binding, but for the label's
- * `text:` binding.
+ * What ko would paint as the tile's company label, derived the same way
+ * renderedValue() does for an input — read the `text:` binding target out of
+ * the template, look it up on the live renderer, evaluate it. A label rewired
+ * to a different (or missing) method fails here rather than passing on a
+ * restated string.
  */
 function renderedLabelText(renderer) {
-    const bound = companyIdNumberSpanTag().match(/text:\s*([A-Za-z_$][\w$]*)/);
+    const bound = companyLabelTag().match(/text:\s*([A-Za-z_$][\w$]*)\(\)/);
     if (!bound) {
-        throw new Error('the number label has no `text:` binding');
+        throw new Error('the company label has no `text:` binding to a renderer method');
     }
     const target = renderer[bound[1]];
     if (typeof target !== 'function') {
         throw new Error(
-            'the number label is bound to `' + bound[1] + '`, which the renderer has not'
+            'the company label is bound to `' + bound[1] + '`, which the renderer has not'
         );
     }
     return target.call(renderer);
 }
 
 /**
- * Whether the number label would currently render, evaluated the same way
- * renderedLabelText() does — read the `visible:` expression out of the
- * template, PIN it to the exact `!!companyId()` shape (so a drift to some
- * other observable or a always-true/always-false stub fails the string
- * match), then evaluate the same observable directly against the live
- * renderer for the actual truth value.
+ * Whether the tile's company label would currently render: read the
+ * `visible:` expression out of the template, PIN it to the exact
+ * `isCompanyCaptured()` shape (so a drift to some other predicate, or to an
+ * always-true stub, fails the string match), then evaluate that predicate
+ * against the live renderer for the actual truth value.
  */
 function labelVisible(renderer) {
-    const tag = companyIdLabelTag();
-    if (!/visible:\s*!!companyId\(\)/.test(tag)) {
-        throw new Error('the number label\'s `visible:` binding is not the pinned `!!companyId()` shape');
+    const tag = companyLabelTag();
+    if (!/visible:\s*isCompanyCaptured\(\)/.test(tag)) {
+        throw new Error(
+            "the company label's `visible:` binding is not the pinned `isCompanyCaptured()` shape"
+        );
     }
-    return !!renderer.companyId();
+    return !!renderer.isCompanyCaptured();
+}
+
+/**
+ * Whether the tile's company-name FIELD (the capture control) would currently
+ * render. Same derive-then-evaluate discipline: the `visible:` expression is
+ * pinned to the negation of the same predicate the label uses, so the two can
+ * never drift into a state where both show or neither does.
+ */
+function nameFieldVisible(renderer) {
+    const markup = withoutComments(readTemplate());
+    const tags =
+        markup.match(/<div\b[^>]*class="field field-text required"[^>]*>/g) || [];
+    if (tags.length !== 1) {
+        throw new Error(
+            'expected exactly one company-name field wrapper, found ' + tags.length
+        );
+    }
+    if (!/visible:\s*!isCompanyCaptured\(\)/.test(tags[0])) {
+        throw new Error(
+            "the company-name field's `visible:` binding is not the pinned "
+                + '`!isCompanyCaptured()` shape'
+        );
+    }
+    return !renderer.isCompanyCaptured();
 }
 
 /**
@@ -228,8 +254,8 @@ describe('the payment tile shows the number as an uneditable label, not a field'
         expect(markup).not.toMatch(/<input\b[^>]*\bid\s*=\s*["']company_id["']/);
     });
 
-    test('the number label is a plain div, carries no name and no value binding to write to', () => {
-        const tag = companyIdLabelTag();
+    test('the company label is a plain div, carries no name and no value binding to write to', () => {
+        const tag = companyLabelTag();
 
         expect(tag).not.toMatch(/\sname\s*=/);
         expect(tag).not.toMatch(/\svalue\s*=/);
@@ -238,35 +264,108 @@ describe('the payment tile shows the number as an uneditable label, not a field'
         expect(tag).toMatch(/^<div\b/);
     });
 
-    test('the number label is bound to companyId and gated on it being present', () => {
-        const tag = companyIdLabelTag();
+    test('the company label is one element bound to one builder, gated on capture', () => {
+        // TWO-25326 §7 asks for ONE line, "Name (number)". The superseded
+        // shape was a caption span plus a number span, i.e. two renderings of
+        // one company in one tile, which is the defect the ticket names.
+        const tag = companyLabelTag();
 
-        expect(tag).toMatch(/text:\s*companyId\b/);
-        expect(tag).toMatch(/visible:\s*!!companyId\(\)/);
+        expect(tag).toMatch(/text:\s*companyDisplayLabel\(\)/);
+        expect(tag).toMatch(/visible:\s*isCompanyCaptured\(\)/);
+        // No inner elements: the whole string comes from one binding, so
+        // there is no caption/value split that can fall out of step.
+        expect(tag).not.toMatch(/<span\b/);
     });
 
-    test('the label carries a visible "Company Number" caption, not a bare number', () => {
-        // Regression caught in adversarial review: the first draft dropped
-        // the old <label for="company_id"> along with the input it labelled,
-        // leaving a sighted buyer (and a screen reader) with an unexplained
-        // number and no indication of what it was. The caption text must
-        // actually be present in the markup, not just asserted by comment.
-        const tag = companyIdLabelTag();
+    /**
+     * §7 names the position, not just the existence: "between the chips and
+     * the intent message (if rendered) or else the optional fields". Asserted
+     * on real source offsets rather than by eye, because the label is inert
+     * display text — nothing about it would break if it drifted to the bottom
+     * of the tile, so nothing but this test would notice.
+     */
+    test('the label sits between the term chips and the intent message', () => {
+        const markup = withoutComments(readTemplate());
 
-        expect(tag).toMatch(/Company Number/);
-        // Specifically via the `ko i18n` macro, not hardcoded English text —
-        // a second adversarial round flagged that a bare `/Company Number/`
-        // match alone is satisfied equally by a hardcoded
-        // `<span>Company Number</span>` that lost translatability, since
-        // withoutComments() deliberately preserves `ko i18n` comments rather
-        // than stripping them. This pins the delivery mechanism, not just
-        // the string's presence.
-        expect(tag).toMatch(/<!--\s*ko i18n:\s*'Company Number'\s*--><!--\s*\/ko\s*-->/);
-        // Two spans: one static caption, one bound to the number. Not one
-        // span doing both jobs — that would make the caption unable to
-        // update independently were it ever translated per-request.
-        const spanCount = (tag.match(/<span\b/g) || []).length;
-        expect(spanCount).toBe(2);
+        const lastChip = markup.lastIndexOf('two-term-chips__container');
+        const label = markup.indexOf('class="two-company-label"');
+        const intent = markup.indexOf('two-order-intent-message');
+        const invoiceEmail = markup.indexOf('id="invoice_emails"');
+
+        // Guard every anchor before comparing: indexOf returns -1 for a
+        // missing needle, and -1 compares "less than" everything, so a
+        // renamed anchor would make the ordering assertions pass on nonsense.
+        expect(lastChip).toBeGreaterThan(-1);
+        expect(label).toBeGreaterThan(-1);
+        expect(intent).toBeGreaterThan(-1);
+        expect(invoiceEmail).toBeGreaterThan(-1);
+
+        expect(label).toBeGreaterThan(lastChip);
+        expect(label).toBeLessThan(intent);
+        // And ahead of the optional fields, which is where §7 puts it when no
+        // intent message is rendered.
+        expect(label).toBeLessThan(invoiceEmail);
+    });
+
+    test('the superseded caption and its separate number span are gone', () => {
+        // Both halves, because either surviving alone is a defect: the
+        // caption without its number is a label for nothing, and the number
+        // rendered separately is the duplicate display §7 removes.
+        const markup = withoutComments(readTemplate());
+
+        expect(markup).not.toContain('two-company-id-label');
+        expect(markup).not.toContain('two-company-id-label__caption');
+        // The old caption text is not simply relocated — the new label
+        // renders the bare `Name (number)` form with no caption at all.
+        expect(companyLabelTag()).not.toMatch(/Company Number/);
+    });
+
+    /**
+     * The reason the field is HIDDEN rather than deleted, pinned so a future
+     * tidy-up cannot quietly delete it: the tile's picker is the only
+     * company-capture surface for a buyer on a saved address (no
+     * `#shipping-new-address-form` is rendered, and that is the only selector
+     * address-autocomplete.js binds) or on a virtual cart (no shipping step
+     * at all). Removing it blocks those orders outright, because
+     * Model/Two.php::authorize() refuses a company with no organisation
+     * number.
+     */
+    test('the capture control is retained and swaps with the label, never both at once', () => {
+        const { renderer } = loadRendererOnly();
+
+        // Still present in the template — not deleted.
+        expect(withoutComments(readTemplate())).toMatch(
+            /<input\b[^>]*\bid\s*=\s*["']company_name["']/
+        );
+
+        // Nothing captured: the control is available, the label is not.
+        expect(nameFieldVisible(renderer)).toBe(true);
+        expect(labelVisible(renderer)).toBe(false);
+
+        // Captured: they swap.
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+        expect(nameFieldVisible(renderer)).toBe(false);
+        expect(labelVisible(renderer)).toBe(true);
+    });
+
+    test('a name with no number leaves the capture control up — name-only is not captured', () => {
+        // §6: manual entry (name, no number) must not make the payment method
+        // usable, so capture is NOT complete and the buyer must keep the
+        // search box. This is the case most likely to be got wrong by gating
+        // the swap on the name alone.
+        const { renderer } = loadRendererOnly();
+
+        renderer.applyCompanyData(
+            { companyName: 'Typed By Hand Ltd', companyId: '' },
+            { authoritative: true }
+        );
+
+        expect(renderer.isCompanyCaptured()).toBe(false);
+        expect(nameFieldVisible(renderer)).toBe(true);
+        expect(labelVisible(renderer)).toBe(false);
     });
 
     test('the name field is read-only only once a company has been captured', () => {
@@ -393,7 +492,7 @@ describe('the payment tile shows the number as an uneditable label, not a field'
 });
 
 describe('what each capture mode puts in front of the buyer', () => {
-    test('search mode: the buyer sees the picked name AND its number label', () => {
+    test('search mode: the tile shows one line, "Name (number)", and hides the control', () => {
         const { renderer } = loadRendererOnly();
 
         renderer.applyCompanyData(
@@ -401,12 +500,16 @@ describe('what each capture mode puts in front of the buyer', () => {
             { authoritative: true }
         );
 
+        // The name observable still carries the name — the control is only
+        // hidden, so it is still bound and still the thing sole-trader mode
+        // and the picker write to.
         expect(renderedValue('company_name', renderer)).toBe('First Example Ltd');
-        expect(renderedLabelText(renderer)).toBe('12345678');
+        expect(renderedLabelText(renderer)).toBe('First Example Ltd (12345678)');
         expect(labelVisible(renderer)).toBe(true);
+        expect(nameFieldVisible(renderer)).toBe(false);
     });
 
-    test('sole-trader mode: the minted name shows locked, the number label shows', () => {
+    test('sole-trader mode: the minted name and synthetic number show as one line', () => {
         const { renderer } = loadRendererOnly();
 
         renderer.prefetched = {
@@ -420,15 +523,18 @@ describe('what each capture mode puts in front of the buyer', () => {
         renderer.soleTraderMode();
 
         expect(renderedValue('company_name', renderer)).toBe('Sole Trader Example');
-        expect(renderedLabelText(renderer)).toBe('ST-SYNTH-004');
+        expect(renderedLabelText(renderer)).toBe('Sole Trader Example (ST-SYNTH-004)');
         expect(labelVisible(renderer)).toBe(true);
-        // The name too, because a name AND number were actually captured — see
-        // the two "never both empty and locked" cases for the branch where they
-        // were not.
+        expect(nameFieldVisible(renderer)).toBe(false);
+        // The field is hidden here, but its readonly binding must STILL read
+        // locked. Hiding is a display decision and sole trader can be left
+        // (registeredOrganisationMode()) — if the binding had been allowed to
+        // relax on the assumption nobody can see the field, re-showing it
+        // would hand the buyer an editable copy of a name they must not edit.
         expect(isReadOnly('company_name', renderer)).toBe(true);
     });
 
-    test('manual-entry mode: the number label disappears and stays gone', () => {
+    test('manual-entry mode: the label disappears and the capture control comes back', () => {
         // Driven through the real manual-entry path — clearCompany() is what the
         // sentinel row's handler calls — not by poking the observable, so this
         // fails if that path stops clearing the abandoned company's number.
@@ -444,11 +550,14 @@ describe('what each capture mode puts in front of the buyer', () => {
 
         expect(renderer.companyId()).toBe('');
         expect(labelVisible(renderer)).toBe(false);
-        // …and the name is typeable, which is the whole point of the mode.
+        // The control is back, and typeable — which is the whole point of the
+        // mode, and the reason the swap is a visibility toggle rather than a
+        // removal.
+        expect(nameFieldVisible(renderer)).toBe(true);
         expect(isReadOnly('company_name', renderer)).toBe(false);
     });
 
-    test('an identifier-less pick shows the name with no number label', () => {
+    test('an identifier-less pick keeps the control up, with no label', () => {
         // The other route to a blank number: the registry holds no identifier
         // for the picked company. Distinct from manual entry — a company IS
         // selected here.
@@ -465,6 +574,7 @@ describe('what each capture mode puts in front of the buyer', () => {
 
         expect(renderedValue('company_name', renderer)).toBe('Second Example Ltd');
         expect(labelVisible(renderer)).toBe(false);
+        expect(nameFieldVisible(renderer)).toBe(true);
     });
 });
 
