@@ -635,18 +635,31 @@ describe('keyboard reachability (round 2 — Tab is not free)', () => {
     });
 
     /**
-     * select2 4.1's OWN search-field keypress handler treats Tab exactly
-     * like Enter (`t===ENTER||t===TAB` both trigger `results:select` and
-     * `preventDefault()`), bound at construction time — before this module
-     * gets a chance to touch the field. A jQuery bubble-phase listener
-     * added later (e.g. on `select2:open`) cannot win that race; only a
-     * capture-phase listener, installed by attachManualEntryButton(), runs
-     * ahead of it. This test does not stub select2's own handler (there is
-     * none in this harness) — it only proves OUR handler intercepts Tab
-     * and moves focus, which is the fix; select2 racing it is covered by
-     * Yoda's static review of the vendored bundle, not re-derivable here.
+     * A stand-in for select2 4.1's OWN search-field keypress handler (there
+     * is no real select2 in this harness): it treats Tab exactly like
+     * Enter, committing whatever is highlighted and closing the dropdown,
+     * and is bound at CONSTRUCTION time via a plain bubble-phase `keydown`
+     * listener on the SAME node this module also binds to. Round 2's fix is
+     * only real if a capture-phase listener genuinely runs — and stops
+     * propagation — BEFORE this ever sees the event. Without that guarantee
+     * a bubble-phase implementation of the same fix would pass a test that
+     * only checks `defaultPrevented` and focus, which is exactly the gap
+     * Yoda's round-2 review found.
      */
-    test('Tab moves focus onto the button and is not left for select2 to also act on', () => {
+    function bindFakeSelect2TabHandler(dom) {
+        let committed = false;
+        dom.search.addEventListener('keydown', function (e) {
+            if (e.key !== 'Tab') return;
+            committed = true;
+            e.preventDefault();
+        });
+        return function () {
+            return committed;
+        };
+    }
+
+    test('Tab moves focus onto the button, and select2 never gets to act on it', () => {
+        const select2Committed = bindFakeSelect2TabHandler(dom);
         model.attachManualEntryButton(dom.$field, dom.token, function () {});
         typeTerm(dom, 'example');
         const $button = $(manualButtons(dom)[0]);
@@ -661,9 +674,25 @@ describe('keyboard reachability (round 2 — Tab is not free)', () => {
 
         expect(event.defaultPrevented).toBe(true);
         expect(document.activeElement).toBe($button.get(0));
+        // The load-bearing assertion: select2's own (stand-in) handler,
+        // bound on the same node, never ran — proving the capture-phase
+        // listener genuinely wins the race rather than merely coexisting
+        // with a handler this harness happens not to model.
+        expect(select2Committed()).toBe(false);
     });
 
-    test('Shift+Tab is left alone — only forward Tab is intercepted', () => {
+    /**
+     * select2's own handler has NO `shiftKey` guard (`t===ENTER||t===TAB`
+     * fires for Shift+Tab identically), so without interception here
+     * Shift+Tab from the search field silently selects the auto-highlighted
+     * first result and closes the picker — committing a company the buyer
+     * never chose. Round 2 closes this the same way as forward Tab: prevent
+     * it from reaching select2, and close the dropdown ourselves rather
+     * than route to select2's own (buggy, for this key) handling.
+     */
+    test('Shift+Tab is ALSO intercepted — select2 would otherwise silently commit a selection', () => {
+        const select2Committed = bindFakeSelect2TabHandler(dom);
+        dom.$field.select2 = jest.fn();
         model.attachManualEntryButton(dom.$field, dom.token, function () {});
         typeTerm(dom, 'example');
 
@@ -675,13 +704,21 @@ describe('keyboard reachability (round 2 — Tab is not free)', () => {
         });
         dom.search.dispatchEvent(event);
 
-        expect(event.defaultPrevented).toBe(false);
+        expect(event.defaultPrevented).toBe(true);
+        expect(select2Committed()).toBe(false);
+        expect(dom.$field.select2).toHaveBeenCalledWith('close');
     });
 
-    test('detaching removes the capture-phase Tab listener, so it does not survive teardown', () => {
+    test('detaching removes the capture-phase Tab listener itself, not just the button it targets', () => {
         model.attachManualEntryButton(dom.$field, dom.token, function () {});
         typeTerm(dom, 'example');
         model.detachManualEntryButton(dom.$field);
+
+        // Direct property check, not just behavioural: the handler
+        // early-returns once the button is gone, so a dispatch-based
+        // assertion alone cannot tell "listener removed" apart from
+        // "listener still installed but its target vanished".
+        expect(dom.search._twoManualEntryTabHandler).toBeUndefined();
 
         const event = new window.KeyboardEvent('keydown', {
             key: 'Tab',
@@ -693,7 +730,8 @@ describe('keyboard reachability (round 2 — Tab is not free)', () => {
         expect(event.defaultPrevented).toBe(false);
     });
 
-    test('Escape on the focused button closes the picker without leaving a stray click/keydown handler', () => {
+    test('Escape on the focused button closes the picker via select2, not a hand-rolled refocus', () => {
+        dom.$field.select2 = jest.fn();
         model.attachManualEntryButton(dom.$field, dom.token, function () {});
         typeTerm(dom, 'example');
         const button = manualButtons(dom)[0];
@@ -707,6 +745,13 @@ describe('keyboard reachability (round 2 — Tab is not free)', () => {
         button.dispatchEvent(event);
 
         expect(event.defaultPrevented).toBe(true);
+        // The real assertion: select2's OWN close() was invoked. Its close
+        // handler is what refocuses the combobox in production — asserting
+        // only `defaultPrevented` (as round 2 originally did) cannot tell a
+        // real close from a no-op, which is exactly what Vader's mutation
+        // pass proved by deleting the close()/refocus call and watching the
+        // suite stay green.
+        expect(dom.$field.select2).toHaveBeenCalledWith('close');
     });
 });
 

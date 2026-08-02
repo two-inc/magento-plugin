@@ -162,15 +162,18 @@ define(['jquery', 'mage/translate'], function ($, $t) {
     }
 
     /**
-     * Append `id` to a space-separated IDREF attribute (`aria-owns`,
-     * `aria-controls`) if it is not already present.
+     * Append `id` to a space-separated IDREF attribute if it is not already
+     * present.
      *
-     * The manual-entry button sits OUTSIDE `.select2-results__options` —
-     * that is the whole point of the sibling-not-child fix — so select2's
-     * own `aria-owns`/`aria-controls` wiring on the search field (which only
-     * ever names the listbox `<ul>`) never mentions it. Without this a
-     * screen reader has no accessible relationship between the combobox and
-     * the button at all, even though native keyboard focus now reaches it.
+     * Used only for `aria-controls` on the search field: the button sits
+     * OUTSIDE `.select2-results__options` (the whole point of the
+     * sibling-not-child fix), so select2's own `aria-controls` wiring on the
+     * search field — which only ever names the listbox `<ul>` — never
+     * mentions it. `aria-owns` is deliberately NOT used for this: `$search`
+     * carries `role="searchbox"`, a leaf widget, and AT does not expose
+     * owned children of a leaf role, so an `aria-owns` pointing at the
+     * button would add an attribute with no accessible effect and assert a
+     * parent/child relationship that isn't structurally true.
      *
      * @param {object} $el jQuery set — no-op if empty
      * @param {string} attr attribute name
@@ -202,6 +205,53 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         } else {
             $el.removeAttr(attr);
         }
+    }
+
+    /**
+     * Close a picker's select2 dropdown, if it has a live instance.
+     *
+     * Deliberately does NOT also refocus the combobox itself: select2's own
+     * `close` handler already does that (`$selection.trigger('focus')`,
+     * `AttachBody`'s base `close()`), so doing it again here would be a
+     * redundant re-focus of the element that already has focus, not a fix
+     * for anything.
+     *
+     * `typeof $field.select2 === 'function'` guards against test doubles
+     * that model `.data('select2')` without modelling the plugin method
+     * itself — a real jQuery + vendored select2 bundle always has both.
+     *
+     * @param {object} $field jQuery-wrapped picker input
+     */
+    function closeDropdown($field) {
+        if ($field && $field.length && $field.data('select2') && typeof $field.select2 === 'function') {
+            $field.select2('close');
+        }
+    }
+
+    /**
+     * Tell select2 to recalculate the dropdown's geometry.
+     *
+     * select2 only recalculates height/position from its OWN mutations
+     * (`results:all`, `results:append`, `results:message`, `select`,
+     * `unselect`) or a window scroll/resize — appending or removing the
+     * manual-entry button is neither. It runs synchronously from the search
+     * field's `input` handler, ahead of the ajax debounce (the whole point
+     * of the threshold-not-has-searched design), so without this nudge the
+     * panel keeps whatever height it was measured at before the button
+     * existed — it can grow past the viewport edge or overlap the field
+     * above it for the entire pre-results window, exactly the
+     * "always visible without scroll" property the button exists to
+     * guarantee. `resize.select2.<id>` is the same namespaced event
+     * `_attachPositioningHandler` binds while open, so this reaches select2's
+     * own repositioning and nothing else. Call on every insert AND removal —
+     * removal shrinks the panel by exactly the same synchronous, pre-results
+     * margin insertion grows it by.
+     *
+     * @param {object} $field jQuery-wrapped picker input
+     */
+    function nudgeSelect2Resize($field) {
+        const instance = $field.data('select2');
+        if (instance) $(window).trigger('resize.select2.' + instance.id);
     }
 
     function cacheGet(key) {
@@ -799,29 +849,27 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                 .text(label)
                 .on('click' + MANUAL_ENTRY_NS, activate)
                 .on('keydown' + MANUAL_ENTRY_NS, function (e) {
+                    const isEscape = e.key === 'Escape' || e.which === 27;
+                    const isTab = e.key === 'Tab' || e.which === 9;
+                    if (!isEscape && !isTab) return;
                     // Escape is select2's own "close the dropdown" key, but
                     // once focus has moved onto this button (a sibling of the
-                    // listbox, outside select2's own keydown delegation) select2
-                    // never sees the keypress. Close the picker ourselves and
-                    // hand focus back to the combobox, matching what select2
-                    // does for Escape pressed inside the search field.
-                    if (e.key !== 'Escape' && e.which !== 27) return;
+                    // listbox, outside select2's own keydown delegation)
+                    // select2 never sees the keypress.
+                    //
+                    // Tab (either direction) is handled the same way,
+                    // deliberately, rather than trying to move focus
+                    // somewhere "natural": with AttachBody this button's
+                    // dropdown is appended as the LAST child of `<body>`, so
+                    // forward Tab from here has nothing sensible to land on
+                    // in real document order (it walks out of the page
+                    // entirely), and Shift+Tab has no defined "previous"
+                    // element either. Closing and returning to the combobox
+                    // keeps the buyer inside the checkout form instead of
+                    // ejecting them into browser chrome.
                     e.preventDefault();
-                    if (
-                        $field &&
-                        $field.length &&
-                        $field.data('select2') &&
-                        typeof $field.select2 === 'function'
-                    ) {
-                        $field.select2('close');
-                    }
-                    const $selection = self.getSearchFieldContainer($field, token);
-                    const instance = $field && $field.data && $field.data('select2');
-                    if (instance && instance.$container) {
-                        instance.$container.find('.select2-selection').trigger('focus');
-                    } else if ($selection && $selection.length) {
-                        $selection.trigger('focus');
-                    }
+                    if (isTab) e.stopPropagation();
+                    closeDropdown($field);
                 });
             return $button;
         },
@@ -860,14 +908,10 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                 if ($existing.length) {
                     removeFromIdrefList(
                         this.getSearchFieldContainer($field, token).find('.select2-search__field'),
-                        'aria-owns',
-                        $existing.attr('id')
-                    );
-                    removeFromIdrefList(
-                        this.getSearchFieldContainer($field, token).find('.select2-search__field'),
                         'aria-controls',
                         $existing.attr('id')
                     );
+                    nudgeSelect2Resize($field);
                 }
                 $existing.remove();
                 return $();
@@ -882,33 +926,16 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             $existing.remove();
             const $button = this.buildManualEntryButton($field, token, onActivate);
             // A stable id, not a generated one: it is what gets appended to
-            // the search field's `aria-owns`/`aria-controls` below, so a
-            // screen reader can resolve it back to this exact button rather
-            // than a dangling reference on the next repaint.
+            // the search field's `aria-controls` below, so a screen reader
+            // can resolve it back to this exact button rather than a
+            // dangling reference on the next repaint.
             $button.attr('id', ($results.attr('id') || 'select2-two-company-search') + '-manual-entry');
             $results.after($button);
-
-            // select2 only recalculates the dropdown's height/position from
-            // its OWN mutations (`results:all`, `results:append`,
-            // `results:message`, `select`, `unselect`) or a window
-            // scroll/resize. Appending or removing this button is neither —
-            // it runs synchronously from the search field's `input` handler,
-            // ahead of the ajax debounce, which is the whole point of the
-            // threshold-not-has-searched design. Without a nudge the dropdown
-            // keeps whatever height it was measured at before the button
-            // existed, so the panel can grow past the viewport edge or
-            // overlap the field above it for the entire pre-results window —
-            // exactly the "always visible without scroll" property this
-            // button exists to guarantee. `resize.select2.<id>` is the same
-            // namespaced event `_attachPositioningHandler` binds, so this
-            // reaches select2's own repositioning and nothing else.
-            const instance = $field.data('select2');
-            if (instance) $(window).trigger('resize.select2.' + instance.id);
+            nudgeSelect2Resize($field);
 
             const $searchField = this.getSearchFieldContainer($field, token).find(
                 '.select2-search__field'
             );
-            appendToIdrefList($searchField, 'aria-owns', $button.attr('id'));
             appendToIdrefList($searchField, 'aria-controls', $button.attr('id'));
 
             return $button;
@@ -932,13 +959,19 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * the search field. select2 4.1's own `_registerEvents` binds a
          * keypress handler on this same field at CONSTRUCTION time that
          * treats Tab exactly like Enter (`t===ENTER||t===TAB` both trigger
-         * `results:select` and call `preventDefault()`), so without this Tab
-         * either selects the highlighted result and closes the dropdown, or
-         * no-ops with `preventDefault()` still firing — either way, focus
-         * never leaves the search field to reach the button. A jQuery
-         * bubble-phase binding added here (or on `select2:open`, later than
-         * select2's own constructor-time bind) cannot win that race; only a
-         * capture-phase listener runs before select2 sees the event at all.
+         * `results:select` and call `preventDefault()`) — with NO
+         * `shiftKey` guard, so Shift+Tab is hijacked identically. Without
+         * this, Tab either selects the (auto-highlighted) first result and
+         * closes the dropdown, or no-ops with `preventDefault()` still
+         * firing — either way, focus never leaves the search field to
+         * reach the button, and Shift+Tab actively COMMITS a company the
+         * buyer never chose. A jQuery bubble-phase binding added here (or
+         * on `select2:open`, later than select2's own constructor-time
+         * bind) cannot win that race; only a capture-phase listener runs
+         * before select2 sees the event at all. Shift+Tab is intercepted
+         * too, but not routed anywhere "previous" — see closeDropdown()'s
+         * doc comment on the button's own keydown handler for why closing
+         * is the safe choice for both directions here.
          *
          * @param {object} $field jQuery-wrapped picker input
          * @param {object} token identity stamped by markSearchBinding()
@@ -971,7 +1004,21 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                     );
                 }
                 const tabHandler = function (e) {
-                    if (e.key !== 'Tab' || e.shiftKey) return;
+                    if (e.key !== 'Tab') return;
+                    if (e.shiftKey) {
+                        // Shift+Tab: select2's own handler would otherwise
+                        // silently select the auto-highlighted first result
+                        // and close the picker — worse than the forward-Tab
+                        // defect this fix exists for, since it commits a
+                        // choice the buyer never made. There is no sibling
+                        // element to send focus "back" to here (the search
+                        // field is where the event fired), so close and let
+                        // select2's own close() refocus the combobox.
+                        e.preventDefault();
+                        e.stopPropagation();
+                        closeDropdown($field);
+                        return;
+                    }
                     const $wrapper = self.getResultsList($field, token).parent();
                     const $button = $wrapper.children(`.${MANUAL_ENTRY_CLASS}`);
                     if (!$button.length) return;
@@ -1056,7 +1103,6 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                 const $searchField2 = $searchBox && $searchBox.find
                     ? $searchBox.find('.select2-search__field')
                     : $();
-                removeFromIdrefList($searchField2, 'aria-owns', $button.attr && $button.attr('id'));
                 removeFromIdrefList($searchField2, 'aria-controls', $button.attr && $button.attr('id'));
                 if (typeof $button.remove === 'function') {
                     $button.remove();
