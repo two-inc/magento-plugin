@@ -663,38 +663,33 @@
 }
 
 /*
- * The captured organisation number, a plain text label rather than a field
- * (canonical design across all four platforms — Doug's ruling). Positioned
- * immediately below the company-name input and right-aligned to it:
- * `text-align: right` inside `.control` lines it up against the input's own
- * right edge, since `.control` is the input's own containing box.
+ * TWO-25326 §7. The captured company on the payment tile, as ONE line of
+ * text — "Name (12345678)" — between the term chips and the order-intent
+ * notice.
  *
- * Grey, not the form's usual text colour, so it reads as a caption on the
- * field above rather than as another piece of body copy — matching how the
- * removed read-only input used to look (`#666666` on a light background).
+ * This supersedes `.two-company-id-label` and its `__caption`, which
+ * rendered a "Company Number" caption and the number as a second block
+ * below the company-name input. That was two renderings of one company in
+ * one tile, which is the defect the ticket names; one line replaces both.
+ *
+ * Sits in the tile's own vertical flow (block, full width) rather than
+ * aligned against a field's edge, because it is no longer a caption hanging
+ * off an input — it is a statement of what the buyer is paying as. Left to
+ * the reading direction for the same reason: `text-align` is not set at all,
+ * so it inherits, and RTL store views need no special case.
+ *
+ * Slightly muted and small, matching the tile's other secondary text, so it
+ * reads as context for the payment rather than competing with the term
+ * chips above it.
  */
-.two-company-id-label {
+.two-company-label {
     display: block;
-    text-align: right;
-    margin-top: 4px;
+    margin: 8px 0;
     color: #666666;
-    font-size: 12px;
+    font-size: 13px;
+    word-break: break-word;
 }
 
-/*
- * The "Company Number" caption inside the label above, on its OWN line
- * (block, not inline) with the number directly beneath it. Stacked rather
- * than joined on one line with punctuation (a colon, a dash) deliberately —
- * see the template comment: a hardcoded ASCII separator glued outside the
- * translated caption string is exactly the kind of thing that reads wrong
- * in some locales. Slightly bolder than the number so the caption still
- * reads as a caption rather than a second, equally-weighted line of body
- * copy.
- */
-.two-company-id-label__caption {
-    display: block;
-    font-weight: 500;
-}
 
 /*
  * TWO-25288. The address-step "Company Number" field (injected by
