@@ -71,9 +71,16 @@ function loadModelWithWrongThreshold($) {
     const tmp = path.join(__dirname, '__tmp_manual_entry_threshold.js');
     fs.writeFileSync(tmp, patched, 'utf8');
     try {
-        return loadAmdModule(path.relative(path.resolve(__dirname, '..', '..'), tmp), {
-            jquery: $
-        });
+        return loadAmdModule(
+            path.relative(path.resolve(__dirname, '..', '..'), tmp),
+            { jquery: $ },
+            // The real jsdom document and window, not the harness's inert
+            // stubs: TWO-25326's Tab handling walks `document.querySelectorAll`
+            // for tab stops and reads `window.getComputedStyle` to skip hidden
+            // ones, and both have to hit the fixture's actual nodes for the
+            // focus assertions below to mean anything.
+            { document: document, window: window }
+        );
     } finally {
         fs.unlinkSync(tmp);
     }
@@ -327,6 +334,12 @@ function makeMiniQuery() {
         // resize nudge silently no-opped, which is exactly what hid the
         // round-3 nudge-ordering bug from the whole suite.
         if (arg && typeof arg === 'object' && 'checkoutConfig' in arg) return wrap([window]);
+        // Since TWO-25326 this file hands the module jsdom's OWN `window`
+        // (it needs `getComputedStyle` for the tab-stop visibility walk), so
+        // the duck-type above no longer fires — the real window has no
+        // `checkoutConfig`. Identity works for that case and, unlike the
+        // duck-type, cannot misroute anything else.
+        if (arg === window) return wrap([window]);
         return wrap([]);
     }
     $.fn = {};
@@ -345,8 +358,30 @@ function makeMiniQuery() {
 
 /** A picker's real DOM, shaped the way select2 4.1 renders it. */
 function makePickerDom($) {
+    // Shaped the way select2 renders it INCLUDING the combobox and the
+    // surrounding form, because TWO-25326 §4 made Tab a focus-MOVING
+    // operation rather than merely a closing one: the assertions below need
+    // a real previous/next tab stop around the picker to observe. `prevField`
+    // and `nextField` stand in for the address form's other inputs;
+    // `#shipping_search_for_company` is the hidden return-to-search link,
+    // present in the DOM but `display: none` while search mode is active, and
+    // is here specifically so a Tab out of the dropdown can be shown to SKIP
+    // it rather than land on something invisible.
     document.body.innerHTML =
-        '<input id="company_name" type="text">' +
+        '<input id="prev-field" type="text">' +
+        '<div class="field">' +
+        '<div class="control">' +
+        '<input id="company_name" type="text" tabindex="-1">' +
+        '<span class="select2 select2-container">' +
+        '<span class="selection">' +
+        '<span class="select2-selection" role="combobox" tabindex="0"></span>' +
+        '</span>' +
+        '</span>' +
+        '</div>' +
+        '<div id="shipping_search_for_company" role="button" tabindex="0" ' +
+        'style="display: none"></div>' +
+        '</div>' +
+        '<input id="next-field" type="text">' +
         '<span class="select2-dropdown">' +
         '<span class="select2-search select2-search--dropdown">' +
         '<input class="select2-search__field" type="text">' +
@@ -359,7 +394,10 @@ function makePickerDom($) {
     const $field = $('#company_name');
     const token = {};
     $field.data('twoSearchBind', token);
-    $field.data('select2', { $dropdown: $('.select2-dropdown') });
+    $field.data('select2', {
+        $dropdown: $('.select2-dropdown'),
+        $selection: $('.select2-selection')
+    });
 
     return {
         $field: $field,
@@ -368,7 +406,11 @@ function makePickerDom($) {
         $wrapper: $('.select2-results'),
         results: $('.select2-results__options').get(0),
         wrapper: $('.select2-results').get(0),
-        search: $('.select2-search__field').get(0)
+        search: $('.select2-search__field').get(0),
+        combobox: document.querySelector('.select2-selection'),
+        prevField: document.getElementById('prev-field'),
+        nextField: document.getElementById('next-field'),
+        searchForCompany: document.getElementById('shipping_search_for_company')
     };
 }
 
@@ -701,11 +743,14 @@ describe('keyboard reachability (round 2 — Tab is not free)', () => {
      * fires for Shift+Tab identically), so without interception here
      * Shift+Tab from the search field silently selects the auto-highlighted
      * first result and closes the picker — committing a company the buyer
-     * never chose. Round 2 closes this the same way as forward Tab: prevent
-     * it from reaching select2, and close the dropdown ourselves rather
-     * than route to select2's own (buggy, for this key) handling.
+     * never chose.
+     *
+     * TWO-25326 §1 also fixes where it goes: tabbing out of the dropdown
+     * moves focus to the adjacent tab stop, so backwards Tab lands on the
+     * control BEFORE the combobox rather than dumping the buyer back onto
+     * the combobox they were just leaving.
      */
-    test('Shift+Tab is ALSO intercepted — select2 would otherwise silently commit a selection', () => {
+    test('Shift+Tab is ALSO intercepted, and lands on the tab stop before the combobox', () => {
         const select2Committed = bindFakeSelect2TabHandler(dom);
         dom.$field.select2 = jest.fn();
         model.attachManualEntryButton(dom.$field, dom.token, function () {});
@@ -722,6 +767,7 @@ describe('keyboard reachability (round 2 — Tab is not free)', () => {
         expect(event.defaultPrevented).toBe(true);
         expect(select2Committed()).toBe(false);
         expect(dom.$field.select2).toHaveBeenCalledWith('close');
+        expect(document.activeElement).toBe(dom.prevField);
     });
 
     test('detaching removes the capture-phase Tab listener itself, not just the button it targets', () => {
@@ -804,14 +850,55 @@ describe('keyboard reachability (round 2 — Tab is not free)', () => {
 
         // select2's own handler must still be preempted (it would otherwise
         // preventDefault() and swallow the key with nothing to show for it —
-        // a keyboard trap), but with no button to route to, native Tab is
-        // left alone so focus advances to the next checkout field.
+        // a keyboard trap). With no button to route to, TWO-25326 §1's rule
+        // for tabbing out of the dropdown applies instead: close it and move
+        // focus to the next tab stop after the combobox. We move focus
+        // ourselves, so the native Tab must be suppressed or the browser
+        // would advance a second time.
         expect(select2Committed()).toBe(false);
-        expect(event.defaultPrevented).toBe(false);
+        expect(event.defaultPrevented).toBe(true);
         expect(dom.$field.select2).toHaveBeenCalledWith('close');
+        expect(document.activeElement).toBe(dom.nextField);
     });
 
-    test("the button's own Tab and Shift+Tab close the picker rather than trapping or falling through to the page", () => {
+    /**
+     * The no-trap escape hatch: when there is genuinely no adjacent tab stop
+     * to move to, the key must fall through to the browser rather than be
+     * swallowed. Proved by stripping the fixture down to the picker alone —
+     * without this branch, `preventDefault()` with nowhere to go is exactly
+     * the keyboard trap §4 forbids.
+     */
+    test('Tab falls through to the browser when there is no adjacent tab stop to move to', () => {
+        bindFakeSelect2TabHandler(dom);
+        dom.$field.select2 = jest.fn();
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        dom.prevField.remove();
+        dom.nextField.remove();
+        dom.combobox.remove();
+
+        const event = new window.KeyboardEvent('keydown', {
+            key: 'Tab',
+            bubbles: true,
+            cancelable: true
+        });
+        dom.search.dispatchEvent(event);
+
+        expect(event.defaultPrevented).toBe(false);
+    });
+
+    /**
+     * TWO-25326 §4: "Tab from the 'not on the list' control moves to the next
+     * control in the tab order AND closes the dropdown area." Forward Tab is
+     * therefore a real exit — not the close-and-bounce-back-to-the-combobox
+     * the earlier round implemented, which left the buyer one Tab short of
+     * where they asked to be.
+     *
+     * The next control is deliberately `#next-field`, NOT
+     * `#shipping_search_for_company`: that link sits between them in document
+     * order but is `display: none` while search mode is active, and Tab must
+     * skip anything the buyer cannot see.
+     */
+    test("the button's forward Tab closes the picker and advances past it", () => {
         dom.$field.select2 = jest.fn();
         model.attachManualEntryButton(dom.$field, dom.token, function () {});
         typeTerm(dom, 'example');
@@ -826,8 +913,25 @@ describe('keyboard reachability (round 2 — Tab is not free)', () => {
         button.dispatchEvent(forwardTab);
         expect(forwardTab.defaultPrevented).toBe(true);
         expect(dom.$field.select2).toHaveBeenCalledWith('close');
+        expect(document.activeElement).toBe(dom.nextField);
+        expect(document.activeElement).not.toBe(dom.searchForCompany);
+    });
 
+    /**
+     * Shift+Tab off the button is the exact inverse of the forward shortcut
+     * that got the buyer here (query field -> button), so it steps back INTO
+     * the query field and leaves the dropdown OPEN. Closing here would make
+     * the shortcut a one-way door: the buyer could reach the button by
+     * keyboard but never return to refine the search that produced it.
+     */
+    test("the button's Shift+Tab returns to the query field and leaves the dropdown open", () => {
+        dom.$field.select2 = jest.fn();
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        typeTerm(dom, 'example');
+        const button = manualButtons(dom)[0];
+        button.focus();
         dom.$field.select2.mockClear();
+
         const shiftTab = new window.KeyboardEvent('keydown', {
             key: 'Tab',
             shiftKey: true,
@@ -836,7 +940,8 @@ describe('keyboard reachability (round 2 — Tab is not free)', () => {
         });
         button.dispatchEvent(shiftTab);
         expect(shiftTab.defaultPrevented).toBe(true);
-        expect(dom.$field.select2).toHaveBeenCalledWith('close');
+        expect(document.activeElement).toBe(dom.search);
+        expect(dom.$field.select2).not.toHaveBeenCalledWith('close');
     });
 
     test('Escape on the focused button closes the picker via select2, not a hand-rolled refocus', () => {

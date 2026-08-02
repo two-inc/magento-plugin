@@ -119,6 +119,104 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         return $t('Please enter %1 or more characters').replace('%1', MIN_INPUT_LENGTH);
     }
 
+    /**
+     * The zero-results message.
+     *
+     * select2's vendored bundle hardcodes English "No results found"
+     * (`noResults:function(){return"No results found"}`). TWO-25326 §1 pins
+     * the cross-platform wording as "No matches found", so both pickers
+     * override it — same reason as minInputLengthMessage() above: the
+     * vendored literal is neither ours to edit nor reachable by Magento's
+     * translation dictionaries.
+     *
+     * @returns {string} translated zero-results message
+     */
+    function noResultsMessage() {
+        return $t('No matches found');
+    }
+
+    /**
+     * Everything focusable by Tab, in document order.
+     *
+     * Deliberately a hand-rolled walk rather than select2's own bookkeeping:
+     * the dropdown is appended to `<body>` by AttachBody, so "the next thing
+     * after the dropdown" is meaningless. What the buyer means by "Tab out of
+     * the picker" is "the next form control after the COMBOBOX", and the
+     * combobox does sit in natural document order inside the address form.
+     * So every caller passes the combobox as the reference element, never
+     * anything inside the dropdown.
+     *
+     * Visibility is decided by walking computed styles up the ancestor
+     * chain, NOT by `offsetParent === null`. Both work in a browser, but
+     * offsetParent additionally reports null for `position: fixed` elements
+     * and for anything in a detached tree, and it is meaningless under jsdom
+     * — where it is always null, so a test could never observe this function
+     * returning anything at all. The style walk is the same answer in both
+     * places, which is what makes the behaviour testable rather than only
+     * assertable by hand in a live browser.
+     *
+     * What the walk has to exclude, concretely: the select2-hidden original
+     * `<input name="company">` (also `tabindex="-1"`, so doubly filtered),
+     * and the "Search for company" link, which is jQuery `.hide()`n — an
+     * inline `display: none` — for the whole time search mode is active. Tab
+     * must skip it, or leaving the dropdown would land on a control the
+     * buyer cannot see.
+     *
+     * @returns {Array<Element>} tabbable elements, document order
+     */
+    function isVisibleForTabbing(el) {
+        let node = el;
+        while (node && node.nodeType === 1) {
+            const style = window.getComputedStyle(node);
+            if (style && (style.display === 'none' || style.visibility === 'hidden')) {
+                return false;
+            }
+            node = node.parentElement;
+        }
+        return true;
+    }
+
+    function tabbableElements() {
+        const selector = [
+            'a[href]',
+            'button',
+            'input:not([type="hidden"])',
+            'select',
+            'textarea',
+            '[tabindex]'
+        ].join(',');
+        return Array.prototype.filter.call(document.querySelectorAll(selector), function (el) {
+            if (el.disabled) return false;
+            if (el.getAttribute('aria-hidden') === 'true') return false;
+            const tabindex = el.getAttribute('tabindex');
+            if (tabindex !== null && parseInt(tabindex, 10) < 0) return false;
+            return isVisibleForTabbing(el);
+        });
+    }
+
+    /**
+     * Move focus to the tab stop before or after `referenceEl`.
+     *
+     * Returns false — and moves nothing — when there is no such element, so
+     * the caller can fall back to the browser's native Tab rather than
+     * swallowing the key and trapping the buyer (TWO-25326 §4: "no keyboard
+     * trap anywhere in this control under any state").
+     *
+     * @param {Element} referenceEl element to move away from
+     * @param {boolean} backwards true for Shift+Tab
+     * @returns {boolean} whether focus was actually moved
+     */
+    function focusAdjacentTabbable(referenceEl, backwards) {
+        if (!referenceEl) return false;
+        const tabbable = tabbableElements();
+        const index = tabbable.indexOf(referenceEl);
+        if (index === -1) return false;
+        const next = tabbable[backwards ? index - 1 : index + 1];
+        if (!next) return false;
+        next.focus();
+        return true;
+    }
+
     /** jQuery event namespace for everything this module binds. */
     const EVENT_NS = '.twoCompanySearch';
 
@@ -229,6 +327,64 @@ define(['jquery', 'mage/translate'], function ($, $t) {
     }
 
     /**
+     * The focusable combobox select2 renders in place of the original input —
+     * `.select2-selection`, the element that carries `role="combobox"` and
+     * `tabindex="0"`.
+     *
+     * This, not the dropdown and not the hidden original `<input>`, is the
+     * picker's position in the page's natural tab order, so it is the
+     * reference every focus-advancing path uses.
+     *
+     * Resolved from the instance's OWN `$selection`, and tolerant of what
+     * that actually is. In select2 4.1 the core does
+     * `this.$selection = this.selection.render()`, and SingleSelection's
+     * `render()` returns the `.select2-selection` span itself — so
+     * `$selection` IS the combobox, not a wrapper around it. A `.find()`
+     * alone therefore returns nothing, silently, and every focus-advancing
+     * path degrades to "Tab does nothing" with no error to show for it.
+     * Checked directly first, then by descendant, so a future select2 that
+     * hands back the `.selection` wrapper instead still resolves.
+     *
+     * @param {object} $field jQuery-wrapped picker input
+     * @returns {Element|null}
+     */
+    function comboboxElement($field) {
+        const instance = $field && $field.data && $field.data('select2');
+        if (!instance || !instance.$selection) return null;
+        const $selection = instance.$selection;
+        const direct = typeof $selection.get === 'function' ? $selection.get(0) : null;
+        if (direct && direct.classList && direct.classList.contains('select2-selection')) {
+            return direct;
+        }
+        const nested =
+            typeof $selection.find === 'function'
+                ? $selection.find('.select2-selection').get(0)
+                : null;
+        return nested || direct || null;
+    }
+
+    /**
+     * Close the dropdown and put focus on the next (or previous) tab stop
+     * around the combobox — TWO-25326 §1/§4: "close the dropdown by tabbing
+     * out of it, in which case focus moves to the next tabstop".
+     *
+     * The refocus has to happen AFTER the close, not before: select2's own
+     * `close()` ends by focusing the combobox, so a focus moved first is
+     * immediately taken back. Doing it in this order means the buyer briefly
+     * passes through the combobox and lands where they asked to go.
+     *
+     * @param {object} $field jQuery-wrapped picker input
+     * @param {boolean} backwards true for Shift+Tab
+     * @returns {boolean} whether focus was actually moved — false means the
+     *          caller must let the browser's native Tab through instead
+     */
+    function closeAndAdvanceFocus($field, backwards) {
+        const combobox = comboboxElement($field);
+        closeDropdown($field);
+        return focusAdjacentTabbable(combobox, backwards);
+    }
+
+    /**
      * Tell select2 to recalculate the dropdown's geometry.
      *
      * select2 only recalculates height/position from its OWN mutations
@@ -277,6 +433,99 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         EVENT_NS: EVENT_NS,
         isDegradedResponse: isDegradedResponse,
         minInputLengthMessage: minInputLengthMessage,
+        noResultsMessage: noResultsMessage,
+
+        /**
+         * The `language` option block both pickers pass to select2.
+         *
+         * Shared rather than repeated so the two surfaces cannot drift on
+         * wording — the whole reason TWO-25326 §1 lists "No results found"
+         * as a per-platform defect is that each surface was inheriting a
+         * different default.
+         *
+         * Functions, not strings: Magento's JS translation dictionary can
+         * arrive after this module is defined, so each message is resolved at
+         * render time.
+         *
+         * @returns {object} select2 `language` option
+         */
+        buildLanguageOptions: function () {
+            return {
+                inputTooShort: function () {
+                    return minInputLengthMessage();
+                },
+                noResults: function () {
+                    return noResultsMessage();
+                }
+            };
+        },
+
+        /**
+         * Open the dropdown when the buyer types a character into the closed
+         * combobox — TWO-25326 §1: "clicking into the company-name field, or
+         * pressing a key (other than Tab) while it has focus, opens the
+         * dropdown".
+         *
+         * select2 4.1 does not do this. Its core keypress handler only opens
+         * on ENTER, SPACE and Alt+Down
+         * (`(t===ENTER||t===SPACE||t===DOWN&&e.altKey)&&(n.open(),...)`);
+         * every other printable character falls through and is simply lost,
+         * so a buyer who focuses the field and starts typing their company
+         * name sees nothing happen at all.
+         *
+         * ENTER and SPACE are deliberately left to select2 — it already
+         * opens on both, and intercepting them here would only double up.
+         * Everything else with a single-character `key` is treated as the
+         * first character of a search: the dropdown opens, and the character
+         * is seeded into the query field with an `input` event so select2's
+         * own debounce/threshold pipeline picks it up exactly as if it had
+         * been typed there. Without the seed the character would be
+         * swallowed, and the buyer would have to type their first letter
+         * twice.
+         *
+         * Modifier combinations (Ctrl/Cmd/Alt) are left alone: those are
+         * browser and OS shortcuts, not text entry.
+         *
+         * @param {object} $field jQuery-wrapped picker input
+         * @param {object} token identity stamped by markSearchBinding()
+         */
+        attachOpenOnType: function ($field, token) {
+            const self = this;
+            const combobox = comboboxElement($field);
+            if (!combobox) return;
+
+            $(combobox)
+                .off('keydown' + EVENT_NS)
+                .on('keydown' + EVENT_NS, function (e) {
+                    if (e.ctrlKey || e.metaKey || e.altKey) return;
+                    if (typeof e.key !== 'string' || e.key.length !== 1) return;
+                    // select2 opens on Space by itself; Enter likewise (and
+                    // its `key` is longer than one character anyway).
+                    if (e.key === ' ') return;
+                    if (!$field.data('select2')) return;
+                    if ($field.data('twoSearchBind') !== token) return;
+
+                    e.preventDefault();
+                    $field.select2('open');
+
+                    const $search = self
+                        .getSearchFieldContainer($field, token)
+                        .find('.select2-search__field');
+                    if (!$search.length) return;
+                    $search.val(e.key);
+                    // A native `input` event, not jQuery's `.trigger('input')`:
+                    // select2's own search handler is a native listener added
+                    // by the vendored bundle, and jQuery-synthesised events do
+                    // not reach native listeners. Our own manual-entry
+                    // `input` handler is jQuery-bound, and jQuery DOES observe
+                    // native events, so one dispatch feeds both.
+                    // `window.Event`, not the bare `Event` global: this module
+                    // is also loaded outside a browser window scope by the
+                    // Jest AMD harness, where only the globals the sandbox
+                    // declares exist. Same object in a browser.
+                    $search.get(0).dispatchEvent(new window.Event('input', { bubbles: true }));
+                });
+        },
 
         /**
          * Cancel the in-flight search for a bind, if any.
@@ -855,21 +1104,42 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                     // Escape is select2's own "close the dropdown" key, but
                     // once focus has moved onto this button (a sibling of the
                     // listbox, outside select2's own keydown delegation)
-                    // select2 never sees the keypress.
-                    //
-                    // Tab (either direction) is handled the same way,
-                    // deliberately, rather than trying to move focus
-                    // somewhere "natural": with AttachBody this button's
-                    // dropdown is appended as the LAST child of `<body>`, so
-                    // forward Tab from here has nothing sensible to land on
-                    // in real document order (it walks out of the page
-                    // entirely), and Shift+Tab has no defined "previous"
-                    // element either. Closing and returning to the combobox
-                    // keeps the buyer inside the checkout form instead of
-                    // ejecting them into browser chrome.
-                    e.preventDefault();
-                    if (isTab) e.stopPropagation();
-                    closeDropdown($field);
+                    // select2 never sees the keypress. Close, and let
+                    // select2's own close() put focus back on the combobox —
+                    // TWO-25326 §1: Escape reverts focus to company-name.
+                    if (isEscape) {
+                        e.preventDefault();
+                        closeDropdown($field);
+                        return;
+                    }
+                    e.stopPropagation();
+                    if (e.shiftKey) {
+                        // Shift+Tab is the exact inverse of the forward Tab
+                        // shortcut that got the buyer here (query field ->
+                        // this button), so it goes back to the query field
+                        // rather than out of the picker. Leaving the dropdown
+                        // open is the point: the buyer is stepping back INTO
+                        // the search, not abandoning it.
+                        e.preventDefault();
+                        const $search = self
+                            .getSearchFieldContainer($field, token)
+                            .find('.select2-search__field');
+                        if ($search.length) {
+                            $search.trigger('focus');
+                            return;
+                        }
+                        closeDropdown($field);
+                        return;
+                    }
+                    // Forward Tab: close the dropdown AND advance to the next
+                    // control after the combobox (TWO-25326 §4). Only
+                    // preventDefault when we actually moved focus ourselves —
+                    // if there is no next tab stop to find, swallowing the key
+                    // would be a keyboard trap, so the native Tab is allowed
+                    // through instead.
+                    if (closeAndAdvanceFocus($field, false)) {
+                        e.preventDefault();
+                    }
                 });
             return $button;
         },
@@ -1019,39 +1289,38 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                     // superseding re-bind and this node's own teardown)
                     // must not act on behalf of a widget it no longer owns.
                     if (!self.getSearchFieldContainer($field, token).length) return;
+                    // select2's own handler must never see a Tab: it treats
+                    // Tab exactly like Enter, with no shiftKey guard, so it
+                    // would commit the auto-highlighted first result — a
+                    // company the buyer never chose.
+                    e.stopPropagation();
                     if (e.shiftKey) {
-                        // Shift+Tab: select2's own handler would otherwise
-                        // silently select the auto-highlighted first result
-                        // and close the picker — worse than the forward-Tab
-                        // defect this fix exists for, since it commits a
-                        // choice the buyer never made. There is no sibling
-                        // element to send focus "back" to here (the search
-                        // field is where the event fired), so close and let
-                        // select2's own close() refocus the combobox.
-                        e.preventDefault();
-                        e.stopPropagation();
-                        closeDropdown($field);
+                        // Shift+Tab leaves the picker backwards: close, and
+                        // land on the control BEFORE the combobox. Same
+                        // no-trap rule as everywhere else here — if there is
+                        // nothing before it, let the native Tab through.
+                        if (closeAndAdvanceFocus($field, true)) {
+                            e.preventDefault();
+                        }
                         return;
                     }
                     const $wrapper = self.getResultsList($field, token).parent();
                     const $button = $wrapper.children(`.${MANUAL_ENTRY_CLASS}`);
                     if (!$button.length) {
                         // Below MIN_INPUT_LENGTH there is no button to reach,
-                        // but select2's own handler treats forward Tab
-                        // exactly like Enter regardless — it would otherwise
-                        // select nothing (nothing is highlighted this early)
-                        // yet still `preventDefault()`, silently swallowing
-                        // the key and trapping keyboard focus in the field.
-                        // Stop select2 from seeing it, but do NOT
-                        // preventDefault ourselves: with no button to route
-                        // to, the right behaviour is the native one — Tab
-                        // advances to the next checkout field.
-                        e.stopPropagation();
-                        closeDropdown($field);
+                        // so the right behaviour is to leave the picker:
+                        // close it and move to the next control after the
+                        // combobox (TWO-25326 §1 — tabbing out of the
+                        // dropdown moves focus to the next tabstop).
+                        if (closeAndAdvanceFocus($field, false)) {
+                            e.preventDefault();
+                        }
                         return;
                     }
+                    // The deliberate shortcut (TWO-25326 §4): forward Tab
+                    // from the query field reaches the "not on the list"
+                    // button directly, without walking the results.
                     e.preventDefault();
-                    e.stopPropagation();
                     $button.trigger('focus');
                 };
                 searchFieldNode.addEventListener('keydown', tabHandler, true);

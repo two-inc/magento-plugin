@@ -1089,6 +1089,13 @@ define([
                     $companyNameField
                         .select2({
                             minimumInputLength: companySearch.MIN_INPUT_LENGTH,
+                            // Shared with the address-step picker so the two
+                            // surfaces cannot show different wording for the
+                            // same state. Before TWO-25326 this picker passed
+                            // no `language` at all and fell back to select2's
+                            // vendored English "No results found" / remaining-
+                            // character countdown.
+                            language: companySearch.buildLanguageOptions(),
                             // Same stable dropdown-row hook as the
                             // address-step picker (address-autocomplete.js)
                             // — this field's `input#company_name` id DOES
@@ -1215,6 +1222,9 @@ define([
                             self.addressLookup(selectedItem);
                         });
                     companySearch.markSearchBinding($companyNameField, bindToken);
+                    // TWO-25326 §1: any character opens the dropdown, not
+                    // just the Space/Enter select2 4.1 handles on its own.
+                    companySearch.attachOpenOnType($companyNameField, bindToken);
                     $('#select2-company_name-container').text(self.companyName());
                     // Scoped to the container of the node THIS bind owns.
                     // With two Two-family renderers there is one

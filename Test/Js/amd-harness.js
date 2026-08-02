@@ -128,6 +128,20 @@ function defaultMocks() {
             minInputLengthMessage: function () {
                 return 'Please enter ' + this.MIN_INPUT_LENGTH + ' or more characters';
             },
+            // TWO-25326 §1 wording, mirrored here so a call site that reads
+            // it through the mock gets the same string the real module
+            // returns rather than select2's vendored "No results found".
+            noResultsMessage: function () {
+                return 'No matches found';
+            },
+            buildLanguageOptions: function () {
+                const self = this;
+                return {
+                    inputTooShort: function () { return self.minInputLengthMessage(); },
+                    noResults: function () { return self.noResultsMessage(); }
+                };
+            },
+            attachOpenOnType: function () {},
             getSearchFieldContainer: function () { return null; },
             abortActiveRequest: function () { return false; },
             attachManualEntryButton: function () {},

@@ -56,9 +56,51 @@ describe('address step: company-number field is CSS-hidden, not removed', () => 
     test('the CSS hides the field purely visually', () => {
         const css = readRepoFile(STYLE);
 
-        const ruleMatch = css.match(/\.two-company-id-hidden\s*\{([^}]*)\}/);
+        const ruleMatch = css.match(/\.two-company-id-hidden[^{]*\{([^}]*)\}/);
         expect(ruleMatch).not.toBeNull();
         expect(ruleMatch[1]).toMatch(/display:\s*none/);
+    });
+
+    /**
+     * TWO-25326 §5/§7. The rule above EXISTED and the field was visible on
+     * Luma anyway, which is why the ticket lists it as a live defect on three
+     * separate Magento checkout surfaces — this test is the one that would
+     * have caught it, and its absence is why the previous test read as
+     * passing while the buyer saw an editable "Company Number" box.
+     *
+     * `.two-company-id-hidden` alone scores (0,1,0). Luma's own
+     * `.fieldset.address > .field { display: inline-block }` scores (0,3,0)
+     * and wins on specificity regardless of source order, so the plugin's
+     * hide never applied. Confirmed live in a browser against a Luma
+     * checkout: computed display was `inline-block`.
+     *
+     * The declaration therefore has to be `!important`. That is not a style
+     * preference here: the plugin cannot know what a merchant's theme (or
+     * Amasty / Fire Checkout, which restyle the same fieldset) declares
+     * against `.field`, so out-scoring an unknown selector by hand is not
+     * something a static selector can guarantee.
+     */
+    test('the hide out-ranks the theme rule that beat it — !important, not bare display:none', () => {
+        const css = readRepoFile(STYLE);
+
+        const ruleMatch = css.match(/\.two-company-id-hidden[^{]*\{([^}]*)\}/);
+        expect(ruleMatch).not.toBeNull();
+        expect(ruleMatch[1]).toMatch(/display:\s*none\s*!important/);
+    });
+
+    /**
+     * The replacement surface: a plain-text company number, which §5 requires
+     * to sit under the name field and align to its end edge. `text-align:
+     * end` rather than `right` so RTL store views follow the writing
+     * direction — the ticket calls that out explicitly.
+     */
+    test('the company-number text label is end-aligned rather than physically right-aligned', () => {
+        const css = readRepoFile(STYLE);
+
+        const ruleMatch = css.match(/\.two-company-id-text\s*\{([^}]*)\}/);
+        expect(ruleMatch).not.toBeNull();
+        expect(ruleMatch[1]).toMatch(/text-align:\s*end/);
+        expect(ruleMatch[1]).not.toMatch(/text-align:\s*right/);
     });
 
     test('the superseded payment-tile hint is gone from markup and stylesheet', () => {
