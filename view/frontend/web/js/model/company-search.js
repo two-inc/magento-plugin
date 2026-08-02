@@ -905,15 +905,23 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             // wait out a debounce and a request first is exactly the wrong
             // order.
             if (term.length < MIN_INPUT_LENGTH) {
-                if ($existing.length) {
+                const hadButton = $existing.length > 0;
+                if (hadButton) {
                     removeFromIdrefList(
                         this.getSearchFieldContainer($field, token).find('.select2-search__field'),
                         'aria-controls',
                         $existing.attr('id')
                     );
-                    nudgeSelect2Resize($field);
                 }
                 $existing.remove();
+                // Nudge AFTER removal, not before: `resize.select2.<id>`
+                // reaches `_positionDropdown`/`_resizeDropdown`
+                // synchronously, and they measure `$dropdown.outerHeight()`
+                // at call time. Nudging with the button still in the DOM
+                // just recomputes the geometry that was already in effect —
+                // the panel then shrinks under a stale position instead of
+                // one measured for its new height.
+                if (hadButton) nudgeSelect2Resize($field);
                 return $();
             }
             // Already there, immediately after the current results list:
@@ -1005,6 +1013,12 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                 }
                 const tabHandler = function (e) {
                     if (e.key !== 'Tab') return;
+                    // Fails CLOSED on a stale bind, same convention as
+                    // getSearchFieldContainer()/getResultsList(): a listener
+                    // that outlives its own bind (the gap between a
+                    // superseding re-bind and this node's own teardown)
+                    // must not act on behalf of a widget it no longer owns.
+                    if (!self.getSearchFieldContainer($field, token).length) return;
                     if (e.shiftKey) {
                         // Shift+Tab: select2's own handler would otherwise
                         // silently select the auto-highlighted first result
@@ -1021,7 +1035,21 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                     }
                     const $wrapper = self.getResultsList($field, token).parent();
                     const $button = $wrapper.children(`.${MANUAL_ENTRY_CLASS}`);
-                    if (!$button.length) return;
+                    if (!$button.length) {
+                        // Below MIN_INPUT_LENGTH there is no button to reach,
+                        // but select2's own handler treats forward Tab
+                        // exactly like Enter regardless — it would otherwise
+                        // select nothing (nothing is highlighted this early)
+                        // yet still `preventDefault()`, silently swallowing
+                        // the key and trapping keyboard focus in the field.
+                        // Stop select2 from seeing it, but do NOT
+                        // preventDefault ourselves: with no button to route
+                        // to, the right behaviour is the native one — Tab
+                        // advances to the next checkout field.
+                        e.stopPropagation();
+                        closeDropdown($field);
+                        return;
+                    }
                     e.preventDefault();
                     e.stopPropagation();
                     $button.trigger('focus');

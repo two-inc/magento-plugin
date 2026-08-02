@@ -312,6 +312,19 @@ function makeMiniQuery() {
         }
         if (arg.nodes) return arg;
         if (arg.nodeType) return wrap([arg]);
+        // `nudgeSelect2Resize()` targets `$(window)` — real jQuery always
+        // resolves that to a real, triggerable set. The AMD harness runs
+        // company-search.js in an isolated vm sandbox whose `window` is a
+        // plain stub object (`amd-harness.js`'s `sandbox.window`), NOT the
+        // outer jsdom `window` this file's `window.addEventListener` calls
+        // use — so an identity check (`arg === window`) never matches
+        // across that realm boundary. Anything reaching here is neither a
+        // wrapped set, a string, nor a real DOM node, so it can only be
+        // that opaque cross-realm window stand-in; route it to the REAL
+        // window so a `.trigger()` on it is actually observable. Without
+        // this every resize nudge silently no-opped, which is exactly what
+        // hid the round-3 nudge-ordering bug from the whole suite.
+        if (arg && typeof arg === 'object') return wrap([window]);
         return wrap([]);
     }
     $.fn = {};
@@ -710,6 +723,7 @@ describe('keyboard reachability (round 2 — Tab is not free)', () => {
     });
 
     test('detaching removes the capture-phase Tab listener itself, not just the button it targets', () => {
+        dom.$field.select2 = jest.fn();
         model.attachManualEntryButton(dom.$field, dom.token, function () {});
         typeTerm(dom, 'example');
         model.detachManualEntryButton(dom.$field);
@@ -720,6 +734,37 @@ describe('keyboard reachability (round 2 — Tab is not free)', () => {
         // "listener still installed but its target vanished".
         expect(dom.search._twoManualEntryTabHandler).toBeUndefined();
 
+        const forwardTab = new window.KeyboardEvent('keydown', {
+            key: 'Tab',
+            bubbles: true,
+            cancelable: true
+        });
+        dom.search.dispatchEvent(forwardTab);
+        expect(forwardTab.defaultPrevented).toBe(false);
+
+        // Shift+Tab specifically: the button-absent branch of the forward
+        // path early-returns without a button/token guard, so a Tab-only
+        // proof (the case above) cannot show the Shift+Tab branch is also
+        // gone — it has no equivalent early-return to hide behind.
+        const shiftTab = new window.KeyboardEvent('keydown', {
+            key: 'Tab',
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true
+        });
+        dom.search.dispatchEvent(shiftTab);
+        expect(shiftTab.defaultPrevented).toBe(false);
+        expect(dom.$field.select2).not.toHaveBeenCalled();
+    });
+
+    test('forward Tab below the threshold (no button yet) is not swallowed — select2 does not trap it', () => {
+        const select2Committed = bindFakeSelect2TabHandler(dom);
+        dom.$field.select2 = jest.fn();
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        // Deliberately below WRONG_THRESHOLD (5): no button exists yet.
+        typeTerm(dom, 'ex');
+        expect(manualButtons(dom)).toHaveLength(0);
+
         const event = new window.KeyboardEvent('keydown', {
             key: 'Tab',
             bubbles: true,
@@ -727,7 +772,41 @@ describe('keyboard reachability (round 2 — Tab is not free)', () => {
         });
         dom.search.dispatchEvent(event);
 
+        // select2's own handler must still be preempted (it would otherwise
+        // preventDefault() and swallow the key with nothing to show for it —
+        // a keyboard trap), but with no button to route to, native Tab is
+        // left alone so focus advances to the next checkout field.
+        expect(select2Committed()).toBe(false);
         expect(event.defaultPrevented).toBe(false);
+        expect(dom.$field.select2).toHaveBeenCalledWith('close');
+    });
+
+    test("the button's own Tab and Shift+Tab close the picker rather than trapping or falling through to the page", () => {
+        dom.$field.select2 = jest.fn();
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        typeTerm(dom, 'example');
+        const button = manualButtons(dom)[0];
+        button.focus();
+
+        const forwardTab = new window.KeyboardEvent('keydown', {
+            key: 'Tab',
+            bubbles: true,
+            cancelable: true
+        });
+        button.dispatchEvent(forwardTab);
+        expect(forwardTab.defaultPrevented).toBe(true);
+        expect(dom.$field.select2).toHaveBeenCalledWith('close');
+
+        dom.$field.select2.mockClear();
+        const shiftTab = new window.KeyboardEvent('keydown', {
+            key: 'Tab',
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true
+        });
+        button.dispatchEvent(shiftTab);
+        expect(shiftTab.defaultPrevented).toBe(true);
+        expect(dom.$field.select2).toHaveBeenCalledWith('close');
     });
 
     test('Escape on the focused button closes the picker via select2, not a hand-rolled refocus', () => {
@@ -752,6 +831,66 @@ describe('keyboard reachability (round 2 — Tab is not free)', () => {
         // pass proved by deleting the close()/refocus call and watching the
         // suite stay green.
         expect(dom.$field.select2).toHaveBeenCalledWith('close');
+    });
+});
+
+describe('dropdown geometry (resize nudge)', () => {
+    let $;
+    let model;
+    let dom;
+
+    beforeEach(() => {
+        $ = makeMiniQuery();
+        model = loadModelWithWrongThreshold($);
+        dom = makePickerDom($);
+    });
+
+    /**
+     * select2 only recalculates dropdown height/position from its own
+     * result/selection events or a window resize — inserting or removing
+     * the button is neither, so nudgeSelect2Resize() pokes
+     * `resize.select2.<id>` by hand. Round 3's bug (proved by Vader's
+     * mutation pass) was firing that nudge on the removal path BEFORE the
+     * button actually left the DOM: select2 measures `$dropdown.outerHeight()`
+     * synchronously when it handles the resize, so a nudge fired too early
+     * just re-measures the stale, still-larger height. These tests capture
+     * whether the button is still present in the DOM at the moment the
+     * nudge is observed, not just that a resize event fired at all.
+     */
+    test('the removal-path nudge fires AFTER the button has actually left the DOM', () => {
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+        typeTerm(dom, 'example');
+        expect(manualButtons(dom)).toHaveLength(1);
+
+        let buttonCountAtNudge = null;
+        const onResize = function () {
+            buttonCountAtNudge = manualButtons(dom).length;
+        };
+        window.addEventListener('resize', onResize);
+        try {
+            typeTerm(dom, 'ex'); // below WRONG_THRESHOLD (5): triggers removal
+        } finally {
+            window.removeEventListener('resize', onResize);
+        }
+
+        expect(buttonCountAtNudge).toBe(0);
+    });
+
+    test('the insert-path nudge fires with the button already present in the DOM', () => {
+        model.attachManualEntryButton(dom.$field, dom.token, function () {});
+
+        let buttonCountAtNudge = null;
+        const onResize = function () {
+            buttonCountAtNudge = manualButtons(dom).length;
+        };
+        window.addEventListener('resize', onResize);
+        try {
+            typeTerm(dom, 'example'); // at/above WRONG_THRESHOLD (5): shows it
+        } finally {
+            window.removeEventListener('resize', onResize);
+        }
+
+        expect(buttonCountAtNudge).toBe(1);
     });
 });
 
