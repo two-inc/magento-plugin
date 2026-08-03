@@ -392,6 +392,25 @@ define([
          * in brand.xml, which leaves orderIntentApprovedNoticeCopy null so the
          * notice text is always '').
          *
+         * READ THIS BEFORE ASSUMING THE LABEL IS ALWAYS AVAILABLE. Two further
+         * configurations mean the notice never appears at all, and therefore
+         * that the §7 company label never renders for those buyers either:
+         *
+         *  - `enable_order_intent` off (Model/Config/Repository.php
+         *    ::isOrderIntentEnabled) — fillCompanyData() skips
+         *    placeOrderIntent() entirely, so nothing ever sets the notice. The
+         *    label is dead for that merchant's whole storefront.
+         *  - a Dutch buyer whose company is not a BV — placeOrderIntent()
+         *    early-returns a Deferred resolved with `null`, so
+         *    processOrderIntentSuccessResponse() sees a falsy response and sets
+         *    nothing.
+         *
+         * Both follow literally from "shown exactly when the intent message is
+         * shown", so they are a consequence of the ruling rather than a defect
+         * here, and they are pinned by tests so they read as decisions. If the
+         * label is meant to survive order intent being off, that is a different
+         * rule and needs the ticket — do not quietly widen this predicate.
+         *
          * `orderIntentApprovedNotice` is created in
          * initOrderIntentApprovedNotice() rather than in `defaults` (see the
          * shared-observable footgun documented there), so it is genuinely

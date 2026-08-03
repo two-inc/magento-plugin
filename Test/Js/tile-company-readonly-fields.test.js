@@ -775,9 +775,16 @@ describe('what each capture mode puts in front of the buyer', () => {
  *    the precise defect the ruling forbids, and no set of behavioural cases can
  *    rule it out.
  *  - as BEHAVIOUR: across every state that separates the new gate from the old
- *    one — captured-but-no-intent, declined, errored, brand-suppressed notice —
- *    the two evaluate the same, and the label follows the message rather than
- *    capture.
+ *    one — captured-but-no-intent, declined, errored, brand-suppressed notice,
+ *    order intent disabled, Dutch non-BV buyer — the label follows the message
+ *    rather than capture.
+ *
+ * Be honest about the division of labour there. Because both bindings resolve
+ * to the SAME predicate, the paired `intentMessageVisible()` /
+ * `labelVisible()` assertions cannot disagree by construction — they are a
+ * readability aid, not independent corroboration. The string-equality pin is
+ * what actually forbids two expressions that merely agree; the behavioural
+ * cases are what forbid the predicate being the wrong one.
  *
  * The behavioural cases are the mutation-sensitive half: each of them had the
  * label VISIBLE under the superseded `isCompanyCaptured()` gate, so reverting
@@ -883,6 +890,84 @@ describe('the company label is shown exactly when the intent message is', () => 
             { companyName: 'Second Example Ltd', companyId: '87654321' },
             { authoritative: true }
         );
+
+        expect(renderer.isCompanyCaptured()).toBe(true);
+        expect(intentMessageVisible(renderer)).toBe(false);
+        expect(labelVisible(renderer)).toBe(false);
+    });
+
+    test('editing only the NAME after approval hides both', () => {
+        // The companyName subscription specifically. The test above changes the
+        // company through applyCompanyData(), which writes BOTH observables, so
+        // the companyId subscription alone satisfies it — verified by mutation:
+        // deleting the companyName clear left the whole suite green. This is the
+        // hand-edited-name fail-closed path initOrderIntentApprovedNotice()'s own
+        // comment calls load-bearing, so it gets its own case.
+        const { renderer } = loadRendererOnly();
+
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+        approveIntent(renderer);
+        expect(labelVisible(renderer)).toBe(true);
+
+        // Only the name, as a buyer typing into the input would.
+        renderer.companyName('First Example Limited');
+
+        expect(renderer.companyId()).toBe('12345678');
+        expect(intentMessageVisible(renderer)).toBe(false);
+        expect(labelVisible(renderer)).toBe(false);
+    });
+
+    test('order intent turned off means no notice and so no label, ever', () => {
+        // `enable_order_intent` off: fillCompanyData() never calls
+        // placeOrderIntent(), so nothing sets the notice and the §7 label is
+        // dead for that merchant's whole storefront. A consequence of "exactly
+        // when", not a defect — pinned so it reads as a decision rather than an
+        // oversight, and so widening the predicate cannot happen silently.
+        const { renderer } = loadRendererOnly();
+        const placeOrderIntent = jest.fn();
+        renderer.placeOrderIntent = placeOrderIntent;
+        renderer.isOrderIntentEnabled = false;
+
+        renderer.fillCompanyData({
+            companyName: 'First Example Ltd',
+            companyId: '12345678'
+        });
+
+        // Guard the premise: no intent was even attempted.
+        expect(placeOrderIntent).not.toHaveBeenCalled();
+        expect(renderer.isCompanyCaptured()).toBe(true);
+        expect(intentMessageVisible(renderer)).toBe(false);
+        expect(labelVisible(renderer)).toBe(false);
+    });
+
+    test('a null intent response — the Dutch non-BV path — shows no label', () => {
+        // placeOrderIntent() early-returns a Deferred resolved with `null` for a
+        // Dutch buyer whose company is not a BV, so the success handler sees a
+        // falsy response and sets nothing. Same consequence as above, different
+        // route, and the route most likely to be missed because the intent call
+        // DOES happen.
+        const { renderer } = loadRendererOnly();
+
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+        approveIntent(renderer);
+        expect(labelVisible(renderer)).toBe(true);
+
+        renderer.processOrderIntentSuccessResponse(null);
+
+        // Nothing was set OR cleared by the null response — but the company
+        // write that precedes a real intent already cleared it, which is what
+        // makes the label absent on that path.
+        renderer.applyCompanyData(
+            { companyName: 'Dutch Example VOF', companyId: '87654321' },
+            { authoritative: true }
+        );
+        renderer.processOrderIntentSuccessResponse(null);
 
         expect(renderer.isCompanyCaptured()).toBe(true);
         expect(intentMessageVisible(renderer)).toBe(false);
