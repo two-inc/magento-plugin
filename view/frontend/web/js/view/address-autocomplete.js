@@ -216,7 +216,20 @@ define([
          * `companyData` customer-data section — and the payment step reads a
          * change NOTIFICATION on that section as an act of selection, so every
          * pick would announce itself twice.
+         *
+         * The DOM write goes FIRST. The component write notifies subscribers
+         * synchronously, one of which re-renders the number label off
+         * `capturedCompanyId()`, which reads the DOM before the component — so
+         * writing the component first paints the PREVIOUS company's number for
+         * the rest of the tick, and paints a number at all on the clearing path.
          */
+        setCompanyIdValue: function (companyId) {
+            $(this.companyIdSelector).val(companyId);
+            const component = uiRegistry.get(this.companyIdComponent);
+            if (component && typeof component.value === 'function') {
+                component.value(companyId);
+            }
+        },
         /**
          * Re-paint the number label whenever the company-number component's
          * value changes underneath us.
@@ -228,27 +241,77 @@ define([
          * calls have already run against an empty field and the buyer sees the
          * name with no number — the original bug, in a narrower window.
          *
-         * Subscribed once per component instance (`_companyIdWatched`), because
-         * `$.async` is a MutationObserver that fires again on every re-render
-         * and Knockout subscriptions stack.
+         * ONE subscription at a time, and it belongs to the CURRENT view. The
+         * `company_id` uiRegistry component outlives this view — that is exactly
+         * why `$.async` refires on a re-render while `uiRegistry.get()` keeps
+         * returning the same object — so a subscription simply left in place
+         * both retains every superseded view for the life of the page and leaves
+         * the live subscriber closed over a stale one. Disposing the previous
+         * subscription and taking a fresh one is what keeps those two properties
+         * ("no stacking", "the current view renders") from being in tension. The
+         * handle is stored on the COMPONENT, because the view being replaced is
+         * the thing that cannot be relied on to still be around.
+         *
+         * Deliberately does NOT re-derive editability (`syncCompanyIdEditable`).
+         * That derivation reads the number field's own value, and this fires on
+         * the buyer's own `change` too — so re-deriving here would disable the
+         * field the moment they blurred it, which is the exact footgun the
+         * derivation's own docblock warns against. The cost is that a number
+         * restored LATE leaves the field enabled when it should be disabled;
+         * that is invisible today because the field is CSS-hidden
+         * unconditionally, and it is the lesser of the two.
          */
         watchCompanyIdComponent: function () {
             const component = uiRegistry.get(this.companyIdComponent);
             if (!component || typeof component.value !== 'function') return;
             if (typeof component.value.subscribe !== 'function') return;
-            if (component._twoCompanyIdWatched) return;
-            component._twoCompanyIdWatched = true;
+            if (component._twoCompanyIdSubscription) {
+                component._twoCompanyIdSubscription.dispose();
+            }
             const self = this;
-            component.value.subscribe(function () {
+            component._twoCompanyIdSubscription = component.value.subscribe(function () {
                 self.renderCompanyIdText();
             });
         },
-        setCompanyIdValue: function (companyId) {
-            const component = uiRegistry.get(this.companyIdComponent);
-            if (component && typeof component.value === 'function') {
-                component.value(companyId);
+        /**
+         * Discard a restored organisation number that belongs to a different
+         * country from the one the form is now showing (TWO-24867).
+         *
+         * The number now persists in `checkout-data` and is restored into the
+         * form on the next load — which is the point of this fix — but that
+         * saved blob carries no record of the country it was captured in, while
+         * the `companyData` customer-data section does. Left unchecked, a GB
+         * organisation number could be restored onto a checkout sitting on an ES
+         * address and credit-checked there: refused upstream, and surfaced to
+         * the buyer as a generic failure with nothing on screen explaining it.
+         * `onCountryChanged` cannot reach this case, because nothing changed in
+         * THIS page.
+         *
+         * Fails OPEN on a missing stamp, matching the same guard on the payment
+         * step: records written before the stamp existed carry no country, and
+         * treating "unstamped" as "wrong country" would drop a legitimate
+         * company on the first load after an upgrade.
+         *
+         * Clears the number only, never the name. A name with no identifier is
+         * an understood state — the payment step routes it to
+         * `selectCompanyWithoutIdentifier()` and the order is refused
+         * server-side — whereas a name silently blanked on load looks like data
+         * loss.
+         */
+        discardForeignCountryCompanyId: function () {
+            if (!$(this.companyIdSelector).val()) return;
+            const capturedCountry = (customerData.get('companyData')() || {}).companyCountry;
+            const currentCountry = this.currentCountryCode();
+            if (!capturedCountry || !currentCountry) return;
+            if (String(capturedCountry).toLowerCase() === String(currentCountry).toLowerCase()) {
+                return;
             }
-            $(this.companyIdSelector).val(companyId);
+            console.debug({
+                logger: 'addressAutocomplete.discardForeignCountryCompanyId',
+                capturedCountry,
+                currentCountry
+            });
+            this.setCompanyIdValue('');
         },
         /**
          * Class on the address-step company-number text label. Also the hook
@@ -453,6 +516,9 @@ define([
                 // A form rendered with an address already on it (returning
                 // customer, or a reload mid-checkout) never passes through
                 // setCompanyData(), so derive once on resolve.
+                // Before the derivation and the label, both of which would
+                // otherwise act on a number belonging to another country.
+                self.discardForeignCountryCompanyId();
                 self.syncCompanyIdEditable();
                 // …and paint the number label for that same case. A reload
                 // restores the number into this field from the provider, not

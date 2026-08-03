@@ -219,6 +219,9 @@ function makeObservable(initial) {
             }
         };
     };
+    obs.subscriberCount = function () {
+        return subscribers.length;
+    };
     return obs;
 }
 
@@ -268,6 +271,11 @@ function makeCompanyIdComponent(provider, mirrorToDom) {
         value: makeObservable(''),
         disabled: makeObservable(true)
     };
+    component.subscriberCount = function () {
+        // Only the module's own subscribers: the harness's Knockout/link stand-in
+        // below is registered first and is not one of them.
+        return component.value.subscriberCount() - 1;
+    };
     component.value.subscribe(function (next) {
         // The element's `links: {value: '${$.provider}:${$.dataScope}'}`.
         provider.set(ID_PATH, next);
@@ -294,6 +302,12 @@ function makeCompanyIdComponent(provider, mirrorToDom) {
  * @param {boolean} [options.mirrorToDom] false suppresses Knockout's `value:`
  *        binding writing the component's value into the input, modelling the
  *        instant before it does so.
+ * @param {object} [options.component] reuse a previous load's company-number
+ *        component, as a real form re-render does.
+ * @param {boolean} [options.searchMode] false leaves select2 off the name
+ *        input, i.e. manual-entry mode.
+ * @param {string} [options.country] the country the form is showing, default
+ *        `GB`.
  */
 function pageLoad(storage, options) {
     const opts = options || {};
@@ -301,7 +315,9 @@ function pageLoad(storage, options) {
         '<form id="shipping-new-address-form">' +
         '<div class="field">' +
         '<div class="control">' +
-        '<select name="country_id"><option value="GB" selected>GB</option></select>' +
+        '<select name="country_id"><option value="' +
+        (opts.country || 'GB') +
+        '" selected></option></select>' +
         '</div>' +
         '</div>' +
         '<div class="field">' +
@@ -318,7 +334,11 @@ function pageLoad(storage, options) {
 
     const $ = makeMiniQuery();
     const provider = makeCheckoutWorld(storage);
-    const companyIdComponent = makeCompanyIdComponent(provider, opts.mirrorToDom);
+    // A caller may hand back the PREVIOUS load's component: the `company_id`
+    // uiRegistry component genuinely outlives a form re-render, and the
+    // subscription bookkeeping is only meaningful against a shared instance.
+    const companyIdComponent =
+        opts.component || makeCompanyIdComponent(provider, opts.mirrorToDom);
     const companyDataSection = makeObservable(storage.companyData);
 
     const restore = function () {
@@ -379,7 +399,7 @@ function pageLoad(storage, options) {
     // BEFORE `initialize()`, because on a reload the picker is bound while the
     // company-number field's own render paths run, and `renderCompanyIdText()`
     // deliberately paints nothing outside search mode.
-    $(NAME_SELECTOR).data('select2', {});
+    if (opts.searchMode !== false) $(NAME_SELECTOR).data('select2', {});
     component.initialize();
     return { component: component, $: $, restore: restore, companyIdComponent: companyIdComponent };
 }
@@ -476,20 +496,112 @@ describe('TWO-25326 §5: the captured company number survives a page reload', ()
         expect(labels()).toHaveLength(0);
     });
 
-    test('re-initialising twice does not stack duplicate number labels', () => {
+    test('the input is already updated when the component notifies', () => {
+        // Ordering inside setCompanyIdValue(). The component write notifies
+        // synchronously and the label renders from a subscriber, and that render
+        // reads the input first — so a component-first write paints the PREVIOUS
+        // company's number for the rest of the tick, and paints a number at all
+        // while clearing.
+        const storage = {};
+        const first = pageLoad(storage);
+        first.component.setCompanyData('919300894', 'Example Trading AS');
+
+        const seen = [];
+        first.companyIdComponent.value.subscribe(function (next) {
+            seen.push({
+                notified: next,
+                inInput: document.querySelector(ID_SELECTOR).value
+            });
+        });
+
+        first.component.setCompanyData('811912312', 'Other Example AS');
+        first.component.setCompanyData();
+
+        expect(seen).toEqual([
+            { notified: '811912312', inInput: '811912312' },
+            { notified: '', inInput: '' }
+        ]);
+    });
+
+    test('a number captured in another country is not restored (TWO-24867)', () => {
+        // `checkout-data` carries no record of the country the company was
+        // captured in; the `companyData` section does. A GB organisation number
+        // restored onto a checkout now showing ES would be credit-checked there
+        // and refused upstream as a generic failure.
+        const storage = {};
+        storage[ID_PATH] = '919300894';
+        storage.companyName = 'Example Trading AS';
+        storage.companyData = {
+            companyId: '919300894',
+            companyName: 'Example Trading AS',
+            companyCountry: 'gb'
+        };
+
+        pageLoad(storage, { country: 'ES' });
+
+        expect(document.querySelector(ID_SELECTOR).value).toBe('');
+        expect(labels()).toHaveLength(0);
+        // The NAME is left alone: a name with no identifier is an understood
+        // state, while a name blanked on load reads as data loss.
+        expect(document.querySelector(NAME_SELECTOR).value).toBe('Example Trading AS');
+    });
+
+    test('an unstamped record fails open rather than dropping a valid number', () => {
+        // Records written before the country stamp existed carry none, and
+        // treating unstamped as wrong-country would drop a legitimate company on
+        // the first load after an upgrade.
+        const storage = {};
+        storage[ID_PATH] = '919300894';
+        storage.companyName = 'Example Trading AS';
+        storage.companyData = { companyId: '919300894', companyName: 'Example Trading AS' };
+
+        pageLoad(storage, { country: 'ES' });
+
+        expect(document.querySelector(ID_SELECTOR).value).toBe('919300894');
+        expect(labels()).toHaveLength(1);
+    });
+
+    test('re-initialising leaves exactly one subscription, held by the live view', () => {
         // `$.async` is a MutationObserver: it fires again on every re-render of
-        // the address form, so every path this fix added runs more than once per
-        // page.
+        // the address form, and the `company_id` uiRegistry component outlives
+        // the view — so a subscription left in place would stack one per render
+        // and the surviving subscriber would be closed over a superseded view.
+        //
+        // Asserted on the subscription itself, NOT on the number of labels
+        // rendered: `renderCompanyIdText()` removes existing labels before
+        // appending, so N stacked subscribers still produce exactly one label
+        // and a label count cannot detect stacking at all.
         const storage = {};
         const first = pageLoad(storage);
         first.component.setCompanyData('919300894', 'Example Trading AS');
         storage.companyName = 'Example Trading AS';
+        expect(first.companyIdComponent.subscriberCount()).toBe(1);
 
-        const second = pageLoad(storage);
+        // Three more form re-renders against the SAME component instance.
+        const second = pageLoad(storage, { component: first.companyIdComponent });
         second.component.initialize();
-        second.companyIdComponent.value('811912312');
+        second.component.initialize();
 
+        expect(first.companyIdComponent.subscriberCount()).toBe(1);
+        // And the surviving subscriber is the live view's, not a stale one: only
+        // the live view can see the current document.
+        second.companyIdComponent.value('811912312');
         expect(labels()).toHaveLength(1);
         expect(labels()[0].textContent).toBe('811912312');
+    });
+
+    test('a restored number paints nothing in manual-entry mode', () => {
+        // Manual entry is name-only capture. This is the branch the sibling
+        // cases cannot reach, because they all assert search mode: select2 is
+        // absent from the name input and a number is nonetheless sitting in the
+        // restored field.
+        const storage = {};
+        storage[ID_PATH] = '919300894';
+        storage.companyName = 'Hand Typed Ltd';
+
+        pageLoad(storage, { searchMode: false });
+
+        expect(document.querySelector(ID_SELECTOR).value).toBe('919300894');
+        expect(labels()).toHaveLength(0);
     });
 });
