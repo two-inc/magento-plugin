@@ -4,13 +4,23 @@
  *
  * The payment tile's company display, as TWO-25326 §7 defines it: ONE line of
  * plain text, "Name (12345678)", between the term chips and the order-intent
- * notice — and the tile's own company controls hidden while it shows.
+ * notice.
  *
- * This supersedes two earlier shapes in turn. TWO-25288 first made the
+ * WHEN it shows is the 2026-08-03 ruling on TWO-25326, and it is NOT the same
+ * as the one that hides the controls: the label is shown exactly when the
+ * inline order-intent message is shown, and hidden exactly when that message
+ * is hidden. The tile's own company controls remain gated on
+ * isCompanyCaptured(), which is a separate and unchanged rule — so a company
+ * captured with no approved intent on screen hides the controls and shows no
+ * label. Both of those are pinned below.
+ *
+ * This supersedes three earlier shapes in turn. TWO-25288 first made the
  * captured number a read-only `<input>`; the ruling after that replaced the
  * input with a "Company Number" caption plus a separately-rendered value.
- * §7 removes that pair too: a caption and a number below an editable
- * company-name box is three renderings of one company in one tile.
+ * §7 removed that pair too — a caption and a number below an editable
+ * company-name box is three renderings of one company in one tile — and gated
+ * the resulting single line on isCompanyCaptured(). The 2026-08-03 ruling
+ * replaces that gate with the intent message's own.
  *
  * The control is HIDDEN, not deleted, and that distinction is pinned here
  * deliberately. The tile's picker is the only company-capture surface for a
@@ -26,12 +36,16 @@
  *     shape and against any future reinstatement of an editable NUMBER field,
  *     because there is no `<input id="company_id">` left to satisfy either.
  *
- *  2. SWAP PINS — the capture control and the label are gated on the same
- *     predicate, in opposite directions, so no state can show both or
- *     neither. Both `visible:` expressions are read out of the template and
- *     pinned to an exact shape before being evaluated, so a drift to some
- *     other predicate (or an always-true stub) fails the string match rather
- *     than passing on a coincidence.
+ *  2. GATE PINS — two separate gates, pinned separately. The label and the
+ *     order-intent message read the IDENTICAL expression (asserted as string
+ *     equality between the two bindings, not as two matches against one
+ *     pattern, because two different expressions that both happen to be true
+ *     is precisely the failure the ruling forbids). The capture controls read
+ *     `!isCompanyCaptured()`, which is a different gate on purpose. Every
+ *     expression is read out of the template and pinned to an exact shape
+ *     before being evaluated, so a drift to some other predicate — or to an
+ *     always-true stub — fails the string match rather than passing on a
+ *     coincidence.
  *
  *  3. WHAT-THE-BUYER-SEES PINS — 'what each capture mode puts in front of the
  *     buyer'. These do not restate the markup: they read the `text:` binding
@@ -169,27 +183,83 @@ function renderedLabelText(renderer) {
 }
 
 /**
- * Whether the tile's company label would currently render: read the
- * `visible:` expression out of the template, PIN it to the exact
- * `isCompanyCaptured()` shape (so a drift to some other predicate, or to an
- * always-true stub, fails the string match), then evaluate that predicate
- * against the live renderer for the actual truth value.
+ * The `visible:` expression on the company label, verbatim and whitespace-
+ * normalised, so it can be compared against the intent message's own gate as
+ * a STRING rather than by two independent pattern matches.
+ *
+ * Anchored on `visible:` up to the next binding (`,` `text:` …) or the end of
+ * the `data-bind` value.
  */
-function labelVisible(renderer) {
-    const tag = companyLabelTag();
-    if (!/visible:\s*isCompanyCaptured\(\)/.test(tag)) {
+function labelGateExpression() {
+    const bound = companyLabelTag().match(/visible:\s*([^,"]+)/);
+    if (!bound) {
+        throw new Error("the company label has no `visible:` binding");
+    }
+    return bound[1].trim();
+}
+
+/**
+ * The `if:` expression on the inline order-intent message's ko virtual
+ * element, same normalisation, so the two gates can be compared directly.
+ */
+function intentMessageGateExpression() {
+    // The notice block is `<!-- ko if: X -->` immediately followed by the div
+    // carrying `two-order-intent-message`. Match that PAIR rather than
+    // guessing which of the template's several `ko if:` blocks it is — a
+    // positional match would silently retarget if a sibling block moved.
+    const pair = readTemplate().match(
+        /<!--\s*ko\s+if:\s*([^>]+?)\s*-->\s*<div[^>]*class="two-order-intent-message/
+    );
+    if (!pair) {
         throw new Error(
-            "the company label's `visible:` binding is not the pinned `isCompanyCaptured()` shape"
+            'could not find the `<!-- ko if: … -->` guarding the order-intent message'
         );
     }
-    return !!renderer.isCompanyCaptured();
+    return pair[1].trim();
+}
+
+/**
+ * Whether the tile's company label would currently render: read the
+ * `visible:` expression out of the template, PIN it to the exact
+ * `isOrderIntentMessageVisible()` shape (so a drift to some other predicate,
+ * or to an always-true stub, fails the string match), then evaluate that
+ * predicate against the live renderer for the actual truth value.
+ *
+ * The pinned shape is the intent message's gate, NOT a capture check. That is
+ * the 2026-08-03 ruling: the label is shown exactly when the message is.
+ */
+function labelVisible(renderer) {
+    if (labelGateExpression() !== 'isOrderIntentMessageVisible()') {
+        throw new Error(
+            "the company label's `visible:` binding is not the pinned "
+                + '`isOrderIntentMessageVisible()` shape, it is `'
+                + labelGateExpression() + '`'
+        );
+    }
+    return !!renderer.isOrderIntentMessageVisible();
+}
+
+/**
+ * Whether the inline order-intent message would currently render, derived the
+ * same way — so "the label shows exactly when the message shows" can be
+ * asserted as two evaluated truth values and not only as matching source text.
+ */
+function intentMessageVisible(renderer) {
+    const expression = intentMessageGateExpression();
+    if (expression !== 'isOrderIntentMessageVisible()') {
+        throw new Error(
+            'the order-intent message is not gated on the pinned '
+                + '`isOrderIntentMessageVisible()` shape, it is `' + expression + '`'
+        );
+    }
+    return !!renderer.isOrderIntentMessageVisible();
 }
 
 /**
  * Whether the tile's company-name FIELD (the capture control) would currently
- * render. Same derive-then-evaluate discipline: the `visible:` expression is
- * pinned to the negation of the same predicate the label uses, so the two can
- * never drift into a state where both show or neither does.
+ * render. Same derive-then-evaluate discipline. Pinned to
+ * `!isCompanyCaptured()`, which is DELIBERATELY not the label's gate any more:
+ * the controls swap on capture, the label swaps on the intent message.
  */
 function nameFieldVisible(renderer) {
     const markup = withoutComments(readTemplate());
@@ -264,14 +334,13 @@ describe('the payment tile shows the number as an uneditable label, not a field'
         expect(tag).toMatch(/^<div\b/);
     });
 
-    test('the company label is one element bound to one builder, gated on capture', () => {
+    test('the company label is one element bound to one builder', () => {
         // TWO-25326 §7 asks for ONE line, "Name (number)". The superseded
         // shape was a caption span plus a number span, i.e. two renderings of
         // one company in one tile, which is the defect the ticket names.
         const tag = companyLabelTag();
 
         expect(tag).toMatch(/text:\s*companyDisplayLabel\(\)/);
-        expect(tag).toMatch(/visible:\s*isCompanyCaptured\(\)/);
         // No inner elements: the whole string comes from one binding, so
         // there is no caption/value split that can fall out of step.
         expect(tag).not.toMatch(/<span\b/);
@@ -330,7 +399,7 @@ describe('the payment tile shows the number as an uneditable label, not a field'
      * Model/Two.php::authorize() refuses a company with no organisation
      * number.
      */
-    test('the capture control is retained and swaps with the label, never both at once', () => {
+    test('the capture control is retained and hides on capture', () => {
         const { renderer } = loadRendererOnly();
 
         // Still present in the template — not deleted.
@@ -338,24 +407,24 @@ describe('the payment tile shows the number as an uneditable label, not a field'
             /<input\b[^>]*\bid\s*=\s*["']company_name["']/
         );
 
-        // Nothing captured: the control is available, the label is not.
+        // Nothing captured: the control is available.
         expect(nameFieldVisible(renderer)).toBe(true);
-        expect(labelVisible(renderer)).toBe(false);
 
-        // Captured: they swap.
+        // Captured: it hides. This rule is unchanged by the 2026-08-03 label
+        // ruling and must stay that way — it is what preserves the
+        // saved-address / virtual-cart capture route described above.
         renderer.applyCompanyData(
             { companyName: 'First Example Ltd', companyId: '12345678' },
             { authoritative: true }
         );
         expect(nameFieldVisible(renderer)).toBe(false);
-        expect(labelVisible(renderer)).toBe(true);
     });
 
     test('a name with no number leaves the capture control up — name-only is not captured', () => {
         // §6: manual entry (name, no number) must not make the payment method
         // usable, so capture is NOT complete and the buyer must keep the
         // search box. This is the case most likely to be got wrong by gating
-        // the swap on the name alone.
+        // the control on the name alone.
         const { renderer } = loadRendererOnly();
 
         renderer.applyCompanyData(
@@ -499,6 +568,7 @@ describe('what each capture mode puts in front of the buyer', () => {
             { companyName: 'First Example Ltd', companyId: '12345678' },
             { authoritative: true }
         );
+        approveIntent(renderer);
 
         // The name observable still carries the name — the control is only
         // hidden, so it is still bound and still the thing sole-trader mode
@@ -521,6 +591,7 @@ describe('what each capture mode puts in front of the buyer', () => {
             }
         };
         renderer.soleTraderMode();
+        approveIntent(renderer);
 
         expect(renderedValue('company_name', renderer)).toBe('Sole Trader Example');
         expect(renderedLabelText(renderer)).toBe('Sole Trader Example (ST-SYNTH-004)');
@@ -544,6 +615,7 @@ describe('what each capture mode puts in front of the buyer', () => {
             { companyName: 'First Example Ltd', companyId: '12345678' },
             { authoritative: true }
         );
+        approveIntent(renderer);
         expect(labelVisible(renderer)).toBe(true);
 
         renderer.clearCompany();
@@ -580,6 +652,7 @@ describe('what each capture mode puts in front of the buyer', () => {
             }
         };
         renderer.soleTraderMode();
+        approveIntent(renderer);
         expect(labelVisible(renderer)).toBe(true);
         expect(nameFieldVisible(renderer)).toBe(false);
 
@@ -634,8 +707,13 @@ describe('what each capture mode puts in front of the buyer', () => {
 
         expect(renderer.companyId()).toBe('12345678');
         expect(renderer.isCompanyCaptured()).toBe(true);
-        expect(labelVisible(renderer)).toBe(true);
         expect(nameFieldVisible(renderer)).toBe(false);
+        // ...and once the intent for it is approved, the label appears. Ordered
+        // this way round on purpose: the notice's companyId subscription clears
+        // it whenever the company changes, so an approval taken BEFORE the
+        // init-path call would prove nothing about what survives the call.
+        approveIntent(renderer);
+        expect(labelVisible(renderer)).toBe(true);
     });
 
     /**
@@ -682,6 +760,257 @@ describe('what each capture mode puts in front of the buyer', () => {
         expect(renderedValue('company_name', renderer)).toBe('Second Example Ltd');
         expect(labelVisible(renderer)).toBe(false);
         expect(nameFieldVisible(renderer)).toBe(true);
+    });
+});
+
+/**
+ * The 2026-08-03 ruling on TWO-25326, which supersedes §7's own gate: the label
+ * is shown exactly when the inline order-intent message is shown, and hidden
+ * exactly when it is hidden.
+ *
+ * "Exactly when" is asserted two ways, because either alone is weak:
+ *
+ *  - as SOURCE: the two bindings must be the identical expression. Two
+ *    different expressions that agree in the states a test happens to visit is
+ *    the precise defect the ruling forbids, and no set of behavioural cases can
+ *    rule it out.
+ *  - as BEHAVIOUR: across every state that separates the new gate from the old
+ *    one — captured-but-no-intent, declined, errored, brand-suppressed notice,
+ *    order intent disabled, Dutch non-BV buyer — the label follows the message
+ *    rather than capture.
+ *
+ * Be honest about the division of labour there. Because both bindings resolve
+ * to the SAME predicate, the paired `intentMessageVisible()` /
+ * `labelVisible()` assertions cannot disagree by construction — they are a
+ * readability aid, not independent corroboration. The string-equality pin is
+ * what actually forbids two expressions that merely agree; the behavioural
+ * cases are what forbid the predicate being the wrong one.
+ *
+ * The behavioural cases are the mutation-sensitive half: each of them had the
+ * label VISIBLE under the superseded `isCompanyCaptured()` gate, so reverting
+ * the template one-liner fails them.
+ */
+describe('the company label is shown exactly when the intent message is', () => {
+    test('both bindings are the same expression, not two that merely agree', () => {
+        expect(labelGateExpression()).toBe(intentMessageGateExpression());
+        // And that shared expression is the intent message's own gate, not a
+        // capture check that both were rewired to.
+        expect(labelGateExpression()).toBe('isOrderIntentMessageVisible()');
+        // The superseded gate is gone from the label specifically. Still
+        // present elsewhere in the template — it governs the capture controls —
+        // so this asserts on the label's tag, not on the whole file.
+        expect(companyLabelTag()).not.toMatch(/isCompanyCaptured/);
+    });
+
+    test('a captured company with no intent placed yet shows neither', () => {
+        // THE case the ruling changes, and the one the old gate got wrong: the
+        // company is fully captured, so `isCompanyCaptured()` is true and the
+        // old label showed. No intent has been placed, so there is no message.
+        const { renderer } = loadRendererOnly();
+
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+
+        expect(renderer.isCompanyCaptured()).toBe(true);
+        expect(intentMessageVisible(renderer)).toBe(false);
+        expect(labelVisible(renderer)).toBe(false);
+    });
+
+    test('an approved intent shows both', () => {
+        const { renderer } = loadRendererOnly();
+
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+        approveIntent(renderer);
+
+        expect(intentMessageVisible(renderer)).toBe(true);
+        expect(labelVisible(renderer)).toBe(true);
+        // The label still renders the company, not the notice copy — tying the
+        // VISIBILITY together does not merge the two texts.
+        expect(renderedLabelText(renderer)).toBe('First Example Ltd (12345678)');
+    });
+
+    test('a declined intent shows neither, though the company is still captured', () => {
+        const { renderer } = loadRendererOnly();
+
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+        approveIntent(renderer);
+        expect(labelVisible(renderer)).toBe(true);
+
+        renderer.processOrderIntentSuccessResponse({ approved: false });
+
+        expect(renderer.isCompanyCaptured()).toBe(true);
+        expect(intentMessageVisible(renderer)).toBe(false);
+        expect(labelVisible(renderer)).toBe(false);
+    });
+
+    test('an errored intent shows neither', () => {
+        // Distinct call site from the declined branch — a separate handler —
+        // and it clears the notice for its own reason (an error says nothing
+        // about approval). Verified by mutation that the declined case above
+        // does not cover it.
+        const { renderer } = loadRendererOnly();
+
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+        approveIntent(renderer);
+        expect(labelVisible(renderer)).toBe(true);
+
+        renderer.processOrderIntentErrorResponse({});
+
+        expect(renderer.isCompanyCaptured()).toBe(true);
+        expect(labelVisible(renderer)).toBe(false);
+        expect(intentMessageVisible(renderer)).toBe(false);
+    });
+
+    test('editing the company after approval hides both again', () => {
+        // The notice is cleared by its own companyName / companyId
+        // subscriptions, because the approval it reports was for the previous
+        // company. The label must follow it down even though the replacement
+        // company is itself fully captured.
+        const { renderer } = loadRendererOnly();
+
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+        approveIntent(renderer);
+        expect(labelVisible(renderer)).toBe(true);
+
+        renderer.applyCompanyData(
+            { companyName: 'Second Example Ltd', companyId: '87654321' },
+            { authoritative: true }
+        );
+
+        expect(renderer.isCompanyCaptured()).toBe(true);
+        expect(intentMessageVisible(renderer)).toBe(false);
+        expect(labelVisible(renderer)).toBe(false);
+    });
+
+    test('editing only the NAME after approval hides both', () => {
+        // The companyName subscription specifically. The test above changes the
+        // company through applyCompanyData(), which writes BOTH observables, so
+        // the companyId subscription alone satisfies it — verified by mutation:
+        // deleting the companyName clear left the whole suite green. This is the
+        // hand-edited-name fail-closed path initOrderIntentApprovedNotice()'s own
+        // comment calls load-bearing, so it gets its own case.
+        const { renderer } = loadRendererOnly();
+
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+        approveIntent(renderer);
+        expect(labelVisible(renderer)).toBe(true);
+
+        // Only the name, as a buyer typing into the input would.
+        renderer.companyName('First Example Limited');
+
+        expect(renderer.companyId()).toBe('12345678');
+        expect(intentMessageVisible(renderer)).toBe(false);
+        expect(labelVisible(renderer)).toBe(false);
+    });
+
+    test('order intent turned off means no notice and so no label, ever', () => {
+        // `enable_order_intent` off: fillCompanyData() never calls
+        // placeOrderIntent(), so nothing sets the notice and the §7 label is
+        // dead for that merchant's whole storefront. A consequence of "exactly
+        // when", not a defect — pinned so it reads as a decision rather than an
+        // oversight, and so widening the predicate cannot happen silently.
+        const { renderer } = loadRendererOnly();
+        const placeOrderIntent = jest.fn();
+        renderer.placeOrderIntent = placeOrderIntent;
+        renderer.isOrderIntentEnabled = false;
+
+        renderer.fillCompanyData({
+            companyName: 'First Example Ltd',
+            companyId: '12345678'
+        });
+
+        // Guard the premise: no intent was even attempted.
+        expect(placeOrderIntent).not.toHaveBeenCalled();
+        expect(renderer.isCompanyCaptured()).toBe(true);
+        expect(intentMessageVisible(renderer)).toBe(false);
+        expect(labelVisible(renderer)).toBe(false);
+    });
+
+    test('a falsy intent response never sets the notice', () => {
+        // The falsy branch of processOrderIntentSuccessResponse(). That branch is
+        // how the Dutch non-BV route surfaces — placeOrderIntent() early-returns
+        // a Deferred resolved with `null` — but be honest about the scope: this
+        // pins the HANDLER, not that route. Verified by mutation that neutering
+        // the NL/BV early return leaves the whole suite green, because nothing
+        // here touches billingAddress or BVCompanyRegex. Pinning the route
+        // itself needs a test driving fillCompanyData() with an NL non-BV
+        // billing address, and that is not this test.
+        const { renderer } = loadRendererOnly();
+
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+        approveIntent(renderer);
+        expect(labelVisible(renderer)).toBe(true);
+
+        renderer.processOrderIntentSuccessResponse(null);
+
+        // Nothing was set OR cleared by the null response — but the company
+        // write that precedes a real intent already cleared it, which is what
+        // makes the label absent on that path.
+        renderer.applyCompanyData(
+            { companyName: 'Dutch Example VOF', companyId: '87654321' },
+            { authoritative: true }
+        );
+        renderer.processOrderIntentSuccessResponse(null);
+
+        expect(renderer.isCompanyCaptured()).toBe(true);
+        expect(intentMessageVisible(renderer)).toBe(false);
+        expect(labelVisible(renderer)).toBe(false);
+    });
+
+    test('a brand that suppresses the notice shows no label either', () => {
+        // <intent_approved_notice_enabled>false</intent_approved_notice_enabled>
+        // leaves orderIntentApprovedNoticeCopy null, so the notice text is
+        // always '' and the message never renders. Under the ruling the label
+        // does not render for that brand either. Flagged deliberately rather
+        // than worked around: it follows from "exactly when". A label wanted
+        // without the notice would be a different rule, and needs the ticket.
+        const { renderer } = loadRendererOnly();
+
+        renderer.initOrderIntentApprovedNotice({});
+        expect(renderer.orderIntentApprovedNoticeCopy).toBeNull();
+
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+        approveIntent(renderer);
+
+        expect(renderer.isCompanyCaptured()).toBe(true);
+        expect(intentMessageVisible(renderer)).toBe(false);
+        expect(labelVisible(renderer)).toBe(false);
+    });
+
+    test('the shared gate survives a renderer that was never initialised', () => {
+        // isOrderIntentMessageVisible() is read from a `visible:` AND an `if:`
+        // binding, and `orderIntentApprovedNotice` is created in
+        // initOrderIntentApprovedNotice() rather than in `defaults` — so on an
+        // uninitialised renderer it is absent. An unguarded read would throw
+        // inside a binding and take the whole payment tile down.
+        const dom = makeRecordingDom();
+        const bare = loadAmdModule(RENDERER, { jquery: dom.$ });
+
+        expect(bare.orderIntentApprovedNotice).toBeUndefined();
+        expect(bare.isOrderIntentMessageVisible()).toBe(false);
     });
 });
 
@@ -767,6 +1096,18 @@ function makeRecordingDom() {
     return { $: $, node: node, writes: writes };
 }
 
+/**
+ * The brand copy ConfigProvider ships for the intent-approved notice. Real
+ * shape (both variants plus the token), because resolveOrderIntentApprovedNotice()
+ * substitutes into it and the label tests depend on the notice actually being
+ * non-empty.
+ */
+const NOTICE_COPY = {
+    withCompany: 'Approved for {company}.',
+    withoutCompany: 'Approved.',
+    companyNameToken: '{company}'
+};
+
 function loadRendererOnly(extraMocks) {
     const dom = makeRecordingDom();
     const renderer = loadAmdModule(
@@ -778,7 +1119,33 @@ function loadRendererOnly(extraMocks) {
     renderer.getCode = function () {
         return 'two_payment';
     };
+    // The intent-approved notice observable is created in
+    // initOrderIntentApprovedNotice(), which initialize() calls — and this
+    // harness deliberately does not boot the component. Called explicitly
+    // rather than faked, so the real observable AND its real companyName /
+    // companyId subscriptions (which clear the notice when the buyer's company
+    // changes) are what the label tests run against. Without this the notice
+    // is absent and the label could never show.
+    renderer.initOrderIntentApprovedNotice({ orderIntentApprovedNotice: NOTICE_COPY });
+    // showErrorMessage() routes through the payment block's messageContainer,
+    // which the renderer-only harness does not model. Needed by the
+    // intent-declined path below.
+    renderer.orderIntentDeclinedMessage = 'Declined.';
+    renderer.messageContainer = {
+        addErrorMessage: function () {},
+        errorMessages: { remove: function () {} }
+    };
     return { renderer: renderer, dom: dom };
+}
+
+/**
+ * Drive the renderer to the state where the inline intent-approved notice is
+ * on screen, through the REAL path — the ajax success handler — rather than by
+ * poking the observable. A test that set the observable by hand would still
+ * pass if processOrderIntentSuccessResponse() stopped setting it.
+ */
+function approveIntent(renderer) {
+    renderer.processOrderIntentSuccessResponse({ approved: true });
 }
 
 describe('an accepted organisation number still reaches the order', () => {

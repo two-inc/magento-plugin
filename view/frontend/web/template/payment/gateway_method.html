@@ -73,10 +73,17 @@
             — between the term chips and the order-intent notice
             (TWO-25326 §7). Canonical placement across all four platforms.
 
-            This does NOT replace the tile's company controls, it swaps with
-            them. While a company is captured the controls below are hidden
-            and this line is shown; while one is not, the controls are visible
-            and this line is not. See isCompanyCaptured() in
+            Shown exactly when the order-intent message below is shown, and
+            hidden exactly when it is hidden (TWO-25326, 2026-08-03) — which is
+            why both bindings call the SAME predicate,
+            isOrderIntentMessageVisible(), rather than each testing its own
+            condition. This supersedes the earlier rule that gated the label on
+            a captured company number.
+
+            It is NOT a swap with the tile's company controls. Those are
+            hidden/shown on isCompanyCaptured() and that rule is unchanged, so
+            a company captured with no approved intent showing hides the
+            controls and shows no label. See isCompanyCaptured() in
             gateway_method.js for why the controls are hidden rather than
             removed — the tile is the ONLY company-capture surface for a buyer
             on a saved address or a virtual cart, and deleting it would block
@@ -97,7 +104,7 @@
         -->
         <div
             class="two-company-label"
-            data-bind="visible: isCompanyCaptured(), text: companyDisplayLabel()"
+            data-bind="visible: isOrderIntentMessageVisible(), text: companyDisplayLabel()"
         ></div>
         <!--
             Persistent inline "order intent approved" notice, inside the
@@ -107,8 +114,13 @@
             in brand.xml) yields no element at all rather than an empty
             wrapper. Class name matches the PrestaShop /
             WooCommerce surfaces so the four platforms stay greppable.
+
+            Gated on isOrderIntentMessageVisible() rather than on the
+            observable directly — same truth value, but it makes the shared
+            gate literal: the company label above reads the identical
+            expression, so the two cannot drift apart.
         -->
-        <!-- ko if: orderIntentApprovedNotice -->
+        <!-- ko if: isOrderIntentMessageVisible() -->
         <div
             class="two-order-intent-message approved"
             role="status"
@@ -257,12 +269,26 @@
                         />
                         <!--
                             The organisation number is NO LONGER shown here.
-                            TWO-25326 §7 replaced the "Company Number"
-                            caption and its separately-rendered value with a
-                            single `Name (number)` text label higher up the
-                            tile, between the term chips and the intent
-                            notice — see `.two-company-label` above and
+                            TWO-25326 §7 moved it into a single
+                            `Name (number)` text label higher up the tile,
+                            between the term chips and the intent notice — see
+                            `.two-company-label` above and
                             companyDisplayLabel() in gateway_method.js.
+
+                            "Moved", not "always replaced". Since the
+                            2026-08-03 ruling that label only renders while
+                            the intent message renders, so in every state
+                            where the notice is absent — no intent placed
+                            yet, declined, errored, a notice-suppressed
+                            brand, order intent off, a Dutch non-BV buyer —
+                            the captured organisation number is displayed
+                            NOWHERE on the payment tile. The address step's
+                            own Company Number field is visually hidden too
+                            (TWO-25288, see style.css), so there is no second
+                            surface picking it up. That is forfeited display,
+                            not a hidden bug: it follows from "exactly when",
+                            and giving the label a second capture-based route
+                            is a ticket decision rather than a tidy-up.
 
                             Removed rather than hidden, unlike the input
                             above it: that input is a capture control and

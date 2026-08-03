@@ -151,7 +151,7 @@ Explicit boolean only:
 | brand.xml                                                                | Behaviour                                                                                  |
 | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
 | `<intent_approved_notice_enabled>true</intent_approved_notice_enabled>`  | Notice **ON**.                                                                             |
-| `<intent_approved_notice_enabled>false</intent_approved_notice_enabled>` | Notice **suppressed entirely** — no element is emitted into the DOM, not an empty wrapper. |
+| `<intent_approved_notice_enabled>false</intent_approved_notice_enabled>` | Notice **suppressed entirely** — no element is emitted into the DOM, not an empty wrapper. Since TWO-25326 this also suppresses the payment tile's captured-company label, whose visibility is tied to the notice's. |
 | element absent                                                           | Documented explicit default **`true`** (notice ON).                                        |
 | anything else (`1`, `0`, `yes`, empty, whitespace)                       | **Error.** Never a silent third behaviour.                                                 |
 

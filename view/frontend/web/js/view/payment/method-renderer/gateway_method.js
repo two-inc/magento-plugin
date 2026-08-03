@@ -297,11 +297,18 @@ define([
          * Has a company actually been CAPTURED — name plus organisation
          * number — as opposed to merely named?
          *
-         * This is the switch TWO-25326 §7 turns on. When it is true the tile
-         * shows the captured company as one line of plain text and hides its
-         * own company controls; when it is false those controls stay visible
-         * and fully functional, because they are the buyer's route to
-         * capturing a company in the first place.
+         * This is the switch that hides the tile's own company CONTROLS. When
+         * it is true the controls are hidden, because capture is complete and
+         * there is nothing left for the buyer to do here; when it is false
+         * they stay visible and fully functional, because they are the buyer's
+         * route to capturing a company in the first place.
+         *
+         * It no longer governs the company LABEL. The label's visibility is
+         * tied to the order-intent message's — see
+         * isOrderIntentMessageVisible() — so this predicate and the label are
+         * NOT two directions of one switch any more. A captured company with
+         * no approved intent showing hides the controls and shows no label,
+         * and that is the ruling, not an oversight.
          *
          * Keeping the controls rather than deleting them is deliberate and
          * load-bearing. The tile's picker is not a duplicate of the address
@@ -318,13 +325,12 @@ define([
          * distinction:
          *
          *  - a registry pick and sole-trader autofill both yield a number, so
-         *    capture is complete and there is nothing left for the buyer to
-         *    do here — show the label;
+         *    capture is complete and the controls can go;
          *  - manual entry yields a name and no number. §6 says name-only must
          *    NOT make the payment method usable, so capture is precisely NOT
-         *    complete, and swapping the controls for a label at that point
-         *    would take away the search box while telling the buyer they were
-         *    finished. The controls stay.
+         *    complete, and hiding the controls at that point would take away
+         *    the search box while telling the buyer they were finished. The
+         *    controls stay.
          *
          * A plain function, not a computed — same reasoning as
          * isCompanyNameReadOnly() above: the template reads it inside `visible`
@@ -341,12 +347,14 @@ define([
          * The captured company as one line of display text for the payment
          * tile (TWO-25326 §7): `Name (12345678)`.
          *
-         * Only ever rendered while isCompanyCaptured() is true, so both parts
-         * are present by construction; the name-only guard below is a
-         * belt-and-braces against a future caller, not a state the template
-         * can reach. Returns '' rather than a bare parenthesised number if a
-         * number ever arrived without a name — nothing to attach it to reads
-         * worse than nothing at all.
+         * Only ever rendered while isOrderIntentMessageVisible() is true, and
+         * that message only exists after an intent was approved for the
+         * company currently in the observables, so both parts are present by
+         * construction; the name-only guard below is a belt-and-braces
+         * against a future caller, not a state the template can reach.
+         * Returns '' rather than a bare parenthesised number if a number ever
+         * arrived without a name — nothing to attach it to reads worse than
+         * nothing at all.
          *
          * The parentheses are the format the ticket specifies literally, and
          * they wrap a VALUE rather than a translated caption. That is why
@@ -366,6 +374,62 @@ define([
             if (!companyName) return '';
             const companyId = (this.companyId() || '').trim();
             return companyId ? companyName + ' (' + companyId + ')' : companyName;
+        },
+        /**
+         * The ONE gate for both the inline order-intent message and the
+         * company label beside it (TWO-25326, ruling of 2026-08-03: the
+         * company label is shown exactly when the intent message is shown and
+         * hidden exactly when it is hidden).
+         *
+         * Both template bindings call THIS, rather than each testing a
+         * condition of its own that happens to agree. That is the whole point
+         * of the method existing: a parallel "is a company captured" check
+         * would agree with the message most of the time and diverge exactly in
+         * the states the ruling asks about — a company captured with no intent
+         * placed yet, an intent that was declined or errored, and a brand that
+         * suppresses the notice altogether
+         * (<intent_approved_notice_enabled>false</intent_approved_notice_enabled>
+         * in brand.xml, which leaves orderIntentApprovedNoticeCopy null so the
+         * notice text is always '').
+         *
+         * READ THIS BEFORE ASSUMING THE LABEL IS ALWAYS AVAILABLE. Two further
+         * configurations mean the notice never appears at all, and therefore
+         * that the §7 company label never renders for those buyers either:
+         *
+         *  - `enable_order_intent` off (Model/Config/Repository.php
+         *    ::isOrderIntentEnabled) — fillCompanyData() skips
+         *    placeOrderIntent() entirely, so nothing ever sets the notice. The
+         *    label is dead for that merchant's whole storefront.
+         *  - a Dutch buyer whose company is not a BV — placeOrderIntent()
+         *    early-returns a Deferred resolved with `null`, so
+         *    processOrderIntentSuccessResponse() sees a falsy response and sets
+         *    nothing.
+         *
+         * Both follow literally from "shown exactly when the intent message is
+         * shown", so they are a consequence of the ruling rather than a defect
+         * here, and they are pinned by tests so they read as decisions. If the
+         * label is meant to survive order intent being off, that is a different
+         * rule and needs the ticket — do not quietly widen this predicate.
+         *
+         * `orderIntentApprovedNotice` is created in
+         * initOrderIntentApprovedNotice() rather than in `defaults` (see the
+         * shared-observable footgun documented there), so it is genuinely
+         * absent on a renderer that has not been initialised. Guarded rather
+         * than assumed: this is read from a `visible:` and an `if:` binding,
+         * and a throw inside either takes the whole tile down.
+         *
+         * Know what the guard trades for that. If a binding ever WERE evaluated
+         * before initOrderIntentApprovedNotice(), ko would register no
+         * dependency on the absent observable, so both the label and the notice
+         * would stay hidden for the life of the tile rather than failing loudly.
+         * Unreachable today — initialize() calls that wiring before bindings
+         * apply — but a future refactor that defers it would produce a silent
+         * permanent hide, not an error.
+         *
+         * @returns {boolean}
+         */
+        isOrderIntentMessageVisible: function () {
+            return !!(this.orderIntentApprovedNotice && this.orderIntentApprovedNotice());
         },
         selectTerm: function (days) {
             surchargeModel.selectTerm(days);
