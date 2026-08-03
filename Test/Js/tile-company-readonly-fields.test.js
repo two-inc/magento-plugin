@@ -943,12 +943,15 @@ describe('the company label is shown exactly when the intent message is', () => 
         expect(labelVisible(renderer)).toBe(false);
     });
 
-    test('a null intent response — the Dutch non-BV path — shows no label', () => {
-        // placeOrderIntent() early-returns a Deferred resolved with `null` for a
-        // Dutch buyer whose company is not a BV, so the success handler sees a
-        // falsy response and sets nothing. Same consequence as above, different
-        // route, and the route most likely to be missed because the intent call
-        // DOES happen.
+    test('a falsy intent response never sets the notice', () => {
+        // The falsy branch of processOrderIntentSuccessResponse(). That branch is
+        // how the Dutch non-BV route surfaces — placeOrderIntent() early-returns
+        // a Deferred resolved with `null` — but be honest about the scope: this
+        // pins the HANDLER, not that route. Verified by mutation that neutering
+        // the NL/BV early return leaves the whole suite green, because nothing
+        // here touches billingAddress or BVCompanyRegex. Pinning the route
+        // itself needs a test driving fillCompanyData() with an NL non-BV
+        // billing address, and that is not this test.
         const { renderer } = loadRendererOnly();
 
         renderer.applyCompanyData(

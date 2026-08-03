@@ -269,12 +269,26 @@
                         />
                         <!--
                             The organisation number is NO LONGER shown here.
-                            TWO-25326 §7 replaced the "Company Number"
-                            caption and its separately-rendered value with a
-                            single `Name (number)` text label higher up the
-                            tile, between the term chips and the intent
-                            notice — see `.two-company-label` above and
+                            TWO-25326 §7 moved it into a single
+                            `Name (number)` text label higher up the tile,
+                            between the term chips and the intent notice — see
+                            `.two-company-label` above and
                             companyDisplayLabel() in gateway_method.js.
+
+                            "Moved", not "always replaced". Since the
+                            2026-08-03 ruling that label only renders while
+                            the intent message renders, so in every state
+                            where the notice is absent — no intent placed
+                            yet, declined, errored, a notice-suppressed
+                            brand, order intent off, a Dutch non-BV buyer —
+                            the captured organisation number is displayed
+                            NOWHERE on the payment tile. The address step's
+                            own Company Number field is visually hidden too
+                            (TWO-25288, see style.css), so there is no second
+                            surface picking it up. That is forfeited display,
+                            not a hidden bug: it follows from "exactly when",
+                            and giving the label a second capture-based route
+                            is a ticket decision rather than a tidy-up.
 
                             Removed rather than hidden, unlike the input
                             above it: that input is a capture control and

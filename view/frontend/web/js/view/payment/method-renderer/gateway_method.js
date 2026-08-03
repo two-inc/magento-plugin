@@ -418,6 +418,14 @@ define([
          * than assumed: this is read from a `visible:` and an `if:` binding,
          * and a throw inside either takes the whole tile down.
          *
+         * Know what the guard trades for that. If a binding ever WERE evaluated
+         * before initOrderIntentApprovedNotice(), ko would register no
+         * dependency on the absent observable, so both the label and the notice
+         * would stay hidden for the life of the tile rather than failing loudly.
+         * Unreachable today — initialize() calls that wiring before bindings
+         * apply — but a future refactor that defers it would produce a silent
+         * permanent hide, not an error.
+         *
          * @returns {boolean}
          */
         isOrderIntentMessageVisible: function () {
