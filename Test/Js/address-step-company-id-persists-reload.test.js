@@ -263,7 +263,7 @@ function makeCheckoutWorld(storage) {
  * its provider path, plus Knockout's `value:` binding copying it into the DOM
  * input.
  */
-function makeCompanyIdComponent(provider) {
+function makeCompanyIdComponent(provider, mirrorToDom) {
     const component = {
         value: makeObservable(''),
         disabled: makeObservable(true)
@@ -271,7 +271,10 @@ function makeCompanyIdComponent(provider) {
     component.value.subscribe(function (next) {
         // The element's `links: {value: '${$.provider}:${$.dataScope}'}`.
         provider.set(ID_PATH, next);
-        // `ui/form/element/input`'s `value:` binding, DOM side.
+        // `ui/form/element/input`'s `value:` binding, DOM side. Suppressible
+        // because its ordering against OUR subscriber on the same observable is
+        // a Knockout internal, and the display read must not depend on it.
+        if (mirrorToDom === false) return;
         const input = document.querySelector(ID_SELECTOR);
         if (input) input.value = next == null ? '' : String(next);
     });
@@ -288,6 +291,9 @@ function makeCompanyIdComponent(provider) {
  * @param {boolean} [options.restoreBeforeInit] apply the restored number before
  *        `initialize()` runs. False models the provider push landing AFTER the
  *        component's `$.async` resolves, which is not ordered against it.
+ * @param {boolean} [options.mirrorToDom] false suppresses Knockout's `value:`
+ *        binding writing the component's value into the input, modelling the
+ *        instant before it does so.
  */
 function pageLoad(storage, options) {
     const opts = options || {};
@@ -312,7 +318,7 @@ function pageLoad(storage, options) {
 
     const $ = makeMiniQuery();
     const provider = makeCheckoutWorld(storage);
-    const companyIdComponent = makeCompanyIdComponent(provider);
+    const companyIdComponent = makeCompanyIdComponent(provider, opts.mirrorToDom);
     const companyDataSection = makeObservable(storage.companyData);
 
     const restore = function () {
@@ -430,6 +436,24 @@ describe('TWO-25326 §5: the captured company number survives a page reload', ()
 
         second.restore();
 
+        expect(labels()).toHaveLength(1);
+        expect(labels()[0].textContent).toBe('919300894');
+    });
+
+    test('the label reads the component when the input has not caught up yet', () => {
+        // The restore paints from a subscriber on the component's `value`
+        // observable, and Knockout's own `value:` binding is another subscriber
+        // on it. Which of the two runs first is a Knockout internal, so the
+        // display read must not depend on the input being updated already.
+        const storage = {};
+        const first = pageLoad(storage);
+        first.component.setCompanyData('919300894', 'Example Trading AS');
+        storage.companyName = 'Example Trading AS';
+
+        const second = pageLoad(storage, { restoreBeforeInit: false, mirrorToDom: false });
+        second.restore();
+
+        expect(document.querySelector(ID_SELECTOR).value).toBe('');
         expect(labels()).toHaveLength(1);
         expect(labels()[0].textContent).toBe('919300894');
     });
