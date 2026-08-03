@@ -174,9 +174,188 @@ define([
             this.publishCompanyData(companyId, companyName);
             $('.select2-selection__rendered').text(companyName);
             $(this.companyNameSelector).val(companyName);
-            $(this.companyIdSelector).val(companyId);
+            this.setCompanyIdValue(companyId);
             this.syncCompanyIdEditable();
             this.renderCompanyIdText();
+        },
+        /**
+         * Write the captured organisation number so that it SURVIVES A PAGE
+         * RELOAD, which a `$(…).val()` write on its own does not.
+         *
+         * The asymmetry this closes: after picking a company, a reload kept the
+         * name on the form and lost the number. Nothing about the number was
+         * being forgotten deliberately — it never reached the store the name
+         * reaches.
+         *
+         * Magento persists the address form by listening for changes on the
+         * `checkoutProvider`'s `shippingAddress` data
+         * (`Magento_Checkout/js/view/shipping.js` → `checkoutData
+         * .setShippingAddressFromData`), writes them to the `checkout-data`
+         * localStorage section, and on the next load pushes the whole saved
+         * object — `custom_attributes` included — back into the provider before
+         * the fields render. So the provider is the persistence boundary, and
+         * only a value the provider has SEEN is restored.
+         *
+         * The company NAME crosses that boundary for free: select2 fires a
+         * native `change` on the input when a result is picked, `ui/form/
+         * element/input`'s `value:` binding reads the DOM on `change`, and the
+         * element's `value` observable is two-way linked to its provider path.
+         * The company NUMBER had no such route — it is written by us, not by a
+         * widget, and a jQuery `.val()` write raises no event Knockout listens
+         * for. The provider therefore never learned the number, nothing was
+         * saved, and there was nothing to restore.
+         *
+         * Writing through the component is what publishes to the provider; the
+         * DOM write is kept for the same reason `setCompanyIdDisabled()` keeps
+         * one — `uiRegistry.get()` yields nothing if this runs before the
+         * component registers, and `needsManualCompanyId()` reads the field's
+         * value straight off the DOM in the same tick.
+         *
+         * Deliberately NOT done by triggering `change` on the input instead:
+         * that would also fire our own change handler, which republishes the
+         * `companyData` customer-data section — and the payment step reads a
+         * change NOTIFICATION on that section as an act of selection, so every
+         * pick would announce itself twice.
+         *
+         * The DOM write goes FIRST. The component write notifies subscribers
+         * synchronously, one of which re-renders the number label off
+         * `capturedCompanyId()`, which reads the DOM before the component — so
+         * writing the component first paints the PREVIOUS company's number for
+         * the rest of the tick, and paints a number at all on the clearing path.
+         */
+        setCompanyIdValue: function (companyId) {
+            $(this.companyIdSelector).val(companyId);
+            const component = uiRegistry.get(this.companyIdComponent);
+            if (component && typeof component.value === 'function') {
+                component.value(companyId);
+            }
+        },
+        /**
+         * Re-paint the number label whenever the company-number component's
+         * value changes underneath us.
+         *
+         * The one case this is for is a reload: the number is restored into the
+         * form by Magento pushing the saved `shippingAddress` object back into
+         * the `checkoutProvider`, and that push is not ordered against either of
+         * this component's `$.async` resolves. If it lands last, both render
+         * calls have already run against an empty field and the buyer sees the
+         * name with no number — the original bug, in a narrower window.
+         *
+         * ONE subscription at a time, and it belongs to the CURRENT view. The
+         * `company_id` uiRegistry component outlives this view — that is exactly
+         * why `$.async` refires on a re-render while `uiRegistry.get()` keeps
+         * returning the same object — so a subscription simply left in place
+         * both retains every superseded view for the life of the page and leaves
+         * the live subscriber closed over a stale one. Disposing the previous
+         * subscription and taking a fresh one is what keeps those two properties
+         * ("no stacking", "the current view renders") from being in tension. The
+         * handle is stored on the COMPONENT, because the view being replaced is
+         * the thing that cannot be relied on to still be around.
+         *
+         * Deliberately does NOT re-derive editability (`syncCompanyIdEditable`).
+         * That derivation reads the number field's own value, and this fires on
+         * the buyer's own `change` too — so re-deriving here would disable the
+         * field the moment they blurred it, which is the exact footgun the
+         * derivation's own docblock warns against. The cost is that a number
+         * restored LATE leaves the field enabled when it should be disabled;
+         * that is invisible today because the field is CSS-hidden
+         * unconditionally, and it is the lesser of the two.
+         *
+         * Same reason this fires on a buyer's own edit at all: Knockout's
+         * `value:` binding writes the observable on `change`. A hand-typed number
+         * therefore gets country-checked against the stamp of the PREVIOUS,
+         * searched company. Also unreachable while the field is CSS-hidden, and
+         * recorded here rather than guarded because the guard's own subject —
+         * a number restored from a previous visit — is the only thing that
+         * reaches it today.
+         */
+        watchCompanyIdComponent: function () {
+            const component = uiRegistry.get(this.companyIdComponent);
+            if (!component || typeof component.value !== 'function') return;
+            if (typeof component.value.subscribe !== 'function') return;
+            if (
+                component._twoCompanyIdSubscription &&
+                typeof component._twoCompanyIdSubscription.dispose === 'function'
+            ) {
+                component._twoCompanyIdSubscription.dispose();
+            }
+            const self = this;
+            component._twoCompanyIdSubscription = component.value.subscribe(function () {
+                // Guard BEFORE render, and on this path specifically: the
+                // one-shot guard on the `$.async` resolve runs while the field is
+                // still empty, so a number restored late is a number the guard
+                // has never seen. Without this the whole country check is dead on
+                // exactly the ordering this subscription exists for.
+                self.discardForeignCountryCompanyId();
+                self.renderCompanyIdText();
+            });
+        },
+        /**
+         * Discard a restored organisation number that belongs to a different
+         * country from the one the form is now showing (TWO-24867).
+         *
+         * The number now persists in `checkout-data` and is restored into the
+         * form on the next load — which is the point of this fix — but that
+         * saved blob carries no record of the country it was captured in, while
+         * the `companyData` customer-data section does. Left unchecked, a GB
+         * organisation number could be restored onto a checkout sitting on an ES
+         * address and credit-checked there: refused upstream, and surfaced to
+         * the buyer as a generic failure with nothing on screen explaining it.
+         * `onCountryChanged` cannot reach this case, because nothing changed in
+         * THIS page.
+         *
+         * Fails OPEN on a missing stamp, matching the same guard on the payment
+         * step: records written before the stamp existed carry no country, and
+         * treating "unstamped" as "wrong country" would drop a legitimate
+         * company on the first load after an upgrade.
+         *
+         * Clears the number only, never the name. A name with no identifier is
+         * an understood state — the payment step routes it to
+         * `selectCompanyWithoutIdentifier()` and the order is refused
+         * server-side — whereas a name silently blanked on load looks like data
+         * loss.
+         *
+         * Re-entrant by construction and terminating: the clear runs through
+         * `setCompanyIdValue()`, which notifies the component subscribers, one of
+         * which calls this again — and under the input-first order that method
+         * uses, the second pass reads empty from the input AND from the component
+         * and returns at the first line. That is the whole of it; no reliance on
+         * Knockout suppressing a same-value notification. Reverse those two
+         * writes and termination would rest on that suppression instead, which is
+         * a second reason not to (the first being the stale label).
+         *
+         * Reads the country off the SELECT, which makes this dependent on the
+         * select being rendered and holding the restored country by the time the
+         * number arrives. Two things hold that up rather than one, so it is
+         * stated rather than assumed: `country_id` is forced to sort before
+         * `company`/`street` (LayoutProcessorPlugin::moveCountryBeforeCompany,
+         * for unrelated reasons) while this field sorts at 65, and an absent or
+         * empty select fails open below. If a store ever did present the store
+         * default here before the restore landed, this would discard a VALID
+         * number persistently — the clear reaches `checkout-data` — so that
+         * ordering is the thing to check first if a valid number ever goes
+         * missing.
+         */
+        discardForeignCountryCompanyId: function () {
+            // `capturedCompanyId()`, not the input alone. This runs immediately
+            // before the render, off the same notification, and the render reads
+            // the component when the input has not caught up — so an
+            // input-only read here would bail out on exactly the ordering the
+            // render refuses to assume, and the number it declined to check is
+            // the one that then gets painted and left in the provider.
+            if (!this.capturedCompanyId()) return;
+            const capturedCountry = (customerData.get('companyData')() || {}).companyCountry;
+            const currentCountry = this.currentCountryCode();
+            if (!capturedCountry || !currentCountry) return;
+            if (String(capturedCountry).toLowerCase() === String(currentCountry).toLowerCase()) {
+                return;
+            }
+            console.debug({
+                logger: 'addressAutocomplete.discardForeignCountryCompanyId',
+                capturedCountry,
+                currentCountry
+            });
+            this.setCompanyIdValue('');
         },
         /**
          * Class on the address-step company-number text label. Also the hook
@@ -220,7 +399,7 @@ define([
             if (!$control.length) return;
             $control.find('.' + this.companyIdTextClass).remove();
             if (!this.isCompanySearchActive()) return;
-            const companyId = $(this.companyIdSelector).val();
+            const companyId = this.capturedCompanyId();
             if (!companyId) return;
             $control.append(
                 $('<div></div>')
@@ -228,6 +407,34 @@ define([
                     .attr('aria-label', $t('Company Number'))
                     .text(companyId)
             );
+        },
+        /**
+         * The organisation number currently captured, for DISPLAY.
+         *
+         * The DOM field first, then the UI component. Not an ordering
+         * preference — the two are written together by setCompanyIdValue() and
+         * agree — but an ordering that needs no assumption about which of them
+         * a reload populates first. On the restore path Knockout's `value:`
+         * binding copies the component's value into the input, and this is read
+         * from a subscriber on that same observable, so "the DOM is already
+         * updated" would be a claim about Knockout's internal subscription
+         * order. Reading both removes the claim.
+         *
+         * Display only. `needsManualCompanyId()` still reads the DOM alone and
+         * must keep doing so: it derives whether the buyer may TYPE here, and
+         * the value they are mid-way through typing lives in the input.
+         *
+         * @returns {string}
+         */
+        capturedCompanyId: function () {
+            const fromDom = $(this.companyIdSelector).val();
+            if (fromDom) return fromDom;
+            const component = uiRegistry.get(this.companyIdComponent);
+            if (component && typeof component.value === 'function') {
+                const value = component.value();
+                return value == null ? '' : String(value);
+            }
+            return '';
         },
         /**
          * True while select2 owns the company-name input, i.e. while the buyer
@@ -353,7 +560,19 @@ define([
                 // A form rendered with an address already on it (returning
                 // customer, or a reload mid-checkout) never passes through
                 // setCompanyData(), so derive once on resolve.
+                // Before the derivation and the label, both of which would
+                // otherwise act on a number belonging to another country.
+                self.discardForeignCountryCompanyId();
                 self.syncCompanyIdEditable();
+                // …and paint the number label for that same case. A reload
+                // restores the number into this field from the provider, not
+                // through setCompanyData(), so nothing else would render it.
+                // Called from BOTH sides of the race deliberately: the picker's
+                // own bind (enableCompanySearch) also renders, because the
+                // label needs select2 present AND the number present and
+                // neither `$.async` can be relied on to resolve second.
+                self.renderCompanyIdText();
+                self.watchCompanyIdComponent();
             });
             $.async(this.companyNameSelector, function (companyNameField) {
                 // Only meaningful after the manual-entry row has destroyed
