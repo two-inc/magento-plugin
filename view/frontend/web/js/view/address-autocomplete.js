@@ -260,6 +260,14 @@ define([
          * restored LATE leaves the field enabled when it should be disabled;
          * that is invisible today because the field is CSS-hidden
          * unconditionally, and it is the lesser of the two.
+         *
+         * Same reason this fires on a buyer's own edit at all: Knockout's
+         * `value:` binding writes the observable on `change`. A hand-typed number
+         * therefore gets country-checked against the stamp of the PREVIOUS,
+         * searched company. Also unreachable while the field is CSS-hidden, and
+         * recorded here rather than guarded because the guard's own subject —
+         * a number restored from a previous visit — is the only thing that
+         * reaches it today.
          */
         watchCompanyIdComponent: function () {
             const component = uiRegistry.get(this.companyIdComponent);
@@ -310,8 +318,10 @@ define([
          *
          * Re-entrant by construction and terminating: the clear runs through
          * `setCompanyIdValue()`, which notifies the component subscribers, one of
-         * which calls this again — on a field that is empty by then, so the
-         * second call returns at the first line.
+         * which calls this again — and by then both the input and the component
+         * read empty, so the second pass returns at the first line whichever of
+         * the two `setCompanyIdValue()` writes went first. Termination does not
+         * rest on that write order.
          *
          * Reads the country off the SELECT, which makes this dependent on the
          * select being rendered and holding the restored country by the time the
@@ -326,7 +336,13 @@ define([
          * missing.
          */
         discardForeignCountryCompanyId: function () {
-            if (!$(this.companyIdSelector).val()) return;
+            // `capturedCompanyId()`, not the input alone. This runs immediately
+            // before the render, off the same notification, and the render reads
+            // the component when the input has not caught up — so an
+            // input-only read here would bail out on exactly the ordering the
+            // render refuses to assume, and the number it declined to check is
+            // the one that then gets painted and left in the provider.
+            if (!this.capturedCompanyId()) return;
             const capturedCountry = (customerData.get('companyData')() || {}).companyCountry;
             const currentCountry = this.currentCountryCode();
             if (!capturedCountry || !currentCountry) return;

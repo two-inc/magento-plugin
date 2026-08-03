@@ -576,6 +576,33 @@ describe('TWO-25326 §5: the captured company number survives a page reload', ()
         expect(storage[ID_PATH]).toBe('');
     });
 
+    test('a foreign number is discarded when only the component holds it', () => {
+        // The discard runs immediately before the render, off the same
+        // notification, and the render reads the component when the input has not
+        // caught up. So the discard has to read the same pair — an input-only
+        // read bails out on exactly that ordering, and the number it declined to
+        // check is then painted and left in the provider to be credit-checked.
+        const storage = {};
+        storage[ID_PATH] = '919300894';
+        storage.companyName = 'Example Trading AS';
+        storage.companyData = {
+            companyId: '919300894',
+            companyName: 'Example Trading AS',
+            companyCountry: 'gb'
+        };
+
+        const load = pageLoad(storage, {
+            country: 'ES',
+            restoreBeforeInit: false,
+            mirrorToDom: false
+        });
+        load.restore();
+
+        expect(load.companyIdComponent.value()).toBe('');
+        expect(labels()).toHaveLength(0);
+        expect(storage[ID_PATH]).toBe('');
+    });
+
     test('an unstamped record fails open rather than dropping a valid number', () => {
         // Records written before the country stamp existed carry none, and
         // treating unstamped as wrong-country would drop a legitimate company on
