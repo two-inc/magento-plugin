@@ -62,7 +62,7 @@ jobs:
     runs-on: ${{ vars.RUNNER_STANDARD }}
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - run: .github/scripts/test-decide-bump-level.sh
 
   bump:
@@ -81,7 +81,7 @@ jobs:
           client-id: ${{ vars.TWO_INC_APP_CLIENT_ID }}
           private-key: ${{ secrets.TWO_INC_APP_PRIVATE_KEY }}
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # The PR's head BRANCH, not the merge ref: the bump commit has to land
           # on the contributor's branch, so HEAD must be the branch tip and not
@@ -104,7 +104,7 @@ jobs:
         id: decide
         run: .github/scripts/decide-bump-level.sh origin/staging HEAD
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         if: steps.decide.outputs.changed == 'true'
         with:
           python-version: "3.12"
