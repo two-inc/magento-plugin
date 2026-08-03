@@ -496,30 +496,34 @@ describe('TWO-25326 §5: the captured company number survives a page reload', ()
         expect(labels()).toHaveLength(0);
     });
 
-    test('the input is already updated when the component notifies', () => {
+    test('the label the component notification paints is the NEW number', () => {
         // Ordering inside setCompanyIdValue(). The component write notifies
-        // synchronously and the label renders from a subscriber, and that render
-        // reads the input first — so a component-first write paints the PREVIOUS
-        // company's number for the rest of the tick, and paints a number at all
+        // synchronously and the label renders from that subscriber, and the
+        // render reads the input before the component — so a component-first
+        // write paints the PREVIOUS company's number, and paints a number at all
         // while clearing.
+        //
+        // Asserted with Knockout's DOM mirror suppressed. With the mirror in
+        // place it is registered before the module's own subscriber and updates
+        // the input first, which hides the ordering entirely — a test that let it
+        // run would pass whichever way round the two writes went.
         const storage = {};
-        const first = pageLoad(storage);
+        const first = pageLoad(storage, { mirrorToDom: false });
         first.component.setCompanyData('919300894', 'Example Trading AS');
 
-        const seen = [];
+        // Registered after the module's subscriber, so it observes the label the
+        // module has just painted rather than racing it.
+        const painted = [];
         first.companyIdComponent.value.subscribe(function (next) {
-            seen.push({
-                notified: next,
-                inInput: document.querySelector(ID_SELECTOR).value
-            });
+            painted.push({ notified: next, label: labels().length ? labels()[0].textContent : null });
         });
 
         first.component.setCompanyData('811912312', 'Other Example AS');
         first.component.setCompanyData();
 
-        expect(seen).toEqual([
-            { notified: '811912312', inInput: '811912312' },
-            { notified: '', inInput: '' }
+        expect(painted).toEqual([
+            { notified: '811912312', label: '811912312' },
+            { notified: '', label: null }
         ]);
     });
 
