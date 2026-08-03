@@ -279,7 +279,6 @@ define([
             ) {
                 component._twoCompanyIdSubscription.dispose();
             }
-            component._twoCompanyIdSubscription = null;
             const self = this;
             component._twoCompanyIdSubscription = component.value.subscribe(function () {
                 // Guard BEFORE render, and on this path specifically: the
@@ -318,10 +317,12 @@ define([
          *
          * Re-entrant by construction and terminating: the clear runs through
          * `setCompanyIdValue()`, which notifies the component subscribers, one of
-         * which calls this again — and by then both the input and the component
-         * read empty, so the second pass returns at the first line whichever of
-         * the two `setCompanyIdValue()` writes went first. Termination does not
-         * rest on that write order.
+         * which calls this again — and under the input-first order that method
+         * uses, the second pass reads empty from the input AND from the component
+         * and returns at the first line. That is the whole of it; no reliance on
+         * Knockout suppressing a same-value notification. Reverse those two
+         * writes and termination would rest on that suppression instead, which is
+         * a second reason not to (the first being the stale label).
          *
          * Reads the country off the SELECT, which makes this dependent on the
          * select being rendered and holding the restored country by the time the
