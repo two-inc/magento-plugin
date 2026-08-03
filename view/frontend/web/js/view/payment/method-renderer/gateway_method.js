@@ -263,6 +263,14 @@ define([
             if (this.isTwoVisible && this.isTwoVisible.dispose) {
                 this.isTwoVisible.dispose();
             }
+            // TWO-25347: tear down fillCustomerData()'s subscriptions to the
+            // shared quote/customerData singletons — see that method's own
+            // comment for why an undisposed set there fired stacked
+            // concurrent order_intent POSTs on Fire Checkout specifically.
+            if (this._customerDataSubs) {
+                this._customerDataSubs.forEach((sub) => sub.dispose());
+                this._customerDataSubs = null;
+            }
             this._super();
         },
         /**
@@ -481,11 +489,28 @@ define([
             $('#select2-company_name-container')?.text(companyName);
             this.companyId(companyId);
             if (this.isOrderIntentEnabled) {
+                // TWO-25347 belt-and-braces: refuse a second concurrent
+                // order_intent POST for the SAME captured company. The root
+                // cause — fillCustomerData() stacking undisposed
+                // subscriptions on every re-render, each one independently
+                // reaching fillCompanyData() for an unchanged company pick
+                // — is fixed in dispose()/fillCustomerData() above; this
+                // guard is a second line of defence against any other path
+                // that could re-enter here before the first request settles
+                // (Fire Checkout re-renders this payment renderer on every
+                // totals/shipping change).
+                if (this._orderIntentInFlightFor === companyId) {
+                    return;
+                }
+                this._orderIntentInFlightFor = companyId;
                 fullScreenLoader.startLoader();
                 const self = this;
                 this.placeOrderIntent()
                     .always(function () {
                         fullScreenLoader.stopLoader();
+                        if (self._orderIntentInFlightFor === companyId) {
+                            self._orderIntentInFlightFor = null;
+                        }
                     })
                     .done(function (response) {
                         self.processOrderIntentSuccessResponse(response);
@@ -759,18 +784,30 @@ define([
             this.updateAddress(billingAddress);
         },
         /**
-         * PRE-EXISTING, not introduced here, flagged so it is not mistaken for
-         * new: none of the subscriptions below are disposed, and
-         * fillCustomerData() is re-callable (registeredOrganisationMode(),
-         * reached from applyPrefetch()). N calls therefore leave N stacked
-         * subscriptions on each section, so one notification runs
-         * applyCompanyData() N times. Idempotent today, so it is waste rather
-         * than a bug — out of scope for this change.
+         * TWO-25347: an earlier version of this comment called the
+         * undisposed subscriptions below "idempotent today... waste rather
+         * than a bug". That was wrong about the network side effect
+         * specifically — N stacked subscriptions run applyCompanyData() N
+         * times, and each of THOSE independently drives fillCompanyData() →
+         * placeOrderIntent(), so N stacked subscriptions fired N concurrent
+         * order_intent POSTs for a single company pick. Fire Checkout
+         * re-renders this payment renderer on every totals/shipping change
+         * (see payment-availability.js), so it hit this far more often than
+         * Luma/Amasty and was the one where it surfaced. Fixed below by
+         * disposing the previous set on every call and disposing the
+         * current set in dispose(), mirroring the `_twoVisibilitySub`
+         * pattern already in place for the minimum-order subscription.
          */
         fillCustomerData: function () {
             const self = this;
 
-            customerData
+            // See the docblock above for why this is here.
+            if (this._customerDataSubs) {
+                this._customerDataSubs.forEach((sub) => sub.dispose());
+            }
+            this._customerDataSubs = [];
+
+            this._customerDataSubs.push(customerData
                 .get('companyData')
                 // Authoritative: a change NOTIFICATION on this section is the
                 // shipping-step picker writing it, so an identifier-less
@@ -791,7 +828,7 @@ define([
                 // one-shot read below exists to prevent.
                 .subscribe((companyData) =>
                     self.applyCompanyData(companyData, { authoritative: true })
-                );
+                ));
             // NOT authoritative: this is a one-shot read of a localStorage
             // section that outlives page loads and previous orders, and
             // fillCustomerData() is re-callable (registeredOrganisationMode(),
@@ -799,20 +836,24 @@ define([
             // companyId: ''}` row must not overwrite a live payment-step pick.
             this.applyCompanyData(customerData.get('companyData')());
 
-            customerData
+            this._customerDataSubs.push(customerData
                 .get('shippingTelephone')
-                .subscribe((telephone) => self.fillTelephone(telephone));
+                .subscribe((telephone) => self.fillTelephone(telephone)));
             this.fillTelephone(customerData.get('shippingTelephone')());
 
-            customerData
+            this._customerDataSubs.push(customerData
                 .get('countryCode')
-                .subscribe((countryCode) => self.fillCountryCode(countryCode));
+                .subscribe((countryCode) => self.fillCountryCode(countryCode)));
             this.fillCountryCode(customerData.get('countryCode')());
 
-            quote.shippingAddress.subscribe((address) => self.updateShippingAddress(address));
+            this._customerDataSubs.push(
+                quote.shippingAddress.subscribe((address) => self.updateShippingAddress(address))
+            );
             this.updateShippingAddress(quote.shippingAddress());
 
-            quote.billingAddress.subscribe((address) => self.updateBillingAddress(address));
+            this._customerDataSubs.push(
+                quote.billingAddress.subscribe((address) => self.updateBillingAddress(address))
+            );
             this.updateBillingAddress(quote.billingAddress());
         },
         afterPlaceOrder: function () {
