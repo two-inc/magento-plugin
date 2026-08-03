@@ -545,9 +545,35 @@ describe('TWO-25326 §5: the captured company number survives a page reload', ()
 
         expect(document.querySelector(ID_SELECTOR).value).toBe('');
         expect(labels()).toHaveLength(0);
+        // The discard reaches `checkout-data` as well, so the number does not
+        // come back on the load after this one. That persistence is also why a
+        // misfire would be unrecoverable, which is why it is asserted.
+        expect(storage[ID_PATH]).toBe('');
         // The NAME is left alone: a name with no identifier is an understood
         // state, while a name blanked on load reads as data loss.
         expect(document.querySelector(NAME_SELECTOR).value).toBe('Example Trading AS');
+    });
+
+    test('a foreign number is discarded even when it arrives after init', () => {
+        // The one-shot guard on the `$.async` resolve runs while the field is
+        // still empty, so a number restored late is one the guard never saw. This
+        // is the ordering the value subscription exists for, and the country
+        // check has to hold on it too or it is dead on the path that matters.
+        const storage = {};
+        storage[ID_PATH] = '919300894';
+        storage.companyName = 'Example Trading AS';
+        storage.companyData = {
+            companyId: '919300894',
+            companyName: 'Example Trading AS',
+            companyCountry: 'gb'
+        };
+
+        const load = pageLoad(storage, { country: 'ES', restoreBeforeInit: false });
+        load.restore();
+
+        expect(document.querySelector(ID_SELECTOR).value).toBe('');
+        expect(labels()).toHaveLength(0);
+        expect(storage[ID_PATH]).toBe('');
     });
 
     test('an unstamped record fails open rather than dropping a valid number', () => {

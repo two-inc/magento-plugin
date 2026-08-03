@@ -265,11 +265,21 @@ define([
             const component = uiRegistry.get(this.companyIdComponent);
             if (!component || typeof component.value !== 'function') return;
             if (typeof component.value.subscribe !== 'function') return;
-            if (component._twoCompanyIdSubscription) {
+            if (
+                component._twoCompanyIdSubscription &&
+                typeof component._twoCompanyIdSubscription.dispose === 'function'
+            ) {
                 component._twoCompanyIdSubscription.dispose();
             }
+            component._twoCompanyIdSubscription = null;
             const self = this;
             component._twoCompanyIdSubscription = component.value.subscribe(function () {
+                // Guard BEFORE render, and on this path specifically: the
+                // one-shot guard on the `$.async` resolve runs while the field is
+                // still empty, so a number restored late is a number the guard
+                // has never seen. Without this the whole country check is dead on
+                // exactly the ordering this subscription exists for.
+                self.discardForeignCountryCompanyId();
                 self.renderCompanyIdText();
             });
         },
@@ -297,6 +307,23 @@ define([
          * `selectCompanyWithoutIdentifier()` and the order is refused
          * server-side — whereas a name silently blanked on load looks like data
          * loss.
+         *
+         * Re-entrant by construction and terminating: the clear runs through
+         * `setCompanyIdValue()`, which notifies the component subscribers, one of
+         * which calls this again — on a field that is empty by then, so the
+         * second call returns at the first line.
+         *
+         * Reads the country off the SELECT, which makes this dependent on the
+         * select being rendered and holding the restored country by the time the
+         * number arrives. Two things hold that up rather than one, so it is
+         * stated rather than assumed: `country_id` is forced to sort before
+         * `company`/`street` (LayoutProcessorPlugin::moveCountryBeforeCompany,
+         * for unrelated reasons) while this field sorts at 65, and an absent or
+         * empty select fails open below. If a store ever did present the store
+         * default here before the restore landed, this would discard a VALID
+         * number persistently — the clear reaches `checkout-data` — so that
+         * ordering is the thing to check first if a valid number ever goes
+         * missing.
          */
         discardForeignCountryCompanyId: function () {
             if (!$(this.companyIdSelector).val()) return;
