@@ -174,9 +174,81 @@ define([
             this.publishCompanyData(companyId, companyName);
             $('.select2-selection__rendered').text(companyName);
             $(this.companyNameSelector).val(companyName);
-            $(this.companyIdSelector).val(companyId);
+            this.setCompanyIdValue(companyId);
             this.syncCompanyIdEditable();
             this.renderCompanyIdText();
+        },
+        /**
+         * Write the captured organisation number so that it SURVIVES A PAGE
+         * RELOAD, which a `$(…).val()` write on its own does not.
+         *
+         * The asymmetry this closes: after picking a company, a reload kept the
+         * name on the form and lost the number. Nothing about the number was
+         * being forgotten deliberately — it never reached the store the name
+         * reaches.
+         *
+         * Magento persists the address form by listening for changes on the
+         * `checkoutProvider`'s `shippingAddress` data
+         * (`Magento_Checkout/js/view/shipping.js` → `checkoutData
+         * .setShippingAddressFromData`), writes them to the `checkout-data`
+         * localStorage section, and on the next load pushes the whole saved
+         * object — `custom_attributes` included — back into the provider before
+         * the fields render. So the provider is the persistence boundary, and
+         * only a value the provider has SEEN is restored.
+         *
+         * The company NAME crosses that boundary for free: select2 fires a
+         * native `change` on the input when a result is picked, `ui/form/
+         * element/input`'s `value:` binding reads the DOM on `change`, and the
+         * element's `value` observable is two-way linked to its provider path.
+         * The company NUMBER had no such route — it is written by us, not by a
+         * widget, and a jQuery `.val()` write raises no event Knockout listens
+         * for. The provider therefore never learned the number, nothing was
+         * saved, and there was nothing to restore.
+         *
+         * Writing through the component is what publishes to the provider; the
+         * DOM write is kept for the same reason `setCompanyIdDisabled()` keeps
+         * one — `uiRegistry.get()` yields nothing if this runs before the
+         * component registers, and `needsManualCompanyId()` reads the field's
+         * value straight off the DOM in the same tick.
+         *
+         * Deliberately NOT done by triggering `change` on the input instead:
+         * that would also fire our own change handler, which republishes the
+         * `companyData` customer-data section — and the payment step reads a
+         * change NOTIFICATION on that section as an act of selection, so every
+         * pick would announce itself twice.
+         */
+        /**
+         * Re-paint the number label whenever the company-number component's
+         * value changes underneath us.
+         *
+         * The one case this is for is a reload: the number is restored into the
+         * form by Magento pushing the saved `shippingAddress` object back into
+         * the `checkoutProvider`, and that push is not ordered against either of
+         * this component's `$.async` resolves. If it lands last, both render
+         * calls have already run against an empty field and the buyer sees the
+         * name with no number — the original bug, in a narrower window.
+         *
+         * Subscribed once per component instance (`_companyIdWatched`), because
+         * `$.async` is a MutationObserver that fires again on every re-render
+         * and Knockout subscriptions stack.
+         */
+        watchCompanyIdComponent: function () {
+            const component = uiRegistry.get(this.companyIdComponent);
+            if (!component || typeof component.value !== 'function') return;
+            if (typeof component.value.subscribe !== 'function') return;
+            if (component._twoCompanyIdWatched) return;
+            component._twoCompanyIdWatched = true;
+            const self = this;
+            component.value.subscribe(function () {
+                self.renderCompanyIdText();
+            });
+        },
+        setCompanyIdValue: function (companyId) {
+            const component = uiRegistry.get(this.companyIdComponent);
+            if (component && typeof component.value === 'function') {
+                component.value(companyId);
+            }
+            $(this.companyIdSelector).val(companyId);
         },
         /**
          * Class on the address-step company-number text label. Also the hook
@@ -220,7 +292,7 @@ define([
             if (!$control.length) return;
             $control.find('.' + this.companyIdTextClass).remove();
             if (!this.isCompanySearchActive()) return;
-            const companyId = $(this.companyIdSelector).val();
+            const companyId = this.capturedCompanyId();
             if (!companyId) return;
             $control.append(
                 $('<div></div>')
@@ -228,6 +300,34 @@ define([
                     .attr('aria-label', $t('Company Number'))
                     .text(companyId)
             );
+        },
+        /**
+         * The organisation number currently captured, for DISPLAY.
+         *
+         * The DOM field first, then the UI component. Not an ordering
+         * preference — the two are written together by setCompanyIdValue() and
+         * agree — but an ordering that needs no assumption about which of them
+         * a reload populates first. On the restore path Knockout's `value:`
+         * binding copies the component's value into the input, and this is read
+         * from a subscriber on that same observable, so "the DOM is already
+         * updated" would be a claim about Knockout's internal subscription
+         * order. Reading both removes the claim.
+         *
+         * Display only. `needsManualCompanyId()` still reads the DOM alone and
+         * must keep doing so: it derives whether the buyer may TYPE here, and
+         * the value they are mid-way through typing lives in the input.
+         *
+         * @returns {string}
+         */
+        capturedCompanyId: function () {
+            const fromDom = $(this.companyIdSelector).val();
+            if (fromDom) return fromDom;
+            const component = uiRegistry.get(this.companyIdComponent);
+            if (component && typeof component.value === 'function') {
+                const value = component.value();
+                return value == null ? '' : String(value);
+            }
+            return '';
         },
         /**
          * True while select2 owns the company-name input, i.e. while the buyer
@@ -354,6 +454,15 @@ define([
                 // customer, or a reload mid-checkout) never passes through
                 // setCompanyData(), so derive once on resolve.
                 self.syncCompanyIdEditable();
+                // …and paint the number label for that same case. A reload
+                // restores the number into this field from the provider, not
+                // through setCompanyData(), so nothing else would render it.
+                // Called from BOTH sides of the race deliberately: the picker's
+                // own bind (enableCompanySearch) also renders, because the
+                // label needs select2 present AND the number present and
+                // neither `$.async` can be relied on to resolve second.
+                self.renderCompanyIdText();
+                self.watchCompanyIdComponent();
             });
             $.async(this.companyNameSelector, function (companyNameField) {
                 // Only meaningful after the manual-entry row has destroyed
