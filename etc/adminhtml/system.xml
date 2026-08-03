@@ -360,7 +360,7 @@
                 <field id="enable_company_search" translate="label comment" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Enable Company Search</label>
-                    <comment>Show company search in the shipping address field. Company search on the payment method step is always available and is not affected by this setting.</comment>
+                    <comment>Where the ONE company-search control lives, not whether it exists: Yes puts it in the shipping address field; No puts it in the payment method tile instead (TWO-25326 §7.1). A checkout with no address form to host it — a saved address, or a virtual cart — keeps it in the tile either way.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <depends>
                         <field id="active">1</field>
