@@ -33,7 +33,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { loadAmdModule } = require('./amd-harness');
+const { loadAmdModule, loadCompanySearchControl } = require('./amd-harness');
 
 const BASE_CONFIG = {
     checkoutApiUrl: 'https://api.example.test',
@@ -124,7 +124,8 @@ function loadShippingSurface($, companySearch) {
     const component = loadAmdModule('view/frontend/web/js/view/address-autocomplete.js', {
         jquery: $,
         'Two_Gateway/js/model/brand-config': brandConfig,
-        'Two_Gateway/js/model/company-search': companySearch
+        'Two_Gateway/js/model/company-search': companySearch,
+        'Two_Gateway/js/model/company-search-control': loadCompanySearchControl($, companySearch)
     });
 
     const ctx = Object.assign(Object.create(component.prototype || {}), {
@@ -251,7 +252,14 @@ describe('threshold centralisation', () => {
 
         const component = loadAmdModule(
             'view/frontend/web/js/view/payment/method-renderer/gateway_method.js',
-            { jquery: $, 'Two_Gateway/js/model/company-search': companySearch }
+            {
+                jquery: $,
+                'Two_Gateway/js/model/company-search': companySearch,
+                'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(
+                    $,
+                    companySearch
+                )
+            }
         );
         const ctx = Object.assign(Object.create(component.prototype || {}), {
             companyNameSelector: 'input#company_name',

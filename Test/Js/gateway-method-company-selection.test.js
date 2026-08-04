@@ -46,7 +46,7 @@
 
 'use strict';
 
-const { loadAmdModule } = require('./amd-harness');
+const { loadAmdModule, loadCompanySearchControl } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
 
@@ -181,7 +181,10 @@ function makeDom() {
  */
 function loadRenderer() {
     const dom = makeDom();
-    const renderer = loadAmdModule(RENDERER, { jquery: dom.$ });
+    const renderer = loadAmdModule(RENDERER, {
+        jquery: dom.$,
+        'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(dom.$)
+    });
     return { renderer: renderer, node: dom.node, $: dom.$ };
 }
 
@@ -465,7 +468,10 @@ describe('order intent for a company with no registry identifier', () => {
      */
     function loadWithIntent() {
         const dom = makeDom();
-        const renderer = loadAmdModule(RENDERER, { jquery: dom.$ });
+        const renderer = loadAmdModule(RENDERER, {
+            jquery: dom.$,
+            'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(dom.$)
+        });
         renderer.isOrderIntentEnabled = true;
         const chain = {
             always: () => chain,

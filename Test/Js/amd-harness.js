@@ -153,6 +153,26 @@ function defaultMocks() {
             setSearching: function () {},
             setUnavailable: function () {}
         },
+        // Inert default, same convention as the company-search mock above:
+        // a constructor whose instances no-op every method. Tests that
+        // exercise the real select2 wiring load the real
+        // company-search-control.js module and pass it via extraMocks so
+        // they control the jQuery/select2 it closes over.
+        'Two_Gateway/js/model/company-search-control': (function () {
+            function CompanySearchControlMock() {
+                this._field = null;
+            }
+            CompanySearchControlMock.prototype.bind = function () {};
+            CompanySearchControlMock.prototype.destroy = function () { return false; };
+            CompanySearchControlMock.prototype.abortActiveRequest = function () { return false; };
+            CompanySearchControlMock.prototype.isBound = function () { return false; };
+            CompanySearchControlMock.prototype.getField = function () { return this._field || {}; };
+            CompanySearchControlMock.prototype.showSearchForCompanyLink = function () {};
+            CompanySearchControlMock.prototype.getSearchForCompanyLink = function () {
+                return { length: 0 };
+            };
+            return CompanySearchControlMock;
+        })(),
         'Two_Gateway/js/model/brand-config': (function () {
             function getBrandConfig(code) {
                 return ((typeof window !== 'undefined' && window.checkoutConfig && window.checkoutConfig.payment) || {})[code] || {};
@@ -465,4 +485,45 @@ function loadAmdModule(relPath, extraMocks, extraGlobals) {
     return captured;
 }
 
-module.exports = { loadAmdModule: loadAmdModule, defaultMocks: defaultMocks };
+/**
+ * Load the REAL `company-search-control.js` class, closed over the given
+ * jQuery (usually a test's own recording/spy double) and the given
+ * `company-search.js` mock/real-module.
+ *
+ * Every test that wants to observe the actual select2 wiring — the
+ * `.select2({...})` call, its `select2:open`/`select2:close`/`select2:select`
+ * handlers, the manual-entry button, the "Search for company" link — has to
+ * load this for real, exactly as it already has to load the real
+ * `company-search.js` for the same reason: TWO-25326's rebuild moved that
+ * wiring out of `address-autocomplete.js` / `gateway_method.js` and into
+ * this one shared class, so the default inert mock (a no-op stub, same
+ * convention as the `company-search` default) proves nothing about it.
+ *
+ * @param {object} $ jQuery (real or a test double)
+ * @param {object} [companySearchMock] `company-search.js` module/mock —
+ *        defaults to the harness's own inert mock, same as any other dep.
+ * @param {object} [extraGlobals] forwarded to `loadAmdModule` — pass
+ *        `{ document: document, window: window }` for any test that expects
+ *        the `select2:open` handler's real focus call (`document
+ *        .querySelector('.select2-search__field').focus()`) to land on the
+ *        REAL jsdom document, the same real-globals requirement this line
+ *        had before TWO-25326 moved it out of the two surface files.
+ * @returns {Function} the CompanySearchControl constructor
+ */
+function loadCompanySearchControl($, companySearchMock, extraGlobals) {
+    const extraMocks = { jquery: $ };
+    if (companySearchMock) {
+        extraMocks['Two_Gateway/js/model/company-search'] = companySearchMock;
+    }
+    return loadAmdModule(
+        'view/frontend/web/js/model/company-search-control.js',
+        extraMocks,
+        extraGlobals
+    );
+}
+
+module.exports = {
+    loadAmdModule: loadAmdModule,
+    defaultMocks: defaultMocks,
+    loadCompanySearchControl: loadCompanySearchControl
+};

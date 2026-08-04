@@ -37,7 +37,7 @@
 
 'use strict';
 
-const { loadAmdModule, defaultMocks } = require('./amd-harness');
+const { loadAmdModule, defaultMocks, loadCompanySearchControl } = require('./amd-harness');
 
 /**
  * BOTH surfaces reach manual entry through a row INSIDE the results list, so
@@ -345,7 +345,12 @@ function loadShipping($) {
         {
             jquery: $,
             'Two_Gateway/js/model/brand-config': brandConfig,
-            'Two_Gateway/js/model/company-search': companySearchMock
+            'Two_Gateway/js/model/company-search': companySearchMock,
+            'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(
+                $,
+                companySearchMock,
+                { document: document, window: window }
+            )
         },
         { document: document, window: window }
     );
@@ -405,7 +410,12 @@ function loadPayment($) {
         'view/frontend/web/js/view/payment/method-renderer/gateway_method.js',
         {
             jquery: $,
-            'Two_Gateway/js/model/company-search': companySearchMock
+            'Two_Gateway/js/model/company-search': companySearchMock,
+            'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(
+                $,
+                companySearchMock,
+                { document: document, window: window }
+            )
         },
         {
             document: document,
@@ -641,13 +651,19 @@ describe.each([
      */
     test('a synthetic click right behind the Enter keydown does not re-activate', () => {
         reachManualMode($, ctx, enterManual, searchLink);
-        ctx.enableCompanySearch = jest.fn(ctx.enableCompanySearch);
+        // The link's own activation now lives on the shared control
+        // (company-search-control.js), not on the surface's
+        // `enableCompanySearch()` — spy on the control's `bind()` instead;
+        // it is the re-activation entry point the guard has to gate.
+        ctx._companySearchControl.bind = jest.fn(ctx._companySearchControl.bind.bind(
+            ctx._companySearchControl
+        ));
 
         $(searchLink).first().trigger('keydown', { key: 'Enter', which: 13, preventDefault: function () {} });
-        expect(ctx.enableCompanySearch).toHaveBeenCalledTimes(1);
+        expect(ctx._companySearchControl.bind).toHaveBeenCalledTimes(1);
 
         click($, searchLink);
 
-        expect(ctx.enableCompanySearch).toHaveBeenCalledTimes(1);
+        expect(ctx._companySearchControl.bind).toHaveBeenCalledTimes(1);
     });
 });

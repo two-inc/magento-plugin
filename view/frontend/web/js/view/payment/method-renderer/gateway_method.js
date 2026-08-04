@@ -19,6 +19,7 @@ define([
     'Two_Gateway/js/model/surcharge',
     'Two_Gateway/js/model/brand-config',
     'Two_Gateway/js/model/company-search',
+    'Two_Gateway/js/model/company-search-control',
     'Two_Gateway/js/model/minimum-order-visibility',
     'Magento_Ui/js/lib/view/utils/async',
     'mage/validation',
@@ -39,6 +40,7 @@ define([
     surchargeModel,
     getBrandConfig,
     companySearch,
+    CompanySearchControl,
     isAboveMinimums
 ) {
     'use strict';
@@ -67,22 +69,20 @@ define([
         formSelector: 'form#two_gateway_form',
         companyNameSelector: 'input#company_name',
         searchForCompanyText: $t('Search for company'),
-        // No `searchForCompanyButton` id selector here on purpose. The append
-        // guard is per-field, so this renderer — pushed once per Two-family
-        // brand — would otherwise mint duplicate ids and a document-wide
-        // lookup would hand brand A's link to brand B. Use
-        // searchForCompanyLink() instead.
+        // No `searchForCompanyButton` id selector here on purpose. The
+        // shared control's own append guard is per-CONTAINER, so this
+        // renderer — pushed once per Two-family brand — would otherwise mint
+        // duplicate ids and a document-wide lookup would hand brand A's link
+        // to brand B. Use searchForCompanyLink() instead.
         searchForCompanyLink: function () {
-            // Resolved from the cached CONTAINER, not from
-            // `_$companyNameField`: the paths where this link is visible are
-            // exactly the paths that have already destroyed the widget and
-            // nulled that node (the manual-entry button → clearCompany() →
-            // destroyCompanySearchWidget()). Keying on the node meant
-            // enterSoleTraderUi() silently hid nothing and the link stayed up
-            // in sole-trader mode.
-            const $container = this._$companyFieldContainer;
-            if (!$container || !$container.find) return $();
-            return $container.find('.search_for_company');
+            // Resolved through the control, which keeps its own reference to
+            // the link it built — surviving the paths that have already
+            // destroyed the select2 widget (the manual-entry button →
+            // clearCompany() → destroyCompanySearchWidget()). Keying on the
+            // widget's own node meant enterSoleTraderUi() silently hid
+            // nothing and the link stayed up in sole-trader mode.
+            if (!this._companySearchControl) return $();
+            return this._companySearchControl.getSearchForCompanyLink();
         },
         delegationToken: '',
         autofillToken: '',
@@ -1494,262 +1494,57 @@ define([
             if (!this.isTileCompanySearchActive()) {
                 return;
             }
-            let self = this;
-            // One-shot, and deliberately a local rather than a property on the
-            // renderer: `$.async` is a MutationObserver that fires again on
-            // every re-render (Fire Checkout re-renders a lot), so a flag that
-            // survived the first bind would pop the dropdown open under a
-            // buyer who has moved on to another field.
-            let pendingOpen = !!(options && options.openDropdown);
-            require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
-                // No `$.async('input#company_id')` block here. The tile does
-                // show a company-number input again (TWO-25288), but it is
-                // `readonly` in every mode and ko's `value: companyId` binding
-                // paints it — so there is no editable state to resolve the node
-                // for, derive, or subscribe the observables to. A
-                // hand-typeable organisation number is still not an accepted
-                // source; showing the captured one is not the same thing as
-                // offering to take a typed one.
-                $.async(self.companyNameSelector, function (companyNameField) {
-                    // `$.async` is a MutationObserver, and every call to
-                    // enableCompanySearch() adds another one, so on a
-                    // one-page checkout (Fire Checkout) this fires
-                    // repeatedly. Re-binding is deliberately NOT guarded
-                    // against: select2 4.1's own constructor destroys any
-                    // existing instance on the same node
-                    // (`GetData(el, 'select2').destroy()`), so re-init is the
-                    // correct way to re-point the widget — and its handlers'
-                    // `self` closure — at the current component. Skipping the
-                    // re-init would leave the previous widget alive with
-                    // closures over a DISPOSED renderer, so picking a company
-                    // would write to dead observables. What re-render safety
-                    // needs instead is the teardown in dispose() below.
-                    const $companyNameField = $(companyNameField);
-                    // Remember the node we bound, so dispose() can destroy
-                    // THIS widget rather than whatever a document-wide
-                    // selector happens to match.
-                    self._$companyNameField = $companyNameField;
-                    // Survives the widget teardown on purpose — see
-                    // searchForCompanyLink().
-                    self._$companyFieldContainer = $companyNameField.closest('.field');
-                    // Identity for this bind. Re-stamped below, so a previous
-                    // widget's still-in-flight response can't paint chrome on
-                    // the widget that replaced it.
-                    const bindToken = {};
-                    // select2's destroy() only does `$element.off('.select2')`
-                    // — our own handlers are not in that namespace and would
-                    // survive every re-init, stacking one more copy per
-                    // re-render. N stacked `select2:select` handlers means one
-                    // company pick fires N address lookups, N-1 of them closed
-                    // over disposed renderers. Clear ours first.
-                    $companyNameField.off(companySearch.EVENT_NS);
-                    // select2's destroy() doesn't disconnect it either (it
-                    // isn't select2's own state), and the same re-render that
-                    // makes the stale-handler comment above true can also
-                    // leave this the ONLY teardown point reached: a re-render
-                    // while the picker is open replaces the select2 instance
-                    // without necessarily emitting `select2:close` first, so
-                    // a manual-entry button from the PREVIOUS bind would
-                    // otherwise survive, still wired to a disposed renderer,
-                    // until this node's picker happens to be reopened again.
-                    companySearch.detachManualEntryButton($companyNameField);
-                    $companyNameField
-                        .select2({
-                            minimumInputLength: companySearch.MIN_INPUT_LENGTH,
-                            // Shared with the address-step picker so the two
-                            // surfaces cannot show different wording for the
-                            // same state. Before TWO-25326 this picker passed
-                            // no `language` at all and fell back to select2's
-                            // vendored English "No results found" / remaining-
-                            // character countdown.
-                            language: companySearch.buildLanguageOptions(),
-                            // Same stable dropdown-row hook as the
-                            // address-step picker (address-autocomplete.js)
-                            // — this field's `input#company_name` id DOES
-                            // give select2 a stable `select2-company_name-*`
-                            // id already (confirmed by the existing
-                            // `#select2-company_name-container` references
-                            // below), but using the same explicit class here
-                            // too keeps both pickers' dropdown CSS keyed off
-                            // one mechanism rather than two. Drawn from
-                            // companySearch.DROPDOWN_CSS_CLASS, same shared
-                            // constant address-autocomplete.js uses, so the
-                            // two call sites and style.css can't drift.
-                            dropdownCssClass: companySearch.DROPDOWN_CSS_CLASS,
-                            width: '100%',
-                            escapeMarkup: function (markup) {
-                                return markup;
-                            },
-                            templateResult: function (data) {
-                                return data.html;
-                            },
-                            templateSelection: function (data) {
-                                return data.text;
-                            },
-                            ajax: companySearch.buildSearchAjaxOptions({
-                                config: self._brandConfig,
-                                token: bindToken,
-                                getCountryCode: function () {
-                                    return self.countryCode();
-                                },
-                                // Bound to THIS node, not to the selector.
-                                // A search issued by a widget that has since
-                                // been destroyed then finds no instance on
-                                // its own element and no-ops, rather than
-                                // painting a stale failure onto whatever
-                                // picker is live now.
-                                onSearching: function (isSearching) {
-                                    companySearch.setSearching(
-                                        $companyNameField,
-                                        isSearching,
-                                        bindToken
-                                    );
-                                },
-                                onUnavailable: function (isUnavailable) {
-                                    companySearch.setUnavailable(
-                                        $companyNameField,
-                                        isUnavailable,
-                                        bindToken
-                                    );
-                                }
-                            })
-                        })
-                        .on('select2:open' + companySearch.EVENT_NS, function () {
-                            // select2 only detaches the dropdown on close and
-                            // only blanks the search input, so anything we
-                            // appended into the search box survives. Clear it
-                            // here or a reopened picker still shows the last
-                            // search's "unavailable" notice.
-                            companySearch.clearSearchChrome($companyNameField, bindToken);
-                            // The manual-entry button is a SIBLING of the
-                            // results list (#30.x.15), not a row inside it,
-                            // so it stays visible outside select2's own
-                            // scroll/clip and needs no selection-cancelling
-                            // dance: its own click handler below is the only
-                            // thing that activates it.
-                            companySearch.attachManualEntryButton(
-                                $companyNameField,
-                                bindToken,
-                                function () {
-                                    self.clearCompany();
-                                    // Resolved here, not earlier: a container
-                                    // captured before the widget teardown
-                                    // above could be replaced by the same
-                                    // checkout re-render the button's own
-                                    // staleness check guards against, and
-                                    // `.show()` on a detached node would
-                                    // silently no-op, leaving the real link
-                                    // hidden.
-                                    //
-                                    // Focused too, not just shown: clearCompany()
-                                    // tears the select2 widget down through
-                                    // destroyCompanySearchWidget(), which removes
-                                    // the manual-entry button — the element that
-                                    // had focus — from the document. Nothing
-                                    // else in that teardown path refocuses
-                                    // anything, so a buyer who reached the
-                                    // button by keyboard is otherwise dropped
-                                    // back to `<body>` with no visible focus at
-                                    // all.
-                                    $companyNameField
-                                        .closest('.field')
-                                        .find('.search_for_company')
-                                        .show()
-                                        .trigger('focus');
-                                }
-                            );
-                            document.querySelector('.select2-search__field').focus();
-                        })
-                        .on('select2:close' + companySearch.EVENT_NS, function () {
-                            // Every open re-attaches, so nothing is lost by
-                            // dropping the button here — and a checkout that
-                            // re-renders the form while the picker is closed
-                            // would otherwise leave a button from this bind
-                            // wired to a disposed renderer for the life of
-                            // the page.
-                            companySearch.detachManualEntryButton($companyNameField);
-                        })
-                        .on('select2:select' + companySearch.EVENT_NS, function (e) {
-                            const selectedItem = e.params.data;
-                            const companyId = selectedItem.companyId;
-                            const companyName = selectedItem.text;
-                            // applyCompanyData(), not fillCompanyData(): a pick
-                            // is authoritative and must overwrite the previous
-                            // company's identifier even when the new company
-                            // has none of its own.
-                            self.applyCompanyData(
-                                { companyId, companyName },
-                                { authoritative: true }
-                            );
-                            // TWO-25193: the payment-step picker used to stop
-                            // here, leaving the billing address blank. Gate is
-                            // config.isAddressSearchEnabled, applied inside
-                            // lookupCompanyAddress — same one the shipping-step
-                            // picker uses.
-                            self.addressLookup(selectedItem);
-                        });
-                    companySearch.markSearchBinding($companyNameField, bindToken);
-                    // TWO-25326 §1: any character opens the dropdown, not
-                    // just the Space/Enter select2 4.1 handles on its own.
-                    companySearch.attachOpenOnType($companyNameField, bindToken);
-                    $('#select2-company_name-container').text(self.companyName());
-                    // Scoped to the container of the node THIS bind owns.
-                    // With two Two-family renderers there is one
-                    // `#billing_search_for_company` id in the page, so a
-                    // document-wide lookup would hand the link in brand A's
-                    // field to whichever component bound last.
-                    const $field = $companyNameField.closest('.field');
-                    if ($field.find('.search_for_company').length == 0) {
-                        $field.append(
-                            `<div class="search_for_company" role="button" tabindex="0" ` +
-                                `title="${self.searchForCompanyText}">` +
-                                `<span>${self.searchForCompanyText}</span>` +
-                                '</div>'
-                        );
-                    }
-                    // Re-bound unconditionally (the div survives a re-render,
-                    // so an append guard would leave this closed over a stale
-                    // component) and scoped to this bind's own container.
-                    const $searchForCompany = $field.find('.search_for_company');
-                    const activateSearchForCompany = function () {
-                        // Guards against a double-activation: this is a
-                        // `role="button"` on a plain div, not a native
-                        // <button>, and some assistive-tech/browser
-                        // combinations forward a synthetic `click` in
-                        // addition to the Enter keydown for exactly that
-                        // shape of widget. Once hidden, a second call is a
-                        // no-op rather than re-opening a dropdown the buyer
-                        // already opened.
-                        const $el = $searchForCompany.first();
-                        if ($el.length && $el.get(0).style.display === 'none') return;
-                        self.enableCompanySearch({ openDropdown: true });
-                        $searchForCompany.hide();
-                    };
-                    $searchForCompany
-                        .off('click' + companySearch.EVENT_NS)
-                        .off('keydown' + companySearch.EVENT_NS)
-                        .on('click' + companySearch.EVENT_NS, activateSearchForCompany)
-                        // Keyboard reachability (TWO parity with WooCommerce /
-                        // Hyvä): this div has no native semantics, so Enter/
-                        // Space have to be wired up by hand to match the
-                        // role="button" contract set on the markup above.
-                        .on('keydown' + companySearch.EVENT_NS, function (e) {
-                            if (e.key !== 'Enter' && e.key !== ' ' && e.which !== 13 && e.which !== 32) {
-                                return;
-                            }
-                            e.preventDefault();
-                            activateSearchForCompany();
-                        });
-                    $searchForCompany.hide();
-                    // Last, so every handler above — including `select2:open`,
-                    // which is what puts the caret in the search box — is
-                    // already bound when the dropdown opens.
-                    if (pendingOpen) {
-                        pendingOpen = false;
-                        $companyNameField.select2('open');
+            const self = this;
+            // ONE instance per renderer — a renderer is pushed once per
+            // Two-family brand, so this is one instance per brand's tile,
+            // never a second parallel select2 wiring for the same tile. No
+            // `searchForCompanyId` here on purpose: the "Search for company"
+            // link's own append guard has to be scoped to THIS bind's
+            // container, not a document-wide id, or a checkout offering two
+            // Two-family brands would mint duplicate ids and hand brand A's
+            // link to brand B — see the class's own doc comment on
+            // `searchForCompanyId`.
+            if (!this._companySearchControl) {
+                this._companySearchControl = new CompanySearchControl({
+                    fieldSelector: self.companyNameSelector,
+                    config: self._brandConfig,
+                    getCountryCode: function () {
+                        return self.countryCode();
+                    },
+                    searchForCompanyText: self.searchForCompanyText,
+                    onSelect: function (selectedItem) {
+                        const companyId = selectedItem.companyId;
+                        const companyName = selectedItem.text;
+                        // applyCompanyData(), not fillCompanyData(): a pick is
+                        // authoritative and must overwrite the previous
+                        // company's identifier even when the new company has
+                        // none of its own.
+                        self.applyCompanyData({ companyId, companyName }, { authoritative: true });
+                        // TWO-25193: the payment-tile picker used to stop
+                        // here, leaving the billing address blank. Gate is
+                        // config.isAddressSearchEnabled, applied inside
+                        // lookupCompanyAddress — same one the shipping-step
+                        // picker uses.
+                        self.addressLookup(selectedItem);
+                    },
+                    onManualEntryActivated: function () {
+                        self.clearCompany();
+                        // Focused too, not just shown: clearCompany() tears
+                        // the select2 widget down through
+                        // destroyCompanySearchWidget(), which removes the
+                        // manual-entry button — the element that had focus —
+                        // from the document. Nothing else in that teardown
+                        // path refocuses anything, so a buyer who reached the
+                        // button by keyboard is otherwise dropped back to
+                        // `<body>` with no visible focus at all.
+                        self._companySearchControl.showSearchForCompanyLink(true);
+                    },
+                    onBound: function () {
+                        $('#select2-company_name-container').text(self.companyName());
                     }
                 });
-            });
+            }
+            this._companySearchControl.bind(options);
         },
         getTelephone: function () {
             const telephone = this.telephone();
@@ -1813,19 +1608,19 @@ define([
          * Destroy only the widget this component bound. Safe to call twice.
          */
         destroyCompanySearchWidget: function () {
-            const $field = this._$companyNameField;
-            // `_$companyFieldContainer` is deliberately NOT cleared here: the
-            // re-enable link lives in that container and has to stay
-            // resolvable after the widget is gone.
-            this._$companyNameField = null;
-            if (!$field || !$field.data || !$field.data('select2')) return;
-            // Belt-and-braces alongside the `select2:close` handler above:
-            // destroy() does not always route through a `close` event first,
-            // and an undetached button would stay wired to this disposed
-            // renderer for the life of the page.
-            companySearch.detachManualEntryButton($field);
-            $field.off(companySearch.EVENT_NS);
-            $field.select2('destroy');
+            if (!this._companySearchControl) return;
+            // The control's own reference to the "Search for company" link
+            // is deliberately NOT cleared by destroy(): the re-enable link
+            // has to stay resolvable after the widget is gone — see
+            // searchForCompanyLink().
+            const $field = this._companySearchControl.getField();
+            // isBound()/destroy() are the scoped, idempotent teardown of
+            // ONLY the widget this component bound — the same belt-and-
+            // braces need as the `select2:close` handler above: destroy()
+            // does not always route through a `close` event first, and an
+            // undetached button would stay wired to this disposed renderer
+            // for the life of the page.
+            if (!this._companySearchControl.destroy()) return;
             $field.attr('type', 'text');
         },
         /**

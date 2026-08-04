@@ -634,7 +634,13 @@ describe('what each capture mode puts in front of the buyer', () => {
      * real browser renders it.
      */
     test('the picker takes a percentage width, so a hidden init cannot freeze it at zero', () => {
-        const source = fs.readFileSync(path.join(__dirname, '..', '..', RENDERER), 'utf8');
+        // TWO-25326 rebuild: the `.select2({...})` call — and this `width`
+        // option — moved into the one shared class both mounts construct,
+        // company-search-control.js, rather than living in this renderer.
+        const source = fs.readFileSync(
+            path.join(__dirname, '..', '..', 'view/frontend/web/js/model/company-search-control.js'),
+            'utf8'
+        );
         const widths = source.match(/width:\s*'([^']*)'/g) || [];
 
         expect(widths.length).toBeGreaterThan(0);
