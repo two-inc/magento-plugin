@@ -133,21 +133,29 @@ across modules). Elements may appear in any order (`xs:all`).
 | `inline_term_fees`               | no       | boolean                   | Show per-term merchant fee beside Payment Terms checkboxes in admin (default true).                                                                             |
 | `intent_approved_notice_enabled` | no       | `true` \| `false`         | On/off switch for BOTH the "order intent approved" and "order intent declined" notices. Default `true`. **See below.**                                          |
 | `intent_approved_notice`         | no       | string                    | Copy override for the approved notice — wording only, **not** an off switch. **See below.**                                                                     |
-| `intent_declined_notice`         | no       | string                    | Copy override for the declined notice — a SEPARATE override from the approved one (added 2026-08-03, TWO-25326 §7.3/§7.4). **See below.**                       |
 
-### The intent notices — one on/off switch, two independent wording overrides
+There is deliberately **no** `intent_declined_notice` element. See below.
+
+### The intent notices — one on/off switch, one wording override
 
 The notices are buyer-facing "order intent approved" / "order intent not
 approved" lines rendered inline in the checkout payment tile — as of the
 2026-08-03 ruling (TWO-25326 §7.3), this is the ONLY place the buyer's
 captured company name/number are displayed in the tile at all; the
 earlier standalone `.two-company-label` element is gone, not relocated.
-Both notices are controlled by **one shared on/off switch** and **two
-independent wording overrides**. **Do not overload the switch with
-wording meaning** — an off switch expressed as the absence of content is
-indistinguishable from an unfinished string, and any tidy-up that
-deletes the "empty, unused" declaration silently turns the notice back
-on.
+Both notices are controlled by **one shared on/off switch**, but only the
+APPROVED notice has a wording override. **This is deliberate, not an
+oversight** (2026-08-04 ruling, TWO-25326): the declined/not-available
+notice must render identical platform-default copy for every brand,
+approved-only overrides are how each ABN-style overlay puts its own
+branding on the reassurance message while the "not available" wording
+stays neutral. Do not add an `intent_declined_notice` copy-override
+element — `Model\Brand\Loader` hard-fails if a brand.xml declares one.
+
+**Do not overload the switch with wording meaning** — an off switch
+expressed as the absence of content is indistinguishable from an
+unfinished string, and any tidy-up that deletes the "empty, unused"
+declaration silently turns the notice back on.
 
 #### `intent_approved_notice_enabled` — the on/off switch for BOTH notices
 
@@ -176,25 +184,25 @@ runtime (see the validation warning below):
 Note `xs:boolean` is deliberately **not** used: it would also accept `1`
 and `0`, and this switch is meant to read as a decision.
 
-#### `intent_approved_notice` / `intent_declined_notice` — the copy overrides
-
-Two SEPARATE elements, one per notice — a brand with its own approved
-wording is not forced to also take the vanilla declined wording, or
-vice versa (§7.4):
+#### `intent_approved_notice` — the copy override (approved only)
 
 | brand.xml                                            | Behaviour                                                                                                                                              |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| element absent                                       | Platform default translated copy for that notice.                                                                                                        |
+| element absent                                       | Platform default translated copy.                                                                                                        |
 | empty or whitespace-only                             | **Inert** — same as absent. It does **not** mean "off".                                                                                                  |
 | `<intent_approved_notice>…</intent_approved_notice>` | Used verbatim as the approved-notice template. `%1` = brand product name, `%2` = buyer company name, `%3` = buyer organisation number (added 2026-08-03). |
-| `<intent_declined_notice>…</intent_declined_notice>` | Used verbatim as the declined-notice template. Same `%1`/`%2`/`%3` contract.                                                                              |
 
-`Descriptor::getIntentApprovedNotice()` / `getIntentDeclinedNotice()`
-each return `null` for the first two rows and their own template for the
-third; neither ever returns `''`. The switch above is what
-`Model\Ui\ConfigProvider` consults to decide whether to ship EITHER
-payload to the renderer at all — the resolution otherwise runs
-independently per notice.
+`Descriptor::getIntentApprovedNotice()` returns `null` for the first two
+rows and the template for the third; it never returns `''`. The declined
+notice has no equivalent override — `Model\Ui\ConfigProvider` always
+renders its own literal default copy for that outcome, and only consults
+the switch above to decide whether to ship EITHER payload to the
+renderer at all.
+
+**Every ABN-style brand overlay is expected to declare
+`intent_approved_notice`** with brand-specific copy (2026-08-04 ruling) —
+falling through to the platform default here for a live overlay is a
+bug, not a valid "no opinion" state.
 
 #### Deploy order
 
@@ -222,17 +230,19 @@ code path) emits each notice as a persistent inline element with class
 inside the payment-method tile, as does PrestaShop (approved variant
 only, as of writing). WooCommerce uses `twoinc-intent-approved` instead,
 so grep for the platform-specific class names when sweeping the four
-checkout surfaces. The magento-hyva-extension repo is out of scope for
-the 2026-08-03 declined-notice addition described here — check that repo
-directly before assuming it has picked up the same shape.
+checkout surfaces. `magento-hyva-extension` shares this parent's
+`BrandRegistryInterface`/brand.xml, so a brand's `intent_approved_notice`
+override applies to Hyvä too without any Hyvä-side declaration.
 
-The two keys carry the same names and the same semantics on WooCommerce
-and PrestaShop, where they are real PHP booleans rather than an XSD
-enumeration. **The failure mode differs:** an invalid value throws here
-and is a logged error plus the default `true` there, because those
-resolvers run while rendering a buyer-facing checkout, where a white
-screen is worse than a notice that stays on. Don't assume Magento's
-throw when working across platforms.
+The `intent_approved_notice_enabled` key carries the same name and
+semantics on WooCommerce and PrestaShop, where it is a real PHP boolean
+rather than an XSD enumeration. **The failure mode differs:** an invalid
+value throws here and is a logged error plus the default `true` there,
+because those resolvers run while rendering a buyer-facing checkout,
+where a white screen is worse than a notice that stays on. Don't assume
+Magento's throw when working across platforms. None of the four
+platforms has (or should ever grow) a copy-override element for the
+declined/not-available notice.
 
 ### A warning about validation
 

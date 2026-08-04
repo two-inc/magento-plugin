@@ -208,14 +208,21 @@ class Loader
             $intentApprovedNotice = null;
         }
 
-        // Copy override ONLY, same contract as $intentApprovedNotice above
-        // — added by the 2026-08-03 ruling (TWO-25326 §7.3/§7.4). No
-        // separate enabled/disabled element: suppression is the approved
-        // notice's switch, since the ruling treats "the intent message" as
-        // one on/off unit.
-        $intentDeclinedNotice = trim((string)($brand->intent_declined_notice ?? ''));
-        if ($intentDeclinedNotice === '') {
-            $intentDeclinedNotice = null;
+        // The declined/not-available notice is NEVER brand-overridable
+        // (2026-08-04 ruling, TWO-25326): there is deliberately no copy
+        // override element for it. A brand.xml that declares
+        // <intent_declined_notice> anyway is almost certainly copying the
+        // approved-notice pattern by habit, so this fails loudly rather
+        // than silently ignoring the element and leaving the overlay
+        // author to wonder why their copy never renders.
+        if (isset($brand->intent_declined_notice)) {
+            throw new \DomainException(sprintf(
+                'brand.xml at %s declares <intent_declined_notice>, which is '
+                . 'not a supported override: the buyer-facing "order intent '
+                . 'NOT approved" notice is never brand-overridable. Remove '
+                . 'the element; the platform default copy always renders.',
+                $sourcePath
+            ));
         }
 
         $inlineTermFees = true;
@@ -252,8 +259,7 @@ class Loader
             (string)($brand->checkout_subtitle ?? ''),
             $roundingSteps,
             $intentApprovedNotice,
-            $intentApprovedNoticeEnabled,
-            $intentDeclinedNotice
+            $intentApprovedNoticeEnabled
         );
     }
 }

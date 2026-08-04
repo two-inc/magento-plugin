@@ -46,7 +46,6 @@ final class Descriptor
      * @param float[] $surchargeRoundingSteps Buyer-surcharge rounding steps offered in the admin Rounding Step dropdown, ascending.
      * @param string|null $intentApprovedNotice Copy override for the buyer-facing intent-approved notice; null = use the platform default copy. Never ''. See getIntentApprovedNotice().
      * @param bool $intentApprovedNoticeEnabled Whether the buyer-facing intent-approved notice is rendered at all. Default true. See isIntentApprovedNoticeEnabled().
-     * @param string|null $intentDeclinedNotice Copy override for the buyer-facing intent-NOT-approved notice; null = use the platform default copy. Never ''. See getIntentDeclinedNotice().
      */
     public function __construct(
         private readonly string $code,
@@ -73,8 +72,7 @@ final class Descriptor
         private readonly string $checkoutSubtitle = '',
         private readonly array $surchargeRoundingSteps = [],
         private readonly ?string $intentApprovedNotice = null,
-        private readonly bool $intentApprovedNoticeEnabled = true,
-        private readonly ?string $intentDeclinedNotice = null
+        private readonly bool $intentApprovedNoticeEnabled = true
     ) {
     }
 
@@ -118,18 +116,6 @@ final class Descriptor
     public function getIntentApprovedNotice(): ?string
     {
         return $this->intentApprovedNotice;
-    }
-
-    /**
-     * Per-brand COPY override for the buyer-facing "order intent NOT
-     * approved" notice (TWO-25326 §7.3/§7.4, 2026-08-03 ruling). Same
-     * null-means-default contract as getIntentApprovedNotice(), and gated
-     * by the SAME isIntentApprovedNoticeEnabled() switch — a brand that
-     * suppresses the notice gets neither variant.
-     */
-    public function getIntentDeclinedNotice(): ?string
-    {
-        return $this->intentDeclinedNotice;
     }
 
     /**
