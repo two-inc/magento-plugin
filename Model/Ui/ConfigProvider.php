@@ -338,6 +338,11 @@ class ConfigProvider implements ConfigProviderInterface
      * surface, `generalErrorMessage`, handled by
      * processOrderIntentErrorResponse() in gateway_method.js.
      *
+     * Deliberately NOT brand-overridable (2026-08-04 ruling, TWO-25326):
+     * unlike getOrderIntentApprovedNotice() above, there is no copy-override
+     * hook here and there must never be one — every brand renders this exact
+     * platform default copy. See BrandRegistryInterface for the contract.
+     *
      * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
      */
     private function getOrderIntentDeclinedNotice(): ?array
@@ -346,18 +351,14 @@ class ConfigProvider implements ConfigProviderInterface
             return null;
         }
 
-        $override = $this->brandRegistry->getIntentDeclinedNotice();
-
         $productName = $this->brandRegistry->getProductName();
 
-        $withCompany = $override === null
-            ? __(
-                '%1 is not available for this order by %2 (%3)',
-                $productName,
-                self::COMPANY_NAME_TOKEN,
-                self::COMPANY_NUMBER_TOKEN
-            )
-            : __($override, $productName, self::COMPANY_NAME_TOKEN, self::COMPANY_NUMBER_TOKEN);
+        $withCompany = __(
+            '%1 is not available for this order by %2 (%3)',
+            $productName,
+            self::COMPANY_NAME_TOKEN,
+            self::COMPANY_NUMBER_TOKEN
+        );
 
         return [
             'withCompany' => (string)$withCompany,

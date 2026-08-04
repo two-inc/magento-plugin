@@ -96,22 +96,13 @@
             -->
             <xs:element name="intent_approved_notice" type="xs:string" minOccurs="0"/>
             <!--
-                COPY OVERRIDE ONLY for the "order intent NOT approved" tile
-                notice (TWO-25326 §7.3/§7.4, added 2026-08-03). Same
-                inert-when-absent/empty contract as
-                <intent_approved_notice> above, and gated by the SAME
-                <intent_approved_notice_enabled> switch — there is no
-                separate on/off element for the declined variant.
-
-                  absent / empty / whitespace-only
-                          ⇒ INERT: platform default translated copy
-                  non-empty
-                          ⇒ used verbatim as the company-known copy
-                            template (%1 = brand product name,
-                            %2 = buyer company name,
-                            %3 = buyer organisation number)
+                Deliberately no <intent_declined_notice> element here
+                (removed 2026-08-04 ruling, TWO-25326): the "order intent
+                NOT approved" tile notice is never brand-overridable. Do
+                not re-add this element; Model\Brand\Loader also hard-fails
+                if a brand.xml declares it, as a backstop for an overlay on
+                an older copy of this schema.
             -->
-            <xs:element name="intent_declined_notice" type="xs:string" minOccurs="0"/>
             <xs:element name="csp_origins" type="cspOriginsType" minOccurs="0"/>
             <xs:element name="admin_resource" type="xs:string"/>
             <xs:element name="module_label_chain" type="moduleLabelChainType" minOccurs="0"/>
