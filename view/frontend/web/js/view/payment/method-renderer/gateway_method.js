@@ -432,6 +432,26 @@ define([
         isOrderIntentDeclinedNoticeVisible: function () {
             return !!(this.orderIntentDeclinedNotice && this.orderIntentDeclinedNotice());
         },
+        /**
+         * Whether the tile's capture control should re-show for decline
+         * recovery, independent of whether the declined NOTICE TEXT is
+         * visible. Added in round 2 of adversarial review, 2026-08-04:
+         * gating the field's re-show directly on
+         * isOrderIntentDeclinedNoticeVisible() reproduced the original
+         * dead-end for any brand with order_intent enabled but the notice
+         * UI suppressed (`enable_order_intent` and
+         * `<intent_approved_notice_enabled>` are independent switches — see
+         * Model/Brand/Loader.php) — that brand's declined buyer would still
+         * see the field stay hidden, just silently instead of with a notice.
+         * `orderIntentDeclined` is set on every decline regardless of
+         * whether any notice text was produced, so this reads true whenever
+         * a decline needs recovering from, on every brand configuration.
+         *
+         * @returns {boolean}
+         */
+        isCompanyRecoveryNeeded: function () {
+            return !!(this.orderIntentDeclined && this.orderIntentDeclined());
+        },
         selectTerm: function (days) {
             surchargeModel.selectTerm(days);
         },
@@ -510,13 +530,31 @@ define([
                     // `_orderIntentInFlightFor` would stay set to this
                     // companyId FOREVER — every later pick of the SAME
                     // company would silently no-op against the guard above,
-                    // with no recovery short of a page reload. Same rescue
-                    // shape as placeOrderBackend()'s own try/catch.
+                    // with no recovery short of a page reload.
                     deferred = self.placeOrderIntent();
                 } catch (error) {
+                    // Round-2 adversarial review, 2026-08-04: an earlier
+                    // version of this catch rethrew, mirroring
+                    // placeOrderBackend()'s shape — but every caller of
+                    // fillCompanyData() is an unguarded synchronous context
+                    // with its OWN statements after the call (the
+                    // select2:select handler's addressLookup() call,
+                    // updateAddress()'s project/department writes,
+                    // updateShippingAddress()/updateBillingAddress()'s
+                    // refreshTileCompanySearchBinding() call). Rethrowing
+                    // aborted all of those too, on top of leaving the buyer
+                    // with no visible sign anything went wrong (loader
+                    // flashes and vanishes, nothing else happens). Logging +
+                    // a visible message + NOT rethrowing lets the caller's
+                    // remaining statements run and gives the buyer something
+                    // to act on, at the cost of this one attempt's order
+                    // intent — strictly better than either silent failure or
+                    // aborting unrelated sibling work.
+                    console.error({ logger: 'twoPayment.fillCompanyData.placeOrderIntent', error });
                     fullScreenLoader.stopLoader();
                     self._orderIntentInFlightFor = null;
-                    throw error;
+                    self.showErrorMessage(self.generalErrorMessage);
+                    return;
                 }
                 deferred
                     .always(function () {
@@ -1114,6 +1152,21 @@ define([
             this.orderIntentDeclinedNoticeCopy = config.orderIntentDeclinedNotice || null;
             this.orderIntentDeclinedNotice = ko.observable('');
 
+            // Round 2 adversarial review, 2026-08-04: `orderIntentDeclinedNotice`
+            // is NOT a reliable "was the last intent declined" signal on its
+            // own — `enable_order_intent` and
+            // `<intent_approved_notice_enabled>` are two INDEPENDENT brand
+            // switches (see Model/Brand/Loader.php), so a brand can have
+            // order_intent firing for real while the notice UI stays off.
+            // On that brand, orderIntentDeclinedNoticeCopy is permanently
+            // null, resolveCompanyNotice() always returns '', and gating the
+            // decline-recovery field re-show on the notice's OWN visibility
+            // would reproduce the exact dead-end that fix was written to
+            // close — just for a different brand config. Tracked separately
+            // so the recovery path does not depend on whether the notice UI
+            // happens to be on.
+            this.orderIntentDeclined = ko.observable(false);
+
             // The notice is *persistent* — unlike the message-region
             // treatment it replaces, it survives checkout updates and a
             // failed placeOrder validation (see the deliberate omission in
@@ -1129,10 +1182,12 @@ define([
             this.companyName.subscribe(function () {
                 self.orderIntentApprovedNotice('');
                 self.orderIntentDeclinedNotice('');
+                self.orderIntentDeclined(false);
             });
             this.companyId.subscribe(function () {
                 self.orderIntentApprovedNotice('');
                 self.orderIntentDeclinedNotice('');
+                self.orderIntentDeclined(false);
             });
         },
         /**
@@ -1192,6 +1247,7 @@ define([
                     // approval reassurance was effectively never seen.
                     this.orderIntentApprovedNotice(this.resolveOrderIntentApprovedNotice());
                     this.orderIntentDeclinedNotice('');
+                    this.orderIntentDeclined(false);
                 } else {
                     // TWO-25326 §7.3 (2026-08-03 ruling): a clean "not
                     // approved" response is a business outcome, not a
@@ -1201,6 +1257,11 @@ define([
                     // ONLY the intent message" the ruling asks for.
                     this.orderIntentApprovedNotice('');
                     this.orderIntentDeclinedNotice(this.resolveOrderIntentDeclinedNotice());
+                    // Set regardless of whether the notice text above is
+                    // empty (brand suppressed the notice UI) — this is the
+                    // signal the decline-recovery field re-show reads, and
+                    // it must fire on EVERY decline, notice or not.
+                    this.orderIntentDeclined(true);
                 }
             }
         },
@@ -1209,6 +1270,7 @@ define([
             // notice from a previous, successful intent.
             this.orderIntentApprovedNotice('');
             this.orderIntentDeclinedNotice('');
+            this.orderIntentDeclined(false);
 
             // `let`, not `const`: the SCHEMA_ERROR branch below reassigns
             // this to '' once it has pushed the field-level errors into

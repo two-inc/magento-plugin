@@ -227,15 +227,23 @@
                     on the tile to pick a different company — a dead end
                     without a page reload on exactly the checkouts where the
                     tile is the buyer's ONLY route (saved address, virtual
-                    cart, or the setting off). isOrderIntentDeclinedNoticeVisible()
-                    re-opens the field for precisely that state; picking a new
-                    company clears the declined notice AND completes capture,
+                    cart, or the setting off).
+
+                    isCompanyRecoveryNeeded(), NOT isOrderIntentDeclinedNoticeVisible()
+                    — round 2 of the same review found gating this on the
+                    NOTICE's own visibility reproduced the dead-end for any
+                    brand with order_intent enabled but the notice UI
+                    suppressed (two independent brand.xml switches), since
+                    that brand's notice text is permanently empty even on a
+                    real decline. isCompanyRecoveryNeeded() is set on every
+                    decline regardless of whether any notice text exists.
+                    Picking a new company clears both AND completes capture,
                     so the field hides again once there is something new to
                     hide it for.
                 -->
                 <div
                     class="field field-text required"
-                    data-bind="visible: (!isCompanyCaptured() || isOrderIntentDeclinedNoticeVisible()) && isTileCompanySearchActive()"
+                    data-bind="visible: (!isCompanyCaptured() || isCompanyRecoveryNeeded()) && isTileCompanySearchActive()"
                 >
                     <label for="company_name" class="label">
                         <span><!-- ko i18n: 'Company Name'--><!-- /ko --></span>

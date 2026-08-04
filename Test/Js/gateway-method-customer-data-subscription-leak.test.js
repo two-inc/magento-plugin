@@ -139,6 +139,37 @@ describe('fillCustomerData() subscription lifecycle (TWO-25347)', () => {
 
         expect(applyCalls).toBe(1);
     });
+
+    test('a synchronous throw during the one-shot company read does not abort the rest of fillCustomerData() (found in round-2 adversarial review, 2026-08-04)', () => {
+        // Han's round-2 finding: fillCustomerData() calls applyCompanyData()
+        // (the one-shot companyData read) BEFORE wiring the shippingTelephone/
+        // countryCode/shippingAddress/billingAddress subscriptions. If that
+        // one-shot call reaches fillCompanyData() → placeOrderIntent() and
+        // THAT throws synchronously, an unswallowed throw would abort
+        // fillCustomerData() mid-function and permanently skip every
+        // subscription after the throw point — for the rest of the page
+        // session, not just this one company pick. This is why the round-1
+        // fix (swallow-and-message, not rethrow) matters beyond the guard
+        // itself: fillCompanyData() must never let an internal throw escape
+        // into a caller with mandatory follow-up work.
+        const { renderer, shippingAddress, billingAddress, companyDataSection } = loadRenderer();
+        renderer.isOrderIntentEnabled = true;
+        renderer.showErrorMessage = function () {};
+        renderer.placeOrderIntent = function () {
+            throw new Error('billingAddress was transiently null');
+        };
+        // Seeded so the one-shot `customerData.get('companyData')()` read
+        // inside fillCustomerData() has both name and id — otherwise
+        // fillCompanyData() early-returns before ever reaching
+        // placeOrderIntent(), and the throw path is never exercised.
+        companyDataSection({ companyName: 'Acme Widgets AS', companyId: '123' });
+
+        expect(() => renderer.fillCustomerData()).not.toThrow();
+
+        expect(shippingAddress.subscriberCount()).toBe(1);
+        expect(billingAddress.subscriberCount()).toBe(1);
+        expect(companyDataSection.subscriberCount()).toBe(1);
+    });
 });
 
 describe('fillCompanyData() in-flight guard (TWO-25347 belt-and-braces)', () => {
@@ -207,8 +238,8 @@ describe('fillCompanyData() in-flight guard (TWO-25347 belt-and-braces)', () => 
         return fn;
     }
 
-    test('a synchronous throw from placeOrderIntent() clears the guard instead of locking it forever (found in adversarial review, 2026-08-04)', () => {
-        // BLOCKER found reviewing this PR: placeOrderIntent() can throw
+    test('a synchronous throw from placeOrderIntent() clears the guard, shows a message, and does NOT propagate (found in adversarial review, 2026-08-04; refined in round 2)', () => {
+        // BLOCKER found in round 1: placeOrderIntent() can throw
         // synchronously (quote.billingAddress() can legitimately be null for
         // a transient window; placeOrderIntent() reads
         // `billingAddress.countryId` unguarded). Before the fix, an
@@ -216,12 +247,26 @@ describe('fillCompanyData() in-flight guard (TWO-25347 belt-and-braces)', () => 
         // `_orderIntentInFlightFor` stayed set to that companyId FOREVER —
         // every later pick of the SAME company would silently no-op against
         // the in-flight guard, with no recovery short of a page reload.
+        //
+        // Round 2 found the FIRST fix (try/catch + rethrow, mirroring
+        // placeOrderBackend()) was still wrong: every caller of
+        // fillCompanyData() is an unguarded synchronous context with its own
+        // statements AFTER the call (updateAddress()'s project/department
+        // writes, the select2:select handler's addressLookup() call,
+        // refreshTileCompanySearchBinding()) — rethrowing aborted all of
+        // those too, and gave the buyer no visible sign anything went wrong.
+        // The catch now shows a message and does NOT rethrow.
         const component = loadAmdModule(RENDERER);
         let placeOrderIntentCalls = 0;
+        const errors = [];
         const ctx = Object.assign({}, component, {
             companyName: plainObservable(''),
             companyId: plainObservable(''),
             isOrderIntentEnabled: true,
+            generalErrorMessage: 'Something went wrong.',
+            showErrorMessage: function (message) {
+                errors.push(message);
+            },
             placeOrderIntent: function () {
                 placeOrderIntentCalls += 1;
                 if (placeOrderIntentCalls === 1) {
@@ -243,10 +288,14 @@ describe('fillCompanyData() in-flight guard (TWO-25347 belt-and-braces)', () => 
             }
         });
 
-        expect(() =>
-            ctx.fillCompanyData({ companyName: 'Acme Widgets AS', companyId: '123' })
-        ).toThrow('billingAddress was transiently null');
+        // No longer throws out of fillCompanyData() — a caller's own
+        // statements after this call must still run.
+        let statementAfterRan = false;
+        ctx.fillCompanyData({ companyName: 'Acme Widgets AS', companyId: '123' });
+        statementAfterRan = true;
+        expect(statementAfterRan).toBe(true);
 
+        expect(errors).toEqual(['Something went wrong.']);
         expect(ctx._orderIntentInFlightFor).toBeNull();
 
         // The buyer picks the SAME company again (e.g. re-selecting after

@@ -197,24 +197,27 @@ function nameFieldVisible(renderer) {
             'expected exactly one company-name field wrapper, found ' + tags.length
         );
     }
-    // TWO-25326 §7.1/decline-recovery (2026-08-04 adversarial-review fix):
-    // the field also re-shows on a declined intent, even though
-    // isCompanyCaptured() is still true then — see the template's own
-    // comment. Pinned to the exact shape so a drift silently narrowing or
-    // widening the gate fails the string match, not just the behavioural
-    // cases below.
+    // TWO-25326 §7.1/decline-recovery (2026-08-04 adversarial-review, round
+    // 1 then round 2): the field also re-shows on a declined intent, even
+    // though isCompanyCaptured() is still true then — see the template's
+    // own comment. Gated on isCompanyRecoveryNeeded(), NOT on the declined
+    // NOTICE's own visibility — round 2 found the notice-visibility gate
+    // reproduced the dead-end for a brand with order_intent enabled but the
+    // notice UI suppressed. Pinned to the exact shape so a drift silently
+    // narrowing or widening the gate fails the string match, not just the
+    // behavioural cases below.
     if (
-        !/visible:\s*\(!isCompanyCaptured\(\)\s*\|\|\s*isOrderIntentDeclinedNoticeVisible\(\)\)\s*&&\s*isTileCompanySearchActive\(\)/.test(
+        !/visible:\s*\(!isCompanyCaptured\(\)\s*\|\|\s*isCompanyRecoveryNeeded\(\)\)\s*&&\s*isTileCompanySearchActive\(\)/.test(
             tags[0]
         )
     ) {
         throw new Error(
             "the company-name field's `visible:` binding is not the pinned "
-                + '`(!isCompanyCaptured() || isOrderIntentDeclinedNoticeVisible()) && isTileCompanySearchActive()` shape'
+                + '`(!isCompanyCaptured() || isCompanyRecoveryNeeded()) && isTileCompanySearchActive()` shape'
         );
     }
     return (
-        (!renderer.isCompanyCaptured() || renderer.isOrderIntentDeclinedNoticeVisible()) &&
+        (!renderer.isCompanyCaptured() || renderer.isCompanyRecoveryNeeded()) &&
         renderer.isTileCompanySearchActive()
     );
 }
@@ -915,6 +918,16 @@ describe('the notices are gated on their own observables, not on capture', () =>
 
         declineIntent(renderer);
         expect(declinedNoticeVisible(renderer)).toBe(false);
+
+        // Round 2 of adversarial review, 2026-08-04: THIS is the case round
+        // 1's decline-recovery fix missed. `enable_order_intent` and
+        // `<intent_approved_notice_enabled>` are independent brand.xml
+        // switches — order_intent can fire for real (as it just did above)
+        // while the notice UI stays off. Gating the field's re-show on the
+        // declined NOTICE's own visibility (always false for this brand)
+        // would silently reproduce the original dead-end. It must re-show
+        // regardless.
+        expect(nameFieldVisible(renderer)).toBe(true);
     });
 
     test('an approved-notice override does not leak into the declined notice, or vice versa', () => {
