@@ -278,11 +278,14 @@ class ConfigProvider implements ConfigProviderInterface
      * company-known variant, absent/empty leaves the platform default.
      * See BrandRegistryInterface for both contracts.
      *
-     * TWO-25326 2026-08-03 ruling, §7.3: this is now the ONLY place the
-     * captured company name/number are displayed in the payment tile — the
+     * TWO-25326 2026-08-03 ruling, §7.3: this is the ONLY place the
+     * captured company NAME is displayed in the payment tile — the
      * standalone `.two-company-label` text (§7, pre-ruling) is removed, not
      * supplemented. Default wording is the literal ticket copy, with the
      * company number substituted the same way the company name always was.
+     * The company NUMBER also renders separately, notice-independent, via
+     * the tile's `.two-company-id-text` label (TWO-25326 2026-08-04 ruling,
+     * §5/§7 follow-up) — see gateway_method.html.
      *
      * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
      */

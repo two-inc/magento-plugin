@@ -71,15 +71,19 @@
         <!--
             TWO-25326 §7.3 (2026-08-03 ruling): the standalone
             `.two-company-label` text that used to sit here is REMOVED, not
-            supplemented. The captured company name/number are now shown
-            ONLY inside the order-intent notice sentence itself — see
+            supplemented. The captured company NAME is now shown ONLY
+            inside the order-intent notice sentence itself — see
             ConfigProvider::getOrderIntentApprovedNotice() /
             getOrderIntentDeclinedNotice() for the copy templates and
             resolveCompanyNotice() in gateway_method.js for the substitution.
             A company captured with no intent outcome yet showing renders
-            neither notice below and therefore displays the company nowhere
-            in the tile — that follows from "the notice is the only display
-            surface" and is the ruling, not an oversight.
+            neither notice below and therefore displays the company NAME
+            nowhere in the tile — that follows from "the notice is the
+            only display surface for the name" and is the ruling, not an
+            oversight. The company NUMBER is a separate surface (2026-08-04
+            ruling, §5/§7 follow-up): see the `.two-company-id-text` label
+            further down this template, which renders independently of
+            these notices.
 
             Persistent inline notices, inside the payment tile next to the
             term chips. Each is emitted only when its own observable is
@@ -184,66 +188,56 @@
                 data-bind='attr: {id: "payment_form_" + getCode()}'
             >
                 <!--
-                    TWO-25326 §7 / §7.1. Hidden once a company is captured,
-                    because the captured company is then shown inside the
-                    order-intent notice sentence (see the notices below) and
-                    a second, editable copy of the same thing is exactly what
-                    the ticket calls out as the defect.
+                    TWO-25326, 2026-08-04 ruling (supersedes the §7/§7.1
+                    capture-state and decline-recovery gating that used to
+                    live in this comment — Doug's exact words: "the search
+                    control ... is controlled ONLY by the state of the
+                    'enable search in address' admin setting: if true,
+                    search control is rendered inside the address block,
+                    otherwise is rendered inside the payment tile — and
+                    search control visibility is not changed for any other
+                    reason").
 
-                    Also hidden whenever isTileCompanySearchActive() is
-                    false — i.e. the admin setting puts the shared
-                    company-search control in the address area AND that
-                    address-area control actually exists on this checkout.
-                    The tile is then a display-only surface; showing this
-                    editable field too would be the "two bespoke
-                    implementations" the 2026-08-03 ruling forbids. See
-                    isTileCompanySearchActive() in gateway_method.js for the
-                    saved-address/virtual-cart fallback that keeps it true
-                    (and this field visible) even with the setting on.
+                    So this field's visibility depends on ONE thing —
+                    isTileCompanySearchActive(), the live read of that single
+                    admin setting (plus the saved-address/virtual-cart
+                    fallback documented on that method in gateway_method.js,
+                    which is the SAME condition, not a second one). It no
+                    longer depends on isCompanyCaptured() or on any
+                    order-intent outcome: the control stays visible after a
+                    company is picked, whether the subsequent order-intent
+                    call approves, declines, or errors. The org-number label
+                    below (not the notice sentence) is now the one thing that
+                    changes on capture.
 
-                    NOT removed, only hidden. This field and the picker bound
-                    to it are the buyer's company-capture route whenever the
-                    tile IS the active location — see isCompanyCaptured() and
-                    isTileCompanySearchActive() in gateway_method.js.
-                    `visible:` also keeps the node in the DOM so the select2
-                    binding, its MutationObserver rebinding and the
-                    sole-trader write path all keep working untouched; `if:`
-                    would destroy and rebuild the node under them.
+                    The previous behaviour hid this field once
+                    isCompanyCaptured() went true, on the theory that the
+                    order-intent notice sentence made an editable, visible
+                    control redundant — and only re-showed it on a decline,
+                    via isCompanyRecoveryNeeded(), to avoid a dead end for a
+                    buyer with no other route to pick a different company.
+                    Doug found this INCORRECT in live testing on 2026-08-04:
+                    the control was disappearing when a company was picked
+                    and, on the common path (order intent approves), never
+                    coming back — with nothing marking that as intentional
+                    from the buyer's side. This ruling removes that coupling
+                    entirely rather than patching it again.
 
-                    Hiding also takes this `required` input out of jQuery
-                    Validation's way, which only matters in the direction that
-                    helps: `elements()` skips hidden fields, and both states
-                    where this is hidden are states where the buyer either
-                    already captured a company here or has another control
-                    (the address-area one) to do it with.
+                    `visible:`, not `if:`, for the same reason as before:
+                    it keeps the node in the DOM so the select2 binding, its
+                    MutationObserver rebinding and the sole-trader write path
+                    all keep working untouched; `if:` would destroy and
+                    rebuild the node under them.
 
-                    RE-SHOWN on a decline, even though isCompanyCaptured() is
-                    still true then (found in adversarial review, 2026-08-04):
-                    processOrderIntentSuccessResponse()'s declined branch does
-                    NOT clear companyName/companyId — only an approval's own
-                    company-change subscriptions do that. Gating on capture
-                    alone left a declined buyer looking at a persistent "not
-                    available for this order" notice with NO control anywhere
-                    on the tile to pick a different company — a dead end
-                    without a page reload on exactly the checkouts where the
-                    tile is the buyer's ONLY route (saved address, virtual
-                    cart, or the setting off).
-
-                    isCompanyRecoveryNeeded(), NOT isOrderIntentDeclinedNoticeVisible()
-                    — round 2 of the same review found gating this on the
-                    NOTICE's own visibility reproduced the dead-end for any
-                    brand with order_intent enabled but the notice UI
-                    suppressed (two independent brand.xml switches), since
-                    that brand's notice text is permanently empty even on a
-                    real decline. isCompanyRecoveryNeeded() is set on every
-                    decline regardless of whether any notice text exists.
-                    Picking a new company clears both AND completes capture,
-                    so the field hides again once there is something new to
-                    hide it for.
+                    Hiding (when isTileCompanySearchActive() is false) also
+                    takes this `required` input out of jQuery Validation's
+                    way — `elements()` skips hidden fields, and that state is
+                    exactly the one where the buyer has the address-area
+                    control instead.
                 -->
                 <div
                     class="field field-text required"
-                    data-bind="visible: (!isCompanyCaptured() || isCompanyRecoveryNeeded()) && isTileCompanySearchActive()"
+                    data-bind="visible: isTileCompanySearchActive()"
                 >
                     <label for="company_name" class="label">
                         <span><!-- ko i18n: 'Company Name'--><!-- /ko --></span>
@@ -285,33 +279,41 @@
                             class="input-text"
                         />
                         <!--
-                            The organisation number is NOT shown here as its
-                            own element. Pre-2026-08-03, TWO-25326 §7 moved it
-                            into a standalone `.two-company-label` text line
-                            higher up the tile; the 2026-08-03 ruling (§7.3)
-                            removed THAT too — the number now appears only
-                            embedded inside the order-intent notice sentence
-                            (ConfigProvider::getOrderIntentApprovedNotice() /
-                            getOrderIntentDeclinedNotice(), rendered by the
-                            `two-order-intent-message` blocks above).
+                            The captured organisation number, as plain text
+                            underneath the field — TWO-25326, 2026-08-04
+                            ruling. This is NOT a reinstatement of the
+                            `.two-company-label` line §7 added and the
+                            2026-08-03 ruling (§7.3) removed: that was a
+                            single line combining name AND number, gated on
+                            the order-intent notice's own visibility, and it
+                            stays removed. This is the tile's equivalent of
+                            the address-step's own `.two-company-id-text`
+                            label (see renderCompanyIdText() in
+                            address-autocomplete.js and TWO-25326 §5) —
+                            NUMBER only, gated on capture rather than on any
+                            notice, so the two mount points behave the same
+                            way once a result is picked, independent of
+                            whether order intent is even enabled.
 
-                            So in every state where NEITHER notice is showing
-                            — no intent placed yet, order intent off, a
-                            notice-suppressed brand, a Dutch non-BV buyer —
-                            the captured organisation number is displayed
-                            NOWHERE on the payment tile. The address step's
-                            own Company Number field is visually hidden too
-                            (TWO-25288, see style.css), so there is no second
-                            surface picking it up. That is forfeited display,
-                            not a hidden bug: it follows from "the notice is
-                            the only display surface", and giving the number
-                            a second capture-based display route is a ticket
-                            decision rather than a tidy-up.
+                            Reuses `.two-company-id-text`'s styling (see
+                            style.css) for the same reason the address step
+                            has it: right/end-aligned under the field it
+                            annotates. Absent before a result is selected and
+                            absent again in manual-entry mode, because
+                            isCompanyCaptured() requires a name AND a number
+                            and manual entry clears the number
+                            (clearCompany()) — matching
+                            renderCompanyIdText()'s own "not visible before
+                            selection, never in manual entry" rule.
 
-                            The value itself is untouched — `companyId` is
-                            still the single carrier and getData() still
-                            reads it, never the DOM.
+                            The value itself is untouched either way —
+                            `companyId` is still the single carrier and
+                            getData() still reads it, never the DOM.
                         -->
+                        <div
+                            class="two-company-id-text"
+                            data-bind="visible: isCompanyCaptured() && isTileCompanySearchActive(), text: companyId, attr: {'aria-label': $t('Company Number')}"
+                        ></div>
                     </div>
                 </div>
                 <!--
