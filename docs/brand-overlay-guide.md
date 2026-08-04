@@ -147,7 +147,7 @@ Both notices are controlled by **one shared on/off switch**, but only the
 APPROVED notice has a wording override. **This is deliberate, not an
 oversight** (2026-08-04 ruling, TWO-25326): the declined/not-available
 notice must render identical platform-default copy for every brand,
-approved-only overrides are how each ABN-style overlay puts its own
+approved-only overrides are how each brand overlay puts its own
 branding on the reassurance message while the "not available" wording
 stays neutral. Do not add an `intent_declined_notice` copy-override
 element — `Model\Brand\Loader` hard-fails if a brand.xml declares one.
@@ -199,7 +199,7 @@ renders its own literal default copy for that outcome, and only consults
 the switch above to decide whether to ship EITHER payload to the
 renderer at all.
 
-**Every ABN-style brand overlay is expected to declare
+**Every white-label brand overlay is expected to declare
 `intent_approved_notice`** with brand-specific copy (2026-08-04 ruling) —
 falling through to the platform default here for a live overlay is a
 bug, not a valid "no opinion" state.
