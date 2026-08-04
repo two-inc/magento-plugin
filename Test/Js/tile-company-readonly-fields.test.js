@@ -2,28 +2,31 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * The payment tile's company display, as the 2026-08-03 ruling on TWO-25326
- * (§7.3) now defines it: NO standalone label at all. The captured company
- * name/number appear ONLY inside the order-intent notice sentence itself —
- * `orderIntentApprovedNotice` / `orderIntentDeclinedNotice` — which has its
- * own gate (whether an intent was placed and what it said), independent of
- * the tile's company CONTROLS, which remain gated on isCompanyCaptured() —
- * a separate and unchanged rule. A company captured with no intent outcome
- * on screen hides the controls and shows neither notice.
+ * The payment tile's company display, as the TWO-25326 2026-08-04 ruling
+ * now defines it. Two things changed from the 2026-08-03 (§7.3) shape this
+ * file used to pin, and they are independent:
  *
- * This supersedes three earlier shapes in turn. TWO-25288 first made the
- * captured number a read-only `<input>`; the ruling after that replaced the
- * input with a "Company Number" caption plus a separately-rendered value.
- * §7 (pre-2026-08-03) replaced that pair with one `.two-company-label` line,
- * gated on the intent message's own visibility. The 2026-08-03 ruling
- * removes that label too — company display now lives ONLY in the notice
- * text, not beside it.
+ *  - Bug A: the capture CONTROL's (the field + picker) visibility is no
+ *    longer gated on isCompanyCaptured() or on any order-intent outcome at
+ *    all. Doug's exact words: it "is controlled ONLY by the state of the
+ *    'enable search in address' admin setting ... and search control
+ *    visibility is not changed for any other reason" — i.e.
+ *    isTileCompanySearchActive() alone. Previously it hid on capture (the
+ *    theory being that the notice sentence made a second, editable copy
+ *    redundant) and briefly grew a decline-recovery carve-out
+ *    (isCompanyRecoveryNeeded(), now deleted) to avoid trapping a declined
+ *    buyer — found in testing to still leave the control gone, permanently,
+ *    on the common approve path.
  *
- * The control is HIDDEN, not deleted, and that distinction is pinned here
- * deliberately. The tile's picker is the only company-capture surface for a
- * buyer on a saved address (no `#shipping-new-address-form` exists, and that
- * is the only selector address-autocomplete.js binds) or on a virtual cart
- * (no shipping step at all). Deleting it would block those orders outright.
+ *  - Bug B: a `.two-company-id-text` org-number LABEL now renders under the
+ *    control once a company is captured (gated on isCompanyCaptured() &&
+ *    isTileCompanySearchActive()), mirroring address-autocomplete.js's
+ *    renderCompanyIdText()/`.two-company-id-text` (§5). This is NOT a
+ *    reinstatement of the `.two-company-label` line §7 added and §7.3
+ *    removed — that was a combined name+number line gated on the notice's
+ *    own visibility, and it stays removed. The order-intent notice sentence
+ *    is unaffected and still carries its own embedded "Name (number)" text
+ *    independently of this label.
  *
  * Four groups, and they are NOT the same kind of test. Be honest about which
  * is which before trusting a green run:
@@ -33,16 +36,12 @@
  *     shape and against any future reinstatement of an editable NUMBER field,
  *     because there is no `<input id="company_id">` left to satisfy either.
  *
- *  2. GATE PINS — two separate gates, pinned separately. The label and the
- *     order-intent message read the IDENTICAL expression (asserted as string
- *     equality between the two bindings, not as two matches against one
- *     pattern, because two different expressions that both happen to be true
- *     is precisely the failure the ruling forbids). The capture controls read
- *     `!isCompanyCaptured()`, which is a different gate on purpose. Every
- *     expression is read out of the template and pinned to an exact shape
- *     before being evaluated, so a drift to some other predicate — or to an
- *     always-true stub — fails the string match rather than passing on a
- *     coincidence.
+ *  2. GATE PINS — the control's `visible:` binding
+ *     (`isTileCompanySearchActive()` alone, post-2026-08-04) and the
+ *     org-number label's (`isCompanyCaptured() && isTileCompanySearchActive()`)
+ *     are pinned separately, each to its exact shape, so a drift to some
+ *     other predicate — or to an always-true stub — fails the string match
+ *     rather than passing on a coincidence.
  *
  *  3. WHAT-THE-BUYER-SEES PINS — 'what each capture mode puts in front of the
  *     buyer'. These do not restate the markup: they read the `text:` binding
@@ -184,9 +183,17 @@ function noticeGateExpression(cssClass) {
 
 /**
  * Whether the tile's company-name FIELD (the capture control) would currently
- * render. Same derive-then-evaluate discipline. Pinned to
- * `!isCompanyCaptured()`, which is DELIBERATELY not the label's gate any more:
- * the controls swap on capture, the label swaps on the intent message.
+ * render. Same derive-then-evaluate discipline.
+ *
+ * TWO-25326, 2026-08-04 ruling: pinned to `isTileCompanySearchActive()`
+ * ALONE. Doug's exact words: the control "is controlled ONLY by the state
+ * of the 'enable search in address' admin setting ... and search control
+ * visibility is not changed for any other reason." This supersedes the
+ * earlier `!isCompanyCaptured() || isCompanyRecoveryNeeded()` gate this
+ * function used to also require — capture state and order-intent outcome
+ * (approved, declined, errored) no longer affect the control's visibility
+ * at all. Pinned to the exact shape so a drift reintroducing either gate
+ * fails the string match, not just the behavioural cases below.
  */
 function nameFieldVisible(renderer) {
     const markup = withoutComments(readTemplate());
@@ -197,29 +204,59 @@ function nameFieldVisible(renderer) {
             'expected exactly one company-name field wrapper, found ' + tags.length
         );
     }
-    // TWO-25326 §7.1/decline-recovery (2026-08-04 adversarial-review, round
-    // 1 then round 2): the field also re-shows on a declined intent, even
-    // though isCompanyCaptured() is still true then — see the template's
-    // own comment. Gated on isCompanyRecoveryNeeded(), NOT on the declined
-    // NOTICE's own visibility — round 2 found the notice-visibility gate
-    // reproduced the dead-end for a brand with order_intent enabled but the
-    // notice UI suppressed. Pinned to the exact shape so a drift silently
-    // narrowing or widening the gate fails the string match, not just the
-    // behavioural cases below.
-    if (
-        !/visible:\s*\(!isCompanyCaptured\(\)\s*\|\|\s*isCompanyRecoveryNeeded\(\)\)\s*&&\s*isTileCompanySearchActive\(\)/.test(
-            tags[0]
-        )
-    ) {
+    if (!/visible:\s*isTileCompanySearchActive\(\)/.test(tags[0])) {
         throw new Error(
             "the company-name field's `visible:` binding is not the pinned "
-                + '`(!isCompanyCaptured() || isCompanyRecoveryNeeded()) && isTileCompanySearchActive()` shape'
+                + '`isTileCompanySearchActive()` shape'
         );
     }
-    return (
-        (!renderer.isCompanyCaptured() || renderer.isCompanyRecoveryNeeded()) &&
-        renderer.isTileCompanySearchActive()
-    );
+    return renderer.isTileCompanySearchActive();
+}
+
+/**
+ * The tile's org-number label — `.two-company-id-text` — as it would
+ * currently render: whether it is visible, and what text it would show.
+ * TWO-25326, 2026-08-04 ruling, Bug B: the tile's equivalent of
+ * address-autocomplete.js's renderCompanyIdText()/`.two-company-id-text`
+ * (§5), NOT a reinstatement of the `.two-company-label` line §7.3 removed.
+ * Derived from the template's own binding, same discipline as the other
+ * helpers here — a drift in either the gate or the bound value fails here
+ * rather than passing on a restated expectation.
+ */
+function companyIdLabel(renderer) {
+    const markup = withoutComments(readTemplate());
+    const tags = markup.match(/<div\b[^>]*class="two-company-id-text"[^>]*>/g) || [];
+    if (tags.length !== 1) {
+        throw new Error(
+            'expected exactly one `.two-company-id-text` label, found ' + tags.length
+        );
+    }
+    const bind = tags[0].match(/data-bind="([^"]*)"/);
+    if (!bind) {
+        throw new Error('`.two-company-id-text` has no data-bind attribute');
+    }
+    const visibleMatch = bind[1].match(/visible:\s*([^,]+?)\s*,/);
+    const textMatch = bind[1].match(/text:\s*([A-Za-z_$][\w$]*)/);
+    if (!visibleMatch || !textMatch) {
+        throw new Error('`.two-company-id-text` is missing its `visible:`/`text:` binding');
+    }
+    // `with`, not a bare `return (expr)`: ko evaluates a `data-bind` string
+    // with the view model as its implicit scope, so `isCompanyCaptured()`
+    // in the markup means `renderer.isCompanyCaptured()`, not a free
+    // identifier — the same reason `renderedValue()` above resolves its
+    // bound name against `renderer` rather than eval-ing it bare.
+    // eslint-disable-next-line no-new-func
+    const visible = !!new Function(
+        'renderer',
+        'with (renderer) { return (' + visibleMatch[1] + '); }'
+    ).call(null, renderer);
+    const target = renderer[textMatch[1]];
+    if (typeof target !== 'function') {
+        throw new Error(
+            '`.two-company-id-text` binds text to `' + textMatch[1] + '`, not on the renderer'
+        );
+    }
+    return { visible: visible, text: target.call(renderer) };
 }
 
 /**
@@ -288,16 +325,19 @@ describe('the payment tile shows the number as an uneditable label, not a field'
     });
 
     /**
-     * The reason the field is HIDDEN rather than deleted, pinned so a future
-     * tidy-up cannot quietly delete it: the tile's picker is the only
-     * company-capture surface for a buyer on a saved address (no
-     * `#shipping-new-address-form` is rendered, and that is the only selector
-     * address-autocomplete.js binds) or on a virtual cart (no shipping step
-     * at all). Removing it blocks those orders outright, because
-     * Model/Two.php::authorize() refuses a company with no organisation
-     * number.
+     * TWO-25326, 2026-08-04 ruling: the field is retained AND stays visible
+     * once a company is captured — it no longer hides. Doug's exact words:
+     * the control's visibility "is controlled ONLY by the state of the
+     * 'enable search in address' admin setting ... and search control
+     * visibility is not changed for any other reason." This supersedes the
+     * earlier "hides once captured, because a second editable copy of the
+     * notice sentence is a defect" reasoning — that theory made the control
+     * disappear on the common approve path with nothing to bring it back.
+     * The saved-address / virtual-cart capture route this used to also
+     * protect is now covered directly by isTileCompanySearchActive() alone,
+     * with no capture-state carve-out needed.
      */
-    test('the capture control is retained and hides on capture', () => {
+    test('the capture control is retained and stays visible on capture', () => {
         const { renderer } = loadRendererOnly();
 
         // Still present in the template — not deleted.
@@ -308,21 +348,22 @@ describe('the payment tile shows the number as an uneditable label, not a field'
         // Nothing captured: the control is available.
         expect(nameFieldVisible(renderer)).toBe(true);
 
-        // Captured: it hides. This rule is unchanged by the 2026-08-03 label
-        // ruling and must stay that way — it is what preserves the
-        // saved-address / virtual-cart capture route described above.
+        // Captured: it stays up. Unlike the pre-2026-08-04 rule, this is
+        // unconditional — no order-intent outcome changes it.
         renderer.applyCompanyData(
             { companyName: 'First Example Ltd', companyId: '12345678' },
             { authoritative: true }
         );
-        expect(nameFieldVisible(renderer)).toBe(false);
+        expect(nameFieldVisible(renderer)).toBe(true);
     });
 
     test('a name with no number leaves the capture control up — name-only is not captured', () => {
         // §6: manual entry (name, no number) must not make the payment method
-        // usable, so capture is NOT complete and the buyer must keep the
-        // search box. This is the case most likely to be got wrong by gating
-        // the control on the name alone.
+        // usable, so capture is NOT complete. The control staying up here is
+        // now the SAME rule as the captured case above (visibility no longer
+        // depends on capture state at all), but this case is kept separate
+        // because isCompanyCaptured() still gates the org-number label below
+        // it, and a name-only capture must show neither.
         const { renderer } = loadRendererOnly();
 
         renderer.applyCompanyData(
@@ -333,6 +374,7 @@ describe('the payment tile shows the number as an uneditable label, not a field'
         expect(renderer.isCompanyCaptured()).toBe(false);
         expect(nameFieldVisible(renderer)).toBe(true);
         expect(approvedNoticeVisible(renderer)).toBe(false);
+        expect(companyIdLabel(renderer).visible).toBe(false);
     });
 
     test('the name field is read-only only once a company has been captured', () => {
@@ -459,7 +501,7 @@ describe('the payment tile shows the number as an uneditable label, not a field'
 });
 
 describe('what each capture mode puts in front of the buyer', () => {
-    test('search mode: an approved intent embeds "Name (number)" in the notice sentence, and hides the control', () => {
+    test('search mode: an approved intent embeds "Name (number)" in the notice sentence, and the control stays up', () => {
         const { renderer } = loadRendererOnly();
 
         renderer.applyCompanyData(
@@ -468,13 +510,17 @@ describe('what each capture mode puts in front of the buyer', () => {
         );
         approveIntent(renderer);
 
-        // The name observable still carries the name — the control is only
-        // hidden, so it is still bound and still the thing sole-trader mode
-        // and the picker write to.
+        // The name observable carries the name, and — TWO-25326, 2026-08-04
+        // ruling — the control is never hidden by an approval, so it is
+        // still bound and still the thing sole-trader mode and the picker
+        // write to.
         expect(renderedValue('company_name', renderer)).toBe('First Example Ltd');
         expect(approvedNoticeText(renderer)).toBe('Approved for First Example Ltd (12345678).');
         expect(approvedNoticeVisible(renderer)).toBe(true);
-        expect(nameFieldVisible(renderer)).toBe(false);
+        expect(nameFieldVisible(renderer)).toBe(true);
+        // The org-number label (Bug B) shows alongside both the control and
+        // the notice — a separate display route from the notice sentence.
+        expect(companyIdLabel(renderer)).toEqual({ visible: true, text: '12345678' });
     });
 
     test('sole-trader mode: the minted name and synthetic number are embedded the same way', () => {
@@ -496,16 +542,14 @@ describe('what each capture mode puts in front of the buyer', () => {
             'Approved for Sole Trader Example (ST-SYNTH-004).'
         );
         expect(approvedNoticeVisible(renderer)).toBe(true);
-        expect(nameFieldVisible(renderer)).toBe(false);
-        // The field is hidden here, but its readonly binding must STILL read
-        // locked. Hiding is a display decision and sole trader can be left
-        // (registeredOrganisationMode()) — if the binding had been allowed to
-        // relax on the assumption nobody can see the field, re-showing it
-        // would hand the buyer an editable copy of a name they must not edit.
+        // Visible throughout (2026-08-04 ruling) — but still LOCKED: a
+        // visible, editable copy of a sole-trader-minted name is exactly
+        // what isCompanyNameReadOnly() exists to prevent.
+        expect(nameFieldVisible(renderer)).toBe(true);
         expect(isReadOnly('company_name', renderer)).toBe(true);
     });
 
-    test('manual-entry mode: the notice disappears and the capture control comes back', () => {
+    test('manual-entry mode: the notice and the org-number label disappear, and the control is typeable again', () => {
         // Driven through the real manual-entry path — clearCompany() is what the
         // sentinel row's handler calls — not by poking the observable, so this
         // fails if that path stops clearing the abandoned company's number.
@@ -517,30 +561,32 @@ describe('what each capture mode puts in front of the buyer', () => {
         );
         approveIntent(renderer);
         expect(approvedNoticeVisible(renderer)).toBe(true);
+        expect(nameFieldVisible(renderer)).toBe(true);
+        expect(companyIdLabel(renderer).visible).toBe(true);
 
         renderer.clearCompany();
 
         expect(renderer.companyId()).toBe('');
         expect(approvedNoticeVisible(renderer)).toBe(false);
-        // The control is back, and typeable — which is the whole point of the
-        // mode, and the reason the swap is a visibility toggle rather than a
-        // removal.
+        expect(companyIdLabel(renderer).visible).toBe(false);
+        // The control was never hidden (2026-08-04 ruling) and is now
+        // typeable again — which is the whole point of the mode.
         expect(nameFieldVisible(renderer)).toBe(true);
         expect(isReadOnly('company_name', renderer)).toBe(false);
     });
 
     /**
-     * The regression §7's swap introduces if nothing is done about it, caught
-     * in adversarial review rather than by the original test set.
-     *
-     * registeredOrganisationMode() did not clear the captured company. While
-     * the tile's control was always visible that was untidy but recoverable —
-     * the buyer could just search, and the pick overwrote the stale identity.
-     * Once the control HIDES on capture it is not recoverable: a buyer
-     * leaving sole-trader mode would face a sole-trader notice, no search box,
-     * and no way back.
+     * Pre-2026-08-04, registeredOrganisationMode() not clearing the captured
+     * company was a regression only because the tile's control used to HIDE
+     * on capture — a buyer leaving sole-trader mode would otherwise face a
+     * sole-trader notice, no search box, and no way back. The control no
+     * longer hides for any capture-state reason, so that specific dead end
+     * is moot, but the underlying clear is still correct on its own terms
+     * (see registeredOrganisationMode()'s own comment): a sole-trader
+     * identity must not survive into registered-organisation mode. Pinned
+     * here as a visibility-independent behaviour.
      */
-    test('leaving sole-trader mode brings the capture control back', () => {
+    test('leaving sole-trader mode clears the sole-trader identity (the control was never hidden)', () => {
         const { renderer } = loadRendererOnly();
 
         renderer.prefetched = {
@@ -554,7 +600,7 @@ describe('what each capture mode puts in front of the buyer', () => {
         renderer.soleTraderMode();
         approveIntent(renderer);
         expect(approvedNoticeVisible(renderer)).toBe(true);
-        expect(nameFieldVisible(renderer)).toBe(false);
+        expect(nameFieldVisible(renderer)).toBe(true);
 
         // fillCustomerData() reaches into the quote's address objects
         // (getCacheKey()), which this file's renderer-only harness does not
@@ -571,8 +617,9 @@ describe('what each capture mode puts in front of the buyer', () => {
         // The sole-trader identity does not survive the mode switch...
         expect(renderer.companyId()).toBe('');
         expect(renderer.isCompanyCaptured()).toBe(false);
-        // ...so the buyer gets the search box back.
+        // ...and the control — visible the whole time — is typeable again.
         expect(nameFieldVisible(renderer)).toBe(true);
+        expect(isReadOnly('company_name', renderer)).toBe(false);
         expect(approvedNoticeVisible(renderer)).toBe(false);
     });
 
@@ -607,7 +654,8 @@ describe('what each capture mode puts in front of the buyer', () => {
 
         expect(renderer.companyId()).toBe('12345678');
         expect(renderer.isCompanyCaptured()).toBe(true);
-        expect(nameFieldVisible(renderer)).toBe(false);
+        expect(nameFieldVisible(renderer)).toBe(true);
+        expect(companyIdLabel(renderer)).toEqual({ visible: true, text: '12345678' });
         // ...and once the intent for it is approved, the notice appears.
         // Ordered this way round on purpose: the notice's companyId
         // subscription clears it whenever the company changes, so an
@@ -618,20 +666,22 @@ describe('what each capture mode puts in front of the buyer', () => {
     });
 
     /**
-     * Hiding rather than removing means select2 can be initialised against a
-     * node that is already `display: none` (a company captured on the address
-     * step before the tile rendered). select2 measures a width at init, and
-     * `_resolveWidth` returns anything that is not `resolve`/`element`/
-     * `style`/`computedstyle` VERBATIM — so the literal `'100%'` this picker
-     * passes is a CSS percentage that resolves whenever the node is shown,
-     * not a pixel count frozen at zero.
+     * `visible:` rather than `if:` means select2 can be initialised against
+     * a node that is already `display: none` — this field still hides
+     * whenever isTileCompanySearchActive() is false (the address-area
+     * setting is on and an address-area control actually exists on this
+     * checkout), even though capture state no longer hides it. select2
+     * measures a width at init, and `_resolveWidth` returns anything that is
+     * not `resolve`/`element`/`style`/`computedstyle` VERBATIM — so the
+     * literal `'100%'` this picker passes is a CSS percentage that resolves
+     * whenever the node is shown, not a pixel count frozen at zero.
      *
      * Switching that option to `'resolve'` or `'element'` would measure
      * `outerWidth()` at init instead, which is 0 on a hidden node, and the
-     * buyer who returns to manual entry would get a zero-width search box.
-     * Pinned as an option value because there is no way to observe the
-     * consequence in jsdom (no layout), and the failure is invisible until a
-     * real browser renders it.
+     * buyer who ends up on the tile after starting on a hidden init would
+     * get a zero-width search box. Pinned as an option value because there
+     * is no way to observe the consequence in jsdom (no layout), and the
+     * failure is invisible until a real browser renders it.
      */
     test('the picker takes a percentage width, so a hidden init cannot freeze it at zero', () => {
         // TWO-25326 rebuild: the `.select2({...})` call — and this `width`
@@ -744,15 +794,15 @@ describe('the notices are gated on their own observables, not on capture', () =>
         expect(errors).toEqual([]);
     });
 
-    test('a decline re-opens the capture control instead of trapping the buyer (found in adversarial review, 2026-08-04)', () => {
-        // BLOCKER found reviewing this PR: isCompanyCaptured() stays true
-        // after a decline (only an approval's own company-change
-        // subscriptions clear the observables), so gating the field purely
-        // on isCompanyCaptured() left a declined buyer staring at a
-        // persistent "not available" notice with NO control anywhere on the
-        // tile to try a different company — a dead end without a page
-        // reload on a saved-address/virtual-cart/setting-off checkout,
-        // where the tile is the buyer's ONLY route to search.
+    test('the capture control stays up through approve, decline, and a re-pick (TWO-25326, 2026-08-04 ruling)', () => {
+        // Supersedes the pre-2026-08-04 "decline re-opens the capture
+        // control" fix: that fix existed only because isCompanyCaptured()
+        // used to hide the field on approval and had no way to re-show it
+        // on decline without a dedicated carve-out
+        // (isCompanyRecoveryNeeded(), now removed). The 2026-08-04 ruling
+        // makes the control's visibility depend on isTileCompanySearchActive()
+        // alone, so there is nothing left to trap the buyer with — pinned
+        // here across all three states in one flow.
         const { renderer } = loadRendererOnly();
 
         renderer.applyCompanyData(
@@ -760,25 +810,21 @@ describe('the notices are gated on their own observables, not on capture', () =>
             { authoritative: true }
         );
         approveIntent(renderer);
-        expect(nameFieldVisible(renderer)).toBe(false);
+        expect(nameFieldVisible(renderer)).toBe(true);
 
         renderer.processOrderIntentSuccessResponse({ approved: false });
 
         expect(renderer.isCompanyCaptured()).toBe(true);
         expect(declinedNoticeVisible(renderer)).toBe(true);
-        // The recovery path: the field is back, letting the buyer search
-        // again.
         expect(nameFieldVisible(renderer)).toBe(true);
 
-        // Picking a different company clears the declined notice AND
-        // completes a new capture, so the field correctly hides again once
-        // there is something new to hide it for.
         renderer.applyCompanyData(
             { companyName: 'Second Example Ltd', companyId: '87654321' },
             { authoritative: true }
         );
         expect(declinedNoticeVisible(renderer)).toBe(false);
-        expect(nameFieldVisible(renderer)).toBe(false);
+        expect(nameFieldVisible(renderer)).toBe(true);
+        expect(companyIdLabel(renderer)).toEqual({ visible: true, text: '87654321' });
     });
 
     test('an errored intent shows neither notice', () => {
@@ -925,14 +971,12 @@ describe('the notices are gated on their own observables, not on capture', () =>
         declineIntent(renderer);
         expect(declinedNoticeVisible(renderer)).toBe(false);
 
-        // Round 2 of adversarial review, 2026-08-04: THIS is the case round
-        // 1's decline-recovery fix missed. `enable_order_intent` and
-        // `<intent_approved_notice_enabled>` are independent brand.xml
-        // switches — order_intent can fire for real (as it just did above)
-        // while the notice UI stays off. Gating the field's re-show on the
-        // declined NOTICE's own visibility (always false for this brand)
-        // would silently reproduce the original dead-end. It must re-show
-        // regardless.
+        // The 2026-08-04 ruling makes this trivial where it used to need a
+        // dedicated fix: the field's visibility no longer reads either
+        // notice observable, so a brand with the notice UI suppressed
+        // (`enable_order_intent` on, `<intent_approved_notice_enabled>`
+        // off — two independent brand.xml switches) can never produce a
+        // hidden-with-no-notice dead end in the first place.
         expect(nameFieldVisible(renderer)).toBe(true);
     });
 

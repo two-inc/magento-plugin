@@ -691,18 +691,24 @@
 }
 
 /*
- * The address-step company number, rendered as a plain text label (TWO-25326
- * §5) rather than the input above — which is hidden outright.
+ * The captured company number, rendered as a plain text label rather than
+ * an editable input, under EITHER of the two mounts the shared
+ * company-search control can live on:
  *
- * Appended into the company field's `.control` by
- * view/frontend/web/js/view/address-autocomplete.js only once a search result
- * has actually been selected, so it is absent before selection and absent in
- * manual-entry mode (name-only capture). `text-align: end` rather than
- * `right` so it follows the writing direction on RTL store views instead of
- * pinning to the physical right edge.
+ *  - the address step (TWO-25326 §5) — appended into the company field's
+ *    `.control` by address-autocomplete.js's renderCompanyIdText(), only
+ *    once a search result has actually been selected;
+ *  - the payment tile (TWO-25326, 2026-08-04 ruling, Bug B) — a KO `<div>`
+ *    in gateway_method.html, `visible`-bound to
+ *    `isCompanyCaptured() && isTileCompanySearchActive()`.
  *
- * `.control` is the input's own containing box, so aligning to its end edge
- * lines the number up with the input's end edge exactly.
+ * Both are absent before selection and absent in manual-entry mode
+ * (name-only capture). `text-align: end` rather than `right` so it follows
+ * the writing direction on RTL store views instead of pinning to the
+ * physical right edge.
+ *
+ * `.control` is the input's own containing box on both mounts, so aligning
+ * to its end edge lines the number up with the input's end edge exactly.
  */
 .two-company-id-text {
     display: block;

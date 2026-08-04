@@ -312,42 +312,35 @@ define([
          * Has a company actually been CAPTURED — name plus organisation
          * number — as opposed to merely named?
          *
-         * This is the switch that hides the tile's own company CONTROLS. When
-         * it is true the controls are hidden, because capture is complete and
-         * there is nothing left for the buyer to do here; when it is false
-         * they stay visible and fully functional, because they are the buyer's
-         * route to capturing a company in the first place.
+         * TWO-25326, 2026-08-04 ruling: this NO LONGER hides the tile's
+         * company-capture controls (the field + picker). Doug's exact
+         * words on the control's visibility: it "is controlled ONLY by the
+         * state of the 'enable search in address' admin setting ... and
+         * search control visibility is not changed for any other reason" —
+         * see isTileCompanySearchActive() and the `visible:` binding on the
+         * field wrapper in gateway_method.html, which no longer reads this
+         * method at all. Superseded here is the earlier design where
+         * capture (and, briefly, a decline-recovery carve-out on top of it)
+         * hid and re-showed that field — found in live testing to leave the
+         * control gone with no way back on the common approve path.
          *
-         * It no longer governs any standalone company LABEL — the
-         * 2026-08-03 ruling (§7.3) removed that element outright. The
-         * captured company now appears ONLY inside the order-intent notice
-         * sentence itself (orderIntentApprovedNotice / orderIntentDeclinedNotice),
-         * which has its own gate (whether an intent was placed and what it
-         * said) that is independent of this one. A captured company with no
-         * intent outcome yet showing hides the controls and shows no
-         * notice, and that is the ruling, not an oversight.
+         * What THIS method still gates, post-ruling:
          *
-         * Keeping the controls rather than deleting them is deliberate and
-         * load-bearing. The tile's picker is not a duplicate of the address
-         * step's: address-autocomplete.js binds only
-         * `#shipping-new-address-form`, so a buyer who selects a SAVED
-         * address (no new-address form is rendered) or checks out a VIRTUAL
-         * cart (no shipping step exists at all) has no company search
-         * anywhere else. Removing this surface outright would leave those two
-         * flows with no way to supply a company, and
-         * Model/Two.php::authorize() then refuses the order server-side — an
-         * order-blocking regression, not a cosmetic one.
+         *  - the org-number label underneath the field in
+         *    gateway_method.html (`.two-company-id-text`) — shown once
+         *    capture is complete, same "name AND number" rule as below,
+         *    mirroring address-autocomplete.js's renderCompanyIdText();
+         *  - placeOrder()'s client-side submit gate (§6a) — a manual,
+         *    name-only capture must not let the buyer submit.
          *
          * Gated on the NUMBER, not on the name alone, and that is the whole
          * distinction:
          *
-         *  - a registry pick and sole-trader autofill both yield a number, so
-         *    capture is complete and the controls can go;
-         *  - manual entry yields a name and no number. §6 says name-only must
-         *    NOT make the payment method usable, so capture is precisely NOT
-         *    complete, and hiding the controls at that point would take away
-         *    the search box while telling the buyer they were finished. The
-         *    controls stay.
+         *  - a registry pick and sole-trader autofill both yield a number,
+         *    so capture is complete;
+         *  - manual entry yields a name and no number. §6 says name-only
+         *    must NOT make the payment method usable, so capture is
+         *    precisely NOT complete.
          *
          * A plain function, not a computed — same reasoning as
          * isCompanyNameReadOnly() above: the template reads it inside `visible`
@@ -375,9 +368,12 @@ define([
          *    when that form does not exist on this checkout at all — a
          *    saved address and a virtual cart both render no such form —
          *    in which case the tile remains the buyer's only route to
-         *    search, same reasoning as isCompanyCaptured()'s doc comment
-         *    above (removing it there would block those orders outright,
-         *    and the same is true here).
+         *    search: a saved address and a virtual cart both mean no
+         *    address-area control exists on this checkout at all, so
+         *    removing the tile's own route too would leave those two flows
+         *    with no way to supply a company, and Model/Two.php::authorize()
+         *    then refuses the order server-side — an order-blocking
+         *    regression, not a cosmetic one.
          *
          * Read live rather than cached: `updateShippingAddress()` /
          * `updateBillingAddress()` call `refreshTileCompanySearchBinding()`
@@ -431,26 +427,6 @@ define([
          */
         isOrderIntentDeclinedNoticeVisible: function () {
             return !!(this.orderIntentDeclinedNotice && this.orderIntentDeclinedNotice());
-        },
-        /**
-         * Whether the tile's capture control should re-show for decline
-         * recovery, independent of whether the declined NOTICE TEXT is
-         * visible. Added in round 2 of adversarial review, 2026-08-04:
-         * gating the field's re-show directly on
-         * isOrderIntentDeclinedNoticeVisible() reproduced the original
-         * dead-end for any brand with order_intent enabled but the notice
-         * UI suppressed (`enable_order_intent` and
-         * `<intent_approved_notice_enabled>` are independent switches — see
-         * Model/Brand/Loader.php) — that brand's declined buyer would still
-         * see the field stay hidden, just silently instead of with a notice.
-         * `orderIntentDeclined` is set on every decline regardless of
-         * whether any notice text was produced, so this reads true whenever
-         * a decline needs recovering from, on every brand configuration.
-         *
-         * @returns {boolean}
-         */
-        isCompanyRecoveryNeeded: function () {
-            return !!(this.orderIntentDeclined && this.orderIntentDeclined());
         },
         selectTerm: function (days) {
             surchargeModel.selectTerm(days);
@@ -1152,21 +1128,6 @@ define([
             this.orderIntentDeclinedNoticeCopy = config.orderIntentDeclinedNotice || null;
             this.orderIntentDeclinedNotice = ko.observable('');
 
-            // Round 2 adversarial review, 2026-08-04: `orderIntentDeclinedNotice`
-            // is NOT a reliable "was the last intent declined" signal on its
-            // own — `enable_order_intent` and
-            // `<intent_approved_notice_enabled>` are two INDEPENDENT brand
-            // switches (see Model/Brand/Loader.php), so a brand can have
-            // order_intent firing for real while the notice UI stays off.
-            // On that brand, orderIntentDeclinedNoticeCopy is permanently
-            // null, resolveCompanyNotice() always returns '', and gating the
-            // decline-recovery field re-show on the notice's OWN visibility
-            // would reproduce the exact dead-end that fix was written to
-            // close — just for a different brand config. Tracked separately
-            // so the recovery path does not depend on whether the notice UI
-            // happens to be on.
-            this.orderIntentDeclined = ko.observable(false);
-
             // The notice is *persistent* — unlike the message-region
             // treatment it replaces, it survives checkout updates and a
             // failed placeOrder validation (see the deliberate omission in
@@ -1182,12 +1143,10 @@ define([
             this.companyName.subscribe(function () {
                 self.orderIntentApprovedNotice('');
                 self.orderIntentDeclinedNotice('');
-                self.orderIntentDeclined(false);
             });
             this.companyId.subscribe(function () {
                 self.orderIntentApprovedNotice('');
                 self.orderIntentDeclinedNotice('');
-                self.orderIntentDeclined(false);
             });
         },
         /**
@@ -1247,7 +1206,6 @@ define([
                     // approval reassurance was effectively never seen.
                     this.orderIntentApprovedNotice(this.resolveOrderIntentApprovedNotice());
                     this.orderIntentDeclinedNotice('');
-                    this.orderIntentDeclined(false);
                 } else {
                     // TWO-25326 §7.3 (2026-08-03 ruling): a clean "not
                     // approved" response is a business outcome, not a
@@ -1257,11 +1215,6 @@ define([
                     // ONLY the intent message" the ruling asks for.
                     this.orderIntentApprovedNotice('');
                     this.orderIntentDeclinedNotice(this.resolveOrderIntentDeclinedNotice());
-                    // Set regardless of whether the notice text above is
-                    // empty (brand suppressed the notice UI) — this is the
-                    // signal the decline-recovery field re-show reads, and
-                    // it must fire on EVERY decline, notice or not.
-                    this.orderIntentDeclined(true);
                 }
             }
         },
@@ -1270,7 +1223,6 @@ define([
             // notice from a previous, successful intent.
             this.orderIntentApprovedNotice('');
             this.orderIntentDeclinedNotice('');
-            this.orderIntentDeclined(false);
 
             // `let`, not `const`: the SCHEMA_ERROR branch below reassigns
             // this to '' once it has pushed the field-level errors into
@@ -1712,16 +1664,9 @@ define([
                 // mirror of enterSoleTraderUi() clearing on the way in. A
                 // sole trader's minted name and synthetic number are not a
                 // registered organisation, so carrying them across the mode
-                // switch would submit one identity under the other's mode.
-                //
-                // Load-bearing since TWO-25326 §7 made the tile's company
-                // control HIDE once a company is captured. Before that the
-                // stale identity was untidy but recoverable — the search box
-                // was still on screen, and picking a company overwrote it.
-                // Now it is not: isCompanyCaptured() would still be true, so
-                // the control would stay hidden and the buyer would be
-                // stranded in registered-organisation mode looking at a
-                // sole-trader label with no way to search.
+                // switch would submit one identity under the other's mode —
+                // getData() would otherwise post the sole trader's number
+                // under whatever name the buyer then searches for.
                 //
                 // Before enableCompanySearch(), not after: clearCompany()
                 // ends in destroyCompanySearchWidget(), which would otherwise
