@@ -17,10 +17,17 @@ const { loadAmdModule, defaultMocks } = require('./amd-harness');
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
 
 const DEFAULT_COPY = {
-    withCompany:
-        'Your invoice with Two is likely to be accepted for {{companyName}}, subject to additional checks.',
-    withoutCompany: 'Your invoice with Two is likely to be accepted, subject to additional checks.',
-    companyNameToken: '{{companyName}}'
+    withCompany: 'This order by {{companyName}} ({{companyNumber}}) is likely to be accepted by Two',
+    withoutCompany: 'This order is likely to be accepted by Two',
+    companyNameToken: '{{companyName}}',
+    companyNumberToken: '{{companyNumber}}'
+};
+
+const DECLINED_COPY = {
+    withCompany: 'Two is not available for this order by {{companyName}} ({{companyNumber}})',
+    withoutCompany: 'Two is not available for this order',
+    companyNameToken: '{{companyName}}',
+    companyNumberToken: '{{companyNumber}}'
 };
 
 /**
@@ -31,7 +38,7 @@ const DEFAULT_COPY = {
  * whole of initialize(), which drags in company search, the address/quote
  * graph and select2 and would make these specs a mocking exercise.
  */
-function makeContext(noticeCopy) {
+function makeContext(noticeCopy, declinedCopy) {
     const component = loadAmdModule(RENDERER);
     const ko = defaultMocks().ko;
 
@@ -58,29 +65,33 @@ function makeContext(noticeCopy) {
 
     component.initOrderIntentApprovedNotice.call(ctx, {
         orderIntentApprovedNotice: noticeCopy,
-        orderIntentDeclinedMessage: 'Declined.'
+        // TWO-25326 §7.3: the "not approved" business outcome now renders
+        // via the SAME persistent-notice mechanism, with its own copy —
+        // undefined here defaults to '' if the individual test doesn't
+        // supply it, matching a caller that never wired the key.
+        orderIntentDeclinedNotice: declinedCopy
     });
-    ctx.orderIntentDeclinedMessage = 'Declined.';
 
     return ctx;
 }
 
 describe('gateway_method intent-approved notice', () => {
-    test('approval renders the company-name variant inline, never via the messages region', () => {
-        const ctx = makeContext(DEFAULT_COPY);
+    test('approval renders the company-name and -number variant inline, never via the messages region', () => {
+        const ctx = makeContext(DEFAULT_COPY, DECLINED_COPY);
         ctx.companyName('Acme Widgets AS');
+        ctx.companyId('123456789');
 
         ctx.processOrderIntentSuccessResponse.call(ctx, { approved: true });
 
         // addSuccessMessage throws in the stub: reaching here at all proves
         // the renderer no longer routes the notice through getRegion('messages').
         expect(ctx.orderIntentApprovedNotice()).toBe(
-            'Your invoice with Two is likely to be accepted for Acme Widgets AS, subject to additional checks.'
+            'This order by Acme Widgets AS (123456789) is likely to be accepted by Two'
         );
     });
 
     test('falls back to the no-company variant when the company name is blank', () => {
-        const ctx = makeContext(DEFAULT_COPY);
+        const ctx = makeContext(DEFAULT_COPY, DECLINED_COPY);
         ctx.companyName('   ');
 
         ctx.processOrderIntentSuccessResponse.call(ctx, { approved: true });
@@ -89,10 +100,11 @@ describe('gateway_method intent-approved notice', () => {
     });
 
     test('takes a company name containing $-sequences literally', () => {
-        const ctx = makeContext(DEFAULT_COPY);
+        const ctx = makeContext(DEFAULT_COPY, DECLINED_COPY);
         // String.replace treats $& / $1 in the *replacement* as patterns; the
         // renderer passes a replacer function to avoid that.
         ctx.companyName('A$& B$1 Ltd');
+        ctx.companyId('999');
 
         ctx.processOrderIntentSuccessResponse.call(ctx, { approved: true });
 
@@ -104,39 +116,50 @@ describe('gateway_method intent-approved notice', () => {
         // <intent_approved_notice_enabled>false</intent_approved_notice_enabled>.
         // The observable stays '' so the template's `ko if` never emits an
         // element.
-        const ctx = makeContext(null);
+        const ctx = makeContext(null, null);
         ctx.companyName('Acme Widgets AS');
+        ctx.companyId('123456789');
 
         ctx.processOrderIntentSuccessResponse.call(ctx, { approved: true });
 
         expect(ctx.orderIntentApprovedNotice()).toBe('');
     });
 
-    test('a decline clears the notice and still shows the decline message', () => {
-        const ctx = makeContext(DEFAULT_COPY);
+    test('a decline clears the approved notice and shows the persistent declined notice instead', () => {
+        const ctx = makeContext(DEFAULT_COPY, DECLINED_COPY);
         ctx.companyName('Acme Widgets AS');
+        ctx.companyId('123456789');
         ctx.processOrderIntentSuccessResponse.call(ctx, { approved: true });
         expect(ctx.orderIntentApprovedNotice()).not.toBe('');
 
         ctx.processOrderIntentSuccessResponse.call(ctx, { approved: false });
 
         expect(ctx.orderIntentApprovedNotice()).toBe('');
-        expect(ctx.errors).toEqual(['Declined.']);
+        expect(ctx.orderIntentDeclinedNotice()).toBe(
+            'Two is not available for this order by Acme Widgets AS (123456789)'
+        );
+        // No toast for a clean decline — the persistent tile notice is the
+        // only surface, matching the "tile shows ONLY the intent message"
+        // ruling.
+        expect(ctx.errors).toEqual([]);
     });
 
-    test('an intent error clears the notice', () => {
-        const ctx = makeContext(DEFAULT_COPY);
+    test('an intent error clears both notices', () => {
+        const ctx = makeContext(DEFAULT_COPY, DECLINED_COPY);
         ctx.companyName('Acme Widgets AS');
+        ctx.companyId('123456789');
         ctx.processOrderIntentSuccessResponse.call(ctx, { approved: true });
 
         ctx.processOrderIntentErrorResponse.call(ctx, {});
 
         expect(ctx.orderIntentApprovedNotice()).toBe('');
+        expect(ctx.orderIntentDeclinedNotice()).toBe('');
     });
 
-    test('changing the company clears the notice', () => {
-        const ctx = makeContext(DEFAULT_COPY);
+    test('changing the company clears both notices', () => {
+        const ctx = makeContext(DEFAULT_COPY, DECLINED_COPY);
         ctx.companyName('Acme Widgets AS');
+        ctx.companyId('123456789');
         ctx.processOrderIntentSuccessResponse.call(ctx, { approved: true });
         expect(ctx.orderIntentApprovedNotice()).not.toBe('');
 
@@ -145,16 +168,19 @@ describe('gateway_method intent-approved notice', () => {
         // The approval was for the previous company; keeping it would be a
         // buyer-facing lie.
         expect(ctx.orderIntentApprovedNotice()).toBe('');
+        expect(ctx.orderIntentDeclinedNotice()).toBe('');
     });
 
-    test('changing the company number clears the notice', () => {
-        const ctx = makeContext(DEFAULT_COPY);
+    test('changing the company number clears both notices', () => {
+        const ctx = makeContext(DEFAULT_COPY, DECLINED_COPY);
         ctx.companyName('Acme Widgets AS');
+        ctx.companyId('123456789');
         ctx.processOrderIntentSuccessResponse.call(ctx, { approved: true });
 
         ctx.companyId('999888777');
 
         expect(ctx.orderIntentApprovedNotice()).toBe('');
+        expect(ctx.orderIntentDeclinedNotice()).toBe('');
     });
 
     test('the notice survives a messageContainer clear (failed placeOrder validation)', () => {

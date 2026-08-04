@@ -78,6 +78,26 @@ interface BrandRegistryInterface
     public function getIntentApprovedNotice(): ?string;
 
     /**
+     * Per-brand COPY override for the buyer-facing "order intent NOT
+     * approved" notice rendered inline in the checkout payment tile
+     * (TWO-25326 §7.3/§7.4, added 2026-08-03). Sourced from brand.xml
+     * <intent_declined_notice>. Wording only, and independent of the
+     * approved-notice override — a brand overlay with its own approved copy
+     * is not forced to also take the vanilla declined copy.
+     *
+     * Suppressed by the SAME switch as the approved notice —
+     * isIntentApprovedNoticeEnabled() — since the ruling treats "the intent
+     * message" as one on/off unit, approved or declined, not two.
+     *
+     *  - `null`  — no override (element absent, empty or whitespace-only):
+     *              platform default translated copy. Never ''.
+     *  - non-''  — used verbatim as the company-known copy template
+     *              (%1 = brand product name, %2 = buyer company name,
+     *              %3 = buyer organisation number).
+     */
+    public function getIntentDeclinedNotice(): ?string;
+
+    /**
      * Short brand tag used to decorate non-production checkout URLs
      * (e.g. `?brand=<tag>`). Empty string ('') means do not decorate
      * — the URL host already conveys the brand. Implementations may

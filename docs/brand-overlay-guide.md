@@ -131,28 +131,33 @@ across modules). Elements may appear in any order (`xs:all`).
 | `extra_http_headers`             | no       | `<header name="…">` list  | Extra headers on API calls.                                                                                                                                     |
 | `suppressed_fields`              | no       | `<field path="…">` list   | Hides admin controls for this brand (below).                                                                                                                    |
 | `inline_term_fees`               | no       | boolean                   | Show per-term merchant fee beside Payment Terms checkboxes in admin (default true).                                                                             |
-| `intent_approved_notice_enabled` | no       | `true` \| `false`         | On/off switch for the buyer-facing "order intent approved" notice. Default `true`. **See below.**                                                               |
-| `intent_approved_notice`         | no       | string                    | Copy override for that notice — wording only, **not** an off switch. **See below.**                                                                             |
+| `intent_approved_notice_enabled` | no       | `true` \| `false`         | On/off switch for BOTH the "order intent approved" and "order intent declined" notices. Default `true`. **See below.**                                          |
+| `intent_approved_notice`         | no       | string                    | Copy override for the approved notice — wording only, **not** an off switch. **See below.**                                                                     |
+| `intent_declined_notice`         | no       | string                    | Copy override for the declined notice — a SEPARATE override from the approved one (added 2026-08-03, TWO-25326 §7.3/§7.4). **See below.**                       |
 
-### The intent-approved notice — two keys, one each for on/off and wording
+### The intent notices — one on/off switch, two independent wording overrides
 
-The notice is a buyer-facing "order intent approved" reassurance line
-rendered inline in the checkout payment tile. It is controlled by **two
-independent keys**: whether it shows, and what it says. **Do not
-overload one key with both meanings** — an off switch expressed as the
-absence of content is indistinguishable from an unfinished string, and
-any tidy-up that deletes the "empty, unused" declaration silently turns
-the notice back on.
+The notices are buyer-facing "order intent approved" / "order intent not
+approved" lines rendered inline in the checkout payment tile — as of the
+2026-08-03 ruling (TWO-25326 §7.3), this is the ONLY place the buyer's
+captured company name/number are displayed in the tile at all; the
+earlier standalone `.two-company-label` element is gone, not relocated.
+Both notices are controlled by **one shared on/off switch** and **two
+independent wording overrides**. **Do not overload the switch with
+wording meaning** — an off switch expressed as the absence of content is
+indistinguishable from an unfinished string, and any tidy-up that
+deletes the "empty, unused" declaration silently turns the notice back
+on.
 
-#### `intent_approved_notice_enabled` — the on/off switch
+#### `intent_approved_notice_enabled` — the on/off switch for BOTH notices
 
 Explicit boolean only:
 
 | brand.xml                                                                | Behaviour                                                                                  |
 | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| `<intent_approved_notice_enabled>true</intent_approved_notice_enabled>`  | Notice **ON**.                                                                             |
-| `<intent_approved_notice_enabled>false</intent_approved_notice_enabled>` | Notice **suppressed entirely** — no element is emitted into the DOM, not an empty wrapper. Since TWO-25326 this also suppresses the payment tile's captured-company label, whose visibility is tied to the notice's. |
-| element absent                                                           | Documented explicit default **`true`** (notice ON).                                        |
+| `<intent_approved_notice_enabled>true</intent_approved_notice_enabled>`  | Both notices **ON** (whichever one an order-intent outcome selects).                       |
+| `<intent_approved_notice_enabled>false</intent_approved_notice_enabled>` | Both notices **suppressed entirely** — no element is emitted into the DOM, not an empty wrapper. There is no separate `intent_declined_notice_enabled` element; the ruling treats "the intent message" as one on/off unit, approved or declined. |
+| element absent                                                           | Documented explicit default **`true`** (notices ON).                                        |
 | anything else (`1`, `0`, `yes`, empty, whitespace)                       | **Error.** Never a silent third behaviour.                                                 |
 
 Absent-means-`true` is deliberate: it keeps a third-party overlay that
@@ -171,18 +176,25 @@ runtime (see the validation warning below):
 Note `xs:boolean` is deliberately **not** used: it would also accept `1`
 and `0`, and this switch is meant to read as a decision.
 
-#### `intent_approved_notice` — the copy override
+#### `intent_approved_notice` / `intent_declined_notice` — the copy overrides
 
-| brand.xml                                            | Behaviour                                                                                                              |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| element absent                                       | Platform default translated copy.                                                                                      |
-| empty or whitespace-only                             | **Inert** — same as absent. It does **not** mean "off".                                                                |
-| `<intent_approved_notice>…</intent_approved_notice>` | The content is used verbatim as the company-known copy template. `%1` = brand product name, `%2` = buyer company name. |
+Two SEPARATE elements, one per notice — a brand with its own approved
+wording is not forced to also take the vanilla declined wording, or
+vice versa (§7.4):
 
-`Descriptor::getIntentApprovedNotice()` returns `null` for the first two
-rows and the template for the third; it never returns `''`. The switch
-above is what `Model\Ui\ConfigProvider` consults to decide whether to ship
-a payload to the renderer at all.
+| brand.xml                                            | Behaviour                                                                                                                                              |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| element absent                                       | Platform default translated copy for that notice.                                                                                                        |
+| empty or whitespace-only                             | **Inert** — same as absent. It does **not** mean "off".                                                                                                  |
+| `<intent_approved_notice>…</intent_approved_notice>` | Used verbatim as the approved-notice template. `%1` = brand product name, `%2` = buyer company name, `%3` = buyer organisation number (added 2026-08-03). |
+| `<intent_declined_notice>…</intent_declined_notice>` | Used verbatim as the declined-notice template. Same `%1`/`%2`/`%3` contract.                                                                              |
+
+`Descriptor::getIntentApprovedNotice()` / `getIntentDeclinedNotice()`
+each return `null` for the first two rows and their own template for the
+third; neither ever returns `''`. The switch above is what
+`Model\Ui\ConfigProvider` consults to decide whether to ship EITHER
+payload to the renderer at all — the resolution otherwise runs
+independently per notice.
 
 #### Deploy order
 
@@ -204,11 +216,15 @@ The company-unknown copy variant always stays on the platform default.
 In practice it is unreachable: an order intent is only ever placed once
 the buyer's company name **and** company number are known.
 
-Both Magento storefront renderers (Luma and Hyvä) emit the notice as a
-persistent inline element with class `two-order-intent-message approved`
-inside the payment-method tile, as does PrestaShop. WooCommerce uses
-`twoinc-intent-approved` instead, so grep for both when sweeping the four
-checkout surfaces.
+This parent plugin's storefront renderer (Luma/Amasty/Fire, one shared
+code path) emits each notice as a persistent inline element with class
+`two-order-intent-message approved` / `two-order-intent-message declined`
+inside the payment-method tile, as does PrestaShop (approved variant
+only, as of writing). WooCommerce uses `twoinc-intent-approved` instead,
+so grep for the platform-specific class names when sweeping the four
+checkout surfaces. The magento-hyva-extension repo is out of scope for
+the 2026-08-03 declined-notice addition described here — check that repo
+directly before assuming it has picked up the same shape.
 
 The two keys carry the same names and the same semantics on WooCommerce
 and PrestaShop, where they are real PHP booleans rather than an XSD

@@ -48,6 +48,14 @@ class ConfigProvider implements ConfigProviderInterface
      */
     public const COMPANY_NAME_TOKEN = '{{companyName}}';
 
+    /**
+     * Same sentinel mechanism as COMPANY_NAME_TOKEN, for the organisation
+     * number (TWO-25326 §7.3: the tile's ONLY company display is now this
+     * sentence, so the number has to be substitutable into it same as the
+     * name).
+     */
+    public const COMPANY_NUMBER_TOKEN = '{{companyNumber}}';
+
     /** @var string */
     private $code;
 
@@ -208,14 +216,30 @@ class ConfigProvider implements ConfigProviderInterface
                     // the KO `messages` region — a surface checkout clears on
                     // every update, so the notice was effectively invisible.
                     'orderIntentApprovedNotice' => $this->getOrderIntentApprovedNotice(),
-                    'orderIntentDeclinedMessage' => __(
-                        'Your invoice purchase with %1 has been declined.',
-                        $this->brandRegistry->getProductName()
-                    ),
+                    'orderIntentDeclinedNotice' => $this->getOrderIntentDeclinedNotice(),
+                    // The former `orderIntentDeclinedMessage` toast (a plain
+                    // "declined" string, fed to the renderer's message
+                    // region) is removed — the 2026-08-03 ruling replaced it
+                    // with the persistent `orderIntentDeclinedNotice` above.
+                    // Found dead in adversarial review, 2026-08-04: a comment
+                    // here once claimed it was kept for the generic HTTP/
+                    // technical-failure path, but
+                    // processOrderIntentErrorResponse() has only ever used
+                    // `generalErrorMessage` for that — this key was assigned
+                    // once on the renderer and never read.
                     'generalErrorMessage' => __(
                         'Something went wrong with your request to %1. %2',
                         $this->brandRegistry->getProductName(),
                         $tryAgainLater
+                    ),
+                    // TWO-25326 §6a: the Two method stays selectable with a
+                    // manual (name-only, no organisation number) capture —
+                    // it is blocked at submit instead, matching the WC/PS/
+                    // Hyvä pattern rather than Magento's previous silent
+                    // no-op (no block, no message, no order).
+                    'companyRequiredMessage' => __(
+                        'Please select your company before paying with %1.',
+                        $this->brandRegistry->getProductName()
                     ),
                     'invalidEmailListMessage' => __('Please ensure that your invoice email address list only contains valid email addresses separated by commas.'),
                     'paymentTermsMessage' => __(
@@ -254,7 +278,13 @@ class ConfigProvider implements ConfigProviderInterface
      * company-known variant, absent/empty leaves the platform default.
      * See BrandRegistryInterface for both contracts.
      *
-     * @return array{withCompany:string,withoutCompany:string,companyNameToken:string}|null
+     * TWO-25326 2026-08-03 ruling, §7.3: this is now the ONLY place the
+     * captured company name/number are displayed in the payment tile — the
+     * standalone `.two-company-label` text (§7, pre-ruling) is removed, not
+     * supplemented. Default wording is the literal ticket copy, with the
+     * company number substituted the same way the company name always was.
+     *
+     * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
      */
     private function getOrderIntentApprovedNotice(): ?array
     {
@@ -270,22 +300,73 @@ class ConfigProvider implements ConfigProviderInterface
         // through a variable, so `i18n:collect-phrases` and the overlay
         // repos' i18n audit can both still see it. The override branch
         // takes a variable by necessity — a brand's own copy is its own
-        // module's msgid and lives in that module's i18n CSV.
+        // module's msgid and lives in that module's i18n CSV. %3 (company
+        // number) is a new argument as of the 2026-08-03 ruling; an
+        // existing override string that only references %1/%2 keeps
+        // working unchanged, and one that wants the number can add %3.
         $withCompany = $override === null
             ? __(
-                'Your invoice with %1 is likely to be accepted for %2, subject to additional checks.',
+                'This order by %2 (%3) is likely to be accepted by %1',
                 $productName,
-                self::COMPANY_NAME_TOKEN
+                self::COMPANY_NAME_TOKEN,
+                self::COMPANY_NUMBER_TOKEN
             )
-            : __($override, $productName, self::COMPANY_NAME_TOKEN);
+            : __($override, $productName, self::COMPANY_NAME_TOKEN, self::COMPANY_NUMBER_TOKEN);
 
         return [
             'withCompany' => (string)$withCompany,
             'withoutCompany' => (string)__(
-                'Your invoice with %1 is likely to be accepted, subject to additional checks.',
+                'This order is likely to be accepted by %1',
                 $productName
             ),
             'companyNameToken' => self::COMPANY_NAME_TOKEN,
+            'companyNumberToken' => self::COMPANY_NUMBER_TOKEN,
+        ];
+    }
+
+    /**
+     * Resolve the buyer-facing "order intent NOT approved" notice — the
+     * §7.3 counterpart to getOrderIntentApprovedNotice() above, added by the
+     * 2026-08-03 ruling. Same shape, same suppression switch (a brand that
+     * turns the notice off gets neither variant — TWO-25326 §7.2 treats
+     * "the intent message" as one on/off unit, approved or declined), and a
+     * SEPARATE copy override so a brand with its own approved wording is not
+     * forced to also take the vanilla declined wording (§7.4).
+     *
+     * This is the "not approved" business outcome only (a clean response
+     * with `approved: false`) — a technical/HTTP failure is a different
+     * surface, `generalErrorMessage`, handled by
+     * processOrderIntentErrorResponse() in gateway_method.js.
+     *
+     * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
+     */
+    private function getOrderIntentDeclinedNotice(): ?array
+    {
+        if (!$this->brandRegistry->isIntentApprovedNoticeEnabled()) {
+            return null;
+        }
+
+        $override = $this->brandRegistry->getIntentDeclinedNotice();
+
+        $productName = $this->brandRegistry->getProductName();
+
+        $withCompany = $override === null
+            ? __(
+                '%1 is not available for this order by %2 (%3)',
+                $productName,
+                self::COMPANY_NAME_TOKEN,
+                self::COMPANY_NUMBER_TOKEN
+            )
+            : __($override, $productName, self::COMPANY_NAME_TOKEN, self::COMPANY_NUMBER_TOKEN);
+
+        return [
+            'withCompany' => (string)$withCompany,
+            'withoutCompany' => (string)__(
+                '%1 is not available for this order',
+                $productName
+            ),
+            'companyNameToken' => self::COMPANY_NAME_TOKEN,
+            'companyNumberToken' => self::COMPANY_NUMBER_TOKEN,
         ];
     }
 

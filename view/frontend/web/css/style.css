@@ -645,6 +645,20 @@
 }
 
 /*
+ * TWO-25326 §7.3 (2026-08-03 ruling): the "not approved" counterpart to
+ * `.approved` above, added when the standalone company label was removed
+ * and its name/number folded into this sentence instead. A warm, muted
+ * red rather than the approved blue — a business decline is not an error
+ * the buyer caused, so it deliberately does not reuse `.message-error`'s
+ * louder styling.
+ */
+.two-order-intent-message.declined {
+    border-color: #e0b7b7;
+    background: #fdf4f4;
+    color: #8a3b3b;
+}
+
+/*
  * The company-NAME input's read-only affordance. `readonly` is bound and true
  * in sole-trader mode only (see gateway_method.html), and `readonly` alone
  * renders identically to a normal input in most themes — an input the buyer
@@ -661,35 +675,6 @@
     color: #666666;
     cursor: default;
 }
-
-/*
- * TWO-25326 §7. The captured company on the payment tile, as ONE line of
- * text — "Name (12345678)" — between the term chips and the order-intent
- * notice.
- *
- * This supersedes `.two-company-id-label` and its `__caption`, which
- * rendered a "Company Number" caption and the number as a second block
- * below the company-name input. That was two renderings of one company in
- * one tile, which is the defect the ticket names; one line replaces both.
- *
- * Sits in the tile's own vertical flow (block, full width) rather than
- * aligned against a field's edge, because it is no longer a caption hanging
- * off an input — it is a statement of what the buyer is paying as. Left to
- * the reading direction for the same reason: `text-align` is not set at all,
- * so it inherits, and RTL store views need no special case.
- *
- * Slightly muted and small, matching the tile's other secondary text, so it
- * reads as context for the payment rather than competing with the term
- * chips above it.
- */
-.two-company-label {
-    display: block;
-    margin: 8px 0;
-    color: #666666;
-    font-size: 13px;
-    word-break: break-word;
-}
-
 
 /*
  * TWO-25288. The address-step "Company Number" field (injected by

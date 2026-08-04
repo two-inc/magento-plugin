@@ -208,6 +208,16 @@ class Loader
             $intentApprovedNotice = null;
         }
 
+        // Copy override ONLY, same contract as $intentApprovedNotice above
+        // — added by the 2026-08-03 ruling (TWO-25326 §7.3/§7.4). No
+        // separate enabled/disabled element: suppression is the approved
+        // notice's switch, since the ruling treats "the intent message" as
+        // one on/off unit.
+        $intentDeclinedNotice = trim((string)($brand->intent_declined_notice ?? ''));
+        if ($intentDeclinedNotice === '') {
+            $intentDeclinedNotice = null;
+        }
+
         $inlineTermFees = true;
         if (isset($brand->inline_term_fees)) {
             $inlineTermFees = filter_var(
@@ -242,7 +252,8 @@ class Loader
             (string)($brand->checkout_subtitle ?? ''),
             $roundingSteps,
             $intentApprovedNotice,
-            $intentApprovedNoticeEnabled
+            $intentApprovedNoticeEnabled,
+            $intentDeclinedNotice
         );
     }
 }

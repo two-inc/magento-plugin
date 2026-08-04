@@ -135,11 +135,18 @@ define([
             this.termsNotAcceptedMessage = config.termsNotAcceptedMessage;
             this.isPaymentTermsEnabled = config.isPaymentTermsEnabled;
             this.initOrderIntentApprovedNotice(config);
-            this.orderIntentDeclinedMessage = config.orderIntentDeclinedMessage;
+            this.companyRequiredMessage = config.companyRequiredMessage;
             this.generalErrorMessage = config.generalErrorMessage;
             this.invalidEmailListMessage = config.invalidEmailListMessage;
             this.soleTraderErrorMessage = config.soleTraderErrorMessage;
             this.isOrderIntentEnabled = config.isOrderIntentEnabled;
+            // TWO-25326 §7.1: the ONE admin setting that decides where the
+            // shared company-search control renders. ON = address area
+            // (address-autocomplete.js's job); OFF = payment tile (this
+            // renderer's job) — see isTileCompanySearchActive() below,
+            // which is also where the saved-address/virtual-cart fallback
+            // is documented.
+            this.isAddressAreaCompanySearchEnabled = !!config.isCompanySearchEnabled;
             this.isInvoiceEmailsEnabled = config.isInvoiceEmailsEnabled;
             this.isDepartmentFieldEnabled = config.isDepartmentFieldEnabled;
             this.isProjectFieldEnabled = config.isProjectFieldEnabled;
@@ -263,6 +270,14 @@ define([
             if (this.isTwoVisible && this.isTwoVisible.dispose) {
                 this.isTwoVisible.dispose();
             }
+            // TWO-25347: tear down fillCustomerData()'s subscriptions to the
+            // shared quote/customerData singletons — see that method's own
+            // comment for why an undisposed set there fired stacked
+            // concurrent order_intent POSTs on Fire Checkout specifically.
+            if (this._customerDataSubs) {
+                this._customerDataSubs.forEach((sub) => sub.dispose());
+                this._customerDataSubs = null;
+            }
             this._super();
         },
         /**
@@ -303,12 +318,14 @@ define([
          * they stay visible and fully functional, because they are the buyer's
          * route to capturing a company in the first place.
          *
-         * It no longer governs the company LABEL. The label's visibility is
-         * tied to the order-intent message's — see
-         * isOrderIntentMessageVisible() — so this predicate and the label are
-         * NOT two directions of one switch any more. A captured company with
-         * no approved intent showing hides the controls and shows no label,
-         * and that is the ruling, not an oversight.
+         * It no longer governs any standalone company LABEL — the
+         * 2026-08-03 ruling (§7.3) removed that element outright. The
+         * captured company now appears ONLY inside the order-intent notice
+         * sentence itself (orderIntentApprovedNotice / orderIntentDeclinedNotice),
+         * which has its own gate (whether an intent was placed and what it
+         * said) that is independent of this one. A captured company with no
+         * intent outcome yet showing hides the controls and shows no
+         * notice, and that is the ruling, not an oversight.
          *
          * Keeping the controls rather than deleting them is deliberate and
          * load-bearing. The tile's picker is not a duplicate of the address
@@ -344,92 +361,96 @@ define([
             return !!(this.companyName() || '').trim() && !!(this.companyId() || '').trim();
         },
         /**
-         * The captured company as one line of display text for the payment
-         * tile (TWO-25326 §7): `Name (12345678)`.
+         * TWO-25326 §7.1: whether the payment tile is the buyer's ACTIVE
+         * route to the shared company-search control, as opposed to a
+         * display-only surface. One admin setting, `isCompanySearchEnabled`
+         * (address-area ON/OFF), decides WHERE the one shared control
+         * lives — never whether it exists twice:
          *
-         * Only ever rendered while isOrderIntentMessageVisible() is true, and
-         * that message only exists after an intent was approved for the
-         * company currently in the observables, so both parts are present by
-         * construction; the name-only guard below is a belt-and-braces
-         * against a future caller, not a state the template can reach.
-         * Returns '' rather than a bare parenthesised number if a number ever
-         * arrived without a name — nothing to attach it to reads worse than
-         * nothing at all.
+         *  - setting OFF (`!isAddressAreaCompanySearchEnabled`) → the tile
+         *    is always the control's home.
+         *  - setting ON → the address-area control
+         *    (address-autocomplete.js, bound to
+         *    `#shipping-new-address-form`) is the control's home, EXCEPT
+         *    when that form does not exist on this checkout at all — a
+         *    saved address and a virtual cart both render no such form —
+         *    in which case the tile remains the buyer's only route to
+         *    search, same reasoning as isCompanyCaptured()'s doc comment
+         *    above (removing it there would block those orders outright,
+         *    and the same is true here).
          *
-         * The parentheses are the format the ticket specifies literally, and
-         * they wrap a VALUE rather than a translated caption. That is why
-         * this does not repeat the locale hazard that kept the superseded
-         * "Company Number" caption and its number on separate lines: there is
-         * no caption here for punctuation to be glued to.
-         *
-         * READ-ONLY. Never writes either observable, and the element it feeds
-         * carries no `name`, so it submits nothing. getData() reads
-         * `companyName()`/`companyId()` directly and remains the only path to
-         * the order.
-         *
-         * @returns {string}
-         */
-        companyDisplayLabel: function () {
-            const companyName = (this.companyName() || '').trim();
-            if (!companyName) return '';
-            const companyId = (this.companyId() || '').trim();
-            return companyId ? companyName + ' (' + companyId + ')' : companyName;
-        },
-        /**
-         * The ONE gate for both the inline order-intent message and the
-         * company label beside it (TWO-25326, ruling of 2026-08-03: the
-         * company label is shown exactly when the intent message is shown and
-         * hidden exactly when it is hidden).
-         *
-         * Both template bindings call THIS, rather than each testing a
-         * condition of its own that happens to agree. That is the whole point
-         * of the method existing: a parallel "is a company captured" check
-         * would agree with the message most of the time and diverge exactly in
-         * the states the ruling asks about — a company captured with no intent
-         * placed yet, an intent that was declined or errored, and a brand that
-         * suppresses the notice altogether
-         * (<intent_approved_notice_enabled>false</intent_approved_notice_enabled>
-         * in brand.xml, which leaves orderIntentApprovedNoticeCopy null so the
-         * notice text is always '').
-         *
-         * READ THIS BEFORE ASSUMING THE LABEL IS ALWAYS AVAILABLE. Two further
-         * configurations mean the notice never appears at all, and therefore
-         * that the §7 company label never renders for those buyers either:
-         *
-         *  - `enable_order_intent` off (Model/Config/Repository.php
-         *    ::isOrderIntentEnabled) — fillCompanyData() skips
-         *    placeOrderIntent() entirely, so nothing ever sets the notice. The
-         *    label is dead for that merchant's whole storefront.
-         *  - a Dutch buyer whose company is not a BV — placeOrderIntent()
-         *    early-returns a Deferred resolved with `null`, so
-         *    processOrderIntentSuccessResponse() sees a falsy response and sets
-         *    nothing.
-         *
-         * Both follow literally from "shown exactly when the intent message is
-         * shown", so they are a consequence of the ruling rather than a defect
-         * here, and they are pinned by tests so they read as decisions. If the
-         * label is meant to survive order intent being off, that is a different
-         * rule and needs the ticket — do not quietly widen this predicate.
-         *
-         * `orderIntentApprovedNotice` is created in
-         * initOrderIntentApprovedNotice() rather than in `defaults` (see the
-         * shared-observable footgun documented there), so it is genuinely
-         * absent on a renderer that has not been initialised. Guarded rather
-         * than assumed: this is read from a `visible:` and an `if:` binding,
-         * and a throw inside either takes the whole tile down.
-         *
-         * Know what the guard trades for that. If a binding ever WERE evaluated
-         * before initOrderIntentApprovedNotice(), ko would register no
-         * dependency on the absent observable, so both the label and the notice
-         * would stay hidden for the life of the tile rather than failing loudly.
-         * Unreachable today — initialize() calls that wiring before bindings
-         * apply — but a future refactor that defers it would produce a silent
-         * permanent hide, not an error.
+         * Read live rather than cached: `updateShippingAddress()` /
+         * `updateBillingAddress()` call `refreshTileCompanySearchBinding()`
+         * on every quote address change specifically because a NEW vs SAVED
+         * address switch flips whether `#shipping-new-address-form` exists,
+         * which is exactly what this reads. DO NOT memoise this into a
+         * property or a `ko.computed` that only recomputes on
+         * companyName/companyId/quote.isVirtual() changes — an earlier
+         * version relied on incidental re-renders for reactivity and an
+         * address-type switch with no company field touched went stale
+         * (found in adversarial review, 2026-08-04; fixed by the explicit
+         * refresh call above, not by caching this differently).
          *
          * @returns {boolean}
          */
-        isOrderIntentMessageVisible: function () {
+        isTileCompanySearchActive: function () {
+            if (!this.isAddressAreaCompanySearchEnabled) {
+                return true;
+            }
+            return (
+                quote.isVirtual() ||
+                $('#shipping-new-address-form input[name="company"]').length === 0
+            );
+        },
+        /**
+         * Guarded read of orderIntentApprovedNotice() for the template's
+         * `ko if`. The observable is created in
+         * initOrderIntentApprovedNotice() rather than in `defaults` (see the
+         * shared-observable footgun documented there), so it is genuinely
+         * absent on a renderer `ko if` is evaluated against before
+         * initialize() runs — unreachable in production (initialize() wires
+         * it before bindings apply) but a plain `orderIntentApprovedNotice()`
+         * call in the template would throw, not fail soft, if that ever
+         * changed. Guarded here rather than trusted; `text:` still binds the
+         * raw observable directly.
+         *
+         * @returns {boolean}
+         */
+        isOrderIntentApprovedNoticeVisible: function () {
             return !!(this.orderIntentApprovedNotice && this.orderIntentApprovedNotice());
+        },
+        /**
+         * Same guard, for the declined notice. Deliberately a SEPARATE
+         * function rather than one shared predicate — TWO-25326's
+         * 2026-08-03 ruling explicitly rejects one gate driving two
+         * different sentences (that was the standalone label's defect).
+         * Each notice is its own on/off decision; this only protects against
+         * reading an absent observable, it does not couple the two.
+         *
+         * @returns {boolean}
+         */
+        isOrderIntentDeclinedNoticeVisible: function () {
+            return !!(this.orderIntentDeclinedNotice && this.orderIntentDeclinedNotice());
+        },
+        /**
+         * Whether the tile's capture control should re-show for decline
+         * recovery, independent of whether the declined NOTICE TEXT is
+         * visible. Added in round 2 of adversarial review, 2026-08-04:
+         * gating the field's re-show directly on
+         * isOrderIntentDeclinedNoticeVisible() reproduced the original
+         * dead-end for any brand with order_intent enabled but the notice
+         * UI suppressed (`enable_order_intent` and
+         * `<intent_approved_notice_enabled>` are independent switches — see
+         * Model/Brand/Loader.php) — that brand's declined buyer would still
+         * see the field stay hidden, just silently instead of with a notice.
+         * `orderIntentDeclined` is set on every decline regardless of
+         * whether any notice text was produced, so this reads true whenever
+         * a decline needs recovering from, on every brand configuration.
+         *
+         * @returns {boolean}
+         */
+        isCompanyRecoveryNeeded: function () {
+            return !!(this.orderIntentDeclined && this.orderIntentDeclined());
         },
         selectTerm: function (days) {
             surchargeModel.selectTerm(days);
@@ -481,17 +502,90 @@ define([
             $('#select2-company_name-container')?.text(companyName);
             this.companyId(companyId);
             if (this.isOrderIntentEnabled) {
+                // TWO-25347 belt-and-braces: refuse a second concurrent
+                // order_intent POST for the SAME captured company. The root
+                // cause — fillCustomerData() stacking undisposed
+                // subscriptions on every re-render, each one independently
+                // reaching fillCompanyData() for an unchanged company pick
+                // — is fixed in dispose()/fillCustomerData() above; this
+                // guard is a second line of defence against any other path
+                // that could re-enter here before the first request settles
+                // (Fire Checkout re-renders this payment renderer on every
+                // totals/shipping change).
+                if (this._orderIntentInFlightFor === companyId) {
+                    return;
+                }
+                this._orderIntentInFlightFor = companyId;
                 fullScreenLoader.startLoader();
                 const self = this;
-                this.placeOrderIntent()
+                let deferred;
+                try {
+                    // Found in adversarial review, 2026-08-04: placeOrderIntent()
+                    // can THROW synchronously rather than return a Deferred —
+                    // quote.billingAddress() can legitimately be null for a
+                    // transient window (see the comment on that observable
+                    // elsewhere in this file), and placeOrderIntent() reads
+                    // `billingAddress.countryId` unguarded. An unhandled throw
+                    // here would skip `.always()` entirely, and
+                    // `_orderIntentInFlightFor` would stay set to this
+                    // companyId FOREVER — every later pick of the SAME
+                    // company would silently no-op against the guard above,
+                    // with no recovery short of a page reload.
+                    deferred = self.placeOrderIntent();
+                } catch (error) {
+                    // Round-2 adversarial review, 2026-08-04: an earlier
+                    // version of this catch rethrew, mirroring
+                    // placeOrderBackend()'s shape — but every caller of
+                    // fillCompanyData() is an unguarded synchronous context
+                    // with its OWN statements after the call (the
+                    // select2:select handler's addressLookup() call,
+                    // updateAddress()'s project/department writes,
+                    // updateShippingAddress()/updateBillingAddress()'s
+                    // refreshTileCompanySearchBinding() call). Rethrowing
+                    // aborted all of those too, on top of leaving the buyer
+                    // with no visible sign anything went wrong (loader
+                    // flashes and vanishes, nothing else happens). Logging +
+                    // a visible message + NOT rethrowing lets the caller's
+                    // remaining statements run and gives the buyer something
+                    // to act on, at the cost of this one attempt's order
+                    // intent — strictly better than either silent failure or
+                    // aborting unrelated sibling work.
+                    console.error({ logger: 'twoPayment.fillCompanyData.placeOrderIntent', error });
+                    fullScreenLoader.stopLoader();
+                    self._orderIntentInFlightFor = null;
+                    self.showErrorMessage(self.generalErrorMessage);
+                    return;
+                }
+                deferred
                     .always(function () {
                         fullScreenLoader.stopLoader();
+                        if (self._orderIntentInFlightFor === companyId) {
+                            self._orderIntentInFlightFor = null;
+                        }
                     })
                     .done(function (response) {
-                        self.processOrderIntentSuccessResponse(response);
+                        // Found in adversarial review, 2026-08-04: a cross-
+                        // company race. The in-flight guard above only
+                        // dedupes a repeat request for the SAME company — it
+                        // does nothing if the buyer picks company A, then
+                        // (once A's request settles and re-arms the guard)
+                        // picks company B before A's response has actually
+                        // arrived back is not the risk; the risk is A's
+                        // response landing AFTER the buyer has already moved
+                        // on to B. resolveCompanyNotice() reads
+                        // companyName()/companyId() LIVE at settle time, so a
+                        // stale response for A would render A's verdict with
+                        // B's name/number substituted in. Guarded by
+                        // confirming the observables still match what THIS
+                        // request was for before writing either notice.
+                        if (self.companyId() === companyId && self.companyName() === companyName) {
+                            self.processOrderIntentSuccessResponse(response);
+                        }
                     })
                     .fail(function (response) {
-                        self.processOrderIntentErrorResponse(response);
+                        if (self.companyId() === companyId && self.companyName() === companyName) {
+                            self.processOrderIntentErrorResponse(response);
+                        }
                     });
             }
         },
@@ -753,24 +847,72 @@ define([
             if (shippingAddress.getCacheKey() == quote.billingAddress().getCacheKey()) {
                 this.updateAddress(shippingAddress);
             }
+            // Unconditional, unlike updateAddress() above: a SAVED address
+            // and a NEW address differ in whether #shipping-new-address-form
+            // exists at all, which is exactly what
+            // isTileCompanySearchActive() reads — so this has to re-run on
+            // every shipping-address change, not only the ones the cache-key
+            // check lets through.
+            this.refreshTileCompanySearchBinding();
         },
         updateBillingAddress: function (billingAddress) {
             console.debug({ logger: 'twoPayment.updateBillingAddress', billingAddress });
             this.updateAddress(billingAddress);
+            this.refreshTileCompanySearchBinding();
         },
         /**
-         * PRE-EXISTING, not introduced here, flagged so it is not mistaken for
-         * new: none of the subscriptions below are disposed, and
-         * fillCustomerData() is re-callable (registeredOrganisationMode(),
-         * reached from applyPrefetch()). N calls therefore leave N stacked
-         * subscriptions on each section, so one notification runs
-         * applyCompanyData() N times. Idempotent today, so it is waste rather
-         * than a bug — out of scope for this change.
+         * Found in adversarial review, 2026-08-04: enableCompanySearch() only
+         * runs from three call sites (initObservable() → registeredOrganisationMode(),
+         * the "Search for company" link, and the supported-company-types
+         * callback) — NONE of which fire when a buyer switches between a NEW
+         * and a SAVED shipping/billing address. `#shipping-new-address-form`
+         * appears and disappears exactly on that switch, which is the live
+         * DOM signal isTileCompanySearchActive() reads. Without this, a buyer
+         * who starts on a new address (tile inactive, address-area control
+         * live) and then picks a saved address (address-area control's host
+         * form disappears) would find the tile's search widget never bound —
+         * `isTileCompanySearchActive()` would newly return true, the FIELD
+         * would show again (template `visible:` binding does react to that),
+         * but the select2 WIDGET behind it was never initialised, leaving a
+         * plain text input with no dropdown.
+         *
+         * Idempotent both directions: enableCompanySearch() itself no-ops if
+         * the tile is not the active location (checked at its own top), and
+         * destroyCompanySearchWidget() is documented safe to call when
+         * nothing is bound.
+         */
+        refreshTileCompanySearchBinding: function () {
+            if (this.isTileCompanySearchActive()) {
+                this.enableCompanySearch();
+            } else {
+                this.destroyCompanySearchWidget();
+            }
+        },
+        /**
+         * TWO-25347: an earlier version of this comment called the
+         * undisposed subscriptions below "idempotent today... waste rather
+         * than a bug". That was wrong about the network side effect
+         * specifically — N stacked subscriptions run applyCompanyData() N
+         * times, and each of THOSE independently drives fillCompanyData() →
+         * placeOrderIntent(), so N stacked subscriptions fired N concurrent
+         * order_intent POSTs for a single company pick. Fire Checkout
+         * re-renders this payment renderer on every totals/shipping change
+         * (see payment-availability.js), so it hit this far more often than
+         * Luma/Amasty and was the one where it surfaced. Fixed below by
+         * disposing the previous set on every call and disposing the
+         * current set in dispose(), mirroring the `_twoVisibilitySub`
+         * pattern already in place for the minimum-order subscription.
          */
         fillCustomerData: function () {
             const self = this;
 
-            customerData
+            // See the docblock above for why this is here.
+            if (this._customerDataSubs) {
+                this._customerDataSubs.forEach((sub) => sub.dispose());
+            }
+            this._customerDataSubs = [];
+
+            this._customerDataSubs.push(customerData
                 .get('companyData')
                 // Authoritative: a change NOTIFICATION on this section is the
                 // shipping-step picker writing it, so an identifier-less
@@ -791,7 +933,7 @@ define([
                 // one-shot read below exists to prevent.
                 .subscribe((companyData) =>
                     self.applyCompanyData(companyData, { authoritative: true })
-                );
+                ));
             // NOT authoritative: this is a one-shot read of a localStorage
             // section that outlives page loads and previous orders, and
             // fillCustomerData() is re-callable (registeredOrganisationMode(),
@@ -799,20 +941,24 @@ define([
             // companyId: ''}` row must not overwrite a live payment-step pick.
             this.applyCompanyData(customerData.get('companyData')());
 
-            customerData
+            this._customerDataSubs.push(customerData
                 .get('shippingTelephone')
-                .subscribe((telephone) => self.fillTelephone(telephone));
+                .subscribe((telephone) => self.fillTelephone(telephone)));
             this.fillTelephone(customerData.get('shippingTelephone')());
 
-            customerData
+            this._customerDataSubs.push(customerData
                 .get('countryCode')
-                .subscribe((countryCode) => self.fillCountryCode(countryCode));
+                .subscribe((countryCode) => self.fillCountryCode(countryCode)));
             this.fillCountryCode(customerData.get('countryCode')());
 
-            quote.shippingAddress.subscribe((address) => self.updateShippingAddress(address));
+            this._customerDataSubs.push(
+                quote.shippingAddress.subscribe((address) => self.updateShippingAddress(address))
+            );
             this.updateShippingAddress(quote.shippingAddress());
 
-            quote.billingAddress.subscribe((address) => self.updateBillingAddress(address));
+            this._customerDataSubs.push(
+                quote.billingAddress.subscribe((address) => self.updateBillingAddress(address))
+            );
             this.updateBillingAddress(quote.billingAddress());
         },
         afterPlaceOrder: function () {
@@ -848,6 +994,21 @@ define([
             // declines/errors — see initialize() and
             // processOrderIntent*Response().
             this.messageContainer.clear();
+
+            // TWO-25326 §6a (2026-08-03 ruling): a manual (name-only, no
+            // organisation number) capture must NOT make the method usable,
+            // but the method stays SELECTABLE — this is a blocked SUBMIT,
+            // matching WC/PS/Hyvä, not a disabled/unselectable radio button.
+            // Before this, Magento had no client-side check here at all: a
+            // manual capture went silently nowhere (see
+            // isCompanyCaptured()'s doc comment for why the method still
+            // has to accept name-only submissions rather than refuse them
+            // outright — validate() does not enforce it either, since
+            // company_name has no number companion field to require).
+            if (!this.isCompanyCaptured()) {
+                this.showErrorMessage(this.companyRequiredMessage);
+                return;
+            }
 
             // Recover a stale place-order latch.
             //
@@ -983,39 +1144,67 @@ define([
             // notice into the next.
             this.orderIntentApprovedNotice = ko.observable('');
 
+            // TWO-25326 §7.3 (2026-08-03 ruling) counterpart to the notice
+            // above: the persistent tile message for a clean "not approved"
+            // order-intent response. Same suppression source
+            // (orderIntentApprovedNoticeCopy === null means the brand
+            // turned the whole intent message off), separate copy.
+            this.orderIntentDeclinedNoticeCopy = config.orderIntentDeclinedNotice || null;
+            this.orderIntentDeclinedNotice = ko.observable('');
+
+            // Round 2 adversarial review, 2026-08-04: `orderIntentDeclinedNotice`
+            // is NOT a reliable "was the last intent declined" signal on its
+            // own — `enable_order_intent` and
+            // `<intent_approved_notice_enabled>` are two INDEPENDENT brand
+            // switches (see Model/Brand/Loader.php), so a brand can have
+            // order_intent firing for real while the notice UI stays off.
+            // On that brand, orderIntentDeclinedNoticeCopy is permanently
+            // null, resolveCompanyNotice() always returns '', and gating the
+            // decline-recovery field re-show on the notice's OWN visibility
+            // would reproduce the exact dead-end that fix was written to
+            // close — just for a different brand config. Tracked separately
+            // so the recovery path does not depend on whether the notice UI
+            // happens to be on.
+            this.orderIntentDeclined = ko.observable(false);
+
             // The notice is *persistent* — unlike the message-region
             // treatment it replaces, it survives checkout updates and a
             // failed placeOrder validation (see the deliberate omission in
             // placeOrder(), which clears messageContainer but not this). It
             // must NOT survive the buyer's company changing, because the
-            // approval it reports was for the previous company.
+            // approval/decline it reports was for the previous company.
             // fillCompanyData() writes companyName / companyId before firing
             // the intent, so these subscriptions clear first and
-            // processOrderIntentSuccessResponse re-sets afterwards; a company
-            // edited by hand in the input clears the notice and leaves it
-            // cleared, which is the correct fail-closed outcome.
+            // processOrderIntent*Response() re-sets afterwards; a company
+            // edited by hand in the input clears both notices and leaves
+            // them cleared, which is the correct fail-closed outcome.
             var self = this;
             this.companyName.subscribe(function () {
                 self.orderIntentApprovedNotice('');
+                self.orderIntentDeclinedNotice('');
+                self.orderIntentDeclined(false);
             });
             this.companyId.subscribe(function () {
                 self.orderIntentApprovedNotice('');
+                self.orderIntentDeclinedNotice('');
+                self.orderIntentDeclined(false);
             });
         },
         /**
-         * Resolve the intent-approved notice text for the current buyer.
+         * Substitute the buyer's company name/number into a
+         * ConfigProvider-shipped copy template. Shared by
+         * resolveOrderIntentApprovedNotice() and
+         * resolveOrderIntentDeclinedNotice() — the only difference between
+         * the two is which `copy` object and which fallback they pass in.
          *
-         * Returns '' when the active brand suppressed the notice, so callers
-         * can assign the result unconditionally.
+         * A replacer *function* is used rather than a plain string so `$&` /
+         * `$1` sequences in a company name or number are taken literally
+         * instead of as replacement patterns.
          *
-         * The company name is substituted client-side because it is only
-         * known here; ConfigProvider ships both resolved copy variants plus
-         * the token to replace. A replacer *function* is used rather than a
-         * plain string so `$&` / `$1` sequences in a company name are taken
-         * literally instead of as replacement patterns.
+         * @param {?object} copy {withCompany, withoutCompany, companyNameToken, companyNumberToken}|null
+         * @returns {string}
          */
-        resolveOrderIntentApprovedNotice: function () {
-            const copy = this.orderIntentApprovedNoticeCopy;
+        resolveCompanyNotice: function (copy) {
             if (!copy) {
                 return '';
             }
@@ -1023,9 +1212,30 @@ define([
             if (!companyName) {
                 return copy.withoutCompany;
             }
-            return copy.withCompany.replace(copy.companyNameToken, function () {
-                return companyName;
-            });
+            const companyId = (this.companyId() || '').trim();
+            return copy.withCompany
+                .replace(copy.companyNameToken, function () {
+                    return companyName;
+                })
+                .replace(copy.companyNumberToken, function () {
+                    return companyId;
+                });
+        },
+        /**
+         * Resolve the intent-approved notice text for the current buyer.
+         * Returns '' when the active brand suppressed the notice, so callers
+         * can assign the result unconditionally.
+         */
+        resolveOrderIntentApprovedNotice: function () {
+            return this.resolveCompanyNotice(this.orderIntentApprovedNoticeCopy);
+        },
+        /**
+         * Resolve the intent-DECLINED notice text for the current buyer
+         * (TWO-25326 §7.3, 2026-08-03 ruling). Returns '' when the active
+         * brand suppressed the intent message entirely.
+         */
+        resolveOrderIntentDeclinedNotice: function () {
+            return this.resolveCompanyNotice(this.orderIntentDeclinedNoticeCopy);
         },
         processOrderIntentSuccessResponse: function (response) {
             if (response) {
@@ -1036,9 +1246,22 @@ define([
                     // is cleared on every checkout update, so on Luma the
                     // approval reassurance was effectively never seen.
                     this.orderIntentApprovedNotice(this.resolveOrderIntentApprovedNotice());
+                    this.orderIntentDeclinedNotice('');
+                    this.orderIntentDeclined(false);
                 } else {
+                    // TWO-25326 §7.3 (2026-08-03 ruling): a clean "not
+                    // approved" response is a business outcome, not a
+                    // technical failure, so it gets the SAME persistent
+                    // tile-notice treatment as approval — a toast that a
+                    // later checkout update wipes is not "the tile shows
+                    // ONLY the intent message" the ruling asks for.
                     this.orderIntentApprovedNotice('');
-                    this.showErrorMessage(this.orderIntentDeclinedMessage);
+                    this.orderIntentDeclinedNotice(this.resolveOrderIntentDeclinedNotice());
+                    // Set regardless of whether the notice text above is
+                    // empty (brand suppressed the notice UI) — this is the
+                    // signal the decline-recovery field re-show reads, and
+                    // it must fire on EVERY decline, notice or not.
+                    this.orderIntentDeclined(true);
                 }
             }
         },
@@ -1046,8 +1269,21 @@ define([
             // An intent that errored says nothing about approval; drop any
             // notice from a previous, successful intent.
             this.orderIntentApprovedNotice('');
+            this.orderIntentDeclinedNotice('');
+            this.orderIntentDeclined(false);
 
-            const message = this.generalErrorMessage,
+            // `let`, not `const`: the SCHEMA_ERROR branch below reassigns
+            // this to '' once it has pushed the field-level errors into
+            // messageContainer itself. A `const` here made every
+            // SCHEMA_ERROR response throw
+            // "TypeError: Assignment to constant variable" the instant it
+            // arrived — silently, since this runs inside a jQuery Deferred
+            // `.fail()` handler with nothing upstream to surface a thrown
+            // error to the buyer. That is very likely why a manual-entry
+            // buyer saw no message at all before the §6a client-side gate
+            // was added: this path was the one meant to show it, and it was
+            // broken.
+            let message = this.generalErrorMessage,
                 self = this;
             if (response && response.responseJSON) {
                 const errorCode = response.responseJSON.error_code,
@@ -1135,9 +1371,28 @@ define([
                 quantity: 1,
                 unit_price: parseFloat(totals['shipping_amount']).toFixed(2),
                 tax_amount: parseFloat(totals['shipping_tax_amount']).toFixed(2),
+                // Free shipping makes shipping_amount 0, and 0/0 is NaN, not
+                // 0 — order_intent then 400s on every free-shipping cart
+                // (found investigating TWO-25326 §6a: it blocked testing
+                // the gating fix on a free-shipping cart). A zero-taxed
+                // shipping line rate is genuinely 0, not "no rate" (the tax
+                // AMOUNT above is already faithfully 0.00), so the guard
+                // resolves to '0.000000' rather than omitting the key or
+                // inventing a non-zero rate.
+                //
+                // Guarded on `!isFinite`, not `=== 0`, since adversarial
+                // review (2026-08-04) found the narrower check still let a
+                // literal "NaN" reach the wire: `shipping_amount` can arrive
+                // non-numeric/undefined mid totals-recalc (Amasty's async
+                // shipping-method changes), and `parseFloat(undefined) === 0`
+                // is false, so that case fell through to the division branch
+                // and produced `NaN / NaN` — same 400, different trigger.
                 tax_rate: (
-                    parseFloat(totals['shipping_tax_amount']) /
-                    parseFloat(totals['shipping_amount'])
+                    !isFinite(parseFloat(totals['shipping_amount'])) ||
+                    parseFloat(totals['shipping_amount']) === 0
+                        ? 0
+                        : parseFloat(totals['shipping_tax_amount']) /
+                          parseFloat(totals['shipping_amount'])
                 ).toFixed(6),
                 tax_class_name: '',
                 quantity_unit: 'unit',
@@ -1231,6 +1486,14 @@ define([
          *        open unasked would steal focus from the payment form.
          */
         enableCompanySearch: function (options) {
+            // TWO-25326 §7.1: don't bind the tile's own live search widget
+            // when the address-area control is this checkout's active
+            // location for it — one shared control, not two simultaneous
+            // ones. See isTileCompanySearchActive() for the fallback carve-
+            // out (saved address / virtual cart).
+            if (!this.isTileCompanySearchActive()) {
+                return;
+            }
             let self = this;
             // One-shot, and deliberately a local rather than a property on the
             // renderer: `$.async` is a MutationObserver that fires again on

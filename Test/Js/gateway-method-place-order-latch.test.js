@@ -112,6 +112,15 @@ function makeContext(component, opts) {
         isPaymentTermsEnabled: 'termsEnabled' in opts ? opts.termsEnabled : true,
         isPaymentTermsAccepted: observable('termsAccepted' in opts ? opts.termsAccepted : true),
         isPlaceOrderActionAllowed: observable('allowed' in opts ? opts.allowed : true),
+        // TWO-25326 §6a: placeOrder() now blocks a manual (name-only, no
+        // organisation number) capture before it reaches this latch. These
+        // specs are about the latch, not the company gate, so a captured
+        // company is the default — pass `companyCaptured: false` to exercise
+        // the gate itself.
+        isCompanyCaptured: function () {
+            return 'companyCaptured' in opts ? opts.companyCaptured : true;
+        },
+        companyRequiredMessage: 'Please select your company before paying with Two.',
         isInvoiceEmailsEnabled: false,
         redirectAfterPlaceOrder: false,
         validate: function () {
@@ -138,6 +147,32 @@ function makeContext(component, opts) {
     };
     return ctx;
 }
+
+describe('gateway_method §6a company gate (TWO-25326, 2026-08-03 ruling)', () => {
+    test('blocks submit with a visible message when no company id has been captured', () => {
+        const component = loadComponent({});
+        const ctx = makeContext(component, { companyCaptured: false });
+
+        ctx.placeOrder.call(ctx);
+
+        expect(ctx.placeOrderCalls).toBe(0);
+        expect(ctx.errors).toEqual(['Please select your company before paying with Two.']);
+        // Blocked before the latch is even touched — matching WC/PS/Hyvä's
+        // "selectable, blocked at submit" pattern rather than disabling the
+        // method up front.
+        expect(ctx.isPlaceOrderActionAllowed()).toBe(true);
+    });
+
+    test('does not block submit once a company id has been captured', () => {
+        const component = loadComponent({});
+        const ctx = makeContext(component, { companyCaptured: true });
+
+        ctx.placeOrder.call(ctx);
+
+        expect(ctx.placeOrderCalls).toBe(1);
+        expect(ctx.errors).toEqual([]);
+    });
+});
 
 describe('gateway_method place-order latch (TWO-24843)', () => {
     test('refuses to post when a non-virtual quote has no shipping method', () => {
