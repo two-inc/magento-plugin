@@ -204,13 +204,32 @@ function nameFieldVisible(renderer) {
             'expected exactly one company-name field wrapper, found ' + tags.length
         );
     }
-    if (!/visible:\s*isTileCompanySearchActive\(\)/.test(tags[0])) {
+    const bind = tags[0].match(/data-bind="([^"]*)"/);
+    if (!bind) {
+        throw new Error("the company-name field's wrapper has no data-bind attribute");
+    }
+    const visibleMatch = bind[1].match(/visible:\s*([^,]+?)\s*(?:,|$)/);
+    if (!visibleMatch) {
+        throw new Error("the company-name field's `visible:` binding is missing");
+    }
+    if (visibleMatch[1].trim() !== 'isTileCompanySearchActive()') {
         throw new Error(
             "the company-name field's `visible:` binding is not the pinned "
-                + '`isTileCompanySearchActive()` shape'
+                + '`isTileCompanySearchActive()` shape — got `'
+                + visibleMatch[1].trim()
+                + '`'
         );
     }
-    return renderer.isTileCompanySearchActive();
+    // Evaluate the pinned expression against the renderer, same discipline as
+    // `companyIdLabel()` below — a drift back to the old
+    // `(!isCompanyCaptured() || isCompanyRecoveryNeeded()) && isTileCompanySearchActive()`
+    // gate (or any other suffix conjunction) fails both the exact-shape check
+    // above AND would fail here too, rather than passing on a restated value.
+    // eslint-disable-next-line no-new-func
+    return !!new Function(
+        'renderer',
+        'with (renderer) { return (' + visibleMatch[1] + '); }'
+    ).call(null, renderer);
 }
 
 /**
@@ -254,6 +273,17 @@ function companyIdLabel(renderer) {
     if (typeof target !== 'function') {
         throw new Error(
             '`.two-company-id-text` binds text to `' + textMatch[1] + '`, not on the renderer'
+        );
+    }
+    // A bare number with no accessible name is unreadable to a screen
+    // reader — the same reason address-autocomplete.js's
+    // renderCompanyIdText() carries an `aria-label`, not just visible text
+    // (see address-step-company-id-text.test.js's aria-label pin). Pinned
+    // here too so a drift that drops it fails the suite, not just review.
+    if (!/attr:\s*\{\s*'aria-label':\s*\$t\('Company Number'\)\s*\}/.test(bind[1])) {
+        throw new Error(
+            "`.two-company-id-text` is missing its pinned `aria-label: 'Company Number'` "
+                + 'accessible name binding'
         );
     }
     return { visible: visible, text: target.call(renderer) };
