@@ -55,6 +55,42 @@ define([
     // every renderer Magento re-creates when the payment-method list refreshes.
     var placeOrderInFlight = false;
 
+    // Count of order-intent requests currently in flight, across ALL
+    // instances of this renderer sharing this module. Deliberately
+    // module-scope and reference-counted rather than a per-instance
+    // start/stop pair, for the same reason as placeOrderInFlight above:
+    // Amasty rebuilds the payment method list (and Fire Checkout
+    // re-renders this renderer outright) on every shipping/totals change,
+    // which can happen WHILE an order-intent request is in flight.
+    // fillCustomerData() re-runs on every fresh instance's init and
+    // re-applies the customer-data section's captured company, so the
+    // NEW instance can independently fire its OWN order_intent POST for
+    // the SAME company while the orphaned OLD instance's request is
+    // still outstanding — the per-instance `_orderIntentInFlightFor`
+    // guard only dedupes re-entry on the SAME instance, not this
+    // cross-instance case. With a plain per-instance
+    // startLoader()/stopLoader() pair, whichever request settles FIRST
+    // (typically the orphaned one, since it started earlier) would hide
+    // the shared full-screen loader while the surviving instance's own
+    // request — whose resolution is what actually updates the
+    // currently-rendered notice text — is still pending. Refcounting
+    // ties the loader's dismissal to ALL outstanding order-intent calls
+    // settling, matching Luma's behaviour (where the count never exceeds
+    // one, so this is a no-op) instead of the first one to resolve.
+    var orderIntentRequestsInFlight = 0;
+
+    function startOrderIntentLoader() {
+        orderIntentRequestsInFlight += 1;
+        fullScreenLoader.startLoader();
+    }
+
+    function stopOrderIntentLoader() {
+        orderIntentRequestsInFlight = Math.max(0, orderIntentRequestsInFlight - 1);
+        if (orderIntentRequestsInFlight === 0) {
+            fullScreenLoader.stopLoader();
+        }
+    }
+
     return Component.extend({
         defaults: {
             template: 'Two_Gateway/payment/gateway_method'
@@ -492,7 +528,7 @@ define([
                     return;
                 }
                 this._orderIntentInFlightFor = companyId;
-                fullScreenLoader.startLoader();
+                startOrderIntentLoader();
                 const self = this;
                 let deferred;
                 try {
@@ -527,14 +563,14 @@ define([
                     // intent — strictly better than either silent failure or
                     // aborting unrelated sibling work.
                     console.error({ logger: 'twoPayment.fillCompanyData.placeOrderIntent', error });
-                    fullScreenLoader.stopLoader();
+                    stopOrderIntentLoader();
                     self._orderIntentInFlightFor = null;
                     self.showErrorMessage(self.generalErrorMessage);
                     return;
                 }
                 deferred
                     .always(function () {
-                        fullScreenLoader.stopLoader();
+                        stopOrderIntentLoader();
                         if (self._orderIntentInFlightFor === companyId) {
                             self._orderIntentInFlightFor = null;
                         }
