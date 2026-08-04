@@ -197,13 +197,26 @@ function nameFieldVisible(renderer) {
             'expected exactly one company-name field wrapper, found ' + tags.length
         );
     }
-    if (!/visible:\s*!isCompanyCaptured\(\)/.test(tags[0])) {
+    // TWO-25326 §7.1/decline-recovery (2026-08-04 adversarial-review fix):
+    // the field also re-shows on a declined intent, even though
+    // isCompanyCaptured() is still true then — see the template's own
+    // comment. Pinned to the exact shape so a drift silently narrowing or
+    // widening the gate fails the string match, not just the behavioural
+    // cases below.
+    if (
+        !/visible:\s*\(!isCompanyCaptured\(\)\s*\|\|\s*isOrderIntentDeclinedNoticeVisible\(\)\)\s*&&\s*isTileCompanySearchActive\(\)/.test(
+            tags[0]
+        )
+    ) {
         throw new Error(
             "the company-name field's `visible:` binding is not the pinned "
-                + '`!isCompanyCaptured()` shape'
+                + '`(!isCompanyCaptured() || isOrderIntentDeclinedNoticeVisible()) && isTileCompanySearchActive()` shape'
         );
     }
-    return !renderer.isCompanyCaptured();
+    return (
+        (!renderer.isCompanyCaptured() || renderer.isOrderIntentDeclinedNoticeVisible()) &&
+        renderer.isTileCompanySearchActive()
+    );
 }
 
 /**
@@ -722,6 +735,43 @@ describe('the notices are gated on their own observables, not on capture', () =>
         expect(errors).toEqual([]);
     });
 
+    test('a decline re-opens the capture control instead of trapping the buyer (found in adversarial review, 2026-08-04)', () => {
+        // BLOCKER found reviewing this PR: isCompanyCaptured() stays true
+        // after a decline (only an approval's own company-change
+        // subscriptions clear the observables), so gating the field purely
+        // on isCompanyCaptured() left a declined buyer staring at a
+        // persistent "not available" notice with NO control anywhere on the
+        // tile to try a different company — a dead end without a page
+        // reload on a saved-address/virtual-cart/setting-off checkout,
+        // where the tile is the buyer's ONLY route to search.
+        const { renderer } = loadRendererOnly();
+
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+        approveIntent(renderer);
+        expect(nameFieldVisible(renderer)).toBe(false);
+
+        renderer.processOrderIntentSuccessResponse({ approved: false });
+
+        expect(renderer.isCompanyCaptured()).toBe(true);
+        expect(declinedNoticeVisible(renderer)).toBe(true);
+        // The recovery path: the field is back, letting the buyer search
+        // again.
+        expect(nameFieldVisible(renderer)).toBe(true);
+
+        // Picking a different company clears the declined notice AND
+        // completes a new capture, so the field correctly hides again once
+        // there is something new to hide it for.
+        renderer.applyCompanyData(
+            { companyName: 'Second Example Ltd', companyId: '87654321' },
+            { authoritative: true }
+        );
+        expect(declinedNoticeVisible(renderer)).toBe(false);
+        expect(nameFieldVisible(renderer)).toBe(false);
+    });
+
     test('an errored intent shows neither notice', () => {
         // Distinct call site from the declined branch — a separate handler —
         // and it clears both notices for its own reason (an error says
@@ -1033,9 +1083,7 @@ function loadRendererOnly(extraMocks) {
         orderIntentDeclinedNotice: DECLINED_NOTICE_COPY
     });
     // showErrorMessage() routes through the payment block's messageContainer,
-    // which the renderer-only harness does not model. Needed by the
-    // intent-declined path below.
-    renderer.orderIntentDeclinedMessage = 'Declined.';
+    // which the renderer-only harness does not model.
     renderer.messageContainer = {
         addErrorMessage: function () {},
         errorMessages: { remove: function () {} }

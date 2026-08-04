@@ -225,6 +225,7 @@ function makeJQueryMock() {
             attr: function () { return obj; },
             data: function () { return obj; },
             find: function () { return obj; },
+            closest: function () { return obj; },
             first: function () { return obj; },
             last: function () { return obj; },
             eq: function () { return obj; },
@@ -291,6 +292,19 @@ function makeJQueryMock() {
     };
     $.Deferred = function () {
         return { resolve: function () { return this; }, reject: function () { return this; }, promise: function () { return this; }, done: function () { return this; }, fail: function () { return this; }, always: function () { return this; } };
+    };
+    // Magento_Ui/js/lib/view/utils/async's `$.async` decorator — a
+    // MutationObserver wrapper real modules call as `$.async(selector, cb)`
+    // to defer against a node that may not exist yet. This default runs the
+    // callback synchronously against the (inert) mock node so a module that
+    // reaches this call path incidentally — e.g. gateway_method.js's
+    // enableCompanySearch(), now called from address-change handlers — does
+    // not throw "not a function" in specs that never meant to exercise the
+    // company-search widget itself. Specs that DO care about the widget's
+    // real async/MutationObserver behaviour already supply their own richer
+    // jquery double (see makeRecordingDom() in tile-company-readonly-fields.test.js).
+    $.async = function (selector, cb) {
+        cb($(selector));
     };
     return $;
 }

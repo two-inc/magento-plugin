@@ -217,15 +217,16 @@ class ConfigProvider implements ConfigProviderInterface
                     // every update, so the notice was effectively invisible.
                     'orderIntentApprovedNotice' => $this->getOrderIntentApprovedNotice(),
                     'orderIntentDeclinedNotice' => $this->getOrderIntentDeclinedNotice(),
-                    // Kept for the generic HTTP/technical failure path
-                    // (processOrderIntentErrorResponse's default branch) —
-                    // that is not the "declined" business outcome §7.3's
-                    // wording is about, so it stays a plain toast rather
-                    // than joining the persistent tile notice.
-                    'orderIntentDeclinedMessage' => __(
-                        'Your invoice purchase with %1 has been declined.',
-                        $this->brandRegistry->getProductName()
-                    ),
+                    // The former `orderIntentDeclinedMessage` toast (a plain
+                    // "declined" string, fed to the renderer's message
+                    // region) is removed — the 2026-08-03 ruling replaced it
+                    // with the persistent `orderIntentDeclinedNotice` above.
+                    // Found dead in adversarial review, 2026-08-04: a comment
+                    // here once claimed it was kept for the generic HTTP/
+                    // technical-failure path, but
+                    // processOrderIntentErrorResponse() has only ever used
+                    // `generalErrorMessage` for that — this key was assigned
+                    // once on the renderer and never read.
                     'generalErrorMessage' => __(
                         'Something went wrong with your request to %1. %2',
                         $this->brandRegistry->getProductName(),
@@ -333,8 +334,8 @@ class ConfigProvider implements ConfigProviderInterface
      * forced to also take the vanilla declined wording (§7.4).
      *
      * This is the "not approved" business outcome only (a clean response
-     * with `approved: false`) — a technical/HTTP failure keeps using
-     * `orderIntentDeclinedMessage` as a toast; see
+     * with `approved: false`) — a technical/HTTP failure is a different
+     * surface, `generalErrorMessage`, handled by
      * processOrderIntentErrorResponse() in gateway_method.js.
      *
      * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null

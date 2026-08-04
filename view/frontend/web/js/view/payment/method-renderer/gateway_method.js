@@ -135,7 +135,6 @@ define([
             this.termsNotAcceptedMessage = config.termsNotAcceptedMessage;
             this.isPaymentTermsEnabled = config.isPaymentTermsEnabled;
             this.initOrderIntentApprovedNotice(config);
-            this.orderIntentDeclinedMessage = config.orderIntentDeclinedMessage;
             this.companyRequiredMessage = config.companyRequiredMessage;
             this.generalErrorMessage = config.generalErrorMessage;
             this.invalidEmailListMessage = config.invalidEmailListMessage;
@@ -380,10 +379,17 @@ define([
          *    above (removing it there would block those orders outright,
          *    and the same is true here).
          *
-         * Read live rather than cached: Luma/Amasty/Fire all re-render
-         * this payment renderer on shipping/address changes (see
-         * dispose()'s comment), which is exactly when a buyer could switch
-         * between a new and a saved address, so a stale answer would stick.
+         * Read live rather than cached: `updateShippingAddress()` /
+         * `updateBillingAddress()` call `refreshTileCompanySearchBinding()`
+         * on every quote address change specifically because a NEW vs SAVED
+         * address switch flips whether `#shipping-new-address-form` exists,
+         * which is exactly what this reads. DO NOT memoise this into a
+         * property or a `ko.computed` that only recomputes on
+         * companyName/companyId/quote.isVirtual() changes — an earlier
+         * version relied on incidental re-renders for reactivity and an
+         * address-type switch with no company field touched went stale
+         * (found in adversarial review, 2026-08-04; fixed by the explicit
+         * refresh call above, not by caching this differently).
          *
          * @returns {boolean}
          */
@@ -492,7 +498,27 @@ define([
                 this._orderIntentInFlightFor = companyId;
                 fullScreenLoader.startLoader();
                 const self = this;
-                this.placeOrderIntent()
+                let deferred;
+                try {
+                    // Found in adversarial review, 2026-08-04: placeOrderIntent()
+                    // can THROW synchronously rather than return a Deferred —
+                    // quote.billingAddress() can legitimately be null for a
+                    // transient window (see the comment on that observable
+                    // elsewhere in this file), and placeOrderIntent() reads
+                    // `billingAddress.countryId` unguarded. An unhandled throw
+                    // here would skip `.always()` entirely, and
+                    // `_orderIntentInFlightFor` would stay set to this
+                    // companyId FOREVER — every later pick of the SAME
+                    // company would silently no-op against the guard above,
+                    // with no recovery short of a page reload. Same rescue
+                    // shape as placeOrderBackend()'s own try/catch.
+                    deferred = self.placeOrderIntent();
+                } catch (error) {
+                    fullScreenLoader.stopLoader();
+                    self._orderIntentInFlightFor = null;
+                    throw error;
+                }
+                deferred
                     .always(function () {
                         fullScreenLoader.stopLoader();
                         if (self._orderIntentInFlightFor === companyId) {
@@ -500,10 +526,28 @@ define([
                         }
                     })
                     .done(function (response) {
-                        self.processOrderIntentSuccessResponse(response);
+                        // Found in adversarial review, 2026-08-04: a cross-
+                        // company race. The in-flight guard above only
+                        // dedupes a repeat request for the SAME company — it
+                        // does nothing if the buyer picks company A, then
+                        // (once A's request settles and re-arms the guard)
+                        // picks company B before A's response has actually
+                        // arrived back is not the risk; the risk is A's
+                        // response landing AFTER the buyer has already moved
+                        // on to B. resolveCompanyNotice() reads
+                        // companyName()/companyId() LIVE at settle time, so a
+                        // stale response for A would render A's verdict with
+                        // B's name/number substituted in. Guarded by
+                        // confirming the observables still match what THIS
+                        // request was for before writing either notice.
+                        if (self.companyId() === companyId && self.companyName() === companyName) {
+                            self.processOrderIntentSuccessResponse(response);
+                        }
                     })
                     .fail(function (response) {
-                        self.processOrderIntentErrorResponse(response);
+                        if (self.companyId() === companyId && self.companyName() === companyName) {
+                            self.processOrderIntentErrorResponse(response);
+                        }
                     });
             }
         },
@@ -765,10 +809,46 @@ define([
             if (shippingAddress.getCacheKey() == quote.billingAddress().getCacheKey()) {
                 this.updateAddress(shippingAddress);
             }
+            // Unconditional, unlike updateAddress() above: a SAVED address
+            // and a NEW address differ in whether #shipping-new-address-form
+            // exists at all, which is exactly what
+            // isTileCompanySearchActive() reads — so this has to re-run on
+            // every shipping-address change, not only the ones the cache-key
+            // check lets through.
+            this.refreshTileCompanySearchBinding();
         },
         updateBillingAddress: function (billingAddress) {
             console.debug({ logger: 'twoPayment.updateBillingAddress', billingAddress });
             this.updateAddress(billingAddress);
+            this.refreshTileCompanySearchBinding();
+        },
+        /**
+         * Found in adversarial review, 2026-08-04: enableCompanySearch() only
+         * runs from three call sites (initObservable() → registeredOrganisationMode(),
+         * the "Search for company" link, and the supported-company-types
+         * callback) — NONE of which fire when a buyer switches between a NEW
+         * and a SAVED shipping/billing address. `#shipping-new-address-form`
+         * appears and disappears exactly on that switch, which is the live
+         * DOM signal isTileCompanySearchActive() reads. Without this, a buyer
+         * who starts on a new address (tile inactive, address-area control
+         * live) and then picks a saved address (address-area control's host
+         * form disappears) would find the tile's search widget never bound —
+         * `isTileCompanySearchActive()` would newly return true, the FIELD
+         * would show again (template `visible:` binding does react to that),
+         * but the select2 WIDGET behind it was never initialised, leaving a
+         * plain text input with no dropdown.
+         *
+         * Idempotent both directions: enableCompanySearch() itself no-ops if
+         * the tile is not the active location (checked at its own top), and
+         * destroyCompanySearchWidget() is documented safe to call when
+         * nothing is bound.
+         */
+        refreshTileCompanySearchBinding: function () {
+            if (this.isTileCompanySearchActive()) {
+                this.enableCompanySearch();
+            } else {
+                this.destroyCompanySearchWidget();
+            }
         },
         /**
          * TWO-25347: an earlier version of this comment called the
@@ -1237,7 +1317,16 @@ define([
                 // AMOUNT above is already faithfully 0.00), so the guard
                 // resolves to '0.000000' rather than omitting the key or
                 // inventing a non-zero rate.
+                //
+                // Guarded on `!isFinite`, not `=== 0`, since adversarial
+                // review (2026-08-04) found the narrower check still let a
+                // literal "NaN" reach the wire: `shipping_amount` can arrive
+                // non-numeric/undefined mid totals-recalc (Amasty's async
+                // shipping-method changes), and `parseFloat(undefined) === 0`
+                // is false, so that case fell through to the division branch
+                // and produced `NaN / NaN` — same 400, different trigger.
                 tax_rate: (
+                    !isFinite(parseFloat(totals['shipping_amount'])) ||
                     parseFloat(totals['shipping_amount']) === 0
                         ? 0
                         : parseFloat(totals['shipping_tax_amount']) /

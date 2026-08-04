@@ -195,4 +195,254 @@ describe('fillCompanyData() in-flight guard (TWO-25347 belt-and-braces)', () => 
 
         expect(placeOrderIntentCalls).toBe(2);
     });
+
+    /** Plain (non-ko) observable factory, matching the pattern above. */
+    function plainObservable(initial) {
+        let v = initial;
+        const fn = function (next) {
+            if (!arguments.length) return v;
+            v = next;
+            return fn;
+        };
+        return fn;
+    }
+
+    test('a synchronous throw from placeOrderIntent() clears the guard instead of locking it forever (found in adversarial review, 2026-08-04)', () => {
+        // BLOCKER found reviewing this PR: placeOrderIntent() can throw
+        // synchronously (quote.billingAddress() can legitimately be null for
+        // a transient window; placeOrderIntent() reads
+        // `billingAddress.countryId` unguarded). Before the fix, an
+        // unhandled throw here skipped `.always()` entirely, and
+        // `_orderIntentInFlightFor` stayed set to that companyId FOREVER —
+        // every later pick of the SAME company would silently no-op against
+        // the in-flight guard, with no recovery short of a page reload.
+        const component = loadAmdModule(RENDERER);
+        let placeOrderIntentCalls = 0;
+        const ctx = Object.assign({}, component, {
+            companyName: plainObservable(''),
+            companyId: plainObservable(''),
+            isOrderIntentEnabled: true,
+            placeOrderIntent: function () {
+                placeOrderIntentCalls += 1;
+                if (placeOrderIntentCalls === 1) {
+                    // Simulates the transient-null-billingAddress window —
+                    // only the FIRST attempt hits it.
+                    throw new Error('billingAddress was transiently null');
+                }
+                return {
+                    always: function () {
+                        return this;
+                    },
+                    done: function () {
+                        return this;
+                    },
+                    fail: function () {
+                        return this;
+                    }
+                };
+            }
+        });
+
+        expect(() =>
+            ctx.fillCompanyData({ companyName: 'Acme Widgets AS', companyId: '123' })
+        ).toThrow('billingAddress was transiently null');
+
+        expect(ctx._orderIntentInFlightFor).toBeNull();
+
+        // The buyer picks the SAME company again (e.g. re-selecting after
+        // the transient null window has passed) — must not be swallowed by
+        // a stuck guard.
+        ctx.fillCompanyData({ companyName: 'Acme Widgets AS', companyId: '123' });
+
+        expect(placeOrderIntentCalls).toBe(2);
+    });
+
+    test('a stale response for a PREVIOUS company does not overwrite the notice for the CURRENT one (cross-company race, found in adversarial review, 2026-08-04)', () => {
+        // BLOCKER found reviewing this PR: the in-flight guard only dedupes
+        // a repeat request for the SAME company. It does nothing to stop a
+        // stale response for company A landing AFTER the buyer has already
+        // moved on to company B — resolveCompanyNotice() reads
+        // companyName()/companyId() LIVE at settle time, so A's verdict
+        // would render with B's name/number substituted in.
+        const component = loadAmdModule(RENDERER);
+        const deferreds = {};
+        const processed = [];
+        const ctx = Object.assign({}, component, {
+            companyName: plainObservable(''),
+            companyId: plainObservable(''),
+            isOrderIntentEnabled: true,
+            placeOrderIntent: function () {
+                const companyId = ctx.companyId();
+                const deferred = {
+                    always: function (fn) {
+                        deferred._always = fn;
+                        return deferred;
+                    },
+                    done: function (fn) {
+                        deferred._done = fn;
+                        return deferred;
+                    },
+                    fail: function () {
+                        return deferred;
+                    }
+                };
+                deferreds[companyId] = deferred;
+                return deferred;
+            },
+            processOrderIntentSuccessResponse: function (response) {
+                processed.push({ company: this.companyName(), response: response });
+            }
+        });
+
+        // Company A selected — request A fires and is left hanging.
+        ctx.fillCompanyData({ companyName: 'Company A', companyId: 'aaa' });
+        // Buyer changes their mind before A settles — company B selected.
+        // The in-flight guard is keyed per-company, so this does not get
+        // deduped against A's still-open request.
+        ctx.fillCompanyData({ companyName: 'Company B', companyId: 'bbb' });
+
+        // A's stale response finally lands, AFTER the buyer moved to B.
+        deferreds['aaa']._always();
+        deferreds['aaa']._done({ approved: true });
+
+        // A's verdict must be dropped, not rendered against the now-current
+        // companyName/companyId (which are B's).
+        expect(processed).toEqual([]);
+
+        // B's own response landing normally still works.
+        deferreds['bbb']._always();
+        deferreds['bbb']._done({ approved: true });
+        expect(processed).toEqual([{ company: 'Company B', response: { approved: true } }]);
+    });
+});
+
+describe('tile company-search re-binds on an address-type switch (found in adversarial review, 2026-08-04)', () => {
+    /**
+     * BLOCKER found reviewing this PR: enableCompanySearch() only runs from
+     * three call sites (initObservable()'s registeredOrganisationMode(), the
+     * "Search for company" link, and the supported-company-types callback)
+     * — NONE of which fire when a buyer switches between a NEW and a SAVED
+     * shipping/billing address. `#shipping-new-address-form` appears and
+     * disappears exactly on that switch, which is the live DOM signal
+     * isTileCompanySearchActive() reads. Fixed by having
+     * updateShippingAddress()/updateBillingAddress() call
+     * refreshTileCompanySearchBinding() unconditionally.
+     *
+     * `formHasCompanyField` is mutable so a single jquery mock can simulate
+     * the address-area form appearing/disappearing across two calls in one
+     * test — the real module closes over this `$` at require time, so the
+     * double has to be able to change its answer without a new require.
+     */
+    function loadRendererWithToggleableAddressForm() {
+        let formHasCompanyField = true; // address-area form present (NEW address)
+
+        function makeNode() {
+            const node = {
+                length: 0,
+                on: () => node,
+                off: () => node,
+                val: () => node,
+                text: () => node,
+                attr: () => node,
+                data: () => null,
+                find: () => node,
+                closest: () => node,
+                each: () => node,
+                hide: () => node,
+                show: () => node,
+                select2: () => node
+            };
+            return node;
+        }
+        function $(selector) {
+            if (selector === '#shipping-new-address-form input[name="company"]') {
+                const node = makeNode();
+                node.length = formHasCompanyField ? 1 : 0;
+                return node;
+            }
+            return makeNode();
+        }
+        $.fn = {};
+        $.extend = Object.assign;
+        $.async = function (sel, cb) {
+            cb($(sel));
+        };
+        $.Deferred = function () {
+            const d = {
+                resolve: () => d,
+                reject: () => d,
+                promise: () => d,
+                done: () => d,
+                fail: () => d,
+                always: () => d
+            };
+            return d;
+        };
+        $.mage = { cookies: { get: () => null, set: () => {} }, redirect: () => {} };
+        $.validator = { methods: {}, addMethod: function () {} };
+
+        const address = { getCacheKey: () => 'k', countryId: 'GB' };
+        const renderer = loadAmdModule(RENDERER, {
+            jquery: $,
+            'Magento_Checkout/js/model/quote': {
+                shippingAddress: { subscribe: () => ({ dispose: () => {} }), peek: () => address },
+                billingAddress: (function () {
+                    const fn = function () {
+                        return address;
+                    };
+                    return fn;
+                })(),
+                getTotals: () => ({}),
+                getQuoteId: () => null,
+                paymentMethod: { subscribe: () => ({ dispose: () => {} }) },
+                shippingMethod: { subscribe: () => ({ dispose: () => {} }) },
+                isVirtual: () => false
+            }
+        });
+        renderer.supportedCompanyTypes = { gb: [] };
+        renderer.isAddressAreaCompanySearchEnabled = true;
+
+        const enableCalls = [];
+        const destroyCalls = [];
+        renderer.enableCompanySearch = function () {
+            enableCalls.push(1);
+        };
+        renderer.destroyCompanySearchWidget = function () {
+            destroyCalls.push(1);
+        };
+
+        return {
+            renderer,
+            enableCalls,
+            destroyCalls,
+            setFormPresent: (present) => {
+                formHasCompanyField = present;
+            }
+        };
+    }
+
+    test('switching from a NEW address (form present) to a SAVED one (form gone) re-binds the tile widget', () => {
+        const { renderer, enableCalls, destroyCalls, setFormPresent } =
+            loadRendererWithToggleableAddressForm();
+
+        // Address-area form present → tile is NOT the active location.
+        setFormPresent(true);
+        renderer.updateBillingAddress({ getCacheKey: () => 'k', countryId: 'GB' });
+        expect(enableCalls.length).toBe(0);
+        expect(destroyCalls.length).toBe(1);
+
+        // Buyer switches to a saved address → the address-area form is gone.
+        setFormPresent(false);
+        renderer.updateBillingAddress({ getCacheKey: () => 'k', countryId: 'GB' });
+        expect(enableCalls.length).toBe(1);
+    });
+
+    test('shipping-address changes also trigger the refresh (not only billing)', () => {
+        const { renderer, enableCalls, setFormPresent } = loadRendererWithToggleableAddressForm();
+
+        setFormPresent(false);
+        renderer.updateShippingAddress({ getCacheKey: () => 'k', countryId: 'GB' });
+
+        expect(enableCalls.length).toBe(1);
+    });
 });

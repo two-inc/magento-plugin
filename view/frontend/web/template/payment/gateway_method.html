@@ -216,10 +216,26 @@
                     where this is hidden are states where the buyer either
                     already captured a company here or has another control
                     (the address-area one) to do it with.
+
+                    RE-SHOWN on a decline, even though isCompanyCaptured() is
+                    still true then (found in adversarial review, 2026-08-04):
+                    processOrderIntentSuccessResponse()'s declined branch does
+                    NOT clear companyName/companyId — only an approval's own
+                    company-change subscriptions do that. Gating on capture
+                    alone left a declined buyer looking at a persistent "not
+                    available for this order" notice with NO control anywhere
+                    on the tile to pick a different company — a dead end
+                    without a page reload on exactly the checkouts where the
+                    tile is the buyer's ONLY route (saved address, virtual
+                    cart, or the setting off). isOrderIntentDeclinedNoticeVisible()
+                    re-opens the field for precisely that state; picking a new
+                    company clears the declined notice AND completes capture,
+                    so the field hides again once there is something new to
+                    hide it for.
                 -->
                 <div
                     class="field field-text required"
-                    data-bind="visible: !isCompanyCaptured() && isTileCompanySearchActive()"
+                    data-bind="visible: (!isCompanyCaptured() || isOrderIntentDeclinedNoticeVisible()) && isTileCompanySearchActive()"
                 >
                     <label for="company_name" class="label">
                         <span><!-- ko i18n: 'Company Name'--><!-- /ko --></span>
