@@ -71,15 +71,19 @@
         <!--
             TWO-25326 §7.3 (2026-08-03 ruling): the standalone
             `.two-company-label` text that used to sit here is REMOVED, not
-            supplemented. The captured company name/number are now shown
-            ONLY inside the order-intent notice sentence itself — see
+            supplemented. The captured company NAME is now shown ONLY
+            inside the order-intent notice sentence itself — see
             ConfigProvider::getOrderIntentApprovedNotice() /
             getOrderIntentDeclinedNotice() for the copy templates and
             resolveCompanyNotice() in gateway_method.js for the substitution.
             A company captured with no intent outcome yet showing renders
-            neither notice below and therefore displays the company nowhere
-            in the tile — that follows from "the notice is the only display
-            surface" and is the ruling, not an oversight.
+            neither notice below and therefore displays the company NAME
+            nowhere in the tile — that follows from "the notice is the
+            only display surface for the name" and is the ruling, not an
+            oversight. The company NUMBER is a separate surface (2026-08-04
+            ruling, §5/§7 follow-up): see the `.two-company-id-text` label
+            further down this template, which renders independently of
+            these notices.
 
             Persistent inline notices, inside the payment tile next to the
             term chips. Each is emitted only when its own observable is

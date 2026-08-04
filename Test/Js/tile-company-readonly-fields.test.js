@@ -337,7 +337,9 @@ describe('the payment tile shows the number as an uneditable label, not a field'
     test('the standalone company label is gone — no class, no builder method', () => {
         // TWO-25326 §7.3 (2026-08-03 ruling): the pre-ruling `.two-company-label`
         // element and its companyDisplayLabel() builder are REMOVED, not
-        // relocated. Company display now lives only inside the notice text.
+        // relocated. The company NAME now lives only inside the notice text;
+        // the NUMBER also renders separately via `.two-company-id-text`
+        // (2026-08-04 ruling, §5/§7 follow-up) — see companyIdLabel() above.
         const markup = withoutComments(readTemplate());
 
         expect(markup).not.toContain('two-company-label');
