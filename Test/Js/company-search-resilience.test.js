@@ -14,7 +14,7 @@
 
 'use strict';
 
-const { loadAmdModule } = require('./amd-harness');
+const { loadAmdModule, loadCompanySearchControl } = require('./amd-harness');
 
 const BASE_CONFIG = {
     checkoutApiUrl: 'https://api.example.test',
@@ -1088,7 +1088,14 @@ describe('re-render safety of the select2 binding', () => {
         const companySearch = loadCompanySearch($);
         const component = loadAmdModule(
             'view/frontend/web/js/view/payment/method-renderer/gateway_method.js',
-            { jquery: $, 'Two_Gateway/js/model/company-search': companySearch }
+            {
+                jquery: $,
+                'Two_Gateway/js/model/company-search': companySearch,
+                'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(
+                    $,
+                    companySearch
+                )
+            }
         );
         return Object.assign(Object.create(component.prototype || {}), {
             companyNameSelector: SEARCH_FIELD,
@@ -1186,9 +1193,11 @@ describe('re-render safety of the select2 binding', () => {
 
     /**
      * The re-enable link is only visible on paths that have already destroyed
-     * the widget (manual entry → clearCompany → destroy), so resolving it from
-     * `_$companyNameField` found nothing and left the link up in sole-trader
-     * mode. It must resolve from the cached container instead.
+     * the widget (manual entry → clearCompany → destroy), so resolving it
+     * from the select2 field itself found nothing and left the link up in
+     * sole-trader mode. It must resolve through the shared control's own
+     * reference instead — the control does not clear that reference on
+     * destroy() (see its own doc comment), for exactly this reason.
      */
     test('the re-enable link stays resolvable after the widget is destroyed', () => {
         const { $ } = makeQueryDouble();
@@ -1196,10 +1205,11 @@ describe('re-render safety of the select2 binding', () => {
 
         ctx.enableCompanySearch();
         expect(ctx.searchForCompanyLink().length).toBe(1);
+        expect(ctx._companySearchControl.isBound()).toBe(true);
 
         ctx.destroyCompanySearchWidget();
 
-        expect(ctx._$companyNameField).toBeNull();
+        expect(ctx._companySearchControl.isBound()).toBe(false);
         expect(ctx.searchForCompanyLink().length).toBe(1);
     });
 
@@ -1303,7 +1313,8 @@ describe('re-render safety of the select2 binding', () => {
         const component = loadAmdModule('view/frontend/web/js/view/address-autocomplete.js', {
             jquery: $,
             'Two_Gateway/js/model/brand-config': brandConfig,
-            'Two_Gateway/js/model/company-search': companySearch
+            'Two_Gateway/js/model/company-search': companySearch,
+            'Two_Gateway/js/model/company-search-control': loadCompanySearchControl($, companySearch)
         });
         return Object.assign(Object.create(component.prototype || {}), {
             countrySelector: '#shipping-new-address-form select[name="country_id"]',

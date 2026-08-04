@@ -10,7 +10,7 @@
 
 'use strict';
 
-const { loadAmdModule } = require('./amd-harness');
+const { loadAmdModule, loadCompanySearchControl } = require('./amd-harness');
 
 /**
  * jQuery test double that records $.ajax calls and the values written to
@@ -220,7 +220,11 @@ describe('payment-step company picker (gateway_method.js)', () => {
                 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js',
                 {
                     jquery: $,
-                    'Two_Gateway/js/model/company-search': companySearch
+                    'Two_Gateway/js/model/company-search': companySearch,
+                    'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(
+                        $,
+                        companySearch
+                    )
                 }
             ),
             companySearch: companySearch
@@ -319,7 +323,8 @@ describe('shipping-step company picker (address-autocomplete.js)', () => {
         const component = loadAmdModule('view/frontend/web/js/view/address-autocomplete.js', {
             jquery: $,
             'Two_Gateway/js/model/brand-config': brandConfig,
-            'Two_Gateway/js/model/company-search': companySearch
+            'Two_Gateway/js/model/company-search': companySearch,
+            'Two_Gateway/js/model/company-search-control': loadCompanySearchControl($, companySearch)
         });
 
         const ctx = Object.assign(Object.create(component.prototype || {}), {
@@ -366,7 +371,8 @@ describe('shipping-step company picker (address-autocomplete.js)', () => {
             jquery: $,
             'Magento_Customer/js/customer-data': { set: function () {}, get: function () { return function () {}; } },
             'Two_Gateway/js/model/brand-config': brandConfig,
-            'Two_Gateway/js/model/company-search': companySearch
+            'Two_Gateway/js/model/company-search': companySearch,
+            'Two_Gateway/js/model/company-search-control': loadCompanySearchControl($, companySearch)
         });
 
         const companyIdSelector =

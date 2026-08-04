@@ -39,7 +39,7 @@
 
 'use strict';
 
-const { loadAmdModule } = require('./amd-harness');
+const { loadAmdModule, loadCompanySearchControl } = require('./amd-harness');
 
 const MODEL = 'view/frontend/web/js/model/company-search.js';
 const ADDRESS_STEP = 'view/frontend/web/js/view/address-autocomplete.js';
@@ -312,6 +312,7 @@ function loadAddressStep(options) {
         jquery: dom.$,
         'Magento_Customer/js/customer-data': cd.api,
         'Two_Gateway/js/model/company-search': companySearch,
+        'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(dom.$, companySearch),
         'Two_Gateway/js/model/brand-config': {
             getActiveTwoBrandConfig: function () {
                 return {
@@ -467,9 +468,11 @@ describe('the address step on a country change', () => {
     test('a search still on the wire for the old country is cancelled', () => {
         // Up to 30s of window (REQUEST_TIMEOUT_MS) in which a GB response can
         // land and repaint a dropdown the buyer is now reading as ES results.
-        const ctx = loadAddressStep({ country: 'GB' });
-        const token = {};
-        ctx.component._bindToken = token;
+        // Search has to be ENABLED for a real control (and a real bind
+        // token) to exist at all — see the "no re-bind" test below for the
+        // token identity itself.
+        const ctx = loadAddressStep({ country: 'GB', searchEnabled: true });
+        const token = ctx.component._companySearchControl.getBindToken();
 
         switchCountryTo(ctx, 'ES');
 
@@ -481,10 +484,11 @@ describe('the address step on a country change', () => {
         // handler would be cancelling nothing, in a shape indistinguishable
         // from cancelling correctly.
         const ctx = loadAddressStep({ country: 'GB', searchEnabled: true });
+        const token = ctx.component._companySearchControl.getBindToken();
 
-        expect(typeof ctx.component._bindToken).toBe('object');
-        expect(ctx.component._bindToken).not.toBeNull();
-        expect(ctx.calls.ajaxOptions.token).toBe(ctx.component._bindToken);
+        expect(typeof token).toBe('object');
+        expect(token).not.toBeNull();
+        expect(ctx.calls.ajaxOptions.token).toBe(token);
     });
 
     test('the next search carries the new country, with no re-bind', () => {
@@ -493,12 +497,12 @@ describe('the address step on a country change', () => {
         // the bound widget already searches the new country — and a re-bind
         // would drag a buyer in manual-entry mode back into search mode.
         const ctx = loadAddressStep({ country: 'GB', searchEnabled: true });
-        const tokenBefore = ctx.component._bindToken;
+        const tokenBefore = ctx.component._companySearchControl.getBindToken();
 
         switchCountryTo(ctx, 'ES');
 
         expect(ctx.calls.ajaxOptions.getCountryCode()).toBe('ES');
-        expect(ctx.component._bindToken).toBe(tokenBefore);
+        expect(ctx.component._companySearchControl.getBindToken()).toBe(tokenBefore);
     });
 
     test('a change event that re-selects the same country discards nothing', () => {
@@ -507,8 +511,6 @@ describe('the address step on a country change', () => {
         // switch would blank a returning customer's prefilled company on load.
         const ctx = loadAddressStep({ country: 'GB' });
         ctx.component.setCompanyData('12345678', 'Example Ltd');
-        const token = {};
-        ctx.component._bindToken = token;
 
         switchCountryTo(ctx, 'GB');
 

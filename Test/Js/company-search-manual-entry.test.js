@@ -1031,9 +1031,14 @@ describe('dropdown geometry (resize nudge)', () => {
 
 describe('address-autocomplete.js surface (structural fix)', () => {
     let src;
+    let controlSrc;
 
     beforeAll(() => {
         src = readSource(SURFACE_PATH);
+        // TWO-25326 rebuild: the select2 wiring — including the manual-entry
+        // button's attach/detach calls — moved out of this surface and into
+        // the one shared class both mounts construct.
+        controlSrc = readSource('view/frontend/web/js/model/company-search-control.js');
     });
 
     test('no longer intercepts select2:selecting for a manual-entry sentinel', () => {
@@ -1041,17 +1046,25 @@ describe('address-autocomplete.js surface (structural fix)', () => {
         expect(src).not.toMatch(/isManualEntryOption/);
     });
 
-    test('wires the shared model button, activating enterDetailsManually directly', () => {
-        expect(src).toMatch(
-            /companySearch\.attachManualEntryButton\(\s*\$companyNameField,\s*bindToken,/
-        );
-        expect(src).toMatch(/self\.enterDetailsManually\(\s*\$companyNameField,\s*bindToken\s*\)/);
+    test('does not roll its own select2 wiring — constructs the shared control instead', () => {
+        expect(src).toContain('new CompanySearchControl(');
+        expect(src).not.toContain('.select2({');
+        expect(src).not.toMatch(/companySearch\.attachManualEntryButton\(/);
+        expect(src).not.toMatch(/companySearch\.detachManualEntryButton\(/);
     });
 
-    test('detaches the button on close, and on the re-bind path before re-init', () => {
-        expect(src).toMatch(/companySearch\.detachManualEntryButton\(\s*\$companyNameField\s*\)/);
-        const detachCalls = src.match(/companySearch\.detachManualEntryButton\(/g) || [];
-        // re-bind path (enterDetailsManually) and select2:close.
+    test('activates enterDetailsManually via the control\'s onManualEntryActivated hook', () => {
+        expect(src).toMatch(/onManualEntryActivated:\s*function\s*\(\$companyNameField\)/);
+        expect(src).toMatch(/self\.enterDetailsManually\(\s*\$companyNameField\s*\)/);
+    });
+
+    test('the shared control wires the shared model button, and detaches it on close and re-bind', () => {
+        expect(controlSrc).toMatch(
+            /companySearch\.attachManualEntryButton\(\s*\$field,\s*bindToken,/
+        );
+        expect(controlSrc).toMatch(/companySearch\.detachManualEntryButton\(\s*\$field\s*\)/);
+        const detachCalls = controlSrc.match(/companySearch\.detachManualEntryButton\(/g) || [];
+        // re-bind path (bind()) and select2:close.
         expect(detachCalls.length).toBeGreaterThanOrEqual(2);
     });
 

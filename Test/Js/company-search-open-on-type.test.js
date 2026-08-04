@@ -30,6 +30,12 @@ const { loadAmdModule } = require('./amd-harness');
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
 const ADDRESS_PATH = 'view/frontend/web/js/view/address-autocomplete.js';
 const TILE_PATH = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
+// TWO-25326 rebuild: the select2 wiring itself (language block, open-on-type)
+// moved into ONE shared class, `company-search-control.js`, constructed by
+// each surface rather than each rolling its own `.select2({...})` call. The
+// wiring is pinned there now; the two surfaces are pinned below only to have
+// constructed the class and to no longer contain a parallel implementation.
+const CONTROL_PATH = 'view/frontend/web/js/model/company-search-control.js';
 
 function readRepoFile(relPath) {
     const contents = fs.readFileSync(path.join(__dirname, '..', '..', relPath), 'utf8');
@@ -313,9 +319,9 @@ describe('TWO-25326 §1: zero-result wording', () => {
     });
 });
 
-describe('both call sites are actually wired to the shared fixes', () => {
-    test('the address-step picker passes the shared language block and opens on type', () => {
-        const src = readRepoFile(ADDRESS_PATH);
+describe('the shared control is actually wired to the shared fixes', () => {
+    test('company-search-control.js passes the shared language block and opens on type', () => {
+        const src = readRepoFile(CONTROL_PATH);
 
         expect(src).toContain('language: companySearch.buildLanguageOptions()');
         expect(src).toContain('companySearch.attachOpenOnType(');
@@ -324,10 +330,16 @@ describe('both call sites are actually wired to the shared fixes', () => {
         expect(src).not.toContain('inputTooShort: function');
     });
 
-    test('the payment-tile picker does too', () => {
-        const src = readRepoFile(TILE_PATH);
+    test('both surfaces construct the shared control rather than rolling their own select2 wiring', () => {
+        [ADDRESS_PATH, TILE_PATH].forEach(function (relPath) {
+            const src = readRepoFile(relPath);
 
-        expect(src).toContain('language: companySearch.buildLanguageOptions()');
-        expect(src).toContain('companySearch.attachOpenOnType(');
+            expect(src).toContain('new CompanySearchControl(');
+            // A second, parallel select2 wiring would be exactly the defect
+            // TWO-25326 asked to close — one implementation, not two.
+            expect(src).not.toContain('.select2({');
+            expect(src).not.toContain('companySearch.buildLanguageOptions()');
+            expect(src).not.toContain('companySearch.attachOpenOnType(');
+        });
     });
 });

@@ -11,7 +11,8 @@ define([
     'Magento_Checkout/js/model/step-navigator',
     'uiRegistry',
     'Two_Gateway/js/model/brand-config',
-    'Two_Gateway/js/model/company-search'
+    'Two_Gateway/js/model/company-search',
+    'Two_Gateway/js/model/company-search-control'
 ], function (
     $,
     $t,
@@ -21,7 +22,8 @@ define([
     stepNavigator,
     uiRegistry,
     brandConfig,
-    companySearch
+    companySearch,
+    CompanySearchControl
 ) {
     'use strict';
 
@@ -126,7 +128,9 @@ define([
             // issued under the OLD country is still on the wire for up to 30s,
             // and its results would populate a dropdown the buyer reads as
             // results for the new one.
-            companySearch.abortActiveRequest(this._bindToken);
+            if (this._companySearchControl) {
+                this._companySearchControl.abortActiveRequest();
+            }
             companySearch.revertAutofilledAddress();
             // Clears the name input, the number field, and the published
             // `companyData` section the payment tile reads — every surviving
@@ -608,22 +612,21 @@ define([
          * @param {object} $companyNameField the node THIS bind owns — not the
          *        document-wide selector, so a re-rendered form's picker is
          *        never the one torn down
-         * @param {object} bindToken identity for this bind, so the search the
-         *        buyer has just given up on can be cancelled
          */
-        enterDetailsManually: function ($companyNameField, bindToken) {
+        enterDetailsManually: function ($companyNameField) {
             // First, before anything else touches the widget. Cancelling the
             // selection leaves the dropdown open, so a search still on the
             // wire would come back up to 30s later and run select2's
             // highlight and scroll bookkeeping over a torn-down picker.
-            companySearch.abortActiveRequest(bindToken);
+            this._companySearchControl.abortActiveRequest();
             this.setCompanyData();
-            companySearch.detachManualEntryButton($companyNameField);
-            $companyNameField.off(companySearch.EVENT_NS);
-            $companyNameField.select2('destroy');
+            // Tears down the widget (detach manual-entry button, drop our
+            // handlers, select2('destroy')) — the mechanics shared with the
+            // payment tile's own teardown, owned by the control now.
+            this._companySearchControl.destroy();
             $companyNameField.attr('type', 'text');
             $companyNameField.val('');
-            $(this.searchForCompanyButton).show();
+            this._companySearchControl.showSearchForCompanyLink();
             // After the destroy above, not before: renderCompanyIdText()
             // decides on isCompanySearchActive(), which only reports
             // manual-entry once select2 is actually gone from the node.
@@ -651,209 +654,57 @@ define([
         enableCompanySearch: function (options) {
             if (!config.isCompanySearchEnabled) return;
             const self = this;
-            // One-shot, and deliberately NOT a property on the component:
-            // `$.async` is a MutationObserver that fires again on every
-            // re-render, so a flag that survived the first bind would pop the
-            // dropdown open under a buyer who has moved on to another field.
-            let pendingOpen = !!(options && options.openDropdown);
-            require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
-                $.async(self.companyNameSelector, function (companyNameField) {
-                    // Re-binding on every `$.async` fire is intentional:
-                    // select2 4.1's constructor destroys any existing
-                    // instance on the same node, so re-init re-points the
-                    // widget and its handlers at the current component. An
-                    // early-return guard here would both keep a stale widget
-                    // alive and skip the placeholder / manual-entry
-                    // housekeeping below.
-                    const $companyNameField = $(companyNameField);
-                    // Identity for this bind, so a previous widget's late
-                    // response cannot paint chrome on its replacement.
-                    const bindToken = {};
-                    // Also held on the component, so the country-change handler
-                    // — which is bound to the country select, not to this node,
-                    // and therefore closes over no bind of its own — can cancel
-                    // the search the CURRENT picker has in flight. Overwritten
-                    // on every re-bind, which is correct: only the live bind
-                    // can have a request worth cancelling.
-                    self._bindToken = bindToken;
-                    // select2's destroy() only clears its own `.select2`
-                    // namespace, so our handlers would stack one copy per
-                    // re-render and a single pick would fire N address
-                    // lookups. Clear ours before re-binding.
-                    $companyNameField.off(companySearch.EVENT_NS);
-                    $companyNameField
-                        .select2({
-                            minimumInputLength: companySearch.MIN_INPUT_LENGTH,
-                            // Displaces select2's own built-in English
-                            // "input too short" and "No results found" text,
-                            // both baked into the vendored bundle. Ours are
-                            // translatable, name the threshold outright, and
-                            // use the cross-platform "No matches found"
-                            // wording pinned by TWO-25326 §1. Shared with the
-                            // payment-tile picker so the two cannot drift.
-                            language: companySearch.buildLanguageOptions(),
-                            // A stable, non-generated hook for style.css's
-                            // dropdown-row CSS fixes (text-transform,
-                            // vertical alignment). select2 IDs its own
-                            // rendered/results elements off the backing
-                            // element's `id` attribute when present, or
-                            // `name + 2 random chars` when it isn't — this
-                            // company field carries no explicit `id`, so
-                            // that fallback is NOT a stable selector CSS
-                            // could target. `dropdownCssClass` is select2's
-                            // own supported hook for exactly this — the
-                            // literal class name lives once, on
-                            // companySearch.DROPDOWN_CSS_CLASS, same
-                            // convention as MIN_INPUT_LENGTH above, so this
-                            // and the payment-tile picker's init (and
-                            // style.css) can't drift apart on a rename.
-                            dropdownCssClass: companySearch.DROPDOWN_CSS_CLASS,
-                            width: '100%',
-                            escapeMarkup: function (markup) {
-                                return markup;
-                            },
-                            templateResult: function (data) {
-                                return data.html;
-                            },
-                            templateSelection: function (data) {
-                                return data.text || self.companyNamePlaceholder;
-                            },
-                            ajax: companySearch.buildSearchAjaxOptions({
-                                config: config,
-                                token: bindToken,
-                                getCountryCode: function () {
-                                    return $(self.countrySelector).val();
-                                },
-                                // Bound to THIS node, not to the selector, so
-                                // a destroyed widget's late response cannot
-                                // paint onto the live picker.
-                                onSearching: function (isSearching) {
-                                    companySearch.setSearching(
-                                        $companyNameField,
-                                        isSearching,
-                                        bindToken
-                                    );
-                                },
-                                onUnavailable: function (isUnavailable) {
-                                    companySearch.setUnavailable(
-                                        $companyNameField,
-                                        isUnavailable,
-                                        bindToken
-                                    );
-                                }
-                            })
-                        })
-                        .on('select2:open' + companySearch.EVENT_NS, function () {
-                            // Nothing else removes what we appended into the
-                            // search box, so a reopened picker would show the
-                            // previous search's "unavailable" notice.
-                            companySearch.clearSearchChrome($companyNameField, bindToken);
-                            // The manual-entry button is a SIBLING of the
-                            // results list (#30.x.15), not a row inside it,
-                            // so it stays visible outside select2's own
-                            // scroll/clip and needs no selection-cancelling
-                            // dance: its own click handler below is the only
-                            // thing that activates it.
-                            companySearch.attachManualEntryButton(
-                                $companyNameField,
-                                bindToken,
-                                function () {
-                                    self.enterDetailsManually($companyNameField, bindToken);
-                                }
-                            );
-                            document.querySelector('.select2-search__field').focus();
-                        })
-                        .on('select2:close' + companySearch.EVENT_NS, function () {
-                            // Every open re-attaches, so nothing is lost by
-                            // dropping the button here — and a checkout that
-                            // re-renders the form while the picker is closed
-                            // would otherwise leave a button from this bind
-                            // wired to a disposed renderer for the life of
-                            // the page.
-                            companySearch.detachManualEntryButton($companyNameField);
-                        })
-                        .on('select2:select' + companySearch.EVENT_NS, function (e) {
-                            const selectedItem = e.params.data;
-                            $('.select2-selection__rendered').text(selectedItem.id);
-                            self.setCompanyData(selectedItem.companyId, selectedItem.text);
-                            // Gate lives in companySearch.lookupCompanyAddress
-                            // (config.isAddressSearchEnabled = the single
-                            // `enable_address_search` setting), shared with the
-                            // payment-step picker.
-                            self.addressLookup(selectedItem);
-                        });
-                    companySearch.markSearchBinding($companyNameField, bindToken);
-                    // TWO-25326 §1: typing any character (not just Space or
-                    // Enter, which is all select2 4.1 handles) opens the
-                    // dropdown and starts the search.
-                    companySearch.attachOpenOnType($companyNameField, bindToken);
-                    // Re-derive on every bind: a re-render rebuilds the
-                    // `.control` this label lives in, so a label written on a
-                    // previous bind is gone by now.
-                    self.renderCompanyIdText();
-                    // Set initial placeholder text for the company search
-                    if (!$(self.companyNameSelector).val()) {
-                        $(self.companyNameSelector)
-                            .closest('.field')
-                            .find('.select2-selection__rendered')
-                            .text(self.companyNamePlaceholder);
-                    }
-                    if ($(self.companyNameSelector).val()) {
-                        // pre-fill on checkout render
-                        $('.select2-selection__rendered').text($(self.companyNameSelector).val());
-                    }
-                    if ($(self.searchForCompanyButton).length == 0) {
-                        $(self.companyNameSelector)
-                            .closest('.field')
-                            .append(
-                                `<div id="shipping_search_for_company" class="search_for_company" ` +
-                                    `role="button" tabindex="0" title="${self.searchForCompanyText}">` +
-                                    `<span>${self.searchForCompanyText}</span>` +
-                                    '</div>'
-                            );
-                    }
-                    // Re-bound unconditionally: the div survives a re-render,
-                    // so the append guard above was false and this handler kept
-                    // closing over the first, stale component.
-                    const activateSearchForCompany = function () {
-                        // Guards against a double-activation: this is a
-                        // `role="button"` on a plain div, not a native
-                        // <button>, and some assistive-tech/browser
-                        // combinations forward a synthetic `click` in
-                        // addition to the Enter keydown for exactly that
-                        // shape of widget. Once hidden, a second call is a
-                        // no-op rather than re-opening a dropdown the buyer
-                        // already opened.
-                        const $button = $(self.searchForCompanyButton).first();
-                        if ($button.length && $button.get(0).style.display === 'none') return;
-                        self.enableCompanySearch({ openDropdown: true });
-                        $(self.searchForCompanyButton).hide();
-                    };
-                    $(self.searchForCompanyButton)
-                        .off('click' + companySearch.EVENT_NS)
-                        .off('keydown' + companySearch.EVENT_NS)
-                        .on('click' + companySearch.EVENT_NS, activateSearchForCompany)
-                        // Keyboard reachability (TWO parity with WooCommerce /
-                        // Hyvä): this div has no native semantics, so Enter/
-                        // Space have to be wired up by hand to match the
-                        // role="button" contract set on the markup above.
-                        .on('keydown' + companySearch.EVENT_NS, function (e) {
-                            if (e.key !== 'Enter' && e.key !== ' ' && e.which !== 13 && e.which !== 32) {
-                                return;
-                            }
-                            e.preventDefault();
-                            activateSearchForCompany();
-                        });
-                    $(self.searchForCompanyButton).hide();
-                    // Last, so every handler above — including `select2:open`,
-                    // which is what puts the caret in the search box — is
-                    // already bound when the dropdown opens.
-                    if (pendingOpen) {
-                        pendingOpen = false;
-                        $companyNameField.select2('open');
+            // ONE instance for this component, mirroring PrestaShop's single
+            // `TwoCompanySearch` construction site: every subsequent call
+            // (re-render, "Search for company" reactivation) re-binds THIS
+            // instance rather than constructing a second one. `companyIdSelector`'s
+            // id is static per address form, so a single fixed `id` on the
+            // return link (rather than container-scoping, which the payment
+            // tile needs for its multi-brand case) is the right lookup here.
+            if (!this._companySearchControl) {
+                this._companySearchControl = new CompanySearchControl({
+                    fieldSelector: self.companyNameSelector,
+                    config: config,
+                    getCountryCode: function () {
+                        return $(self.countrySelector).val();
+                    },
+                    templateSelectionFallback: function () {
+                        return self.companyNamePlaceholder;
+                    },
+                    searchForCompanyId: self.searchForCompanyButton.replace('#', ''),
+                    searchForCompanyText: self.searchForCompanyText,
+                    onSelect: function (selectedItem, $companyNameField) {
+                        $('.select2-selection__rendered').text(selectedItem.id);
+                        self.setCompanyData(selectedItem.companyId, selectedItem.text);
+                        // Gate lives in companySearch.lookupCompanyAddress
+                        // (config.isAddressSearchEnabled = the single
+                        // `enable_address_search` setting), shared with the
+                        // payment-tile picker.
+                        self.addressLookup(selectedItem);
+                    },
+                    onManualEntryActivated: function ($companyNameField) {
+                        self.enterDetailsManually($companyNameField);
+                    },
+                    onBound: function ($companyNameField) {
+                        // Re-derive on every bind: a re-render rebuilds the
+                        // `.control` this label lives in, so a label written
+                        // on a previous bind is gone by now.
+                        self.renderCompanyIdText();
+                        // Set initial placeholder text for the company search
+                        if (!$companyNameField.val()) {
+                            $companyNameField
+                                .closest('.field')
+                                .find('.select2-selection__rendered')
+                                .text(self.companyNamePlaceholder);
+                        }
+                        if ($companyNameField.val()) {
+                            // pre-fill on checkout render
+                            $('.select2-selection__rendered').text($companyNameField.val());
+                        }
                     }
                 });
-            });
+            }
+            this._companySearchControl.bind(options);
         }
     });
 });
