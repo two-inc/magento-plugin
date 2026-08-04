@@ -144,8 +144,10 @@ function renderedValue(id, renderer) {
  * render, and what it says — both derived from the live observable rather
  * than restated, so a rewired binding fails here rather than passing on an
  * assumed string. TWO-25326 §7.3 (2026-08-03 ruling): these observables are
- * now the ONLY surface the captured company name/number appear on in the
- * tile — there is no separate label to keep in sync with them.
+ * the ONLY surface the captured company NAME appears on in the tile —
+ * there is no separate name label to keep in sync with them. The NUMBER
+ * also renders separately, notice-independent, via `.two-company-id-text`
+ * (2026-08-04 ruling, §5/§7 follow-up) — see companyIdLabel() below.
  */
 function approvedNoticeVisible(renderer) {
     return !!renderer.orderIntentApprovedNotice();
