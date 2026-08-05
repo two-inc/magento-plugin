@@ -149,8 +149,11 @@ class FeeLineProviderPoolTest extends TestCase
         $this->assertSame([$this->feeLine('fee_ok')], $result);
     }
 
-    public function testLineWithNonNumericTaxAmountIsDropped(): void
+    public function testLineWithNonNumericTaxAmountAmongOtherMissingFieldsIsDropped(): void
     {
+        // Also missing net_amount/type/tax_rate — testLineMissingNetAmountTypeOrTaxRateIsDropped
+        // below isolates that case; this one specifically pins that a
+        // non-numeric tax_amount alone is sufficient grounds to drop.
         $provider = $this->createMock(FeeLineProviderInterface::class);
         $provider->method('getFeeLines')->willReturn([
             ['order_item_id' => 'malformed', 'gross_amount' => '12.00', 'tax_amount' => 'oops'],
