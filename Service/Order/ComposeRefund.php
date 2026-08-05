@@ -32,25 +32,18 @@ class ComposeRefund extends OrderService
     {
         $lineItems = array_values($this->getLineItemsCreditmemo($order, $creditmemo));
 
-        // Real per-fee itemization from any registered FeeLineProviderInterface.
-        // None are registered by default; see etc/di.xml. A provider only
-        // needs to return a line here if the fee it targets was actually
-        // refunded on this credit memo — no proration is guessed at this
-        // call site.
-        foreach ($this->getFeeLines($creditmemo) as $feeLine) {
-            $lineItems[] = $feeLine;
-        }
-
-        // Secondary fallback for anything no provider recognized. See
-        // Service\Order::getOtherChargesLineItem() docblock.
-        $otherCharges = $this->getOtherChargesLineItem(
+        // Reconcile any known third-party fee (via a registered
+        // FeeLineProviderInterface — a provider only needs to return a
+        // line here if the fee it targets was actually refunded on this
+        // credit memo, no proration is guessed at this call site) and,
+        // failing that, any genuinely untaxed residual. See
+        // Order::reconcileOtherCharges() docblock.
+        $lineItems = $this->reconcileOtherCharges(
             $lineItems,
+            $creditmemo,
             (float)$creditmemo->getGrandTotal(),
             (float)$creditmemo->getTaxAmount()
         );
-        if ($otherCharges) {
-            $lineItems[] = $otherCharges;
-        }
 
         // Use creditmemo->getGrandTotal() rather than re-summing line items.
         // It's the canonical post-collector refund value Magento records

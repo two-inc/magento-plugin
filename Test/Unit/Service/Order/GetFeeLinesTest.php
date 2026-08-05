@@ -9,9 +9,11 @@ use Two\Gateway\Service\Order;
 
 /**
  * Order::getFeeLines() is a thin passthrough to the injected
- * FeeLineProviderPool — this pins the delegation and the
- * defaults-to-an-empty-pool behaviour when no pool is injected
- * (constructor skipped in tests, or a caller pre-dating this change).
+ * FeeLineProviderPool. The null-coalescing "no pool means an empty one"
+ * default lives ONLY in __construct() — this test injects a real (empty)
+ * pool via reflection to exercise the same real-world shape a caller going
+ * through the constructor gets, rather than duplicating the default in the
+ * getter itself.
  */
 class GetFeeLinesTest extends TestCase
 {
@@ -28,6 +30,12 @@ class GetFeeLinesTest extends TestCase
         );
     }
 
+    private function injectPool($pool): void
+    {
+        $property = new \ReflectionProperty(Order::class, 'feeLineProviderPool');
+        $property->setValue($this->orderService, $pool);
+    }
+
     public function testDelegatesToInjectedPool(): void
     {
         $entity = new \stdClass();
@@ -39,17 +47,17 @@ class GetFeeLinesTest extends TestCase
             ->with($entity)
             ->willReturn($expected);
 
-        $property = new \ReflectionProperty(Order::class, 'feeLineProviderPool');
-        $property->setValue($this->orderService, $pool);
+        $this->injectPool($pool);
 
         $this->assertSame($expected, $this->orderService->getFeeLines($entity));
     }
 
-    public function testNoPoolInjectedBehavesAsEmptyPool(): void
+    public function testEmptyPoolReturnsNoLines(): void
     {
-        // Constructor is skipped by getMockForAbstractClass(..., false), so
-        // feeLineProviderPool is never set — mirrors any caller that
-        // doesn't go through the constructor's null-coalescing default.
+        // Mirrors the constructor's default when nothing is registered in
+        // etc/di.xml (the current, zero-provider state).
+        $this->injectPool(new FeeLineProviderPool([]));
+
         $this->assertSame([], $this->orderService->getFeeLines(new \stdClass()));
     }
 }

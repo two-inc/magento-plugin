@@ -94,6 +94,39 @@ class OtherChargesLineItemTest extends TestCase
         $this->assertNull($result);
     }
 
+    public function testCumulativeRoundingDriftAcrossManyLinesDoesNotFalsePositive(): void
+    {
+        // Each of the 10 lines is independently roundAmt()'d to 2dp, so the
+        // entity's own higher-precision aggregate can legitimately drift up
+        // to ~N*0.005 from sum(line_items) with ZERO third-party extension
+        // involved (the same bound ComposeRefund's own comment documents).
+        // A flat 1-cent epsilon would false-positive here; the scaled one
+        // (max(0.01, 0.005*N) = 0.05 for N=10) must not.
+        $this->logRepository->expects($this->never())->method('addErrorLog');
+
+        $lineItems = array_fill(0, 10, $this->productLine('10.00', '2.00'));
+
+        // sum(gross) = 100.00, sum(tax) = 20.00; drift of 0.04 is within the
+        // scaled epsilon of 0.05 for 10 lines.
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, 100.04, 20.00);
+
+        $this->assertNull($result);
+    }
+
+    public function testDriftBeyondTheScaledEpsilonStillFires(): void
+    {
+        // Same 10 lines, but the residual (0.06) exceeds the scaled
+        // epsilon (0.05) — still a real untaxed residual to reconcile.
+        $this->logRepository->expects($this->never())->method('addErrorLog');
+
+        $lineItems = array_fill(0, 10, $this->productLine('10.00', '2.00'));
+
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, 100.06, 20.00);
+
+        $this->assertNotNull($result);
+        $this->assertSame('0.06', $result['gross_amount']);
+    }
+
     public function testNoLineItemsAndZeroGrandTotalProducesNoSyntheticLine(): void
     {
         $this->logRepository->expects($this->never())->method('addErrorLog');
@@ -126,12 +159,15 @@ class OtherChargesLineItemTest extends TestCase
         $this->assertSame('1', (string)$result['quantity']);
     }
 
-    public function testNegativeUntaxedResidualIsAlsoReconciled(): void
+    public function testNegativeResidualIsLoggedNotAutoReconciled(): void
     {
-        // Defensive: if known items somehow overshoot grand_total, the
-        // residual is negative and still gets reconciled rather than
-        // silently dropped or clamped — as long as tax stays zero.
-        $this->logRepository->expects($this->never())->method('addErrorLog');
+        // A negative residual (known items exceed grand_total) is NOT a
+        // "fee we forgot" — it's more likely our own line-item math
+        // double-counted something. Log it for diagnosis rather than
+        // inventing a negative-amount correction line.
+        $this->logRepository->expects($this->once())
+            ->method('addErrorLog')
+            ->with('UnreconciledOtherCharges', $this->isType('string'));
 
         $lineItems = [
             $this->productLine('100.00', '20.00'),
@@ -139,9 +175,7 @@ class OtherChargesLineItemTest extends TestCase
 
         $result = $this->orderService->getOtherChargesLineItem($lineItems, 95.00, 20.00);
 
-        $this->assertNotNull($result);
-        $this->assertSame('-5.00', $result['gross_amount']);
-        $this->assertSame('0.00', $result['tax_amount']);
+        $this->assertNull($result);
     }
 
     // ── (c) a taxed untracked total is logged, NOT guessed ──────────────

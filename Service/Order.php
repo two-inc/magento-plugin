@@ -111,11 +111,12 @@ abstract class Order
      */
     public function getFeeLines($entity): array
     {
-        // Defensive: a test double built via getMockForAbstractClass() with
-        // the constructor skipped never runs the null-coalescing default in
-        // __construct(), leaving this property unset. Real instantiation
-        // always goes through the constructor.
-        return ($this->feeLineProviderPool ?? new FeeLineProviderPool([]))->getFeeLines($entity);
+        // The null-coalescing default lives ONLY in __construct() (single
+        // source of truth for "no pool injected means an empty one"). A
+        // test double built via getMockForAbstractClass() with the
+        // constructor skipped must inject a pool via reflection before
+        // calling this — see Test/Unit/Service/Order/GetFeeLinesTest.php.
+        return $this->feeLineProviderPool->getFeeLines($entity);
     }
 
     /**
@@ -607,6 +608,24 @@ abstract class Order
      * can't be safely reconciled), so an ordinary order never gets a
      * synthetic line.
      *
+     * Two more guards, both there to stop this firing on completely
+     * ordinary orders that have nothing to do with a third-party fee:
+     *
+     *  - The epsilon scales with $lineItems' count (min 0.01, +0.005 per
+     *    line). Every gross_amount here is independently roundAmt()'d to
+     *    2dp; summing N independently-rounded values can legitimately
+     *    drift from the entity's own higher-precision aggregate column by
+     *    up to ~N*0.005 (the same bound ComposeRefund's own line-summing
+     *    comment already documents) with zero third-party extension
+     *    involved. A flat 1-cent epsilon would false-positive on any
+     *    large multi-item order.
+     *  - Only a POSITIVE residual (grand_total > known items) is ever
+     *    auto-emitted. A negative residual means known items already
+     *    exceed grand_total, which isn't a "fee we forgot" — it's more
+     *    likely a bug in our own line-item math (e.g. double-counting)
+     *    than a legitimate negative-amount fee. Paper over it with a
+     *    synthetic line and the real bug goes undiagnosed; log it instead.
+     *
      * @param array $lineItems Line items already built for this entity
      *                          (products, shipping, surcharge, entity-native
      *                          adjustment lines, and any FeeLineProviderInterface
@@ -624,14 +643,32 @@ abstract class Order
             $knownTax += (float)($lineItem['tax_amount'] ?? 0);
         }
 
+        $epsilon = max(0.01, 0.005 * count($lineItems));
+
         $residualGross = round($grandTotal - $knownGross, 2);
-        if (abs($residualGross) <= 0.01) {
+        if (abs($residualGross) <= $epsilon) {
             // Ordinary rounding noise, not an untracked total.
             return null;
         }
 
+        if ($residualGross < 0) {
+            // Known items already exceed grand_total. Not a fee we
+            // forgot — more likely our own line-item math double-counted
+            // something. Surface it; don't invent a negative-amount line
+            // to paper over a bug that needs diagnosing.
+            $this->logRepository->addErrorLog(
+                'UnreconciledOtherCharges',
+                sprintf(
+                    'sum(line_items.gross_amount) exceeds grand_total by %.2F. '
+                    . 'Not auto-itemizing a negative correction line.',
+                    abs($residualGross)
+                )
+            );
+            return null;
+        }
+
         $residualTax = round($taxTotal - $knownTax, 2);
-        if (abs($residualTax) > 0.01) {
+        if (abs($residualTax) > $epsilon) {
             // Non-zero tax on an unrecognized residual: we don't know its
             // real rate. Guessing one is worse than not reconciling —
             // surface it loudly instead so it can be diagnosed and, if it
@@ -670,6 +707,34 @@ abstract class Order
             'quantity' => 1,
             'quantity_unit' => 'sc',
         ];
+    }
+
+    /**
+     * Shared glue for ComposeOrder/ComposeCapture/ComposeRefund: merge any
+     * registered FeeLineProviderInterface output into $lineItems, then
+     * append the getOtherChargesLineItem() fallback if it has anything to
+     * reconcile. One call site instead of three near-identical ones, so a
+     * future change to the merge order/logic only needs to happen once.
+     *
+     * @param array $lineItems Line items already built for this entity.
+     * @param OrderModel|OrderModel\Invoice|OrderModel\Creditmemo $entity
+     * @param float $grandTotal The entity's own aggregate gross/grand total.
+     * @param float $taxTotal The entity's own aggregate tax total.
+     * @return array $lineItems with fee-provider output and/or the residual
+     *               fallback appended.
+     */
+    public function reconcileOtherCharges(array $lineItems, $entity, float $grandTotal, float $taxTotal): array
+    {
+        foreach ($this->getFeeLines($entity) as $feeLine) {
+            $lineItems[] = $feeLine;
+        }
+
+        $otherCharges = $this->getOtherChargesLineItem($lineItems, $grandTotal, $taxTotal);
+        if ($otherCharges) {
+            $lineItems[] = $otherCharges;
+        }
+
+        return $lineItems;
     }
 
     /**
