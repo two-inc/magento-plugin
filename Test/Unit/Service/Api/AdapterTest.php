@@ -142,6 +142,26 @@ class AdapterTest extends TestCase
 
         $this->assertEquals(400, $result['error_code']);
         $this->assertStringContainsString('Invalid API response from Two.', $result['error_message']);
+        // The real status is preserved rather than being swallowed by the
+        // catch-all. Callers that categorise failures need it: without a
+        // status, an empty-bodied 5xx is indistinguishable from a transport
+        // failure, so a service outage would be reported to the merchant as
+        // "could not be reached" instead of "the service errored".
+        $this->assertSame(500, $result['http_status']);
+    }
+
+    public function testTransportFailureCarriesNoHttpStatus(): void
+    {
+        // The counterpart to the case above, and the reason it matters: when
+        // no HTTP exchange completes at all, there is no status to report.
+        // The absence of http_status is what distinguishes the two.
+        $this->curl->method('getStatus')
+            ->willThrowException(new \RuntimeException('Error in transfer'));
+
+        $result = $this->adapter->execute('/v1/order', ['amount' => 100]);
+
+        $this->assertEquals(400, $result['error_code']);
+        $this->assertArrayNotHasKey('http_status', $result);
     }
 
     // ── Edge cases ──────────────────────────────────────────────────────

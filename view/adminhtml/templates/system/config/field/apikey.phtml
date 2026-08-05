@@ -15,9 +15,14 @@ $status = $block->getApiKeyStatus();
 <div>
     <span><?= $block->escapeHtml($status['message']); ?></span>
     <span class="api-key-status-icon <?= $block->escapeHtmlAttr('api-key-' . $status['status']); ?>"></span>
-    <?php if (isset($status['error'])): ?>
-        <span class="api-key-error-message"><?= $block->escapeHtml($status['error']); ?></span>
-    <?php endif; ?>
+    <?php
+    // No raw upstream response body is rendered here. It used to be echoed
+    // alongside the message, which put an API error payload in front of a
+    // merchant while telling them, wrongly, that their key was invalid.
+    // getApiKeyStatus() now carries a category-specific message (and, where
+    // an HTTP exchange completed, its status code) which is the whole of
+    // what an admin can act on.
+    ?>
     <?php if (!empty($status['merchant_id'])): ?>
         <div style="margin-top: 8px; color: #666; font-size: 13px;">
             <strong><?= $block->escapeHtml(__('Merchant ID:')); ?></strong>

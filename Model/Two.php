@@ -32,6 +32,7 @@ use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
@@ -141,6 +142,10 @@ class Two extends AbstractMethod
      */
     private $configDataCollectionFactory;
     /**
+     * @var ApiKeyStatus
+     */
+    private $apiKeyStatus;
+    /**
      * Per-store memo for isAmastyCheckoutStore(); isAvailable() fires many
      * times per page and the detection reads config + core_config_data.
      *
@@ -172,6 +177,7 @@ class Two extends AbstractMethod
      * @param MinimumOrderProvider $minimumOrderProvider
      * @param MerchantMinimumResolver $merchantMinimumResolver
      * @param ConfigDataCollectionFactory $configDataCollectionFactory
+     * @param ApiKeyStatus $apiKeyStatus
      * @param AbstractResource|null $resource
      * @param AbstractDb|null $resourceCollection
      * @param array $data
@@ -200,6 +206,7 @@ class Two extends AbstractMethod
         MinimumOrderProvider $minimumOrderProvider,
         MerchantMinimumResolver $merchantMinimumResolver,
         ConfigDataCollectionFactory $configDataCollectionFactory,
+        ApiKeyStatus $apiKeyStatus,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -232,6 +239,7 @@ class Two extends AbstractMethod
         $this->minimumOrderProvider = $minimumOrderProvider;
         $this->merchantMinimumResolver = $merchantMinimumResolver;
         $this->configDataCollectionFactory = $configDataCollectionFactory;
+        $this->apiKeyStatus = $apiKeyStatus;
     }
 
     /**
@@ -777,6 +785,32 @@ class Two extends AbstractMethod
             if ($quote->getStoreId() !== null) {
                 $storeId = (int)$quote->getStoreId();
             }
+        }
+        // A configured api_key is not the same thing as a WORKING one. Unless
+        // the stored key currently verifies, the method must not be offered —
+        // for ANY reason it fails to verify (rejected key, service 5xx, the
+        // API unreachable), because a buyer selecting a method whose
+        // integration cannot be confirmed gets a failure at placement instead
+        // of at selection. The check is cached (see ApiKeyStatus), so this
+        // costs no HTTP round-trip per render.
+        //
+        // Placed BEFORE the Amasty bypass below deliberately: that bypass
+        // returns true unconditionally to defer the *minimum-order* gate to
+        // the client, and it must not also defer this one — there is no
+        // client-side equivalent, and an unverified key is not something a
+        // later total recalculation can turn into a working integration.
+        if (!$this->apiKeyStatus->isVerified($storeId)) {
+            // Withdrawing the method is invisible to the merchant, so record
+            // why. Category and HTTP status only, never a response body —
+            // being unable to tell "wrong key" from "service down" is the
+            // exact gap this change closes on the admin page, and it must not
+            // reappear here.
+            $status = $this->apiKeyStatus->getStatus($storeId);
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: API key verification failed', $this->_code),
+                ['status' => $status['status'], 'http_status' => $status['code']]
+            );
+            return false;
         }
         // Amasty OneStepCheckout persists the buyer's shipping method to the
         // server quote only at order placement, so at checkout-render time the

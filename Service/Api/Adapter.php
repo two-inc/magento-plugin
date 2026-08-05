@@ -7,7 +7,6 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Service\Api;
 
-use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use Throwable;
@@ -162,9 +161,25 @@ class Adapter
                         sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
                         'Invalid API response.'
                     );
-                    throw new LocalizedException(
-                        __('Invalid API response from %1.', $this->brandRegistry->getProductName())
-                    );
+                    // This used to throw a LocalizedException, which this
+                    // method's own catch-all immediately converted into
+                    // exactly the array below minus `http_status` — the
+                    // throw never escaped execute(). Returning directly
+                    // keeps that same shape while preserving the real HTTP
+                    // status, which the catch-all discarded. Callers that
+                    // categorise failures (Service\Merchant\ApiKeyStatus)
+                    // need it: without a status, an empty-bodied 5xx is
+                    // indistinguishable from a transport failure, and a
+                    // service outage would be reported to the merchant as
+                    // "unreachable" instead of "the service errored".
+                    return [
+                        'error_code' => 400,
+                        'http_status' => $result->status,
+                        'error_message' => (string)__(
+                            'Invalid API response from %1.',
+                            $this->brandRegistry->getProductName()
+                        ),
+                    ];
                 }
             }
         } catch (Throwable $exception) {

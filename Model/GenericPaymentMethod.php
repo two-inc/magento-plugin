@@ -25,6 +25,7 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
@@ -89,6 +90,7 @@ class GenericPaymentMethod extends Two
         MinimumOrderProvider $minimumOrderProvider,
         MerchantMinimumResolver $merchantMinimumResolver,
         ConfigDataCollectionFactory $configDataCollectionFactory,
+        ApiKeyStatus $apiKeyStatus,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -117,6 +119,7 @@ class GenericPaymentMethod extends Two
             $minimumOrderProvider,
             $merchantMinimumResolver,
             $configDataCollectionFactory,
+            $apiKeyStatus,
             $resource,
             $resourceCollection,
             $data
