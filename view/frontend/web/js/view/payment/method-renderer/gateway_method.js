@@ -79,15 +79,36 @@ define([
     // one, so this is a no-op) instead of the first one to resolve.
     var orderIntentRequestsInFlight = 0;
 
-    function startOrderIntentLoader() {
+    /**
+     * Whether an order-intent check is in flight, for the TILE-LOCAL spinner.
+     *
+     * TWO-25326: this used to drive `fullScreenLoader`, a page-covering
+     * overlay — every order-intent check greyed out and blocked the whole
+     * checkout while a single payment method decided whether it could offer
+     * itself. The spinner for that check now lives inside the payment tile
+     * (`.two-order-intent-spinner` in gateway_method.html) and nothing
+     * outside the tile is covered or blocked, matching the sibling plugins.
+     *
+     * Module-scope, exactly like the refcount above and for the same reason:
+     * Amasty rebuilds the payment-method list and Fire Checkout re-renders
+     * this renderer outright on every totals/shipping change, so a re-render
+     * mid-flight orphans one instance's request and starts another's. A
+     * per-instance observable would be dismissed by whichever request settles
+     * first — the orphan, usually — while the live instance is still waiting.
+     * Bound into the template as a prototype property, so every instance's
+     * tile reads this one observable.
+     */
+    var orderIntentInProgress = ko.observable(false);
+
+    function startOrderIntentSpinner() {
         orderIntentRequestsInFlight += 1;
-        fullScreenLoader.startLoader();
+        orderIntentInProgress(true);
     }
 
-    function stopOrderIntentLoader() {
+    function stopOrderIntentSpinner() {
         orderIntentRequestsInFlight = Math.max(0, orderIntentRequestsInFlight - 1);
         if (orderIntentRequestsInFlight === 0) {
-            fullScreenLoader.stopLoader();
+            orderIntentInProgress(false);
         }
     }
 
@@ -132,6 +153,10 @@ define([
         selectedTerm: surchargeModel.selectedTerm,
         telephone: ko.observable(''),
         countryCode: ko.observable(''),
+        // Tile-local order-intent spinner flag — the module-scope observable
+        // declared above, deliberately shared by every instance. See its
+        // docblock for why it is not per-instance.
+        orderIntentInProgress: orderIntentInProgress,
         showPopupMessage: ko.observable(false),
         showSoleTrader: ko.observable(false),
         showWhatIsTwo: ko.observable(false),
@@ -390,6 +415,62 @@ define([
             return !!(this.companyName() || '').trim() && !!(this.companyId() || '').trim();
         },
         /**
+         * The captured organisation number as it may be SHOWN in the tile, or
+         * '' when it must not be shown (TWO-25326: an internal `TWO:`-prefixed
+         * identifier). Routed through the ONE shared display formatter that
+         * the dropdown row, the address-step label and the order-intent notice
+         * all use — see companySearch.formatCompanyNumber().
+         *
+         * `companyId()` itself is untouched: it is still the single carrier and
+         * getData()/placeOrderIntent() still read it, never this.
+         *
+         * A plain function, not a computed — same reasoning as
+         * isCompanyCaptured() above: the template reads it inside `visible:`
+         * and `text:` bindings, so ko tracks `companyId` as a dependency of
+         * those bindings and re-evaluates when it changes.
+         *
+         * @returns {string}
+         */
+        displayCompanyId: function () {
+            return companySearch.formatCompanyNumber(this.companyId());
+        },
+        /**
+         * The billing country the company search should be run against.
+         *
+         * DOM FIRST, `countryCode()` second, and that order is the fix for
+         * TWO-25326's Fire Checkout bug: the tile's picker searched as if the
+         * country were the API's default (US) whatever the buyer had actually
+         * selected, on Fire Checkout only.
+         *
+         * Why only there: `countryCode()` has exactly two feeds — the
+         * `countryCode` customer-data section, written ONLY by
+         * address-autocomplete.js's toggleCompanyVisibility()/onCountryChanged()
+         * once `$.async('#shipping-new-address-form select[name="country_id"]')`
+         * resolves, and updateAddress(), which reads the country off the quote's
+         * PERSISTED billing/shipping address. On Luma and Amasty the first feed
+         * fires on every country change, so the observable is current before the
+         * buyer can search. A one-page checkout supplying its own address markup
+         * matches neither that selector nor (until the address is saved) has a
+         * persisted quote address to read, so `fillCountryCode()`'s
+         * `if (!countryCode) return;` left the observable at its `''` default —
+         * and buildSearchAjaxOptions() then puts an EMPTY `country=` on the
+         * search URL, which the API answers under its own default.
+         *
+         * Reading the buyer's `<select>` live removes the dependency on which
+         * components a given checkout mounts: it is the same source the
+         * address-area picker already uses (`$(countrySelector).val()`), just
+         * resolved through a priority list of selectors instead of one theme's.
+         * The observable stays as the fallback for the checkouts that have no
+         * address-form select at all — a saved address and a virtual cart, the
+         * two carve-outs isTileCompanySearchActive() documents — where the
+         * quote-derived country is the only country there is.
+         *
+         * @returns {string} lower-cased ISO country code, or ''
+         */
+        currentCountryCode: function () {
+            return companySearch.currentAddressFormCountry() || this.countryCode();
+        },
+        /**
          * TWO-25326 §7.1: whether the payment tile is the buyer's ACTIVE
          * route to the shared company-search control, as opposed to a
          * display-only surface. One admin setting, `isCompanySearchEnabled`
@@ -528,7 +609,7 @@ define([
                     return;
                 }
                 this._orderIntentInFlightFor = companyId;
-                startOrderIntentLoader();
+                startOrderIntentSpinner();
                 const self = this;
                 let deferred;
                 try {
@@ -563,14 +644,14 @@ define([
                     // intent — strictly better than either silent failure or
                     // aborting unrelated sibling work.
                     console.error({ logger: 'twoPayment.fillCompanyData.placeOrderIntent', error });
-                    stopOrderIntentLoader();
+                    stopOrderIntentSpinner();
                     self._orderIntentInFlightFor = null;
                     self.showErrorMessage(self.generalErrorMessage);
                     return;
                 }
                 deferred
                     .always(function () {
-                        stopOrderIntentLoader();
+                        stopOrderIntentSpinner();
                         if (self._orderIntentInFlightFor === companyId) {
                             self._orderIntentInFlightFor = null;
                         }
@@ -746,8 +827,8 @@ define([
          * The widget is deliberately left bound. disableCompanySearch() would
          * destroy it and force the buyer to click "Search for company" again to
          * do the very thing the switch implies they are about to do; the picker
-         * reads `countryCode()` per request (see its `getCountryCode`), so the
-         * bound widget already searches the new country.
+         * reads `currentCountryCode()` per request (see its `getCountryCode`),
+         * so the bound widget already searches the new country.
          */
         clearCompanyForCountryChange: function () {
             console.debug({ logger: 'twoPayment.clearCompanyForCountryChange' });
@@ -1207,14 +1288,23 @@ define([
             if (!companyName) {
                 return copy.withoutCompany;
             }
-            const companyId = (this.companyId() || '').trim();
-            return copy.withCompany
-                .replace(copy.companyNameToken, function () {
-                    return companyName;
-                })
-                .replace(copy.companyNumberToken, function () {
+            // The DISPLAY number, so an internal `TWO:`-prefixed identifier
+            // never reaches the sentence (TWO-25326). When there is nothing to
+            // show, the token goes AND SO DO ITS BRACKETS — the default copy
+            // is "… by {{companyName}} ({{companyNumber}}) …", so substituting
+            // an empty string would render "Company Name ()". That also fixes
+            // the pre-existing empty-`companyId` case, which read the same way.
+            const companyId = companySearch.formatCompanyNumber(this.companyId());
+            const withNumber = companyId
+                ? copy.withCompany.replace(copy.companyNumberToken, function () {
                     return companyId;
-                });
+                })
+                : companySearch.stripBracketedToken(copy.withCompany, copy.companyNumberToken);
+            // Name LAST, so a company name that happens to contain brackets
+            // cannot be mistaken for the number's own brackets above.
+            return withNumber.replace(copy.companyNameToken, function () {
+                return companyName;
+            });
         },
         /**
          * Resolve the intent-approved notice text for the current buyer.
@@ -1497,7 +1587,7 @@ define([
                     fieldSelector: self.companyNameSelector,
                     config: self._brandConfig,
                     getCountryCode: function () {
-                        return self.countryCode();
+                        return self.currentCountryCode();
                     },
                     searchForCompanyText: self.searchForCompanyText,
                     onSelect: function (selectedItem) {

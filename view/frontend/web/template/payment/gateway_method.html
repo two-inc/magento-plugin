@@ -95,6 +95,25 @@
             surfaces so the four platforms stay greppable; `declined` is a
             new modifier alongside the existing `approved` one.
         -->
+        <!--
+            Order-intent spinner, TILE-LOCAL by requirement (TWO-25326): a
+            spinner shown while an order-intent check is in flight must be
+            scoped inside the payment tile and must never be a page-covering
+            overlay. This replaces the `fullScreenLoader` that check used to
+            raise — see orderIntentInProgress in gateway_method.js for why the
+            observable behind it is module-scope and shared, and style.css for
+            the figure (the same 16x16 asset the company-search field spinner
+            uses).
+
+            `visible:`, not `ko if:`, so the node is always in the DOM and the
+            spinner cannot be missed by a race between the binding and a
+            request that settles fast.
+        -->
+        <div
+            class="two-order-intent-spinner"
+            role="status"
+            data-bind="visible: orderIntentInProgress, attr: {'aria-label': $t('Checking company')}"
+        ></div>
         <!-- ko if: isOrderIntentApprovedNoticeVisible() -->
         <div
             class="two-order-intent-message approved"
@@ -309,10 +328,18 @@
                             The value itself is untouched either way —
                             `companyId` is still the single carrier and
                             getData() still reads it, never the DOM.
+
+                            Bound to displayCompanyId(), not to `companyId`
+                            directly: an internal `TWO:`-prefixed identifier is
+                            never shown to the buyer (TWO-25326), and the
+                            formatter's empty return is what takes the whole
+                            label out rather than leaving a blank one. Same
+                            helper the dropdown row, the address-step label and
+                            the order-intent notice go through.
                         -->
                         <div
                             class="two-company-id-text"
-                            data-bind="visible: isCompanyCaptured() && isTileCompanySearchActive(), text: companyId, attr: {'aria-label': $t('Company Number')}"
+                            data-bind="visible: isCompanyCaptured() && isTileCompanySearchActive() && displayCompanyId() !== '', text: displayCompanyId, attr: {'aria-label': $t('Company Number')}"
                         ></div>
                     </div>
                 </div>

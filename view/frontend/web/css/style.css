@@ -486,6 +486,30 @@
     background-size: 16px 16px;
 }
 
+/*
+ * Order-intent spinner, TILE-LOCAL (TWO-25326).
+ *
+ * Deliberately NOT `position: absolute` like the company-search field spinner
+ * above: that one is pinned inside a specific input's `.control`, whereas this
+ * one is a row in the tile's normal flow, next to the order-intent notices. In
+ * flow it needs no positioned ancestor, which is what keeps it working
+ * unchanged across the themes that restyle the tile (Amasty, Fire Checkout)
+ * without any of them having to opt in.
+ *
+ * Same 16x16 `loader.gif` as the field spinner, same `../images/` reasoning —
+ * see the comment on `.two-company-search__spinner`.
+ */
+.two-order-intent-spinner {
+    display: block;
+    width: 16px;
+    height: 16px;
+    margin: 8px 0;
+    background-image: url("../images/loader.gif");
+    background-repeat: no-repeat;
+    background-position: left center;
+    background-size: 16px 16px;
+}
+
 .two-company-search__unavailable {
     display: block;
     margin-top: 6px;

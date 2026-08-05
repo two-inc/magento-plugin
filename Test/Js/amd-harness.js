@@ -149,6 +149,32 @@ function defaultMocks() {
             syncManualEntryButton: function () { return null; },
             buildManualEntryButton: function () { return null; },
             markSearchBinding: function () {},
+            // TWO-25326 display/country helpers. Mirrored (not stubbed inert)
+            // because call sites READ their return value to decide whether to
+            // render a label at all, and an inert '' would make every such
+            // assertion pass vacuously.
+            HIDDEN_COMPANY_NUMBER_PREFIX: 'TWO:',
+            formatCompanyNumber: function (value) {
+                if (value === null || value === undefined) return '';
+                const text = String(value).trim();
+                if (!text) return '';
+                if (text.toUpperCase().indexOf(this.HIDDEN_COMPANY_NUMBER_PREFIX) === 0) return '';
+                return text;
+            },
+            stripBracketedToken: function (text, token) {
+                if (!text) return '';
+                if (!token) return String(text);
+                const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                return String(text)
+                    .replace(new RegExp('[ \\t]*[([]\\s*' + escaped + '\\s*[)\\]]', 'g'), '')
+                    .replace(new RegExp(escaped, 'g'), '')
+                    .replace(/[ \t]{2,}/g, ' ')
+                    .trim();
+            },
+            // No DOM in the inert default: a spec that wants the live
+            // address-form country read has to supply the real module (or its
+            // own double) the same way it already does for the search itself.
+            currentAddressFormCountry: function () { return ''; },
             clearSearchChrome: function () {},
             setSearching: function () {},
             setUnavailable: function () {}

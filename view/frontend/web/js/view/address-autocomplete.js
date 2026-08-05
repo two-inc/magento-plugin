@@ -106,6 +106,9 @@ define([
          * widget captures the country at construction; this one does not —
          * `getCountryCode` (enableCompanySearch() below) reads the select on
          * every request, so the next search already carries the new country.
+         * (The payment tile's own picker reads the same select first, via
+         * companySearch.currentAddressFormCountry() — see currentCountryCode()
+         * in gateway_method.js.)
          * Re-binding would tear down and rebuild select2 for no behavioural
          * gain, and would drag a buyer sitting in manual-entry mode back into
          * search mode. Pinned by the "search after a switch uses the new
@@ -403,7 +406,12 @@ define([
             if (!$control.length) return;
             $control.find('.' + this.companyIdTextClass).remove();
             if (!this.isCompanySearchActive()) return;
-            const companyId = this.capturedCompanyId();
+            // Through the shared display formatter, so an internal
+            // `TWO:`-prefixed identifier renders NO label at all rather than
+            // a label the buyer cannot make sense of (TWO-25326). Same
+            // helper the dropdown row, the tile label and the order-intent
+            // notice use — see companySearch.formatCompanyNumber().
+            const companyId = companySearch.formatCompanyNumber(this.capturedCompanyId());
             if (!companyId) return;
             $control.append(
                 $('<div></div>')
