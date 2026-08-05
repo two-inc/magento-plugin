@@ -256,6 +256,129 @@ define(['jquery', 'mage/translate'], function ($, $t) {
     }
 
     /**
+     * An organisation-number value carrying this literal prefix is an
+     * internal reference minted on our side rather than a registry number
+     * the buyer would recognise, so it is NEVER shown to them.
+     */
+    const HIDDEN_COMPANY_NUMBER_PREFIX = 'TWO:';
+
+    /**
+     * The organisation number as it may be SHOWN, or '' when it must not be
+     * shown at all (TWO-25326).
+     *
+     * ONE formatter for every display site — the dropdown row below, the
+     * address-step label (renderCompanyIdText() in address-autocomplete.js),
+     * the payment tile's own label and the order-intent notice sentence
+     * (displayCompanyId() / resolveCompanyNotice() in gateway_method.js) — so
+     * a surface added later cannot quietly forget the rule. Callers use the
+     * EMPTY return to decide whether to render a label/brackets at all, not
+     * just what text to put in one.
+     *
+     * Display only. The raw value is untouched everywhere it is SUBMITTED
+     * (getData(), placeOrderIntent(), the address form's `company_id`
+     * attribute), because it is the identifier the API is asked about — the
+     * buyer merely never reads it.
+     *
+     * Case-insensitive on the prefix, and trimmed first: the rule is about
+     * which VALUES are internal, and a stored `two: 123` or ` TWO:123` is the
+     * same internal reference as `TWO:123`. No registry organisation number
+     * begins with letters followed by a colon, so nothing legitimate is
+     * hidden by being permissive here.
+     *
+     * @param {*} value raw organisation number
+     * @returns {string} the value to display, or '' to display nothing
+     */
+    function formatCompanyNumber(value) {
+        if (value === null || value === undefined) return '';
+        const text = String(value).trim();
+        if (!text) return '';
+        if (text.toUpperCase().indexOf(HIDDEN_COMPANY_NUMBER_PREFIX) === 0) return '';
+        return text;
+    }
+
+    /**
+     * Remove a copy token from a notice template ALONG WITH the brackets it
+     * sits in.
+     *
+     * The default notice copy is `… by {{companyName}} ({{companyNumber}}) …`
+     * (ConfigProvider::getOrderIntentApprovedNotice()), so substituting an
+     * empty number would read "Company Name ()" — explicitly ruled out. The
+     * brackets belong to the number, not to the sentence, so they go with it.
+     *
+     * Handles a token NOT in brackets too (a brand copy override is free to
+     * place `%3` anywhere), then collapses the double space that leaves.
+     *
+     * @param {string} text notice template
+     * @param {string} token sentinel to remove
+     * @returns {string}
+     */
+    function stripBracketedToken(text, token) {
+        if (!text) return '';
+        if (!token) return String(text);
+        const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return String(text)
+            .replace(new RegExp('[ \\t]*[([]\\s*' + escaped + '\\s*[)\\]]', 'g'), '')
+            .replace(new RegExp(escaped, 'g'), '')
+            .replace(/[ \t]{2,}/g, ' ')
+            .trim();
+    }
+
+    /**
+     * Selectors for the checkout's address-form country `<select>`, in
+     * PRIORITY ORDER, most specific first.
+     *
+     * Two entries only, and the shortness is the point. The first is core's own
+     * shipping address form, which Luma and Amasty both render and which the
+     * address-area picker already reads directly; the second is a deliberate
+     * catch-all for a one-page checkout that supplies its own address markup
+     * (Fire Checkout), where nothing else in the plugin can find the buyer's
+     * country at all.
+     *
+     * Deliberately NOT in the list: `#billing-new-address-form`. Core renders
+     * one billing-address form PER PAYMENT METHOD, so a checkout offering two
+     * Two-family brands has several, all but one untouched and carrying the
+     * store default country — `.first()` would pick arbitrarily between them.
+     * `#co-shipping-form` is not in it either: it is an ANCESTOR of
+     * `#shipping-new-address-form` in core, so it could only ever match the
+     * same node the first entry already does.
+     *
+     * The catch-all can still resolve a select the buyer has not touched (core
+     * renders the new-address form inside a HIDDEN modal for a customer with
+     * saved addresses). That is why the only consumer, searchCountryCode() in
+     * gateway_method.js, reads this AFTER its own observable rather than before
+     * — see that method for the full reasoning.
+     *
+     * @type {string[]}
+     */
+    const COUNTRY_SELECT_SELECTORS = [
+        '#shipping-new-address-form select[name="country_id"]',
+        'select[name="country_id"]'
+    ];
+
+    /**
+     * The country the buyer currently has selected in the checkout's address
+     * form, lower-cased, read LIVE off the DOM — or '' when no address-form
+     * country select is present or none has a value.
+     *
+     * A DOM read rather than a quote- or customer-data-derived one because it
+     * answers "what has the buyer chosen", which is knowable before any of that
+     * reaches the quote, and knowable on every checkout regardless of which
+     * components a given one-page checkout mounts. It is NOT authoritative on
+     * its own — see the note above on untouched selects.
+     *
+     * @returns {string}
+     */
+    function currentAddressFormCountry() {
+        for (let i = 0; i < COUNTRY_SELECT_SELECTORS.length; i++) {
+            const $select = $(COUNTRY_SELECT_SELECTORS[i]).first();
+            if (!$select.length) continue;
+            const value = $select.val();
+            if (typeof value === 'string' && value) return value.toLowerCase();
+        }
+        return '';
+    }
+
+    /**
      * Does this response mean "the search backend could not answer
      * properly"? The API answers HTTP 200 with near-empty results when its
      * upstream provider timed out, and flags that with `degraded: true`.
@@ -559,6 +682,13 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             resultCache.clear();
         },
 
+        /** @see formatCompanyNumber */
+        HIDDEN_COMPANY_NUMBER_PREFIX: HIDDEN_COMPANY_NUMBER_PREFIX,
+        formatCompanyNumber: formatCompanyNumber,
+        stripBracketedToken: stripBracketedToken,
+        COUNTRY_SELECT_SELECTORS: COUNTRY_SELECT_SELECTORS,
+        currentAddressFormCountry: currentAddressFormCountry,
+
         /**
          * Build the select2 `ajax` option block for the company search.
          *
@@ -761,10 +891,20 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                             item.national_identifier && item.national_identifier.id
                                 ? String(item.national_identifier.id)
                                 : '';
+                        // Display copy of the identifier, which is '' for an
+                        // internal `TWO:`-prefixed value (TWO-25326) — the row
+                        // then renders exactly as it does for a company with no
+                        // identifier at all, name only and no empty brackets.
+                        // `companyId` below still carries the RAW value: it is
+                        // what gets submitted, and hiding it from the buyer is
+                        // not the same as not having it.
+                        const displayIdentifier = formatCompanyNumber(identifier);
                         items.push({
                             id: item.name,
                             text: item.name,
-                            html: identifier ? `${item.highlight} (${identifier})` : item.highlight,
+                            html: displayIdentifier
+                                ? `${item.highlight} (${displayIdentifier})`
+                                : item.highlight,
                             companyId: identifier,
                             // Required by lookupCompanyAddress(); dropping it
                             // silently disables address autofill.

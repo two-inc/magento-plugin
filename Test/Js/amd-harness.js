@@ -30,6 +30,30 @@ const vm = require('vm');
  * override individual entries via the `extraMocks` parameter of
  * `loadAmdModule()`.
  */
+/**
+ * Lazily-loaded REAL `company-search.js`, for the default mock's pure display
+ * helpers to delegate to (see the `formatCompanyNumber` entry below).
+ *
+ * Lazy and memoised: `defaultMocks()` runs for every `loadAmdModule()` call, and
+ * this must not load the module — nor recurse into `defaultMocks()` — unless one
+ * of those helpers is actually reached. Given its own jQuery double rather than
+ * the caller's: the delegated members are pure string functions that touch no
+ * DOM, so the double is never used, and closing over the caller's would make the
+ * memoised copy depend on whichever test loaded first.
+ *
+ * @returns {object} the real company-search module
+ */
+let realCompanySearchModule = null;
+function realCompanySearch() {
+    if (!realCompanySearchModule) {
+        realCompanySearchModule = loadAmdModule(
+            'view/frontend/web/js/model/company-search.js',
+            { jquery: makeJQueryMock(), 'mage/translate': function (s) { return s; } }
+        );
+    }
+    return realCompanySearchModule;
+}
+
 function defaultMocks() {
     const ko = makeKnockoutMock();
     const $ = makeJQueryMock();
@@ -149,6 +173,26 @@ function defaultMocks() {
             syncManualEntryButton: function () { return null; },
             buildManualEntryButton: function () { return null; },
             markSearchBinding: function () {},
+            // TWO-25326 display helpers. DELEGATED to the real module, not
+            // reimplemented: call sites READ their return value to decide
+            // whether to render a label or brackets at all, so an inert '' would
+            // make those assertions pass vacuously — and a hand-copied
+            // reimplementation would leave every suite that reaches them (e.g.
+            // gateway-method-intent-approved-notice) green against stale logic
+            // the moment the production rule changes.
+            get HIDDEN_COMPANY_NUMBER_PREFIX() {
+                return realCompanySearch().HIDDEN_COMPANY_NUMBER_PREFIX;
+            },
+            formatCompanyNumber: function (value) {
+                return realCompanySearch().formatCompanyNumber(value);
+            },
+            stripBracketedToken: function (text, token) {
+                return realCompanySearch().stripBracketedToken(text, token);
+            },
+            // No DOM in the inert default: a spec that wants the live
+            // address-form country read has to supply the real module (or its
+            // own double) the same way it already does for the search itself.
+            currentAddressFormCountry: function () { return ''; },
             clearSearchChrome: function () {},
             setSearching: function () {},
             setUnavailable: function () {}

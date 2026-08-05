@@ -227,6 +227,21 @@ The company-unknown copy variant always stays on the platform default.
 In practice it is unreachable: an order intent is only ever placed once
 the buyer's company name **and** company number are known.
 
+A company number is not always DISPLAYABLE, though, even when it is
+known. A value beginning with the literal prefix `TWO:` is an internal
+reference rather than a registry number and is never shown to the buyer
+on any surface. In the notice sentence the renderer then removes the
+company-number token **together with the brackets around it**, so the
+copy reads `… by Acme Ltd …`, never `… by Acme Ltd () …`. An override
+that places `%3` outside brackets is handled the same way. If you are
+writing override copy, do not assume the number will be present.
+
+**Keep `%3` inside round or square brackets in override copy.** The
+renderer removes the token together with a bracket pair around it; it
+does not know about other separators, so copy shaped `%2 – %3` or
+`%2, %3` leaves the dangling separator behind when the number is
+withheld.
+
 This parent plugin's storefront renderer (Luma/Amasty/Fire, one shared
 code path) emits each notice as a persistent inline element with class
 `two-order-intent-message approved` / `two-order-intent-message declined`
