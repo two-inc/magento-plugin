@@ -34,10 +34,11 @@ class ApiKeyStatusTest extends TestCase
         $this->cache = $this->createMock(CacheInterface::class);
     }
 
-    private function build(string $apiKey = self::KEY): ApiKeyStatus
+    private function build(string $apiKey = self::KEY, string $mode = 'production'): ApiKeyStatus
     {
         $configRepository = $this->createMock(ConfigRepository::class);
         $configRepository->method('getApiKey')->willReturn($apiKey);
+        $configRepository->method('getMode')->willReturn($mode);
 
         return new ApiKeyStatus(
             $this->apiAdapter,
@@ -285,6 +286,30 @@ class ApiKeyStatusTest extends TestCase
         $this->assertNotSame($keys[0], $keys[1], 'a different API key must use a different cache slot');
         // The key itself must never appear in a cache identifier.
         $this->assertStringNotContainsString('key-one', $keys[0]);
+    }
+
+    public function testCacheKeyTracksTheModeSoTheSameKeyInTwoEnvironmentsDoesNotCollide(): void
+    {
+        // The mode decides which host the key is verified against, and the
+        // same key can be accepted in one environment and rejected in the
+        // other. Two store views sharing a key while configured to different
+        // modes must not share one cache slot.
+        $this->cache->method('load')->willReturn(false);
+        $this->apiAdapter->method('execute')->willReturn(['id' => 'abc-123']);
+
+        $keys = [];
+        $this->cache->method('save')->willReturnCallback(
+            function ($data, $identifier) use (&$keys) {
+                $keys[] = $identifier;
+                return true;
+            }
+        );
+
+        $this->build(self::KEY, 'production')->getStatus();
+        $this->build(self::KEY, 'sandbox')->getStatus();
+
+        $this->assertCount(2, $keys);
+        $this->assertNotSame($keys[0], $keys[1], 'the same key in a different mode must use a different cache slot');
     }
 
     public function testRefreshIgnoresTheCacheAndWritesItsResultForward(): void

@@ -39,9 +39,12 @@ use Two\Gateway\Service\Api\Adapter;
  *    this namespace ({@see RecordProvider}) and Service\Fx\RateTableProvider.
  *
  * Cache protocol:
- * - Keyed on a hash of the API key itself, so swapping the key (a fixed
- *   key, or sandbox <-> production) misses the cache immediately and
- *   re-verifies rather than serving the previous key's verdict.
+ * - Keyed on a hash of the API key AND the resolved mode, so correcting
+ *   the key, pointing it at a different merchant, or switching
+ *   sandbox <-> production all miss the cache immediately and re-verify
+ *   rather than serving the previous verdict. The mode belongs in the key
+ *   because it decides which host the key is verified against, and two
+ *   store views can share a key while being configured to different modes.
  * - A success is cached for CACHE_LIFETIME (5 min). Short enough that a
  *   key which is revoked upstream stops being honoured within minutes,
  *   long enough that checkout renders cost nothing.
@@ -160,7 +163,7 @@ class ApiKeyStatus
             return self::notConfigured();
         }
 
-        $cacheKey = $this->cacheKey($apiKey);
+        $cacheKey = $this->cacheKey($apiKey, $storeId);
         if (isset($this->memo[$cacheKey])) {
             return $this->memo[$cacheKey];
         }
@@ -203,7 +206,7 @@ class ApiKeyStatus
             return self::notConfigured();
         }
 
-        return $this->verify($apiKey, $this->cacheKey($apiKey), $storeId);
+        return $this->verify($apiKey, $this->cacheKey($apiKey, $storeId), $storeId);
     }
 
     /**
@@ -288,12 +291,19 @@ class ApiKeyStatus
 
     /**
      * Keyed on the API key so a key swap never serves the previous key's
-     * verdict. sha256 of the key, never the key itself — cache
-     * identifiers end up in log lines and cache-backend keyspaces.
+     * verdict, AND on the resolved mode, because the mode decides which
+     * host the key is verified against: the same key can be accepted in
+     * one environment and rejected in the other, and two store views
+     * sharing a key while configured to different modes would otherwise
+     * share one cache slot and serve each other's verdict.
+     *
+     * sha256 of the key, never the key itself — cache identifiers end up
+     * in log lines and cache-backend keyspaces.
      */
-    private function cacheKey(string $apiKey): string
+    private function cacheKey(string $apiKey, ?int $storeId): string
     {
-        return self::CACHE_KEY_PREFIX . hash('sha256', $apiKey);
+        return self::CACHE_KEY_PREFIX
+            . hash('sha256', $this->configRepository->getMode($storeId) . "\0" . $apiKey);
     }
 
     /**

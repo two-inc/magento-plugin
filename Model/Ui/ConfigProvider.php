@@ -161,11 +161,19 @@ class ConfigProvider implements ConfigProviderInterface
         // matching the sibling plugins, where the equivalent client-side
         // bootstrap object is withheld on a verification failure.
         //
-        // The check is shared with Two::isAvailable() and cached
-        // (see ApiKeyStatus), so the two surfaces can never disagree about
-        // whether the integration works, and this no longer costs a live
-        // HTTP round-trip on every checkout render as it did when the verify
-        // call was made inline here.
+        // The check is the same one Two::isAvailable() makes, and cached
+        // (see ApiKeyStatus), so this no longer costs a live HTTP round-trip
+        // on every checkout render as it did when the verify call was made
+        // inline here.
+        //
+        // No store id is passed, matching every other configRepository read
+        // in this method: ConfigRepository resolves a null store id through
+        // ScopeInterface::SCOPE_STORE, i.e. the current store. On a checkout
+        // render that is the quote's store, which is the id
+        // Two::isAvailable() resolves from the quote and passes explicitly —
+        // so both surfaces judge the same store's key and agree. They would
+        // only diverge if this provider were evaluated outside the store
+        // whose quote is being rendered, which checkout does not do.
         $apiKeyStatus = $this->apiKeyStatus->getStatus();
         if ($apiKeyStatus['status'] !== ApiKeyStatus::OK) {
             return [];
