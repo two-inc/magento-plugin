@@ -106,18 +106,28 @@
             uses).
 
             `ko if:`, not `visible:`, and that is an accessibility choice
-            rather than a stylistic one: the figure is a background image with
-            no text content of its own, so a `role="status"` region that is
+            rather than a stylistic one: a `role="status"` region that is
             merely un-hidden announces nothing on most screen readers, while one
             INSERTED into the document does. There is no race to lose by it —
             bindings are applied before any order-intent request can start.
+
+            TWO-25326 (2026-08-05, four-platform convergence): the spinner is
+            no longer text-less. All four plugins now show the SAME spokes
+            figure next to the SAME sentence, "Checking availability" — Luma
+            and WooCommerce previously showed a wordless figure and PrestaShop
+            and Hyva showed two different sentences. The visible text is what
+            names the region, so the figure carries `aria-hidden` and there is
+            no `aria-label` any more: a labelled `role="status"` wrapping
+            visible text is announced twice.
         -->
         <!-- ko if: orderIntentInProgress() -->
-        <div
-            class="two-order-intent-spinner"
-            role="status"
-            data-bind="attr: {'aria-label': $t('Checking company')}"
-        ></div>
+        <div class="two-order-intent-loading" role="status">
+            <span class="two-order-intent-spinner" aria-hidden="true"></span>
+            <span
+                class="two-order-intent-loading__text"
+                data-bind="i18n: 'Checking availability'"
+            ></span>
+        </div>
         <!-- /ko -->
         <!-- ko if: isOrderIntentApprovedNoticeVisible() -->
         <div
@@ -131,6 +141,28 @@
             class="two-order-intent-message declined"
             role="status"
             data-bind="text: orderIntentDeclinedNotice"
+        ></div>
+        <!-- /ko -->
+        <!--
+            TWO-25326 (2026-08-05, four-platform convergence): the THIRD
+            outcome of an order-intent check — it errored — now renders in the
+            same bordered box as approval and decline, instead of only as a
+            checkout toast that the next checkout update wipes. PrestaShop is
+            the reference: it shows all three outcomes in one container and
+            drops the approved/declined colour for the error case, so this
+            modifier is deliberately the box's neutral palette rather than
+            Magento's `.message-error`.
+
+            Not gated on the brand's intent-message suppression switch, unlike
+            the two above: an error is not the intent verdict a brand can
+            choose not to state, it is the buyer's only sign that the check did
+            not happen.
+        -->
+        <!-- ko if: isOrderIntentErrorNoticeVisible() -->
+        <div
+            class="two-order-intent-message error"
+            role="alert"
+            data-bind="text: orderIntentErrorNotice"
         ></div>
         <!-- /ko -->
         <!-- ko if: showModeTab -->

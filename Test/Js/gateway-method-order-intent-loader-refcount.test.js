@@ -229,19 +229,47 @@ describe('order-intent spinner is tile-local and refcounted (TWO-25326)', () => 
         // pass or fail on documentation rather than on markup.
         const withoutComments = markup.replace(/<!--[\s\S]*?-->/g, '');
 
-        const tag = withoutComments.match(/<div\b[^>]*class="two-order-intent-spinner"[^>]*>/);
-        expect(tag).not.toBeNull();
-        expect(tag[0]).toMatch(/role="status"/);
-        // Accessible name, and translated — the figure itself is a background
-        // image with no text of its own.
-        expect(tag[0]).toMatch(/\$t\('Checking company'\)/);
+        const row = withoutComments.match(
+            /<div\b[^>]*class="two-order-intent-loading"[^>]*>[\s\S]*?<\/div>/
+        );
+        expect(row).not.toBeNull();
+        expect(row[0]).toMatch(/role="status"/);
+        // The figure itself, still the same tile-local background image.
+        expect(row[0]).toMatch(/class="two-order-intent-spinner"/);
+        // TWO-25326 (2026-08-05): the region is named by VISIBLE, translated
+        // text — the same sentence on all four plugins — and the wordless
+        // `aria-label` the figure used to carry is gone, so a screen reader
+        // does not hear the label and then the text.
+        expect(row[0]).toMatch(/i18n: 'Checking availability'/);
+        expect(row[0]).not.toMatch(/aria-label/);
+        expect(withoutComments).not.toMatch(/Checking company/);
         // Gated by `ko if:` on the flag, so the `role="status"` node is
         // INSERTED rather than un-hidden — see the template comment. Matched
         // against the RAW markup: ko's virtual bindings are themselves HTML
         // comments, so the comment-stripped copy above cannot see them.
         expect(markup).toMatch(
-            /<!--\s*ko if:\s*orderIntentInProgress\(\)\s*-->\s*<div\b[^>]*class="two-order-intent-spinner"/
+            /<!--\s*ko if:\s*orderIntentInProgress\(\)\s*-->\s*<div\b[^>]*class="two-order-intent-loading"/
         );
+
+        // The sentence is translatable for every locale this module ships, or
+        // the convergence is English-only in practice. Asserted against the
+        // shipped CSVs rather than a hard-coded locale list, so a locale added
+        // later is covered without editing this spec.
+        const i18nDir = path.resolve(__dirname, '..', '..', 'i18n');
+        const locales = fs.readdirSync(i18nDir).filter((name) => name.endsWith('.csv'));
+        expect(locales.length).toBeGreaterThan(0);
+        locales.forEach((name) => {
+            const csv = fs.readFileSync(path.join(i18nDir, name), 'utf8');
+            const translated = csv.match(/^"Checking availability","([^"]+)"$/m);
+            if (translated === null) {
+                throw new Error(name + ' has no "Checking availability" row');
+            }
+            // A row echoing the source string back is an untranslated stub.
+            expect(translated[1]).not.toBe('Checking availability');
+            // …and the retired string must not linger, or a translator sees
+            // two rows for one surface.
+            expect(csv).not.toMatch(/^"Checking company"/m);
+        });
 
         // The tile must not reach for Magento's page-covering loader markup.
         expect(withoutComments).not.toMatch(/loading-mask/);
