@@ -116,6 +116,10 @@ require_once __DIR__ . '/Stubs/AdminConfigField.php';
 // per-symbol guards live inside the stub file.
 require_once __DIR__ . '/Stubs/InvoiceUpload.php';
 
+// Payment-method base class with a real isAvailable() and a declared
+// $_scopeConfig, so Model\Two's availability gates are testable.
+require_once __DIR__ . '/Stubs/PaymentMethod.php';
+
 // Catch-all autoloader for remaining Magento classes/interfaces.
 // Creates empty stubs so that type hints, extends, and implements resolve.
 spl_autoload_register(function ($class) {

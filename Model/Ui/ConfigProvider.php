@@ -14,8 +14,8 @@ use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\UrlCookie;
-use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Api\SupportedCompanyTypes;
+use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Model\Two;
 
 /**
@@ -73,9 +73,9 @@ class ConfigProvider implements ConfigProviderInterface
     private $two;
 
     /**
-     * @var Adapter
+     * @var ApiKeyStatus
      */
-    private $adapter;
+    private $apiKeyStatus;
 
     /**
      * @var AssetRepository
@@ -105,7 +105,7 @@ class ConfigProvider implements ConfigProviderInterface
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
-        Adapter $adapter,
+        ApiKeyStatus $apiKeyStatus,
         Two $two,
         AssetRepository $assetRepository,
         CheckoutSession $checkoutSession,
@@ -115,7 +115,7 @@ class ConfigProvider implements ConfigProviderInterface
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
-        $this->adapter = $adapter;
+        $this->apiKeyStatus = $apiKeyStatus;
         $this->two = $two;
         $this->assetRepository = $assetRepository;
         $this->checkoutSession = $checkoutSession;
@@ -149,10 +149,28 @@ class ConfigProvider implements ConfigProviderInterface
      */
     public function getConfig(): array
     {
-        $merchant = null;
-        if ($this->configRepository->getApiKey()) {
-            $merchant = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
+        // No config subtree at all unless the stored API key currently
+        // verifies. This is the gate the company-search control sits behind:
+        // `js/model/brand-config.js::getActiveTwoBrandCode()` identifies the
+        // active Two-family brand by scanning
+        // `window.checkoutConfig.payment` for a subtree carrying a truthy
+        // `redirectUrlCookieCode`, and its consumers — the address block's
+        // company-search widget (`js/view/address-autocomplete.js`) and the
+        // payment-method renderer — mount only when that resolves. Emitting
+        // nothing therefore withholds company search as well as the tile,
+        // matching the sibling plugins, where the equivalent client-side
+        // bootstrap object is withheld on a verification failure.
+        //
+        // The check is shared with Two::isAvailable() and cached
+        // (see ApiKeyStatus), so the two surfaces can never disagree about
+        // whether the integration works, and this no longer costs a live
+        // HTTP round-trip on every checkout render as it did when the verify
+        // call was made inline here.
+        $apiKeyStatus = $this->apiKeyStatus->getStatus();
+        if ($apiKeyStatus['status'] !== ApiKeyStatus::OK) {
+            return [];
         }
+        $merchant = $apiKeyStatus['merchant'];
         $orderIntentConfig = [
             'extensionPlatformName' => $this->configRepository->getExtensionPlatformName(),
             'extensionDBVersion' => $this->configRepository->getExtensionDBVersion(),

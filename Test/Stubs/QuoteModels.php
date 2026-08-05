@@ -27,6 +27,37 @@ namespace Magento\Store\Model {
             {
                 return null;
             }
+
+            /**
+             * Declared so tests can configure the display-currency lookup
+             * Model\Ui\ConfigProvider::getCurrencySymbol() makes.
+             *
+             * @return \Magento\Directory\Model\Currency|null
+             */
+            public function getCurrentCurrency()
+            {
+                return null;
+            }
+
+            public function getCurrentCurrencyCode()
+            {
+                return null;
+            }
+        }
+    }
+    // StoreManagerInterface itself is stubbed in AdminScope.php, which
+    // already declares getStore(); do not redeclare it here — this file
+    // loads first, so a partial copy would win and strip the rest.
+}
+
+namespace Magento\Directory\Model {
+    if (!class_exists(Currency::class, false)) {
+        class Currency
+        {
+            public function getCurrencySymbol()
+            {
+                return null;
+            }
         }
     }
 }
@@ -58,6 +89,30 @@ namespace Magento\Quote\Model {
             public function getAllAddresses()
             {
                 return [];
+            }
+
+            /**
+             * Declared (rather than left to the catch-all) so tests can
+             * configure it: Model\Ui\ConfigProvider resolves the quote's
+             * billing country through it.
+             *
+             * @return \Magento\Quote\Model\Quote\Address|null
+             */
+            public function getBillingAddress()
+            {
+                return null;
+            }
+        }
+    }
+}
+
+namespace Magento\Quote\Model\Quote {
+    if (!class_exists(Address::class, false)) {
+        class Address
+        {
+            public function getCountryId()
+            {
+                return null;
             }
         }
     }
