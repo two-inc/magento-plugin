@@ -724,7 +724,10 @@
  *    once a search result has actually been selected;
  *  - the payment tile (TWO-25326, 2026-08-04 ruling, Bug B) — a KO `<div>`
  *    in gateway_method.html, `visible`-bound to
- *    `isCompanyCaptured() && isTileCompanySearchActive()`.
+ *    `isCompanyCaptured() && isTileCompanySearchActive()
+ *    && displayCompanyId() !== ''` — the last conjunct is TWO-25326's
+ *    display filter, which withholds the whole label for an internal
+ *    `TWO:`-prefixed number rather than rendering a blank one.
  *
  * Both are absent before selection and absent in manual-entry mode
  * (name-only capture). `text-align: end` rather than `right` so it follows

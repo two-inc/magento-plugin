@@ -100,6 +100,14 @@ define([
      */
     var orderIntentInProgress = ko.observable(false);
 
+    /**
+     * Source of the per-instance event namespace watchAddressFormCountry()
+     * uses. Module-scope counter, so two renderer instances (two Two-family
+     * brands, or a re-render) can never share a namespace and dispose() can
+     * never detach a sibling's handler.
+     */
+    var countryWatcherSeq = 0;
+
     function startOrderIntentSpinner() {
         orderIntentRequestsInFlight += 1;
         orderIntentInProgress(true);
@@ -300,6 +308,7 @@ define([
             });
 
             this.registeredOrganisationMode();
+            this.watchAddressFormCountry();
             this.configureFormValidation();
             this.popupMessageListener();
             return this;
@@ -338,6 +347,14 @@ define([
             if (this._customerDataSubs) {
                 this._customerDataSubs.forEach((sub) => sub.dispose());
                 this._customerDataSubs = null;
+            }
+            // The delegated address-form country handler, by THIS instance's
+            // own namespace — see watchAddressFormCountry(). Without this a
+            // one-page checkout's re-renders would stack one live handler per
+            // re-render, each closed over a disposed renderer.
+            if (this._countryWatcherNs) {
+                $(document).off(this._countryWatcherNs);
+                this._countryWatcherNs = null;
             }
             this._super();
         },
@@ -435,14 +452,13 @@ define([
             return companySearch.formatCompanyNumber(this.companyId());
         },
         /**
-         * The billing country the company search should be run against.
+         * The billing country the company search runs against.
          *
-         * DOM FIRST, `countryCode()` second, and that order is the fix for
-         * TWO-25326's Fire Checkout bug: the tile's picker searched as if the
-         * country were the API's default (US) whatever the buyer had actually
-         * selected, on Fire Checkout only.
+         * TWO-25326: the tile's picker searched as if the country were the
+         * search API's own default (US) whatever the buyer had selected, on
+         * one-page checkouts (Fire Checkout) only.
          *
-         * Why only there: `countryCode()` has exactly two feeds — the
+         * Why only there: `countryCode()` had exactly two feeds — the
          * `countryCode` customer-data section, written ONLY by
          * address-autocomplete.js's toggleCompanyVisibility()/onCountryChanged()
          * once `$.async('#shipping-new-address-form select[name="country_id"]')`
@@ -450,25 +466,74 @@ define([
          * PERSISTED billing/shipping address. On Luma and Amasty the first feed
          * fires on every country change, so the observable is current before the
          * buyer can search. A one-page checkout supplying its own address markup
-         * matches neither that selector nor (until the address is saved) has a
+         * matches neither that selector nor — until the address is saved — has a
          * persisted quote address to read, so `fillCountryCode()`'s
-         * `if (!countryCode) return;` left the observable at its `''` default —
-         * and buildSearchAjaxOptions() then puts an EMPTY `country=` on the
-         * search URL, which the API answers under its own default.
+         * `if (!countryCode) return;` left the observable at its `''` default,
+         * and buildSearchAjaxOptions() put an EMPTY `country=` on the search
+         * URL, which the API answers under its own default.
          *
-         * Reading the buyer's `<select>` live removes the dependency on which
-         * components a given checkout mounts: it is the same source the
-         * address-area picker already uses (`$(countrySelector).val()`), just
-         * resolved through a priority list of selectors instead of one theme's.
-         * The observable stays as the fallback for the checkouts that have no
-         * address-form select at all — a saved address and a virtual cart, the
-         * two carve-outs isTileCompanySearchActive() documents — where the
-         * quote-derived country is the only country there is.
+         * The real fix is the THIRD feed added by watchAddressFormCountry()
+         * below, which keeps `countryCode()` current on any checkout. This
+         * getter is the belt-and-braces on top of it: the observable FIRST,
+         * because it is the authoritative value (quote-derived, and now
+         * DOM-driven too), and a direct DOM read only when it is still empty —
+         * i.e. only in the window before anything has resolved a country at all,
+         * which is exactly the state that produced the bug.
+         *
+         * That order matters and is not interchangeable. DOM-first was tried and
+         * rejected in adversarial review: core renders `#shipping-new-address-form`
+         * inside the HIDDEN new-address modal for a customer who has saved
+         * addresses, and renders one billing-address form PER payment method, so
+         * a DOM-first read could let an untouched form's STORE DEFAULT country
+         * beat a correct quote-derived one — reintroducing the same class of bug
+         * on the platforms that worked.
          *
          * @returns {string} lower-cased ISO country code, or ''
          */
-        currentCountryCode: function () {
-            return companySearch.currentAddressFormCountry() || this.countryCode();
+        searchCountryCode: function () {
+            return this.countryCode() || companySearch.currentAddressFormCountry();
+        },
+        /**
+         * Keep `countryCode()` current from the buyer's own address-form country
+         * `<select>`, on any checkout (TWO-25326).
+         *
+         * The third feed referred to by searchCountryCode() above, and the one
+         * that actually closes the Fire Checkout gap. Fixing only the search
+         * URL would have left `countryCode()` empty there, and it drives two
+         * more things:
+         *
+         *  - getSupportedCompanyTypes() → showModeTab()/prefetchSoleTrader(),
+         *    so the Business / Sole trader tab never appeared at all;
+         *  - clearCompanyForCountryChange(), so a company captured under the
+         *    previous country survived a switch (TWO-24867's protection,
+         *    silently absent on this checkout).
+         *
+         * DELEGATED off the document, not bound to the node: a one-page checkout
+         * re-renders the address form freely, and delegation survives that with
+         * no `$.async` re-resolution. Per-instance event namespace so a checkout
+         * offering two Two-family brands has two independent handlers and
+         * dispose() detaches only its own.
+         *
+         * Change events only, with NO initial seed, and that is deliberate: a
+         * `change` fires when the BUYER acts on a real, visible select, whereas
+         * a seed would read whatever the DOM happens to hold — including the
+         * hidden new-address modal's untouched store default — and
+         * fillCountryCode() treats a differing value as a country CHANGE and
+         * discards the captured company. The initial value is already covered by
+         * the two pre-existing feeds, and by searchCountryCode()'s DOM fallback
+         * for the case where neither has produced anything.
+         */
+        watchAddressFormCountry: function () {
+            const self = this;
+            countryWatcherSeq += 1;
+            this._countryWatcherNs = '.twoTileCountryWatch' + countryWatcherSeq;
+            $(document).on(
+                'change' + this._countryWatcherNs,
+                'select[name="country_id"]',
+                function () {
+                    self.fillCountryCode(companySearch.currentAddressFormCountry());
+                }
+            );
         },
         /**
          * TWO-25326 §7.1: whether the payment tile is the buyer's ACTIVE
@@ -827,7 +892,7 @@ define([
          * The widget is deliberately left bound. disableCompanySearch() would
          * destroy it and force the buyer to click "Search for company" again to
          * do the very thing the switch implies they are about to do; the picker
-         * reads `currentCountryCode()` per request (see its `getCountryCode`),
+         * reads `searchCountryCode()` per request (see its `getCountryCode`),
          * so the bound widget already searches the new country.
          */
         clearCompanyForCountryChange: function () {
@@ -1517,7 +1582,19 @@ define([
                     this._brandConfig.checkoutApiUrl
                 }/v1/order_intent?${queryParams.toString()}`,
                 type: 'POST',
-                global: true,
+                // `global: false`, and this is load-bearing for the tile-local
+                // spinner rather than a micro-optimisation. Magento's
+                // `loaderAjax` widget is bound on `<body>` and listens for
+                // jQuery's GLOBAL `ajaxSend`/`ajaxComplete` events, raising the
+                // same body-wide `processStart`/`processStop` overlay that
+                // `fullScreenLoader` does. So leaving this `true` kept the
+                // page-covering overlay up for the whole order-intent round
+                // trip no matter what this renderer did with its own loader —
+                // found in adversarial review of the local-spinner change.
+                // Opting out of the global handlers is safe here: this request
+                // has its own done/fail/always handling and reports failures
+                // through the tile's messageContainer.
+                global: false,
                 contentType: 'application/json',
                 headers: {},
                 data: JSON.stringify(orderIntentRequestBody)
@@ -1587,7 +1664,7 @@ define([
                     fieldSelector: self.companyNameSelector,
                     config: self._brandConfig,
                     getCountryCode: function () {
-                        return self.currentCountryCode();
+                        return self.searchCountryCode();
                     },
                     searchForCompanyText: self.searchForCompanyText,
                     onSelect: function (selectedItem) {

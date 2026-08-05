@@ -105,15 +105,20 @@
             the figure (the same 16x16 asset the company-search field spinner
             uses).
 
-            `visible:`, not `ko if:`, so the node is always in the DOM and the
-            spinner cannot be missed by a race between the binding and a
-            request that settles fast.
+            `ko if:`, not `visible:`, and that is an accessibility choice
+            rather than a stylistic one: the figure is a background image with
+            no text content of its own, so a `role="status"` region that is
+            merely un-hidden announces nothing on most screen readers, while one
+            INSERTED into the document does. There is no race to lose by it —
+            bindings are applied before any order-intent request can start.
         -->
+        <!-- ko if: orderIntentInProgress() -->
         <div
             class="two-order-intent-spinner"
             role="status"
-            data-bind="visible: orderIntentInProgress, attr: {'aria-label': $t('Checking company')}"
+            data-bind="attr: {'aria-label': $t('Checking company')}"
         ></div>
+        <!-- /ko -->
         <!-- ko if: isOrderIntentApprovedNoticeVisible() -->
         <div
             class="two-order-intent-message approved"
@@ -339,7 +344,7 @@
                         -->
                         <div
                             class="two-company-id-text"
-                            data-bind="visible: isCompanyCaptured() && isTileCompanySearchActive() && displayCompanyId() !== '', text: displayCompanyId, attr: {'aria-label': $t('Company Number')}"
+                            data-bind="visible: isCompanyCaptured() && isTileCompanySearchActive() && displayCompanyId() !== '', text: displayCompanyId(), attr: {'aria-label': $t('Company Number')}"
                         ></div>
                     </div>
                 </div>

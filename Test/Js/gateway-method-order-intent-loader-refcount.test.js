@@ -231,11 +231,17 @@ describe('order-intent spinner is tile-local and refcounted (TWO-25326)', () => 
 
         const tag = withoutComments.match(/<div\b[^>]*class="two-order-intent-spinner"[^>]*>/);
         expect(tag).not.toBeNull();
-        expect(tag[0]).toMatch(/visible:\s*orderIntentInProgress/);
         expect(tag[0]).toMatch(/role="status"/);
         // Accessible name, and translated — the figure itself is a background
         // image with no text of its own.
         expect(tag[0]).toMatch(/\$t\('Checking company'\)/);
+        // Gated by `ko if:` on the flag, so the `role="status"` node is
+        // INSERTED rather than un-hidden — see the template comment. Matched
+        // against the RAW markup: ko's virtual bindings are themselves HTML
+        // comments, so the comment-stripped copy above cannot see them.
+        expect(markup).toMatch(
+            /<!--\s*ko if:\s*orderIntentInProgress\(\)\s*-->\s*<div\b[^>]*class="two-order-intent-spinner"/
+        );
 
         // The tile must not reach for Magento's page-covering loader markup.
         expect(withoutComments).not.toMatch(/loading-mask/);
@@ -253,5 +259,24 @@ describe('order-intent spinner is tile-local and refcounted (TWO-25326)', () => 
         // cover, so exactly one call site is expected, not zero.
         const loaderCalls = renderer.match(/fullScreenLoader\.\w+\(/g) || [];
         expect(loaderCalls).toEqual(['fullScreenLoader.startLoader(']);
+    });
+
+    test('the order-intent request opts out of jQuery\'s GLOBAL ajax events, which raise the body overlay', () => {
+        // Found in adversarial review: Magento's `loaderAjax` widget is bound on
+        // `<body>` and listens for `ajaxSend`/`ajaxComplete`, raising the same
+        // body-wide overlay `fullScreenLoader` does. With `global: true` the
+        // page-covering overlay came up for the whole order-intent round trip no
+        // matter what this renderer did with its own loader — so "the spinner is
+        // tile-local" is only true with this flag off, and nothing in the
+        // behavioural specs above can see it.
+        const fs = require('fs');
+        const path = require('path');
+        const src = fs.readFileSync(path.resolve(__dirname, '..', '..', RENDERER), 'utf8');
+
+        const call = src.match(/\/v1\/order_intent[\s\S]{0,1200}?\}\);/);
+        expect(call).not.toBeNull();
+        const options = call[0].replace(/\/\/[^\n]*/g, '');
+        expect(options).toMatch(/global:\s*false/);
+        expect(options).not.toMatch(/global:\s*true/);
     });
 });

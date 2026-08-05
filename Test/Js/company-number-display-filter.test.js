@@ -273,17 +273,33 @@ describe('(a) the tile label goes through the same filter', () => {
         const tag = markup.match(/<div\b[^>]*class="two-company-id-text"[^>]*>/);
         expect(tag).not.toBeNull();
         const bind = tag[0].match(/data-bind="([^"]*)"/)[1];
-        expect(bind).toMatch(/text:\s*displayCompanyId\b/);
-        // The gate, evaluated for real against both states rather than
-        // asserted as a string only.
+
+        /**
+         * Evaluate a `data-bind` sub-expression the way ko does — with the view
+         * model as implicit scope. Both halves are EVALUATED, not string-matched:
+         * `text: displayCompanyId` (no parens) satisfies a string match but
+         * makes ko render the function's own source into the tile, which is
+         * exactly the defect this evaluation catches.
+         *
+         * @param {string} expr binding expression
+         * @param {object} renderer view model
+         * @returns {*}
+         */
+        function evaluate(expr, renderer) {
+            // eslint-disable-next-line no-new-func
+            return new Function('renderer', 'with (renderer) { return (' + expr + '); }').call(
+                null,
+                renderer
+            );
+        }
+
         const visible = bind.match(/visible:\s*(.+?)\s*,\s*text:/)[1];
-        // eslint-disable-next-line no-new-func
-        const evaluate = new Function(
-            'renderer',
-            'with (renderer) { return !!(' + visible + '); }'
-        );
-        expect(evaluate.call(null, ctxWith('923609016'))).toBe(true);
-        expect(evaluate.call(null, ctxWith('TWO:internal-ref'))).toBe(false);
+        const text = bind.match(/text:\s*(.+?)\s*,\s*attr:/)[1];
+
+        expect(!!evaluate(visible, ctxWith('923609016'))).toBe(true);
+        expect(evaluate(text, ctxWith('923609016'))).toBe('923609016');
+        expect(!!evaluate(visible, ctxWith('TWO:internal-ref'))).toBe(false);
+        expect(evaluate(text, ctxWith('TWO:internal-ref'))).toBe('');
     });
 });
 

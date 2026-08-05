@@ -55,6 +55,12 @@ const SEARCH = 'view/frontend/web/js/model/company-search.js';
  * @returns {Function} jQuery-shaped selector function
  */
 function makeDollar() {
+    // Delegated handlers registered through `$(document).on(events, sel, fn)`,
+    // recorded rather than really delegated — the spec fires them by hand, so
+    // what is under test is the renderer's wiring and effect rather than a
+    // reimplementation of jQuery's delegation.
+    const delegated = [];
+
     function wrap(nodes) {
         return {
             length: nodes.length,
@@ -63,6 +69,16 @@ function makeDollar() {
             },
             val: function () {
                 return nodes.length ? nodes[0].value : undefined;
+            },
+            on: function (events, selector, handler) {
+                delegated.push({ events: events, selector: selector, handler: handler });
+                return this;
+            },
+            off: function (events) {
+                for (let i = delegated.length - 1; i >= 0; i--) {
+                    if (delegated[i].events.indexOf(events) !== -1) delegated.splice(i, 1);
+                }
+                return this;
             }
         };
     }
@@ -70,6 +86,7 @@ function makeDollar() {
         if (typeof selector !== 'string') return wrap([]);
         return wrap(Array.prototype.slice.call(document.querySelectorAll(selector)));
     }
+    $.delegated = delegated;
     $.async = function (selector, cb) {
         cb($(selector));
     };
@@ -123,12 +140,22 @@ function makeCtx(companySearch, observableCountry) {
         'Two_Gateway/js/model/company-search': companySearch
     });
     return Object.assign({}, component, {
-        countryCode: plainObservable(observableCountry || '')
+        countryCode: plainObservable(observableCountry || ''),
+        // fillCountryCode()'s downstream work, stubbed so the specs below can
+        // observe the country landing without also driving the
+        // supported-company-types fetch and the sole-trader tab.
+        getSupportedCompanyTypes: function () {
+            return { then: function () {} };
+        },
+        clearCompanyForCountryChange: function () {
+            this._cleared = true;
+        }
     });
 }
 
 afterEach(() => {
     document.body.innerHTML = '';
+    $.delegated.length = 0;
 });
 
 describe('payment-tile company search sources the country the buyer selected (TWO-25326)', () => {
@@ -150,7 +177,7 @@ describe('payment-tile company search sources the country the buyer selected (TW
         // The observable — the ONLY source before this fix — is empty, which
         // is exactly the state that produced an empty `country=` on the wire.
         expect(ctx.countryCode()).toBe('');
-        expect(ctx.currentCountryCode()).toBe('no');
+        expect(ctx.searchCountryCode()).toBe('no');
     });
 
     test('the country reaching the search URL is the selected one, not an empty default', () => {
@@ -169,7 +196,7 @@ describe('payment-tile company search sources the country the buyer selected (TW
             config: { checkoutApiUrl: 'https://api.example.test', companySearchLimit: 10 },
             token: {},
             getCountryCode: function () {
-                return ctx.currentCountryCode();
+                return ctx.searchCountryCode();
             }
         });
         const url = ajax.url({ term: 'acme', page: 1 });
@@ -177,25 +204,40 @@ describe('payment-tile company search sources the country the buyer selected (TW
         expect(url).not.toContain('country=&');
     });
 
-    test('Luma/Amasty are unchanged: the core form\'s select is the highest-priority source', () => {
+    test('the core form\'s select is the highest-priority DOM source', () => {
         document.body.innerHTML =
             '<form id="shipping-new-address-form">' +
             '  <select name="country_id"><option value="SE" selected>SE</option></select>' +
             '</form>' +
-            // A second, lower-priority select carrying a different country —
-            // a billing form the buyer has not touched. The shipping form must
-            // win, or a store with "my billing address is different" open
-            // would search the wrong country.
+            // A second select carrying a different country — a per-payment-method
+            // billing form the buyer has not touched. The core shipping form must
+            // win, or an untouched form's store default decides the search.
             '<form id="billing-new-address-form">' +
             '  <select name="country_id"><option value="US" selected>US</option></select>' +
             '</form>';
 
-        const companySearch = loadCompanySearch();
-        expect(companySearch.currentAddressFormCountry()).toBe('se');
-        expect(makeCtx(companySearch, 'se').currentCountryCode()).toBe('se');
+        expect(loadCompanySearch().currentAddressFormCountry()).toBe('se');
     });
 
-    test('a live selection change is picked up on the NEXT search, with no rebind', () => {
+    test('an UNTOUCHED DOM select can never beat a resolved country — the Luma/Amasty non-regression', () => {
+        // Core renders `#shipping-new-address-form` inside the HIDDEN
+        // new-address modal for a customer who has saved addresses: the select
+        // exists, holds the store default, and the buyer has never seen it. The
+        // quote-derived country must win, or this fix reintroduces the very bug
+        // it exists to close on the platforms that already worked.
+        document.body.innerHTML =
+            '<div id="opc-new-shipping-address" style="display:none">' +
+            '  <form id="shipping-new-address-form">' +
+            '    <select name="country_id"><option value="US" selected>US</option></select>' +
+            '  </form>' +
+            '</div>';
+
+        const companySearch = loadCompanySearch();
+        expect(companySearch.currentAddressFormCountry()).toBe('us');
+        expect(makeCtx(companySearch, 'no').searchCountryCode()).toBe('no');
+    });
+
+    test('a live selection change reaches countryCode() through the delegated watcher', () => {
         document.body.innerHTML =
             '<form id="shipping-new-address-form">' +
             '  <select name="country_id">' +
@@ -205,27 +247,72 @@ describe('payment-tile company search sources the country the buyer selected (TW
 
         const companySearch = loadCompanySearch();
         const ctx = makeCtx(companySearch, 'gb');
-        expect(ctx.currentCountryCode()).toBe('gb');
+        ctx.watchAddressFormCountry();
 
-        // The buyer switches country. Nothing re-binds the picker (see
-        // clearCompanyForCountryChange()'s docblock) — the read is per
-        // request, so the next search has to carry the new country.
+        // Delegated off the document, on the country select, so a re-rendered
+        // address form needs no re-binding.
+        expect($.delegated).toHaveLength(1);
+        expect($.delegated[0].events).toMatch(/^change\./);
+        expect($.delegated[0].selector).toBe('select[name="country_id"]');
+
+        // The buyer switches country; the handler fires.
         document.querySelector('select[name="country_id"]').value = 'NO';
-        expect(ctx.currentCountryCode()).toBe('no');
+        $.delegated[0].handler();
+
+        expect(ctx.countryCode()).toBe('no');
+        expect(ctx.searchCountryCode()).toBe('no');
+        // A country change must also retract the company captured under the
+        // previous one (TWO-24867) — silently absent on this checkout before.
+        expect(ctx._cleared).toBe(true);
     });
 
-    test('falls back to the quote-derived observable where there is NO address-form select at all', () => {
-        // The two carve-outs isTileCompanySearchActive() documents: a saved
-        // address and a virtual cart both render no address form, so the
+    test('each instance gets its own watcher namespace, and dispose() detaches only its own', () => {
+        const companySearch = loadCompanySearch();
+        // ONE module load, two instances built from it — the real shape (one
+        // RequireJS module, a renderer pushed per Two-family brand). Two
+        // separate loads would each get their own module-scope sequence and the
+        // namespaces would collide at 1, testing the harness rather than the
+        // renderer.
+        const component = loadAmdModule(RENDERER, {
+            jquery: $,
+            'Two_Gateway/js/model/company-search': companySearch
+        });
+        const instance = function () {
+            return Object.assign({}, component, {
+                countryCode: plainObservable(''),
+                getSupportedCompanyTypes: function () {
+                    return { then: function () {} };
+                }
+            });
+        };
+        const a = instance();
+        const b = instance();
+        a.watchAddressFormCountry();
+        b.watchAddressFormCountry();
+
+        expect($.delegated).toHaveLength(2);
+        expect(a._countryWatcherNs).not.toBe(b._countryWatcherNs);
+
+        Object.assign(a, { _super: function () {}, destroyCompanySearchWidget: function () {} });
+        a.dispose();
+        expect($.delegated).toHaveLength(1);
+        expect($.delegated[0].events).toContain(b._countryWatcherNs);
+    });
+
+    test('falls back to the DOM where there is NO resolved country yet, and to the observable where there is no select', () => {
+        // The two carve-outs isTileCompanySearchActive() documents — a saved
+        // address and a virtual cart — render no address form at all, so the
         // quote-derived country is the only country there is.
         document.body.innerHTML = '<div class="payment-method"></div>';
-
         const companySearch = loadCompanySearch();
         expect(companySearch.currentAddressFormCountry()).toBe('');
-        expect(makeCtx(companySearch, 'nl').currentCountryCode()).toBe('nl');
+        expect(makeCtx(companySearch, 'nl').searchCountryCode()).toBe('nl');
+
+        // Neither source has anything: no country, rather than a wrong one.
+        expect(makeCtx(companySearch, '').searchCountryCode()).toBe('');
     });
 
-    test('an address-form select with no value chosen falls back rather than sending an empty country', () => {
+    test('an address-form select with no value chosen contributes nothing', () => {
         document.body.innerHTML =
             '<form id="shipping-new-address-form">' +
             '  <select name="country_id"><option value="" selected></option></select>' +
@@ -233,13 +320,14 @@ describe('payment-tile company search sources the country the buyer selected (TW
 
         const companySearch = loadCompanySearch();
         expect(companySearch.currentAddressFormCountry()).toBe('');
-        expect(makeCtx(companySearch, 'dk').currentCountryCode()).toBe('dk');
+        expect(makeCtx(companySearch, 'dk').searchCountryCode()).toBe('dk');
+        expect(makeCtx(companySearch, '').searchCountryCode()).toBe('');
     });
 
     test('the getCountryCode the CONTROL is actually constructed with resolves the selected country', () => {
         // End to end through enableCompanySearch(), not a direct call to the
         // getter: the wiring is the part that regressed, and a spec that only
-        // calls currentCountryCode() itself would pass against a control still
+        // calls searchCountryCode() itself would pass against a control still
         // constructed with the raw observable.
         document.body.innerHTML =
             '<div id="firecheckout-address">' +
@@ -272,7 +360,7 @@ describe('payment-tile company search sources the country the buyer selected (TW
         expect(captured.getCountryCode()).toBe('no');
     });
 
-    test('the renderer wires currentCountryCode() into the control, not the raw observable', () => {
+    test('the renderer wires searchCountryCode() into the control, not the raw observable', () => {
         const fs = require('fs');
         const path = require('path');
         const src = fs.readFileSync(path.resolve(__dirname, '..', '..', RENDERER), 'utf8');
@@ -281,6 +369,14 @@ describe('payment-tile company search sources the country the buyer selected (TW
         // as a wrong country on one checkout variant nobody re-tests.
         const getter = src.match(/getCountryCode:\s*function\s*\(\)\s*\{\s*return\s+([^;]+);/);
         expect(getter).not.toBeNull();
-        expect(getter[1].trim()).toBe('self.currentCountryCode()');
+        expect(getter[1].trim()).toBe('self.searchCountryCode()');
+
+        // …and the watcher is actually armed on init. Every behavioural spec
+        // above calls watchAddressFormCountry() itself, so without this a drop
+        // of the initialize() call would leave the whole suite green while
+        // nothing on a real checkout ever attached the handler.
+        const initialize = src.match(/initialize:\s*function\s*\(\)\s*\{[\s\S]*?\n {8}\},/);
+        expect(initialize).not.toBeNull();
+        expect(initialize[0]).toMatch(/this\.watchAddressFormCountry\(\);/);
     });
 });

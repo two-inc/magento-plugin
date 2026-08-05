@@ -327,19 +327,31 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * Selectors for the checkout's address-form country `<select>`, in
      * PRIORITY ORDER, most specific first.
      *
-     * The last entry is a deliberate catch-all. Luma and Amasty both render
-     * the core `#shipping-new-address-form` markup, so they resolve on the
-     * first entry; a one-page checkout that supplies its own address markup
-     * (Fire Checkout) matches only the catch-all, and reading the country off
-     * the buyer's actual `<select>` there is the whole point of this helper —
-     * see currentCountryCode() in gateway_method.js for what it fixes.
+     * Two entries only, and the shortness is the point. The first is core's own
+     * shipping address form, which Luma and Amasty both render and which the
+     * address-area picker already reads directly; the second is a deliberate
+     * catch-all for a one-page checkout that supplies its own address markup
+     * (Fire Checkout), where nothing else in the plugin can find the buyer's
+     * country at all.
+     *
+     * Deliberately NOT in the list: `#billing-new-address-form`. Core renders
+     * one billing-address form PER PAYMENT METHOD, so a checkout offering two
+     * Two-family brands has several, all but one untouched and carrying the
+     * store default country — `.first()` would pick arbitrarily between them.
+     * `#co-shipping-form` is not in it either: it is an ANCESTOR of
+     * `#shipping-new-address-form` in core, so it could only ever match the
+     * same node the first entry already does.
+     *
+     * The catch-all can still resolve a select the buyer has not touched (core
+     * renders the new-address form inside a HIDDEN modal for a customer with
+     * saved addresses). That is why the only consumer, searchCountryCode() in
+     * gateway_method.js, reads this AFTER its own observable rather than before
+     * — see that method for the full reasoning.
      *
      * @type {string[]}
      */
     const COUNTRY_SELECT_SELECTORS = [
         '#shipping-new-address-form select[name="country_id"]',
-        '#co-shipping-form select[name="country_id"]',
-        '#billing-new-address-form select[name="country_id"]',
         'select[name="country_id"]'
     ];
 
@@ -348,10 +360,11 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * form, lower-cased, read LIVE off the DOM — or '' when no address-form
      * country select is present or none has a value.
      *
-     * Deliberately DOM-first rather than quote- or customer-data-derived:
-     * this answers "what has the buyer chosen", which is knowable before any
-     * of that reaches the quote, and it is knowable on every checkout
-     * regardless of which components a given one-page checkout mounts.
+     * A DOM read rather than a quote- or customer-data-derived one because it
+     * answers "what has the buyer chosen", which is knowable before any of that
+     * reaches the quote, and knowable on every checkout regardless of which
+     * components a given one-page checkout mounts. It is NOT authoritative on
+     * its own — see the note above on untouched selects.
      *
      * @returns {string}
      */

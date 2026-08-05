@@ -236,6 +236,12 @@ copy reads `… by Acme Ltd …`, never `… by Acme Ltd () …`. An override
 that places `%3` outside brackets is handled the same way. If you are
 writing override copy, do not assume the number will be present.
 
+**Keep `%3` inside round or square brackets in override copy.** The
+renderer removes the token together with a bracket pair around it; it
+does not know about other separators, so copy shaped `%2 – %3` or
+`%2, %3` leaves the dangling separator behind when the number is
+withheld.
+
 This parent plugin's storefront renderer (Luma/Amasty/Fire, one shared
 code path) emits each notice as a persistent inline element with class
 `two-order-intent-message approved` / `two-order-intent-message declined`
