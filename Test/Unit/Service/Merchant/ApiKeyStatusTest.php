@@ -288,6 +288,48 @@ class ApiKeyStatusTest extends TestCase
         $this->assertStringNotContainsString('key-one', $keys[0]);
     }
 
+    /**
+     * @dataProvider storeScopes
+     */
+    public function testTheStoreScopeIsCarriedIntoTheVerificationCall(?int $storeId): void
+    {
+        // The store id decides which store's API key and mode the Adapter
+        // resolves, so dropping it would silently verify the wrong scope's
+        // key while the cache key still varied by mode.
+        $this->cache->method('load')->willReturn(false);
+        $this->apiAdapter->expects($this->once())
+            ->method('execute')
+            ->with(ApiKeyStatus::ENDPOINT, [], 'GET', $storeId)
+            ->willReturn(['id' => 'abc-123']);
+
+        $this->assertSame(ApiKeyStatus::OK, $this->build()->getStatus($storeId)['status']);
+    }
+
+    /**
+     * @dataProvider storeScopes
+     */
+    public function testRefreshAlsoCarriesTheStoreScope(?int $storeId): void
+    {
+        $this->cache->method('load')->willReturn(false);
+        $this->apiAdapter->expects($this->once())
+            ->method('execute')
+            ->with(ApiKeyStatus::ENDPOINT, [], 'GET', $storeId)
+            ->willReturn(['id' => 'abc-123']);
+
+        $this->assertSame(ApiKeyStatus::OK, $this->build()->refresh($storeId)['status']);
+    }
+
+    /**
+     * @return array<string, array{0: int|null}>
+     */
+    public static function storeScopes(): array
+    {
+        return [
+            'default scope' => [null],
+            'explicit store view' => [7],
+        ];
+    }
+
     public function testCacheKeyTracksTheModeSoTheSameKeyInTwoEnvironmentsDoesNotCollide(): void
     {
         // The mode decides which host the key is verified against, and the
