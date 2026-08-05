@@ -500,14 +500,34 @@
  * see the comment on `.two-company-search__spinner`.
  */
 .two-order-intent-spinner {
-    display: block;
+    display: inline-block;
+    flex: 0 0 auto;
     width: 16px;
     height: 16px;
-    margin: 8px 0;
     background-image: url("../images/loader.gif");
     background-repeat: no-repeat;
     background-position: left center;
     background-size: 16px 16px;
+}
+
+/*
+ * The row the spinner now sits in, with the "Checking availability" sentence
+ * beside it (TWO-25326, 2026-08-05 four-platform convergence — all four
+ * plugins show the same figure and the same sentence). The row owns the
+ * vertical margin the spinner used to carry itself, so the figure and the text
+ * cannot drift apart when a theme restyles either one.
+ */
+.two-order-intent-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+}
+
+.two-order-intent-loading__text {
+    color: #495057;
+    font-size: 1.3rem;
+    line-height: 1.4;
 }
 
 .two-company-search__unavailable {
@@ -656,30 +676,55 @@
     margin: 0 0 1.5em;
     padding: 10px 12px;
     border-radius: 8px;
-    border: 1px solid var(--color-gray89);
-    background: #f4f6fd;
-    color: var(--color-brownie-vanilla);
+    border: 1px solid #e9ecef;
+    background: #fff;
+    color: #495057;
     font-size: 1.3rem;
     line-height: 1.4;
 }
 
+/*
+ * TWO-25326 (2026-08-05, four-platform convergence): the palette is now the
+ * SEMANTIC one PrestaShop already uses — success green for an approval, danger
+ * red for a decline, and the box's own neutral colours for an error — rather
+ * than this module's brand blue for approval and a warm red for decline. The
+ * point of the change is that a buyer meeting two of the four plugins reads
+ * the same colour for the same outcome; the flat background (no gradient, no
+ * shadow) is Luma's rendering of it.
+ */
 .two-order-intent-message.approved {
-    border-color: #b7c0ee;
-    color: var(--color-blue2);
+    border-color: #28a745;
+    background: #d4edda;
+    color: #155724;
 }
 
 /*
  * TWO-25326 §7.3 (2026-08-03 ruling): the "not approved" counterpart to
  * `.approved` above, added when the standalone company label was removed
- * and its name/number folded into this sentence instead. A warm, muted
- * red rather than the approved blue — a business decline is not an error
- * the buyer caused, so it deliberately does not reuse `.message-error`'s
- * louder styling.
+ * and its name/number folded into this sentence instead. Recoloured
+ * 2026-08-05 to PrestaShop's danger red for cross-platform convergence
+ * (see the note on `.approved`); it is still this box's own styling and
+ * not Magento's `.message-error`, because a business decline is not an
+ * error the buyer caused.
  */
 .two-order-intent-message.declined {
-    border-color: #e0b7b7;
-    background: #fdf4f4;
-    color: #8a3b3b;
+    border-color: #dc3545;
+    background: #f8d7da;
+    color: #721c24;
+}
+
+/*
+ * The check itself failed (TWO-25326, 2026-08-05). Same container, and
+ * deliberately the base neutral palette rather than a third colour: matching
+ * PrestaShop, which strips its approved/declined classes for this case. The
+ * rule exists explicitly, with nothing but the base values in it, so the
+ * error state is greppable next to its siblings and a later edit to the base
+ * cannot silently repaint it.
+ */
+.two-order-intent-message.error {
+    border-color: #e9ecef;
+    background: #fff;
+    color: #495057;
 }
 
 /*

@@ -610,6 +610,63 @@ define([
         isOrderIntentDeclinedNoticeVisible: function () {
             return !!(this.orderIntentDeclinedNotice && this.orderIntentDeclinedNotice());
         },
+        /**
+         * Same guard, for the order-intent ERROR notice (TWO-25326,
+         * 2026-08-05 four-platform convergence). The error text renders in
+         * the same bordered box as the other two outcomes instead of a
+         * checkout toast — see processOrderIntentErrorResponse().
+         *
+         * @returns {boolean}
+         */
+        isOrderIntentErrorNoticeVisible: function () {
+            return !!(this.orderIntentErrorNotice && this.orderIntentErrorNotice());
+        },
+        /**
+         * Blank all three order-intent outcome notices.
+         *
+         * Called at the START of every order-intent check as well as from the
+         * company-change subscriptions, because the two are not the same
+         * event and only one of them is guaranteed to fire. The subscriptions
+         * fire on a company OBSERVABLE CHANGING; a check can start with the
+         * observables already holding those values (a re-render re-applying
+         * the captured company, a repeat pick of the company already in the
+         * field), and ko notifies nothing then. Before this, the box kept the
+         * PREVIOUS company's verdict on screen for the whole of the new
+         * request in exactly those cases — a stale approval sitting under a
+         * spinner that is checking something else.
+         *
+         * Guarded on each observable's existence: initialize() creates them
+         * in initOrderIntentApprovedNotice(), and fillCompanyData() is
+         * reachable from contexts (and specs) that never ran it.
+         *
+         * @returns {void}
+         */
+        clearOrderIntentNotices: function () {
+            if (this.orderIntentApprovedNotice) this.orderIntentApprovedNotice('');
+            if (this.orderIntentDeclinedNotice) this.orderIntentDeclinedNotice('');
+            if (this.orderIntentErrorNotice) this.orderIntentErrorNotice('');
+        },
+        /**
+         * Put an order-intent failure in the tile's own bordered box rather
+         * than the checkout message region (TWO-25326, 2026-08-05): the
+         * region is cleared on every checkout update, which is how a buyer
+         * ended up with a spinner that vanished and nothing else to read.
+         *
+         * Falls back to the toast when the observable is absent, which is the
+         * pre-initialize() case the sibling `is…Visible()` guards protect
+         * against — an error is the one message that must not be swallowed
+         * because its own surface was not wired yet.
+         *
+         * @param {string} message
+         * @returns {void}
+         */
+        showOrderIntentErrorNotice: function (message) {
+            if (this.orderIntentErrorNotice) {
+                this.orderIntentErrorNotice(message);
+                return;
+            }
+            this.showErrorMessage(message);
+        },
         selectTerm: function (days) {
             surchargeModel.selectTerm(days);
         },
@@ -674,6 +731,11 @@ define([
                     return;
                 }
                 this._orderIntentInFlightFor = companyId;
+                // The previous verdict goes as the new check STARTS, not when
+                // its answer arrives (TWO-25326, 2026-08-05). See
+                // clearOrderIntentNotices() for why the company-change
+                // subscriptions do not already cover this.
+                this.clearOrderIntentNotices();
                 startOrderIntentSpinner();
                 const self = this;
                 let deferred;
@@ -711,7 +773,10 @@ define([
                     console.error({ logger: 'twoPayment.fillCompanyData.placeOrderIntent', error });
                     stopOrderIntentSpinner();
                     self._orderIntentInFlightFor = null;
-                    self.showErrorMessage(self.generalErrorMessage);
+                    // Same surface as processOrderIntentErrorResponse()'s
+                    // message (TWO-25326, 2026-08-05): a synchronous throw and
+                    // a failed request are the same outcome to the buyer.
+                    self.showOrderIntentErrorNotice(self.generalErrorMessage);
                     return;
                 }
                 deferred
@@ -1310,6 +1375,14 @@ define([
             this.orderIntentDeclinedNoticeCopy = config.orderIntentDeclinedNotice || null;
             this.orderIntentDeclinedNotice = ko.observable('');
 
+            // TWO-25326 (2026-08-05 four-platform convergence): the third
+            // outcome, "the check errored", in the same bordered box. No
+            // brand-supplied copy behind it and no suppression switch — the
+            // text is the renderer's own error message, and a brand that
+            // declines to state a verdict has not thereby asked for failures
+            // to be silent. Per-instance for the same reason as the two above.
+            this.orderIntentErrorNotice = ko.observable('');
+
             // The notice is *persistent* — unlike the message-region
             // treatment it replaces, it survives checkout updates and a
             // failed placeOrder validation (see the deliberate omission in
@@ -1323,12 +1396,10 @@ define([
             // them cleared, which is the correct fail-closed outcome.
             var self = this;
             this.companyName.subscribe(function () {
-                self.orderIntentApprovedNotice('');
-                self.orderIntentDeclinedNotice('');
+                self.clearOrderIntentNotices();
             });
             this.companyId.subscribe(function () {
-                self.orderIntentApprovedNotice('');
-                self.orderIntentDeclinedNotice('');
+                self.clearOrderIntentNotices();
             });
         },
         /**
@@ -1395,8 +1466,8 @@ define([
                     // getRegion('messages') region this renderer used before
                     // is cleared on every checkout update, so on Luma the
                     // approval reassurance was effectively never seen.
+                    this.clearOrderIntentNotices();
                     this.orderIntentApprovedNotice(this.resolveOrderIntentApprovedNotice());
-                    this.orderIntentDeclinedNotice('');
                 } else {
                     // TWO-25326 §7.3 (2026-08-03 ruling): a clean "not
                     // approved" response is a business outcome, not a
@@ -1404,16 +1475,17 @@ define([
                     // tile-notice treatment as approval — a toast that a
                     // later checkout update wipes is not "the tile shows
                     // ONLY the intent message" the ruling asks for.
-                    this.orderIntentApprovedNotice('');
+                    this.clearOrderIntentNotices();
                     this.orderIntentDeclinedNotice(this.resolveOrderIntentDeclinedNotice());
                 }
             }
         },
         processOrderIntentErrorResponse: function (response) {
             // An intent that errored says nothing about approval; drop any
-            // notice from a previous, successful intent.
-            this.orderIntentApprovedNotice('');
-            this.orderIntentDeclinedNotice('');
+            // notice from a previous, successful intent — including a previous
+            // error, so a second attempt does not stack two boxes' worth of
+            // text or leave the first error's wording under a newer one.
+            this.clearOrderIntentNotices();
 
             // `let`, not `const`: the SCHEMA_ERROR branch below reassigns
             // this to '' once it has pushed the field-level errors into
@@ -1458,7 +1530,13 @@ define([
                 }
             }
             if (message) {
-                this.showErrorMessage(message);
+                // The tile's own bordered box, not the checkout message
+                // region (TWO-25326, 2026-08-05). SCHEMA_ERROR is the one
+                // exception and it opts itself out by blanking `message`
+                // above: those are per-FIELD validation errors, several at a
+                // time, which belong with the fields and not in a box that
+                // states one outcome.
+                this.showOrderIntentErrorNotice(message);
             }
         },
         processTermsNotAcceptedErrorResponse: function (response) {
