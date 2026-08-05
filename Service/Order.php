@@ -34,6 +34,14 @@ use Two\Gateway\Service\Fee\FeeLineProviderPool;
 abstract class Order
 {
     /**
+     * Ceiling on getOtherChargesLineItem()'s per-line-count epsilon. Bounds
+     * the worst case of "a genuine small untaxed fee vanishes silently on
+     * a large order" to this amount, regardless of how many line items the
+     * order has. See that method's docblock.
+     */
+    private const OTHER_CHARGES_EPSILON_CEILING = 1.00;
+
+    /**
      * @var ConfigRepository
      */
     public $configRepository;
@@ -612,13 +620,17 @@ abstract class Order
      * ordinary orders that have nothing to do with a third-party fee:
      *
      *  - The epsilon scales with $lineItems' count (min 0.01, +0.005 per
-     *    line). Every gross_amount here is independently roundAmt()'d to
-     *    2dp; summing N independently-rounded values can legitimately
-     *    drift from the entity's own higher-precision aggregate column by
-     *    up to ~N*0.005 (the same bound ComposeRefund's own line-summing
-     *    comment already documents) with zero third-party extension
-     *    involved. A flat 1-cent epsilon would false-positive on any
-     *    large multi-item order.
+     *    line, capped at self::OTHER_CHARGES_EPSILON_CEILING). Every
+     *    gross_amount here is independently roundAmt()'d to 2dp; summing N
+     *    independently-rounded values can legitimately drift from the
+     *    entity's own higher-precision aggregate column by up to ~N*0.005
+     *    (the same bound ComposeRefund's own line-summing comment already
+     *    documents) with zero third-party extension involved. A flat
+     *    1-cent epsilon would false-positive on any large multi-item
+     *    order — but leaving it uncapped would let a genuine small
+     *    untaxed fee vanish silently (no log at all — this is the
+     *    "ordinary rounding noise" branch, deliberately quiet) on a large
+     *    enough order. The ceiling bounds that worst case.
      *  - Only a POSITIVE residual (grand_total > known items) is ever
      *    auto-emitted. A negative residual means known items already
      *    exceed grand_total, which isn't a "fee we forgot" — it's more
@@ -643,7 +655,7 @@ abstract class Order
             $knownTax += (float)($lineItem['tax_amount'] ?? 0);
         }
 
-        $epsilon = max(0.01, 0.005 * count($lineItems));
+        $epsilon = min(max(0.01, 0.005 * count($lineItems)), self::OTHER_CHARGES_EPSILON_CEILING);
 
         $residualGross = round($grandTotal - $knownGross, 2);
         if (abs($residualGross) <= $epsilon) {
@@ -723,7 +735,7 @@ abstract class Order
      * @return array $lineItems with fee-provider output and/or the residual
      *               fallback appended.
      */
-    public function reconcileOtherCharges(array $lineItems, $entity, float $grandTotal, float $taxTotal): array
+    protected function reconcileOtherCharges(array $lineItems, $entity, float $grandTotal, float $taxTotal): array
     {
         foreach ($this->getFeeLines($entity) as $feeLine) {
             $lineItems[] = $feeLine;

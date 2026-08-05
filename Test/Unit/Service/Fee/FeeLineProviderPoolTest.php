@@ -15,10 +15,11 @@ use Two\Gateway\Service\Fee\FeeLineProviderPool;
  * field/table names, verified against an actual install.
  *
  * Also covers the pool's isolation of a misbehaving provider: a provider
- * that throws, or returns a line missing/non-numeric gross_amount or
- * tax_amount (the two fields getOtherChargesLineItem() sums), must not
- * take down checkout/capture/refund for every other order, and must not
- * silently corrupt the residual computation via a cast-to-0.
+ * that throws, or returns a line missing/non-numeric gross_amount,
+ * net_amount, or tax_amount, or missing order_item_id/type/tax_rate, must
+ * not take down checkout/capture/refund for every other order, and must
+ * not silently corrupt the residual computation via a cast-to-0 or leak a
+ * malformed line into Two's API payload.
  */
 class FeeLineProviderPoolTest extends TestCase
 {
@@ -26,8 +27,11 @@ class FeeLineProviderPoolTest extends TestCase
     {
         return [
             'order_item_id' => $orderItemId,
+            'type' => 'OTHER',
             'gross_amount' => $gross,
+            'net_amount' => '8.00',
             'tax_amount' => $tax,
+            'tax_rate' => '0.200000',
         ];
     }
 
@@ -150,6 +154,31 @@ class FeeLineProviderPoolTest extends TestCase
         $provider = $this->createMock(FeeLineProviderInterface::class);
         $provider->method('getFeeLines')->willReturn([
             ['order_item_id' => 'malformed', 'gross_amount' => '12.00', 'tax_amount' => 'oops'],
+        ]);
+
+        $pool = new FeeLineProviderPool([$provider], $this->createMock(LogRepository::class));
+
+        $this->assertSame([], $pool->getFeeLines(new \stdClass()));
+    }
+
+    /**
+     * A line that satisfies the amount fields but omits net_amount, type,
+     * or tax_rate (the rest of what FeeLineProviderInterface's docblock
+     * promises) must ALSO be dropped, not just gross/tax_amount — those
+     * missing keys would otherwise surface as an undefined-array-key
+     * notice in Order::getTaxSubtotals() and a malformed Two API payload,
+     * not a caught-early rejection here.
+     */
+    public function testLineMissingNetAmountTypeOrTaxRateIsDropped(): void
+    {
+        $provider = $this->createMock(FeeLineProviderInterface::class);
+        $provider->method('getFeeLines')->willReturn([
+            [
+                'order_item_id' => 'malformed',
+                'gross_amount' => '12.00',
+                'tax_amount' => '2.00',
+                // no net_amount, type, or tax_rate
+            ],
         ]);
 
         $pool = new FeeLineProviderPool([$provider], $this->createMock(LogRepository::class));

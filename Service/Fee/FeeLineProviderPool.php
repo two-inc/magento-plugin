@@ -38,7 +38,14 @@ class FeeLineProviderPool
 
     /**
      * @param FeeLineProviderInterface[] $providers
-     * @param LogRepository|null $logRepository
+     * @param LogRepository|null $logRepository Nullable purely for
+     *        hand-instantiated/test convenience (e.g. the empty-pool
+     *        default built inline in Order.php, where a throw/malformed
+     *        line is impossible with zero providers). NOT a "silent
+     *        logging mode" toggle — any real DI-constructed pool gets one
+     *        auto-wired via the existing Api\Log\RepositoryInterface
+     *        preference in etc/di.xml, since di.xml only names the
+     *        `providers` argument explicitly.
      */
     public function __construct(array $providers = [], ?LogRepository $logRepository = null)
     {
@@ -72,7 +79,8 @@ class FeeLineProviderPool
                         'FeeLineProviderMalformedLine',
                         sprintf(
                             '%s::getFeeLines() returned a line missing/non-numeric '
-                            . 'gross_amount or tax_amount; dropped: %s',
+                            . 'gross_amount, net_amount, or tax_amount, or missing '
+                            . 'order_item_id/type; dropped: %s',
                             $providerClass,
                             json_encode($line)
                         )
@@ -87,21 +95,39 @@ class FeeLineProviderPool
     }
 
     /**
-     * A provider-returned line must at minimum carry numeric gross_amount
-     * and tax_amount — those are what getOtherChargesLineItem() sums to
-     * compute the residual. A missing/non-numeric value would silently
-     * cast to 0 there, either double-counting (if the real amount never
-     * makes it into $lineItems at all) or masking a real residual.
+     * Enforces the full field set Api\Fee\FeeLineProviderInterface's
+     * docblock promises ("real gross/net/tax amounts and tax rate"), not
+     * just the two fields getOtherChargesLineItem() happens to sum.
+     * gross_amount/tax_amount missing or non-numeric would silently cast
+     * to 0 in that residual sum; net_amount/tax_rate missing would instead
+     * surface as an undefined-array-key notice later — in
+     * Order::getTaxSubtotals() (keys directly on every line) and
+     * everywhere this line eventually reaches Two's API payload.
+     * order_item_id/type are the two fields every other line builder in
+     * this codebase always sets and Two's API needs to classify the line.
      *
      * @param mixed $line
      * @return bool
      */
     private function isWellFormed($line): bool
     {
-        return is_array($line)
-            && isset($line['gross_amount'], $line['tax_amount'])
-            && is_numeric($line['gross_amount'])
-            && is_numeric($line['tax_amount']);
+        if (!is_array($line)) {
+            return false;
+        }
+
+        foreach (['gross_amount', 'net_amount', 'tax_amount'] as $amountKey) {
+            if (!isset($line[$amountKey]) || !is_numeric($line[$amountKey])) {
+                return false;
+            }
+        }
+
+        foreach (['order_item_id', 'type', 'tax_rate'] as $requiredKey) {
+            if (!isset($line[$requiredKey]) || $line[$requiredKey] === '') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

@@ -127,6 +127,37 @@ class OtherChargesLineItemTest extends TestCase
         $this->assertSame('0.06', $result['gross_amount']);
     }
 
+    public function testEpsilonIsCappedOnALargeOrderSoASmallFeeIsNotSilentlySwallowed(): void
+    {
+        // 500 lines: uncapped, 0.005*500 = 2.50 would swallow a 1.50
+        // residual with zero log line at all (the quiet "rounding noise"
+        // branch). The ceiling (1.00) must win, so this genuine untaxed
+        // fee still gets reconciled.
+        $this->logRepository->expects($this->never())->method('addErrorLog');
+
+        $lineItems = array_fill(0, 500, $this->productLine('10.00', '2.00'));
+
+        // sum(gross) = 5000.00; residual of 1.50 exceeds the 1.00 ceiling.
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, 5001.50, 1000.00);
+
+        $this->assertNotNull($result);
+        $this->assertSame('1.50', $result['gross_amount']);
+    }
+
+    public function testDriftUnderTheEpsilonCeilingOnALargeOrderStillDoesNotFalsePositive(): void
+    {
+        $this->logRepository->expects($this->never())->method('addErrorLog');
+
+        $lineItems = array_fill(0, 500, $this->productLine('10.00', '2.00'));
+
+        // A 0.90 residual is realistic rounding noise for 500 independently
+        // rounded lines (well under the uncapped 2.50 bound) and still
+        // under the 1.00 ceiling — must not fire.
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, 5000.90, 1000.00);
+
+        $this->assertNull($result);
+    }
+
     public function testNoLineItemsAndZeroGrandTotalProducesNoSyntheticLine(): void
     {
         $this->logRepository->expects($this->never())->method('addErrorLog');
