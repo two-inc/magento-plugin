@@ -31,6 +31,19 @@ class ComposeRefund extends OrderService
     public function execute(Creditmemo $creditmemo, float $amount, Order $order): array
     {
         $lineItems = array_values($this->getLineItemsCreditmemo($order, $creditmemo));
+
+        // Catch any OTHER totals-collector amount not represented above
+        // (e.g. a third-party fee extension prorated onto this credit
+        // memo). See Service\Order::getOtherChargesLineItem() docblock.
+        $otherCharges = $this->getOtherChargesLineItem(
+            $lineItems,
+            (float)$creditmemo->getGrandTotal(),
+            (float)$creditmemo->getTaxAmount()
+        );
+        if ($otherCharges) {
+            $lineItems[] = $otherCharges;
+        }
+
         // Use creditmemo->getGrandTotal() rather than re-summing line items.
         // It's the canonical post-collector refund value Magento records
         // and avoids per-line 2dp-rounding drift that re-summing would

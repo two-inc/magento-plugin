@@ -546,6 +546,73 @@ abstract class Order
     }
 
     /**
+     * Build a catch-all line item for any total-collector amount that
+     * inflates grand_total without being itemized elsewhere.
+     *
+     * Magento only lets us itemize what we know about: product items,
+     * shipping, our own surcharge. A third-party extension that adds a
+     * fee the same way Magento adds shipping — a totals-collector amount
+     * bumping grand_total, but not a quote/order item (e.g. Amasty's
+     * "Extra Fee" module) — is invisible to every getLineItems*() method
+     * above, while still being included in the aggregate total we report.
+     * That leaves sum(line_items) != grand_total.
+     *
+     * Deliberately generic rather than named to one extension: it
+     * reconciles against Magento's own aggregate columns (grand/gross
+     * total, tax total), which ANY well-behaved totals collector
+     * contributes to correctly, so it catches this shape from any
+     * current or future third-party extension without knowing its
+     * field names.
+     *
+     * Returns null when there's nothing to reconcile, so an ordinary
+     * order with no such extension never gets a synthetic line.
+     *
+     * @param array $lineItems Line items already built for this entity
+     *                          (products, shipping, surcharge, and any
+     *                          entity-native adjustment lines).
+     * @param float $grandTotal The entity's own aggregate gross/grand total.
+     * @param float $taxTotal The entity's own aggregate tax total.
+     * @return array|null
+     */
+    public function getOtherChargesLineItem(array $lineItems, float $grandTotal, float $taxTotal): ?array
+    {
+        $knownGross = 0.0;
+        $knownTax = 0.0;
+        foreach ($lineItems as $lineItem) {
+            $knownGross += (float)($lineItem['gross_amount'] ?? 0);
+            $knownTax += (float)($lineItem['tax_amount'] ?? 0);
+        }
+
+        $residualGross = round($grandTotal - $knownGross, 2);
+        if (abs($residualGross) <= 0.01) {
+            // Ordinary rounding noise, not an untracked total.
+            return null;
+        }
+
+        $residualTax = round($taxTotal - $knownTax, 2);
+        $residualNet = round($residualGross - $residualTax, 2);
+        $residualTaxRate = $residualNet != 0.0 ? $residualTax / $residualNet : 0.0;
+
+        return [
+            'order_item_id' => 'other_charges',
+            'name' => (string)__('Other charges'),
+            'description' => (string)__('Other charges'),
+            'type' => 'OTHER',
+            'image_url' => '',
+            'product_page_url' => '',
+            'gross_amount' => $this->roundAmt($residualGross),
+            'net_amount' => $this->roundAmt($residualNet),
+            'tax_amount' => $this->roundAmt($residualTax),
+            'discount_amount' => '0.00',
+            'tax_rate' => $this->roundAmt($residualTaxRate, 6),
+            'tax_class_name' => 'VAT ' . $this->roundAmt($residualTaxRate * 100) . '%',
+            'unit_price' => $this->roundAmt($residualNet, 6),
+            'quantity' => 1,
+            'quantity_unit' => 'sc',
+        ];
+    }
+
+    /**
      * @param array $lineItems
      * @return array
      */

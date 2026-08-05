@@ -118,6 +118,14 @@ class ComposeOrder extends OrderService
         $taxTotal = (float)$order->getTaxAmount();
         $netTotal = $grossTotal - $taxTotal;
 
+        // Catch any OTHER totals-collector amount (e.g. a third-party fee
+        // extension bumping grand_total without a quote/order item) that
+        // isn't represented above. See getOtherChargesLineItem() docblock.
+        $otherCharges = $this->getOtherChargesLineItem($lineItems, $grossTotal, $taxTotal);
+        if ($otherCharges) {
+            $lineItems[] = $otherCharges;
+        }
+
         // Compose the final payload for the API call
         $payload = [
             'billing_address' => $this->getAddress($order, $additionalData, 'billing'),

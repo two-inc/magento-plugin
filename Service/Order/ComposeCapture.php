@@ -28,6 +28,19 @@ class ComposeCapture extends OrderService
     {
         $order = $invoice->getOrder();
         $lineItems = $this->getLineItemsInvoice($invoice, $order);
+
+        // Catch any OTHER totals-collector amount not represented above
+        // (e.g. a third-party fee extension prorated onto this invoice).
+        // See Service\Order::getOtherChargesLineItem() docblock.
+        $otherCharges = $this->getOtherChargesLineItem(
+            $lineItems,
+            (float)$invoice->getGrandTotal(),
+            (float)$invoice->getTaxAmount()
+        );
+        if ($otherCharges) {
+            $lineItems[] = $otherCharges;
+        }
+
         $reqBody = [
             'discount_amount' => $this->roundAmt(abs((float)$invoice->getDiscountAmount())),
             'gross_amount' => $this->roundAmt($invoice->getGrandTotal()),
