@@ -29,9 +29,22 @@ class ComposeCapture extends OrderService
         $order = $invoice->getOrder();
         $lineItems = $this->getLineItemsInvoice($invoice, $order);
 
-        // Catch any OTHER totals-collector amount not represented above
-        // (e.g. a third-party fee extension prorated onto this invoice).
-        // See Service\Order::getOtherChargesLineItem() docblock.
+        // Real per-fee itemization from any registered FeeLineProviderInterface.
+        // None are registered by default; see etc/di.xml.
+        //
+        // NOTE (known, separate, not fixed here): unlike the shipping line
+        // below and ComposeShipment's first-shipment guard, this method has
+        // no "first invoice only" guard around a fee proration. If a future
+        // provider needs to itemize a fee that Magento's totals collector
+        // only applies once (e.g. on the first invoice, mirroring how
+        // shipping is invoiced once), that provider is responsible for its
+        // own idempotency — this call site doesn't provide one.
+        foreach ($this->getFeeLines($invoice) as $feeLine) {
+            $lineItems[] = $feeLine;
+        }
+
+        // Secondary fallback for anything no provider recognized. See
+        // Service\Order::getOtherChargesLineItem() docblock.
         $otherCharges = $this->getOtherChargesLineItem(
             $lineItems,
             (float)$invoice->getGrandTotal(),

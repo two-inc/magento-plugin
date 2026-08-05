@@ -32,9 +32,17 @@ class ComposeRefund extends OrderService
     {
         $lineItems = array_values($this->getLineItemsCreditmemo($order, $creditmemo));
 
-        // Catch any OTHER totals-collector amount not represented above
-        // (e.g. a third-party fee extension prorated onto this credit
-        // memo). See Service\Order::getOtherChargesLineItem() docblock.
+        // Real per-fee itemization from any registered FeeLineProviderInterface.
+        // None are registered by default; see etc/di.xml. A provider only
+        // needs to return a line here if the fee it targets was actually
+        // refunded on this credit memo — no proration is guessed at this
+        // call site.
+        foreach ($this->getFeeLines($creditmemo) as $feeLine) {
+            $lineItems[] = $feeLine;
+        }
+
+        // Secondary fallback for anything no provider recognized. See
+        // Service\Order::getOtherChargesLineItem() docblock.
         $otherCharges = $this->getOtherChargesLineItem(
             $lineItems,
             (float)$creditmemo->getGrandTotal(),

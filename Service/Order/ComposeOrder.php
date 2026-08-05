@@ -113,14 +113,23 @@ class ComposeOrder extends OrderService
             ];
         }
 
+        // Real per-fee itemization from any registered FeeLineProviderInterface
+        // (see Api\Fee\FeeLineProviderInterface) — the primary mechanism for a
+        // known third-party fee, e.g. a totals-collector extension bumping
+        // grand_total without a quote/order item. None are registered by
+        // default; see etc/di.xml.
+        foreach ($this->getFeeLines($order) as $feeLine) {
+            $lineItems[] = $feeLine;
+        }
+
         // Grand total already includes surcharge from Total Collector
         $grossTotal = (float)$order->getGrandTotal();
         $taxTotal = (float)$order->getTaxAmount();
         $netTotal = $grossTotal - $taxTotal;
 
-        // Catch any OTHER totals-collector amount (e.g. a third-party fee
-        // extension bumping grand_total without a quote/order item) that
-        // isn't represented above. See getOtherChargesLineItem() docblock.
+        // Secondary fallback for anything no provider recognized. See
+        // getOtherChargesLineItem() docblock — only auto-emits when the
+        // residual is genuinely untaxed.
         $otherCharges = $this->getOtherChargesLineItem($lineItems, $grossTotal, $taxTotal);
         if ($otherCharges) {
             $lineItems[] = $otherCharges;
