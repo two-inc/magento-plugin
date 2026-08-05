@@ -17,6 +17,7 @@ use Magento\Sales\Model\Order;
 use Magento\Store\Model\App\Emulation;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Service\Fee\FeeLineProviderPool;
 use Two\Gateway\Service\Order as OrderService;
 
 /**
@@ -37,7 +38,8 @@ class ComposeOrder extends OrderService
         Emulation $appEmulation,
         Url $url,
         LogRepository $logRepository,
-        CheckoutSession $checkoutSession
+        CheckoutSession $checkoutSession,
+        ?FeeLineProviderPool $feeLineProviderPool = null
     ) {
         parent::__construct(
             $imageHelper,
@@ -46,7 +48,8 @@ class ComposeOrder extends OrderService
             $orderItemRepository,
             $appEmulation,
             $url,
-            $logRepository
+            $logRepository,
+            $feeLineProviderPool
         );
         $this->checkoutSession = $checkoutSession;
     }
@@ -117,6 +120,11 @@ class ComposeOrder extends OrderService
         $grossTotal = (float)$order->getGrandTotal();
         $taxTotal = (float)$order->getTaxAmount();
         $netTotal = $grossTotal - $taxTotal;
+
+        // Reconcile any known third-party fee (via a registered
+        // FeeLineProviderInterface) and, failing that, any genuinely
+        // untaxed residual. See Order::reconcileOtherCharges() docblock.
+        $lineItems = $this->reconcileOtherCharges($lineItems, $order, $grossTotal, $taxTotal);
 
         // Compose the final payload for the API call
         $payload = [

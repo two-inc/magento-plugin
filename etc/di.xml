@@ -10,6 +10,26 @@
     <preference for="Two\Gateway\Api\Config\RepositoryInterface"
                 type="Two\Gateway\Model\Config\Repository"/>
     <!--
+        FeeLineProviderPool aggregates Api\Fee\FeeLineProviderInterface
+        implementations, each of which itemizes ONE known third-party
+        fee (a totals-collector amount bumping grand_total without a
+        quote/order item, e.g. Amasty's "Extra Fee" module) into real
+        line item(s) with that fee's actual tax rate.
+
+        Deliberately EMPTY: no concrete provider is registered here.
+        Building one for a specific extension needs that extension's
+        real field/table names verified against an actual install, not
+        guessed at. Add providers here, one <item> per provider, once
+        one exists. Until then, Service\Order::getOtherChargesLineItem()
+        is the only reconciliation in effect, and only for the
+        genuinely-untaxed case — see its docblock.
+    -->
+    <type name="Two\Gateway\Service\Fee\FeeLineProviderPool">
+        <arguments>
+            <argument name="providers" xsi:type="array"/>
+        </arguments>
+    </type>
+    <!--
         SettingsProvider resolves the merchant record via the API key
         this Repository owns, so it is injected as a \Proxy to break the
         construction cycle (Repository → SettingsProvider → RecordProvider

@@ -26,12 +26,21 @@ use Magento\Sales\Model\Order\Item as OrderItem;
 use Magento\Store\Model\App\Emulation;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Service\Fee\FeeLineProviderPool;
 
 /**
  * Abstract order class
  */
 abstract class Order
 {
+    /**
+     * Ceiling on getOtherChargesLineItem()'s per-line-count epsilon. Bounds
+     * the worst case of "a genuine small untaxed fee vanishes silently on
+     * a large order" to this amount, regardless of how many line items the
+     * order has. See that method's docblock.
+     */
+    private const OTHER_CHARGES_EPSILON_CEILING = 1.00;
+
     /**
      * @var ConfigRepository
      */
@@ -60,6 +69,10 @@ abstract class Order
      * @var LogRepository
      */
     private $logRepository;
+    /**
+     * @var FeeLineProviderPool
+     */
+    private $feeLineProviderPool;
 
     /**
      * Order constructor.
@@ -71,6 +84,7 @@ abstract class Order
      * @param Emulation $appEmulation
      * @param Url $url
      * @param LogRepository $logRepository
+     * @param FeeLineProviderPool|null $feeLineProviderPool
      */
     public function __construct(
         Image $imageHelper,
@@ -79,7 +93,8 @@ abstract class Order
         OrderItemRepositoryInterface $orderItemRepository,
         Emulation $appEmulation,
         Url $url,
-        LogRepository $logRepository
+        LogRepository $logRepository,
+        ?FeeLineProviderPool $feeLineProviderPool = null
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -88,6 +103,28 @@ abstract class Order
         $this->appEmulation = $appEmulation;
         $this->url = $url;
         $this->logRepository = $logRepository;
+        // Nullable + defaulted: keeps every existing getMockForAbstractClass()
+        // test (constructor skipped) and any direct instantiation working
+        // without having to know about this dependency.
+        $this->feeLineProviderPool = $feeLineProviderPool ?? new FeeLineProviderPool([]);
+    }
+
+    /**
+     * Fee lines from registered FeeLineProviderInterface implementations
+     * (see Api\Fee\FeeLineProviderInterface). Empty by default — no
+     * providers are registered in etc/di.xml yet.
+     *
+     * @param OrderModel|OrderModel\Invoice|OrderModel\Creditmemo $entity
+     * @return array[]
+     */
+    public function getFeeLines($entity): array
+    {
+        // The null-coalescing default lives ONLY in __construct() (single
+        // source of truth for "no pool injected means an empty one"). A
+        // test double built via getMockForAbstractClass() with the
+        // constructor skipped must inject a pool via reflection before
+        // calling this — see Test/Unit/Service/Order/GetFeeLinesTest.php.
+        return $this->feeLineProviderPool->getFeeLines($entity);
     }
 
     /**
@@ -543,6 +580,173 @@ abstract class Order
                     : $billingAddress->getCompany(),
             ]
         ];
+    }
+
+    /**
+     * SECONDARY fallback for any total-collector amount that inflates
+     * grand_total without being itemized elsewhere.
+     *
+     * Magento only lets us itemize what we know about: product items,
+     * shipping, our own surcharge. A third-party extension that adds a
+     * fee the same way Magento adds shipping — a totals-collector amount
+     * bumping grand_total, but not a quote/order item (e.g. Amasty's
+     * "Extra Fee" module) — is invisible to every getLineItems*() method
+     * above, while still being included in the aggregate total we report.
+     * That leaves sum(line_items) != grand_total.
+     *
+     * The PRIMARY mechanism is a registered FeeLineProviderInterface
+     * (see getFeeLines() / Api\Fee\FeeLineProviderInterface): a provider
+     * that knows a specific fee's real per-fee tax rate. Callers are
+     * expected to merge getFeeLines() into $lineItems before calling this
+     * method, so this only ever has to reconcile what no provider
+     * recognized.
+     *
+     * That means whatever residual reaches here has an UNKNOWN tax
+     * rate — we cannot honestly itemize it without a provider. We only
+     * auto-emit a synthetic line when the residual is genuinely
+     * untaxed (residual tax rounds to zero — a 0% line is always a
+     * valid statement, never a guess). Any residual with a non-zero tax
+     * component is a real fee we can't safely itemize blind: submitting
+     * a blended/guessed tax_rate risks Two's API rejecting the payload
+     * (or worse, silently accepting a wrong VAT rate), so instead this
+     * logs a loud warning and leaves it unreconciled — visibility over
+     * a guess.
+     *
+     * Returns null when there's nothing to reconcile (or the residual
+     * can't be safely reconciled), so an ordinary order never gets a
+     * synthetic line.
+     *
+     * Two more guards, both there to stop this firing on completely
+     * ordinary orders that have nothing to do with a third-party fee:
+     *
+     *  - The epsilon scales with $lineItems' count (min 0.01, +0.005 per
+     *    line, capped at self::OTHER_CHARGES_EPSILON_CEILING). Every
+     *    gross_amount here is independently roundAmt()'d to 2dp; summing N
+     *    independently-rounded values can legitimately drift from the
+     *    entity's own higher-precision aggregate column by up to ~N*0.005
+     *    (the same bound ComposeRefund's own line-summing comment already
+     *    documents) with zero third-party extension involved. A flat
+     *    1-cent epsilon would false-positive on any large multi-item
+     *    order — but leaving it uncapped would let a genuine small
+     *    untaxed fee vanish silently (no log at all — this is the
+     *    "ordinary rounding noise" branch, deliberately quiet) on a large
+     *    enough order. The ceiling bounds that worst case.
+     *  - Only a POSITIVE residual (grand_total > known items) is ever
+     *    auto-emitted. A negative residual means known items already
+     *    exceed grand_total, which isn't a "fee we forgot" — it's more
+     *    likely a bug in our own line-item math (e.g. double-counting)
+     *    than a legitimate negative-amount fee. Paper over it with a
+     *    synthetic line and the real bug goes undiagnosed; log it instead.
+     *
+     * @param array $lineItems Line items already built for this entity
+     *                          (products, shipping, surcharge, entity-native
+     *                          adjustment lines, and any FeeLineProviderInterface
+     *                          output already merged in).
+     * @param float $grandTotal The entity's own aggregate gross/grand total.
+     * @param float $taxTotal The entity's own aggregate tax total.
+     * @return array|null
+     */
+    public function getOtherChargesLineItem(array $lineItems, float $grandTotal, float $taxTotal): ?array
+    {
+        $knownGross = 0.0;
+        $knownTax = 0.0;
+        foreach ($lineItems as $lineItem) {
+            $knownGross += (float)($lineItem['gross_amount'] ?? 0);
+            $knownTax += (float)($lineItem['tax_amount'] ?? 0);
+        }
+
+        $epsilon = min(max(0.01, 0.005 * count($lineItems)), self::OTHER_CHARGES_EPSILON_CEILING);
+
+        $residualGross = round($grandTotal - $knownGross, 2);
+        if (abs($residualGross) <= $epsilon) {
+            // Ordinary rounding noise, not an untracked total.
+            return null;
+        }
+
+        if ($residualGross < 0) {
+            // Known items already exceed grand_total. Not a fee we
+            // forgot — more likely our own line-item math double-counted
+            // something. Surface it; don't invent a negative-amount line
+            // to paper over a bug that needs diagnosing.
+            $this->logRepository->addErrorLog(
+                'UnreconciledOtherCharges',
+                sprintf(
+                    'sum(line_items.gross_amount) exceeds grand_total by %.2F. '
+                    . 'Not auto-itemizing a negative correction line.',
+                    abs($residualGross)
+                )
+            );
+            return null;
+        }
+
+        $residualTax = round($taxTotal - $knownTax, 2);
+        if (abs($residualTax) > $epsilon) {
+            // Non-zero tax on an unrecognized residual: we don't know its
+            // real rate. Guessing one is worse than not reconciling —
+            // surface it loudly instead so it can be diagnosed and, if it
+            // recurs, given a real FeeLineProviderInterface.
+            $this->logRepository->addErrorLog(
+                'UnreconciledOtherCharges',
+                sprintf(
+                    'grand_total exceeds sum(line_items) by %.2F with a non-zero tax '
+                    . 'component (%.2F) that no FeeLineProviderInterface recognized. '
+                    . 'Not auto-itemizing an unverified tax rate.',
+                    $residualGross,
+                    $residualTax
+                )
+            );
+            return null;
+        }
+
+        // Residual tax is zero (or rounds to it) — a 0% line is always a
+        // valid, honest statement, safe to auto-emit without a provider.
+        $residualNet = $residualGross;
+
+        return [
+            'order_item_id' => 'other_charges',
+            'name' => (string)__('Other charges'),
+            'description' => (string)__('Other charges'),
+            'type' => 'OTHER',
+            'image_url' => '',
+            'product_page_url' => '',
+            'gross_amount' => $this->roundAmt($residualGross),
+            'net_amount' => $this->roundAmt($residualNet),
+            'tax_amount' => '0.00',
+            'discount_amount' => '0.00',
+            'tax_rate' => '0.000000',
+            'tax_class_name' => 'VAT 0%',
+            'unit_price' => $this->roundAmt($residualNet, 6),
+            'quantity' => 1,
+            'quantity_unit' => 'sc',
+        ];
+    }
+
+    /**
+     * Shared glue for ComposeOrder/ComposeCapture/ComposeRefund: merge any
+     * registered FeeLineProviderInterface output into $lineItems, then
+     * append the getOtherChargesLineItem() fallback if it has anything to
+     * reconcile. One call site instead of three near-identical ones, so a
+     * future change to the merge order/logic only needs to happen once.
+     *
+     * @param array $lineItems Line items already built for this entity.
+     * @param OrderModel|OrderModel\Invoice|OrderModel\Creditmemo $entity
+     * @param float $grandTotal The entity's own aggregate gross/grand total.
+     * @param float $taxTotal The entity's own aggregate tax total.
+     * @return array $lineItems with fee-provider output and/or the residual
+     *               fallback appended.
+     */
+    protected function reconcileOtherCharges(array $lineItems, $entity, float $grandTotal, float $taxTotal): array
+    {
+        foreach ($this->getFeeLines($entity) as $feeLine) {
+            $lineItems[] = $feeLine;
+        }
+
+        $otherCharges = $this->getOtherChargesLineItem($lineItems, $grandTotal, $taxTotal);
+        if ($otherCharges) {
+            $lineItems[] = $otherCharges;
+        }
+
+        return $lineItems;
     }
 
     /**
