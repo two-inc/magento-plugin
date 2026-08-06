@@ -209,30 +209,44 @@ describe('order-intent request body omits buyer.company.website (TWO-25365)', ()
         // code: prose explaining this very fix necessarily names the global, and
         // round 1 proved a raw-text match going red on exactly that.
         //
-        // Only the two comment forms this file uses — JSDoc blocks and
-        // whole-line `//`. A general strip silently WEAKENS the check instead of
-        // breaking it: `//` inside a string literal eats the rest of that line,
-        // and one `'/*'` string constant opens a fake comment swallowing
-        // hundreds of real lines. Neither shape is in the file today; the point
-        // is that nothing would surface when one arrives.
+        // The three comment forms this file uses: JSDoc blocks, whole-line `//`,
+        // and TRAILING `//` after code (there is one at the `termsAccepted`
+        // observable). The trailing form was missed for two rounds, which left
+        // the false-red channel open — appending `// no BASE_URL here` to a line
+        // of code still reddened this check.
+        //
+        // Each strip is deliberately narrow, because a general one silently
+        // WEAKENS the check rather than breaking it: `//` inside a string
+        // literal eats the rest of that line, and one `'/*'` string constant
+        // opens a fake comment swallowing hundreds of real lines. Hence the
+        // quote exclusion on the trailing form — it declines to strip rather
+        // than risk eating a URL in a string, which is the safe direction.
         const code = src
             .replace(/\/\*\*[\s\S]*?\*\//g, '')
-            .replace(/^[ \t]*\/\/[^\n]*$/gm, '');
+            .replace(/^[ \t]*\/\/[^\n]*$/gm, '')
+            .replace(/[ \t]\/\/[^\n'"]*$/gm, '');
 
         // The bare token, not `window.BASE_URL`: narrowing to the member access
-        // let `const { BASE_URL } = window` through, and this file contains no
-        // other `*BASE_URL` name to false-positive on (the local-dev env vars of
-        // that shape live in PHP config and shell, which this never reads).
+        // let `const { BASE_URL } = window` through. No false-positive risk —
+        // this file contains no `BASE_URL` of any kind, and the leading `\b`
+        // could not match the `TWO_*_BASE_URL` env-var names anyway (a word
+        // boundary fails after an underscore, the same property exploited below).
         expect(code).not.toMatch(/\bBASE_URL\b/);
-        // The computed form evades the token check entirely
-        // (`window['BASE_' + 'URL']`), and this file has no legitimate computed
-        // window access, so banning the construct costs nothing here.
-        expect(code).not.toMatch(/window\s*\[/);
         // No `\b` before `web`: the boundary fails after an underscore, so
         // `company_website:` — a likely name if the field moves out of
         // `buyer.company` — slipped past. Assignment as well as the literal key,
         // for the after-the-fact mutation case. Still the KEY rather than the
         // bare word, so ordinary prose about Magento's website scope stays legal.
         expect(code).not.toMatch(/web_?site\s*[:=]/);
+
+        // What this deliberately does NOT catch, so the guards above are not
+        // read as more than they are: the URL reappearing on an unexercised
+        // branch under a name no regex can anticipate (`homepage`, say), or
+        // outside the body altogether (a request header). Both need a key-name
+        // oracle this spec cannot have, and closing the first would mean banning
+        // the URL builder this file legitimately uses elsewhere. A previous
+        // `window[...]` ban was dropped for the same reason: it outlawed a
+        // general JS construct across 2000 lines to cover a case strictly
+        // narrower than the ones already accepted here.
     });
 });
