@@ -1699,11 +1699,37 @@ define([
             };
         },
         /**
-         * Fill the billing address form from a picked company. No-op unless
-         * the merchant has address search enabled (ConfigProvider exposes
-         * `enable_address_search` as isAddressSearchEnabled).
+         * Fill the billing address form from a picked company.
+         *
+         * TWO-25326: autofill needs BOTH settings on, and this method is
+         * where the second one is applied. "Autofill company address"
+         * (`enable_address_search` → isAddressSearchEnabled) is the gate
+         * inside companySearch.lookupCompanyAddress(); "Enable company
+         * search in address entry" (`enable_company_search` →
+         * isAddressAreaCompanySearchEnabled) is the gate here.
+         *
+         * The reason is positional rather than a second opinion on the same
+         * question. With company search in address entry OFF, the tile is
+         * the control's home (isTileCompanySearchActive()) and the buyer has
+         * already completed the address step — so a pick made from the tile
+         * would be overwriting an address the buyer has entered and
+         * confirmed, behind their back and after the fact. Autofill is only
+         * ever a *pre-fill* of a form the buyer is about to work in, so it
+         * belongs to the address-entry location alone.
+         *
+         * The saved-address / virtual-cart fallback keeps working: those keep
+         * the tile as the only search location while the setting stays ON, so
+         * this gate passes and the tile's own billing form is still filled.
+         *
+         * Deliberately NOT folded into the server-side isAddressSearchEnabled
+         * flag: that reads one setting and is shared with the address-area
+         * picker (TWO-25202), and the condition being added is about WHICH
+         * picker is asking, which only the caller knows.
          */
         addressLookup: function (selectedCompany) {
+            if (!this.isAddressAreaCompanySearchEnabled) {
+                return null;
+            }
             return companySearch.lookupCompanyAddress(this._brandConfig, selectedCompany);
         },
         /**
@@ -1753,10 +1779,10 @@ define([
                         // none of its own.
                         self.applyCompanyData({ companyId, companyName }, { authoritative: true });
                         // TWO-25193: the payment-tile picker used to stop
-                        // here, leaving the billing address blank. Gate is
-                        // config.isAddressSearchEnabled, applied inside
-                        // lookupCompanyAddress — same one the shipping-step
-                        // picker uses.
+                        // here, leaving the billing address blank. Two gates
+                        // now, both inside addressLookup() — see its doc
+                        // comment for why the tile carries one the
+                        // address-area picker does not.
                         self.addressLookup(selectedItem);
                     },
                     onManualEntryActivated: function () {

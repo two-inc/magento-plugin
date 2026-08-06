@@ -253,10 +253,16 @@ interface RepositoryInterface
     /**
      * Check if address autocomplete is enabled
      *
-     * Reads `enable_address_search` alone — it is the single toggle for
-     * address lookup on both the shipping and the payment step. It does
-     * NOT depend on `enable_company_search`, which gates only the
-     * shipping-step company-search widget (isCompanySearchEnabled).
+     * Reads `enable_address_search` alone (TWO-25202) and does NOT depend on
+     * `enable_company_search`, which decides WHERE the company-search control
+     * lives (isCompanySearchEnabled).
+     *
+     * This is the shared "may autofill at all" answer, not the whole rule.
+     * The payment-tile picker applies a second, positional condition
+     * client-side — the tile does not autofill when it is the control's
+     * primary home, because the buyer has already completed the address step
+     * by then. See gateway_method.js::addressLookup(). Keep that condition
+     * there: it turns on which picker is asking, which this method cannot see.
      *
      * @param int|null $storeId
      *

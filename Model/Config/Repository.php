@@ -505,9 +505,11 @@ class Repository implements RepositoryInterface
      */
     public function isAddressSearchEnabled(?int $storeId = null): bool
     {
-        // Single source of truth (TWO-25202). `enable_company_search` is
-        // deliberately NOT part of this: it gates the shipping-step search
-        // widget only (isCompanySearchEnabled), not address lookup.
+        // Single source of truth for the shared gate (TWO-25202).
+        // `enable_company_search` is deliberately NOT part of this: it decides
+        // where the search control lives (isCompanySearchEnabled). The
+        // payment-tile picker's extra positional condition lives client-side —
+        // see the interface doc comment.
         return $this->isSetFlag($this->path('enable_address_search'), $storeId);
     }
 

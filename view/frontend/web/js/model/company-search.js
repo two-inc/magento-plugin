@@ -930,8 +930,13 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          *
          * No-op unless `config.isAddressSearchEnabled` is true. That flag is
          * server-side the single `enable_address_search` admin setting
-         * (Model\Config\Repository::isAddressSearchEnabled), so both pickers
-         * honour exactly one gate.
+         * (Model\Config\Repository::isAddressSearchEnabled), and this gate is
+         * the one both pickers share.
+         *
+         * The payment-tile picker adds a second, positional gate of its own
+         * before calling in — see gateway_method.js::addressLookup(). Do not
+         * move that gate down here: it depends on which picker is asking,
+         * which this model cannot see.
          *
          * @param {object} config brand config subtree
          * @param {object} selectedCompany select2 result item (needs lookupId)
