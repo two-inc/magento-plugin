@@ -226,17 +226,25 @@ describe('payment-step company picker (gateway_method.js)', () => {
                         companySearch
                     )
                 }
-            ),
-            companySearch: companySearch
+            )
         };
     }
 
     /**
      * Minimal renderer `this` for enableCompanySearch(): it only touches
      * selectors, the brand config, countryCode() and fillCompanyData().
+     *
+     * `isAddressAreaCompanySearchEnabled` defaults to true — the
+     * saved-address / virtual-cart fallback, where "Enable company search in
+     * address entry" is ON but there is no address-area form to host the
+     * control, so the tile hosts it AND owns the (still-empty) billing
+     * address form it fills. Pass false for the other tile case, where the
+     * setting is OFF and the tile is the control's primary home.
      */
-    function makeRendererContext(component, config, filled) {
+    function makeRendererContext(component, config, filled, addressAreaEnabled) {
         return Object.assign(Object.create(component.prototype || {}), {
+            isAddressAreaCompanySearchEnabled:
+                addressAreaEnabled === undefined ? true : addressAreaEnabled,
             companyNameSelector: 'input#company_name',
             enterDetailsManuallyButton: '#billing_enter_details_manually',
             enterDetailsManuallyText: 'Enter details manually',
@@ -303,6 +311,38 @@ describe('payment-step company picker (gateway_method.js)', () => {
 
         // Company still selected, but no company-detail request and no writes.
         expect(filled).toHaveLength(1);
+        expect(recorder.ajax).toHaveLength(0);
+        expect(recorder.written).toHaveLength(0);
+    });
+
+    /**
+     * TWO-25326. With "Enable company search in address entry" OFF the tile is
+     * the control's primary home, which means the buyer has ALREADY completed
+     * and confirmed the address step before they can pick a company. Autofill
+     * must not fire there, whatever "Autofill company address" says — writing
+     * then would silently overwrite an address the buyer entered themselves.
+     *
+     * `isAddressSearchEnabled` is left ON deliberately: this pins the
+     * conjunction, so a fix that merely re-read the address-search flag would
+     * not pass.
+     */
+    test('makes no detail call when company search in address entry is off', () => {
+        const recorder = makeRecorder();
+        const $ = makeSpyJQuery(recorder);
+        const { component } = loadRenderer(recorder, $);
+        const filled = [];
+        const ctx = makeRendererContext(component, BASE_CONFIG, filled, false);
+
+        expect(BASE_CONFIG.isAddressSearchEnabled).toBe(true);
+
+        ctx.enableCompanySearch();
+        const mapped = recorder.select2Options.ajax.processResults(SEARCH_RESPONSE).results[0];
+        recorder.handlers['select2:select']({ params: { data: mapped } });
+
+        // The pick itself still lands — only the address autofill is gated.
+        expect(filled).toEqual([
+            { companyId: '12345678', companyName: 'Example Trading Ltd' }
+        ]);
         expect(recorder.ajax).toHaveLength(0);
         expect(recorder.written).toHaveLength(0);
     });

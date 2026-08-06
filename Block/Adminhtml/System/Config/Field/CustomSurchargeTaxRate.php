@@ -17,7 +17,7 @@ use Two\Gateway\Service\Locale\AdminDecimalFormatter;
  * Renderer for the deprecated custom (flat) surcharge tax rate field.
  *
  * DEPRECATED FIELD: initial attempt at tax support, superseded by the
- * tax-rule-based configurable selector (Surcharge Tax Treatment),
+ * tax-rule-based configurable selector (Surcharge tax treatment),
  * retained only for pre-existing merchants. The field is only shown
  * when the deprecated "Custom" treatment is selected, which itself is
  * only offered to merchants with a previously configured rate. The

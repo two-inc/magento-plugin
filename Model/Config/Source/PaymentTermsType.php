@@ -10,7 +10,7 @@ namespace Two\Gateway\Model\Config\Source;
 use Magento\Framework\Data\OptionSourceInterface;
 
 /**
- * Payment Terms Type Source Model
+ * Payment terms type source model
  *
  * Supported payment term types depend on the brand's commercial
  * agreement — see BrandRegistryInterface.

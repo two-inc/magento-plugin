@@ -61,7 +61,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             return parseInt($defaultTerm.val(), 10) || 0;
         }
 
-        // ── Default Payment Term dropdown ────────────────────────────────
+        // ── Default payment term dropdown ────────────────────────────────
 
         function updateDefaultTermOptions() {
             var terms = getSelectedTerms();

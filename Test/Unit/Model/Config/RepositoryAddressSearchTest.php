@@ -16,7 +16,10 @@ use Two\Gateway\Model\Provenance;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
- * TWO-25202: address lookup is gated by `enable_address_search` alone.
+ * TWO-25202: this method reads `enable_address_search` alone. That is the
+ * shared gate, not the whole feature rule — TWO-25326 added a positional
+ * condition for the payment-tile picker in gateway_method.js::addressLookup(),
+ * client-side and deliberately not here.
  * `enable_company_search` keeps its own separate job (the shipping-step
  * company-search widget) and must not influence address lookup.
  */

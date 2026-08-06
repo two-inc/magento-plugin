@@ -43,7 +43,7 @@ final class Descriptor
      * @param array<string,string> $extraHttpHeaders name=>value, decoration on outbound requests.
      * @param string[] $suppressedFields `section_suffix/group/field` paths to hide in the synthesised admin form.
      * @param bool $inlineTermFees Whether to render the per-term merchant fee beside each Payment Terms checkbox in admin.
-     * @param float[] $surchargeRoundingSteps Buyer-surcharge rounding steps offered in the admin Rounding Step dropdown, ascending.
+     * @param float[] $surchargeRoundingSteps Buyer-surcharge rounding steps offered in the admin Rounding step dropdown, ascending.
      * @param string|null $intentApprovedNotice Copy override for the buyer-facing intent-approved notice; null = use the platform default copy. Never ''. See getIntentApprovedNotice().
      * @param bool $intentApprovedNoticeEnabled Whether the buyer-facing intent-approved notice is rendered at all. Default true. See isIntentApprovedNoticeEnabled().
      */
@@ -236,7 +236,7 @@ final class Descriptor
     }
 
     /**
-     * Buyer-surcharge rounding steps offered in the admin Rounding Step
+     * Buyer-surcharge rounding steps offered in the admin Rounding step
      * dropdown, ascending. Brand overlays narrow the set via brand.xml
      * <surcharge_rounding_steps>; Loader applies the parent default set
      * when the element is absent or empty.

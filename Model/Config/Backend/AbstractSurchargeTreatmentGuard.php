@@ -18,10 +18,10 @@ use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
  *
  * A Magento field backend model is only instantiated when its own field is
  * part of the save, so a single guard on the treatment selector could never
- * see a save that only touched the Surcharge Method (or any unrelated field
- * in the section). Both the Surcharge Method field and the Surcharge Tax
+ * see a save that only touched the Surcharge method (or any unrelated field
+ * in the section). Both the Surcharge method field and the Surcharge tax
  * Treatment field therefore extend this class: the admin section save posts
- * every visible field in the group, so the Surcharge Method guard runs on
+ * every visible field in the group, so the Surcharge method guard runs on
  * every admin save of the payment section — including saves of a shop that
  * is already sitting in the enabled-with-blank-treatment state.
  *
@@ -38,7 +38,7 @@ use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
  * Nothing here runs on config page load — this is the save path only, and it
  * throws a LocalizedException, which Magento renders as an admin error
  * message on the section it was saving. The save transaction rolls back as a
- * whole, so a rejected save writes nothing. The Surcharge Tax Treatment field
+ * whole, so a rejected save writes nothing. The Surcharge tax treatment field
  * lives in that same section, so a rejected merchant can always pick a
  * treatment and save again.
  *
@@ -69,8 +69,8 @@ abstract class AbstractSurchargeTreatmentGuard extends Value
         if ($this->isSurchargeEnabled() && !$this->isTaxTreatmentSelected()) {
             throw new LocalizedException(
                 __(
-                    'Please select a Surcharge Tax Treatment. A surcharge method is enabled '
-                    . '(see the Surcharge Method field), so the Surcharge Tax Treatment field '
+                    'Please select a surcharge tax treatment. A surcharge method is enabled '
+                    . '(see the Surcharge method field), so the Surcharge tax treatment field '
                     . 'must be chosen explicitly before this configuration can be saved.'
                 )
             );

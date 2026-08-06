@@ -43,7 +43,7 @@ interface BrandRegistryInterface
 
     /**
      * Buyer-surcharge rounding steps (in major currency units) offered
-     * in the admin "Rounding Step" dropdown, ascending. Brand overlays
+     * in the admin "Rounding step" dropdown, ascending. Brand overlays
      * narrow the set via brand.xml <surcharge_rounding_steps>; the
      * default binding returns the parent default set. Never empty.
      *

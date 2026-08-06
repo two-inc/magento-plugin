@@ -14,7 +14,7 @@ use Two\Gateway\Model\Config\Backend\SurchargeType;
 /**
  * Tests the section-save half of the surcharge tax treatment invariant.
  *
- * The Surcharge Method field is posted on every admin save of the payment
+ * The Surcharge method field is posted on every admin save of the payment
  * section, so this guard is what catches a save triggered by any other
  * field — including a shop already stored in the enabled-with-blank-
  * treatment state. A pre-existing legacy flat rate counts as an explicit
@@ -66,7 +66,7 @@ class SurchargeTypeTest extends TestCase
         ]);
 
         $this->expectException(LocalizedException::class);
-        $this->expectExceptionMessage('Please select a Surcharge Tax Treatment');
+        $this->expectExceptionMessage('Please select a surcharge tax treatment');
         $model->beforeSave();
     }
 
@@ -88,7 +88,7 @@ class SurchargeTypeTest extends TestCase
         ]);
 
         $this->expectException(LocalizedException::class);
-        $this->expectExceptionMessage('Surcharge Tax Treatment field');
+        $this->expectExceptionMessage('Surcharge tax treatment field');
         $model->beforeSave();
     }
 

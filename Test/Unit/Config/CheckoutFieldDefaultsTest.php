@@ -21,7 +21,7 @@ use PHPUnit\Framework\TestCase;
 class CheckoutFieldDefaultsTest extends TestCase
 {
     /**
-     * Optional checkout-field toggles, as grouped under "Checkout Fields"
+     * Optional checkout-field toggles, as grouped under "Checkout fields"
      * in etc/adminhtml/system.xml.
      */
     private const OPTIONAL_FIELD_FLAGS = [
@@ -88,7 +88,7 @@ class CheckoutFieldDefaultsTest extends TestCase
 
     /**
      * Guards the assumption the rest of this test rests on: that these five
-     * flags really are the complete "Checkout Fields" set, so a sixth
+     * flags really are the complete "Checkout fields" set, so a sixth
      * optional field added later cannot default to off unnoticed.
      */
     public function testFlagListMatchesTheAdminCheckoutFieldsGroup(): void

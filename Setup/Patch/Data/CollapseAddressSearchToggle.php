@@ -25,7 +25,12 @@ use Magento\Store\Model\StoreManagerInterface;
  * address-lookup behaviour is therefore identical before and after.
  *
  * `enable_company_search` is NOT touched or removed — it keeps its own
- * separate job (gating the shipping-step company-search widget).
+ * separate job (placing the company-search control).
+ *
+ * TWO-25326 later reinstated a conjunction, but only for the payment-tile
+ * picker and only client-side (gateway_method.js::addressLookup()). This
+ * patch and the server-side single-key read it migrated to are unaffected:
+ * the config semantics it converted merchants onto still hold.
  *
  * Scope-aware: default, website and store scopes are walked parent-first
  * and a row is only written where the inherited new value would differ

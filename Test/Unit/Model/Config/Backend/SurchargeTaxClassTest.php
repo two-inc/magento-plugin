@@ -68,7 +68,7 @@ class SurchargeTaxClassTest extends TestCase
         ]);
 
         $this->expectException(LocalizedException::class);
-        $this->expectExceptionMessage('Please select a Surcharge Tax Treatment');
+        $this->expectExceptionMessage('Please select a surcharge tax treatment');
         $model->beforeSave();
     }
 
