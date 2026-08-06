@@ -8,9 +8,10 @@
  * Luma used to send `buyer.company.website = window.BASE_URL`. That global is
  * the MERCHANT's own storefront URL, so every order intent claimed the
  * merchant's site as the buying company's website — wrong data under a field
- * name that says something else. Nothing downstream reads it (the field is not
- * part of the request Luma is meant to send, and the Hyvä payment component
- * never sent it), so it is gone rather than re-sourced.
+ * name that says something else. The field is not part of the request this
+ * renderer is meant to send, and this module's own PHP order-create path
+ * (`Service\Order`) never sent it either, so it is gone rather than re-sourced
+ * from somewhere else. See TWO-25365 for the API-side reference.
  *
  * The behavioural spec below composes a real request body and asserts on the
  * JSON that would go on the wire, with `window.BASE_URL` deliberately SET — a
@@ -76,7 +77,11 @@ function loadRenderer() {
                     price: '90.00',
                     tax_amount: '21.60',
                     tax_percent: '24',
-                    thumbnail: 'https://merchant-storefront.example/widget.png',
+                    // A DIFFERENT host from STOREFRONT_URL on purpose: a
+                    // product image legitimately carries a merchant-hosted URL,
+                    // and the whole-body guard below would otherwise trip on it
+                    // instead of on the defect.
+                    thumbnail: 'https://cdn.example/media/widget.png',
                     is_virtual: '0'
                 }
             ];
@@ -143,24 +148,41 @@ describe('order-intent request body omits buyer.company.website (TWO-25365)', ()
             country_prefix: 'NO',
             company_name: 'Acme Widgets AS'
         });
-        expect('website' in body.buyer.company).toBe(false);
-        // Belt and braces on the specific defect: the storefront URL must not
-        // appear anywhere in the buyer object under any key.
-        expect(JSON.stringify(body.buyer)).not.toContain(STOREFRONT_URL);
+        // The exact-shape assertion above already pins the key set, so a
+        // separate `'website' in …` check would be dead: JSON.parse produces no
+        // undefined-valued keys, and any defined value fails the toEqual.
+        //
+        // What toEqual canNOT see is the URL reappearing somewhere else in the
+        // body — adversarial review reached a passing `store_url:
+        // window['BASE_' + 'URL']` sitting beside `merchant_id`, outside
+        // `buyer` and past both source-text regexes below. The merchant's own
+        // storefront URL has no business anywhere in this request, so the guard
+        // is on the WHOLE body rather than on the buyer object.
+        expect(JSON.stringify(body)).not.toContain(STOREFRONT_URL);
     });
 
     test('the source no longer reads window.BASE_URL', () => {
-        // The behavioural spec above proves the key is absent from the body
-        // it composes; this pins the GLOBAL itself as unused, so a later
-        // change cannot reintroduce the merchant URL into some other field
-        // without a spec failing.
+        // The behavioural spec above proves the key is absent from the body it
+        // composes; this pins the GLOBAL itself as unused, so a later change
+        // cannot reintroduce the merchant URL down a path this spec's fixture
+        // does not happen to exercise.
         const fs = require('fs');
         const path = require('path');
         const src = fs.readFileSync(path.resolve(__dirname, '..', '..', RENDERER), 'utf8');
+        // COMMENTS STRIPPED, because the rationale prose that documents this
+        // very fix names `window.BASE_URL` — a check matched against the raw
+        // text would go red on someone explaining the change, i.e. fail on
+        // documentation rather than on code. Proved in adversarial review.
+        const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 
-        expect(src).not.toMatch(/BASE_URL/);
-        // Narrow on purpose: the KEY, not the word. Magento's own
-        // website-scope vocabulary is legitimate prose in this file.
-        expect(src).not.toMatch(/\bwebsite\s*:/);
+        expect(code).not.toMatch(/BASE_URL/);
+        // The plain-literal key form only — `'website':`, a computed
+        // `['web' + 'site']` and a newline before the colon all slip past this.
+        // That is fine: those are the mutations the behavioural spec above
+        // catches, and this line exists for the reverse case (the global read
+        // somewhere the fixture never reaches). Narrow on the KEY rather than
+        // the word because Magento's own website-scope vocabulary is legitimate
+        // prose in this file.
+        expect(code).not.toMatch(/\bwebsite\s*:/);
     });
 });
