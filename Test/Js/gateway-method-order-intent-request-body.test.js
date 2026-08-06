@@ -219,12 +219,16 @@ describe('order-intent request body omits buyer.company.website (TWO-25365)', ()
         // WEAKENS the check rather than breaking it: `//` inside a string
         // literal eats the rest of that line, and one `'/*'` string constant
         // opens a fake comment swallowing hundreds of real lines. Hence the
-        // quote exclusion on the trailing form — it declines to strip rather
-        // than risk eating a URL in a string, which is the safe direction.
+        // quote-and-backtick exclusion on the trailing form — it declines to
+        // strip rather than risk eating a URL in a string, which is the safe
+        // direction. The backtick is in that class because this file composes
+        // URLs in template literals; without it, a template literal containing
+        // whitespace-`//` on a line that also read the global would have had its
+        // real code deleted, silently weakening the token check below.
         const code = src
             .replace(/\/\*\*[\s\S]*?\*\//g, '')
             .replace(/^[ \t]*\/\/[^\n]*$/gm, '')
-            .replace(/[ \t]\/\/[^\n'"]*$/gm, '');
+            .replace(/[ \t]\/\/[^\n'"`]*$/gm, '');
 
         // The bare token, not `window.BASE_URL`: narrowing to the member access
         // let `const { BASE_URL } = window` through. No false-positive risk —
