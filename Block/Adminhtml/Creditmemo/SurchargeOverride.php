@@ -14,7 +14,7 @@ use Magento\Framework\Locale\FormatInterface;
 use Magento\Framework\Registry;
 
 /**
- * Renders the "Refund Two Surcharge" override input on the new-creditmemo
+ * Renders the "Refund Two surcharge" override input on the new-creditmemo
  * form. Pre-fills with the proportional default the collector would compute,
  * so the merchant only has to type when overriding.
  */
@@ -153,7 +153,7 @@ class SurchargeOverride extends Template
         if ($description !== '') {
             return (string)__('Refund %1', $description);
         }
-        return (string)__('Refund Two Surcharge');
+        return (string)__('Refund Two surcharge');
     }
 
     public function formatPrice($value): string

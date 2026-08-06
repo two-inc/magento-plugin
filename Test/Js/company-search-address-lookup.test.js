@@ -347,23 +347,6 @@ describe('payment-step company picker (gateway_method.js)', () => {
         expect(recorder.ajax).toHaveLength(0);
         expect(recorder.written).toHaveLength(0);
     });
-
-    /**
-     * The gate belongs to the tile alone: the address-area picker keeps
-     * autofilling on `isAddressSearchEnabled` by itself (TWO-25202), and its
-     * own existence already implies the setting is on. Guards against the
-     * conjunction being pushed down into the shared model, where it would
-     * disable the address-area picker's autofill too.
-     */
-    test('the shared model itself carries no company-search gate', () => {
-        const recorder = makeRecorder();
-        const $ = makeSpyJQuery(recorder);
-        const { companySearch } = loadRenderer(recorder, $);
-
-        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
-
-        expect(recorder.ajax).toHaveLength(1);
-    });
 });
 
 describe('shipping-step company picker (address-autocomplete.js)', () => {

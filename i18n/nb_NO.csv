@@ -240,7 +240,7 @@
 "No extra costs","Ingen ekstra kostnader"
 "Order on invoice","Bestill på faktura"
 "Pay within 30 days","Betal innen 30 dager"
-"Refund Two Surcharge","Refunder tilleggsavgift"
+"Refund Two surcharge","Refunder tilleggsavgift"
 "Select the payment term(s) you want to offer.","Velg betalingsvilkår du vil tilby."
 "Warning: The fixed fee limit of %1 %2 cannot be enforced correctly because no exchange rate is currently available from %3 to %4.","Advarsel: Den faste avgiftsgrensen %1 %2 kan ikke håndheves korrekt fordi ingen valutakurs er tilgjengelig fra %3 til %4."
 
@@ -261,7 +261,7 @@
 "Platform minimum %1, %2 tax. A value here is interpreted in the store base currency on the tax basis selected below and must be at least this.","Plattformminimum %1, %2 MVA. En verdi her tolkes i butikkens basisvaluta på MVA-grunnlaget som er valgt nedenfor, og må være minst dette."
 "including","inkludert"
 "excluding","ekskludert"
-"Minimum order value, %1","Minste ordreverdi, %1"
+"Minimum order value, %1","Minimum bestillingsverdi, %1"
 "Including tax (gross)","Inkludert MVA (brutto)"
 "Excluding tax (net)","Ekskludert MVA (netto)"
 "Invoice purchase with %1 is not available for this order. Minimum order value is %2 %3 tax.","Fakturakjøp med %1 er ikke tilgjengelig for denne bestillingen. Minimum bestillingsverdi er %2 %3 MVA."

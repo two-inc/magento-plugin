@@ -1709,17 +1709,25 @@ define([
          * isAddressAreaCompanySearchEnabled) is the gate here.
          *
          * The reason is positional rather than a second opinion on the same
-         * question. With company search in address entry OFF, the tile is
-         * the control's home (isTileCompanySearchActive()) and the buyer has
-         * already completed the address step — so a pick made from the tile
-         * would be overwriting an address the buyer has entered and
-         * confirmed, behind their back and after the fact. Autofill is only
-         * ever a *pre-fill* of a form the buyer is about to work in, so it
-         * belongs to the address-entry location alone.
+         * question. The setting places the control, and the merchant who has
+         * put it in the payment tile has said the buyer completes their
+         * address by hand — so a pick made there is not pre-filling a form
+         * the buyer is about to work in, it is rewriting one they are already
+         * done with. Autofill belongs to the address-entry location alone.
          *
-         * The saved-address / virtual-cart fallback keeps working: those keep
-         * the tile as the only search location while the setting stays ON, so
-         * this gate passes and the tile's own billing form is still filled.
+         * Keyed on the SETTING, deliberately, not on whether an address form
+         * happens to be on screen. TWO-25326 states the rule that way: with
+         * company search in address entry off, a pick never fills an address,
+         * whatever "Autofill company address" says. The cost is that a
+         * virtual cart under that setting loses the tile autofill TWO-25193
+         * added, even though its billing form is genuinely blank; that is the
+         * rule as specified, not an oversight.
+         *
+         * With the setting ON, autofill still fires from the tile in the
+         * saved-address / virtual-cart fallback, where the tile is the only
+         * search location (isTileCompanySearchActive() — note that predicate
+         * is true in BOTH tile cases, so it does not on its own distinguish
+         * the gated one).
          *
          * Deliberately NOT folded into the server-side isAddressSearchEnabled
          * flag: that reads one setting and is shared with the address-area

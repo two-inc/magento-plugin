@@ -686,8 +686,11 @@ define([
                         self.setCompanyData(selectedItem.companyId, selectedItem.text);
                         // Gate lives in companySearch.lookupCompanyAddress
                         // (config.isAddressSearchEnabled = the single
-                        // `enable_address_search` setting), shared with the
-                        // payment-tile picker.
+                        // `enable_address_search` setting). This picker only
+                        // exists when company search in address entry is on,
+                        // so that one gate is the whole rule here — the
+                        // payment-tile picker adds a second, positional one
+                        // of its own (gateway_method.js::addressLookup()).
                         self.addressLookup(selectedItem);
                     },
                     onManualEntryActivated: function ($companyNameField) {
