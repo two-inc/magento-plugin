@@ -1788,8 +1788,9 @@ define([
                         self.applyCompanyData({ companyId, companyName }, { authoritative: true });
                         // TWO-25193: the payment-tile picker used to stop
                         // here, leaving the billing address blank. Two gates
-                        // now, both inside addressLookup() — see its doc
-                        // comment for why the tile carries one the
+                        // now — addressLookup()'s own positional one, then the
+                        // shared isAddressSearchEnabled gate it delegates to.
+                        // See its doc comment for why the tile carries one the
                         // address-area picker does not.
                         self.addressLookup(selectedItem);
                     },

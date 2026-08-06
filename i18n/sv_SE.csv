@@ -269,7 +269,7 @@
 "Surcharge","Tillägg"
 "Amounts are shown in %1 unless otherwise stated.","Belopp visas i %1 om inte annat anges."
 "Select at least one payment term or enter a custom term.","Välj minst ett betalningsvillkor eller ange ett anpassat villkor."
-"Please select a Surcharge Tax Treatment. A surcharge method is enabled (see the Surcharge Method field), so the Surcharge Tax Treatment field must be chosen explicitly before this configuration can be saved.","Välj en momshantering för tillägget. En tilläggsmetod är aktiverad (se fältet Tilläggsstrategi), så fältet Momshantering för tillägg måste väljas uttryckligen innan denna konfiguration kan sparas."
+"Please select a surcharge tax treatment. A surcharge method is enabled (see the Surcharge method field), so the Surcharge tax treatment field must be chosen explicitly before this configuration can be saved.","Välj en momshantering för tillägget. En tilläggsmetod är aktiverad (se fältet Tilläggsstrategi), så fältet Momshantering för tillägg måste väljas uttryckligen innan denna konfiguration kan sparas."
 "Unable to calculate payment terms surcharge. Please try again in a moment.","Kan inte beräkna tillägget för betalningsvillkor. Försök igen om en stund."
 "The configured surcharge cap resolves to zero in %1 and cannot be applied. Please try another payment method or contact support.","Den konfigurerade avgiftsgränsen blir noll i %1 och kan inte tillämpas. Försök med en annan betalningsmetod eller kontakta supporten."
 "Two payment is temporarily unavailable. Please try another payment method or contact support (ref: %1).","Betalning med Two är tillfälligt otillgänglig. Försök med en annan betalningsmetod eller kontakta supporten (ref: %1)."

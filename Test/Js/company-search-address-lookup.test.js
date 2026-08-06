@@ -226,8 +226,7 @@ describe('payment-step company picker (gateway_method.js)', () => {
                         companySearch
                     )
                 }
-            ),
-            companySearch: companySearch
+            )
         };
     }
 

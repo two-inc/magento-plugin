@@ -10,7 +10,7 @@ namespace Two\Gateway\Model\Config\Backend;
 use Magento\Framework\Exception\LocalizedException;
 
 /**
- * Server-side guard on the Surcharge Method field.
+ * Server-side guard on the Surcharge method field.
  *
  * Enforces the same invariant as the guard on the treatment selector —
  * surcharge enabled implies a surcharge tax treatment is explicitly

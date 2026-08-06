@@ -105,7 +105,7 @@ class Loader
             ));
         }
 
-        // Brand-driven Rounding Step dropdown options. Validate at load
+        // Brand-driven Rounding step dropdown options. Validate at load
         // time — nothing validates brand.xsd at runtime, so a malformed
         // <step> would otherwise coerce to 0.0 and silently offer a
         // bogus option. Absent/empty falls back to the parent default.

@@ -13,7 +13,7 @@ use Magento\Framework\Data\Form\Element\AbstractElement;
 use Two\Gateway\Model\Config\NeverTaxedTreatment;
 
 /**
- * Renderer for the Surcharge Tax Treatment field: fails LOUD when the
+ * Renderer for the Surcharge tax treatment field: fails LOUD when the
  * value this scope has stored is a never-taxed treatment (TWO-25279).
  *
  * Never-taxed treatments — core "None" (Product Tax Class id 0) and the

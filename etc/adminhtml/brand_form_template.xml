@@ -323,7 +323,7 @@
                     <config_path>payment/{{code}}/surcharge_tax_class</config_path>
                 </field>
                 <!-- Deprecated: initial attempt at tax support, superseded by the
-                     tax-rule-based Surcharge Tax Treatment selector above. Retained
+                     tax-rule-based Surcharge tax treatment selector above. Retained
                      only for pre-existing merchants (the "Custom" treatment is only
                      offered when a value already exists). Field id renamed at the
                      code level only - the persisted config key deliberately stays

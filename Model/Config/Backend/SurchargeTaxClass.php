@@ -25,7 +25,7 @@ use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource
  * the config save is rejected until the merchant has explicitly picked
  * a treatment. The shared invariant lives in
  * {@see AbstractSurchargeTreatmentGuard} so the sibling guard on the
- * Surcharge Method field enforces exactly the same rule — see that
+ * Surcharge method field enforces exactly the same rule — see that
  * class for why one guard on this field alone is not enough.
  *
  * This model additionally refuses the deprecated "Custom" treatment

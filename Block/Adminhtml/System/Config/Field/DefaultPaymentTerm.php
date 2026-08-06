@@ -13,7 +13,7 @@ use Magento\Framework\Data\Form\Element\AbstractElement;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
- * Renders the "Default Payment Term" select.
+ * Renders the "Default payment term" select.
  *
  * When the admin has not saved an explicit value, the field is
  * pre-selected to the merchant's API default term (due_in_days), so a

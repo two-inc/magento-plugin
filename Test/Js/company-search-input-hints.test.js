@@ -135,13 +135,6 @@ function loadShippingSurface($, companySearch) {
         searchForCompanyText: 'Search for company',
         companyNamePlaceholder: component.companyNamePlaceholder,
         setCompanyData: function () {},
-        // Autofill is out of scope for this fixture — it exercises widget
-        // lifecycle / spinner / hint behaviour, and letting the detail
-        // lookup fire would add unrelated $.ajax traffic to the recorders
-        // these tests count. Stated explicitly rather than left undefined,
-        // so anyone adding an autofill assertion here sees the gate first
-        // (TWO-25326, gateway_method.js::addressLookup()).
-        isAddressAreaCompanySearchEnabled: false,
         addressLookup: component.addressLookup,
         enableCompanySearch: component.enableCompanySearch
     });
@@ -280,13 +273,6 @@ describe('threshold centralisation', () => {
                 subscribe: function () { return { dispose: function () {} }; }
             }),
             fillCompanyData: function () {},
-            // Autofill is out of scope for this fixture — it exercises widget
-            // lifecycle / spinner / hint behaviour, and letting the detail
-            // lookup fire would add unrelated $.ajax traffic to the recorders
-            // these tests count. Stated explicitly rather than left undefined,
-            // so anyone adding an autofill assertion here sees the gate first
-            // (TWO-25326, gateway_method.js::addressLookup()).
-            isAddressAreaCompanySearchEnabled: false,
             addressLookup: component.addressLookup,
             enableCompanySearch: component.enableCompanySearch
         });
