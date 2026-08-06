@@ -28,6 +28,20 @@ const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_meth
 const STOREFRONT_URL = 'https://merchant-storefront.example/';
 
 /**
+ * The host alone, matched separately from the full URL above.
+ *
+ * Magento's `BASE_URL` always ends in a slash, so stripping the trailing slash
+ * is the most natural thing a reintroduction would do — and adversarial review
+ * proved four such normalisations (`replace(/[/]+$/, '')`, `split('://')[1]`,
+ * `encodeURIComponent()`, `toUpperCase()`) sailing past an exact match on the
+ * full URL. The host token survives all four.
+ *
+ * Deliberately NOT shortened to `example`: the fixture's product-image host
+ * shares that suffix, so the assertion would fire on a legitimate field.
+ */
+const STOREFRONT_HOST = 'merchant-storefront.example';
+
+/**
  * Load the renderer with a quote double carrying one physical line item and a
  * complete set of totals, plus a jQuery double that RECORDS the `$.ajax`
  * options instead of issuing a request.
@@ -158,14 +172,20 @@ describe('order-intent request body omits buyer.company.website (TWO-25365)', ()
         // `buyer` and past both source-text regexes below. The merchant's own
         // storefront URL has no business anywhere in this request, so the guard
         // is on the WHOLE body rather than on the buyer object.
-        expect(JSON.stringify(body)).not.toContain(STOREFRONT_URL);
+        //
+        // Two tokens, not one: the full URL, and the bare host for the
+        // normalised forms an exact match cannot see (see STOREFRONT_HOST).
+        // Lower-cased for the guard so an upper-cased value cannot slip by.
+        const wire = JSON.stringify(body);
+        expect(wire).not.toContain(STOREFRONT_URL);
+        expect(wire.toLowerCase()).not.toContain(STOREFRONT_HOST);
     });
 
     test('the source no longer reads window.BASE_URL', () => {
         // The behavioural spec above proves the key is absent from the body it
-        // composes; this pins the GLOBAL itself as unused, so a later change
-        // cannot reintroduce the merchant URL down a path this spec's fixture
-        // does not happen to exercise.
+        // composes. This covers the reverse risk: the global read on a path the
+        // fixture never exercises — a country branch, a later mutation of the
+        // composed object — which no single fixture can reach.
         const fs = require('fs');
         const path = require('path');
         const src = fs.readFileSync(path.resolve(__dirname, '..', '..', RENDERER), 'utf8');
@@ -173,16 +193,31 @@ describe('order-intent request body omits buyer.company.website (TWO-25365)', ()
         // very fix names `window.BASE_URL` — a check matched against the raw
         // text would go red on someone explaining the change, i.e. fail on
         // documentation rather than on code. Proved in adversarial review.
-        const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+        //
+        // Only the two comment forms this file actually uses: JSDoc blocks and
+        // WHOLE-LINE `//`. A general strip is what the previous round used and
+        // it silently WEAKENS this check rather than breaking it — adversarial
+        // review proved both halves: `//` inside a string literal
+        // (`'https://x'`) deletes the rest of that line, and an unanchored
+        // block strip lets a single `'/*'` string constant open a fake comment
+        // that swallows 400+ real lines. Neither construct is in the file
+        // today; the point is that nothing would surface when one arrives.
+        const code = src
+            .replace(/\/\*\*[\s\S]*?\*\//g, '')
+            .replace(/^[ \t]*\/\/[^\n]*$/gm, '');
 
-        expect(code).not.toMatch(/BASE_URL/);
-        // The plain-literal key form only — `'website':`, a computed
-        // `['web' + 'site']` and a newline before the colon all slip past this.
-        // That is fine: those are the mutations the behavioural spec above
-        // catches, and this line exists for the reverse case (the global read
-        // somewhere the fixture never reaches). Narrow on the KEY rather than
-        // the word because Magento's own website-scope vocabulary is legitimate
-        // prose in this file.
-        expect(code).not.toMatch(/\bwebsite\s*:/);
+        // Narrowed to the actual global. A bare /BASE_URL/ also reddens on
+        // `TWO_API_BASE_URL` / `TWO_CHECKOUT_BASE_URL`, which are live
+        // vocabulary elsewhere in this module.
+        expect(code).not.toMatch(/window\s*\.\s*BASE_URL/);
+        // …and the computed form the same review used to evade that regex.
+        // Zero legitimate `window[...]` accesses exist in this file.
+        expect(code).not.toMatch(/window\s*\[/);
+        // Assignment as well as the object-literal key, since a reintroduction
+        // on an unexercised path would most likely mutate the composed object
+        // after the literal (`…company.website = …`) rather than edit it.
+        // Narrow on the KEY rather than the word: Magento's own website-scope
+        // vocabulary is legitimate prose in this file.
+        expect(code).not.toMatch(/\bweb_?site\s*[:=]/);
     });
 });
