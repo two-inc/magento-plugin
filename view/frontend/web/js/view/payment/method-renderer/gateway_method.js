@@ -1634,8 +1634,7 @@ define([
                     company: {
                         organization_number: this.companyId(),
                         country_prefix: billingAddress.countryId,
-                        company_name: this.companyName(),
-                        website: window.BASE_URL
+                        company_name: this.companyName()
                     },
                     representative: {
                         email: this.getEmail(),
