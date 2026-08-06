@@ -28,13 +28,12 @@ const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_meth
 const STOREFRONT_URL = 'https://merchant-storefront.example/';
 
 /**
- * The host alone, matched separately from the full URL above.
- *
- * Magento's `BASE_URL` always ends in a slash, so stripping the trailing slash
- * is the most natural thing a reintroduction would do — and adversarial review
- * proved four such normalisations (`replace(/[/]+$/, '')`, `split('://')[1]`,
- * `encodeURIComponent()`, `toUpperCase()`) sailing past an exact match on the
- * full URL. The host token survives all four.
+ * The host alone, matched separately from the full URL above, because
+ * normalising the value defeats an exact match — Magento's base URL always ends
+ * in a slash, so stripping it is the obvious thing a reintroduction would do.
+ * Adversarial review got four such forms past the full-URL check
+ * (trailing-slash strip, scheme strip, percent-encode, upper-case); the host
+ * token survives all of them.
  *
  * Deliberately NOT shortened to `example`: the fixture's product-image host
  * shares that suffix, so the assertion would fire on a legitimate field.
@@ -91,10 +90,12 @@ function loadRenderer() {
                     price: '90.00',
                     tax_amount: '21.60',
                     tax_percent: '24',
-                    // A DIFFERENT host from STOREFRONT_URL on purpose: a
-                    // product image legitimately carries a merchant-hosted URL,
-                    // and the whole-body guard below would otherwise trip on it
-                    // instead of on the defect.
+                    // A DIFFERENT host from STOREFRONT_URL, and it must STAY
+                    // different: in production this really is the storefront
+                    // base plus `media/...`, so "making the fixture realistic"
+                    // would trip the whole-body guard below with no defect
+                    // present. The guard exists for the merchant URL arriving as
+                    // a company field, which a product image is not.
                     thumbnail: 'https://cdn.example/media/widget.png',
                     is_virtual: '0'
                 }
@@ -107,7 +108,22 @@ function loadRenderer() {
 
     const component = loadAmdModule(
         RENDERER,
-        { jquery: $, 'Magento_Checkout/js/model/quote': quote },
+        {
+            jquery: $,
+            'Magento_Checkout/js/model/quote': quote,
+            // `mage/url` is the OTHER live route to the storefront URL — this
+            // renderer already injects it and calls `url.build(...)` elsewhere.
+            // The harness default returns its argument unchanged, so
+            // `url.build('')` yields '' and a reintroduction through it would be
+            // invisible to the wire assertions. Adversarial review got two such
+            // mutations past this spec, one of them under the removed field's
+            // exact name. Resolving to the real storefront root, as the browser
+            // does, is what makes the body guard cover both routes.
+            'mage/url': {
+                build: function (path) { return STOREFRONT_URL + (path || ''); },
+                setBaseUrl: function () {}
+            }
+        },
         {
             // BASE_URL present and non-empty on purpose — see the file header.
             window: {
@@ -181,43 +197,42 @@ describe('order-intent request body omits buyer.company.website (TWO-25365)', ()
         expect(wire.toLowerCase()).not.toContain(STOREFRONT_HOST);
     });
 
-    test('the source no longer reads window.BASE_URL', () => {
-        // The behavioural spec above proves the key is absent from the body it
-        // composes. This covers the reverse risk: the global read on a path the
-        // fixture never exercises — a country branch, a later mutation of the
-        // composed object — which no single fixture can reach.
+    test('the renderer reintroduces the field on no path, exercised or not', () => {
+        // The behavioural spec above only sees the ONE path its fixture takes.
+        // This covers the reverse risk: the field or the global reappearing on a
+        // path no single fixture reaches — a country branch, a mutation of the
+        // composed object after the literal.
         const fs = require('fs');
         const path = require('path');
         const src = fs.readFileSync(path.resolve(__dirname, '..', '..', RENDERER), 'utf8');
-        // COMMENTS STRIPPED, because the rationale prose that documents this
-        // very fix names `window.BASE_URL` — a check matched against the raw
-        // text would go red on someone explaining the change, i.e. fail on
-        // documentation rather than on code. Proved in adversarial review.
+        // Comments stripped, or this check fails on DOCUMENTATION rather than on
+        // code: prose explaining this very fix necessarily names the global, and
+        // round 1 proved a raw-text match going red on exactly that.
         //
-        // Only the two comment forms this file actually uses: JSDoc blocks and
-        // WHOLE-LINE `//`. A general strip is what the previous round used and
-        // it silently WEAKENS this check rather than breaking it — adversarial
-        // review proved both halves: `//` inside a string literal
-        // (`'https://x'`) deletes the rest of that line, and an unanchored
-        // block strip lets a single `'/*'` string constant open a fake comment
-        // that swallows 400+ real lines. Neither construct is in the file
-        // today; the point is that nothing would surface when one arrives.
+        // Only the two comment forms this file uses — JSDoc blocks and
+        // whole-line `//`. A general strip silently WEAKENS the check instead of
+        // breaking it: `//` inside a string literal eats the rest of that line,
+        // and one `'/*'` string constant opens a fake comment swallowing
+        // hundreds of real lines. Neither shape is in the file today; the point
+        // is that nothing would surface when one arrives.
         const code = src
             .replace(/\/\*\*[\s\S]*?\*\//g, '')
             .replace(/^[ \t]*\/\/[^\n]*$/gm, '');
 
-        // Narrowed to the actual global. A bare /BASE_URL/ also reddens on
-        // `TWO_API_BASE_URL` / `TWO_CHECKOUT_BASE_URL`, which are live
-        // vocabulary elsewhere in this module.
-        expect(code).not.toMatch(/window\s*\.\s*BASE_URL/);
-        // …and the computed form the same review used to evade that regex.
-        // Zero legitimate `window[...]` accesses exist in this file.
+        // The bare token, not `window.BASE_URL`: narrowing to the member access
+        // let `const { BASE_URL } = window` through, and this file contains no
+        // other `*BASE_URL` name to false-positive on (the local-dev env vars of
+        // that shape live in PHP config and shell, which this never reads).
+        expect(code).not.toMatch(/\bBASE_URL\b/);
+        // The computed form evades the token check entirely
+        // (`window['BASE_' + 'URL']`), and this file has no legitimate computed
+        // window access, so banning the construct costs nothing here.
         expect(code).not.toMatch(/window\s*\[/);
-        // Assignment as well as the object-literal key, since a reintroduction
-        // on an unexercised path would most likely mutate the composed object
-        // after the literal (`…company.website = …`) rather than edit it.
-        // Narrow on the KEY rather than the word: Magento's own website-scope
-        // vocabulary is legitimate prose in this file.
-        expect(code).not.toMatch(/\bweb_?site\s*[:=]/);
+        // No `\b` before `web`: the boundary fails after an underscore, so
+        // `company_website:` — a likely name if the field moves out of
+        // `buyer.company` — slipped past. Assignment as well as the literal key,
+        // for the after-the-fact mutation case. Still the KEY rather than the
+        // bare word, so ordinary prose about Magento's website scope stays legal.
+        expect(code).not.toMatch(/web_?site\s*[:=]/);
     });
 });
