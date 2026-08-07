@@ -101,14 +101,19 @@
             <group id="display" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>Title &amp; Display</label>
+                <!-- TWO-25386: no <depends> on "active" here — Magento renders each
+                     top-level <section> as its own admin page, so a <depends> can
+                     only resolve within the section it's declared in (bare id =
+                     same group; "group/field" = same section). "active" lives in
+                     two_general now, a different page from this section, so the
+                     dependency could never fire; kept as dead XML pre-regroup only
+                     because it happened to still be in the same section as "active"
+                     back then. Removed rather than left as inert-looking markup. -->
                 <field id="title" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                        showInStore="1" canRestore="1">
                     <label>Title</label>
                     <comment>Descriptive title which gives the buyer a better understanding of this payment method</comment>
                     <validate>required-entry</validate>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
                     <config_path>payment/two_payment/title</config_path>
                 </field>
                 <!-- TWO-25386: ported from prestashop-plugin's per-language PS_TWO_SUB_TITLE.
@@ -119,9 +124,6 @@
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Subtitle</label>
                     <comment>Optional line shown beneath the title at checkout (e.g. "Buy now, pay later"). Leave blank to use the default. Can be set per store view.</comment>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
                     <config_path>payment/two_payment/subtitle</config_path>
                 </field>
                 <field id="sort_order" translate="label comment" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"
@@ -157,9 +159,6 @@
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\MinimumOrderValue</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\MerchantMinimumOrder</backend_model>
                     <comment model="Two\Gateway\Model\Config\Comment\MerchantMinimumOrder"/>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
                     <config_path>payment/two_payment/merchant_minimum_order</config_path>
                 </field>
                 <field id="merchant_minimum_order_basis" translate="label comment" type="select" sortOrder="40"
@@ -167,9 +166,6 @@
                     <label>Minimum order value tax basis</label>
                     <comment>Whether the basket is compared against the minimum including or excluding tax</comment>
                     <source_model>Two\Gateway\Model\Config\Source\MinimumOrderBasis</source_model>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
                     <config_path>payment/two_payment/merchant_minimum_order_basis</config_path>
                 </field>
                 <field id="enable_order_intent" translate="label comment" type="select" sortOrder="50" showInDefault="1"
@@ -265,14 +261,19 @@
             <group id="search" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>Company Lookup</label>
+                <!-- TWO-25386: no <depends> on "active" — it lives in a different
+                     top-level <section> (two_general) than this one, and Magento
+                     can only resolve <depends> within the section it's declared
+                     in, since each section renders as its own admin page. This
+                     was already the case before this PR (the old two_search
+                     section vs. the old two_payment section); pre-existing dead
+                     markup, removed while this PR is already touching the same
+                     contract elsewhere. -->
                 <field id="enable_company_search" translate="label comment" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Enable company search in address entry</label>
                     <comment>When enabled, the buyer may search for their company within the address entry section of the checkout. Otherwise, company search will be visible within the payment method.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
                     <config_path>payment/two_payment/enable_company_search</config_path>
                 </field>
                 <field id="enable_address_search" translate="label comment" type="select" sortOrder="20" showInDefault="1"
@@ -280,9 +281,6 @@
                     <label>Autofill company address</label>
                     <comment>Autocomplete address based on selected country and company. Only takes effect when company search in address entry is also enabled.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
                     <config_path>payment/two_payment/enable_address_search</config_path>
                 </field>
             </group>

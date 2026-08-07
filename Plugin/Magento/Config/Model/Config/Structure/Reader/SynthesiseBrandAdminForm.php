@@ -16,8 +16,9 @@ use Two\Gateway\Model\Brand\Loader;
 
 /**
  * Synthesises a brand's admin Configuration surface — tab plus
- * the four canonical sections (`{prefix}_general`, `{prefix}_payment`,
- * `{prefix}_search`, `{prefix}_version`) — by stamping
+ * the six canonical sections (`{prefix}_general`, `{prefix}_checkout_fields`,
+ * `{prefix}_search`, `{prefix}_payment`, `{prefix}_order_management`,
+ * `{prefix}_version` — TWO-25386's A-F regroup) — by stamping
  * `etc/adminhtml/brand_form_template.xml` against each brand's
  * `Brand\Descriptor` and feeding the result through
  * `Magento\Config\Model\Config\Structure\Converter::convert`. The

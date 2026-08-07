@@ -151,15 +151,16 @@
                    showInDefault="1" showInWebsite="1" showInStore="1"
                    brand_code="{{code}}">
                 <label>Title &amp; Display</label>
+                <!-- TWO-25386: no <depends> on "active" here — see the matching
+                     comment in system.xml. Each top-level <section> is its own
+                     admin page; "active" now lives in {{section_prefix}}_general,
+                     a different page, so the dependency could never fire. -->
                 <field id="title" translate="label" type="text" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
                     <label>Title</label>
                     <comment>Descriptive title which gives the buyer a better understanding of this payment method</comment>
                     <validate>required-entry</validate>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
                     <config_path>payment/{{code}}/title</config_path>
                 </field>
                 <field id="subtitle" translate="label comment" type="text" sortOrder="20"
@@ -167,9 +168,6 @@
                        canRestore="1" brand_code="{{code}}">
                     <label>Subtitle</label>
                     <comment>Optional line shown beneath the title at checkout (e.g. "Buy now, pay later"). Leave blank to use the default. Can be set per store view.</comment>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
                     <config_path>payment/{{code}}/subtitle</config_path>
                 </field>
                 <field id="sort_order" translate="label comment" type="text" sortOrder="30"
@@ -212,9 +210,6 @@
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\MinimumOrderValue</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\MerchantMinimumOrder</backend_model>
                     <comment model="Two\Gateway\Model\Config\Comment\MerchantMinimumOrder"/>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
                     <config_path>payment/{{code}}/merchant_minimum_order</config_path>
                 </field>
                 <field id="merchant_minimum_order_basis" translate="label comment" type="select" sortOrder="40"
@@ -223,9 +218,6 @@
                     <label>Minimum order value tax basis</label>
                     <comment>Whether the basket is compared against the minimum including or excluding tax</comment>
                     <source_model>Two\Gateway\Model\Config\Source\MinimumOrderBasis</source_model>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
                     <config_path>payment/{{code}}/merchant_minimum_order_basis</config_path>
                 </field>
                 <field id="enable_order_intent" translate="label" type="select" sortOrder="50"
@@ -345,15 +337,16 @@
                    showInDefault="1" showInWebsite="1" showInStore="1"
                    brand_code="{{code}}">
                 <label>Company Lookup</label>
+                <!-- TWO-25386: no <depends> on "active" — it lives in a different
+                     top-level <section> ({{section_prefix}}_general) than this
+                     one; pre-existing dead markup (same issue pre-dates this PR),
+                     removed while this PR is already touching the same contract. -->
                 <field id="enable_company_search" translate="label comment" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
                     <label>Enable company search in address entry</label>
                     <comment>When enabled, the buyer may search for their company within the address entry section of the checkout. Otherwise, company search will be visible within the payment method.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
                     <config_path>payment/{{code}}/enable_company_search</config_path>
                 </field>
                 <field id="enable_address_search" translate="label comment" type="select" sortOrder="20"
@@ -362,9 +355,6 @@
                     <label>Autofill company address</label>
                     <comment>Autocomplete address based on selected country and company. Only takes effect when company search in address entry is also enabled.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
                     <config_path>payment/{{code}}/enable_address_search</config_path>
                 </field>
             </group>
