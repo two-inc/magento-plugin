@@ -105,7 +105,7 @@ across modules). Elements may appear in any order (`xs:all`).
 | ---------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `code`           | yes      | Brand + payment-method code (`[a-z][a-z0-9_]*`). Keyed into `sales_order.payment.method` and `core_config_data` paths — frozen for live installs.                       |
 | `tab_sort_order` | yes      | Admin Configuration tab ordering.                                                                                                                                       |
-| `section_prefix` | no       | Prefix for synthesised admin section ids (`{prefix}_general`, `{prefix}_payment`, …) and the tab id `{prefix}_gateway`. Defaults to `code` minus a trailing `_payment`. |
+| `section_prefix` | no       | Prefix for synthesised admin section ids (`{prefix}_general`, `{prefix}_checkout_fields`, `{prefix}_search`, `{prefix}_payment`, `{prefix}_order_management`, `{prefix}_version` — TWO-25386's A-F regroup) and the tab id `{prefix}_gateway`. Defaults to `code` minus a trailing `_payment`. |
 
 **Elements**
 
@@ -295,6 +295,19 @@ in the canonical template but doesn't render for this brand. Use this
 instead of shipping a `<section>` stub in the overlay's system.xml —
 a static stub inserts itself into the merged Structure first and
 short-circuits the synthesised section ordering.
+
+**TWO-25386 moved some fields to a different section suffix.** `title`,
+`subtitle`, `sort_order`, `sallowspecific`/`specificcountry`,
+`merchant_minimum_order(_basis)` and `enable_order_intent` now live
+under `{section_prefix}_checkout_fields` (groups `display`/
+`availability`) instead of `{section_prefix}_payment`;
+`fulfill_trigger`, `fulfill_order_status` and `enable_tax_subtotals`
+now live under `{section_prefix}_order_management` (group
+`order_management`) instead of `{section_prefix}_payment`/`advanced`.
+Any `suppressed_fields` entry targeting one of those fields by its old
+`payment/advanced/…` or `payment/payment_method/…` path needs its
+`section_suffix` segment updated to match, or the suppression silently
+stops matching and the field reappears for that brand.
 
 ## Worked example: adding a brand-driven field
 

@@ -14,7 +14,10 @@ use Two\Gateway\Api\BrandOverlayRegistryInterface;
 
 /**
  * Hide every vanilla Two_Gateway admin config section (`two_general`,
- * `two_payment`, `two_search`, `two_version`) when:
+ * `two_checkout_fields`, `two_search`, `two_payment`,
+ * `two_order_management`, `two_version` — TWO-25386's A-F regroup:
+ * General/Checkout Fields/Company Lookup/Payment Terms/Order
+ * Management/Diagnostics) when:
  *   - At least one brand overlay (e.g. Overlay_Gateway) is registered, AND
  *   - `two_brand_synthesis/hide_payment_section/enabled` resolves to truthy.
  *
@@ -74,7 +77,14 @@ class HidePaymentSection
     private const HIDE_FLAG_PATH = 'two_brand_synthesis/hide_payment_section/enabled';
     private const LEGACY_HIDE_FLAG_PATH = 'payment/two_payment/hide_when_overlay_installed';
     private const DEFAULT_HIDE = true;
-    private const TARGET_SECTIONS = ['two_general', 'two_payment', 'two_search', 'two_version'];
+    private const TARGET_SECTIONS = [
+        'two_general',
+        'two_checkout_fields',
+        'two_search',
+        'two_payment',
+        'two_order_management',
+        'two_version',
+    ];
 
     public function __construct(
         private readonly BrandOverlayRegistryInterface $overlayRegistry,

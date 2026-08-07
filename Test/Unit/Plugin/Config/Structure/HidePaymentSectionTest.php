@@ -109,6 +109,24 @@ class HidePaymentSectionTest extends TestCase
         $this->assertFalse($plugin->afterIsVisible($this->section('two_search'), true));
     }
 
+    public function testHidesTwoCheckoutFieldsSection(): void
+    {
+        $plugin = $this->plugin(true, true);
+        $this->assertFalse($plugin->afterIsVisible($this->section('two_checkout_fields'), true));
+    }
+
+    public function testHidesTwoOrderManagementSection(): void
+    {
+        $plugin = $this->plugin(true, true);
+        $this->assertFalse($plugin->afterIsVisible($this->section('two_order_management'), true));
+    }
+
+    public function testHidesTwoVersionSection(): void
+    {
+        $plugin = $this->plugin(true, true);
+        $this->assertFalse($plugin->afterIsVisible($this->section('two_version'), true));
+    }
+
     // --- TWO-25191: flag moved to two_brand_synthesis/, legacy path still read ---
 
     public function testNewPathSetToZeroShows(): void

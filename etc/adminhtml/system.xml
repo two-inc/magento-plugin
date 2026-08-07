@@ -11,6 +11,26 @@
         <tab id="two_gateway" translate="label comment" class="two-extension two-extension--no-caption" sortOrder="500">
             <label>Two</label>
         </tab>
+        <!--
+            TWO-25386 Part 1: unified 6-section admin scheme, same names
+            and order as prestashop-plugin and woocommerce-plugin —
+            A. General, B. Checkout Fields, C. Company Lookup,
+            D. Payment Terms, E. Order Management, F. Diagnostics.
+
+            Pure reorganization: no field's config_path or behavior
+            changed here, only which <section>/<group> it renders under
+            and the section/group labels. `two_general`, `two_search` and
+            `two_payment` keep their historical section ids (relabeled)
+            to avoid breaking Plugin\Config\Structure\HidePaymentSection
+            and any brand-overlay `suppressed_fields` path that targets
+            them by section suffix; `two_checkout_fields` and
+            `two_order_management` are new section ids introduced to
+            hold content split out of the old `two_payment` section.
+            `two_version` keeps its id, relabeled to Diagnostics and
+            folding in the general/debug/health fields that used to
+            live in `two_general`/`two_payment`.
+        -->
+        <!-- A. General -->
         <section id="two_general" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                  showInStore="1">
             <class>separator-top</class>
@@ -20,6 +40,13 @@
             <group id="general" translate="label comment" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>General</label>
+                <field id="active" translate="label comment" type="select" sortOrder="5" showInDefault="1" showInWebsite="1"
+                       showInStore="1" canRestore="1">
+                    <label>Enable payment method</label>
+                    <comment>Activates this plugin as a payment option in the checkout page</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/two_payment/active</config_path>
+                </field>
                 <field id="mode" translate="label comment" type="select" sortOrder="35" showInDefault="1" showInWebsite="1"
                        showInStore="1">
                     <label>Environment</label>
@@ -52,91 +79,29 @@
                     <comment>Optional. If you run Two across multiple sites or stores that share one merchant account, enter a name here to identify this site's orders.</comment>
                     <config_path>payment/two_payment/vendor_site_name</config_path>
                 </field>
-                <field id="debug" translate="label comment" type="select" sortOrder="60" showInDefault="1" showInWebsite="1"
-                       showInStore="1">
-                    <label>Debug mode</label>
-                    <comment>The debug mode enables writing to the error logs below. Debug mode should only be enabled when the sandbox environment is active</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/two_payment/debug</config_path>
-                </field>
-                <field id="debug_button" translate="label comment" type="button" sortOrder="70" showInDefault="1"
-                       showInWebsite="0" showInStore="0">
-                    <label/>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Button\DebugCheck</frontend_model>
-                </field>
-                <field id="error_button" translate="label comment" type="button" sortOrder="80" showInDefault="1"
-                       showInWebsite="0" showInStore="0">
-                    <label/>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Button\ErrorCheck</frontend_model>
-                </field>
-                <!-- TWO-25386: ported from woocommerce-plugin's 'skip_confirm_auth'.
-                     See Controller\Payment\Confirm — Magento's confirmation callback
-                     has no separate nonce layer to skip today (only the mandatory
-                     order-reference match), so this flag is currently a documented
-                     no-op kept for admin-surface parity across plugins. -->
-                <field id="skip_confirm_nonce_check" translate="label comment" type="select" sortOrder="85"
+                <!-- TWO-25386: ported from prestashop-plugin's PS_TWO_DISABLE_SSL_VERIFY.
+                     Default OFF (verification on / secure). Fixes Service\Api\Adapter,
+                     which previously disabled TLS verification unconditionally. -->
+                <field id="disable_ssl_verify" translate="label comment" type="select" sortOrder="65"
                        showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Skip confirm-order nonce check</label>
-                    <comment>Debug/support use only. No effect today: Magento's order-confirmation callback is identified solely by the order reference, which is always checked and cannot be skipped.</comment>
+                    <label>Disable SSL verification</label>
+                    <comment><![CDATA[<strong>WARNING: unsafe for production.</strong> Skips TLS certificate verification on outbound calls to the Two API. Only enable this if this store sits behind a corporate proxy that terminates TLS with its own certificate. Leave this Off everywhere else.]]></comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/two_payment/skip_confirm_nonce_check</config_path>
-                </field>
-                <!-- TWO-25386: ported from woocommerce-plugin's 'clear_options_on_deactivation'.
-                     Magento's nearest lifecycle event is module uninstall, not
-                     deactivation; see Setup\Uninstall. -->
-                <field id="clear_settings_on_uninstall" translate="label comment" type="select" sortOrder="90"
-                       showInDefault="1" showInWebsite="0" showInStore="0" canRestore="1">
-                    <label>Clear settings on module uninstall</label>
-                    <comment>When this module is uninstalled (bin/magento module:uninstall), delete its stored configuration instead of leaving it behind.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/two_payment/clear_settings_on_uninstall</config_path>
-                </field>
-                <!-- TWO-25386: ported from prestashop-plugin's install health checklist. -->
-                <field id="health_checklist" translate="label comment" type="button" sortOrder="95"
-                       showInDefault="1" showInWebsite="1" showInStore="1">
-                    <label>Health checklist</label>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\HealthChecklist</frontend_model>
+                    <config_path>payment/two_payment/disable_ssl_verify</config_path>
                 </field>
             </group>
         </section>
-        <section id="two_payment" translate="label comment" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
-                 showInStore="1">
+        <!-- B. Checkout Fields -->
+        <section id="two_checkout_fields" translate="label comment" type="text" sortOrder="20" showInDefault="1"
+                 showInWebsite="1" showInStore="1">
             <class>separator-top</class>
-            <label>Payment</label>
+            <label>Checkout Fields</label>
             <tab>two_gateway</tab>
             <resource>Magento_Sales::config_sales</resource>
-            <group id="payment_method" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
+            <group id="display" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                    showInStore="1">
-                <label>Payment method</label>
-                <field id="active" translate="label comment" type="select" sortOrder="10" showInDefault="1" showInWebsite="1"
-                       showInStore="1" canRestore="1">
-                    <label>Enable payment method</label>
-                    <comment>Activates this plugin as a payment option in the checkout page</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/two_payment/active</config_path>
-                </field>
-                <field id="merchant_minimum_order" translate="label" type="text" sortOrder="25" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Minimum order value</label>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\MinimumOrderValue</frontend_model>
-                    <backend_model>Two\Gateway\Model\Config\Backend\MerchantMinimumOrder</backend_model>
-                    <comment model="Two\Gateway\Model\Config\Comment\MerchantMinimumOrder"/>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
-                    <config_path>payment/two_payment/merchant_minimum_order</config_path>
-                </field>
-                <field id="merchant_minimum_order_basis" translate="label comment" type="select" sortOrder="26"
-                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Minimum order value tax basis</label>
-                    <comment>Whether the basket is compared against the minimum including or excluding tax</comment>
-                    <source_model>Two\Gateway\Model\Config\Source\MinimumOrderBasis</source_model>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
-                    <config_path>payment/two_payment/merchant_minimum_order_basis</config_path>
-                </field>
-                <field id="title" translate="label comment" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
+                <label>Title &amp; Display</label>
+                <field id="title" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                        showInStore="1" canRestore="1">
                     <label>Title</label>
                     <comment>Descriptive title which gives the buyer a better understanding of this payment method</comment>
@@ -150,7 +115,7 @@
                      showInStore="1" gives the same per-store-view override PrestaShop gets
                      from its per-language storage; empty falls back to the brand default
                      (BrandRegistryInterface::getCheckoutSubtitle). -->
-                <field id="subtitle" translate="label comment" type="text" sortOrder="21" showInDefault="1"
+                <field id="subtitle" translate="label comment" type="text" sortOrder="20" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Subtitle</label>
                     <comment>Optional line shown beneath the title at checkout (e.g. "Buy now, pay later"). Leave blank to use the default. Can be set per store view.</comment>
@@ -159,8 +124,63 @@
                     </depends>
                     <config_path>payment/two_payment/subtitle</config_path>
                 </field>
+                <field id="sort_order" translate="label comment" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"
+                       showInStore="1" canRestore="1">
+                    <label>Sort order</label>
+                    <comment>Controls the position of this payment method relative to other payment methods at checkout. Lower numbers appear first. Default is empty (no specific order).</comment>
+                    <config_path>payment/two_payment/sort_order</config_path>
+                </field>
             </group>
-            <group id="checkout_fields" translate="label comment" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
+            <group id="availability" translate="label comment" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
+                   showInStore="1">
+                <label>Availability &amp; Minimum Order</label>
+                <field id="sallowspecific" translate="label comment" type="select" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="0" canRestore="1">
+                    <label>Country availability</label>
+                    <comment>Choose whether to enable this payment method for all allowed countries or only specific ones.</comment>
+                    <frontend_class>shipping-applicable-country</frontend_class>
+                    <source_model>Magento\Shipping\Model\Config\Source\Allspecificcountries</source_model>
+                    <config_path>payment/two_payment/allowspecific</config_path>
+                </field>
+                <field id="specificcountry" translate="label comment" type="multiselect" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="0" canRestore="1">
+                    <label>Allowed countries</label>
+                    <comment>Select the countries where this payment method should be available.</comment>
+                    <source_model>Magento\Directory\Model\Config\Source\Country</source_model>
+                    <can_be_empty>1</can_be_empty>
+                    <depends>
+                        <field id="sallowspecific">1</field>
+                    </depends>
+                    <config_path>payment/two_payment/specificcountry</config_path>
+                </field>
+                <field id="merchant_minimum_order" translate="label" type="text" sortOrder="30" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Minimum order value</label>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\MinimumOrderValue</frontend_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\MerchantMinimumOrder</backend_model>
+                    <comment model="Two\Gateway\Model\Config\Comment\MerchantMinimumOrder"/>
+                    <depends>
+                        <field id="active">1</field>
+                    </depends>
+                    <config_path>payment/two_payment/merchant_minimum_order</config_path>
+                </field>
+                <field id="merchant_minimum_order_basis" translate="label comment" type="select" sortOrder="40"
+                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Minimum order value tax basis</label>
+                    <comment>Whether the basket is compared against the minimum including or excluding tax</comment>
+                    <source_model>Two\Gateway\Model\Config\Source\MinimumOrderBasis</source_model>
+                    <depends>
+                        <field id="active">1</field>
+                    </depends>
+                    <config_path>payment/two_payment/merchant_minimum_order_basis</config_path>
+                </field>
+                <field id="enable_order_intent" translate="label comment" type="select" sortOrder="50" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Enable order intent</label>
+                    <comment>Perform a check during checkout to inform the buyer whether an order is likely to be accepted before being placed (recommended).</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/two_payment/enable_order_intent</config_path>
+                </field>
+            </group>
+            <group id="checkout_fields" translate="label comment" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>Checkout fields</label>
                 <!--
@@ -234,10 +254,57 @@
                     <config_path>payment/two_payment/display_tooltips</config_path>
                 </field>
             </group>
-            <group id="payment_terms" translate="label comment" type="text" sortOrder="25" showInDefault="1" showInWebsite="1"
+        </section>
+        <!-- C. Company Lookup -->
+        <section id="two_search" translate="label comment" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"
+                 showInStore="1">
+            <class>separator-top</class>
+            <label>Company Lookup</label>
+            <tab>two_gateway</tab>
+            <resource>Magento_Sales::config_sales</resource>
+            <group id="search" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
+                   showInStore="1">
+                <label>Company Lookup</label>
+                <field id="enable_company_search" translate="label comment" type="select" sortOrder="10"
+                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Enable company search in address entry</label>
+                    <comment>When enabled, the buyer may search for their company within the address entry section of the checkout. Otherwise, company search will be visible within the payment method.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <depends>
+                        <field id="active">1</field>
+                    </depends>
+                    <config_path>payment/two_payment/enable_company_search</config_path>
+                </field>
+                <field id="enable_address_search" translate="label comment" type="select" sortOrder="20" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Autofill company address</label>
+                    <comment>Autocomplete address based on selected country and company. Only takes effect when company search in address entry is also enabled.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <depends>
+                        <field id="active">1</field>
+                    </depends>
+                    <config_path>payment/two_payment/enable_address_search</config_path>
+                </field>
+            </group>
+        </section>
+        <!-- D. Payment Terms -->
+        <section id="two_payment" translate="label comment" type="text" sortOrder="40" showInDefault="1" showInWebsite="1"
+                 showInStore="1">
+            <class>separator-top</class>
+            <label>Payment Terms</label>
+            <tab>two_gateway</tab>
+            <resource>Magento_Sales::config_sales</resource>
+            <group id="payment_terms" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>Payment terms</label>
-                <field id="payment_terms" translate="label comment" type="text" sortOrder="10" showInDefault="1"
+                <field id="payment_terms_type" translate="label comment" type="select" sortOrder="10" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Payment terms type</label>
+                    <comment><![CDATA[<strong>Standard:</strong> Payment due after a fixed number of days from fulfilment.<br/><strong>End of Month:</strong> Payment due at the end of month plus additional days from fulfilment.]]></comment>
+                    <source_model>Two\Gateway\Model\Config\Source\PaymentTermsType</source_model>
+                    <config_path>payment/two_payment/payment_terms_type</config_path>
+                </field>
+                <field id="payment_terms" translate="label comment" type="text" sortOrder="20" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Payment terms</label>
                     <comment>Select the payment term(s) you want to offer.</comment>
@@ -245,19 +312,12 @@
                     <backend_model>Two\Gateway\Model\Config\Backend\PaymentTermsCheckboxes</backend_model>
                     <config_path>payment/two_payment/payment_terms</config_path>
                 </field>
-                <field id="payment_terms_duration_days" translate="label comment" type="text" sortOrder="20" showInDefault="1"
+                <field id="payment_terms_duration_days" translate="label comment" type="text" sortOrder="30" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Custom payment term (days)</label>
                     <comment>Optional. Enter a custom number of days to offer alongside the selected terms above.</comment>
                     <validate>validate-digits validate-zero-or-greater</validate>
                     <config_path>payment/two_payment/payment_terms_duration_days</config_path>
-                </field>
-                <field id="payment_terms_type" translate="label comment" type="select" sortOrder="30" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Payment terms type</label>
-                    <comment><![CDATA[<strong>Standard:</strong> Payment due after a fixed number of days from fulfilment.<br/><strong>End of Month:</strong> Payment due at the end of month plus additional days from fulfilment.]]></comment>
-                    <source_model>Two\Gateway\Model\Config\Source\PaymentTermsType</source_model>
-                    <config_path>payment/two_payment/payment_terms_type</config_path>
                 </field>
                 <field id="default_payment_term" translate="label comment" type="select" sortOrder="40" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
@@ -292,8 +352,35 @@
                     <comment><![CDATA[Description shown to the buyer for the surcharge line item. Use <strong>%1</strong> to insert the selected number of days (e.g. "Payment terms fee - %1 days"). If you leave the default, the word <em>days</em> is translated per locale.]]></comment>
                     <config_path>payment/two_payment/surcharge_line_description</config_path>
                 </field>
-
-                <field id="surcharge_tax_class" translate="label comment" type="select" sortOrder="80"
+                <!-- Per-term surcharge grid (fixed, percentage, limit per term) -->
+                <field id="surcharge_grid" translate="label comment" type="text" sortOrder="80" showInDefault="1"
+                       showInWebsite="1" showInStore="1">
+                    <label>Payment surcharge configuration</label>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeGrid</frontend_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\SurchargeGrid</backend_model>
+                </field>
+                <field id="surcharge_rounding_basis" translate="label comment" type="select" sortOrder="90"
+                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Surcharge rounding</label>
+                    <comment>Snap the buyer surcharge line item to a clean increment. Select None for standard two-decimal amounts.</comment>
+                    <source_model>Two\Gateway\Model\Config\Source\RoundingBasis</source_model>
+                    <config_path>payment/two_payment/surcharge_rounding_basis</config_path>
+                    <depends>
+                        <field id="surcharge_type" separator=",">percentage,fixed_and_percentage</field>
+                    </depends>
+                </field>
+                <field id="surcharge_rounding_step" translate="label comment" type="select" sortOrder="100"
+                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Rounding step</label>
+                    <comment><![CDATA[Increment the surcharge is rounded to (e.g. 1 = whole units, 0.50 = nearest half).]]></comment>
+                    <source_model>Two\Gateway\Model\Config\Source\RoundingStep</source_model>
+                    <config_path>payment/two_payment/surcharge_rounding_step</config_path>
+                    <depends>
+                        <field id="surcharge_type" separator=",">percentage,fixed_and_percentage</field>
+                        <field id="surcharge_rounding_basis" separator=",">up,down,standard</field>
+                    </depends>
+                </field>
+                <field id="surcharge_tax_class" translate="label comment" type="select" sortOrder="110"
                        showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Surcharge tax treatment</label>
                     <!-- The never-taxed options this selector used to offer
@@ -314,7 +401,7 @@
                      offered when a value already exists). Field id renamed at the
                      code level only — the persisted config key deliberately stays
                      payment/two_payment/surcharge_tax_rate (no data migration). -->
-                <field id="custom_surcharge_tax_rate" translate="label comment" type="text" sortOrder="90" showInDefault="1"
+                <field id="custom_surcharge_tax_rate" translate="label comment" type="text" sortOrder="120" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Custom surcharge tax rate (%)</label>
                     <comment>Deprecated flat tax rate. Only used with the Custom surcharge tax treatment above.</comment>
@@ -327,55 +414,18 @@
                         <field id="surcharge_type" separator=",">percentage,fixed,fixed_and_percentage</field>
                     </depends>
                 </field>
-                <!-- Per-term surcharge grid (fixed, percentage, limit per term) -->
-                <field id="surcharge_grid" translate="label comment" type="text" sortOrder="100" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
-                    <label>Payment surcharge configuration</label>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeGrid</frontend_model>
-                    <backend_model>Two\Gateway\Model\Config\Backend\SurchargeGrid</backend_model>
-                </field>
-                <field id="surcharge_rounding_basis" translate="label comment" type="select" sortOrder="110"
-                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Surcharge rounding</label>
-                    <comment>Snap the buyer surcharge line item to a clean increment. Select None for standard two-decimal amounts.</comment>
-                    <source_model>Two\Gateway\Model\Config\Source\RoundingBasis</source_model>
-                    <config_path>payment/two_payment/surcharge_rounding_basis</config_path>
-                    <depends>
-                        <field id="surcharge_type" separator=",">percentage,fixed_and_percentage</field>
-                    </depends>
-                </field>
-                <field id="surcharge_rounding_step" translate="label comment" type="select" sortOrder="120"
-                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Rounding step</label>
-                    <comment><![CDATA[Increment the surcharge is rounded to (e.g. 1 = whole units, 0.50 = nearest half).]]></comment>
-                    <source_model>Two\Gateway\Model\Config\Source\RoundingStep</source_model>
-                    <config_path>payment/two_payment/surcharge_rounding_step</config_path>
-                    <depends>
-                        <field id="surcharge_type" separator=",">percentage,fixed_and_percentage</field>
-                        <field id="surcharge_rounding_basis" separator=",">up,down,standard</field>
-                    </depends>
-                </field>
             </group>
-            <group id="advanced" translate="label comment" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"
+        </section>
+        <!-- E. Order Management -->
+        <section id="two_order_management" translate="label comment" type="text" sortOrder="50" showInDefault="1"
+                 showInWebsite="1" showInStore="1">
+            <class>separator-top</class>
+            <label>Order Management</label>
+            <tab>two_gateway</tab>
+            <resource>Magento_Sales::config_sales</resource>
+            <group id="order_management" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                    showInStore="1">
-                <label>Advanced</label>
-                <field id="sallowspecific" translate="label comment" type="select" sortOrder="5" showInDefault="1" showInWebsite="1" showInStore="0" canRestore="1">
-                    <label>Country availability</label>
-                    <comment>Choose whether to enable this payment method for all allowed countries or only specific ones.</comment>
-                    <frontend_class>shipping-applicable-country</frontend_class>
-                    <source_model>Magento\Shipping\Model\Config\Source\Allspecificcountries</source_model>
-                    <config_path>payment/two_payment/allowspecific</config_path>
-                </field>
-                <field id="specificcountry" translate="label comment" type="multiselect" sortOrder="6" showInDefault="1" showInWebsite="1" showInStore="0" canRestore="1">
-                    <label>Allowed countries</label>
-                    <comment>Select the countries where this payment method should be available.</comment>
-                    <source_model>Magento\Directory\Model\Config\Source\Country</source_model>
-                    <can_be_empty>1</can_be_empty>
-                    <depends>
-                        <field id="sallowspecific">1</field>
-                    </depends>
-                    <config_path>payment/two_payment/specificcountry</config_path>
-                </field>
+                <label>Order Management</label>
                 <field id="fulfill_trigger" translate="label comment" type="select" sortOrder="10" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Fulfilment trigger</label>
@@ -393,88 +443,94 @@
                     </depends>
                     <config_path>payment/two_payment/fulfill_order_status</config_path>
                 </field>
-                <field id="enable_order_intent" translate="label comment" type="select" sortOrder="30" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Enable order intent</label>
-                    <comment>Perform a check during checkout to inform the buyer whether an order is likely to be accepted before being placed (recommended).</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/two_payment/enable_order_intent</config_path>
-                </field>
-                <field id="enable_tax_subtotals" translate="label comment" type="select" sortOrder="40" showInDefault="1"
+                <field id="enable_tax_subtotals" translate="label comment" type="select" sortOrder="30" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Enable tax subtotals</label>
                     <comment>Add optional tax_subtotals metadata to order creation payload to enforce additional validation (recommended).</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/enable_tax_subtotals</config_path>
                 </field>
-                <field id="sort_order" translate="label comment" type="text" sortOrder="70" showInDefault="1" showInWebsite="1"
-                       showInStore="1" canRestore="1">
-                    <label>Sort order</label>
-                    <comment>Controls the position of this payment method relative to other payment methods at checkout. Lower numbers appear first. Default is empty (no specific order).</comment>
-                    <config_path>payment/two_payment/sort_order</config_path>
-                </field>
-                <!-- TWO-25386: ported from prestashop-plugin's PS_TWO_DISABLE_SSL_VERIFY.
-                     Default OFF (verification on / secure). Fixes Service\Api\Adapter,
-                     which previously disabled TLS verification unconditionally. -->
-                <field id="disable_ssl_verify" translate="label comment" type="select" sortOrder="80"
-                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Disable SSL verification</label>
-                    <comment><![CDATA[<strong>WARNING: unsafe for production.</strong> Skips TLS certificate verification on outbound calls to the Two API. Only enable this if this store sits behind a corporate proxy that terminates TLS with its own certificate. Leave this Off everywhere else.]]></comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/two_payment/disable_ssl_verify</config_path>
-                </field>
-            </group>
-        </section>
-        <section id="two_search" translate="label comment" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"
-                 showInStore="1">
-            <class>separator-top</class>
-            <label>Search</label>
-            <tab>two_gateway</tab>
-            <resource>Magento_Sales::config_sales</resource>
-            <group id="search" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
-                   showInStore="1">
-                <label>Search</label>
-                <field id="enable_company_search" translate="label comment" type="select" sortOrder="10"
-                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Enable company search in address entry</label>
-                    <comment>When enabled, the buyer may search for their company within the address entry section of the checkout. Otherwise, company search will be visible within the payment method.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
-                    <config_path>payment/two_payment/enable_company_search</config_path>
-                </field>
-                <field id="enable_address_search" translate="label comment" type="select" sortOrder="20" showInDefault="1"
-                       showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Autofill company address</label>
-                    <comment>Autocomplete address based on selected country and company. Only takes effect when company search in address entry is also enabled.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
-                    <config_path>payment/two_payment/enable_address_search</config_path>
-                </field>
             </group>
         </section>
         <!--
-            Deployment version panel. Standalone section so the operator
-            can land directly on it from the left nav rather than scrolling
-            past General config. sortOrder=100 keeps it at the bottom of
-            the "Two" tab regardless of how many config sections grow above.
+            F. Diagnostics. Standalone section so the operator can land
+            directly on it from the left nav. Was the "Version" section
+            (two_version, sortOrder=100, kept at the bottom regardless of
+            how many sections grew above it); now folds in the debug/log/
+            admin-control fields that used to live in two_general and
+            two_payment, and sits last in the 6-section A-F scheme at
+            sortOrder=60.
         -->
-        <section id="two_version" translate="label comment" type="text" sortOrder="100" showInDefault="1" showInWebsite="1"
+        <section id="two_version" translate="label comment" type="text" sortOrder="60" showInDefault="1" showInWebsite="1"
                  showInStore="1">
             <class>separator-top</class>
-            <label>Version</label>
+            <label>Diagnostics</label>
             <tab>two_gateway</tab>
             <resource>Magento_Sales::config_sales</resource>
-            <group id="general" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
+            <group id="logging" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
+                   showInStore="1">
+                <label>Debug &amp; Logging</label>
+                <field id="debug" translate="label comment" type="select" sortOrder="10" showInDefault="1" showInWebsite="1"
+                       showInStore="1">
+                    <label>Debug mode</label>
+                    <comment>The debug mode enables writing to the error logs below. Debug mode should only be enabled when the sandbox environment is active</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/two_payment/debug</config_path>
+                </field>
+                <field id="debug_button" translate="label comment" type="button" sortOrder="20" showInDefault="1"
+                       showInWebsite="0" showInStore="0">
+                    <label/>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Button\DebugCheck</frontend_model>
+                </field>
+                <field id="error_button" translate="label comment" type="button" sortOrder="30" showInDefault="1"
+                       showInWebsite="0" showInStore="0">
+                    <label/>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Button\ErrorCheck</frontend_model>
+                </field>
+            </group>
+            <group id="admin_controls" translate="label comment" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
+                   showInStore="1">
+                <label>Admin Controls</label>
+                <!-- TWO-25386: ported from woocommerce-plugin's 'skip_confirm_auth'.
+                     See Controller\Payment\Confirm — Magento's confirmation callback
+                     has no separate nonce layer to skip today (only the mandatory
+                     order-reference match), so this flag is currently a documented
+                     no-op kept for admin-surface parity across plugins. -->
+                <field id="skip_confirm_nonce_check" translate="label comment" type="select" sortOrder="10"
+                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Skip confirm-order nonce check</label>
+                    <comment>Debug/support use only. No effect today: Magento's order-confirmation callback is identified solely by the order reference, which is always checked and cannot be skipped.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/two_payment/skip_confirm_nonce_check</config_path>
+                </field>
+                <!-- TWO-25386: ported from woocommerce-plugin's 'clear_options_on_deactivation'.
+                     Magento's nearest lifecycle event is module uninstall, not
+                     deactivation; see Setup\Uninstall. -->
+                <field id="clear_settings_on_uninstall" translate="label comment" type="select" sortOrder="20"
+                       showInDefault="1" showInWebsite="0" showInStore="0" canRestore="1">
+                    <label>Clear settings on module uninstall</label>
+                    <comment>When this module is uninstalled (bin/magento module:uninstall), delete its stored configuration instead of leaving it behind.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/two_payment/clear_settings_on_uninstall</config_path>
+                </field>
+            </group>
+            <group id="general" translate="label comment" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>Version</label>
                 <field id="version" translate="label comment" type="button" sortOrder="10" showInDefault="1"
                        showInWebsite="1" showInStore="1">
                     <label/>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\Version</frontend_model>
+                </field>
+            </group>
+            <group id="health" translate="label comment" type="text" sortOrder="40" showInDefault="1" showInWebsite="1"
+                   showInStore="1">
+                <label>Health</label>
+                <!-- TWO-25386: ported from prestashop-plugin's install health checklist. -->
+                <field id="health_checklist" translate="label comment" type="button" sortOrder="10"
+                       showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Health checklist</label>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\HealthChecklist</frontend_model>
                 </field>
             </group>
         </section>
