@@ -103,8 +103,18 @@ class Adapter
                 $curl->addHeader($name, $value);
             }
             $curl->setOption(CURLOPT_RETURNTRANSFER, true);
-            $curl->setOption(CURLOPT_SSL_VERIFYHOST, 0);
-            $curl->setOption(CURLOPT_SSL_VERIFYPEER, 0);
+            // TWO-25386: TLS verification is ON by default (secure). Only the
+            // "Disable SSL verification" debug toggle (ported from
+            // prestashop-plugin's PS_TWO_DISABLE_SSL_VERIFY) turns it off, for
+            // stores behind a corporate proxy that terminates TLS with its own
+            // certificate. Previously this was unconditionally disabled here.
+            if ($this->configRepository->isSslVerificationDisabled($storeId)) {
+                $curl->setOption(CURLOPT_SSL_VERIFYHOST, 0);
+                $curl->setOption(CURLOPT_SSL_VERIFYPEER, 0);
+            } else {
+                $curl->setOption(CURLOPT_SSL_VERIFYHOST, 2);
+                $curl->setOption(CURLOPT_SSL_VERIFYPEER, true);
+            }
             $curl->setOption(CURLOPT_TIMEOUT, 60);
 
             if ($call->method == "POST" || $call->method == "PUT") {

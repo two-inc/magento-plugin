@@ -33,6 +33,19 @@
                 <enable_order_note>1</enable_order_note>
                 <enable_project>1</enable_project>
                 <enable_po_number>1</enable_po_number>
+                <vendor_site_name/>
+                <subtitle/>
+                <!-- TWO-25386: show_about_link default ON matches
+                     woocommerce-plugin's default. display_tooltips default ON
+                     preserves Magento's prior behaviour — the optional
+                     checkout field inputs rendered their title-attribute
+                     tooltip unconditionally before this flag existed. -->
+                <show_about_link>1</show_about_link>
+                <display_tooltips>1</display_tooltips>
+                <skip_confirm_nonce_check>0</skip_confirm_nonce_check>
+                <clear_settings_on_uninstall>0</clear_settings_on_uninstall>
+                <!-- TWO-25386: default OFF — TLS verification ON/secure. -->
+                <disable_ssl_verify>0</disable_ssl_verify>
                 <payment_terms_type>standard</payment_terms_type>
                 <payment_terms_duration_days/>
                 <payment_terms>14,30,60,90</payment_terms>

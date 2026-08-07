@@ -757,4 +757,60 @@ class Repository implements RepositoryInterface
     {
         return (float)$this->getConfig($this->path('surcharge_rounding_step'), $storeId);
     }
+
+    /**
+     * @inheritDoc
+     */
+    public function getVendorSiteName(?int $storeId = null): string
+    {
+        return (string)$this->getConfig($this->path('vendor_site_name'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isAboutLinkEnabled(?int $storeId = null): bool
+    {
+        return $this->isSetFlag($this->path('show_about_link'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isDisplayTooltipsEnabled(?int $storeId = null): bool
+    {
+        return $this->isSetFlag($this->path('display_tooltips'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isSkipConfirmNonceCheckEnabled(?int $storeId = null): bool
+    {
+        return $this->isSetFlag($this->path('skip_confirm_nonce_check'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isClearSettingsOnUninstallEnabled(?int $storeId = null): bool
+    {
+        return $this->isSetFlag($this->path('clear_settings_on_uninstall'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getSubtitle(?int $storeId = null): string
+    {
+        return (string)$this->getConfig($this->path('subtitle'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isSslVerificationDisabled(?int $storeId = null): bool
+    {
+        return $this->isSetFlag($this->path('disable_ssl_verify'), $storeId);
+    }
 }

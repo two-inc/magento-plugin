@@ -21,6 +21,17 @@ use Two\Gateway\Service\Payment\OrderService;
 
 /**
  * Payment confirm controller
+ *
+ * TWO-25386: the "Skip confirm-order nonce check" admin toggle
+ * (Api\Config\RepositoryInterface::isSkipConfirmNonceCheckEnabled(), ported
+ * from woocommerce-plugin's WordPress-nonce skip) is DELIBERATELY not
+ * consumed here. This controller identifies the callback solely by the
+ * `_two_order_reference` param (see OrderService::getOrderByReference()),
+ * which is always checked — there is no separate session/nonce layer on
+ * top of it the way WooCommerce's WP nonce sits on top of its own mandatory
+ * order-reference check. The toggle exists for admin-surface parity with
+ * the other plugins; it is a documented no-op until Magento gains an
+ * equivalent signing mechanism to actually gate.
  */
 class Confirm extends Action
 {
