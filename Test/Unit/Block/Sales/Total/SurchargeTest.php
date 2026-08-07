@@ -9,6 +9,7 @@ namespace Two\Gateway\Test\Unit\Block\Sales\Total;
 
 use Magento\Sales\Model\Order;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Block\Sales\Total\Surcharge;
 
 /**
@@ -98,5 +99,78 @@ class SurchargeTest extends TestCase
             $capture->before,
             'surcharge row must sit directly above the Tax line (it contributes to the tax base)'
         );
+    }
+
+    /**
+     * When the order/invoice/creditmemo has no per-order surcharge
+     * description, the row label must fall back to the active brand's
+     * product name, not a hardcoded "Two" — a partner brand overlay must
+     * see its own name on this totals row (TWO-25386 follow-up).
+     *
+     * @dataProvider brandProductNames
+     */
+    public function testLabelFallsBackToBrandProductNameWhenSourceHasNoDescription(string $productName): void
+    {
+        $source = new Order();
+        $source->setData('two_surcharge_amount', 23.99);
+        $source->setData('base_two_surcharge_amount', 23.99);
+        // Deliberately no 'two_surcharge_description' set.
+
+        $capture = new \stdClass();
+        $parent = new class($source, $capture) {
+            private $src;
+            private $cap;
+            public function __construct($src, $cap)
+            {
+                $this->src = $src;
+                $this->cap = $cap;
+            }
+            public function getSource()
+            {
+                return $this->src;
+            }
+            public function addTotalBefore($total, $before)
+            {
+                $this->cap->total = $total;
+                $this->cap->before = $before;
+                return $this;
+            }
+        };
+
+        $brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $brandRegistry->method('getProductName')->willReturn($productName);
+
+        $block = new class($parent, $brandRegistry) extends Surcharge {
+            private $p;
+            private $brand;
+            public function __construct($p, $brand)
+            {
+                $this->p = $p;
+                $this->brand = $brand;
+            }
+            public function getParentBlock()
+            {
+                return $this->p;
+            }
+            protected function getBrandRegistry(): BrandRegistryInterface
+            {
+                return $this->brand;
+            }
+        };
+
+        $block->initTotals();
+
+        $this->assertSame($productName . ' Surcharge', $capture->total->getLabel());
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public function brandProductNames(): array
+    {
+        return [
+            'base brand' => ['Two'],
+            'hypothetical overlay brand' => ['Acme Corp'],
+        ];
     }
 }

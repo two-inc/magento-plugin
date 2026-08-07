@@ -27,9 +27,24 @@
  *                    ids (`{prefix}_general`/`_checkout_fields`/
  *                    `_search`/`_payment`/`_order_management`/
  *                    `_version`).
- *   provider         Short brand name. Currently unused at the
- *                    admin-XML level but reserved for label
- *                    interpolation in follow-ups.
+ *   provider         Short brand name (Descriptor::getProvider()), e.g.
+ *                    "Two", or a partner overlay's own name. Interpolated
+ *                    into a handful of admin <comment>/<label> strings
+ *                    below that would otherwise hardcode "Two" for every
+ *                    brand (TWO-25386 follow-up). Values come from
+ *                    etc/brand.xml (install-time, trusted). A brand name
+ *                    containing an XML control character would corrupt
+ *                    this template same as any other token.
+ *   provider_cdata   Same value as `provider`, substituted RAW (no
+ *                    entity-escaping). Used only inside the
+ *                    "Disable SSL verification" comment below, which is
+ *                    a CDATA section — CDATA content is never
+ *                    entity-decoded, so the entity-escaped `provider`
+ *                    substitution would bake literal "&amp;" etc. into
+ *                    that one caption for a provider name containing
+ *                    "&", "<", ">", "'" or '"'. Do not reuse this token
+ *                    outside a CDATA block: a raw provider name CAN
+ *                    corrupt plain XML text/attribute content.
  *   tab_label        Admin Configuration tab label.
  *   tab_css_class    CSS class on the admin tab `<li>`. Some brands
  *                    use values that contain double hyphens (BEM
@@ -126,7 +141,7 @@
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
                     <label>Vendor name (optional)</label>
-                    <comment>If this store represents one of several vendor sites sharing the same Two merchant account, enter a name here to identify this specific site/vendor. It is sent as the "vendor_name" field on every order Two receives from this store, and is not shown to buyers. Leave blank if you only run a single site.</comment>
+                    <comment>If this store represents one of several vendor sites sharing the same {{provider}} merchant account, enter a name here to identify this specific site/vendor. It is sent as the "vendor_name" field on every order {{provider}} receives from this store, and is not shown to buyers. Leave blank if you only run a single site.</comment>
                     <config_path>payment/{{code}}/vendor_site_name</config_path>
                 </field>
             </group>
@@ -302,8 +317,8 @@
                 <field id="show_about_link" translate="label comment" type="select" sortOrder="60"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Show "What is Two" link</label>
-                    <comment>Show a link at checkout explaining Two's buy-now-pay-later offering to the buyer.</comment>
+                    <label>Show "What is {{provider}}" link</label>
+                    <comment>Show a link at checkout explaining {{provider}}'s buy-now-pay-later offering to the buyer.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/{{code}}/show_about_link</config_path>
                 </field>
@@ -578,7 +593,7 @@
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
                     <label>Disable SSL verification</label>
-                    <comment><![CDATA[<strong>WARNING: unsafe for production.</strong> Skips TLS certificate verification on outbound calls to the Two API. Only enable this if this store sits behind a corporate proxy that terminates TLS with its own certificate. Leave this Off everywhere else.]]></comment>
+                    <comment><![CDATA[<strong>WARNING: unsafe for production.</strong> Skips TLS certificate verification on outbound calls to the {{provider_cdata}} API. Only enable this if this store sits behind a corporate proxy that terminates TLS with its own certificate. Leave this Off everywhere else.]]></comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/{{code}}/disable_ssl_verify</config_path>
                 </field>

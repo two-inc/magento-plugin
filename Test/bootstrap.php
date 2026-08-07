@@ -116,6 +116,14 @@ require_once __DIR__ . '/Stubs/AdminConfigField.php';
 // per-symbol guards live inside the stub file.
 require_once __DIR__ . '/Stubs/InvoiceUpload.php';
 
+// Config\Structure\Converter (real convert() signature), Module\Dir (real
+// getDir() + MODULE_ETC_DIR) and Psr\Log\LoggerInterface (real PSR-3
+// methods) — needed so SynthesiseBrandAdminFormProviderTokenTest can mock
+// specific methods; the catch-all below creates method-less stubs, which
+// PHPUnit cannot configure via ->method(). Per-symbol guards live inside
+// the stub file.
+require_once __DIR__ . '/Stubs/ConfigStructureSynthesisFixtures.php';
+
 // Payment-method base class with a real isAvailable() and a declared
 // $_scopeConfig, so Model\Two's availability gates are testable.
 require_once __DIR__ . '/Stubs/PaymentMethod.php';

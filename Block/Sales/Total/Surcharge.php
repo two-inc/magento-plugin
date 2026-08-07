@@ -9,9 +9,11 @@ namespace Two\Gateway\Block\Sales\Total;
 
 use Magento\Framework\DataObject;
 use Magento\Framework\View\Element\Template;
+use Magento\Framework\View\Element\Template\Context;
+use Two\Gateway\Api\BrandRegistryInterface;
 
 /**
- * Renders the Two surcharge row in order/invoice/creditmemo totals.
+ * Renders the [Brand] surcharge row in order/invoice/creditmemo totals.
  *
  * Layout XML inserts this as a child of the order_totals / invoice_totals /
  * creditmemo_totals block. initTotals() reads the surcharge from the parent
@@ -19,6 +21,27 @@ use Magento\Framework\View\Element\Template;
  */
 class Surcharge extends Template
 {
+    private BrandRegistryInterface $brandRegistry;
+
+    public function __construct(
+        Context $context,
+        BrandRegistryInterface $brandRegistry,
+        array $data = []
+    ) {
+        parent::__construct($context, $data);
+        $this->brandRegistry = $brandRegistry;
+    }
+
+    /**
+     * Wrapped behind a method so unit tests built via an anonymous subclass
+     * with a no-op constructor (the existing pattern in SurchargeTest, which
+     * never sets $brandRegistry) can override just this accessor.
+     */
+    protected function getBrandRegistry(): BrandRegistryInterface
+    {
+        return $this->brandRegistry;
+    }
+
     /**
      * @return $this
      */
@@ -48,7 +71,7 @@ class Surcharge extends Template
 
         $label = $source->getDataUsingMethod('two_surcharge_description');
         if (!$label) {
-            $label = (string)__('Two Surcharge');
+            $label = (string)__('%1 Surcharge', $this->getBrandRegistry()->getProductName());
         }
 
         // Place the surcharge row directly above the Tax line — the surcharge
