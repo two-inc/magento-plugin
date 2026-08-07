@@ -106,7 +106,7 @@ class CheckoutFieldDefaultsTest extends TestCase
         self::assertNotFalse($xml, 'etc/adminhtml/system.xml is not parseable XML');
 
         $paths = $xml->xpath(
-            '/config/system/section[@id="two_payment"]/group[@id="checkout_fields"]/field/config_path'
+            '/config/system/section[@id="two_checkout_fields"]/group[@id="checkout_fields"]/field/config_path'
         );
         self::assertIsArray($paths);
         self::assertNotEmpty($paths, 'no fields found in the checkout_fields admin group');
