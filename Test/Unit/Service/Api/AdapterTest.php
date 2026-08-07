@@ -212,6 +212,42 @@ class AdapterTest extends TestCase
         $this->assertEquals('Connection failed', $result['error_message']);
     }
 
+    // ── TWO-25386: SSL verification toggle ───────────────────────────────
+
+    public function testSslVerificationIsOnByDefault(): void
+    {
+        $this->curl->method('getStatus')->willReturn(200);
+        $this->curl->method('getBody')->willReturn('{}');
+        $this->configRepository->method('isSslVerificationDisabled')->willReturn(false);
+
+        $calls = [];
+        $this->curl->method('setOption')->willReturnCallback(function ($opt, $val) use (&$calls) {
+            $calls[$opt] = $val;
+        });
+
+        $this->adapter->execute('/v1/order', ['amount' => 100]);
+
+        $this->assertSame(2, $calls[CURLOPT_SSL_VERIFYHOST]);
+        $this->assertSame(true, $calls[CURLOPT_SSL_VERIFYPEER]);
+    }
+
+    public function testSslVerificationDisabledWhenToggleIsOn(): void
+    {
+        $this->curl->method('getStatus')->willReturn(200);
+        $this->curl->method('getBody')->willReturn('{}');
+        $this->configRepository->method('isSslVerificationDisabled')->willReturn(true);
+
+        $calls = [];
+        $this->curl->method('setOption')->willReturnCallback(function ($opt, $val) use (&$calls) {
+            $calls[$opt] = $val;
+        });
+
+        $this->adapter->execute('/v1/order', ['amount' => 100]);
+
+        $this->assertSame(0, $calls[CURLOPT_SSL_VERIFYHOST]);
+        $this->assertSame(0, $calls[CURLOPT_SSL_VERIFYPEER]);
+    }
+
     // ── ApiTranslator hook ──────────────────────────────────────────────
 
     public function testTranslatorRewritesUrl(): void

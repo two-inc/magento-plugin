@@ -15,6 +15,13 @@
             <div class="two-title-block">
                 <span class="two-payment-title" data-bind="text: getTitle()"></span>
                 <div class="two-payment-subtitle" data-bind="html: twoSubtitleHtml"></div>
+                <!-- TWO-25386: ported from woocommerce-plugin's show_abt_link. -->
+                <a
+                    class="two-about-link"
+                    target="_blank"
+                    rel="noopener"
+                    data-bind="visible: showWhatIsTwo, attr: {href: aboutLinkUrl}, text: aboutLinkText"
+                ></a>
             </div>
             <div class="two-payment-shield"></div>
         </div>
@@ -398,7 +405,8 @@
                         <input
                             type="text"
                             id="invoice_emails"
-                            data-bind="value: invoiceEmails, event: { change: validateEmails }"
+                            data-bind="value: invoiceEmails, event: { change: validateEmails },
+                            attr: {title: displayTooltips ? $t('Invoice email address') : ''}"
                             class="input-text"
                         />
                     </div>
@@ -413,7 +421,7 @@
                             id="two_po_number"
                             name="payment[poNumber]"
                             data-bind='
-                            attr: {title: $t("PO Number")},
+                            attr: {title: displayTooltips ? $t("PO Number") : ""},
                             value: poNumber'
                             class="input-text"
                         />
@@ -429,7 +437,7 @@
                             id="two_project"
                             name="payment[project]"
                             data-bind='
-                            attr: {title: $t("Project")},
+                            attr: {title: displayTooltips ? $t("Project") : ""},
                             value: project'
                             class="input-text"
                         />
@@ -445,7 +453,7 @@
                             id="two_department"
                             name="payment[department]"
                             data-bind='
-                            attr: {title: $t("Department")},
+                            attr: {title: displayTooltips ? $t("Department") : ""},
                             value: department'
                             class="input-text"
                         />
@@ -461,7 +469,7 @@
                             id="two_order_note"
                             name="payment[orderNote]"
                             data-bind='
-                            attr: {title: $t("Order Note")},
+                            attr: {title: displayTooltips ? $t("Order Note") : ""},
                             value: orderNote'
                             class="input-text"
                         />

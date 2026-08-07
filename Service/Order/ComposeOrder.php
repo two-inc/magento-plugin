@@ -160,7 +160,10 @@ class ComposeOrder extends OrderService
                     ['_two_order_reference' => base64_encode($orderReference)]
                 ),
             ],
-            'order_note' => $additionalData['orderNote'] ?? ''
+            'order_note' => $additionalData['orderNote'] ?? '',
+            // TWO-25386: ported from woocommerce-plugin's 'vendor_name',
+            // sent unconditionally there (empty string when unset).
+            'vendor_name' => $this->configRepository->getVendorSiteName($storeId),
         ];
 
         // Add invoice_details and required placeholders only if invoiceEmails are present

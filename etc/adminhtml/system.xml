@@ -45,6 +45,13 @@
                        showInWebsite="1" showInStore="1">
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck</frontend_model>
                 </field>
+                <!-- TWO-25386: ported from woocommerce-plugin's 'vendor_name' field. -->
+                <field id="vendor_site_name" translate="label comment" type="text" sortOrder="57" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Vendor/site name</label>
+                    <comment>Optional. If you run Two across multiple sites or stores that share one merchant account, enter a name here to identify this site's orders.</comment>
+                    <config_path>payment/two_payment/vendor_site_name</config_path>
+                </field>
                 <field id="debug" translate="label comment" type="select" sortOrder="60" showInDefault="1" showInWebsite="1"
                        showInStore="1">
                     <label>Debug mode</label>
@@ -61,6 +68,34 @@
                        showInWebsite="0" showInStore="0">
                     <label/>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Button\ErrorCheck</frontend_model>
+                </field>
+                <!-- TWO-25386: ported from woocommerce-plugin's 'skip_confirm_auth'.
+                     See Controller\Payment\Confirm — Magento's confirmation callback
+                     has no separate nonce layer to skip today (only the mandatory
+                     order-reference match), so this flag is currently a documented
+                     no-op kept for admin-surface parity across plugins. -->
+                <field id="skip_confirm_nonce_check" translate="label comment" type="select" sortOrder="85"
+                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Skip confirm-order nonce check</label>
+                    <comment>Debug/support use only. No effect today: Magento's order-confirmation callback is identified solely by the order reference, which is always checked and cannot be skipped.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/two_payment/skip_confirm_nonce_check</config_path>
+                </field>
+                <!-- TWO-25386: ported from woocommerce-plugin's 'clear_options_on_deactivation'.
+                     Magento's nearest lifecycle event is module uninstall, not
+                     deactivation; see Setup\Uninstall. -->
+                <field id="clear_settings_on_uninstall" translate="label comment" type="select" sortOrder="90"
+                       showInDefault="1" showInWebsite="0" showInStore="0" canRestore="1">
+                    <label>Clear settings on module uninstall</label>
+                    <comment>When this module is uninstalled (bin/magento module:uninstall), delete its stored configuration instead of leaving it behind.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/two_payment/clear_settings_on_uninstall</config_path>
+                </field>
+                <!-- TWO-25386: ported from prestashop-plugin's install health checklist. -->
+                <field id="health_checklist" translate="label comment" type="button" sortOrder="95"
+                       showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Health checklist</label>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\HealthChecklist</frontend_model>
                 </field>
             </group>
         </section>
@@ -110,6 +145,19 @@
                         <field id="active">1</field>
                     </depends>
                     <config_path>payment/two_payment/title</config_path>
+                </field>
+                <!-- TWO-25386: ported from prestashop-plugin's per-language PS_TWO_SUB_TITLE.
+                     showInStore="1" gives the same per-store-view override PrestaShop gets
+                     from its per-language storage; empty falls back to the brand default
+                     (BrandRegistryInterface::getCheckoutSubtitle). -->
+                <field id="subtitle" translate="label comment" type="text" sortOrder="21" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Subtitle</label>
+                    <comment>Optional line shown beneath the title at checkout (e.g. "Buy now, pay later"). Leave blank to use the default. Can be set per store view.</comment>
+                    <depends>
+                        <field id="active">1</field>
+                    </depends>
+                    <config_path>payment/two_payment/subtitle</config_path>
                 </field>
             </group>
             <group id="checkout_fields" translate="label comment" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
@@ -165,6 +213,25 @@
                     <comment>Optional field which enables the buyer to register a note to the merchant. The information is eventually displayed on the invoice.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/enable_order_note</config_path>
+                </field>
+                <!--
+                    TWO-25386: ported from woocommerce-plugin. Not part of the
+                    load-bearing order-note-last sequence above (TWO-25263) — these
+                    come after it, so their sortOrder is free to change independently.
+                -->
+                <field id="show_about_link" translate="label comment" type="select" sortOrder="60" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Show "What is Two" link</label>
+                    <comment>Show a link at checkout explaining Two's buy-now-pay-later offering to the buyer.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/two_payment/show_about_link</config_path>
+                </field>
+                <field id="display_tooltips" translate="label comment" type="select" sortOrder="70" showInDefault="1"
+                       showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Display input tooltips</label>
+                    <comment>Show a hover tooltip with the field label on the optional checkout field inputs above.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/two_payment/display_tooltips</config_path>
                 </field>
             </group>
             <group id="payment_terms" translate="label comment" type="text" sortOrder="25" showInDefault="1" showInWebsite="1"
@@ -345,6 +412,16 @@
                     <label>Sort order</label>
                     <comment>Controls the position of this payment method relative to other payment methods at checkout. Lower numbers appear first. Default is empty (no specific order).</comment>
                     <config_path>payment/two_payment/sort_order</config_path>
+                </field>
+                <!-- TWO-25386: ported from prestashop-plugin's PS_TWO_DISABLE_SSL_VERIFY.
+                     Default OFF (verification on / secure). Fixes Service\Api\Adapter,
+                     which previously disabled TLS verification unconditionally. -->
+                <field id="disable_ssl_verify" translate="label comment" type="select" sortOrder="80"
+                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Disable SSL verification</label>
+                    <comment><![CDATA[<strong>WARNING: unsafe for production.</strong> Skips TLS certificate verification on outbound calls to the Two API. Only enable this if this store sits behind a corporate proxy that terminates TLS with its own certificate. Leave this Off everywhere else.]]></comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/two_payment/disable_ssl_verify</config_path>
                 </field>
             </group>
         </section>

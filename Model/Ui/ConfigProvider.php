@@ -56,6 +56,18 @@ class ConfigProvider implements ConfigProviderInterface
      */
     public const COMPANY_NUMBER_TOKEN = '{{companyNumber}}';
 
+    /**
+     * Buyer-facing "What is Two?" explainer link target (TWO-25386, ported
+     * from woocommerce-plugin's brand-descriptor `about_url`). Kept as a
+     * plain constant here rather than threaded through
+     * BrandRegistryInterface — a single marketing URL did not seem worth
+     * the blast radius of a new brand.xml tag across the descriptor,
+     * loader, XSD and every implementation; a brand overlay that wants a
+     * different URL should override this constant, or this can be
+     * revisited if that need arises.
+     */
+    public const ABOUT_URL = 'https://www.two.inc/what-is-two';
+
     /** @var string */
     private $code;
 
@@ -234,6 +246,11 @@ class ConfigProvider implements ConfigProviderInterface
                     'minimumOrder' => $minimumOrder['minimums'],
                     'minimumOrderUnresolved' => $minimumOrder['unresolved'],
                     'subtitleHtml' => $this->getSubtitleHtml(),
+                    // TWO-25386: ported from woocommerce-plugin.
+                    'showAboutLink' => $this->configRepository->isAboutLinkEnabled(),
+                    'aboutLinkUrl' => self::ABOUT_URL,
+                    'aboutLinkText' => (string)__('What is %1?', $this->brandRegistry->getProductName()),
+                    'displayTooltips' => $this->configRepository->isDisplayTooltipsEnabled(),
                     'surchargeDescription' => $this->configRepository->getSurchargeLineDescription(),
                     'isPaymentTermsEnabled' => true,
                     // null ⇒ the brand suppressed the notice; the renderer
@@ -414,17 +431,31 @@ class ConfigProvider implements ConfigProviderInterface
     }
 
     /**
-     * Resolve the brand's checkout subtitle for the storefront renderer.
+     * Resolve the checkout subtitle for the storefront renderer.
      *
-     * The string is brand data (BrandRegistryInterface::getCheckoutSubtitle,
-     * sourced from brand.xml). The vanilla Two brand returns '' → no
-     * subtitle. We only pass a non-empty key to the translator, so an
-     * unmapped locale falls back to the (brand-owned) source key rather
-     * than ever leaking a vanilla key. May contain HTML (e.g. a link);
-     * the KO template binds it via `html:`.
+     * TWO-25386: a store-view-scoped admin override (ported from
+     * prestashop-plugin's per-language PS_TWO_SUB_TITLE) takes priority
+     * when set. It is merchant-entered free text, so it is HTML-escaped
+     * here rather than treated as a translation source key — unlike the
+     * brand default below, it must never be passed to __().
+     *
+     * Falling back, the string is brand data
+     * (BrandRegistryInterface::getCheckoutSubtitle, sourced from
+     * brand.xml). The vanilla Two brand returns '' → no subtitle. We only
+     * pass a non-empty key to the translator, so an unmapped locale falls
+     * back to the (brand-owned) source key rather than ever leaking a
+     * vanilla key.
+     *
+     * Either way the result may contain HTML; the KO template binds it via
+     * `html:`.
      */
     private function getSubtitleHtml(): string
     {
+        $configured = trim($this->configRepository->getSubtitle());
+        if ($configured !== '') {
+            return htmlspecialchars($configured, ENT_QUOTES, 'UTF-8');
+        }
+
         $key = $this->brandRegistry->getCheckoutSubtitle();
         return $key === '' ? '' : (string)__($key);
     }
