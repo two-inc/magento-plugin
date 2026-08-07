@@ -62,9 +62,11 @@ class ConfigProvider implements ConfigProviderInterface
      * plain constant here rather than threaded through
      * BrandRegistryInterface — a single marketing URL did not seem worth
      * the blast radius of a new brand.xml tag across the descriptor,
-     * loader, XSD and every implementation; a brand overlay that wants a
-     * different URL should override this constant, or this can be
-     * revisited if that need arises.
+     * loader, XSD and every implementation. A brand overlay only supplies
+     * DATA (its own etc/brand.xml), so it has no subclassing point to
+     * override this constant from; a brand overlay that needs a different
+     * link would need this threaded through BrandRegistryInterface after
+     * all — revisit then, rather than pre-building it now on spec.
      */
     public const ABOUT_URL = 'https://www.two.inc/what-is-two';
 

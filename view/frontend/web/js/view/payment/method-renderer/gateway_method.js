@@ -200,9 +200,9 @@ define([
             this.supportedCompanyTypes = config.supportedCompanyTypes || {};
 
             this.twoSubtitleHtml = config.subtitleHtml || '';
-            // TWO-25386: ported from woocommerce-plugin's show_abt_link /
-            // display_tooltips. showWhatIsTwo is the pre-existing (unused
-            // until now) observable declared above.
+            // TWO-25386: ported from woocommerce-plugin's about-link toggle
+            // and tooltip-display toggle. showWhatIsTwo is the pre-existing
+            // (unused until now) observable declared above.
             this.showWhatIsTwo(!!config.showAboutLink);
             this.aboutLinkUrl = config.aboutLinkUrl || '';
             this.aboutLinkText = config.aboutLinkText || '';

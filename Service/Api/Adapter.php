@@ -108,7 +108,7 @@ class Adapter
             // prestashop-plugin's PS_TWO_DISABLE_SSL_VERIFY) turns it off, for
             // stores behind a corporate proxy that terminates TLS with its own
             // certificate. Previously this was unconditionally disabled here.
-            if ($this->configRepository->isSslVerificationDisabled()) {
+            if ($this->configRepository->isSslVerificationDisabled($storeId)) {
                 $curl->setOption(CURLOPT_SSL_VERIFYHOST, 0);
                 $curl->setOption(CURLOPT_SSL_VERIFYPEER, 0);
             } else {
