@@ -384,6 +384,17 @@ class SynthesiseBrandAdminForm
             '{{code}}' => $this->escapeXmlAttribute($brand->getCode()),
             '{{section_prefix}}' => $this->escapeXmlAttribute($brand->getSectionPrefix()),
             '{{provider}}' => $this->escapeXmlAttribute($brand->getProvider()),
+            // Distinct from {{provider}} above: substituted RAW, with no
+            // entity-escaping, because its only use site
+            // (disable_ssl_verify's comment) is inside a CDATA section.
+            // CDATA content is never entity-decoded by the XML parser, so
+            // running a provider name through escapeXmlAttribute() there
+            // would bake the escaped entities in literally (e.g. a legal
+            // entity name containing "&" would render as "&amp;" to the
+            // merchant). CDATA syntactically only forbids the literal
+            // sequence "]]>", which no realistic brand/provider name
+            // contains.
+            '{{provider_cdata}}' => $brand->getProvider(),
             '{{tab_label}}' => $this->escapeXmlAttribute($brand->getTabLabel()),
             '{{tab_css_class}}' => $this->escapeXmlAttribute($brand->getTabCssClass()),
             '{{tab_sort_order}}' => (string)$brand->getTabSortOrder(),

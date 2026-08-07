@@ -84,7 +84,35 @@ class SynthesiseBrandAdminFormProviderTokenTest extends TestCase
         );
 
         // No leftover token anywhere in the rendered document, for any brand.
-        self::assertStringNotContainsString('{{provider}}', $dom->saveXML());
+        $xml = $dom->saveXML();
+        self::assertStringNotContainsString('{{provider}}', $xml);
+        self::assertStringNotContainsString('{{provider_cdata}}', $xml);
+    }
+
+    /**
+     * The disable_ssl_verify comment is a CDATA section, which the XML
+     * parser never entity-decodes. A provider name containing "&" must
+     * come through literally ("Smith & Co."), NOT as an entity-escaped
+     * "Smith &amp;amp; Co." — which is what would happen if this site
+     * used the entity-escaped {{provider}} substitution instead of the
+     * raw {{provider_cdata}} one. This is the regression Han's review
+     * (round 1) caught: legal/partner entity names routinely contain
+     * "&", so this was not a hypothetical edge case.
+     */
+    public function testProviderCdataSiteHandlesAmpersandLiterally(): void
+    {
+        $dom = $this->renderTemplateForProvider('Smith & Co.');
+        $xpath = new \DOMXPath($dom);
+
+        $sslComment = $xpath->query(
+            '//section[@id="brandx_version"]//field[@id="disable_ssl_verify"]/comment'
+        )->item(0);
+        self::assertNotNull($sslComment);
+        self::assertStringContainsString(
+            'outbound calls to the Smith & Co. API',
+            $sslComment->textContent,
+            'a "&" in the provider name must render literally inside the CDATA comment, not as an escaped entity'
+        );
     }
 
     /**
