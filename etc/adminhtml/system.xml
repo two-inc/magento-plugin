@@ -75,19 +75,9 @@
                 <!-- TWO-25386: ported from woocommerce-plugin's 'vendor_name' field. -->
                 <field id="vendor_site_name" translate="label comment" type="text" sortOrder="57" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Vendor/site name</label>
-                    <comment>Optional. If you run Two across multiple sites or stores that share one merchant account, enter a name here to identify this site's orders.</comment>
+                    <label>Vendor name (optional)</label>
+                    <comment>If this store represents one of several vendor sites sharing the same Two merchant account, enter a name here to identify this specific site/vendor. It is sent as the "vendor_name" field on every order Two receives from this store, and is not shown to buyers. Leave blank if you only run a single site.</comment>
                     <config_path>payment/two_payment/vendor_site_name</config_path>
-                </field>
-                <!-- TWO-25386: ported from prestashop-plugin's PS_TWO_DISABLE_SSL_VERIFY.
-                     Default OFF (verification on / secure). Fixes Service\Api\Adapter,
-                     which previously disabled TLS verification unconditionally. -->
-                <field id="disable_ssl_verify" translate="label comment" type="select" sortOrder="65"
-                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Disable SSL verification</label>
-                    <comment><![CDATA[<strong>WARNING: unsafe for production.</strong> Skips TLS certificate verification on outbound calls to the Two API. Only enable this if this store sits behind a corporate proxy that terminates TLS with its own certificate. Leave this Off everywhere else.]]></comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/two_payment/disable_ssl_verify</config_path>
                 </field>
             </group>
         </section>
@@ -510,6 +500,19 @@
                     <comment>When this module is uninstalled (bin/magento module:uninstall), delete its stored configuration instead of leaving it behind.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/clear_settings_on_uninstall</config_path>
+                </field>
+                <!-- TWO-25386: ported from prestashop-plugin's PS_TWO_DISABLE_SSL_VERIFY.
+                     Default OFF (verification on / secure). Fixes Service\Api\Adapter,
+                     which previously disabled TLS verification unconditionally. Moved
+                     here from General (was mis-grouped there during the section
+                     regroup) — this is a diagnostics/support-only escape hatch, not
+                     a general checkout setting. -->
+                <field id="disable_ssl_verify" translate="label comment" type="select" sortOrder="30"
+                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Disable SSL verification</label>
+                    <comment><![CDATA[<strong>WARNING: unsafe for production.</strong> Skips TLS certificate verification on outbound calls to the Two API. Only enable this if this store sits behind a corporate proxy that terminates TLS with its own certificate. Leave this Off everywhere else.]]></comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/two_payment/disable_ssl_verify</config_path>
                 </field>
             </group>
             <group id="general" translate="label comment" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"
