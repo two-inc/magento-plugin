@@ -87,6 +87,11 @@ class SalesOrderAddressUpdate implements ObserverInterface
         ) {
             try {
                 $additionalInformation = $order->getPayment()->getAdditionalInformation();
+                // Department and Project are optional at checkout, and the
+                // stored payload now leaves the keys out entirely when the
+                // buyer skipped them (TWO-25386) — so they must be coalesced
+                // here. Re-composing with '' is correct: the composer applies
+                // the same omit rule again on the way back out.
                 $payload = $this->compositeOrder->execute(
                     $order,
                     $order->getTwoOrderReference(),
@@ -94,8 +99,8 @@ class SalesOrderAddressUpdate implements ObserverInterface
                         'companyName' => $additionalInformation['buyer']['company']['company_name'],
                         'telephone' => $additionalInformation['buyer']['representative']['phone_number'],
                         'companyId' => $additionalInformation['buyer']['company']['organization_number'],
-                        'department' => $additionalInformation['buyer_department'],
-                        'project' => $additionalInformation['buyer_project'],
+                        'department' => $additionalInformation['buyer_department'] ?? '',
+                        'project' => $additionalInformation['buyer_project'] ?? '',
                     ]
                 );
                 $payload['merchant_reference'] = '';
