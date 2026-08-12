@@ -29,7 +29,6 @@ jobs:
       (
         github.event_name == 'pull_request' &&
         github.head_ref != 'staging' &&
-        github.head_ref != 'abn-develop' &&
         vars.CLAUDE_REVIEW_CONFIG != '' &&
         fromJSON(vars.CLAUDE_REVIEW_CONFIG)[format('{0}:{1}', github.base_ref, github.event.action)] == true
       ) ||
