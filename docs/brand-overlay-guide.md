@@ -242,25 +242,15 @@ does not know about other separators, so copy shaped `%2 – %3` or
 `%2, %3` leaves the dangling separator behind when the number is
 withheld.
 
-This parent plugin's storefront renderer (Luma/Amasty/Fire, one shared
-code path) emits each notice as a persistent inline element with class
+This plugin's storefront renderer (Luma/Amasty/Fire, one shared code
+path) emits each notice as a persistent inline element with class
 `two-order-intent-message approved` / `two-order-intent-message declined`
-inside the payment-method tile, as does PrestaShop (approved variant
-only, as of writing). WooCommerce uses `twoinc-intent-approved` instead,
-so grep for the platform-specific class names when sweeping the four
-checkout surfaces. `magento-hyva-extension` shares this parent's
-`BrandRegistryInterface`/brand.xml, so a brand's `intent_approved_notice`
-override applies to Hyvä too without any Hyvä-side declaration.
+inside the payment-method tile.
 
-The `intent_approved_notice_enabled` key carries the same name and
-semantics on WooCommerce and PrestaShop, where it is a real PHP boolean
-rather than an XSD enumeration. **The failure mode differs:** an invalid
-value throws here and is a logged error plus the default `true` there,
-because those resolvers run while rendering a buyer-facing checkout,
-where a white screen is worse than a notice that stays on. Don't assume
-Magento's throw when working across platforms. None of the four
-platforms has (or should ever grow) a copy-override element for the
-declined/not-available notice.
+`intent_approved_notice_enabled` is an XSD enumeration here, so an
+invalid value throws rather than falling back to a default. There is no
+copy-override element for the declined/not-available notice, and one
+should never be added.
 
 ### A warning about validation
 

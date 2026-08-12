@@ -32,9 +32,7 @@ use Magento\Framework\Component\ComponentRegistrar;
  *     time to close that gap.
  *
  * Resolution order is `.git` gitlink → Composer reference →
- * `.two-deployed-commit` stamp, one org-wide order shared by all six Two
- * plugin artifacts (Magento, Magento overlay, WooCommerce, WooCommerce overlay,
- * PrestaShop, OpenCart). The order is freshness-ranked, not
+ * `.two-deployed-commit` stamp. The order is freshness-ranked, not
  * confidence-ranked: the gitlink is the only signal that reflects what is
  * checked out *right now*, the Composer reference is recorded once at
  * install time, and the build stamp is frozen at build time and so is the

@@ -31,8 +31,8 @@
 #     second fix commit on the same PR is a no-op, and the version can NEVER
 #     REGRESS. That last part is load-bearing because `main` sits behind
 #     `staging` in these repos: with a stale main the raw candidate can compute
-#     BELOW the version already on staging, and on PrestaShop that would
-#     resurrect an already-run `upgrade/upgrade-<version>.php` filename.
+#     BELOW the version already on staging, which would resurrect an
+#     already-run `upgrade/upgrade-<version>.php` filename.
 #
 #  3. ONLY `feat` EARNS A MINOR. `chore`, `docs`, `ci`, `test`, `refactor`,
 #     `build`, `perf`, `style` all take a patch. The obvious-looking "minor
@@ -44,14 +44,15 @@
 #
 #         target_major = max(declared, M.major + breaking)
 #
-# PrestaShop-only clause: PrestaShop discovers upgrade scripts BY FILENAME and
-# runs `upgrade/upgrade-<version>.php` only for versions strictly above the
-# installed one. Appending a second migration to an already-installed version's
-# script therefore never runs on a shop that already reached that version -
-# silently, `number_upgraded=0`. So if this PR ADDS a new upgrade script and the
-# rule above produced no version change, force a patch bump so the script gets a
-# filename of its own. Editing an EXISTING script does not trigger this. The
-# clause is inert in the repos that have no `upgrade/upgrade-*.php` at all.
+# Filename-discovered upgrade scripts: where the platform discovers upgrade
+# scripts BY FILENAME and runs `upgrade/upgrade-<version>.php` only for versions
+# strictly above the installed one, appending a second migration to an
+# already-installed version's script never runs on a shop that already reached
+# that version - silently, `number_upgraded=0`. So if this PR ADDS a new upgrade
+# script and the rule above produced no version change, force a patch bump so
+# the script gets a filename of its own. Editing an EXISTING script does not
+# trigger this. The clause is inert in the repos that have no
+# `upgrade/upgrade-*.php` at all.
 #
 # Usage:  decide-bump-level.sh [<base-ref>] [<head-ref>]
 #         defaults: origin/staging HEAD
@@ -78,7 +79,7 @@ die() {
 # --- reading a version out of a ref ------------------------------------------
 #
 # bumpver.toml is the source of truth everywhere it exists. It does NOT exist on
-# `main` in the PrestaShop repo (it was only ever added on `staging`), so fall
+# `main` in every repo (in some it was only ever added on `staging`), so fall
 # back to the module's own declarations rather than crashing - reading M is not
 # optional, it is the base of every candidate below.
 read_version() {
@@ -227,7 +228,7 @@ if [ "$new" != "$candidate" ]; then
     why="${why}; clamped to the version already on the head (${head_version} >= candidate ${candidate})"
 fi
 
-# --- PrestaShop-only: a NEW upgrade script needs a filename of its own -------
+# --- a NEW upgrade script needs a filename of its own ------------------------
 #
 # `--diff-filter=A` against the merge base, so an EDIT to an existing script
 # never triggers this - only a genuinely new file does.
