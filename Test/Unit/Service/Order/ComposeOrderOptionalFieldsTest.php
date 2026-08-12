@@ -10,9 +10,17 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\Order\ComposeOrder;
 
 /**
- * TWO-25386: several optional payload fields are length-constrained when
- * present, so composing them as empty strings makes the API reject the order
- * outright. The getters are allowed to return '' (see
+ * TWO-25386: optional payload fields must be omitted rather than composed as
+ * empty strings, for two separate reasons.
+ *
+ * vendor_name has to be non-empty whenever the key is present, so a blank admin
+ * setting sent as '' had the order rejected and nothing created at all. The
+ * remaining fields do accept an empty string on create, but the later
+ * order-edit call merges scalars — an absent key keeps the stored value while
+ * an empty one overwrites it — so composing them blank was erasing what the
+ * buyer entered at checkout as soon as an admin edited the order address.
+ *
+ * The getters are allowed to return '' (see
  * Model\Config\RepositoryAdminControlsTest) — it is the caller's job to leave
  * the key out, which is what this covers.
  *
@@ -189,5 +197,106 @@ class ComposeOrderOptionalFieldsTest extends TestCase
         $payload = $this->makeComposeOrder('')->execute($this->makeOrder(), 'ref', []);
 
         $this->assertArrayNotHasKey('invoice_details', $payload);
+    }
+
+    /**
+     * A non-scalar cannot be a value for any of the optional fields, and the
+     * observer that stores checkout data only validates that the top level is
+     * an array — so a crafted request can put an array here. Casting it to
+     * string raises a warning that developer mode turns into a failed order
+     * placement, so the field must simply be dropped.
+     */
+    public function testNonScalarCheckoutFieldIsDroppedWithoutWarning(): void
+    {
+        set_error_handler(
+            static function (int $severity, string $message, string $file, int $line): bool {
+                throw new \ErrorException($message, 0, $severity, $file, $line);
+            },
+            E_WARNING | E_NOTICE
+        );
+
+        try {
+            $payload = $this->makeComposeOrder('')
+                ->execute($this->makeOrder(), 'ref', ['department' => ['x']]);
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertArrayNotHasKey('buyer_department', $payload);
+    }
+
+    /**
+     * Payload paths that are legitimately allowed to hold an empty string, each
+     * with the reason it is sanctioned. Adding an entry has to be a deliberate
+     * act — that is the point of the list.
+     *
+     * Numeric array indices are normalised to '*' so a path stays stable
+     * regardless of how many line items a payload happens to carry.
+     *
+     * Empty as of TWO-25386: nothing the composer emits is currently allowed to
+     * be an empty string.
+     */
+    private const ACCEPTED_EMPTY_PATHS = [];
+
+    /**
+     * The general form of the bug this ticket is about: walk every scalar in a
+     * fully composed create payload and fail on any empty string that is not on
+     * the sanctioned list above.
+     *
+     * This is worth more than the per-field assertions, because it needs no
+     * change when a new field is added to the payload — only when a field is
+     * genuinely permitted to be blank, which is exactly the decision that
+     * deserves a second look.
+     *
+     * Scope note: address, buyer and line-item composition are stubbed out by
+     * this test's fixture (they have their own coverage), so this walks the
+     * payload the composer assembles itself, not those nested structures.
+     */
+    public function testComposedPayloadHasNoUnsanctionedEmptyStrings(): void
+    {
+        // Every optional input left blank: the worst case for this check, and
+        // the common one in production.
+        $additionalData = [
+            'companyName' => '',
+            'companyId' => '',
+            'department' => '',
+            'project' => '',
+            'poNumber' => '',
+            'orderNote' => '',
+            'invoiceEmails' => '',
+        ];
+
+        $payload = $this->makeComposeOrder('')->execute($this->makeOrder(), 'ref', $additionalData);
+
+        $offenders = [];
+        $this->collectEmptyStringPaths($payload, '', $offenders);
+
+        $this->assertSame(
+            [],
+            $offenders,
+            'empty strings must be omitted, not composed into the payload'
+        );
+    }
+
+    /**
+     * @param array $node payload fragment being walked
+     * @param string $prefix dotted path of $node within the payload
+     * @param array $offenders collected paths, by reference
+     */
+    private function collectEmptyStringPaths(array $node, string $prefix, array &$offenders): void
+    {
+        foreach ($node as $key => $value) {
+            $segment = is_int($key) ? '*' : (string)$key;
+            $path = $prefix === '' ? $segment : $prefix . '.' . $segment;
+
+            if (is_array($value)) {
+                $this->collectEmptyStringPaths($value, $path, $offenders);
+                continue;
+            }
+
+            if ($value === '' && !array_key_exists($path, self::ACCEPTED_EMPTY_PATHS)) {
+                $offenders[] = $path;
+            }
+        }
     }
 }

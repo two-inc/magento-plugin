@@ -154,8 +154,10 @@ class ComposeOrder extends OrderService
                     ['_two_order_reference' => base64_encode($orderReference)]
                 ),
                 // merchant_edit_order_url is deliberately absent: the plugin
-                // exposes no merchant-side edit-order route, and the field is
-                // length-constrained, so an empty string is rejected.
+                // exposes no merchant-side edit-order route, so there is no
+                // URL to put here. An empty string would be accepted, but it
+                // is still a value nobody set, and on a later order edit an
+                // empty string overwrites while an absent key is left alone.
                 'merchant_order_verification_failed_url' => $this->url->getUrl(
                     'two/payment/verificationfailed',
                     ['_two_order_reference' => base64_encode($orderReference)]
@@ -163,14 +165,23 @@ class ComposeOrder extends OrderService
             ],
         ];
 
-        // TWO-25386: these fields are optional, but each is length-constrained
-        // when present, so a blank admin setting or an untouched checkout field
-        // must OMIT the key rather than send an empty string — otherwise every
-        // order is rejected with a schema error. An explicit allowlist, never a
-        // blanket empty-strip over $payload: merchant_confirmation_url and the
-        // amount fields are required and must survive regardless of value.
-        // (woocommerce-plugin guards its equivalent of vendor_name the same
-        // way, conditionally rather than unconditionally.)
+        // TWO-25386: these fields are optional and are omitted rather than sent
+        // blank. Two different reasons, both real:
+        //
+        // vendor_name is the one that must be non-empty whenever the key is
+        // present. A blank admin setting sent as '' is rejected outright and no
+        // order is created — that rejection is why this ticket exists.
+        //
+        // The other four are accepted as empty strings on create, so they were
+        // never causing rejections. They are omitted because of what happens
+        // afterwards: the order-edit call merges scalar fields, so a key left
+        // out preserves the stored value while a key sent as '' overwrites it
+        // with blank. Composing them empty meant an admin order-address edit
+        // erased whatever the buyer had actually entered at checkout.
+        //
+        // An explicit allowlist, never a blanket empty-strip over $payload:
+        // merchant_confirmation_url and the amount fields are required and must
+        // survive regardless of their value.
         $optionalFields = [
             'buyer_department' => $additionalData['department'] ?? '',
             'buyer_project' => $additionalData['project'] ?? '',
@@ -179,6 +190,15 @@ class ComposeOrder extends OrderService
             'vendor_name' => $this->configRepository->getVendorSiteName($storeId),
         ];
         foreach ($optionalFields as $key => $value) {
+            // $additionalData comes straight from the checkout request, and the
+            // observer that stores it only checks that the top level is an
+            // array — so a crafted request can leave an array sitting in one of
+            // these values. Casting that to string raises a warning, which
+            // developer mode turns into a failed order placement, so drop
+            // anything that is not a scalar instead.
+            if (!is_scalar($value)) {
+                continue;
+            }
             // Compare as string rather than using empty(), so a legitimate
             // '0' department/project reference is still sent.
             if ((string)$value !== '') {
@@ -187,8 +207,9 @@ class ComposeOrder extends OrderService
         }
 
         // Add invoice_details only if invoiceEmails are present. The payment
-        // reference fields are omitted rather than sent blank — the plugin has
-        // no value for them, and they reject null.
+        // reference fields are omitted rather than sent blank: the plugin has
+        // no value to put in them, they are defaulted when the key is absent,
+        // and sending '' would blank the stored value on a later order edit.
         if (!empty($additionalData['invoiceEmails'])) {
             $payload['invoice_details'] = [
                 'invoice_emails' => explode(',', $additionalData['invoiceEmails']),

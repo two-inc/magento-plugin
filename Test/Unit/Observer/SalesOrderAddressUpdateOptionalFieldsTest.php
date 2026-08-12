@@ -212,12 +212,13 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
      * order already held remotely. A key left out of the request keeps the
      * stored value; a key sent as an empty string is accepted and overwrites
      * the stored value with blank. The observer used to append three such keys
-     * unconditionally, so every admin address edit blanked them.
+     * unconditionally, so every admin address edit blanked them — and the
+     * plugin never has a value for any of the three in the first place, so
+     * they are now left out of the request under every condition.
      *
-     * shipping_details is the worse of the three, because it is replaced as a
-     * whole object rather than merged field by field — sending it with only
-     * carrier and tracking populated discards every other stored delivery
-     * field. It must be omitted outright when there is nothing to send.
+     * shipping_details is the worst of the three, because it is replaced as a
+     * whole object rather than merged field by field, so sending it at all
+     * discards every stored delivery field the request does not mention.
      */
 
     /**
@@ -276,56 +277,6 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
             self::EXPECTED_SHIPPING_ADDRESS,
             $payload['shipping_address'],
             'shipping_address is required and is not the field being omitted'
-        );
-    }
-
-    public function testPopulatedMerchantReferenceFieldsAreSent(): void
-    {
-        $stored = $this->storedInformationWithoutOptionalFields();
-        $stored['merchant_reference'] = 'REF-4471';
-        $stored['merchant_additional_info'] = 'Delivered to loading bay';
-        $this->order = $this->makeOrder($stored);
-
-        $payload = $this->executeAndCapturePayload();
-
-        $this->assertSame('REF-4471', $payload['merchant_reference']);
-        $this->assertSame('Delivered to loading bay', $payload['merchant_additional_info']);
-    }
-
-    public function testPopulatedShippingDetailsIsSentAndShippingAddressIsUnchanged(): void
-    {
-        $stored = $this->storedInformationWithoutOptionalFields();
-        $stored['shipping_details'] = [
-            'carrier_name' => 'Test Carrier',
-            'tracking_number' => 'TRK-99001',
-        ];
-        $this->order = $this->makeOrder($stored);
-
-        $payload = $this->executeAndCapturePayload();
-
-        $this->assertSame(
-            ['carrier_name' => 'Test Carrier', 'tracking_number' => 'TRK-99001'],
-            $payload['shipping_details']
-        );
-        $this->assertSame(
-            self::EXPECTED_SHIPPING_ADDRESS,
-            $payload['shipping_address'],
-            'shipping_address must be untouched whether or not shipping_details is sent'
-        );
-    }
-
-    public function testShippingDetailsIsSentWhenOnlyTrackingNumberIsKnown(): void
-    {
-        $stored = $this->storedInformationWithoutOptionalFields();
-        $stored['shipping_details'] = ['tracking_number' => 'TRK-99001'];
-        $this->order = $this->makeOrder($stored);
-
-        $payload = $this->executeAndCapturePayload();
-
-        $this->assertSame(
-            ['carrier_name' => '', 'tracking_number' => 'TRK-99001'],
-            $payload['shipping_details'],
-            'a partially known delivery record is still worth sending'
         );
     }
 }
