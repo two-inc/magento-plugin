@@ -126,14 +126,13 @@ class ComposeOrder extends OrderService
         // untaxed residual. See Order::reconcileOtherCharges() docblock.
         $lineItems = $this->reconcileOtherCharges($lineItems, $order, $grossTotal, $taxTotal);
 
-        // Compose the final payload for the API call
+        // Compose the final payload for the API call. Fields that may
+        // legitimately be blank are NOT listed here — see the optional-field
+        // allowlist below.
         $payload = [
             'billing_address' => $this->getAddress($order, $additionalData, 'billing'),
             'shipping_address' => $this->getAddress($order, $additionalData, 'shipping'),
             'buyer' => $this->getBuyer($order, $additionalData),
-            'buyer_department' => $additionalData['department'] ?? '',
-            'buyer_project' => $additionalData['project'] ?? '',
-            'buyer_purchase_order_number' => $additionalData['poNumber'] ?? '',
             'currency' => $order->getOrderCurrencyCode(),
             'discount_amount' => $this->roundAmt($this->getDiscountAmountItem($order)),
             'gross_amount' => $this->roundAmt($grossTotal),
@@ -154,26 +153,46 @@ class ComposeOrder extends OrderService
                     'two/payment/cancel',
                     ['_two_order_reference' => base64_encode($orderReference)]
                 ),
-                'merchant_edit_order_url' => '',
+                // merchant_edit_order_url is deliberately absent: the plugin
+                // exposes no merchant-side edit-order route, and the field is
+                // length-constrained, so an empty string is rejected.
                 'merchant_order_verification_failed_url' => $this->url->getUrl(
                     'two/payment/verificationfailed',
                     ['_two_order_reference' => base64_encode($orderReference)]
                 ),
             ],
-            'order_note' => $additionalData['orderNote'] ?? '',
-            // TWO-25386: ported from woocommerce-plugin's 'vendor_name',
-            // sent unconditionally there (empty string when unset).
-            'vendor_name' => $this->configRepository->getVendorSiteName($storeId),
         ];
 
-        // Add invoice_details and required placeholders only if invoiceEmails are present
+        // TWO-25386: these fields are optional, but each is length-constrained
+        // when present, so a blank admin setting or an untouched checkout field
+        // must OMIT the key rather than send an empty string — otherwise every
+        // order is rejected with a schema error. An explicit allowlist, never a
+        // blanket empty-strip over $payload: merchant_confirmation_url and the
+        // amount fields are required and must survive regardless of value.
+        // (woocommerce-plugin guards its equivalent of vendor_name the same
+        // way, conditionally rather than unconditionally.)
+        $optionalFields = [
+            'buyer_department' => $additionalData['department'] ?? '',
+            'buyer_project' => $additionalData['project'] ?? '',
+            'buyer_purchase_order_number' => $additionalData['poNumber'] ?? '',
+            'order_note' => $additionalData['orderNote'] ?? '',
+            'vendor_name' => $this->configRepository->getVendorSiteName($storeId),
+        ];
+        foreach ($optionalFields as $key => $value) {
+            // Compare as string rather than using empty(), so a legitimate
+            // '0' department/project reference is still sent.
+            if ((string)$value !== '') {
+                $payload[$key] = $value;
+            }
+        }
+
+        // Add invoice_details only if invoiceEmails are present. The payment
+        // reference fields are omitted rather than sent blank — the plugin has
+        // no value for them, and they reject null.
         if (!empty($additionalData['invoiceEmails'])) {
-            $invoiceDetails = [
+            $payload['invoice_details'] = [
                 'invoice_emails' => explode(',', $additionalData['invoiceEmails']),
-                'payment_reference_message' => '',
-                'payment_reference_ocr' => ''
             ];
-            $payload['invoice_details'] = $invoiceDetails;
         }
 
         return $payload;
