@@ -21,8 +21,7 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
  * operates in, so they are deliberately omitted: an empty list is a
  * legitimate answer meaning business-only checkout for that country.
  *
- * Mirrors the WooCommerce / PrestaShop plugins' fetch+cache+fail-soft
- * protocol (WC_Twoinc_Sole_Trader / TwoSoleTrader):
+ * The fetch+cache+fail-soft protocol:
  * - a successful answer (including a genuine empty list) is cached for
  *   CACHE_LIFETIME seconds, matching the endpoint's own Cache-Control
  *   max-age, keyed by country;

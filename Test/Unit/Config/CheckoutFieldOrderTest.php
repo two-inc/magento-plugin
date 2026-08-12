@@ -36,9 +36,9 @@ class CheckoutFieldOrderTest extends TestCase
         'enable_project',
         'enable_department',
         'enable_order_note',
-        // TWO-25386: ported from woocommerce-plugin. Not part of the
-        // load-bearing order-note-last sequence above (TWO-25263) — these
-        // just need to come after it, which this test also pins.
+        // TWO-25386: not part of the load-bearing order-note-last sequence
+        // above (TWO-25263) — these just need to come after it, which this
+        // test also pins.
         'show_about_link',
         'display_tooltips',
     ];

@@ -434,10 +434,9 @@ interface RepositoryInterface
 
     /**
      * Optional merchant-entered site/vendor name for multi-site setups
-     * (TWO-25386, ported from woocommerce-plugin). Sent to the API on
-     * order creation as `vendor_name` so a merchant running Two across
-     * several sites/stores that share one merchant account can tell the
-     * orders apart. Empty string means unset.
+     * (TWO-25386). Sent to the API on order creation as `vendor_name` so a
+     * merchant running Two across several sites/stores that share one
+     * merchant account can tell the orders apart. Empty string means unset.
      *
      * @param int|null $storeId
      *
@@ -447,8 +446,7 @@ interface RepositoryInterface
 
     /**
      * Whether the buyer-facing "What is <Product>?" explainer link is
-     * shown on the payment method tile at checkout (TWO-25386, ported
-     * from woocommerce-plugin).
+     * shown on the payment method tile at checkout (TWO-25386).
      *
      * @param int|null $storeId
      *
@@ -459,9 +457,9 @@ interface RepositoryInterface
     /**
      * Whether the optional checkout field inputs (PO number, project,
      * department, order note, invoice email) render a hover tooltip with
-     * the field's label (TWO-25386, ported from woocommerce-plugin).
-     * Defaults to enabled — Magento already rendered these unconditionally
-     * before this flag existed, so the default preserves prior behaviour.
+     * the field's label (TWO-25386). Defaults to enabled — Magento already
+     * rendered these unconditionally before this flag existed, so the
+     * default preserves prior behaviour.
      *
      * @param int|null $storeId
      *
@@ -471,8 +469,7 @@ interface RepositoryInterface
 
     /**
      * Debug flag: skip the additional confirmation-callback check on
-     * top of the mandatory order-reference match (TWO-25386, ported from
-     * woocommerce-plugin's WordPress-nonce skip). See
+     * top of the mandatory order-reference match (TWO-25386). See
      * Controller\Payment\Confirm for why this is currently a documented
      * no-op on Magento — kept for admin-surface parity with the other
      * plugins pending a Magento-side signing mechanism to actually gate.
@@ -486,9 +483,8 @@ interface RepositoryInterface
     /**
      * Whether stored Two configuration (payment/two_payment/* and
      * payment/two_search/*) is deleted from core_config_data when the
-     * module is uninstalled (TWO-25386, ported from woocommerce-plugin's
-     * "clear settings on deactivation" — Magento's nearest equivalent
-     * lifecycle event is module uninstall, not deactivation).
+     * module is uninstalled (TWO-25386). Module uninstall is the nearest
+     * lifecycle event Magento offers for this.
      *
      * @param int|null $storeId
      *
@@ -498,9 +494,9 @@ interface RepositoryInterface
 
     /**
      * Store-view-scoped payment method subtitle shown beneath the title
-     * at checkout (TWO-25386, ported from prestashop-plugin's per-language
-     * PS_TWO_SUB_TITLE). Empty string means unset — callers fall back to
-     * the brand's default subtitle (BrandRegistryInterface::getCheckoutSubtitle).
+     * at checkout (TWO-25386). Empty string means unset — callers fall back
+     * to the brand's default subtitle
+     * (BrandRegistryInterface::getCheckoutSubtitle).
      *
      * @param int|null $storeId
      *
@@ -510,10 +506,9 @@ interface RepositoryInterface
 
     /**
      * Debug flag: skip TLS certificate verification on outbound API calls
-     * (TWO-25386, ported from prestashop-plugin's PS_TWO_DISABLE_SSL_VERIFY).
-     * Defaults to false (verification ON, secure). Unsafe for production —
-     * intended only for corporate networks that terminate TLS with a
-     * custom/self-signed certificate.
+     * (TWO-25386). Defaults to false (verification ON, secure). Unsafe for
+     * production — intended only for corporate networks that terminate TLS
+     * with a custom/self-signed certificate.
      *
      * @param int|null $storeId
      *

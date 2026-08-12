@@ -30,10 +30,8 @@ class CheckoutFieldDefaultsTest extends TestCase
         'enable_po_number',
         'enable_order_note',
         'enable_invoice_emails',
-        // TWO-25386: ported from woocommerce-plugin. Both default to
-        // enabled — display_tooltips preserves Magento's prior
-        // (unconditional) behaviour, show_about_link matches WC's own
-        // default.
+        // TWO-25386: both default to enabled — display_tooltips preserves
+        // Magento's prior (unconditional) behaviour.
         'show_about_link',
         'display_tooltips',
     ];

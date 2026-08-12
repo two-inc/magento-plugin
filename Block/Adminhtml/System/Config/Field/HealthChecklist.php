@@ -14,13 +14,11 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 
 /**
- * Read-only "install health" panel in Stores Configuration (TWO-25386,
- * ported from prestashop-plugin's renderTwoPluginHealthChecklist).
+ * Read-only "install health" panel in Stores Configuration (TWO-25386).
  *
- * Deliberately mirrors the same three checks prestashop-plugin ships —
- * API key, environment, SSL verification — rather than inventing new ones
- * (e.g. webhook reachability, PHP extensions) that plugin's checklist does
- * not have either.
+ * Deliberately limited to three checks — API key, environment, SSL
+ * verification — rather than inventing new ones (e.g. webhook
+ * reachability, PHP extensions).
  *
  * Uses the cached ApiKeyStatus::getStatus() rather than a live refresh():
  * the neighbouring "API key check" field (ApiKeyCheck) already performs a
@@ -89,8 +87,7 @@ class HealthChecklist extends Field
 
     /**
      * True when the environment is production and SSL verification is
-     * disabled — the one combination worth a loud warning, mirroring
-     * prestashop-plugin's equivalent banner.
+     * disabled — the one combination worth a loud warning.
      */
     public function isProductionWithSslDisabled(): bool
     {

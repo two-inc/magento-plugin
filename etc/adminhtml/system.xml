@@ -72,7 +72,6 @@
                        showInWebsite="1" showInStore="1">
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck</frontend_model>
                 </field>
-                <!-- TWO-25386: ported from woocommerce-plugin's 'vendor_name' field. -->
                 <field id="vendor_site_name" translate="label comment" type="text" sortOrder="57" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Vendor name (optional)</label>
@@ -106,9 +105,8 @@
                     <validate>required-entry</validate>
                     <config_path>payment/two_payment/title</config_path>
                 </field>
-                <!-- TWO-25386: ported from prestashop-plugin's per-language PS_TWO_SUB_TITLE.
-                     showInStore="1" gives the same per-store-view override PrestaShop gets
-                     from its per-language storage; empty falls back to the brand default
+                <!-- TWO-25386: showInStore="1" gives a per-store-view override;
+                     empty falls back to the brand default
                      (BrandRegistryInterface::getCheckoutSubtitle). -->
                 <field id="subtitle" translate="label comment" type="text" sortOrder="20" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
@@ -221,9 +219,9 @@
                     <config_path>payment/two_payment/enable_order_note</config_path>
                 </field>
                 <!--
-                    TWO-25386: ported from woocommerce-plugin. Not part of the
-                    load-bearing order-note-last sequence above (TWO-25263) — these
-                    come after it, so their sortOrder is free to change independently.
+                    TWO-25386: not part of the load-bearing order-note-last
+                    sequence above (TWO-25263) — these come after it, so their
+                    sortOrder is free to change independently.
                 -->
                 <field id="show_about_link" translate="label comment" type="select" sortOrder="60" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
@@ -479,10 +477,10 @@
             <group id="admin_controls" translate="label comment" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>Admin Controls</label>
-                <!-- TWO-25386: ported from woocommerce-plugin's 'skip_confirm_auth'.
-                     See Controller\Payment\Confirm — Magento's confirmation callback
-                     has no separate nonce layer to skip today (only the mandatory
-                     order-reference match), so this flag is currently a documented
+                <!-- TWO-25386: see Controller\Payment\Confirm — Magento's
+                     confirmation callback has no separate nonce layer to skip
+                     today (only the mandatory order-reference match), so this
+                     flag is currently a documented
                      no-op kept for admin-surface parity across plugins. -->
                 <field id="skip_confirm_nonce_check" translate="label comment" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
@@ -491,9 +489,8 @@
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/skip_confirm_nonce_check</config_path>
                 </field>
-                <!-- TWO-25386: ported from woocommerce-plugin's 'clear_options_on_deactivation'.
-                     Magento's nearest lifecycle event is module uninstall, not
-                     deactivation; see Setup\Uninstall. -->
+                <!-- TWO-25386: module uninstall is Magento's nearest lifecycle
+                     event for this; see Setup\Uninstall. -->
                 <field id="clear_settings_on_uninstall" translate="label comment" type="select" sortOrder="20"
                        showInDefault="1" showInWebsite="0" showInStore="0" canRestore="1">
                     <label>Clear settings on module uninstall</label>
@@ -501,9 +498,9 @@
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/clear_settings_on_uninstall</config_path>
                 </field>
-                <!-- TWO-25386: ported from prestashop-plugin's PS_TWO_DISABLE_SSL_VERIFY.
-                     Default OFF (verification on / secure). Fixes Service\Api\Adapter,
-                     which previously disabled TLS verification unconditionally. Moved
+                <!-- TWO-25386: default OFF (verification on / secure). Fixes
+                     Service\Api\Adapter, which previously disabled TLS
+                     verification unconditionally. Moved
                      here from General (was mis-grouped there during the section
                      regroup) — this is a diagnostics/support-only escape hatch, not
                      a general checkout setting. -->
@@ -527,7 +524,6 @@
             <group id="health" translate="label comment" type="text" sortOrder="40" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>Health</label>
-                <!-- TWO-25386: ported from prestashop-plugin's install health checklist. -->
                 <field id="health_checklist" translate="label comment" type="button" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Health checklist</label>

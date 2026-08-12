@@ -57,9 +57,8 @@ class ConfigProvider implements ConfigProviderInterface
     public const COMPANY_NUMBER_TOKEN = '{{companyNumber}}';
 
     /**
-     * Buyer-facing "What is Two?" explainer link target (TWO-25386, ported
-     * from woocommerce-plugin's brand-descriptor `about_url`). Kept as a
-     * plain constant here rather than threaded through
+     * Buyer-facing "What is Two?" explainer link target (TWO-25386). Kept
+     * as a plain constant here rather than threaded through
      * BrandRegistryInterface — a single marketing URL did not seem worth
      * the blast radius of a new brand.xml tag across the descriptor,
      * loader, XSD and every implementation. A brand overlay only supplies
@@ -248,7 +247,6 @@ class ConfigProvider implements ConfigProviderInterface
                     'minimumOrder' => $minimumOrder['minimums'],
                     'minimumOrderUnresolved' => $minimumOrder['unresolved'],
                     'subtitleHtml' => $this->getSubtitleHtml(),
-                    // TWO-25386: ported from woocommerce-plugin.
                     'showAboutLink' => $this->configRepository->isAboutLinkEnabled(),
                     'aboutLinkUrl' => self::ABOUT_URL,
                     'aboutLinkText' => (string)__('What is %1?', $this->brandRegistry->getProductName()),
@@ -435,9 +433,8 @@ class ConfigProvider implements ConfigProviderInterface
     /**
      * Resolve the checkout subtitle for the storefront renderer.
      *
-     * TWO-25386: a store-view-scoped admin override (ported from
-     * prestashop-plugin's per-language PS_TWO_SUB_TITLE) takes priority
-     * when set. It is merchant-entered free text, so it is HTML-escaped
+     * TWO-25386: a store-view-scoped admin override takes priority when
+     * set. It is merchant-entered free text, so it is HTML-escaped
      * here rather than treated as a translation source key — unlike the
      * brand default below, it must never be passed to __().
      *

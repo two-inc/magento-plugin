@@ -15,17 +15,15 @@ use Magento\Framework\Setup\SchemaSetupInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 
 /**
- * Fires on `bin/magento module:uninstall Two_Gateway` (TWO-25386, ported
- * from woocommerce-plugin's "clear settings on deactivation" — Magento's
- * nearest equivalent lifecycle event is uninstall, not deactivation:
- * Magento has no admin-triggered "disable this module" hook a payment
- * module can act on the way a WordPress plugin can).
+ * Fires on `bin/magento module:uninstall Two_Gateway` (TWO-25386).
+ * Uninstall is the nearest lifecycle event Magento offers for this: there
+ * is no admin-triggered "disable this module" hook a payment module can act
+ * on.
  *
  * Deletes stored `payment/<code>/*` configuration from core_config_data
  * ONLY when the merchant opted in via the "Clear settings on module
  * uninstall" toggle. Default off, so uninstall leaves configuration in
- * place unless the merchant asked otherwise — matching the WooCommerce
- * default.
+ * place unless the merchant asked otherwise.
  *
  * `<code>` is resolved from BrandRegistryInterface::getCode() rather than
  * hardcoded to `two_payment` — every field this module ships writes to
