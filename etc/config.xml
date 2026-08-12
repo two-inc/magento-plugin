@@ -35,9 +35,8 @@
                 <enable_po_number>1</enable_po_number>
                 <vendor_site_name/>
                 <subtitle/>
-                <!-- TWO-25386: show_about_link default ON matches
-                     woocommerce-plugin's default. display_tooltips default ON
-                     preserves Magento's prior behaviour — the optional
+                <!-- TWO-25386: show_about_link defaults ON. display_tooltips
+                     default ON preserves Magento's prior behaviour — the optional
                      checkout field inputs rendered their title-attribute
                      tooltip unconditionally before this flag existed. -->
                 <show_about_link>1</show_about_link>

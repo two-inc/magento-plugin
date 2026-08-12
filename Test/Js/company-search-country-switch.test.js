@@ -14,12 +14,8 @@
  * country, is refused there, and surfaces to the buyer as a generic failure
  * with nothing on screen saying which field is wrong.
  *
- * Ported from the PrestaShop fix (its country-change listener clears the
- * company and organisation fields, and its server side discards a session
- * company whose country marker does not match the address). The mechanism
- * differs in one deliberate way, pinned below: PrestaShop recreates its
- * autocomplete on a country change because that widget captures the country at
- * construction. This one reads it per request, so the picker is left bound and
+ * The picker is deliberately left bound on a country change rather than
+ * recreated, a divergence pinned below: it reads the country per request, so
  * the NEXT search simply carries the new country.
  *
  * LIMITATIONS OF THE DOUBLES BELOW — read before trusting a pass here.

@@ -10,7 +10,7 @@ use Two\Gateway\Service\Order;
 
 /**
  * TWO-25099 — fail loud on negative discount amounts before reaching the
- * Two API (Magento mirror of the PrestaShop guard shipped in TWO-24741).
+ * Two API.
  *
  * Covers:
  *  (a) legitimate positive discounts pass through untouched, at native

@@ -38,7 +38,7 @@ new_repo() {
     git config commit.gpgsign false
 
     if [ "$nomain" = "--no-main-bumpver" ]; then
-        # PrestaShop's `main`: no bumpver.toml, version only in the module files.
+        # A `main` with no bumpver.toml: version only in the module files.
         cat >config.xml <<EOF
 <?xml version="1.0" encoding="UTF-8" ?>
 <module>
@@ -114,8 +114,8 @@ check_fails() {
 check_upgrade() {
     local label=$1 expected=$2 want=$3
     local out rc
-    # check-upgrade-script-version.sh only exists in the PrestaShop repo — the
-    # filename-based upgrade mechanism it guards is PrestaShop's alone.
+    # check-upgrade-script-version.sh only exists in the repos that use the
+    # filename-based upgrade mechanism it guards.
     if [ ! -x "$CHECKER" ]; then
         printf 'SKIP  %-58s (no check-upgrade-script-version.sh in this repo)\n' "$label"
         return 0

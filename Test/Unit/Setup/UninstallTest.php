@@ -11,10 +11,9 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Setup\Uninstall;
 
 /**
- * TWO-25386: ported from woocommerce-plugin's "clear settings on
- * deactivation" — Magento's nearest equivalent lifecycle event is module
- * uninstall. Default off: uninstall must leave configuration in place
- * unless the merchant explicitly opted in.
+ * TWO-25386: clear stored settings on module uninstall — Magento's
+ * nearest equivalent lifecycle event for this. Default off: uninstall must
+ * leave configuration in place unless the merchant explicitly opted in.
  *
  * Adversarial review (round 1) found the first version of this class
  * hardcoded `payment/two_payment/%`, ignoring the active brand's own code

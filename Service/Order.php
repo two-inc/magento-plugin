@@ -352,9 +352,9 @@ abstract class Order
     public function getDiscountAmountItem($item): float
     {
         // Compute at native float precision — never round the inputs first.
-        // Early per-component rounding is the phantom-negative trap hit on
-        // PrestaShop (TWO-24741). The returned value stays native so the
-        // payload boundary keeps its single roundAmt() call.
+        // Early per-component rounding is the phantom-negative trap
+        // (TWO-24741). The returned value stays native so the payload
+        // boundary keeps its single roundAmt() call.
         $discountAmount = (float)$item->getDiscountAmount()
             - (float)$item->getDiscountTaxCompensationAmount();
 

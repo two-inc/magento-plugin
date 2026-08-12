@@ -9,9 +9,8 @@ use Two\Gateway\Block\Adminhtml\System\Config\Field\HealthChecklist;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 
 /**
- * TWO-25386: the admin "Health checklist" panel, ported from
- * prestashop-plugin's renderTwoPluginHealthChecklist(). Same three checks
- * as that plugin: API key, environment, SSL verification.
+ * TWO-25386: the admin "Health checklist" panel. Three checks: API key,
+ * environment, SSL verification.
  */
 class HealthChecklistTest extends TestCase
 {

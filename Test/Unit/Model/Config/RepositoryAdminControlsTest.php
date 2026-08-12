@@ -16,8 +16,7 @@ use Two\Gateway\Model\Provenance;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
- * TWO-25386: config accessors for the 8 admin controls ported from
- * woocommerce-plugin and prestashop-plugin.
+ * TWO-25386: config accessors for the 8 admin controls.
  */
 class RepositoryAdminControlsTest extends TestCase
 {
