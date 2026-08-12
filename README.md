@@ -244,7 +244,9 @@ The push goes out under the App token rather than `GITHUB_TOKEN` for two reasons
 
 `.github/workflows/merge-back.yml` keeps `staging` fast-forwarded to match `main` after each release (falling back to a sync PR if the two have diverged).
 
-To trigger a release, merge `staging` into `main`. CI runs on the merged commit; once green, `release.yml` fires.
+`.github/workflows/auto-pr.yml` runs on every push to `staging` (a merge is a push) and keeps a single rolling `staging → main` promotion PR open, no-opping when one already exists or when `staging` is not ahead of `main`.
+
+To trigger a release, merge that `staging → main` PR. CI runs on the merged commit; once green, `release.yml` fires.
 
 ## Links
 

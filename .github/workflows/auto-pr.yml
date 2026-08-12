@@ -2,16 +2,25 @@ name: Auto-PR
 
 on:
   push:
-    branches: [develop]
+    branches: [staging]
   workflow_dispatch:
+
+# One run at a time for this sync PR. The "is a PR already open?" check
+# below is check-then-create, so two runs racing (two merges landing on
+# `staging` in quick succession) could both pass the check and the second
+# `gh pr create` would fail with a red check. The later run supersedes
+# the earlier one, so cancelling in progress is safe.
+concurrency:
+  group: auto-pr-staging-to-main
+  cancel-in-progress: true
 
 permissions:
   contents: read
   pull-requests: write
 
 jobs:
-  develop-to-main:
-    name: develop → main
+  staging-to-main:
+    name: staging → main
     runs-on: ${{ vars.RUNNER_STANDARD }}
     steps:
       - uses: actions/checkout@v7
@@ -26,34 +35,34 @@ jobs:
           client-id: ${{ vars.TWO_INC_APP_CLIENT_ID }}
           private-key: ${{ secrets.TWO_INC_APP_PRIVATE_KEY }}
 
-      - name: Ensure open PR develop → main
+      - name: Ensure open PR staging → main
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          existing=$(gh pr list --base main --head develop --state open --json number --jq '.[0].number // ""')
+          existing=$(gh pr list --base main --head staging --state open --json number --jq '.[0].number // ""')
           if [ -n "$existing" ]; then
             echo "PR #$existing already open — nothing to do."
             exit 0
           fi
-          # No-op when develop has nothing ahead of main. Happens
-          # right after a merge-back fast-forwards develop to match
+          # No-op when staging has nothing ahead of main. Happens
+          # right after a merge-back fast-forwards staging to match
           # main — there's no diff for `gh pr create`, which would
-          # otherwise fail with "No commits between main and develop"
+          # otherwise fail with "No commits between main and staging"
           # and leave a red check on the auto-PR workflow.
-          ahead=$(gh api "repos/${REPO}/compare/main...develop" --jq '.ahead_by')
+          ahead=$(gh api "repos/${REPO}/compare/main...staging" --jq '.ahead_by')
           if [ "$ahead" = "0" ]; then
-            echo "develop has no commits ahead of main — nothing to sync."
+            echo "staging has no commits ahead of main — nothing to sync."
             exit 0
           fi
           gh pr create \
             --base main \
-            --head develop \
-            --title "chore: sync develop → main" \
+            --head staging \
+            --title "chore: sync staging → main" \
             --body "$(cat <<'EOF'
-          Automated rolling sync PR opened by `.github/workflows/auto-pr-develop-to-main.yml`.
+          Automated rolling sync PR opened by `.github/workflows/auto-pr.yml`.
 
-          Merges everything currently on `develop` into `main`. Auto-updates as new commits land on `develop`. Close manually if you need to skip a sync window.
+          Merges everything currently on `staging` into `main`. Auto-updates as new commits land on `staging`. Close manually if you need to skip a sync window.
           EOF
           )"
