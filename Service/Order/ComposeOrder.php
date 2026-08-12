@@ -127,8 +127,8 @@ class ComposeOrder extends OrderService
         $lineItems = $this->reconcileOtherCharges($lineItems, $order, $grossTotal, $taxTotal);
 
         // Compose the final payload for the API call. Fields that may
-        // legitimately be blank are NOT listed here — see the optional-field
-        // allowlist below.
+        // legitimately be blank are NOT listed here — they go through the
+        // omit-when-blank list below.
         $payload = [
             'billing_address' => $this->getAddress($order, $additionalData, 'billing'),
             'shipping_address' => $this->getAddress($order, $additionalData, 'shipping'),
@@ -155,9 +155,7 @@ class ComposeOrder extends OrderService
                 ),
                 // merchant_edit_order_url is deliberately absent: the plugin
                 // exposes no merchant-side edit-order route, so there is no
-                // URL to put here. An empty string would be accepted, but it
-                // is still a value nobody set, and on a later order edit an
-                // empty string overwrites while an absent key is left alone.
+                // URL to put here.
                 'merchant_order_verification_failed_url' => $this->url->getUrl(
                     'two/payment/verificationfailed',
                     ['_two_order_reference' => base64_encode($orderReference)]
@@ -166,22 +164,24 @@ class ComposeOrder extends OrderService
         ];
 
         // TWO-25386: these fields are optional and are omitted rather than sent
-        // blank. Two different reasons, both real:
+        // blank. Two different reasons, both real.
         //
-        // vendor_name is the one that must be non-empty whenever the key is
-        // present. A blank admin setting sent as '' is rejected outright and no
-        // order is created — that rejection is why this ticket exists.
+        // vendor_name is the one that cannot be blank while the key is present:
+        // a blank admin setting sent as '' had the order rejected and nothing
+        // created at all, and that rejection is why this ticket exists.
         //
-        // The other four are accepted as empty strings on create, so they were
-        // never causing rejections. They are omitted because of what happens
-        // afterwards: the order-edit call merges scalar fields, so a key left
-        // out preserves the stored value while a key sent as '' overwrites it
-        // with blank. Composing them empty meant an admin order-address edit
-        // erased whatever the buyer had actually entered at checkout.
+        // The other four never caused a rejection. They are omitted because of
+        // what an omitted key means to a later order edit; the field
+        // constraints and the edit-merge semantics behind that are recorded on
+        // TWO-25386. The decision here is that a value nobody set is left out
+        // of the request entirely. Concretely, composing them blank meant an
+        // admin order-address edit sent buyer_purchase_order_number and
+        // order_note blank (buyer_department and buyer_project were forwarded
+        // from the stored additional_information, so those two survived).
         //
-        // An explicit allowlist, never a blanket empty-strip over $payload:
-        // merchant_confirmation_url and the amount fields are required and must
-        // survive regardless of their value.
+        // An explicit list of what to omit when blank, never a blanket
+        // empty-strip over $payload: merchant_confirmation_url and the amount
+        // fields have to survive regardless of their value.
         $optionalFields = [
             'buyer_department' => $additionalData['department'] ?? '',
             'buyer_project' => $additionalData['project'] ?? '',
@@ -202,14 +202,14 @@ class ComposeOrder extends OrderService
             // Compare as string rather than using empty(), so a legitimate
             // '0' department/project reference is still sent.
             if ((string)$value !== '') {
-                $payload[$key] = $value;
+                $payload[$key] = (string)$value;
             }
         }
 
         // Add invoice_details only if invoiceEmails are present. The payment
-        // reference fields are omitted rather than sent blank: the plugin has
-        // no value to put in them, they are defaulted when the key is absent,
-        // and sending '' would blank the stored value on a later order edit.
+        // reference fields are left out for one reason: the plugin has no value
+        // to put in them, and they are defaulted when the key is absent. Their
+        // constraints are recorded on TWO-25386.
         if (!empty($additionalData['invoiceEmails'])) {
             $payload['invoice_details'] = [
                 'invoice_emails' => explode(',', $additionalData['invoiceEmails']),

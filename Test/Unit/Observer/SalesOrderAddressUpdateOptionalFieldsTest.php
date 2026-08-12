@@ -76,9 +76,9 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
                 $this->capturedAdditionalData = $additionalData;
                 return [
                     'order_reference' => $orderReference,
-                    // shipping_address is required and composed on every call.
-                    // It is a different field from shipping_details and must
-                    // reach the request untouched — see the tests below.
+                    // shipping_address is composed on every call. It is a
+                    // different field from shipping_details and must reach the
+                    // request untouched — see the tests below.
                     'shipping_address' => self::EXPECTED_SHIPPING_ADDRESS,
                 ];
             });
@@ -161,6 +161,11 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
         );
         $this->assertSame('/v1/order/remote-order-id', $this->capturedApiCall[0]);
         $this->assertSame('PUT', $this->capturedApiCall[2]);
+        $this->assertSame(
+            1,
+            $this->order->saveCount,
+            'the order is saved once, after the edit request'
+        );
     }
 
     public function testMissingDepartmentAndProjectKeysAreNotReportedAsAnError(): void
@@ -208,17 +213,13 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
     }
 
     /*
-     * TWO-25386 (scope extension): the address edit is a merging update of an
-     * order already held remotely. A key left out of the request keeps the
-     * stored value; a key sent as an empty string is accepted and overwrites
-     * the stored value with blank. The observer used to append three such keys
-     * unconditionally, so every admin address edit blanked them — and the
-     * plugin never has a value for any of the three in the first place, so
-     * they are now left out of the request under every condition.
-     *
-     * shipping_details is the worst of the three, because it is replaced as a
-     * whole object rather than merged field by field, so sending it at all
-     * discards every stored delivery field the request does not mention.
+     * TWO-25386 (scope extension): the observer used to append
+     * merchant_reference, merchant_additional_info and shipping_details to
+     * every edit request, so every admin address edit sent them blank —
+     * shipping_details as a two-field object with nothing else populated. The
+     * plugin never has a value for any of the three, so they are now left out
+     * of the request under every condition. Why sending them is harmful, and
+     * the edit-merge semantics behind that, are recorded on TWO-25386.
      */
 
     /**
@@ -244,12 +245,12 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
         $this->assertArrayNotHasKey(
             'merchant_reference',
             $payload,
-            'sending it blank would overwrite the stored reference'
+            'the plugin never has a value for it, so it must not be sent'
         );
         $this->assertArrayNotHasKey(
             'merchant_additional_info',
             $payload,
-            'sending it blank would overwrite the stored additional info'
+            'the plugin never has a value for it, so it must not be sent'
         );
     }
 
@@ -262,7 +263,7 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
         $this->assertArrayNotHasKey(
             'shipping_details',
             $payload,
-            'sending it at all replaces the whole stored delivery record'
+            'the plugin never has a value for it, so it must not be sent'
         );
     }
 

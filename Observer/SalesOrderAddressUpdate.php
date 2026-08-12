@@ -114,17 +114,12 @@ class SalesOrderAddressUpdate implements ObserverInterface
                 // sets the completion marker, and the checkout data-assign
                 // path is limited to its own fixed key list.
                 //
-                // Sending them anyway would be actively harmful. This is a
-                // merging update of an order already held remotely: a key left
-                // out keeps whatever is stored, while a key sent as an empty
-                // string is accepted and overwrites the stored value with
-                // blank. shipping_details is worse still, because it is
-                // replaced as a whole object rather than merged field by
-                // field, so sending a partially populated one discards every
-                // delivery field the payload does not mention. That is
-                // delivery/tracking metadata, not the buyer's shipping
-                // address: shipping_address is a separate required field and
-                // is composed as usual, above.
+                // Why sending them anyway is harmful — the edit-merge
+                // semantics of this request — is recorded on TWO-25386. The
+                // decision here is to leave all three out unconditionally.
+                // Note that shipping_details is delivery/tracking metadata,
+                // not the buyer's shipping address: shipping_address is a
+                // different field and is composed as usual, above.
                 $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId(), $payload, 'PUT');
                 $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
                 if ($response && $error) {

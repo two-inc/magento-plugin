@@ -13,12 +13,14 @@ use Two\Gateway\Service\Order\ComposeOrder;
  * TWO-25386: optional payload fields must be omitted rather than composed as
  * empty strings, for two separate reasons.
  *
- * vendor_name has to be non-empty whenever the key is present, so a blank admin
+ * vendor_name cannot be blank while the key is present, so a blank admin
  * setting sent as '' had the order rejected and nothing created at all. The
- * remaining fields do accept an empty string on create, but the later
- * order-edit call merges scalars — an absent key keeps the stored value while
- * an empty one overwrites it — so composing them blank was erasing what the
- * buyer entered at checkout as soon as an admin edited the order address.
+ * remaining fields never caused a rejection; they are omitted because of what
+ * an omitted key means to the later order-edit call. Those field constraints
+ * and the edit-merge semantics are recorded on TWO-25386. What the plugin did
+ * wrong: an admin order-address edit re-composed the payload and sent
+ * buyer_purchase_order_number and order_note blank (buyer_department and
+ * buyer_project were forwarded from the stored additional_information).
  *
  * The getters are allowed to return '' (see
  * Model\Config\RepositoryAdminControlsTest) — it is the caller's job to leave
@@ -164,9 +166,10 @@ class ComposeOrderOptionalFieldsTest extends TestCase
     }
 
     /**
-     * The counterpart guard: omission must never reach the required keys.
-     * A blanket empty-strip over the payload would take
-     * merchant_confirmation_url with it and produce a fresh rejection.
+     * The counterpart guard: omission must never reach the keys that have to be
+     * there. A blanket empty-strip over the payload would take
+     * merchant_confirmation_url with it — TWO-25386 records why that one has to
+     * survive whatever its value.
      */
     public function testRequiredMerchantConfirmationUrlIsAlwaysPresent(): void
     {
@@ -226,17 +229,28 @@ class ComposeOrderOptionalFieldsTest extends TestCase
     }
 
     /**
-     * Payload paths that are legitimately allowed to hold an empty string, each
-     * with the reason it is sanctioned. Adding an entry has to be a deliberate
-     * act — that is the point of the list.
+     * Payload paths sanctioned here to hold an empty string, each with the
+     * reason. Adding an entry has to be a deliberate act — that is the point of
+     * the list.
+     *
+     * Entries are KEYS, not values: the lookup below is array_key_exists(), so
+     * a list-style entry would silently match nothing.
      *
      * Numeric array indices are normalised to '*' so a path stays stable
      * regardless of how many line items a payload happens to carry.
      *
-     * Empty as of TWO-25386: nothing the composer emits is currently allowed to
-     * be an empty string.
+     * None of these are reachable under this test's fixture, which stubs
+     * line-item composition out and leaves the surcharge amount at 0. They are
+     * seeded so that enriching makeOrder() later produces a legible list rather
+     * than a failure that reads as a TWO-25386 regression.
      */
-    private const ACCEPTED_EMPTY_PATHS = [];
+    private const ACCEPTED_EMPTY_PATHS = [
+        // Shipping, buyer-fee and other-charges lines are synthesised by the
+        // plugin rather than drawn from the catalogue.
+        'line_items.*.description' => 'the synthesised shipping line carries no description',
+        'line_items.*.image_url' => 'synthesised lines have no catalogue image',
+        'line_items.*.product_page_url' => 'synthesised lines have no catalogue page',
+    ];
 
     /**
      * The general form of the bug this ticket is about: walk every scalar in a
@@ -252,10 +266,13 @@ class ComposeOrderOptionalFieldsTest extends TestCase
      * this test's fixture (they have their own coverage), so this walks the
      * payload the composer assembles itself, not those nested structures.
      */
-    public function testComposedPayloadHasNoUnsanctionedEmptyStrings(): void
+    public function testComposerAssembledKeysHaveNoUnsanctionedEmptyStrings(): void
     {
         // Every optional input left blank: the worst case for this check, and
-        // the common one in production.
+        // the common one in production. companyName and companyId are inert
+        // here — getBuyer() and getAddress() are stubbed to [] by this fixture,
+        // so nothing consumes them; they are listed only to mirror the shape of
+        // a real blank checkout submission.
         $additionalData = [
             'companyName' => '',
             'companyId' => '',
