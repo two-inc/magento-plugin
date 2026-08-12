@@ -27,6 +27,17 @@ use Two\Gateway\Service\Order\ComposeOrder;
  */
 class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
 {
+    /**
+     * The shipping address the composer produces. Held as a constant so the
+     * "unchanged" assertions compare against the exact composed value.
+     */
+    private const EXPECTED_SHIPPING_ADDRESS = [
+        'street_address' => 'Storgata 1',
+        'city' => 'Oslo',
+        'postal_code' => '0155',
+        'country' => 'NO',
+    ];
+
     /** @var array captured $additionalData handed to the composer */
     private $capturedAdditionalData;
 
@@ -63,7 +74,13 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
         $composeOrder->method('execute')
             ->willReturnCallback(function ($order, $orderReference, array $additionalData): array {
                 $this->capturedAdditionalData = $additionalData;
-                return ['order_reference' => $orderReference];
+                return [
+                    'order_reference' => $orderReference,
+                    // shipping_address is required and composed on every call.
+                    // It is a different field from shipping_details and must
+                    // reach the request untouched — see the tests below.
+                    'shipping_address' => self::EXPECTED_SHIPPING_ADDRESS,
+                ];
             });
 
         $this->apiAdapter = $this->createMock(Adapter::class);
@@ -188,6 +205,128 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
 
         $this->assertSame('Facilities', $this->capturedAdditionalData['department']);
         $this->assertSame('Q3 Refit', $this->capturedAdditionalData['project']);
+    }
+
+    /*
+     * TWO-25386 (scope extension): the address edit is a merging update of an
+     * order already held remotely. A key left out of the request keeps the
+     * stored value; a key sent as an empty string is accepted and overwrites
+     * the stored value with blank. The observer used to append three such keys
+     * unconditionally, so every admin address edit blanked them.
+     *
+     * shipping_details is the worse of the three, because it is replaced as a
+     * whole object rather than merged field by field — sending it with only
+     * carrier and tracking populated discards every other stored delivery
+     * field. It must be omitted outright when there is nothing to send.
+     */
+
+    /**
+     * @return array the captured request payload for the current order
+     */
+    private function executeAndCapturePayload(): array
+    {
+        $this->makeObserverService()->execute(
+            new AddressUpdateObserverStub(new AddressUpdateEventStub(42))
+        );
+
+        $this->assertNotNull($this->capturedApiCall, 'the edit request must be attempted');
+
+        return $this->capturedApiCall[1];
+    }
+
+    public function testBlankMerchantReferenceFieldsAreOmittedFromTheEditRequest(): void
+    {
+        $this->order = $this->makeOrder($this->storedInformationWithoutOptionalFields());
+
+        $payload = $this->executeAndCapturePayload();
+
+        $this->assertArrayNotHasKey(
+            'merchant_reference',
+            $payload,
+            'sending it blank would overwrite the stored reference'
+        );
+        $this->assertArrayNotHasKey(
+            'merchant_additional_info',
+            $payload,
+            'sending it blank would overwrite the stored additional info'
+        );
+    }
+
+    public function testBlankShippingDetailsIsOmittedFromTheEditRequest(): void
+    {
+        $this->order = $this->makeOrder($this->storedInformationWithoutOptionalFields());
+
+        $payload = $this->executeAndCapturePayload();
+
+        $this->assertArrayNotHasKey(
+            'shipping_details',
+            $payload,
+            'sending it at all replaces the whole stored delivery record'
+        );
+    }
+
+    public function testShippingAddressSurvivesWhenOptionalFieldsAreOmitted(): void
+    {
+        $this->order = $this->makeOrder($this->storedInformationWithoutOptionalFields());
+
+        $payload = $this->executeAndCapturePayload();
+
+        $this->assertArrayHasKey('shipping_address', $payload);
+        $this->assertSame(
+            self::EXPECTED_SHIPPING_ADDRESS,
+            $payload['shipping_address'],
+            'shipping_address is required and is not the field being omitted'
+        );
+    }
+
+    public function testPopulatedMerchantReferenceFieldsAreSent(): void
+    {
+        $stored = $this->storedInformationWithoutOptionalFields();
+        $stored['merchant_reference'] = 'REF-4471';
+        $stored['merchant_additional_info'] = 'Delivered to loading bay';
+        $this->order = $this->makeOrder($stored);
+
+        $payload = $this->executeAndCapturePayload();
+
+        $this->assertSame('REF-4471', $payload['merchant_reference']);
+        $this->assertSame('Delivered to loading bay', $payload['merchant_additional_info']);
+    }
+
+    public function testPopulatedShippingDetailsIsSentAndShippingAddressIsUnchanged(): void
+    {
+        $stored = $this->storedInformationWithoutOptionalFields();
+        $stored['shipping_details'] = [
+            'carrier_name' => 'Test Carrier',
+            'tracking_number' => 'TRK-99001',
+        ];
+        $this->order = $this->makeOrder($stored);
+
+        $payload = $this->executeAndCapturePayload();
+
+        $this->assertSame(
+            ['carrier_name' => 'Test Carrier', 'tracking_number' => 'TRK-99001'],
+            $payload['shipping_details']
+        );
+        $this->assertSame(
+            self::EXPECTED_SHIPPING_ADDRESS,
+            $payload['shipping_address'],
+            'shipping_address must be untouched whether or not shipping_details is sent'
+        );
+    }
+
+    public function testShippingDetailsIsSentWhenOnlyTrackingNumberIsKnown(): void
+    {
+        $stored = $this->storedInformationWithoutOptionalFields();
+        $stored['shipping_details'] = ['tracking_number' => 'TRK-99001'];
+        $this->order = $this->makeOrder($stored);
+
+        $payload = $this->executeAndCapturePayload();
+
+        $this->assertSame(
+            ['carrier_name' => '', 'tracking_number' => 'TRK-99001'],
+            $payload['shipping_details'],
+            'a partially known delivery record is still worth sending'
+        );
     }
 }
 

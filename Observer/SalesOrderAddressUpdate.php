@@ -103,12 +103,47 @@ class SalesOrderAddressUpdate implements ObserverInterface
                         'project' => $additionalInformation['buyer_project'] ?? '',
                     ]
                 );
-                $payload['merchant_reference'] = '';
-                $payload['merchant_additional_info'] = '';
-                $payload['shipping_details'] = [
-                    'carrier_name' => '',
-                    'tracking_number' => '',
+                // TWO-25386: this is a PUT that merges into the order already
+                // held remotely. A key left out of the payload keeps whatever
+                // is stored; a key sent as an empty string is accepted and
+                // overwrites the stored value with blank. So sending these
+                // unconditionally does not validate-fail — it silently erases
+                // data that this edit was never meant to touch.
+                //
+                // Same allowlist shape as the composer's optional fields, and
+                // for the same reason: never a blanket empty-strip over
+                // $payload, because shipping_address and the amount fields are
+                // required and must survive regardless of their value.
+                $optionalFields = [
+                    'merchant_reference' => (string)($additionalInformation['merchant_reference'] ?? ''),
+                    'merchant_additional_info' => (string)($additionalInformation['merchant_additional_info'] ?? ''),
                 ];
+                foreach ($optionalFields as $key => $value) {
+                    // String comparison rather than empty(), so a legitimate
+                    // '0' reference would still be sent.
+                    if ($value !== '') {
+                        $payload[$key] = $value;
+                    }
+                }
+
+                // shipping_details needs a stronger rule than the scalars
+                // above, because it is not merged key-by-key: sending the
+                // object at all replaces the stored one wholesale, so every
+                // field this payload omits — carrier tracking URL, expected
+                // delivery date, the delivery-method and recipient details —
+                // is cleared as a side effect. Omitting the key entirely is
+                // the only way to leave the stored shipping information
+                // alone. Note this is delivery/tracking metadata, not the
+                // buyer's shipping address: shipping_address is a separate
+                // required field and is composed as usual, above.
+                $carrierName = (string)($additionalInformation['shipping_details']['carrier_name'] ?? '');
+                $trackingNumber = (string)($additionalInformation['shipping_details']['tracking_number'] ?? '');
+                if ($carrierName !== '' || $trackingNumber !== '') {
+                    $payload['shipping_details'] = [
+                        'carrier_name' => $carrierName,
+                        'tracking_number' => $trackingNumber,
+                    ];
+                }
 
                 $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId(), $payload, 'PUT');
                 $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
