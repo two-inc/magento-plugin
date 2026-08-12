@@ -124,6 +124,10 @@ require_once __DIR__ . '/Stubs/InvoiceUpload.php';
 // the stub file.
 require_once __DIR__ . '/Stubs/ConfigStructureSynthesisFixtures.php';
 
+// URL builder with a real getUrl() (mock target) so ComposeOrder's
+// merchant_urls construction is exercisable; per-symbol guard lives inside.
+require_once __DIR__ . '/Stubs/FrameworkUrl.php';
+
 // Payment-method base class with a real isAvailable() and a declared
 // $_scopeConfig, so Model\Two's availability gates are testable.
 require_once __DIR__ . '/Stubs/PaymentMethod.php';

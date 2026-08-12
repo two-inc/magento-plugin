@@ -126,14 +126,13 @@ class ComposeOrder extends OrderService
         // untaxed residual. See Order::reconcileOtherCharges() docblock.
         $lineItems = $this->reconcileOtherCharges($lineItems, $order, $grossTotal, $taxTotal);
 
-        // Compose the final payload for the API call
+        // Compose the final payload for the API call. Fields that may
+        // legitimately be blank are NOT listed here — they go through the
+        // omit-when-blank list below.
         $payload = [
             'billing_address' => $this->getAddress($order, $additionalData, 'billing'),
             'shipping_address' => $this->getAddress($order, $additionalData, 'shipping'),
             'buyer' => $this->getBuyer($order, $additionalData),
-            'buyer_department' => $additionalData['department'] ?? '',
-            'buyer_project' => $additionalData['project'] ?? '',
-            'buyer_purchase_order_number' => $additionalData['poNumber'] ?? '',
             'currency' => $order->getOrderCurrencyCode(),
             'discount_amount' => $this->roundAmt($this->getDiscountAmountItem($order)),
             'gross_amount' => $this->roundAmt($grossTotal),
@@ -154,26 +153,67 @@ class ComposeOrder extends OrderService
                     'two/payment/cancel',
                     ['_two_order_reference' => base64_encode($orderReference)]
                 ),
-                'merchant_edit_order_url' => '',
+                // merchant_edit_order_url is deliberately absent: the plugin
+                // exposes no merchant-side edit-order route, so there is no
+                // URL to put here.
                 'merchant_order_verification_failed_url' => $this->url->getUrl(
                     'two/payment/verificationfailed',
                     ['_two_order_reference' => base64_encode($orderReference)]
                 ),
             ],
-            'order_note' => $additionalData['orderNote'] ?? '',
-            // TWO-25386: ported from woocommerce-plugin's 'vendor_name',
-            // sent unconditionally there (empty string when unset).
-            'vendor_name' => $this->configRepository->getVendorSiteName($storeId),
         ];
 
-        // Add invoice_details and required placeholders only if invoiceEmails are present
+        // TWO-25386: these fields are optional and are omitted rather than sent
+        // blank. Two different reasons, both real.
+        //
+        // vendor_name is the one that cannot be blank while the key is present:
+        // a blank admin setting sent as '' had the order rejected and nothing
+        // created at all, and that rejection is why this ticket exists.
+        //
+        // The other four never caused a rejection. They are omitted because of
+        // what an omitted key means to a later order edit; the field
+        // constraints and the edit-merge semantics behind that are recorded on
+        // TWO-25386. The decision here is that a value nobody set is left out
+        // of the request entirely. Concretely, composing them blank meant an
+        // admin order-address edit sent buyer_purchase_order_number and
+        // order_note blank (buyer_department and buyer_project were forwarded
+        // from the stored additional_information, so those two survived).
+        //
+        // An explicit list of what to omit when blank, never a blanket
+        // empty-strip over $payload: merchant_confirmation_url and the amount
+        // fields have to survive regardless of their value.
+        $optionalFields = [
+            'buyer_department' => $additionalData['department'] ?? '',
+            'buyer_project' => $additionalData['project'] ?? '',
+            'buyer_purchase_order_number' => $additionalData['poNumber'] ?? '',
+            'order_note' => $additionalData['orderNote'] ?? '',
+            'vendor_name' => $this->configRepository->getVendorSiteName($storeId),
+        ];
+        foreach ($optionalFields as $key => $value) {
+            // $additionalData comes straight from the checkout request, and the
+            // observer that stores it only checks that the top level is an
+            // array — so a crafted request can leave an array sitting in one of
+            // these values. Casting that to string raises a warning, which
+            // developer mode turns into a failed order placement, so drop
+            // anything that is not a scalar instead.
+            if (!is_scalar($value)) {
+                continue;
+            }
+            // Compare as string rather than using empty(), so a legitimate
+            // '0' department/project reference is still sent.
+            if ((string)$value !== '') {
+                $payload[$key] = (string)$value;
+            }
+        }
+
+        // Add invoice_details only if invoiceEmails are present. The payment
+        // reference fields are left out for one reason: the plugin has no value
+        // to put in them, and they are defaulted when the key is absent. Their
+        // constraints are recorded on TWO-25386.
         if (!empty($additionalData['invoiceEmails'])) {
-            $invoiceDetails = [
+            $payload['invoice_details'] = [
                 'invoice_emails' => explode(',', $additionalData['invoiceEmails']),
-                'payment_reference_message' => '',
-                'payment_reference_ocr' => ''
             ];
-            $payload['invoice_details'] = $invoiceDetails;
         }
 
         return $payload;
