@@ -1960,7 +1960,17 @@ define([
             return btoa(JSON.stringify(data));
         },
 
+        // True once the signup URL can be built. Both tokens are minted
+        // together by prefetchSoleTrader(), and neither is optional in the
+        // URL — an empty one produces a signup link the hosted flow rejects.
+        hasSignupTokens() {
+            return !!(this.delegationToken && this.autofillToken);
+        },
+
         openIframe() {
+            if (!this.hasSignupTokens()) {
+                return null;
+            }
             const data = this.getAutofillData();
             var brandParams = this._brandConfig.brand ? `&brand=${this._brandConfig.brand}` : '';
             if (this._brandConfig.brandVersion) {
@@ -1968,7 +1978,7 @@ define([
             }
             const URL = `${this._brandConfig.checkoutPageUrl}/soletrader/signup?businessToken=${this.delegationToken}&autofillToken=${this.autofillToken}&autofillData=${data}${brandParams}`;
             const windowFeatures =
-                'location=yes,resizable=yes,scrollbars=yes,status=yes, height=805, width=610';
+                'location=yes,resizable=yes,scrollbars=yes,status=yes, height=805, width=700';
             return window.open(URL, '_blank', windowFeatures);
         },
 
@@ -2025,29 +2035,40 @@ define([
                 // Resolved with no matching buyer → signup. Opening here keeps
                 // the gesture intact; if the browser blocks it, show the link.
                 const win = this.openIframe();
-                this.showPopupMessage(!win);
+                // Blocked popup → offer the link, but only if it can build a
+                // valid signup URL. A prefetch that resolved through its catch
+                // reaches here READY with no tokens minted, and a link to
+                // `businessToken=&autofillToken=` is worse than none.
+                this.showPopupMessage(!win && this.hasSignupTokens());
             } else {
                 // Prefetch not ready (payment selected before email entered):
-                // kick it off and offer the link as the fallback.
-                this.showPopupMessage(true);
-                this.prefetchSoleTrader();
+                // kick it off and offer the link as the fallback — but only
+                // once the tokens it needs exist. Offered before they are
+                // minted, the link builds a signup URL with empty
+                // businessToken/autofillToken, which the hosted flow rejects.
+                this.prefetchSoleTrader().then(() => {
+                    this.showPopupMessage(this.hasSignupTokens());
+                });
             }
         },
 
         // Mint tokens + read the buyer on the Two cookie for the entered email.
         // Deduped per email so re-renders don't re-mint. A matching buyer
         // auto-selects Sole trader and prefills via applyPrefetch().
+        //
+        // Always returns a promise, including on the skip paths, so a caller
+        // can sequence on the tokens being minted.
         prefetchSoleTrader() {
             if (!this.showModeTab()) {
-                return;
+                return Promise.resolve();
             }
             const email = (this.getEmail() || '').trim();
             if (!email || email === this.prefetchedEmail) {
-                return;
+                return Promise.resolve();
             }
             this.prefetchedEmail = email;
             this.prefetched = { ready: false, buyer: null, matches: false };
-            this.getTokens()
+            return this.getTokens()
                 .then((json) => {
                     this.delegationToken = json.delegation_token;
                     this.autofillToken = json.autofill_token;
