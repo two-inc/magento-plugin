@@ -44,6 +44,9 @@ const BILLING = {
     country_code: 'GB'
 };
 
+/** Sentinel for the scope the shared model resolves; see the scope spec. */
+const BILLING_ROLE_ROOT = { billingRoleFormRoot: true };
+
 const BUYER = {
     email: ENTERED_EMAIL,
     organization_number: '999888777',
@@ -62,14 +65,24 @@ const BUYER = {
 function loadRenderer(buyer, options) {
     const opts = options || {};
     const applied = [];
+    const roots = [];
+    const reverts = [];
     const listeners = [];
+    const removed = [];
     const companySearch = Object.assign(
         {},
         loadAmdModule(SEARCH, { jquery: require('./amd-harness').defaultMocks().jquery }),
         {
-            applyAddress: function (address) {
+            applyAddress: function (address, root) {
                 applied.push(address);
-                return { city: address.city };
+                roots.push(root);
+            },
+            billingRoleFormRoot: function () {
+                return BILLING_ROLE_ROOT;
+            },
+            revertAutofilledAddress: function () {
+                reverts.push(true);
+                return 0;
             }
         }
     );
@@ -82,6 +95,9 @@ function loadRenderer(buyer, options) {
                 checkoutConfig: { payment: {} },
                 addEventListener: function (name, fn) {
                     listeners.push({ name: name, fn: fn });
+                },
+                removeEventListener: function (name, fn) {
+                    removed.push({ name: name, fn: fn });
                 }
             }
         }
@@ -99,7 +115,14 @@ function loadRenderer(buyer, options) {
     renderer.getTokens = () => Promise.resolve({ delegation_token: 'dt', autofill_token: 'at' });
     renderer.fetchBuyer = () => Promise.resolve(buyer);
 
-    return { renderer: renderer, applied: applied, listeners: listeners };
+    return {
+        renderer: renderer,
+        applied: applied,
+        roots: roots,
+        reverts: reverts,
+        listeners: listeners,
+        removed: removed
+    };
 }
 
 /**
@@ -192,19 +215,35 @@ describe('the write-back ignores the address-lookup switches (§5)', () => {
         }
     );
 
-    test('neither switch is even read on the write path', () => {
-        // Stated against the source because the gate's absence is the
-        // behaviour: a spec that only asserted the write landed would keep
-        // passing if someone added a gate whose flag happened to be on.
-        const fs = require('fs');
-        const path = require('path');
-        const src = fs.readFileSync(path.resolve(__dirname, '..', '..', RENDERER), 'utf8');
-        const write = src.match(/writeSoleTraderAddress\(buyer\)\s*\{[\s\S]*?\n {8}\},/);
-        expect(write).not.toBeNull();
-        expect(write[0]).not.toMatch(/isAddress\w*Enabled/);
-        const adopt = src.match(/adoptSoleTraderBuyer\(buyer\)\s*\{[\s\S]*?\n {8}\},/);
-        expect(adopt).not.toBeNull();
-        expect(adopt[0]).not.toMatch(/isAddress\w*Enabled/);
+    test('neither switch is even READ on the write path', () => {
+        // Stronger than asserting the write landed with both off: a gate added
+        // in a helper, or read through the brand config, throws here. A spec
+        // that only checked the outcome would keep passing if the flag it
+        // consulted happened to be on.
+        const { renderer, applied } = loadRenderer(BUYER);
+        const refuse = {
+            get: function () {
+                throw new Error('the address-lookup switch must not be read here');
+            }
+        };
+        Object.defineProperty(renderer, 'isAddressAreaCompanySearchEnabled', refuse);
+        Object.defineProperty(renderer._brandConfig, 'isAddressSearchEnabled', refuse);
+
+        renderer.adoptSoleTraderBuyer(BUYER);
+
+        expect(applied).toEqual([BILLING]);
+    });
+
+    test('the write is scoped to the billing-role form, not document-wide', () => {
+        // §1(a.3): the tile writes as the billing/invoice role, and the payment
+        // step has more than one address form in the DOM to get that wrong in —
+        // Luma leaves the shipping form there and core renders a billing form
+        // per payment method.
+        const { renderer, roots } = loadRenderer(BUYER);
+
+        renderer.adoptSoleTraderBuyer(BUYER);
+
+        expect(roots).toEqual([BILLING_ROLE_ROOT]);
     });
 });
 
@@ -227,12 +266,11 @@ describe('what the write-back does with an awkward buyer record', () => {
     ])('%p -> %p (%s)', (record, expected) => {
         const { renderer, applied } = loadRenderer(null);
 
-        const wrote = renderer.adoptSoleTraderBuyer(
+        renderer.adoptSoleTraderBuyer(
             Object.assign({ organization_number: '1', company_name: 'Example' }, record)
         );
 
         expect(applied).toEqual(expected === null ? [] : [expected]);
-        expect(wrote).toBe(expected !== null);
     });
 
     test('a sole trader with no trading name still gets their address', () => {
@@ -254,19 +292,19 @@ describe('what the write-back does with an awkward buyer record', () => {
     test('adoption is safe against a non-buyer', () => {
         const { renderer, applied } = loadRenderer(null);
 
-        expect(renderer.adoptSoleTraderBuyer(null)).toBe(false);
-        expect(renderer.adoptSoleTraderBuyer('buyer')).toBe(false);
+        renderer.adoptSoleTraderBuyer(null);
+        renderer.adoptSoleTraderBuyer('buyer');
         expect(applied).toEqual([]);
     });
 });
 
 describe('re-entrancy', () => {
-    test('a repeated adoption re-writes the same address and starts no second intent', () => {
+    test('a repeated adoption writes the address once and starts no second intent', () => {
         // The popup can post ACCEPTED more than once (double submit, a reopened
-        // window) and a re-render can replay the prefetch. The address write is
-        // idempotent by construction — same payload, same fields — and the
-        // order intent stays behind fillCompanyData()'s in-flight guard rather
-        // than gaining a trigger of its own here.
+        // window) and a re-render can replay the prefetch. A replay must not
+        // overwrite a correction the buyer made to the address after the first
+        // write, and the order intent stays behind fillCompanyData()'s
+        // in-flight guard rather than gaining a trigger of its own here.
         const { renderer, applied } = loadRenderer(BUYER);
         renderer.isOrderIntentEnabled = true;
         let intents = 0;
@@ -289,7 +327,81 @@ describe('re-entrancy', () => {
         renderer.adoptSoleTraderBuyer(BUYER);
         renderer.adoptSoleTraderBuyer(BUYER);
 
-        expect(applied).toEqual([BILLING, BILLING]);
+        expect(applied).toEqual([BILLING]);
         expect(intents).toBe(1);
+    });
+});
+
+describe('the state the write-back has to survive', () => {
+    test('a different identity writes again; the same one does not', () => {
+        const { renderer, applied } = loadRenderer(null);
+        const other = Object.assign({}, BUYER, {
+            organization_number: '111222333',
+            billing_address: { city: 'Elsewhere', street: 'Other Lane' }
+        });
+
+        renderer.adoptSoleTraderBuyer(BUYER);
+        renderer.adoptSoleTraderBuyer(BUYER);
+        renderer.adoptSoleTraderBuyer(other);
+
+        expect(applied).toEqual([BILLING, other.billing_address]);
+    });
+
+    test('leaving sole-trader mode takes the address back and re-arms the write', () => {
+        // The identity half is already discarded on the way out; without the
+        // address half the sole trader's address goes out under whatever
+        // registered company the buyer searches for next.
+        const { renderer, applied, reverts } = loadRenderer(null);
+        renderer.enableCompanySearch = function () {};
+        renderer.fillCustomerData = function () {};
+        renderer.clearCompany = function () {};
+
+        renderer.adoptSoleTraderBuyer(BUYER);
+        renderer.showSoleTrader(true);
+        renderer.registeredOrganisationMode();
+        renderer.adoptSoleTraderBuyer(BUYER);
+
+        expect(reverts).toHaveLength(1);
+        expect(applied).toEqual([BILLING, BILLING]);
+    });
+
+    test('a superseded prefetch neither records its buyer nor adopts it', () => {
+        // The buyer corrects their email mid-flight. The first chain resolves
+        // last, against an email that is no longer in the form: it must not
+        // record its buyer as the prefetch (a chip click would adopt it) and
+        // must not run applyPrefetch(), which would revert sole-trader mode and
+        // strand the newer buyer's address with no identity beside it.
+        const first = Object.assign({}, BUYER, { email: 'first@example.com' });
+        const { renderer, applied } = loadRenderer(first);
+        renderer.showModeTab(true);
+        renderer.getEmail = () => 'first@example.com';
+
+        const chain = renderer.prefetchSoleTrader();
+        // A second chain starts and wins the race while the first is in flight.
+        renderer._prefetchGeneration += 1;
+
+        return chain.then(() => {
+            expect(applied).toEqual([]);
+            expect(renderer.prefetched.buyer).toBeNull();
+            expect(renderer.companyId()).toBe('');
+        });
+    });
+
+    test('dispose detaches the popup listener, so one message adopts once', () => {
+        // A re-rendering checkout (Amasty, Fire Checkout) rebuilds the method
+        // list; a listener left behind by each render would write to the live
+        // address form once per stacked renderer.
+        const { renderer, listeners, removed } = loadRenderer(BUYER);
+        renderer.destroyCompanySearchWidget = function () {};
+        renderer._super = function () {};
+
+        renderer.popupMessageListener();
+        const bound = listeners.filter((l) => l.name === 'message');
+        expect(bound).toHaveLength(1);
+
+        renderer.dispose();
+
+        expect(removed).toEqual([{ name: 'message', fn: bound[0].fn }]);
+        expect(renderer._popupMessageHandler).toBeNull();
     });
 });

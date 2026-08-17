@@ -48,6 +48,9 @@ function makeDollar() {
     const triggered = [];
 
     function isVisible(el) {
+        // jsdom has no layout, so jQuery's own `:visible` (offsetWidth/Height)
+        // would answer false for everything. Only the root-form choice uses it,
+        // and inline `display` is enough to express that here.
         let node = el;
         while (node && node.style) {
             if (node.hidden || node.style.display === 'none') return false;
@@ -95,6 +98,18 @@ function makeDollar() {
             },
             first: function () {
                 return wrap(nodes.slice(0, 1));
+            },
+            eq: function (index) {
+                return wrap(nodes.slice(index, index + 1));
+            },
+            find: function (selector) {
+                const found = [];
+                nodes.forEach(function (n) {
+                    found.push.apply(found, Array.prototype.slice.call(
+                        n.querySelectorAll(selector)
+                    ));
+                });
+                return wrap(found);
             }
         };
         return set;
@@ -132,9 +147,11 @@ const ADDRESS_FIELDS =
  *
  * `select` is the country-with-regions shape (Magento renders the region code
  * in each option's `title` and the name as its text). `text` is the
- * country-without-regions shape. `both` is what the checkout actually renders
- * for a country WITH regions — the free-text input is still in the DOM,
- * hidden — which is why the select is tried first.
+ * country-without-regions shape, where the select is present but carries only
+ * its placeholder. `both` is what the checkout actually renders for a country
+ * WITH regions — the free-text input is still in the DOM beside the populated
+ * select — which is why having real options, not CSS visibility, is what
+ * decides which control is in play.
  */
 const REGION_MARKUP = {
     none: '',
@@ -144,13 +161,14 @@ const REGION_MARKUP = {
         '  <option value="12" title="CA">California</option>' +
         '  <option value="43" title="NY">New York</option>' +
         '</select>',
-    text: '<input name="region" value="" />',
+    text: '<select name="region_id"><option value=""></option></select>' +
+        '<input name="region" value="" />',
     both:
         '<select name="region_id">' +
         '  <option value=""></option>' +
         '  <option value="12" title="CA">California</option>' +
         '</select>' +
-        '<input name="region" value="" style="display:none" />'
+        '<input name="region" value="" />'
 };
 
 /**
@@ -285,13 +303,13 @@ describe('a region lands wherever the address format can hold it', () => {
             'both',
             'Kent',
             { region_id: '', region: '', city: 'Los Angeles, Kent' },
-            'a HIDDEN free-text region is not a usable field either'
+            'a populated select wins over the free-text input beside it'
         ],
         [
             'text',
             'Kent',
             { region: 'Kent', city: 'Los Angeles' },
-            'a visible free-text region field takes it verbatim'
+            'a placeholder-only select means the free-text field is in play'
         ],
         [
             'none',
@@ -393,8 +411,9 @@ describe('every field the write can reach, the revert can take back', () => {
         model.applyAddress({ city: 'Ashford', street: 'Mill Lane', region: 'Kent' });
         field('region').value = 'Surrey';
 
-        // city, postcode and line 1 revert; the edited region does not.
-        expect(model.revertAutofilledAddress()).toBe(3);
+        // city and line 1 revert; the edited region does not, and the payload
+        // said nothing about a postcode so none was ever written.
+        expect(model.revertAutofilledAddress()).toBe(2);
         expect(field('region').value).toBe('Surrey');
     });
 
@@ -433,5 +452,147 @@ describe('every field the write can reach, the revert can take back', () => {
         model.applyAddress({ city: 'Los Angeles', street: 'Mill Lane', country_code: 'US' });
 
         expect(document.querySelector('[name="country_id"]').value).toBe('GB');
+    });
+});
+
+describe('an omission is not a blank, but a stale value is not kept either', () => {
+    test.each([
+        [
+            { city: 'Ashford', street: 'Mill Lane' },
+            { postcode: 'TN23 1AA' },
+            'a payload with no postcode leaves the buyer\'s own postcode alone'
+        ],
+        [
+            { city: 'Ashford', postal_code: '', street: 'Mill Lane' },
+            { postcode: '' },
+            'an explicit empty postcode IS an instruction, and blanks it'
+        ]
+    ])('%p -> %p (%s)', (address, expected) => {
+        const { model, field } = load();
+        field('postcode').value = 'TN23 1AA';
+
+        model.applyAddress(address);
+
+        Object.keys(expected).forEach(function (name) {
+            expect(`${name}=${field(name).value}`).toBe(`${name}=${expected[name]}`);
+        });
+    });
+
+    test('a second selection takes back what the first wrote and the second does not mention', () => {
+        // Otherwise the form ends up holding one address assembled from two
+        // companies: line 2 and the region from the first, everything else from
+        // the second, with nothing on screen saying so.
+        const { model, field } = load('select');
+
+        model.applyAddress({
+            city: 'Los Angeles',
+            postal_code: '90001',
+            street: 'Mill Lane',
+            building: 'Mill House',
+            region: 'California'
+        });
+        expect(field('street[1]').value).toBe('Mill Lane');
+        expect(field('region_id').value).toBe('12');
+
+        model.applyAddress({ city: 'Ashford', postal_code: 'TN23 1AA', street: 'Mill Lane' });
+
+        expect(field('street[0]').value).toBe('Mill Lane');
+        expect(field('street[1]').value).toBe('');
+        expect(field('region_id').value).toBe('');
+    });
+
+    test('what the buyer edited between the two selections survives the retraction', () => {
+        const { model, field } = load('select');
+
+        model.applyAddress({ street: 'Mill Lane', building: 'Mill House', city: 'Ashford' });
+        field('street[1]').value = 'Second Line By Hand';
+
+        model.applyAddress({ street: 'Other Lane', city: 'Ashford' });
+
+        expect(field('street[1]').value).toBe('Second Line By Hand');
+    });
+
+    test('the region is not appended twice when the payload has no city of its own', () => {
+        const { model, field } = load();
+        field('city').value = 'Ashford, Kent';
+
+        model.applyAddress({ street: 'Mill Lane', region: 'Kent' });
+
+        expect(field('city').value).toBe('Ashford, Kent');
+    });
+});
+
+describe('a shop configured for a single street line', () => {
+    test('joins the locator and the street rather than losing the street', () => {
+        // `input[name="street[1]"]` simply does not exist when
+        // `customer/address/street_lines` is 1, and jQuery no-ops on an empty
+        // set — so routing the street there would discard it silently.
+        document.body.innerHTML =
+            '<form id="shipping-new-address-form">' +
+            '<input name="city" value="" /><input name="postcode" value="" />' +
+            '<input name="street[0]" value="" />' +
+            '</form>';
+        const model = loadAmdModule(SEARCH, { jquery: makeDollar() });
+
+        model.applyAddress({ street: 'Mill Lane', building: 'Mill House', city: 'Ashford' });
+
+        expect(document.querySelector('[name="street[0]"]').value).toBe('Mill House, Mill Lane');
+    });
+});
+
+describe('the write can be scoped to one address form', () => {
+    /** Two forms, as the payment step actually renders them. */
+    function loadTwoForms(billingHidden) {
+        document.body.innerHTML =
+            '<form id="shipping-new-address-form">' +
+            '<input name="city" value="Shipping City" /><input name="postcode" value="" />' +
+            '<input name="street[0]" value="" /><input name="street[1]" value="" />' +
+            '</form>' +
+            `<form id="billing-new-address-form"${billingHidden ? ' style="display:none"' : ''}>` +
+            '<input name="city" value="Billing City" /><input name="postcode" value="" />' +
+            '<input name="street[0]" value="" /><input name="street[1]" value="" />' +
+            '</form>';
+        return loadAmdModule(SEARCH, { jquery: makeDollar() });
+    }
+
+    /**
+     * @param {string} formId form to read from
+     * @param {string} name field name
+     * @returns {string}
+     */
+    function valueIn(formId, name) {
+        return document.querySelector(`#${formId} [name="${name}"]`).value;
+    }
+
+    test('a scoped write reaches only that form', () => {
+        // The payment step is not a one-form page: Luma leaves the shipping
+        // form in the DOM and core renders a billing form per payment method,
+        // all with the same field names. An unscoped write reaches every one.
+        const model = loadTwoForms(false);
+
+        model.applyAddress({ city: 'Ashford', street: 'Mill Lane' }, model.billingRoleFormRoot());
+
+        expect(valueIn('billing-new-address-form', 'city')).toBe('Ashford');
+        expect(valueIn('shipping-new-address-form', 'city')).toBe('Shipping City');
+    });
+
+    test('billingRoleFormRoot prefers the billing form, and a visible one over a hidden one', () => {
+        const model = loadTwoForms(false);
+        expect(model.billingRoleFormRoot()[0].id).toBe('billing-new-address-form');
+
+        // Hidden billing form (its payment method is not the selected one):
+        // the visible shipping form is the address in play.
+        const hidden = loadTwoForms(true);
+        expect(hidden.billingRoleFormRoot()[0].id).toBe('shipping-new-address-form');
+    });
+
+    test('with no address form at all there is no scope, and the write stays document-wide', () => {
+        document.body.innerHTML = '<div><input name="city" value="" /></div>';
+        const model = loadAmdModule(SEARCH, { jquery: makeDollar() });
+
+        expect(model.billingRoleFormRoot()).toBeNull();
+
+        model.applyAddress({ city: 'Ashford' }, model.billingRoleFormRoot());
+        expect(document.querySelector('[name="city"]').value).toBe('Ashford');
     });
 });

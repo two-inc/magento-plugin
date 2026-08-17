@@ -449,21 +449,13 @@ describe('the tile resolves the BILLING-role country (TWO-25461 §1(a.3))', () =
         expect(ctx.searchCountryCode()).toBe('');
     });
 
-    test('it is the SAME source the autofill payload and the order intent read', () => {
-        // §1 asks for one resolution reused everywhere. A second mirror is the
-        // documented root cause of the bugs this port exists to avoid, so the
-        // getter is pinned to quote.billingAddress() rather than to any
-        // re-derived value.
-        const fs = require('fs');
-        const path = require('path');
-        const src = fs.readFileSync(path.resolve(__dirname, '..', '..', RENDERER), 'utf8');
-        const getter = src.match(/billingRoleCountryCode:\s*function\s*\(\)\s*\{[\s\S]*?\n {8}\},/);
-        expect(getter).not.toBeNull();
-        expect(getter[0]).toContain('quote.billingAddress()');
-        // …and it is consulted FIRST, ahead of both shipping-biased feeds.
-        const search = src.match(/searchCountryCode:\s*function\s*\(\)\s*\{[\s\S]*?\n {8}\},/);
-        expect(search[0].indexOf('billingRoleCountryCode()')).toBeLessThan(
-            search[0].indexOf('this.countryCode()')
-        );
+    test('the billing country comes from the quote, not from a mirror of its own', () => {
+        // §1 asks for ONE resolution reused everywhere. The quote double is the
+        // only place this value exists in the spec, so a getter that re-derived
+        // the country from anywhere else answers ''.
+        document.body.innerHTML = '';
+        const ctx = makeCtxWithBilling(loadCompanySearch(), '', 'DK');
+        expect(ctx.billingRoleCountryCode()).toBe('dk');
+        expect(ctx.searchCountryCode()).toBe('dk');
     });
 });
