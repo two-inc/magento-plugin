@@ -2047,20 +2047,13 @@ define([
             }
             this.prefetchedEmail = email;
             this.prefetched = { ready: false, buyer: null, matches: false };
-            this.getTokens()
+            return this.getTokens()
                 .then((json) => {
                     this.delegationToken = json.delegation_token;
                     this.autofillToken = json.autofill_token;
-                    return this.fetchBuyer();
+                    return this.resolveBuyer(false);
                 })
-                .then((buyer) => {
-                    const entered = (this.getEmail() || '').trim().toLowerCase();
-                    const matches = !!(
-                        buyer &&
-                        buyer.email &&
-                        String(buyer.email).toLowerCase() === entered
-                    );
-                    this.prefetched = { ready: true, buyer: buyer, matches: matches };
+                .then(() => {
                     this.applyPrefetch();
                 })
                 .catch(() => {
@@ -2084,6 +2077,42 @@ define([
                 .catch(() => null);
         },
 
+        /**
+         * Read the buyer on the Two cookie and record it as the prefetch
+         * result, resolving to it.
+         *
+         * `authenticated` is the difference between the two contexts that
+         * reach here, and it is not cosmetic. On the PASSIVE pre-auth path
+         * nothing proves the cookie's buyer is the person checking out, so
+         * the buyer only counts when its email matches the one entered on
+         * the form. After the signup popup reports ACCEPTED the buyer has
+         * just authenticated server-side, and the email it authenticated
+         * with IS the identity — the order's contact-email field has no say
+         * in it. Requiring a match there discarded an authenticated buyer
+         * and left the company field permanently blank with no route
+         * forward (TWO-25461).
+         *
+         * @param {boolean} authenticated buyer already proved this identity
+         * @returns {Promise<object>} the recorded prefetch result
+         */
+        resolveBuyer(authenticated) {
+            return this.fetchBuyer().then((buyer) => {
+                let matches;
+                if (authenticated) {
+                    matches = !!buyer;
+                } else {
+                    const entered = (this.getEmail() || '').trim().toLowerCase();
+                    matches = !!(
+                        buyer &&
+                        buyer.email &&
+                        String(buyer.email).toLowerCase() === entered
+                    );
+                }
+                this.prefetched = { ready: true, buyer: buyer, matches: matches };
+                return this.prefetched;
+            });
+        },
+
         // React to a resolved prefetch: a matching buyer auto-selects Sole
         // trader and prefills; a non-match reverts an active Sole-trader
         // selection to Registered organisation.
@@ -2105,21 +2134,15 @@ define([
             window.addEventListener('message', (event) => {
                 if (this.showSoleTrader() && event.origin == this._brandConfig.checkoutPageUrl) {
                     if (event.data == 'ACCEPTED') {
-                        // Signup complete: the new sole trader now owns the
-                        // entered email — re-read and autofill, staying in
-                        // sole-trader mode.
-                        this.fetchBuyer().then((buyer) => {
-                            const entered = (this.getEmail() || '').trim().toLowerCase();
-                            const matches = !!(
-                                buyer &&
-                                buyer.email &&
-                                String(buyer.email).toLowerCase() === entered
-                            );
-                            this.prefetched = { ready: true, buyer: buyer, matches: matches };
-                            if (matches) {
+                        // Signup complete: the buyer authenticated in the
+                        // popup, so re-read and autofill whatever identity
+                        // that produced, staying in sole-trader mode. No
+                        // email-match check — see resolveBuyer().
+                        this.resolveBuyer(true).then((pf) => {
+                            if (pf.matches && pf.buyer) {
                                 this.fillCompanyData({
-                                    companyId: buyer.organization_number,
-                                    companyName: buyer.company_name
+                                    companyId: pf.buyer.organization_number,
+                                    companyName: pf.buyer.company_name
                                 });
                                 this.showPopupMessage(false);
                             }
