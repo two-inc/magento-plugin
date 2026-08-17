@@ -494,10 +494,47 @@ define([
          * beat a correct quote-derived one — reintroducing the same class of bug
          * on the platforms that worked.
          *
+         * TWO-25461 §1(a.3) added the billing-role read AHEAD of all of that.
+         * The tile has no address fields of its own, so its country is whatever
+         * the address playing the BILLING/INVOICE role says — never "whichever
+         * address is primary". Every feed below is shipping-biased in some
+         * state: the `countryCode` customer-data section is written from the
+         * SHIPPING form only, updateAddress() takes whichever quote address
+         * fired last, the delegated watcher takes whichever country select the
+         * buyer touched, and the DOM fallback tries
+         * `#shipping-new-address-form` first. With a shipping country differing
+         * from the billing one, any of them can leave the tile searching — and
+         * gating sole-trader availability on — the wrong country.
+         *
+         * `quote.billingAddress()` is the same source getAutofillData(),
+         * getData() and placeOrderIntent() already read, which is the point:
+         * §1 asks for ONE resolution reused everywhere, not a fourth mirror.
+         * It is also quote-derived rather than a DOM read, so the objection
+         * that killed DOM-first below does not apply to it.
+         *
          * @returns {string} lower-cased ISO country code, or ''
          */
         searchCountryCode: function () {
-            return this.countryCode() || companySearch.currentAddressFormCountry();
+            return (
+                this.billingRoleCountryCode() ||
+                this.countryCode() ||
+                companySearch.currentAddressFormCountry()
+            );
+        },
+        /**
+         * The country of the address playing the billing/invoice ROLE, lower
+         * cased, or '' when the quote has no billing address yet.
+         *
+         * Read live on every call, never cached: `quote.billingAddress()` can
+         * legitimately be null for a transient window (see fillCompanyData()'s
+         * placeOrderIntent() guard), and it changes as the buyer edits.
+         *
+         * @returns {string}
+         */
+        billingRoleCountryCode: function () {
+            const billingAddress = quote.billingAddress();
+            const countryId = billingAddress && billingAddress.countryId;
+            return typeof countryId === 'string' ? countryId.toLowerCase() : '';
         },
         /**
          * Keep `countryCode()` current from the buyer's own address-form country
@@ -2026,11 +2063,7 @@ define([
             this.enterSoleTraderUi();
             const pf = this.prefetched;
             if (pf.ready && pf.matches && pf.buyer) {
-                this.fillCompanyData({
-                    companyId: pf.buyer.organization_number,
-                    companyName: pf.buyer.company_name
-                });
-                this.showPopupMessage(false);
+                this.adoptSoleTraderBuyer(pf.buyer);
             } else if (pf.ready) {
                 // Resolved with no matching buyer → signup. Opening here keeps
                 // the gesture intact; if the browser blocks it, show the link.
@@ -2134,6 +2167,77 @@ define([
             });
         },
 
+        /**
+         * Adopt the sole trader an autofill buyer record describes: the
+         * registered ADDRESS into the checkout address form, then the identity
+         * into the tile (TWO-25461 §5).
+         *
+         * The single write-back path for all three contexts that resolve a
+         * buyer — the passive prefetch, the chip click against an already
+         * resolved prefetch, and the popup's post-signup `ACCEPTED` message.
+         * They were three copies of the identity half with no address half at
+         * all: `fetchBuyer()` has always returned the buyer's address and every
+         * caller discarded it, so a completed sole-trader signup left the buyer
+         * retyping an address the plugin already held.
+         *
+         * NOT gated on `isAddressAreaCompanySearchEnabled` or the server-side
+         * `isAddressSearchEnabled`, deliberately and per §5: those gate an
+         * ORDINARY company-search selection's address write, and the tile is
+         * the only place the sole-trader entry point exists — so gating here
+         * would leave the write permanently dead on exactly the shops the
+         * feature runs on. companySearch.applyAddress() carries no gate of its
+         * own (the gate lives one level up, in lookupCompanyAddress()), so
+         * calling it directly IS the bypass; there is nothing to opt out of.
+         *
+         * Address BEFORE identity: fillCompanyData() is what fires the order
+         * intent, and placeOrderIntent() reads `quote.billingAddress()`, so the
+         * address wants to be in place first. No new intent trigger is added
+         * either way — the trigger stays fillCompanyData()'s, guarded by
+         * `_orderIntentInFlightFor`, so a re-entrant adoption (a second
+         * prefetch, a repeated `ACCEPTED`) cannot start a second one for the
+         * same company.
+         *
+         * @param {object} buyer `/autofill/v1/buyer/current` record
+         * @returns {boolean} whether the address write landed anything
+         */
+        adoptSoleTraderBuyer(buyer) {
+            if (!buyer || typeof buyer !== 'object') return false;
+            const wrote = this.writeSoleTraderAddress(buyer);
+            // Writes nothing without BOTH a name and a number — a sole trader
+            // with no trading name of their own reaches the order through the
+            // number alone, and the ADDRESS above is still filled for them,
+            // which is the whole reason it does not sit inside this call.
+            this.fillCompanyData({
+                companyId: buyer.organization_number,
+                companyName: buyer.company_name
+            });
+            this.showPopupMessage(false);
+            return wrote;
+        },
+        /**
+         * Write the buyer's registered address into the checkout address form.
+         *
+         * `billing_address` is the registered address and is what fills the
+         * form; `shipping_address` is a FALLBACK for a record that carries one
+         * and no billing address. A null must never be allowed to blank
+         * anything, hence the shape check rather than a truthiness test on the
+         * whole record.
+         *
+         * Field routing (which part lands on which line, and where the region
+         * goes) is companySearch.applyAddress()'s, shared with the ordinary
+         * company-search write — §2.6 asks for one rule for both, with no
+         * sole-trader special case.
+         *
+         * @param {object} buyer `/autofill/v1/buyer/current` record
+         * @returns {boolean} whether anything was written
+         */
+        writeSoleTraderAddress(buyer) {
+            const source = buyer.billing_address || buyer.shipping_address || null;
+            if (!source || typeof source !== 'object') return false;
+            const written = companySearch.applyAddress(source) || {};
+            console.debug({ logger: 'twoPayment.writeSoleTraderAddress', written });
+            return Object.keys(written).length > 0;
+        },
         // React to a resolved prefetch: a matching buyer auto-selects Sole
         // trader and prefills; a non-match reverts an active Sole-trader
         // selection to Registered organisation.
@@ -2141,11 +2245,7 @@ define([
             const pf = this.prefetched;
             if (pf.matches && pf.buyer) {
                 this.enterSoleTraderUi();
-                this.fillCompanyData({
-                    companyId: pf.buyer.organization_number,
-                    companyName: pf.buyer.company_name
-                });
-                this.showPopupMessage(false);
+                this.adoptSoleTraderBuyer(pf.buyer);
             } else if (this.showSoleTrader()) {
                 this.registeredOrganisationMode();
             }
@@ -2161,11 +2261,7 @@ define([
                         // email-match check — see resolveBuyer().
                         this.resolveBuyer(true).then((pf) => {
                             if (pf.matches && pf.buyer) {
-                                this.fillCompanyData({
-                                    companyId: pf.buyer.organization_number,
-                                    companyName: pf.buyer.company_name
-                                });
-                                this.showPopupMessage(false);
+                                this.adoptSoleTraderBuyer(pf.buyer);
                             }
                         });
                     } else {

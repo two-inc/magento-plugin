@@ -241,6 +241,27 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      */
     const AUTOFILL_MARKER_ATTR = 'data-two-autofilled-value';
 
+    /**
+     * Every field applyAddress() can write, and therefore every field
+     * revertAutofilledAddress() has to be able to take back.
+     *
+     * The two lists must stay in step. A field the write can reach but the
+     * revert cannot leaves the previous country's value standing after a
+     * country switch, with a marker on it claiming the plugin owns it — the
+     * exact state the marker exists to prevent.
+     *
+     * `region_id` is a `<select>`, the rest are `<input>`s, so the selector is
+     * carried per field rather than derived from the name.
+     */
+    const AUTOFILLED_FIELDS = [
+        { name: 'city', selector: 'input[name="city"]' },
+        { name: 'postcode', selector: 'input[name="postcode"]' },
+        { name: 'street[0]', selector: 'input[name="street[0]"]' },
+        { name: 'street[1]', selector: 'input[name="street[1]"]' },
+        { name: 'region', selector: 'input[name="region"]' },
+        { name: 'region_id', selector: 'select[name="region_id"]' }
+    ];
+
     const SPINNER_CLASS = 'two-company-search__spinner';
     const UNAVAILABLE_CLASS = 'two-company-search__unavailable';
     const MANUAL_ENTRY_CLASS = 'two-company-search__manual-entry';
@@ -558,6 +579,82 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             resultCache.delete(resultCache.keys().next().value);
         }
         resultCache.set(key, value);
+    }
+
+    /**
+     * A value off an address payload, trimmed, with null/undefined coalesced to
+     * ''. The API sends '' for a field the registry has nothing for and omits
+     * the key entirely on some records, and those two mean the same thing here.
+     *
+     * @param {*} value
+     * @returns {string}
+     */
+    function addressValue(value) {
+        return value == null ? '' : String(value).trim();
+    }
+
+    /**
+     * Route an external address payload's street parts onto the form's two
+     * address lines (TWO-25461 §2.6). The same rule for an autofill buyer
+     * record and a registered-company search hit — deliberately NOT special
+     * cased per source.
+     *
+     *  - a `building`/`apartment` is the more specific locator and takes LINE
+     *    1, moving `street` to line 2. With both present they are joined
+     *    most-specific-first, the way an address is read aloud ("Apartment 4,
+     *    Mill House");
+     *  - with neither present, `street` takes line 1 and line 2 is left ALONE —
+     *    absent from the returned object rather than written empty, so a
+     *    payload that says nothing about a second line cannot blank one the
+     *    buyer typed.
+     *
+     * NO de-duplication between the two lines even when the text is identical:
+     * real addresses legitimately repeat a line, so suppressing the second one
+     * would discard something the registry actually sent.
+     *
+     * `street_address` is the company-detail response's spelling for the
+     * street, `street` the autofill buyer record's. Coalesced here so both
+     * callers share one mapping rather than each translating its own payload.
+     *
+     * @param {object} address company address or buyer address record
+     * @returns {object} field name → value, keyed as the form names them
+     */
+    function resolveStreetLines(address) {
+        const street = addressValue(
+            address.street_address == null ? address.street : address.street_address
+        );
+        const locator = [addressValue(address.apartment), addressValue(address.building)]
+            .filter(Boolean)
+            .join(', ');
+        return locator ? { 'street[0]': locator, 'street[1]': street } : { 'street[0]': street };
+    }
+
+    /**
+     * The value of the option in a region `<select>` that stands for a
+     * free-text region name, or null when nothing matches.
+     *
+     * Best-effort, and the limit is worth stating: the payload carries a region
+     * NAME with no code beside it while Magento needs a region ID, so the only
+     * available join is on what the option says. Magento renders the region
+     * code in the option's `title` attribute alongside the full name as its
+     * text, so both are accepted — several registries answer "CA" where the
+     * shop shows "California". Matching nothing writes nothing rather than
+     * guessing at an ID.
+     *
+     * @param {HTMLSelectElement} select
+     * @param {string} region trimmed region name from the payload
+     * @returns {?string} option value, or null
+     */
+    function regionOptionValue(select, region) {
+        const wanted = region.toLowerCase();
+        const options = (select && select.options) || [];
+        for (let i = 0; i < options.length; i++) {
+            const label = String(options[i].text || '').trim().toLowerCase();
+            const code = String(options[i].title || '').trim().toLowerCase();
+            if (!options[i].value) continue;
+            if (label === wanted || (code && code === wanted)) return options[i].value;
+        }
+        return null;
     }
 
     return {
@@ -979,26 +1076,121 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * would leave the second write unrecorded, and the field would read as
          * buyer-typed for the rest of the page's life.
          *
-         * @param {object} address company address record from the API
+         * Field routing — which payload part lands in which form field — is
+         * resolveStreetLines() and applyRegion() below, shared by both callers
+         * and by the sole-trader write-back (TWO-25461 §5). The COUNTRY is
+         * deliberately never written: the server discards a company whose
+         * country disagrees with the checkout address's, so writing a
+         * registered country over the one the buyer chose would destroy the
+         * very selection this is completing.
+         *
+         * NO address-lookup gate here, and that is load-bearing rather than an
+         * oversight: `config.isAddressSearchEnabled` gates
+         * lookupCompanyAddress() — an ordinary search selection — one level up.
+         * The sole-trader write-back calls this directly BECAUSE it must write
+         * regardless of where company search is mounted (TWO-25461 §5). Do not
+         * move that gate down here.
+         *
+         * @param {object} address company address or buyer address record
+         * @returns {object} field name → value actually written, for tests and
+         *          for a caller that needs to know whether anything landed
          */
         applyAddress: function (address) {
             console.debug({ logger: 'companySearch.applyAddress', address });
-            const values = {
-                city: address.city,
-                postcode: address.postal_code,
-                'street[0]': address.street_address
-            };
+            const self = this;
+            const written = {};
+            const values = Object.assign(
+                {
+                    city: address.city,
+                    postcode: address.postal_code
+                },
+                resolveStreetLines(address)
+            );
             // No presence check: jQuery's `.val()` and `.attr()` are no-ops on
             // an empty set, which is the pre-existing behaviour for a step
             // whose form is not on screen, and a guard here would only make
             // the two writes disagree about when they run.
             Object.keys(values).forEach(function (name) {
                 const value = values[name] == null ? '' : String(values[name]);
-                $(`input[name="${name}"]`).val(value).attr(AUTOFILL_MARKER_ATTR, value);
+                self.writeAutofilledField(name, value);
+                written[name] = value;
             });
-            $('input[name="city"], input[name="postcode"], input[name="street[0]"]').trigger(
-                'change'
-            );
+            // AFTER the city write, never before: with no usable region field
+            // the region is appended to the CITY, and it has to see the value
+            // this write has just put there rather than the one it replaced.
+            Object.assign(written, this.applyRegion(address));
+            return written;
+        },
+
+        /**
+         * Write one field, recording the value in `AUTOFILL_MARKER_ATTR` from
+         * the same statement so the two can never disagree, and firing `change`
+         * so Magento's address-form bookkeeping sees the write.
+         *
+         * @param {string} name form field name, as AUTOFILLED_FIELDS names it
+         * @param {string} value
+         */
+        writeAutofilledField: function (name, value) {
+            const field = AUTOFILLED_FIELDS.filter(function (candidate) {
+                return candidate.name === name;
+            })[0];
+            // Refusing an unlisted name rather than writing it: a field the
+            // revert cannot reach must not be writable at all (see
+            // AUTOFILLED_FIELDS).
+            if (!field) return;
+            $(field.selector).val(value).attr(AUTOFILL_MARKER_ATTR, value).trigger('change');
+        },
+
+        /**
+         * Put the payload's `region` somewhere it survives, in the order the
+         * address format allows (TWO-25461 §2.6):
+         *
+         *  1. the region `<select>`, when one is rendered AND an option matches
+         *     the region text (best-effort — see regionOptionValue());
+         *  2. the free-text region input, when the form renders a visible one
+         *     (Magento shows that instead of the select for a country with no
+         *     predefined regions);
+         *  3. failing both, appended to the city with a comma
+         *     ("Ashford, Kent") — a lossy home, but a visible and correctable
+         *     one, where dropping the region silently is neither.
+         *
+         * The visibility check on (2) is why the select is tried first: Magento
+         * keeps BOTH controls in the DOM and hides the one the current country
+         * does not use, so presence alone does not say which is in play.
+         *
+         * Appends at most once — a value that already ends with the region is
+         * left alone, so a re-entrant write (a second prefetch, a repeated
+         * popup message) cannot grow the city on every pass.
+         *
+         * @param {object} address company address or buyer address record
+         * @returns {object} field name → value written, empty when nothing was
+         */
+        applyRegion: function (address) {
+            const region = addressValue(address.region);
+            if (!region) return {};
+
+            const $select = $('select[name="region_id"]');
+            if ($select.length) {
+                const optionValue = regionOptionValue($select[0], region);
+                if (optionValue !== null) {
+                    this.writeAutofilledField('region_id', optionValue);
+                    return { region_id: optionValue };
+                }
+            }
+
+            const $text = $('input[name="region"]');
+            if ($text.length && $text.is(':visible')) {
+                this.writeAutofilledField('region', region);
+                return { region: region };
+            }
+
+            const $city = $('input[name="city"]');
+            if (!$city.length) return {};
+            const city = addressValue($city.val());
+            if (city.toLowerCase().endsWith(region.toLowerCase())) return {};
+            const combined = city ? `${city}, ${region}` : region;
+            this.writeAutofilledField('city', combined);
+            return { city: combined };
         },
 
         /**
@@ -1027,8 +1219,8 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          */
         revertAutofilledAddress: function () {
             let cleared = 0;
-            ['city', 'postcode', 'street[0]'].forEach(function (name) {
-                const $input = $(`input[name="${name}"]`);
+            AUTOFILLED_FIELDS.forEach(function (field) {
+                const $input = $(field.selector);
                 const marker = $input.attr(AUTOFILL_MARKER_ATTR);
                 // `undefined` means never autofilled. An empty-string marker is
                 // a real recording (the registry had no value for this field)

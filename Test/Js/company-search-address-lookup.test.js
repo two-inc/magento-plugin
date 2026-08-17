@@ -182,9 +182,14 @@ describe('company-search shared module', () => {
                 ['input[name="street[0]"]', '1 Example Street']
             ])
         );
+        // One `change` PER FIELD since TWO-25461 gave every write one shared
+        // helper — the write, its marker and its event now leave from the same
+        // statement, so they cannot drift apart per field.
         expect(recorder.triggered).toEqual(
             expect.arrayContaining([
-                ['input[name="city"], input[name="postcode"], input[name="street[0]"]', 'change']
+                ['input[name="city"]', 'change'],
+                ['input[name="postcode"]', 'change'],
+                ['input[name="street[0]"]', 'change']
             ])
         );
     });
