@@ -182,9 +182,15 @@ describe('company-search shared module', () => {
                 ['input[name="street[0]"]', '1 Example Street']
             ])
         );
+        // `change` per field written, not one combined trigger: TWO-25461 gave
+        // the write path a per-field routing plan (a building/apartment moves
+        // the street to the second line), so which fields are written is no
+        // longer a fixed list to name in one selector.
         expect(recorder.triggered).toEqual(
             expect.arrayContaining([
-                ['input[name="city"], input[name="postcode"], input[name="street[0]"]', 'change']
+                ['input[name="city"]', 'change'],
+                ['input[name="postcode"]', 'change'],
+                ['input[name="street[0]"]', 'change']
             ])
         );
     });

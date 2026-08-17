@@ -51,6 +51,9 @@ const STREET = 'input[name="street[0]"]';
 
 const MARKER = 'data-two-autofilled-value';
 
+const PRIMARY_ROOT = '#shipping-new-address-form';
+const SECONDARY_ROOT = '[data-form="billing-new-address"]';
+
 /**
  * jQuery double with one persistent node per selector and, unlike the doubles
  * in the neighbouring files, a REAL attribute store.
@@ -143,8 +146,32 @@ function makeDom() {
             },
             select2: function () {
                 return n;
+            },
+            first: function () {
+                return n;
+            },
+            each: function (fn) {
+                if (n.length) fn.call(n, 0, n);
+                return n;
             }
         };
+        // The shipping address form is the SCOPE the autofill and the revert now
+        // resolve their fields inside (TWO-25461 §2), so a lookup through it has
+        // to land on the same node the plain selector does — otherwise every
+        // assertion below would be watching a node production never writes.
+        if (selector === PRIMARY_ROOT) {
+            n.find = function (sel) {
+                return node(sel);
+            };
+        }
+        // No billing address form in these fixtures. Modelled as genuinely
+        // ABSENT rather than as another length-1 node: these tests cover the
+        // shipping step alone, and a billing form that answered every selector
+        // would have the mirror writing into the same nodes the assertions
+        // watch, which would make a scoping regression invisible here.
+        if (selector === SECONDARY_ROOT) {
+            n.length = 0;
+        }
         nodes[selector] = n;
         return n;
     }
@@ -250,7 +277,7 @@ function loadAddressStep(options) {
     const opts = options || {};
     const dom = makeDom();
     const cd = makeCustomerData();
-    const calls = { abort: [], revert: 0, applyAddress: [] };
+    const calls = { abort: [], revert: 0, applyAddress: [], baselines: [], mirrored: [] };
 
     dom.node(COUNTRY_FIELD).val(opts.country || 'GB');
 
@@ -301,6 +328,19 @@ function loadAddressStep(options) {
         },
         noResultsMessage: function () {
             return '';
+        },
+        // Two-address mirror (TWO-25461 §2). Recorded rather than executed:
+        // these fixtures model the shipping step alone, so what is checkable
+        // here is that the address step ASKS for the propagation on a country
+        // change and on every company write — the mirror's own pin logic is
+        // covered against real markup in company-search-address-mirror.test.js.
+        SECONDARY_ADDRESS_ROOT_SELECTOR: SECONDARY_ROOT,
+        captureSecondaryAddressBaseline: function (root) {
+            calls.baselines.push(root);
+        },
+        mirrorFieldsToSecondaryAddresses: function (names) {
+            calls.mirrored.push(names);
+            return 0;
         }
     };
 

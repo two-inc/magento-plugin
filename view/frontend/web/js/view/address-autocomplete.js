@@ -62,6 +62,16 @@ define([
                         self.onCountryChanged();
                     });
             });
+            // Record what each billing address form was rendered holding, the
+            // moment core puts it in the document. `$.async` is what makes that
+            // moment reachable — the form appears when the buyer unchecks "My
+            // billing and shipping address are the same", long after this
+            // component initialises, and it reappears on every re-render. See
+            // companySearch.captureSecondaryAddressBaseline() for why the
+            // baseline has to be taken before the buyer can touch the form.
+            $.async(companySearch.SECONDARY_ADDRESS_ROOT_SELECTOR, function (billingForm) {
+                companySearch.captureSecondaryAddressBaseline(billingForm);
+            });
             this.enableCompanySearch();
             this.enableManualCompanyId();
             const setTwoTelephone = (e) => customerData.set('shippingTelephone', e.target.value);
@@ -139,6 +149,12 @@ define([
             // `companyData` section the payment tile reads — every surviving
             // copy of the previous country's company.
             this.setCompanyData();
+            // …then propagate the country the buyer just chose. AFTER the two
+            // clears above, deliberately: both of them run over the billing
+            // address as well, and both consult the sync pin, so a country
+            // written first would be a value they then had to judge as
+            // already-ours mid-sequence.
+            companySearch.mirrorFieldsToSecondaryAddresses(['country']);
             this.toggleCompanyVisibility();
         },
         toggleCompanyVisibility: function () {
@@ -184,6 +200,12 @@ define([
             this.setCompanyIdValue(companyId);
             this.syncCompanyIdEditable();
             this.renderCompanyIdText();
+            // The company half of the two-address propagation. Every path that
+            // establishes a company on the default address comes through here —
+            // a registry pick, the manual-entry reset, the country-switch clear
+            // — so this is the one place it has to be wired, and the pin inside
+            // decides whether a given billing address accepts it.
+            companySearch.mirrorFieldsToSecondaryAddresses(['company']);
         },
         /**
          * Write the captured organisation number so that it SURVIVES A PAGE
