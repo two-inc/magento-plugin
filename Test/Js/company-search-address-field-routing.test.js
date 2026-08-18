@@ -89,6 +89,7 @@ function makeDollar() {
             trigger: function (event) {
                 nodes.forEach(function (n) {
                     triggered.push([n.getAttribute('name'), event]);
+                    if ($.onChange) $.onChange(n, event);
                 });
                 return set;
             },
@@ -101,6 +102,9 @@ function makeDollar() {
             },
             eq: function (index) {
                 return wrap(nodes.slice(index, index + 1));
+            },
+            prop: function (name) {
+                return nodes.length ? !!nodes[0][name] : undefined;
             },
             find: function (selector) {
                 const found = [];
@@ -339,6 +343,24 @@ describe('a region lands wherever the address format can hold it', () => {
         });
     });
 
+    test.each([
+        [false, { region: 'Kent', city: 'Los Angeles' }, 'an enabled free-text region takes it'],
+        [
+            true,
+            { region: '', city: 'Los Angeles, Kent' },
+            'a DISABLED one is not a usable field: Magento drops its value on post'
+        ]
+    ])('free-text region disabled=%p -> %p (%s)', (disabled, expected) => {
+        const { model, field } = load('text');
+        field('region').disabled = disabled;
+
+        model.applyAddress({ city: 'Los Angeles', street: 'Mill Lane', region: 'Kent' });
+
+        Object.keys(expected).forEach(function (name) {
+            expect(`${name}=${field(name).value}`).toBe(`${name}=${expected[name]}`);
+        });
+    });
+
     test('the city append happens AFTER the city write, not against the old value', () => {
         // Ordering, stated as its own case because the failure is silent: run
         // the other way round the append lands on the PREVIOUS city and the
@@ -415,6 +437,38 @@ describe('every field the write can reach, the revert can take back', () => {
         // said nothing about a postcode so none was ever written.
         expect(model.revertAutofilledAddress()).toBe(2);
         expect(field('region').value).toBe('Surrey');
+    });
+
+    test('the form is already fully written when the first change fires', () => {
+        // The invariant, not the event order: a handler on any of these fields
+        // serialises the WHOLE form, so one firing mid-write posts an address
+        // that is half the previous company's. Asserting the sequence alone
+        // cannot tell "after all writes" from "interleaved with them".
+        const seen = [];
+        document.body.innerHTML =
+            '<form id="shipping-new-address-form">' + ADDRESS_FIELDS + REGION_MARKUP.select +
+            '</form>';
+        const $ = makeDollar();
+        $.onChange = function () {
+            seen.push(
+                ['city', 'postcode', 'street[0]', 'street[1]', 'region_id']
+                    .map((name) => `${name}=${document.querySelector(`[name="${name}"]`).value}`)
+                    .join(' ')
+            );
+        };
+        const model = loadAmdModule(SEARCH, { jquery: $ });
+
+        model.applyAddress({
+            city: 'Los Angeles',
+            postal_code: '90001',
+            street: 'Mill Lane',
+            building: 'Mill House',
+            region: 'California'
+        });
+
+        const complete =
+            'city=Los Angeles postcode=90001 street[0]=Mill House street[1]=Mill Lane region_id=12';
+        expect(seen).toEqual([complete, complete, complete, complete, complete]);
     });
 
     test('every write fires change, so the quote sees it', () => {
@@ -512,13 +566,16 @@ describe('an omission is not a blank, but a stale value is not kept either', () 
         expect(field('street[1]').value).toBe('Second Line By Hand');
     });
 
-    test('the region is not appended twice when the payload has no city of its own', () => {
+    test('a region with no city of its own does not annex the city the buyer typed', () => {
+        // Appending would mark a buyer-authored city as this module's own, and
+        // the next revert would then delete their text along with the region.
         const { model, field } = load();
-        field('city').value = 'Ashford, Kent';
+        field('city').value = 'Ashford';
 
         model.applyAddress({ street: 'Mill Lane', region: 'Kent' });
 
-        expect(field('city').value).toBe('Ashford, Kent');
+        expect(field('city').value).toBe('Ashford');
+        expect(field('city').hasAttribute(MARKER)).toBe(false);
     });
 });
 
@@ -576,14 +633,43 @@ describe('the write can be scoped to one address form', () => {
         expect(valueIn('shipping-new-address-form', 'city')).toBe('Shipping City');
     });
 
-    test('billingRoleFormRoot prefers the billing form, and a visible one over a hidden one', () => {
+    test('the billing form wins on ROLE, whether or not it is visible', () => {
         const model = loadTwoForms(false);
         expect(model.billingRoleFormRoot()[0].id).toBe('billing-new-address-form');
 
-        // Hidden billing form (its payment method is not the selected one):
-        // the visible shipping form is the address in play.
+        // Still the billing form when it is hidden: role beats visibility, and a
+        // hidden invoice address is not the shipping address.
         const hidden = loadTwoForms(true);
-        expect(hidden.billingRoleFormRoot()[0].id).toBe('shipping-new-address-form');
+        expect(hidden.billingRoleFormRoot()[0].id).toBe('billing-new-address-form');
+    });
+
+    test('visibility picks between SEVERAL forms matching the same selector', () => {
+        // Core renders one billing form per payment method, all carrying that
+        // id — which is also why the production selector is the attribute form
+        // and not `#id`, whose jQuery fast path returns at most one element.
+        document.body.innerHTML =
+            '<form id="billing-new-address-form" style="display:none">' +
+            '<input name="city" value="Other Method" />' +
+            '</form>' +
+            '<form id="billing-new-address-form">' +
+            '<input name="city" value="Selected Method" />' +
+            '</form>';
+        const model = loadAmdModule(SEARCH, { jquery: makeDollar() });
+
+        const root = model.billingRoleFormRoot();
+        expect(root.length).toBe(1);
+        expect(root.find('input[name="city"]').val()).toBe('Selected Method');
+    });
+
+    test('the shipping form is the last resort, for a same-as-shipping checkout', () => {
+        // Core's default has "my billing and shipping address are the same"
+        // checked and renders NO billing form: the shipping form IS the invoice
+        // address there.
+        document.body.innerHTML =
+            '<form id="shipping-new-address-form"><input name="city" value="" /></form>';
+        const model = loadAmdModule(SEARCH, { jquery: makeDollar() });
+
+        expect(model.billingRoleFormRoot()[0].id).toBe('shipping-new-address-form');
     });
 
     test('with no address form at all there is no scope, and the write stays document-wide', () => {

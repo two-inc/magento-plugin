@@ -108,6 +108,32 @@ define([
      */
     var countryWatcherSeq = 0;
 
+    /**
+     * Sole-trader identities whose registered address has already been written
+     * into this page's checkout, so a replay does not overwrite a correction the
+     * buyer made afterwards (TWO-25461 §5).
+     *
+     * Module scope, not per renderer: Amasty and Fire Checkout rebuild the
+     * payment method list on every totals change, and a per-instance record
+     * would be re-armed by the very re-render the guard exists to survive.
+     * Cleared when the buyer leaves sole-trader mode, the one event that means
+     * "write it again next time".
+     */
+    const adoptedSoleTraderIds = new Set();
+
+    /**
+     * What "the same sole trader" means for that guard. The organisation number
+     * where there is one; the email otherwise, so two buyers who both arrive
+     * without a number are not treated as one.
+     *
+     * @param {object} buyer `/autofill/v1/buyer/current` record
+     * @returns {string}
+     */
+    function soleTraderIdentityKey(buyer) {
+        const number = String(buyer.organization_number || '').trim();
+        return number || `email:${String(buyer.email || '').trim().toLowerCase()}`;
+    }
+
     function startOrderIntentSpinner() {
         orderIntentRequestsInFlight += 1;
         orderIntentInProgress(true);
@@ -1794,7 +1820,16 @@ define([
             if (!this.isAddressAreaCompanySearchEnabled) {
                 return null;
             }
-            return companySearch.lookupCompanyAddress(this._brandConfig, selectedCompany);
+            // Scoped like the sole-trader write-back, and for the same reason:
+            // this is the TILE's picker, so it writes as the billing/invoice
+            // role, and the payment step has more than one address form in the
+            // DOM carrying these field names. The address-area picker stays
+            // document-wide — it runs on a step that renders one.
+            return companySearch.lookupCompanyAddress(
+                this._brandConfig,
+                selectedCompany,
+                companySearch.billingRoleFormRoot()
+            );
         },
         /**
          * (Re-)bind the company-search picker to the company-name input.
@@ -2061,7 +2096,7 @@ define([
                 companySearch.revertAutofilledAddress();
                 // Re-arm the once-per-identity guard: re-entering sole-trader
                 // mode has an address to write again.
-                this._adoptedSoleTraderId = null;
+                adoptedSoleTraderIds.clear();
             }
             this.enableCompanySearch();
             this.fillCustomerData();
@@ -2253,13 +2288,17 @@ define([
                 companyId: buyer.organization_number,
                 companyName: buyer.company_name
             });
-            const identity = String(buyer.organization_number || '');
-            if (this._adoptedSoleTraderId !== identity) {
-                this._adoptedSoleTraderId = identity;
+            const identity = soleTraderIdentityKey(buyer);
+            if (!adoptedSoleTraderIds.has(identity)) {
                 // Isolated: a DOM failure in the address write must not take the
-                // identity fill or the popup message with it.
+                // identity fill or the popup message with it. Recorded only once
+                // the write has actually happened, so a failure — or a record
+                // with no address on it — leaves the next attempt free to try
+                // again rather than consuming the single chance.
                 try {
-                    this.writeSoleTraderAddress(buyer);
+                    if (this.writeSoleTraderAddress(buyer)) {
+                        adoptedSoleTraderIds.add(identity);
+                    }
                 } catch (error) {
                     console.error({ logger: 'twoPayment.adoptSoleTraderBuyer', error });
                 }
@@ -2282,12 +2321,14 @@ define([
          * step has more than one address form in the DOM to get that wrong in.
          *
          * @param {object} buyer `/autofill/v1/buyer/current` record
+         * @returns {boolean} whether there was an address to write
          */
         writeSoleTraderAddress(buyer) {
             const source = buyer.billing_address || buyer.shipping_address || null;
-            if (!source || typeof source !== 'object') return;
+            if (!source || typeof source !== 'object') return false;
             console.debug({ logger: 'twoPayment.writeSoleTraderAddress', source });
             companySearch.applyAddress(source, companySearch.billingRoleFormRoot());
+            return true;
         },
         // React to a resolved prefetch: a matching buyer auto-selects Sole
         // trader and prefills; a non-match reverts an active Sole-trader
@@ -2314,6 +2355,12 @@ define([
                         // popup, so re-read and autofill whatever identity
                         // that produced, staying in sole-trader mode. No
                         // email-match check — see resolveBuyer().
+                        // Supersede any prefetch still in flight. Its `matches`
+                        // is computed against the form's email, so a late
+                        // pre-auth answer would disagree with the identity the
+                        // buyer just authenticated, revert sole-trader mode and
+                        // take this adoption's address back out with it.
+                        this._prefetchGeneration = (this._prefetchGeneration || 0) + 1;
                         this.resolveBuyer(true).then((pf) => {
                             if (pf.matches && pf.buyer) {
                                 this.adoptSoleTraderBuyer(pf.buyer);

@@ -365,26 +365,129 @@ describe('the state the write-back has to survive', () => {
         expect(applied).toEqual([BILLING, BILLING]);
     });
 
-    test('a superseded prefetch neither records its buyer nor adopts it', () => {
+    test.each([
+        [false, 'the buyer is not in sole-trader mode'],
+        [true, 'the buyer IS in sole-trader mode and must stay there']
+    ])('a superseded prefetch records nothing and adopts nothing (%p: %s)', (soleTrader) => {
         // The buyer corrects their email mid-flight. The first chain resolves
-        // last, against an email that is no longer in the form: it must not
-        // record its buyer as the prefetch (a chip click would adopt it) and
-        // must not run applyPrefetch(), which would revert sole-trader mode and
-        // strand the newer buyer's address with no identity beside it.
+        // LAST, against an email that is no longer in the form. Superseded after
+        // its tokens are minted, so every guard downstream is genuinely
+        // exercised — bumping the generation before the first await would
+        // short-circuit the chain at its first check and prove only that one.
         const first = Object.assign({}, BUYER, { email: 'first@example.com' });
         const { renderer, applied } = loadRenderer(first);
         renderer.showModeTab(true);
-        renderer.getEmail = () => 'first@example.com';
+        renderer.showSoleTrader(soleTrader);
+        renderer.enableCompanySearch = function () {};
+        renderer.fillCustomerData = function () {};
+        renderer.clearCompany = function () {};
+        let releaseTokens;
+        renderer.getTokens = () =>
+            new Promise((resolve) => {
+                releaseTokens = () => resolve({ delegation_token: 'dt', autofill_token: 'at' });
+            });
 
         const chain = renderer.prefetchSoleTrader();
-        // A second chain starts and wins the race while the first is in flight.
         renderer._prefetchGeneration += 1;
+        releaseTokens();
 
         return chain.then(() => {
+            // Not recorded: a chip click reads `prefetched` and would otherwise
+            // adopt the buyer belonging to the email the buyer replaced.
+            expect(renderer.prefetched).toEqual({ ready: false, buyer: null, matches: false });
             expect(applied).toEqual([]);
-            expect(renderer.prefetched.buyer).toBeNull();
-            expect(renderer.companyId()).toBe('');
+            // Not acted on: applyPrefetch() would read a non-match and revert
+            // sole-trader mode, stranding the newer buyer's address.
+            expect(renderer.showSoleTrader()).toBe(soleTrader);
+            // And a chip click still finds nothing to adopt.
+            renderer.soleTraderMode();
+            expect(applied).toEqual([]);
         });
+    });
+
+    test('a superseded chain that FAILS does not clobber the live result', () => {
+        const { renderer } = loadRenderer(BUYER);
+        renderer.showModeTab(true);
+        let failTokens;
+        renderer.getTokens = () =>
+            new Promise((resolve, reject) => {
+                failTokens = () => reject(new Error('token mint failed'));
+            });
+
+        const chain = renderer.prefetchSoleTrader();
+        renderer._prefetchGeneration += 1;
+        renderer.prefetched = { ready: true, buyer: BUYER, matches: true };
+        failTokens();
+
+        return chain.then(() => {
+            expect(renderer.prefetched.buyer).toBe(BUYER);
+        });
+    });
+
+    test('the buyer lookup goes out under the token its own chain minted', () => {
+        // The real fetchBuyer(), not the stub every other case here uses: the
+        // token parameter exists precisely so a superseded chain cannot read the
+        // cookie under a newer chain's token, and a stubbed fetchBuyer never
+        // executes the header expression that carries it.
+        const requests = [];
+        const renderer = loadAmdModule(
+            RENDERER,
+            {},
+            {
+                window: { checkoutConfig: { payment: {} }, addEventListener: function () {} },
+                fetch: function (url, options) {
+                    requests.push(options.headers['two-delegated-authority-token']);
+                    return Promise.resolve({ ok: false, status: 404 });
+                }
+            }
+        );
+        renderer._brandConfig = { checkoutApiUrl: 'https://api.example' };
+        renderer.autofillToken = 'newer-chain-token';
+
+        return renderer.fetchBuyer('own-chain-token').then(() => {
+            expect(requests).toEqual(['own-chain-token']);
+            // No token passed → the instance's current one, which is what the
+            // post-signup lookup relies on.
+            return renderer.fetchBuyer().then(() => {
+                expect(requests).toEqual(['own-chain-token', 'newer-chain-token']);
+            });
+        });
+    });
+
+    test('a completed signup supersedes a prefetch still in flight', () => {
+        // Otherwise the pre-auth chain lands after the adoption, disagrees with
+        // the authenticated identity, and reverts both the mode and the address
+        // that adoption just wrote.
+        const { renderer, listeners } = loadRenderer(BUYER);
+        const handler = messageHandler(renderer, listeners);
+        renderer.showSoleTrader(true);
+        renderer._prefetchGeneration = 7;
+
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED' });
+
+        expect(renderer._prefetchGeneration).toBe(8);
+    });
+
+    test('a throw in the address write leaves the identity filled and the write retryable', () => {
+        const { renderer, applied } = loadRenderer(BUYER);
+        let fail = true;
+        renderer.writeSoleTraderAddress = function (buyer) {
+            if (fail) throw new Error('DOM write failed');
+            applied.push(buyer.billing_address);
+            return true;
+        };
+
+        renderer.showPopupMessage(true);
+        renderer.adoptSoleTraderBuyer(BUYER);
+
+        expect(renderer.companyId()).toBe(BUYER.organization_number);
+        expect(renderer.showPopupMessage()).toBe(false);
+
+        // The failure did not consume the one chance: the next adoption of the
+        // same identity tries again.
+        fail = false;
+        renderer.adoptSoleTraderBuyer(BUYER);
+        expect(applied).toEqual([BILLING]);
     });
 
     test('dispose detaches the popup listener, so one message adopts once', () => {

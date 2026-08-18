@@ -265,8 +265,16 @@ define(['jquery', 'mage/translate'], function ($, $t) {
     /**
      * Address forms an address write can be scoped to, billing/invoice role
      * first — the role the payment tile writes as (TWO-25461 §1(a.3)).
+     *
+     * Attribute selectors, not `#id`: jQuery answers a bare `#id` through
+     * `document.getElementById` and returns AT MOST ONE element, and core
+     * renders a billing address form per payment method — all carrying that
+     * same id. The fast path would hide every one but the first.
      */
-    const ADDRESS_FORM_ROOT_SELECTORS = ['#billing-new-address-form', '#shipping-new-address-form'];
+    const ADDRESS_FORM_ROOT_SELECTORS = [
+        '[id="billing-new-address-form"]',
+        '[id="shipping-new-address-form"]'
+    ];
 
     const SPINNER_CLASS = 'two-company-search__spinner';
     const UNAVAILABLE_CLASS = 'two-company-search__unavailable';
@@ -658,18 +666,28 @@ define(['jquery', 'mage/translate'], function ($, $t) {
     function revertFields(fields, $root) {
         let cleared = 0;
         fields.forEach(function (field) {
-            const $input = scopedFind($root, field.selector);
-            const marker = $input.attr(AUTOFILL_MARKER_ATTR);
-            // `undefined` means never autofilled. An empty-string marker is a
-            // real recording (the registry had no value for this field) and must
-            // still be honoured, so this tests for absence rather than
-            // falsiness.
-            if (typeof marker === 'undefined') return;
-            $input.removeAttr(AUTOFILL_MARKER_ATTR);
-            if (($input.val() || '') !== marker) return;
-            $input.val('');
-            $input.trigger('change');
-            cleared += 1;
+            // PER ELEMENT, never over the set: `.attr()` and `.val()` read the
+            // FIRST match while `.val(x)` writes every one, so a set-level check
+            // lets one form's marker decide another form's field. The payment
+            // step has several forms carrying these names, and the sole-trader
+            // write is scoped to one of them — so the first match is routinely
+            // a form this module never wrote to.
+            const $set = scopedFind($root, field.selector);
+            for (let i = 0; i < $set.length; i++) {
+                const $input = $set.eq(i);
+                const marker = $input.attr(AUTOFILL_MARKER_ATTR);
+                // `undefined` means never autofilled. An empty-string marker is
+                // a real recording (the registry had no value for this field)
+                // and must still be honoured, so this tests for absence rather
+                // than falsiness.
+                if (typeof marker === 'undefined') continue;
+                $input.removeAttr(AUTOFILL_MARKER_ATTR);
+                if (($input.val() || '') === marker) {
+                    $input.val('');
+                    $input.trigger('change');
+                    cleared += 1;
+                }
+            }
         });
         return cleared;
     }
@@ -1130,9 +1148,10 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          *
          * @param {object} config brand config subtree
          * @param {object} selectedCompany select2 result item (needs lookupId)
+         * @param {object} [root] scope for the write — see applyAddress()
          * @returns {object|null} the jqXHR, or null when gated off / no id
          */
-        lookupCompanyAddress: function (config, selectedCompany) {
+        lookupCompanyAddress: function (config, selectedCompany, root) {
             if (!config.isAddressSearchEnabled) return null;
             if (!selectedCompany || !selectedCompany.lookupId) return null;
 
@@ -1144,7 +1163,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             });
             addressResponse.done(function (response) {
                 if (response && response.addresses && response.addresses.length) {
-                    self.applyAddress(response.addresses[0]);
+                    self.applyAddress(response.addresses[0], root);
                 }
             });
             return addressResponse;
@@ -1160,22 +1179,30 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * renders a billing address form PER PAYMENT METHOD, all carrying the
          * same field names. An unscoped write reaches every one of them.
          *
-         * Visible candidates first, then the first candidate of any kind: a
-         * hidden form is still a better answer than the whole document.
+         * A billing form wins over a shipping one whether or not it is visible —
+         * role beats visibility, and a hidden billing form still belongs to this
+         * buyer's invoice address. Visibility only picks between several forms
+         * matching the SAME selector, which is how the buyer's selected payment
+         * method's form is told from the other methods'.
+         *
+         * The shipping form is the last resort rather than a wrong answer: with
+         * "my billing and shipping address are the same" — core's default — no
+         * billing form is rendered at all and the shipping form IS the invoice
+         * address, which is the sync mechanism §1(a.3) says to read the
+         * billing-role value from on a shipping-first platform.
          *
          * @returns {?object} jQuery set of exactly one form, or null
          */
         billingRoleFormRoot: function () {
-            let fallback = null;
             for (let i = 0; i < ADDRESS_FORM_ROOT_SELECTORS.length; i++) {
                 const $candidates = $(ADDRESS_FORM_ROOT_SELECTORS[i]);
+                if (!$candidates.length) continue;
                 for (let n = 0; n < $candidates.length; n++) {
-                    const $one = $candidates.eq(n);
-                    if ($one.is(':visible')) return $one;
-                    if (!fallback) fallback = $one;
+                    if ($candidates.eq(n).is(':visible')) return $candidates.eq(n);
                 }
+                return $candidates.eq(0);
             }
-            return fallback;
+            return null;
         },
 
         /**
@@ -1197,8 +1224,11 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * assembled from two companies.
          *
          * `change` fires only once every value has landed, so no listener sees a
-         * partly-written address — the city is the case that forces it, since
-         * the region can be appended to it.
+         * PARTLY-written address: the handlers on these fields serialise the
+         * whole form (Magento's own totals/shipping estimate, and every one-page
+         * checkout that posts the address on field change), and the city's event
+         * firing before the street lines exist would send one of those out
+         * describing an address that is half the previous company's.
          *
          * The COUNTRY is never written: the server discards a company whose
          * country disagrees with the checkout address's, so writing a registered
@@ -1294,13 +1324,26 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                 // on a required select an unmatched write would also blank the
                 // buyer's own answer.
                 if (optionValue !== null) return { region_id: optionValue };
-            } else if (scopedFind($root, 'input[name="region"]').length) {
-                return { region: region };
+            } else {
+                const $text = scopedFind($root, 'input[name="region"]');
+                // Not merely present: Magento renders both controls and DISABLES
+                // the one the current country does not use. A write to the
+                // disabled one is dropped from the posted form, so treating
+                // presence as applicability loses the region silently — and it
+                // would also claim the region was placed on a country whose
+                // select is simply not populated yet.
+                if ($text.length && !$text.prop('disabled')) return { region: region };
             }
 
             const $city = scopedFind($root, 'input[name="city"]');
             if (!$city.length) return {};
-            const city = hasValue(values.city) ? values.city : addressValue($city.val());
+            // Appended only onto a city this write is ALSO setting: the combined
+            // value carries a marker, and marking a city the buyer typed would
+            // hand their own text to the next revert. A payload with a region and
+            // no city of its own therefore drops the region rather than taking
+            // ownership of the buyer's city.
+            if (!hasValue(values.city)) return {};
+            const city = values.city;
             if (city.toLowerCase().endsWith(region.toLowerCase())) return {};
             return { city: city ? `${city}, ${region}` : region };
         },
