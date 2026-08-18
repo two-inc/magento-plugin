@@ -553,8 +553,13 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * @returns {string}
      */
     function secondaryAddressKey($root) {
-        const id = $root
-            .closest('.checkout-billing-address')
+        const $block = $root.closest('.checkout-billing-address');
+        // Not a billing address at all — the default form, or the document-wide
+        // lookup. There is no per-address record to consult, and minting a key
+        // would both stamp an attribute onto a form that is not one of these and
+        // burn a key another form would then not get.
+        if (!$block.length) return '';
+        const id = $block
             .find('input[name="billing-address-same-as-shipping"]')
             .first()
             .attr('id');
@@ -946,8 +951,9 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         const written = [];
         const marker = handle.$field.attr(AUTOFILL_MARKER_ATTR);
         if (typeof marker !== 'undefined') written.push(marker);
-        if ($root) {
-            const recorded = mirrorWriteRecords.get(secondaryAddressKey($root)) || {};
+        const key = $root ? secondaryAddressKey($root) : '';
+        if (key) {
+            const recorded = mirrorWriteRecords.get(key) || {};
             if (typeof recorded[field.name] !== 'undefined') written.push(recorded[field.name]);
         }
         return written.filter(function (value) {
@@ -1031,6 +1037,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      */
     function recordMirrorWrites($root, values) {
         const key = secondaryAddressKey($root);
+        if (!key) return;
         mirrorWriteRecords.set(key, Object.assign({}, mirrorWriteRecords.get(key) || {}, values));
     }
 
@@ -1051,6 +1058,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      */
     function clearMirrorWriteRecord($root, name) {
         const key = secondaryAddressKey($root);
+        if (!key) return;
         const recorded = Object.assign({}, mirrorWriteRecords.get(key) || {});
         delete recorded[name];
         mirrorWriteRecords.set(key, recorded);
@@ -1810,7 +1818,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             const $root = $(root);
             if (!$root.length) return;
             const key = secondaryAddressKey($root);
-            if (secondaryAddressBaselines.has(key)) return;
+            if (!key || secondaryAddressBaselines.has(key)) return;
             // Too late to trust what the form is holding: the mirror has already
             // written into some billing address on this page, and every billing
             // form renders from the same quote billing address, so a form

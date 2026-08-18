@@ -940,3 +940,25 @@ describe('a country switch after core has rebuilt the form', () => {
         expect(read(SECONDARY, 'city')).toBe('Stockholm');
     });
 });
+
+describe('the mirror record belongs to billing addresses only', () => {
+    test('the default address neither consults a record nor gets stamped with a key', () => {
+        // `secondaryAddressKey()` is reached for the DEFAULT form too — the
+        // retraction asks every form what it is on record as having written. It
+        // must answer "nothing" there rather than minting an identity: a minted
+        // key stamps an attribute onto a form that is not a billing address, and
+        // burns a key a real billing form would otherwise have been given.
+        const model = renderCheckout({ regions: true, noCheckboxId: true });
+        captureAllBaselines(model);
+        model.applyAddress(COMPANY_A);
+        rebuildForms();
+
+        model.revertAutofilledAddress();
+
+        const primary = document.querySelector(PRIMARY);
+        expect(primary.hasAttribute('data-two-mirror-key')).toBe(false);
+        // And the billing form still got its own, so the guard did not disable
+        // the fallback it is guarding.
+        expect(billing('two_payment').hasAttribute('data-two-mirror-key')).toBe(true);
+    });
+});
