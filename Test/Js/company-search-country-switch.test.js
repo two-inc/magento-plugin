@@ -277,7 +277,14 @@ function loadAddressStep(options) {
     const opts = options || {};
     const dom = makeDom();
     const cd = makeCustomerData();
-    const calls = { abort: [], revert: 0, applyAddress: [], baselines: [], mirrored: [] };
+    const calls = {
+        abort: [],
+        revert: 0,
+        applyAddress: [],
+        baselines: [],
+        mirrored: [],
+        sequence: []
+    };
 
     dom.node(COUNTRY_FIELD).val(opts.country || 'GB');
 
@@ -303,6 +310,7 @@ function loadAddressStep(options) {
         },
         revertAutofilledAddress: function () {
             calls.revert += 1;
+            calls.sequence.push('revert');
             return 0;
         },
         abortActiveRequest: function (token) {
@@ -337,9 +345,11 @@ function loadAddressStep(options) {
         SECONDARY_ADDRESS_ROOT_SELECTOR: SECONDARY_ROOT,
         captureSecondaryAddressBaseline: function (root) {
             calls.baselines.push(root);
+            calls.sequence.push('baseline');
         },
         mirrorFieldsToSecondaryAddresses: function (names) {
             calls.mirrored.push(names);
+            calls.sequence.push('mirror:' + names.join('+'));
             return 0;
         }
     };
@@ -677,5 +687,49 @@ describe('a company restored from a previous visit', () => {
         );
 
         expect(renderer.companyId()).toBe('B12345678');
+    });
+});
+
+describe('the address step asks for the two-address propagation', () => {
+    /**
+     * These three wirings live in `address-autocomplete.js` and are invisible to
+     * the mirror's own suite, which drives the model directly. Deleting any one
+     * of them left every suite in the repo green before these tests existed.
+     */
+    test('the billing form is watched so its rendered baseline can be captured', () => {
+        const ctx = loadAddressStep({ country: 'GB' });
+
+        // Watched via a FIELD inside the form and walked back up, not the form
+        // itself: core inserts the fieldset before its child fields render.
+        expect(ctx.calls.baselines).toHaveLength(1);
+    });
+
+    test('a country change propagates the country, after the two clears', () => {
+        const ctx = loadAddressStep({ country: 'GB' });
+        ctx.calls.sequence.length = 0;
+
+        switchCountryTo(ctx, 'ES');
+
+        expect(ctx.calls.mirrored).toContainEqual(['country']);
+        // The country goes LAST. Both clears run over the billing address and
+        // both consult the sync pin, so a country written first would be a value
+        // they then had to judge as already-ours mid-sequence.
+        expect(ctx.calls.sequence.indexOf('revert')).toBeLessThan(
+            ctx.calls.sequence.indexOf('mirror:country')
+        );
+        expect(ctx.calls.sequence.indexOf('mirror:company+organization')).toBeLessThan(
+            ctx.calls.sequence.indexOf('mirror:country')
+        );
+    });
+
+    test('every company write propagates the name AND the number it belongs to', () => {
+        // A field the pin JUDGES but the mirror never WRITES can only ever
+        // freeze the address, so the organisation number travels with the name.
+        const ctx = loadAddressStep({ country: 'GB' });
+        ctx.calls.mirrored.length = 0;
+
+        ctx.component.setCompanyData('12345678', 'Example Ltd');
+
+        expect(ctx.calls.mirrored).toEqual([['company', 'organization']]);
     });
 });

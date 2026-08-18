@@ -12,7 +12,12 @@ define([
     'uiRegistry',
     'Two_Gateway/js/model/brand-config',
     'Two_Gateway/js/model/company-search',
-    'Two_Gateway/js/model/company-search-control'
+    'Two_Gateway/js/model/company-search-control',
+    // `$.async`, used below — it decorates jQuery as a side effect and takes no
+    // factory parameter, hence LAST in the list. Declared rather than relied on
+    // transitively: it only resolved because a knockout bootstrap dependency
+    // happens to pull it in, which is an ordering this file does not control.
+    'Magento_Ui/js/lib/view/utils/async'
 ], function (
     $,
     $t,
@@ -69,9 +74,20 @@ define([
             // component initialises, and it reappears on every re-render. See
             // companySearch.captureSecondaryAddressBaseline() for why the
             // baseline has to be taken before the buyer can touch the form.
-            $.async(companySearch.SECONDARY_ADDRESS_ROOT_SELECTOR, function (billingForm) {
-                companySearch.captureSecondaryAddressBaseline(billingForm);
-            });
+            // Watched on the country SELECT inside the form, not the form
+            // itself, then walked back up. Core inserts the fieldset before its
+            // child field components resolve their own templates, and `$.async`
+            // fires on the insertion — so watching the fieldset would run this
+            // against a form with no fields in it yet. The select is the last
+            // thing to arrive that the baseline needs.
+            $.async(
+                companySearch.SECONDARY_ADDRESS_ROOT_SELECTOR + ' select[name="country_id"]',
+                function (countrySelect) {
+                    companySearch.captureSecondaryAddressBaseline(
+                        $(countrySelect).closest(companySearch.SECONDARY_ADDRESS_ROOT_SELECTOR)
+                    );
+                }
+            );
             this.enableCompanySearch();
             this.enableManualCompanyId();
             const setTwoTelephone = (e) => customerData.set('shippingTelephone', e.target.value);
@@ -205,7 +221,10 @@ define([
             // a registry pick, the manual-entry reset, the country-switch clear
             // — so this is the one place it has to be wired, and the pin inside
             // decides whether a given billing address accepts it.
-            companySearch.mirrorFieldsToSecondaryAddresses(['company']);
+            // The number travels with the name. Both are in the pin's field
+            // set, and a field the pin JUDGES but the mirror never WRITES is a
+            // field that can only ever freeze the address.
+            companySearch.mirrorFieldsToSecondaryAddresses(['company', 'organization']);
         },
         /**
          * Write the captured organisation number so that it SURVIVES A PAGE

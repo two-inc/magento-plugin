@@ -257,6 +257,8 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * `shipping-address/form.html` carries one (`#shipping-new-address-form`).
      */
     const PRIMARY_ADDRESS_ROOT_SELECTOR = '#shipping-new-address-form';
+    /** @see primaryAddressRoot — core's saved-addresses wrapper for that form. */
+    const NEW_SHIPPING_ADDRESS_WRAPPER_SELECTOR = '#opc-new-shipping-address';
     const SECONDARY_ADDRESS_ROOT_SELECTOR = '[data-form="billing-new-address"]';
 
     /**
@@ -281,15 +283,17 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * depends on the country; see resolveRegionField().
      */
     const REGION_FIELD = { name: 'region', resolve: resolveRegionField };
+    const STREET1_FIELD = { name: 'street1', selector: 'input[name="street[1]"]' };
+    const COUNTRY_FIELD = { name: 'country', selector: 'select[name="country_id"]' };
     const MIRRORED_FIELDS = [
         { name: 'company', selector: 'input[name="company"]' },
         { name: 'organization', selector: 'input[name="custom_attributes[company_id]"]' },
         { name: 'street0', selector: 'input[name="street[0]"]' },
-        { name: 'street1', selector: 'input[name="street[1]"]' },
+        STREET1_FIELD,
         { name: 'city', selector: 'input[name="city"]' },
         { name: 'postcode', selector: 'input[name="postcode"]' },
         REGION_FIELD,
-        { name: 'country', selector: 'select[name="country_id"]' }
+        COUNTRY_FIELD
     ];
 
     /**
@@ -322,6 +326,10 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      */
     const mirrorWriteRecords = new Map();
     const secondaryAddressBaselines = new Map();
+
+    /** @see secondaryAddressKey — the no-id fallback's own identity. */
+    const FALLBACK_KEY_ATTR = 'data-two-mirror-key';
+    let fallbackKeySequence = 0;
 
     /**
      * Trim, and fold case. Both halves are the ruling on how a content match is
@@ -385,6 +393,53 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * @param {string} selector
      * @returns {object} jQuery set
      */
+    /**
+     * The default address form, but only when core is actually using it.
+     *
+     * Presence is not enough, and neither is plain visibility. Core renders the
+     * shipping form two different ways (`shipping.html`):
+     *
+     *  - INLINE (`render if="isFormInline"`), for a buyer with no saved
+     *    addresses. There is no wrapper, and the form is always the one in use;
+     *  - inside `#opc-new-shipping-address`, whose own `visible:` binding is
+     *    `isFormPopUpVisible()`, for a buyer with saved addresses. There the
+     *    form exists — holding store defaults and nothing else — for the whole
+     *    of a checkout completed against a saved address. Reading country or
+     *    company from it would propagate values nobody chose, and writing into
+     *    it would write nowhere the buyer can see.
+     *
+     * So the question is asked of that WRAPPER, and of its own display only —
+     * never of its ancestors. Luma collapses the whole shipping step once the
+     * buyer reaches payment, which hides an ancestor of the wrapper while
+     * leaving the form the buyer just filled in exactly as authoritative as it
+     * was a moment earlier.
+     *
+     * Both halves of that were found by live verification rather than reasoning:
+     * a first revision walked the whole ancestor chain and silently disabled the
+     * mirror from the payment step onwards, and a second inferred "in use" from
+     * the form having content, which broke the moment a country switch retracted
+     * the autofill and emptied it.
+     *
+     * @returns {object} jQuery set — empty when there is no usable default form
+     */
+    function primaryAddressRoot() {
+        const $root = $(PRIMARY_ADDRESS_ROOT_SELECTOR);
+        if (!$root.length) return $root;
+        const $wrapper = $root.closest(NEW_SHIPPING_ADDRESS_WRAPPER_SELECTOR);
+        if (!$wrapper.length) return $root;
+        const node = typeof $wrapper.get === 'function' ? $wrapper.get(0) : null;
+        // Fails OPEN on anything that cannot be asked the question: a test
+        // double's node is not an element, and a harness `window` need not carry
+        // `getComputedStyle`. Refusing to act there would disable the whole
+        // mechanism rather than test it.
+        if (!node || node.nodeType !== 1) return $root;
+        if (typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') {
+            return $root;
+        }
+        const style = window.getComputedStyle(node);
+        return style && style.display === 'none' ? $() : $root;
+    }
+
     function scopedField($root, selector) {
         return $root ? $root.find(selector).first() : $(selector);
     }
@@ -453,9 +508,16 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * Best-effort by construction, and the limits are worth stating rather
      * than discovering: the company record gives a region as a NAME with no
      * code beside it while the store needs its own region id, so the only
-     * available join is the visible label, trimmed and case-folded, with a
-     * two-letter abbreviation accepted as well because several registries
-     * answer "CA" where the store shows "California".
+     * available join is the visible label, trimmed and case-folded.
+     *
+     * The label is the ONLY join available, which is why no abbreviation match
+     * is attempted. Core's rendered region options carry no code: checked in a
+     * real browser, a `data-title` is present but holds the region's own NAME
+     * ("A Coruña"), the same string as the label — so matching on it would only
+     * duplicate the label match, never add an abbreviation to it. A registry
+     * that answers "CA" where the store shows "California" therefore cannot be
+     * resolved from the DOM at all, and falls through to the caller's no-match
+     * path rather than to a guess.
      *
      * A region matching nothing writes NOTHING here — the caller falls back to
      * the city rather than guessing at an option. Guessing is the one outcome
@@ -473,13 +535,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         for (let i = 0; i < select.options.length; i++) {
             const option = select.options[i];
             if (!option.value) continue;
-            const name = normalizeMirroredValue(option.text);
-            const abbreviation = normalizeMirroredValue(
-                option.getAttribute('data-title') || option.getAttribute('data-iso-code') || ''
-            );
-            if (name === target || (abbreviation !== '' && abbreviation === target)) {
-                return option.value;
-            }
+            if (normalizeMirroredValue(option.text) === target) return option.value;
         }
         return null;
     }
@@ -502,7 +558,20 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             .find('input[name="billing-address-same-as-shipping"]')
             .first()
             .attr('id');
-        return id || 'two-billing-address';
+        if (id) return id;
+        // No id to key on. A SHARED constant here would be the worst of the
+        // options: two billing forms would answer to one record, so the second
+        // one to appear would be judged against writes made into the first —
+        // empty fields against a non-empty record, which pins a pristine
+        // address. A per-node stamp keeps them separate instead. It dies with
+        // the node, so a rebuild loses the record and re-pins, which is the
+        // safe direction.
+        const existing = $root.attr(FALLBACK_KEY_ATTR);
+        if (existing) return existing;
+        fallbackKeySequence += 1;
+        const minted = 'two-billing-address-' + fallbackKeySequence;
+        $root.attr(FALLBACK_KEY_ATTR, minted);
+        return minted;
     }
 
     const SPINNER_CLASS = 'two-company-search__spinner';
@@ -845,31 +914,64 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      *          rendered: string}>}
      */
     function mirroredFieldStates($root) {
-        const recorded = mirrorWriteRecords.get(secondaryAddressKey($root)) || {};
         const rendered = secondaryAddressBaselines.get(secondaryAddressKey($root)) || {};
         const states = [];
         MIRRORED_FIELDS.forEach(function (field) {
             const handle = mirroredFieldHandle($root, field);
             if (!handle.$field.length) return;
-            const marker = handle.$field.attr(AUTOFILL_MARKER_ATTR);
-            const written = [];
-            if (typeof marker !== 'undefined') written.push(marker);
-            if (typeof recorded[field.name] !== 'undefined') written.push(recorded[field.name]);
             states.push({
                 name: field.name,
                 current: handle.select
                     ? selectedOptionText(handle.select)
                     : trimmedString(handle.$field.val()),
-                // An empty recorded value is not a record of a write, it is the
-                // absence of one — see clearMirrorWriteRecord(), which is how a
-                // field the mirror has retracted stops being attributed to it.
-                written: written.filter(function (value) {
-                    return trimmedString(value) !== '';
-                }),
+                written: recordedWritesForField($root, field),
                 rendered: trimmedString(rendered[field.name])
             });
         });
         return states;
+    }
+
+    /**
+     * The values the plugin is on record as having written into one field of
+     * one form — its marker attribute and, for a billing form, the module
+     * record that outlives a rebuild. Empty entries are dropped: an empty
+     * record is the absence of a write, not a write of ''.
+     *
+     * @param {?object} $root jQuery-wrapped address form, or null
+     * @param {object} field entry from MIRRORED_FIELDS
+     * @returns {Array<string>}
+     */
+    function recordedWritesForField($root, field) {
+        const handle = mirroredFieldHandle($root, field);
+        const written = [];
+        const marker = handle.$field.attr(AUTOFILL_MARKER_ATTR);
+        if (typeof marker !== 'undefined') written.push(marker);
+        if ($root) {
+            const recorded = mirrorWriteRecords.get(secondaryAddressKey($root)) || {};
+            if (typeof recorded[field.name] !== 'undefined') written.push(recorded[field.name]);
+        }
+        return written.filter(function (value) {
+            return trimmedString(value) !== '';
+        });
+    }
+
+    /**
+     * Whether one field of one form still holds a value the plugin put there.
+     *
+     * @param {?object} $root jQuery-wrapped address form, or null
+     * @param {object} field entry from MIRRORED_FIELDS
+     * @returns {boolean}
+     */
+    function fieldHoldsOurOwnValue($root, field) {
+        const handle = mirroredFieldHandle($root, field);
+        if (!handle.$field.length && $root) return false;
+        const current = normalizeMirroredValue(
+            handle.select ? selectedOptionText(handle.select) : handle.$field.val()
+        );
+        if (current === '') return false;
+        return recordedWritesForField($root, field).some(function (value) {
+            return normalizeMirroredValue(value) === current;
+        });
     }
 
     /**
@@ -1031,6 +1133,15 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             values.street1 = street;
         } else {
             values.street0 = street;
+            // Line 2 is left UNTOUCHED by the routing rule when the payload has
+            // no locator — but only where its contents are not already the
+            // plugin's own. A previous company whose payload DID carry a
+            // building put its street on line 2; leaving that behind would
+            // strand the old company's street beside the new company's line 1,
+            // with nothing to pin it because line 2 still matches its own stale
+            // record. A buyer's line 2 is never touched, here or anywhere: it
+            // has no recording, so it fails this test.
+            if (fieldHoldsOurOwnValue($root, STREET1_FIELD)) values.street1 = '';
         }
 
         const plan = [];
@@ -1102,25 +1213,36 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * @returns {number} how many fields were cleared
      */
     function revertAddressFormFields($root) {
-        let cleared = 0;
+        const cleared = [];
         MIRRORED_FIELDS.forEach(function (field) {
             if (REVERTABLE_FIELD_NAMES.indexOf(field.name) === -1) return;
             const handle = mirroredFieldHandle($root, field);
             if ($root && !handle.$field.length) return;
             const marker = handle.$field.attr(AUTOFILL_MARKER_ATTR);
-            // `undefined` means never autofilled. An empty-string marker is a
-            // real recording (the registry had no value for this field) and
-            // must still be honoured, so this tests for absence rather than
-            // falsiness.
-            if (typeof marker === 'undefined') return;
+            const current = trimmedString(
+                handle.select ? selectedOptionText(handle.select) : handle.$field.val() || ''
+            );
+            // An EMPTY field with a marker on it is still ours to retract — the
+            // marker may be an empty-string recording, which is a real one (the
+            // registry had no value for this field).
+            const markerClaims = typeof marker !== 'undefined' && current === trimmedString(marker);
+            // The module record is consulted as well, and it has to be: a
+            // rebuild of the form destroys every marker attribute, and the
+            // record is the ONLY surviving evidence that these values are the
+            // plugin's. Without this a country switch after a rebuild retracted
+            // nothing while still retiring the record, leaving the previous
+            // country's address in the billing form attributed to nobody — which
+            // the pin then reads as buyer-authored and freezes permanently.
+            const recordClaims =
+                current !== '' &&
+                recordedWritesForField($root, field).some(function (value) {
+                    return normalizeMirroredValue(value) === normalizeMirroredValue(current);
+                });
             handle.$field.removeAttr(AUTOFILL_MARKER_ATTR);
-            const current = handle.select
-                ? selectedOptionText(handle.select)
-                : handle.$field.val() || '';
-            if (trimmedString(current) !== trimmedString(marker)) return;
+            if (!markerClaims && !recordClaims) return;
             handle.$field.val('');
             handle.$field.trigger('change');
-            cleared += 1;
+            cleared.push(field.name);
         });
         return cleared;
     }
@@ -1525,11 +1647,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             return addressResponse;
         },
 
-        PRIMARY_ADDRESS_ROOT_SELECTOR: PRIMARY_ADDRESS_ROOT_SELECTOR,
         SECONDARY_ADDRESS_ROOT_SELECTOR: SECONDARY_ADDRESS_ROOT_SELECTOR,
-        MIRRORED_FIELD_NAMES: MIRRORED_FIELDS.map(function (field) {
-            return field.name;
-        }),
 
         /**
          * Write a company address into the buyer's own working address form,
@@ -1560,11 +1678,34 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          */
         applyAddress: function (address) {
             console.debug({ logger: 'companySearch.applyAddress', address });
-            const $primary = $(PRIMARY_ADDRESS_ROOT_SELECTOR);
-            const $target = $primary.length ? $primary : null;
-            applyPlan($target, plannedAddressWrites(address, $target));
-            if (!$primary.length) return 0;
-            return this.mirrorAddressToSecondaryAddresses(address);
+            const $primary = primaryAddressRoot();
+            if ($primary.length) {
+                applyPlan($primary, plannedAddressWrites(address, $primary));
+                return this.mirrorAddressToSecondaryAddresses(address);
+            }
+            // No default address form in use — a virtual cart, or a buyer
+            // checking out against a saved shipping address. The billing form is
+            // then the buyer's OWN working form rather than a mirror of
+            // anything, so it is written directly and NOT judged by the pin;
+            // that is the pre-existing behaviour of a pick made in the payment
+            // tile, which carries its own positional gate for whether autofill
+            // should happen there at all (see the tile's addressLookup()).
+            //
+            // Written PER FORM rather than through one document-wide selector,
+            // which matters twice: the region routing inspects the form's own
+            // option list, so a document-wide decision would apply one form's
+            // answer to all of them; and the writes are recorded per form, so a
+            // later evaluation attributes them instead of reading them as
+            // buyer-authored.
+            const roots = secondaryAddressRoots();
+            if (!roots.length) {
+                applyPlan(null, plannedAddressWrites(address, null));
+                return 0;
+            }
+            roots.forEach(function ($root) {
+                recordMirrorWrites($root, applyPlan($root, plannedAddressWrites(address, $root)));
+            });
+            return 0;
         },
 
         /**
@@ -1575,6 +1716,15 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * @returns {number} how many billing addresses were written
          */
         mirrorAddressToSecondaryAddresses: function (address) {
+            // The country FIRST, and it is not an optimisation. The store's
+            // default country is frequently not the buyer's, so the billing form
+            // can be sitting on a different country from the address about to be
+            // written into it — and the region routing reads that country's own
+            // option list to decide between the state control and the city
+            // append. Mirroring the country first means both forms route the
+            // same region the same way; leaving it meant one form selected a
+            // state while the other appended a state name into its city.
+            this.mirrorFieldsToSecondaryAddresses(['country']);
             let synced = 0;
             secondaryAddressRoots().forEach(function ($root) {
                 if (secondaryAddressIsPinned($root)) return;
@@ -1603,7 +1753,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * @returns {number} how many billing addresses were written
          */
         mirrorFieldsToSecondaryAddresses: function (names) {
-            const $primary = $(PRIMARY_ADDRESS_ROOT_SELECTOR);
+            const $primary = primaryAddressRoot();
             if (!$primary.length) return 0;
             const fields = MIRRORED_FIELDS.filter(function (field) {
                 return names.indexOf(field.name) !== -1;
@@ -1661,6 +1811,18 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             if (!$root.length) return;
             const key = secondaryAddressKey($root);
             if (secondaryAddressBaselines.has(key)) return;
+            // Too late to trust what the form is holding: the mirror has already
+            // written into some billing address on this page, and every billing
+            // form renders from the same quote billing address, so a form
+            // appearing now can be carrying a value the buyer authored in a
+            // sibling form. Seal an EMPTY baseline instead — only a genuinely
+            // empty field then counts as unanswered, which pins rather than
+            // overwrites. Reachable when the buyer switches payment method,
+            // since each method has a billing form of its own.
+            if (mirrorWriteRecords.size) {
+                secondaryAddressBaselines.set(key, {});
+                return;
+            }
             const rendered = {};
             MIRRORED_FIELDS.forEach(function (field) {
                 const handle = mirroredFieldHandle($root, field);
@@ -1669,6 +1831,20 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                     ? selectedOptionText(handle.select)
                     : trimmedString(handle.$field.val());
             });
+            // A form whose COUNTRY select has not rendered yet is a form whose
+            // fields have not rendered yet. Core inserts the fieldset before its
+            // child field components resolve their templates, and `$.async`
+            // fires on the insertion — so storing this would seal a baseline of
+            // nothing, and every field of the real render would then read as
+            // buyer-authored and pin the address before the buyer saw it.
+            // Declining leaves the next `$.async` fire to capture it properly.
+            if (!Object.prototype.hasOwnProperty.call(rendered, 'country')) {
+                console.debug({
+                    logger: 'companySearch.captureSecondaryAddressBaseline.deferred',
+                    key
+                });
+                return;
+            }
             secondaryAddressBaselines.set(key, rendered);
             console.debug({
                 logger: 'companySearch.captureSecondaryAddressBaseline',
@@ -1720,15 +1896,22 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          *          caller can tell "nothing was ours" from "reverted"
          */
         revertAutofilledAddress: function () {
-            const $primary = $(PRIMARY_ADDRESS_ROOT_SELECTOR);
-            let cleared = revertAddressFormFields($primary.length ? $primary : null);
+            const $primary = primaryAddressRoot();
+            let cleared = revertAddressFormFields($primary.length ? $primary : null).length;
             if ($primary.length) {
                 secondaryAddressRoots().forEach(function ($root) {
                     if (secondaryAddressIsPinned($root)) return;
-                    cleared += revertAddressFormFields($root);
-                    REVERTABLE_FIELD_NAMES.forEach(function (name) {
+                    // Only the fields actually emptied are retracted. Retracting
+                    // the whole revertable set unconditionally was a real defect:
+                    // a field the retraction declined to clear kept its value and
+                    // lost its record in the same pass, which is exactly the
+                    // "non-empty field, nothing on record" shape the pin reads as
+                    // a buyer edit.
+                    const retracted = revertAddressFormFields($root);
+                    retracted.forEach(function (name) {
                         clearMirrorWriteRecord($root, name);
                     });
+                    cleared += retracted.length;
                 });
             }
             console.debug({ logger: 'companySearch.revertAutofilledAddress', cleared });

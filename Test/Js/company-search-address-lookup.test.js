@@ -44,6 +44,11 @@ function makeSpyJQuery(recorder) {
             },
             closest: function () { return obj; },
             find: function () { return obj; },
+            first: function () { return obj; },
+            // A length-0 set: this fixture models the payment-tile case, where
+            // no address form exists as a node and the writes go through the
+            // module's document-wide branch. `each` therefore never calls back.
+            each: function () { return obj; },
             append: function () { return obj; },
             hide: function () { return obj; },
             show: function () { return obj; },
