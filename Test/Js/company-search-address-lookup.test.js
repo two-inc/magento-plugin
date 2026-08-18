@@ -44,6 +44,11 @@ function makeSpyJQuery(recorder) {
             },
             closest: function () { return obj; },
             find: function () { return obj; },
+            first: function () { return obj; },
+            // A length-0 set: this fixture models the payment-tile case, where
+            // no address form exists as a node and the writes go through the
+            // module's document-wide branch. `each` therefore never calls back.
+            each: function () { return obj; },
             append: function () { return obj; },
             hide: function () { return obj; },
             show: function () { return obj; },
@@ -182,9 +187,15 @@ describe('company-search shared module', () => {
                 ['input[name="street[0]"]', '1 Example Street']
             ])
         );
+        // `change` per field written, not one combined trigger: TWO-25461 gave
+        // the write path a per-field routing plan (a building/apartment moves
+        // the street to the second line), so which fields are written is no
+        // longer a fixed list to name in one selector.
         expect(recorder.triggered).toEqual(
             expect.arrayContaining([
-                ['input[name="city"], input[name="postcode"], input[name="street[0]"]', 'change']
+                ['input[name="city"]', 'change'],
+                ['input[name="postcode"]', 'change'],
+                ['input[name="street[0]"]', 'change']
             ])
         );
     });

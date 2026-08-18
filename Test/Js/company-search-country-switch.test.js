@@ -51,6 +51,9 @@ const STREET = 'input[name="street[0]"]';
 
 const MARKER = 'data-two-autofilled-value';
 
+const PRIMARY_ROOT = '#shipping-new-address-form';
+const SECONDARY_ROOT = '[data-form="billing-new-address"]';
+
 /**
  * jQuery double with one persistent node per selector and, unlike the doubles
  * in the neighbouring files, a REAL attribute store.
@@ -143,8 +146,32 @@ function makeDom() {
             },
             select2: function () {
                 return n;
+            },
+            first: function () {
+                return n;
+            },
+            each: function (fn) {
+                if (n.length) fn.call(n, 0, n);
+                return n;
             }
         };
+        // The shipping address form is the SCOPE the autofill and the revert now
+        // resolve their fields inside (TWO-25461 §2), so a lookup through it has
+        // to land on the same node the plain selector does — otherwise every
+        // assertion below would be watching a node production never writes.
+        if (selector === PRIMARY_ROOT) {
+            n.find = function (sel) {
+                return node(sel);
+            };
+        }
+        // No billing address form in these fixtures. Modelled as genuinely
+        // ABSENT rather than as another length-1 node: these tests cover the
+        // shipping step alone, and a billing form that answered every selector
+        // would have the mirror writing into the same nodes the assertions
+        // watch, which would make a scoping regression invisible here.
+        if (selector === SECONDARY_ROOT) {
+            n.length = 0;
+        }
         nodes[selector] = n;
         return n;
     }
@@ -250,7 +277,14 @@ function loadAddressStep(options) {
     const opts = options || {};
     const dom = makeDom();
     const cd = makeCustomerData();
-    const calls = { abort: [], revert: 0, applyAddress: [] };
+    const calls = {
+        abort: [],
+        revert: 0,
+        applyAddress: [],
+        baselines: [],
+        mirrored: [],
+        sequence: []
+    };
 
     dom.node(COUNTRY_FIELD).val(opts.country || 'GB');
 
@@ -276,6 +310,7 @@ function loadAddressStep(options) {
         },
         revertAutofilledAddress: function () {
             calls.revert += 1;
+            calls.sequence.push('revert');
             return 0;
         },
         abortActiveRequest: function (token) {
@@ -301,6 +336,21 @@ function loadAddressStep(options) {
         },
         noResultsMessage: function () {
             return '';
+        },
+        // Two-address mirror (TWO-25461 §2). Recorded rather than executed:
+        // these fixtures model the shipping step alone, so what is checkable
+        // here is that the address step ASKS for the propagation on a country
+        // change and on every company write — the mirror's own pin logic is
+        // covered against real markup in company-search-address-mirror.test.js.
+        SECONDARY_ADDRESS_ROOT_SELECTOR: SECONDARY_ROOT,
+        captureSecondaryAddressBaseline: function (root) {
+            calls.baselines.push(root);
+            calls.sequence.push('baseline');
+        },
+        mirrorFieldsToSecondaryAddresses: function (names) {
+            calls.mirrored.push(names);
+            calls.sequence.push('mirror:' + names.join('+'));
+            return 0;
         }
     };
 
@@ -637,5 +687,49 @@ describe('a company restored from a previous visit', () => {
         );
 
         expect(renderer.companyId()).toBe('B12345678');
+    });
+});
+
+describe('the address step asks for the two-address propagation', () => {
+    /**
+     * These three wirings live in `address-autocomplete.js` and are invisible to
+     * the mirror's own suite, which drives the model directly. Deleting any one
+     * of them left every suite in the repo green before these tests existed.
+     */
+    test('the billing form is watched so its rendered baseline can be captured', () => {
+        const ctx = loadAddressStep({ country: 'GB' });
+
+        // Watched via a FIELD inside the form and walked back up, not the form
+        // itself: core inserts the fieldset before its child fields render.
+        expect(ctx.calls.baselines).toHaveLength(1);
+    });
+
+    test('a country change propagates the country, after the two clears', () => {
+        const ctx = loadAddressStep({ country: 'GB' });
+        ctx.calls.sequence.length = 0;
+
+        switchCountryTo(ctx, 'ES');
+
+        expect(ctx.calls.mirrored).toContainEqual(['country']);
+        // The country goes LAST. Both clears run over the billing address and
+        // both consult the sync pin, so a country written first would be a value
+        // they then had to judge as already-ours mid-sequence.
+        expect(ctx.calls.sequence.indexOf('revert')).toBeLessThan(
+            ctx.calls.sequence.indexOf('mirror:country')
+        );
+        expect(ctx.calls.sequence.indexOf('mirror:company+organization')).toBeLessThan(
+            ctx.calls.sequence.indexOf('mirror:country')
+        );
+    });
+
+    test('every company write propagates the name AND the number it belongs to', () => {
+        // A field the pin JUDGES but the mirror never WRITES can only ever
+        // freeze the address, so the organisation number travels with the name.
+        const ctx = loadAddressStep({ country: 'GB' });
+        ctx.calls.mirrored.length = 0;
+
+        ctx.component.setCompanyData('12345678', 'Example Ltd');
+
+        expect(ctx.calls.mirrored).toEqual([['company', 'organization']]);
     });
 });

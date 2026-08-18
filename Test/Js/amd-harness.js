@@ -195,7 +195,19 @@ function defaultMocks() {
             currentAddressFormCountry: function () { return ''; },
             clearSearchChrome: function () {},
             setSearching: function () {},
-            setUnavailable: function () {}
+            setUnavailable: function () {},
+            // Two-address mirror (TWO-25461 §2). Exactly the three members
+            // `view/address-autocomplete.js` calls, and no more: a mock member
+            // with no production caller is a surface that drifts silently. The
+            // specs that exercise the mirror itself load the real module so its
+            // DOM reads hit their own fixture.
+            //
+            // The selector is NOT inert — the address-step component builds a
+            // `$.async` selector from it, so a mock returning undefined would
+            // exercise a selector production never uses.
+            SECONDARY_ADDRESS_ROOT_SELECTOR: '[data-form="billing-new-address"]',
+            mirrorFieldsToSecondaryAddresses: function () { return 0; },
+            captureSecondaryAddressBaseline: function () {}
         },
         // Inert default, same convention as the company-search mock above:
         // a constructor whose instances no-op every method. Tests that
