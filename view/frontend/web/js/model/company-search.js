@@ -1171,10 +1171,12 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                     value: region,
                     recordAs: region
                 });
-            } else if (
-                values.city &&
-                !normalizeMirroredValue(values.city).endsWith(normalizeMirroredValue(region))
-            ) {
+            } else if (!values.city) {
+                // No state control, no free-text region field, and no city to
+                // append onto — the region still has to land somewhere, or it
+                // is silently dropped from a payload that carried it.
+                values.city = region;
+            } else if (!normalizeMirroredValue(values.city).endsWith(normalizeMirroredValue(region))) {
                 values.city = values.city + ', ' + region;
             }
         }
