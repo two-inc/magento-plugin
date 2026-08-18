@@ -567,6 +567,13 @@ describe("an external payload's region lands somewhere, always", () => {
             { region: 'Kent', city: 'Ashford' },
             'Kent',
             'Ashford'
+        ],
+        [
+            'a region matching no option, with no city in the payload at all, still lands — in the city field alone',
+            true,
+            { region: 'Kent' },
+            '',
+            'Kent'
         ]
     ];
 
