@@ -266,12 +266,18 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * Address forms an address write can be scoped to, billing/invoice role
      * first — the role the payment tile writes as (TWO-25461 §1(a.3)).
      *
-     * Attribute selectors, not `#id`: jQuery answers a bare `#id` through
-     * `document.getElementById` and returns AT MOST ONE element, and core
-     * renders a billing address form per payment method — all carrying that
-     * same id. The fast path would hide every one but the first.
+     * The billing form is matched on `data-form`, which is what core actually
+     * renders (`billing-address/form.html`: `<fieldset class="fieldset address"
+     * data-form="billing-new-address">`) — there is no `billing-new-address-form`
+     * id anywhere in core, and core's own tests select it by that attribute. The
+     * id form is kept after it for third-party checkouts that do render one.
+     *
+     * Attribute selectors rather than `#id` throughout: jQuery answers a bare
+     * `#id` through `document.getElementById` and returns AT MOST ONE element,
+     * while core renders one billing form per payment method.
      */
     const ADDRESS_FORM_ROOT_SELECTORS = [
+        '[data-form="billing-new-address"]',
         '[id="billing-new-address-form"]',
         '[id="shipping-new-address-form"]'
     ];
@@ -663,7 +669,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * @param {?object} $root scope, or null for document-wide
      * @returns {number} how many fields were cleared
      */
-    function revertFields(fields, $root) {
+    function retractStaleFields(fields, $root) {
         let cleared = 0;
         fields.forEach(function (field) {
             // PER ELEMENT, never over the set: `.attr()` and `.val()` read the
@@ -746,11 +752,11 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      *
      * Best-effort, and the limit is worth stating: the payload carries a region
      * NAME with no code beside it while Magento needs a region ID, so the only
-     * available join is on what the option says. Magento renders the region
-     * code in the option's `title` attribute alongside the full name as its
-     * text, so both are accepted — several registries answer "CA" where the
-     * shop shows "California". Matching nothing writes nothing rather than
-     * guessing at an ID.
+     * available join is on what the option says. Its text is matched, and its
+     * `title` too where the theme puts the region code there — several
+     * registries answer "CA" where the shop shows "California", and a shop whose
+     * options carry no code simply falls through. Matching nothing writes nothing
+     * rather than guessing at an ID.
      *
      * @param {HTMLSelectElement} select
      * @param {string} region trimmed region name from the payload
@@ -1223,12 +1229,14 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * previous selection is stale, and leaving it produces one address
          * assembled from two companies.
          *
-         * `change` fires only once every value has landed, so no listener sees a
-         * PARTLY-written address: the handlers on these fields serialise the
-         * whole form (Magento's own totals/shipping estimate, and every one-page
-         * checkout that posts the address on field change), and the city's event
-         * firing before the street lines exist would send one of those out
-         * describing an address that is half the previous company's.
+         * Every value is in the DOM before the first `change` for a WRITTEN field
+         * fires: the handlers on these fields serialise the whole form (Magento's
+         * own totals/shipping estimate, and every one-page checkout that posts
+         * the address on field change), and the city's event firing before the
+         * street lines exist would send one of those out describing an address
+         * that is half the previous company's. The retraction below fires its own
+         * `change` for each field it clears, which is the same event shape a
+         * buyer clearing a field produces.
          *
          * The COUNTRY is never written: the server discards a company whose
          * country disagrees with the checkout address's, so writing a registered
@@ -1253,7 +1261,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                 const $field = scopedFind($root, fieldSelector(name));
                 $field.val(values[name]).attr(AUTOFILL_MARKER_ATTR, values[name]);
             });
-            revertFields(
+            retractStaleFields(
                 AUTOFILLED_FIELDS.filter(function (field) {
                     return names.indexOf(field.name) === -1;
                 }),
@@ -1317,6 +1325,12 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             if (!region) return {};
 
             const select = scopedFind($root, 'select[name="region_id"]')[0];
+            // Having real options is the discriminator, because that is what the
+            // country drives: core's region element HIDES the control the country
+            // does not use (`Magento_Ui` region.js hideRegion() → setVisible /
+            // toggleInput) rather than disabling it, so `disabled` says nothing
+            // here, and an empty select means this country has no predefined
+            // regions.
             if (select && select.options && select.options.length > 1) {
                 const optionValue = regionOptionValue(select, region);
                 // An unmatched region falls through to the city rather than
@@ -1325,14 +1339,13 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                 // buyer's own answer.
                 if (optionValue !== null) return { region_id: optionValue };
             } else {
+                // Visibility IS the test on the free-text control: with no
+                // options in the select, a hidden text input means core has
+                // hidden both — the form is mid-render or the country has no
+                // region field at all — and a value written there is one the
+                // buyer can neither see nor correct.
                 const $text = scopedFind($root, 'input[name="region"]');
-                // Not merely present: Magento renders both controls and DISABLES
-                // the one the current country does not use. A write to the
-                // disabled one is dropped from the posted form, so treating
-                // presence as applicability loses the region silently — and it
-                // would also claim the region was placed on a country whose
-                // select is simply not populated yet.
-                if ($text.length && !$text.prop('disabled')) return { region: region };
+                if ($text.length && $text.is(':visible')) return { region: region };
             }
 
             const $city = scopedFind($root, 'input[name="city"]');
@@ -1357,7 +1370,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * is a wrong address the buyer may well not re-read before placing the
          * order.
          *
-         * Which fields are cleared and which are left standing is revertFields()
+         * Which fields are cleared and which are left standing is retractStaleFields()
          * — the same rule the next selection's write applies to the fields its
          * own payload says nothing about.
          *
@@ -1369,7 +1382,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          *          caller can tell "nothing was ours" from "reverted"
          */
         revertAutofilledAddress: function () {
-            const cleared = revertFields(AUTOFILLED_FIELDS, null);
+            const cleared = retractStaleFields(AUTOFILLED_FIELDS, null);
             console.debug({ logger: 'companySearch.revertAutofilledAddress', cleared });
             return cleared;
         },

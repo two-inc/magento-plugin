@@ -183,10 +183,10 @@ const REGION_MARKUP = {
  */
 function load(regionShape) {
     document.body.innerHTML =
-        '<form id="shipping-new-address-form">' +
+        '<div id="shipping-new-address-form">' +
         ADDRESS_FIELDS +
         REGION_MARKUP[regionShape || 'none'] +
-        '</form>';
+        '</div>';
     const $ = makeDollar();
     return {
         model: loadAmdModule(SEARCH, { jquery: $ }),
@@ -344,15 +344,16 @@ describe('a region lands wherever the address format can hold it', () => {
     });
 
     test.each([
-        [false, { region: 'Kent', city: 'Los Angeles' }, 'an enabled free-text region takes it'],
+        [false, { region: 'Kent', city: 'Los Angeles' }, 'a visible free-text region takes it'],
         [
             true,
             { region: '', city: 'Los Angeles, Kent' },
-            'a DISABLED one is not a usable field: Magento drops its value on post'
+            'a HIDDEN one is not the control in play: core hides the region field '
+                + 'the country does not use'
         ]
-    ])('free-text region disabled=%p -> %p (%s)', (disabled, expected) => {
+    ])('free-text region hidden=%p -> %p (%s)', (hidden, expected) => {
         const { model, field } = load('text');
-        field('region').disabled = disabled;
+        if (hidden) field('region').style.display = 'none';
 
         model.applyAddress({ city: 'Los Angeles', street: 'Mill Lane', region: 'Kent' });
 
@@ -446,8 +447,8 @@ describe('every field the write can reach, the revert can take back', () => {
         // cannot tell "after all writes" from "interleaved with them".
         const seen = [];
         document.body.innerHTML =
-            '<form id="shipping-new-address-form">' + ADDRESS_FIELDS + REGION_MARKUP.select +
-            '</form>';
+            '<div id="shipping-new-address-form">' + ADDRESS_FIELDS + REGION_MARKUP.select +
+            '</div>';
         const $ = makeDollar();
         $.onChange = function () {
             seen.push(
@@ -496,10 +497,10 @@ describe('every field the write can reach, the revert can take back', () => {
         // with the checkout address's, so writing a registered country over the
         // one the buyer chose would destroy the selection this completes.
         document.body.innerHTML =
-            '<form id="shipping-new-address-form">' +
+            '<div id="shipping-new-address-form">' +
             ADDRESS_FIELDS +
             '<select name="country_id"><option value="GB" selected>GB</option></select>' +
-            '</form>';
+            '</div>';
         const $ = makeDollar();
         const model = loadAmdModule(SEARCH, { jquery: $ });
 
@@ -585,10 +586,10 @@ describe('a shop configured for a single street line', () => {
         // `customer/address/street_lines` is 1, and jQuery no-ops on an empty
         // set — so routing the street there would discard it silently.
         document.body.innerHTML =
-            '<form id="shipping-new-address-form">' +
+            '<div id="shipping-new-address-form">' +
             '<input name="city" value="" /><input name="postcode" value="" />' +
             '<input name="street[0]" value="" />' +
-            '</form>';
+            '</div>';
         const model = loadAmdModule(SEARCH, { jquery: makeDollar() });
 
         model.applyAddress({ street: 'Mill Lane', building: 'Mill House', city: 'Ashford' });
@@ -600,15 +601,19 @@ describe('a shop configured for a single street line', () => {
 describe('the write can be scoped to one address form', () => {
     /** Two forms, as the payment step actually renders them. */
     function loadTwoForms(billingHidden) {
+        // Core's own markup: the shipping form carries an id, the billing
+        // fieldset carries `data-form="billing-new-address"` and NO id (checked
+        // against Magento_Checkout's billing-address/form.html and
+        // shipping-address/form.html, 2.4.6).
         document.body.innerHTML =
-            '<form id="shipping-new-address-form">' +
+            '<div id="shipping-new-address-form">' +
             '<input name="city" value="Shipping City" /><input name="postcode" value="" />' +
             '<input name="street[0]" value="" /><input name="street[1]" value="" />' +
-            '</form>' +
-            `<form id="billing-new-address-form"${billingHidden ? ' style="display:none"' : ''}>` +
+            '</div>' +
+            `<fieldset data-form="billing-new-address"${billingHidden ? ' style="display:none"' : ''}>` +
             '<input name="city" value="Billing City" /><input name="postcode" value="" />' +
             '<input name="street[0]" value="" /><input name="street[1]" value="" />' +
-            '</form>';
+            '</fieldset>';
         return loadAmdModule(SEARCH, { jquery: makeDollar() });
     }
 
@@ -617,8 +622,8 @@ describe('the write can be scoped to one address form', () => {
      * @param {string} name field name
      * @returns {string}
      */
-    function valueIn(formId, name) {
-        return document.querySelector(`#${formId} [name="${name}"]`).value;
+    function valueIn(form, name) {
+        return document.querySelector(`${form} [name="${name}"]`).value;
     }
 
     test('a scoped write reaches only that form', () => {
@@ -629,18 +634,18 @@ describe('the write can be scoped to one address form', () => {
 
         model.applyAddress({ city: 'Ashford', street: 'Mill Lane' }, model.billingRoleFormRoot());
 
-        expect(valueIn('billing-new-address-form', 'city')).toBe('Ashford');
-        expect(valueIn('shipping-new-address-form', 'city')).toBe('Shipping City');
+        expect(valueIn('[data-form="billing-new-address"]', 'city')).toBe('Ashford');
+        expect(valueIn('#shipping-new-address-form', 'city')).toBe('Shipping City');
     });
 
     test('the billing form wins on ROLE, whether or not it is visible', () => {
         const model = loadTwoForms(false);
-        expect(model.billingRoleFormRoot()[0].id).toBe('billing-new-address-form');
+        expect(model.billingRoleFormRoot()[0].dataset.form).toBe('billing-new-address');
 
         // Still the billing form when it is hidden: role beats visibility, and a
         // hidden invoice address is not the shipping address.
         const hidden = loadTwoForms(true);
-        expect(hidden.billingRoleFormRoot()[0].id).toBe('billing-new-address-form');
+        expect(hidden.billingRoleFormRoot()[0].dataset.form).toBe('billing-new-address');
     });
 
     test('visibility picks between SEVERAL forms matching the same selector', () => {
@@ -648,12 +653,12 @@ describe('the write can be scoped to one address form', () => {
         // id — which is also why the production selector is the attribute form
         // and not `#id`, whose jQuery fast path returns at most one element.
         document.body.innerHTML =
-            '<form id="billing-new-address-form" style="display:none">' +
+            '<fieldset data-form="billing-new-address" style="display:none">' +
             '<input name="city" value="Other Method" />' +
-            '</form>' +
-            '<form id="billing-new-address-form">' +
+            '</fieldset>' +
+            '<fieldset data-form="billing-new-address">' +
             '<input name="city" value="Selected Method" />' +
-            '</form>';
+            '</fieldset>';
         const model = loadAmdModule(SEARCH, { jquery: makeDollar() });
 
         const root = model.billingRoleFormRoot();
@@ -666,7 +671,7 @@ describe('the write can be scoped to one address form', () => {
         // checked and renders NO billing form: the shipping form IS the invoice
         // address there.
         document.body.innerHTML =
-            '<form id="shipping-new-address-form"><input name="city" value="" /></form>';
+            '<div id="shipping-new-address-form"><input name="city" value="" /></div>';
         const model = loadAmdModule(SEARCH, { jquery: makeDollar() });
 
         expect(model.billingRoleFormRoot()[0].id).toBe('shipping-new-address-form');

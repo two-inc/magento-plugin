@@ -129,9 +129,17 @@ define([
      * @param {object} buyer `/autofill/v1/buyer/current` record
      * @returns {string}
      */
-    function soleTraderIdentityKey(buyer) {
+    function soleTraderIdentityKey(brandCode, buyer) {
         const number = String(buyer.organization_number || '').trim();
-        return number || `email:${String(buyer.email || '').trim().toLowerCase()}`;
+        // Per BRAND: a checkout offering two Two-family brands renders a tile —
+        // and a billing form — for each, so an adoption in one says nothing
+        // about whether the other's form has been written.
+        if (number) return `${brandCode}:${number}`;
+        const email = String(buyer.email || '').trim().toLowerCase();
+        // Nothing to tell one such buyer from another, so record nothing and let
+        // the write happen every time — repeating a write is recoverable, and
+        // collapsing two buyers onto one key silently drops the second's address.
+        return email ? `${brandCode}:email:${email}` : '';
     }
 
     function startOrderIntentSpinner() {
@@ -525,31 +533,22 @@ define([
          * beat a correct quote-derived one — reintroducing the same class of bug
          * on the platforms that worked.
          *
-         * TWO-25461 §1(a.3) added the billing-role read AHEAD of all of that.
-         * The tile has no address fields of its own, so its country is whatever
-         * the address playing the BILLING/INVOICE role says — never "whichever
-         * address is primary". Every feed below is shipping-biased in some
-         * state: the `countryCode` customer-data section is written from the
-         * SHIPPING form only, updateAddress() takes whichever quote address
-         * fired last, the delegated watcher takes whichever country select the
-         * buyer touched, and the DOM fallback tries `#shipping-new-address-form`
-         * first. With a shipping country differing from the billing one, any of
-         * them can leave the tile searching the wrong country's registry.
+         * TWO-25461 §1(a.3): the tile has no address fields of its own, so its
+         * country is the BILLING/INVOICE-role address's — and every feed below is
+         * shipping-biased in some state, so a buyer shipping to one country and
+         * invoicing in another could search the wrong registry.
          *
-         * `quote.billingAddress()` is the same source getAutofillData(),
-         * getData() and placeOrderIntent() already read — §1 asks for one
-         * resolution reused, not a fourth mirror — and it is quote-derived, so
-         * the DOM-first objection below does not apply to it. Billing being
-         * Magento's non-default form, §1(a.3) says its value comes from the sync
-         * mechanism (core's own same-as-shipping copy into the quote) rather
-         * than an independent read, which is exactly what this is. The accepted
-         * cost: while the buyer is editing the billing form and has not applied
-         * it, the quote still holds the previous country.
+         * `quote.billingAddress()` rather than a live read of the billing form:
+         * billing is Magento's non-default form, and §1(a.3) says its value comes
+         * from the sync mechanism (core's own same-as-shipping copy into the
+         * quote). It is also the source getAutofillData(), getData() and
+         * placeOrderIntent() already read, so this is one resolution reused
+         * rather than a fourth mirror. Accepted cost: while the buyer is editing
+         * the billing form and has not applied it, the quote holds the previous
+         * country.
          *
          * This getter feeds the SEARCH. Sole-trader availability and the
-         * country-change company discard still run off `countryCode()` — see
-         * fillCountryCode() — which is fed from the billing address too whenever
-         * a billing-address change is the last one to fire.
+         * country-change company discard still run off `countryCode()`.
          *
          * @returns {string} lower-cased ISO country code, or ''
          */
@@ -1044,6 +1043,11 @@ define([
          */
         clearCompanyForCountryChange: function () {
             console.debug({ logger: 'twoPayment.clearCompanyForCountryChange' });
+            // The address written for a sole trader in the previous country is
+            // reverted by the address step on the same switch, so the adoption
+            // has to be re-armed here too — otherwise the buyer who returns to
+            // that country gets the identity back with no address behind it.
+            adoptedSoleTraderIds.clear();
             this.companyName('');
             this.companyId('');
             $(this.companyNameSelector).val('');
@@ -2253,13 +2257,9 @@ define([
          * into the tile, and the registered ADDRESS into the checkout address
          * form (TWO-25461 §5).
          *
-         * The single write-back path for all three contexts that resolve a
-         * buyer — the passive prefetch, the chip click against an already
-         * resolved prefetch, and the popup's post-signup `ACCEPTED` message.
-         * They were three copies of the identity half with no address half at
-         * all: `fetchBuyer()` has always returned the buyer's address and every
-         * caller discarded it, so a completed sole-trader signup left the buyer
-         * retyping an address the plugin already held.
+         * The single write-back path for all three contexts that resolve a buyer:
+         * the passive prefetch, the chip click against an already resolved
+         * prefetch, and the popup's post-signup `ACCEPTED` message.
          *
          * NOT gated on `isAddressAreaCompanySearchEnabled` or the server-side
          * `isAddressSearchEnabled`, per §5: those gate an ORDINARY
@@ -2288,15 +2288,19 @@ define([
                 companyId: buyer.organization_number,
                 companyName: buyer.company_name
             });
-            const identity = soleTraderIdentityKey(buyer);
-            if (!adoptedSoleTraderIds.has(identity)) {
+            // `getCode()` comes from the payment renderer base and is the brand's
+            // own method code; guarded because the guard must not be the thing
+            // that breaks a renderer built without it.
+            const brandCode = (typeof this.getCode === 'function' && this.getCode()) || '';
+            const identity = soleTraderIdentityKey(brandCode, buyer);
+            if (!identity || !adoptedSoleTraderIds.has(identity)) {
                 // Isolated: a DOM failure in the address write must not take the
                 // identity fill or the popup message with it. Recorded only once
                 // the write has actually happened, so a failure — or a record
                 // with no address on it — leaves the next attempt free to try
                 // again rather than consuming the single chance.
                 try {
-                    if (this.writeSoleTraderAddress(buyer)) {
+                    if (this.writeSoleTraderAddress(buyer) && identity) {
                         adoptedSoleTraderIds.add(identity);
                     }
                 } catch (error) {
