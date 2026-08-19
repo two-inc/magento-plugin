@@ -35,7 +35,7 @@
 
 'use strict';
 
-const { loadAmdModule } = require('./amd-harness');
+const { loadAmdModule, defaultMocks } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
@@ -378,5 +378,84 @@ describe('payment-tile company search sources the country the buyer selected (TW
         const initialize = src.match(/initialize:\s*function\s*\(\)\s*\{[\s\S]*?\n {8}\},/);
         expect(initialize).not.toBeNull();
         expect(initialize[0]).toMatch(/this\.watchAddressFormCountry\(\);/);
+    });
+});
+
+/**
+ * A renderer context whose quote carries a billing address, so the
+ * billing-ROLE read can be observed against the shipping-biased feeds it now
+ * precedes.
+ *
+ * @param {object} companySearch real company-search module
+ * @param {string} observableCountry value for `countryCode()`
+ * @param {?string} billingCountry `quote.billingAddress().countryId`, or null
+ *        for a quote with no billing address yet
+ * @returns {object}
+ */
+function makeCtxWithBilling(companySearch, observableCountry, billingCountry) {
+    const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
+        billingAddress: plainObservable(
+            billingCountry === null ? null : { countryId: billingCountry }
+        )
+    });
+    const component = loadAmdModule(RENDERER, {
+        jquery: $,
+        'Two_Gateway/js/model/company-search': companySearch,
+        'Magento_Checkout/js/model/quote': quote
+    });
+    return Object.assign({}, component, {
+        countryCode: plainObservable(observableCountry || '')
+    });
+}
+
+describe('the tile resolves the BILLING-role country (TWO-25461 §1(a.3))', () => {
+    test.each([
+        ['NO', 'gb', 'gb', 'no', 'billing beats a shipping-fed observable'],
+        ['NO', '', 'gb', 'no', 'billing beats the shipping-first DOM fallback'],
+        ['no', 'gb', 'gb', 'no', 'an already-lower-cased billing country is unchanged'],
+        [null, 'gb', 'se', 'gb', 'no billing address yet: the observable still wins'],
+        ['', 'gb', 'se', 'gb', 'an empty billing country is not an answer'],
+        [undefined, '', 'se', 'se', 'neither quote nor observable: the DOM fallback stands']
+    ])(
+        'billing=%p observable=%p dom=%p -> %p (%s)',
+        (billingCountry, observableCountry, domCountry, expected) => {
+            // A shipping form whose country DIFFERS from the billing address —
+            // the case every pre-existing feed gets wrong. A buyer shipping to
+            // one country and invoicing in another is ordinary, and the tile's
+            // country gates sole-trader availability and the company search.
+            document.body.innerHTML =
+                '<form id="shipping-new-address-form">' +
+                `  <select name="country_id"><option value="${domCountry.toUpperCase()}" ` +
+                'selected></option></select>' +
+                '</form>';
+
+            const companySearch = loadCompanySearch();
+            const ctx = makeCtxWithBilling(
+                companySearch,
+                observableCountry,
+                billingCountry === undefined ? '' : billingCountry
+            );
+
+            expect(ctx.searchCountryCode()).toBe(expected);
+        }
+    );
+
+    test('billingRoleCountryCode() survives a null billing address', () => {
+        // placeOrderIntent()'s own guard exists because this observable can be
+        // null for a transient window; a getter that threw there would take the
+        // whole search down with it.
+        const ctx = makeCtxWithBilling(loadCompanySearch(), '', null);
+        expect(ctx.billingRoleCountryCode()).toBe('');
+        expect(ctx.searchCountryCode()).toBe('');
+    });
+
+    test('the billing country comes from the quote, not from a mirror of its own', () => {
+        // §1 asks for ONE resolution reused everywhere. The quote double is the
+        // only place this value exists in the spec, so a getter that re-derived
+        // the country from anywhere else answers ''.
+        document.body.innerHTML = '';
+        const ctx = makeCtxWithBilling(loadCompanySearch(), '', 'DK');
+        expect(ctx.billingRoleCountryCode()).toBe('dk');
+        expect(ctx.searchCountryCode()).toBe('dk');
     });
 });

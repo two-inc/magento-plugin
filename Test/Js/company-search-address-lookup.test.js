@@ -33,7 +33,23 @@ function makeSpyJQuery(recorder) {
             },
             prop: function () { return obj; },
             text: function () { return obj; },
-            attr: function () { return obj; },
+            // A REAL attribute store, keyed by selector. An inert getter here
+            // returned a truthy object for every read, which made the autofill
+            // marker (and therefore the retraction of fields a payload says
+            // nothing about) unobservable and every assertion about it vacuous.
+            attr: function (name, value) {
+                if (arguments.length > 1) {
+                    recorder.attrs[selector] = recorder.attrs[selector] || {};
+                    recorder.attrs[selector][name] = value;
+                    return obj;
+                }
+                const bag = recorder.attrs[selector];
+                return bag ? bag[name] : undefined;
+            },
+            removeAttr: function (name) {
+                if (recorder.attrs[selector]) delete recorder.attrs[selector][name];
+                return obj;
+            },
             off: function () { return obj; },
             data: function (key, value) {
                 if (arguments.length > 1) {
@@ -101,6 +117,7 @@ function makeRecorder() {
         written: [],
         triggered: [],
         values: {},
+        attrs: {},
         data: {},
         handlers: {},
         select2Options: null
@@ -187,10 +204,9 @@ describe('company-search shared module', () => {
                 ['input[name="street[0]"]', '1 Example Street']
             ])
         );
-        // `change` per field written, not one combined trigger: TWO-25461 gave
-        // the write path a per-field routing plan (a building/apartment moves
-        // the street to the second line), so which fields are written is no
-        // longer a fixed list to name in one selector.
+        // One `change` PER FIELD since TWO-25461, fired only once every value
+        // has landed — the region can be appended to the city, so a listener
+        // must never see the address half-written.
         expect(recorder.triggered).toEqual(
             expect.arrayContaining([
                 ['input[name="city"]', 'change'],

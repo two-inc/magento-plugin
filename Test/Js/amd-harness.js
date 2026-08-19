@@ -141,6 +141,11 @@ function defaultMocks() {
             buildSearchAjaxOptions: function () { return {}; },
             lookupCompanyAddress: function () { return null; },
             applyAddress: function () {},
+            // Address write-back surface (TWO-25461). Inert, like applyAddress()
+            // above: a spec that cares about what the write or the revert
+            // actually does loads the real module.
+            revertAutofilledAddress: function () { return 0; },
+            billingRoleFormRoot: function () { return null; },
             isDegradedResponse: function () { return false; },
             clearResultCache: function () {},
             EVENT_NS: '.twoCompanySearch',
@@ -299,6 +304,7 @@ function makeJQueryMock() {
             text: function () { return obj; },
             html: function () { return obj; },
             attr: function () { return obj; },
+            removeAttr: function () { return obj; },
             data: function () { return obj; },
             find: function () { return obj; },
             closest: function () { return obj; },

@@ -116,6 +116,11 @@ function makeDom() {
             off: function () {
                 return n;
             },
+            // One node per selector in this double, so the set is always this
+            // node — enough for the production revert's per-element loop.
+            eq: function () {
+                return n;
+            },
             trigger: function (event) {
                 triggered.push([selector, event]);
                 return n;
