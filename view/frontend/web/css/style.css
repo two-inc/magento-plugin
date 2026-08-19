@@ -530,6 +530,53 @@
     line-height: 1.4;
 }
 
+/*
+ * Anchors the in-field sole-trader prefetch spinner below (TWO-25461 §7) —
+ * same role `.select2-search--dropdown` plays for `.two-company-search__spinner`.
+ */
+.two-sole-trader-field-control {
+    position: relative;
+}
+
+/*
+ * In-flight spinner for the sole-trader prefetch round trip. Same 16x16
+ * `loader.gif` and absolute-inside-the-field positioning as
+ * `.two-company-search__spinner` — kept as its own flat class rather than
+ * reused verbatim, since that one's selector must stay untouched for overlay
+ * stylesheets (see its comment).
+ */
+.two-sole-trader-prefetch-spinner {
+    position: absolute;
+    top: calc(50% - 8px);
+    right: 12px;
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    pointer-events: none;
+    background-image: url("../images/loader.gif");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 16px 16px;
+}
+
+/*
+ * "Select a different sole trader" link (TWO-25461 §7) — a plain text-link
+ * button, same visual weight as the tile's other secondary affordances.
+ */
+.two-select-different-sole-trader {
+    margin-top: 6px;
+}
+
+.two-select-different-sole-trader__link {
+    background: none;
+    border: none;
+    padding: 0;
+    color: #1979c3;
+    font-size: 1.3rem;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
 .two-company-search__unavailable {
     display: block;
     margin-top: 6px;
