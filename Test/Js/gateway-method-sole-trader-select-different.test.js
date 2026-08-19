@@ -115,6 +115,101 @@ describe('select a different sole trader (TWO-25461 §7)', () => {
     });
 });
 
+describe('at most one sole-trader popup is ever live (TWO-25461 review finding)', () => {
+    /**
+     * A window.open() double that hands back distinct, individually
+     * closable handles, so a test can assert the FIRST one was closed
+     * before/when the second opened.
+     */
+    function loadRendererWithClosableHandles() {
+        const opened = [];
+        const handles = [];
+        const component = loadAmdModule(
+            RENDERER,
+            {},
+            {
+                window: {
+                    checkoutConfig: { payment: {} },
+                    open: function (url, target, features) {
+                        opened.push({ url: url, target: target, features: features });
+                        const handle = { closed: false, close: function () { this.closed = true; } };
+                        handles.push(handle);
+                        return handle;
+                    }
+                },
+                btoa: global.btoa
+            }
+        );
+        return { component: component, opened: opened, handles: handles };
+    }
+
+    test('clicking "select a different sole trader" while the first adoption popup is still open closes it, not a second concurrent tab', () => {
+        const { component, opened, handles } = loadRendererWithClosableHandles();
+        const ctx = makeContext(component);
+
+        ctx.openIframe.call(ctx);
+        ctx.selectDifferentSoleTrader.call(ctx);
+
+        expect(opened).toHaveLength(2);
+        expect(handles[0].closed).toBe(true);
+        expect(handles[1].closed).toBe(false);
+    });
+
+    test('a double-click on "select a different sole trader" closes the first popup rather than leaving two live', () => {
+        const { component, handles } = loadRendererWithClosableHandles();
+        const ctx = makeContext(component);
+
+        ctx.selectDifferentSoleTrader.call(ctx);
+        ctx.selectDifferentSoleTrader.call(ctx);
+
+        expect(handles).toHaveLength(2);
+        expect(handles[0].closed).toBe(true);
+        expect(handles[1].closed).toBe(false);
+    });
+
+    test('popupMessageListener ignores a message whose source is not the currently tracked popup', async () => {
+        const opened = [];
+        const listeners = [];
+        const component = loadAmdModule(
+            RENDERER,
+            {},
+            {
+                window: {
+                    checkoutConfig: { payment: {} },
+                    open: function (url, target, features) {
+                        opened.push({ url: url, target: target, features: features });
+                        return { closed: false, close: function () { this.closed = true; } };
+                    },
+                    addEventListener: function (name, fn) {
+                        listeners.push({ name: name, fn: fn });
+                    }
+                },
+                btoa: global.btoa
+            }
+        );
+        const resolveBuyer = jest.fn(() =>
+            Promise.resolve({ matches: true, buyer: { organization_number: '1', company_name: 'X' } })
+        );
+        const fillCompanyData = jest.fn();
+        const ctx = makeContext(component, { resolveBuyer: resolveBuyer, fillCompanyData: fillCompanyData });
+
+        ctx.openIframe.call(ctx); // opens and tracks handle A as the live popup
+        const staleWindow = { fake: 'a stand-in for handle A' };
+
+        ctx.popupMessageListener.call(ctx);
+        const handler = listeners.find((l) => l.name === 'message').fn;
+
+        // A message claiming to come from something OTHER than the
+        // currently-tracked popup — the exact shape of a stale/superseded
+        // popup posting late — must not apply its result.
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: staleWindow });
+        await Promise.resolve();
+
+        expect(resolveBuyer).not.toHaveBeenCalled();
+        expect(fillCompanyData).not.toHaveBeenCalled();
+    });
+});
+
 describe('sole-trader prefetch in-flight spinner (TWO-25461 §7)', () => {
     test('the spinner flag is true while the round trip is outstanding, false once it settles (success)', async () => {
         const { component } = loadRenderer();
@@ -166,5 +261,55 @@ describe('sole-trader prefetch in-flight spinner (TWO-25461 §7)', () => {
         const template = fs.readFileSync(path.resolve(__dirname, '..', '..', TEMPLATE), 'utf8');
         expect(template).toContain('soleTraderPrefetchInFlight');
         expect(template).toContain('two-sole-trader-prefetch-spinner');
+    });
+
+    test('an earlier call settling after a newer one started does not clear the flag out from under it (review finding)', async () => {
+        // Buyer edits the email again before the FIRST prefetch resolves: a
+        // second prefetchSoleTrader() call fires for the new email. If the
+        // first call's chain happens to settle after the second one starts,
+        // its own .finally() must not flip the shared flag to false while
+        // the second request is still genuinely outstanding.
+        const { component } = loadRenderer();
+        const states = [];
+        let resolveFirst;
+        let resolveSecond;
+        const emails = ['first@example.com', 'second@example.com'];
+        let callIndex = 0;
+        const ctx = makeContext(component, {
+            enterSoleTraderUi: function () {},
+            fillCompanyData: function () {},
+            applyPrefetch: function () {},
+            fetchBuyer: function () { return Promise.resolve(null); },
+            prefetchedEmail: null,
+            getEmail: function () { return emails[callIndex]; },
+            soleTraderPrefetchInFlight: function (next) {
+                if (!arguments.length) return states.length ? states[states.length - 1] : false;
+                states.push(next);
+                return next;
+            },
+            getTokens: function () {
+                if (callIndex === 0) {
+                    return new Promise((resolve) => { resolveFirst = resolve; });
+                }
+                return new Promise((resolve) => { resolveSecond = resolve; });
+            }
+        });
+
+        const firstFlight = ctx.prefetchSoleTrader.call(ctx);
+        callIndex = 1;
+        const secondFlight = ctx.prefetchSoleTrader.call(ctx);
+
+        // Resolve the FIRST (older) call while the second is still pending.
+        resolveFirst({ delegation_token: 'dt-1', autofill_token: 'at-1' });
+        await firstFlight;
+
+        // The second request is still genuinely in flight — the spinner
+        // must still read true, not have been cleared by the stale first call.
+        expect(ctx.soleTraderPrefetchInFlight()).toBe(true);
+
+        resolveSecond({ delegation_token: 'dt-2', autofill_token: 'at-2' });
+        await secondFlight;
+
+        expect(ctx.soleTraderPrefetchInFlight()).toBe(false);
     });
 });

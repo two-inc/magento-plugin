@@ -1977,9 +1977,23 @@ define([
         //   the only caller passing it is selectDifferentSoleTrader(). The
         //   flag is currently unread server-side (PS/WC precedent); wired
         //   through unconditionally, no client-side branching on its value.
+        //
+        // Re-entrancy (TWO-25461 review finding): at most one sole-trader
+        // popup is ever live. A prior one still open (e.g. the first
+        // adoption's popup, still open when "select a different sole
+        // trader" is clicked) is CLOSED, not left running — closing it
+        // rather than refocusing it also stops it from later posting a
+        // stale ACCEPTED that would win a race against whichever popup the
+        // buyer actually completed (popupMessageListener() additionally
+        // checks event.source against the tracked handle as a second line
+        // of defence). Same handle also makes a double-click on either
+        // launcher a close-then-reopen instead of two concurrent tabs.
         openIframe(options) {
             if (!this.hasSignupTokens()) {
                 return null;
+            }
+            if (this._soleTraderPopupWindow && !this._soleTraderPopupWindow.closed) {
+                this._soleTraderPopupWindow.close();
             }
             const data = this.getAutofillData();
             var brandParams = this._brandConfig.brand ? `&brand=${this._brandConfig.brand}` : '';
@@ -1992,7 +2006,8 @@ define([
             const URL = `${this._brandConfig.checkoutPageUrl}/soletrader/signup?businessToken=${this.delegationToken}&autofillToken=${this.autofillToken}&autofillData=${data}${brandParams}`;
             const windowFeatures =
                 'location=yes,resizable=yes,scrollbars=yes,status=yes, height=805, width=700';
-            return window.open(URL, '_blank', windowFeatures);
+            this._soleTraderPopupWindow = window.open(URL, '_blank', windowFeatures);
+            return this._soleTraderPopupWindow;
         },
 
         // "Select a different sole trader" (TWO-25461 §7). Only rendered once
@@ -2107,7 +2122,15 @@ define([
                     this.prefetched = { ready: true, buyer: null, matches: false };
                 })
                 .finally(() => {
-                    this.soleTraderPrefetchInFlight(false);
+                    // Guarded on THIS call's email (review finding): an
+                    // earlier, still-outstanding call's .finally must not
+                    // clear the flag out from under a newer call that started
+                    // after an email edit — flightDepth-style ref-counting
+                    // without needing a counter, since prefetchedEmail
+                    // already identifies "the current one".
+                    if (this.prefetchedEmail === email) {
+                        this.soleTraderPrefetchInFlight(false);
+                    }
                 });
         },
 
@@ -2182,7 +2205,16 @@ define([
 
         popupMessageListener() {
             window.addEventListener('message', (event) => {
-                if (this.showSoleTrader() && event.origin == this._brandConfig.checkoutPageUrl) {
+                // event.source correlation (TWO-25461 review finding): a
+                // second line of defence alongside openIframe()'s
+                // close-before-reopen — a message from any popup that is not
+                // the one CURRENTLY tracked (stale, already superseded) is
+                // ignored, so it can never overwrite a later adoption.
+                if (
+                    this.showSoleTrader() &&
+                    event.origin == this._brandConfig.checkoutPageUrl &&
+                    event.source === this._soleTraderPopupWindow
+                ) {
                     if (event.data == 'ACCEPTED') {
                         // Signup complete: the buyer authenticated in the
                         // popup, so re-read and autofill whatever identity
