@@ -12,5 +12,6 @@ parameters:
     fileExtensions:
         - php
         - phtml
-    excludes_analyse:
+    excludePaths:
         - Test/*
+        - dev/*
