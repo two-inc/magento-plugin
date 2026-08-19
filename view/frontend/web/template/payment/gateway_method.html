@@ -303,7 +303,7 @@
                     <label for="company_name" class="label">
                         <span><!-- ko i18n: 'Company Name'--><!-- /ko --></span>
                     </label>
-                    <div class="control">
+                    <div class="control two-sole-trader-field-control">
                         <!--
                             `readonly` is BOUND, not static, and the binding is
                             what keeps this field satisfiable. In sole-trader
@@ -339,6 +339,22 @@
                             value: companyName'
                             class="input-text"
                         />
+                        <!--
+                            In-flight spinner for prefetchSoleTrader()'s token-mint
+                            + buyer-lookup round trip (TWO-25461 §7). Lives inside
+                            this field's own `.control` (see
+                            `.two-sole-trader-field-control` in style.css for the
+                            `position: relative` that anchors it), not a separate
+                            overlay — same shape as the address step's
+                            `.two-company-search__spinner`. `visible:`, not `ko if:`,
+                            because this toggles rapidly on every email edit and the
+                            field is not a `role="status"` region.
+                        -->
+                        <span
+                            class="two-sole-trader-prefetch-spinner"
+                            aria-hidden="true"
+                            data-bind="visible: soleTraderPrefetchInFlight"
+                        ></span>
                         <!--
                             The captured organisation number, as plain text
                             underneath the field — TWO-25326, 2026-08-04
@@ -384,6 +400,28 @@
                             data-bind="visible: isCompanyCaptured() && isTileCompanySearchActive() && displayCompanyId() !== '', text: displayCompanyId(), attr: {'aria-label': $t('Company Number')}"
                         ></div>
                     </div>
+                </div>
+                <!--
+                    "Select a different sole trader" (TWO-25461 §7, porting
+                    guide §0/§7). A SIBLING AFTER the company field's outer
+                    wrapper, never a descendant of it — only renders once a
+                    sole-trader identity has been adopted (name + number
+                    captured), the same one-way affordance PS/WC ship. There
+                    is deliberately no equivalent for an adopted registered
+                    company; that case reuses clicking the field itself to
+                    reopen search.
+                -->
+                <div
+                    class="two-select-different-sole-trader"
+                    data-bind="visible: showSoleTrader() && isCompanyCaptured()"
+                >
+                    <button
+                        type="button"
+                        class="two-select-different-sole-trader__link"
+                        data-bind="event: { click: () => selectDifferentSoleTrader() }"
+                    >
+                        <!-- ko i18n: 'Select a different sole trader' --><!-- /ko -->
+                    </button>
                 </div>
                 <!--
                     Optional buyer fields. ORDER IS LOAD-BEARING: this markup

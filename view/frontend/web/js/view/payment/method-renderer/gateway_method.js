@@ -166,6 +166,11 @@ define([
         // docblock for why it is not per-instance.
         orderIntentInProgress: orderIntentInProgress,
         showPopupMessage: ko.observable(false),
+        // True for the duration of prefetchSoleTrader()'s token-mint +
+        // buyer-lookup round trip (TWO-25461 §7). Drives the in-field
+        // spinner; not the popup-open state, which showPopupMessage/
+        // showSoleTrader already cover.
+        soleTraderPrefetchInFlight: ko.observable(false),
         showSoleTrader: ko.observable(false),
         showWhatIsTwo: ko.observable(false),
         showModeTab: ko.observable(false),
@@ -1967,7 +1972,12 @@ define([
             return !!(this.delegationToken && this.autofillToken);
         },
 
-        openIframe() {
+        // @param {Object} [options] `{ autoselect: false }` skips the hosted
+        //   flow's silent autoselect of the buyer's existing registration —
+        //   the only caller passing it is selectDifferentSoleTrader(). The
+        //   flag is currently unread server-side (PS/WC precedent); wired
+        //   through unconditionally, no client-side branching on its value.
+        openIframe(options) {
             if (!this.hasSignupTokens()) {
                 return null;
             }
@@ -1976,10 +1986,23 @@ define([
             if (this._brandConfig.brandVersion) {
                 brandParams += `&brandVersion=${this._brandConfig.brandVersion}`;
             }
+            if (options && options.autoselect === false) {
+                brandParams += '&autoselect=false';
+            }
             const URL = `${this._brandConfig.checkoutPageUrl}/soletrader/signup?businessToken=${this.delegationToken}&autofillToken=${this.autofillToken}&autofillData=${data}${brandParams}`;
             const windowFeatures =
                 'location=yes,resizable=yes,scrollbars=yes,status=yes, height=805, width=700';
             return window.open(URL, '_blank', windowFeatures);
+        },
+
+        // "Select a different sole trader" (TWO-25461 §7). Only rendered once
+        // an identity has already been adopted (see the template's `visible:`
+        // binding), so tokens are already minted — skip the passive
+        // cookie/email-match pre-check entirely and launch the popup directly,
+        // synchronously with the click, with autoselect=false so the hosted
+        // flow doesn't silently re-pick the same registration.
+        selectDifferentSoleTrader() {
+            return this.openIframe({ autoselect: false });
         },
 
         registeredOrganisationMode() {
@@ -2068,6 +2091,9 @@ define([
             }
             this.prefetchedEmail = email;
             this.prefetched = { ready: false, buyer: null, matches: false };
+            // Spinner covers the whole round trip; cleared on every terminal
+            // branch below (success, failure) via .finally(), never a timeout.
+            this.soleTraderPrefetchInFlight(true);
             return this.getTokens()
                 .then((json) => {
                     this.delegationToken = json.delegation_token;
@@ -2079,6 +2105,9 @@ define([
                 })
                 .catch(() => {
                     this.prefetched = { ready: true, buyer: null, matches: false };
+                })
+                .finally(() => {
+                    this.soleTraderPrefetchInFlight(false);
                 });
         },
 
