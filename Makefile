@@ -44,6 +44,20 @@ install: clean
 		community-engineering/language-sv_se \
 		community-engineering/language-fi_fi \
 		community-engineering/language-da_dk
+	# The base image's own entrypoint independently bootstraps Magento (4x
+	# `magerun2 config:store:set` for the base URL, then a cache:flush) as
+	# soon as its MySQL/Elasticsearch wait loop clears - a window that can
+	# still be open here since it isn't gated by the `bin/magento --version`
+	# check above. Each of those bootstraps can autoload-generate classes
+	# under generated/code, racing the rm -rf below and intermittently
+	# leaving it unable to rmdir a directory a magerun2 process just wrote
+	# a new file into ("Directory not empty"). Wait for 3 consecutive
+	# clean samples (the observed gaps between magerun2 calls are ~1-2s)
+	# before it's safe to touch generated/code.
+	@clean=0; while [ $$clean -lt 3 ]; do \
+		docker exec $(CONTAINER) pgrep -f magerun2 >/dev/null 2>&1 && clean=0 || clean=$$((clean+1)); \
+		sleep 1; \
+	done
 	docker exec $(CONTAINER) rm -rf /data/generated/code
 	docker exec $(CONTAINER) php bin/magento module:disable \
 		Magento_AdminAdobeImsTwoFactorAuth Magento_TwoFactorAuth \
@@ -98,6 +112,7 @@ install: clean
 	fi; \
 	echo " Credentials:   exampleuser / examplepassword123"; \
 	echo " Xdebug:        installed (activate with 'make debug')"; \
+	dev/print-resolved-hosts.sh $(CONTAINER); \
 	echo "========================================="
 
 ## Update payment config: make configure TWO_API_KEY=xxx
@@ -131,6 +146,7 @@ run:
 		echo " Proxy admin:   $$PROXY_URL/admin"; \
 	fi; \
 	echo " Credentials:   exampleuser / examplepassword123"; \
+	dev/print-resolved-hosts.sh $(CONTAINER); \
 	echo "========================================="
 
 ## Start Magento with Xdebug and caches disabled for hot reload
@@ -162,6 +178,7 @@ debug:
 	fi; \
 	echo " Credentials:   exampleuser / examplepassword123"; \
 	echo " Mode:          debug (Xdebug + caches disabled)"; \
+	dev/print-resolved-hosts.sh $(CONTAINER); \
 	echo "========================================="
 
 ## Stop Magento container and FRP proxy
