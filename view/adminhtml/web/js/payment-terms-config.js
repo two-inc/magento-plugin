@@ -109,11 +109,30 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             // show() would fight Magento's dependence controller.
             var surchargeFields = [
                 'surcharge_differential',
+                'surcharge_line_description',
                 'surcharge_tax_class'
             ];
             $.each(surchargeFields, function (_, id) {
                 hasSurcharge ? showField(id) : hideField(id);
             });
+        }
+
+        // ── Custom payment terms visibility ──────────────────────────────
+
+        function getOfferedTerms() {
+            // Every rendered checkbox is a backend-offered term (ticked or
+            // not) — see Block\...\PaymentTermsCheckboxes::getAvailableTerms().
+            // Comparing against ticked terms only left the matching save-time
+            // fold-in unreachable on an offered-but-unticked preset (TWO-25498).
+            return $termsContainer.find('.two-term-checkboxes__input').map(function () {
+                return Number(this.value);
+            }).get().filter(function (n) { return n > 0; });
+        }
+
+        function updateCustomDaysVisibility() {
+            var custom = parseInt($customDays.val(), 10);
+            var genuine = custom > 0 && getOfferedTerms().indexOf(custom) === -1;
+            genuine ? showField('payment_terms_duration_days') : hideField('payment_terms_duration_days');
         }
 
         // ── Differential option label ────────────────────────────────────
@@ -134,6 +153,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         function onTermsChanged() {
             updateDefaultTermOptions();
             updateSurchargeVisibility();
+            updateCustomDaysVisibility();
         }
 
         function onSurchargeChanged() {
@@ -356,6 +376,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         updateDefaultTermOptions();
         updateDifferentialOptionLabel();
         updateSurchargeVisibility();
+        updateCustomDaysVisibility();
         initInheritResetBehavior();
         initTermCheckboxInherit();
         loadFees();
