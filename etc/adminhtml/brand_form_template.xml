@@ -377,11 +377,11 @@
             <group id="payment_terms" translate="label" type="text" sortOrder="10"
                    showInDefault="1" showInWebsite="1" showInStore="1"
                    brand_code="{{code}}">
-                <label>Payment terms</label>
+                <label>Payment Terms</label>
                 <field id="payment_terms_type" translate="label comment" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Payment terms type</label>
+                    <label>Payment Terms Type</label>
                     <comment><![CDATA[<strong>Standard:</strong> Payment due after a fixed number of days from fulfilment.<br/><strong>End of Month:</strong> Payment due at the end of month plus additional days from fulfilment.]]></comment>
                     <source_model>Two\Gateway\Model\Config\Source\PaymentTermsType</source_model>
                     <config_path>payment/{{code}}/payment_terms_type</config_path>
@@ -389,7 +389,7 @@
                 <field id="payment_terms" translate="label comment" type="text" sortOrder="20"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Payment terms</label>
+                    <label>Payment Terms</label>
                     <comment>Select the payment term(s) you want to offer.</comment>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\PaymentTermsCheckboxes</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\PaymentTermsCheckboxes</backend_model>
@@ -398,15 +398,19 @@
                 <field id="payment_terms_duration_days" translate="label comment" type="text" sortOrder="30"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Custom payment term (days)</label>
+                    <label>Custom Payment Terms (days)</label>
                     <comment>Optional. Enter a custom number of days to offer alongside the selected terms above.</comment>
                     <validate>validate-digits validate-zero-or-greater</validate>
+                    <!-- Clears itself on save when it duplicates a merchant-offered
+                         term (ticked or not) — see PaymentTermsCustomDays and the
+                         matching fold-in on PaymentTermsCheckboxes. TWO-25498. -->
+                    <backend_model>Two\Gateway\Model\Config\Backend\PaymentTermsCustomDays</backend_model>
                     <config_path>payment/{{code}}/payment_terms_duration_days</config_path>
                 </field>
                 <field id="default_payment_term" translate="label comment" type="select" sortOrder="40"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Default payment term</label>
+                    <label>Default Payment Terms</label>
                     <comment>Select the payment term that will be automatically selected for your customer.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\AvailablePaymentTerms</source_model>
                     <config_path>payment/{{code}}/default_payment_term</config_path>
@@ -414,7 +418,7 @@
                 <field id="surcharge_type" translate="label comment" type="select" sortOrder="50"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Surcharge method</label>
+                    <label>Surcharge Method</label>
                     <comment>Select a method to surcharge your customer.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\SurchargeType</source_model>
                     <config_path>payment/{{code}}/surcharge_type</config_path>
@@ -422,28 +426,28 @@
                 <field id="surcharge_differential" translate="label" type="select" sortOrder="60"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Surcharge calculation basis</label>
+                    <label>Surcharge Calculation Basis</label>
                     <source_model>Two\Gateway\Model\Config\Source\SurchargeCalculationBasis</source_model>
                     <config_path>payment/{{code}}/surcharge_differential</config_path>
                 </field>
                 <field id="surcharge_line_description" translate="label comment" type="text" sortOrder="70"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Surcharge line description</label>
+                    <label>Surcharge Line Description</label>
                     <comment><![CDATA[Description shown to the buyer for the surcharge line item. Use <strong>%1</strong> to insert the selected number of days (e.g. "Payment terms fee - %1 days"). If you leave the default, the word <em>days</em> is translated per locale.]]></comment>
                     <config_path>payment/{{code}}/surcharge_line_description</config_path>
                 </field>
                 <field id="surcharge_grid" translate="label" type="text" sortOrder="80"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        brand_code="{{code}}">
-                    <label>Payment surcharge configuration</label>
+                    <label>Payment Surcharge Configuration</label>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeGrid</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\SurchargeGrid</backend_model>
                 </field>
                 <field id="surcharge_rounding_basis" translate="label comment" type="select" sortOrder="90"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Surcharge rounding</label>
+                    <label>Surcharge Rounding</label>
                     <comment>Snap the buyer surcharge line item to a clean increment. Select None for standard two-decimal amounts.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\RoundingBasis</source_model>
                     <config_path>payment/{{code}}/surcharge_rounding_basis</config_path>
@@ -454,7 +458,7 @@
                 <field id="surcharge_rounding_step" translate="label comment" type="select" sortOrder="100"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Rounding step</label>
+                    <label>Rounding Step</label>
                     <comment><![CDATA[Increment the surcharge is rounded to (e.g. 1 = whole units, 0.50 = nearest half).]]></comment>
                     <source_model>Two\Gateway\Model\Config\Source\RoundingStep</source_model>
                     <config_path>payment/{{code}}/surcharge_rounding_step</config_path>
@@ -466,7 +470,7 @@
                 <field id="surcharge_tax_class" translate="label comment" type="select" sortOrder="110"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        brand_code="{{code}}">
-                    <label>Surcharge tax treatment</label>
+                    <label>Surcharge Tax Treatment</label>
                     <comment>Product Tax Class applied to the surcharge. Country, region and combined rates resolve exactly as they do for a product. To leave the surcharge untaxed, create a Tax Rule with a 0% rate and select its Product Tax Class here.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\SurchargeTaxClass</source_model>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeTaxClass</frontend_model>
@@ -482,7 +486,7 @@
                 <field id="custom_surcharge_tax_rate" translate="label comment" type="text" sortOrder="120"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Custom surcharge tax rate (%)</label>
+                    <label>Custom Surcharge Tax Rate (%)</label>
                     <comment>Deprecated flat tax rate. Only used with the Custom surcharge tax treatment above.</comment>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\CustomSurchargeTaxRate</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\LocaleDecimal</backend_model>
