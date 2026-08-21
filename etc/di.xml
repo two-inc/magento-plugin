@@ -16,17 +16,18 @@
         quote/order item, e.g. Amasty's "Extra Fee" module) into real
         line item(s) with that fee's actual tax rate.
 
-        Deliberately EMPTY: no concrete provider is registered here.
-        Building one for a specific extension needs that extension's
-        real field/table names verified against an actual install, not
-        guessed at. Add providers here, one <item> per provider, once
-        one exists. Until then, Service\Order::getOtherChargesLineItem()
-        is the only reconciliation in effect, and only for the
-        genuinely-untaxed case — see its docblock.
+        Add providers here, one <item> per provider, once that
+        extension's real field/table names are verified against an
+        actual install, not guessed at. On any order without a given
+        provider's fee, Service\Order::getOtherChargesLineItem() remains
+        the fallback, and only for the genuinely-untaxed case — see its
+        docblock.
     -->
     <type name="Two\Gateway\Service\Fee\FeeLineProviderPool">
         <arguments>
-            <argument name="providers" xsi:type="array"/>
+            <argument name="providers" xsi:type="array">
+                <item name="amastyExtraFee" xsi:type="object">Two\Gateway\Service\Fee\Provider\AmastyExtraFee</item>
+            </argument>
         </arguments>
     </type>
     <!--
