@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Service\Fee\Provider;
 
 use Magento\Framework\Exception\NoSuchEntityException;
-use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order as OrderModel;
 use Magento\Sales\Model\Order\Creditmemo;
@@ -72,7 +71,7 @@ class AmastyExtraFeeTest extends TestCase
     }
 
     /** Stub repository that returns the given order for any get() call. */
-    private function repositoryReturning(OrderInterface $order): OrderRepositoryInterface
+    private function repositoryReturning(OrderModel $order): OrderRepositoryInterface
     {
         $repository = $this->createMock(OrderRepositoryInterface::class);
         $repository->method('get')->willReturn($order);
