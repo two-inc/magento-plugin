@@ -76,7 +76,8 @@ class ApiKey extends Encrypted
         // The obscured placeholder (all asterisks) and a blank submission both
         // mean the stored key is not being changed, so there is nothing to verify.
         if ($candidate === '' || preg_match('/^\*+$/', $candidate)) {
-            return parent::beforeSave();
+            parent::beforeSave();
+            return;
         }
 
         $result = $this->apiKeyStatus->verifyCandidate($candidate, $this->resolveStoreId());
@@ -89,7 +90,7 @@ class ApiKey extends Encrypted
             throw new LocalizedException($this->statusMessage->describe($result)['message']);
         }
 
-        return parent::beforeSave();
+        parent::beforeSave();
     }
 
     /**
