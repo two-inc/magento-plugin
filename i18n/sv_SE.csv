@@ -57,6 +57,7 @@
 "Validate tax subtotals","Validera delsummor för skatt"
 "Enter company name to search","Ange företagsnamn för att söka"
 "Enter details manually","Ange detaljer manuellt"
+"Enter manually","Ange manuellt"
 "Environment","Miljö"
 "Failed to refund order with %1. Reason: %2","Det gick inte att återbetala beställningen med %1. Orsak: %2"
 "Failed to update %1 customer address: %2","Misslyckades med att uppdatera %1 kundadress: %2"

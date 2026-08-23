@@ -58,6 +58,7 @@
 "Validate tax subtotals","BTW-subtotalen valideren"
 "Enter company name to search","Voer bedrijfsnaam in om te zoeken"
 "Enter details manually","Gegevens handmatig invoeren"
+"Enter manually","Handmatig invoeren"
 "Environment","Omgeving"
 "Failed to refund order with %1. Reason: %2","Het is niet gelukt om de bestelling met %1 terug te betalen. Reden: %2"
 "Failed to update %1 customer address: %2","Kon het adres van klant %1 niet bijwerken: %2"

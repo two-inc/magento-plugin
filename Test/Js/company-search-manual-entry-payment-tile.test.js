@@ -7,10 +7,10 @@
  * threshold-driven, staleness-checked) is pinned in
  * company-search-manual-entry.test.js — this file covers only what is
  * specific to the payment-tile surface (`gateway_method.js`): it must
- * construct the ONE shared control (company-search-control.js) with an
- * `onManualEntryActivated` hook that tears down this picker's own widget
- * (`self.clearCompany()`) and brings back the "Search for company" link,
- * rather than address-autocomplete.js's `enterDetailsManually()`.
+ * construct the ONE shared control (company-search-control.js), and it must
+ * opt that control's in-dropdown button OUT, because on this surface manual
+ * entry is a peer chip in the mode control instead. The address-area mount,
+ * which has no mode control, keeps the button.
  *
  * TWO-25326 rebuild: the select2 wiring itself — including where
  * `attachManualEntryButton`/`detachManualEntryButton` are actually called —
@@ -79,22 +79,27 @@ describe('gateway_method.js payment-tile surface (structural fix, #30.x.15)', fu
         expect(detachCalls.length).toBeGreaterThanOrEqual(2);
     });
 
-    test("the activation callback tears down this picker's widget and restores the search link", () => {
-        const hookIndex = src.indexOf('onManualEntryActivated:');
-        expect(hookIndex).toBeGreaterThan(-1);
-        const nextKeyIndex = src.indexOf('onBound:', hookIndex);
-        expect(nextKeyIndex).toBeGreaterThan(hookIndex);
-        const block = src.slice(hookIndex, nextKeyIndex);
+    /*
+     * TWO-25503 reversed the direction of this surface's manual-entry glue.
+     * The in-dropdown button was the ONLY route to manual entry here, and it
+     * is now none of it: manual entry is a peer chip in the mode control, so
+     * this surface opts the shared button out and owns the mode transition
+     * itself. The behavioural half — what manualEntryMode() actually does —
+     * is pinned in gateway-method-capture-mode-chips.test.js.
+     */
+    test('this surface opts the shared in-dropdown button out entirely', () => {
+        expect(src).toContain('manualEntryEnabled: false');
+        expect(src).not.toContain('onManualEntryActivated:');
+        // The control has to honour the opt-out, not merely accept it.
+        expect(controlSrc).toMatch(
+            /if \(self\.manualEntryEnabled\) \{\s*companySearch\.attachManualEntryButton\(/
+        );
+    });
 
-        expect(block).toMatch(/self\.clearCompany\(\)/);
-        expect(block).toMatch(/showSearchForCompanyLink\(\s*true\s*\)/);
-
-        // clearCompany() (the teardown) has to run BEFORE the link is shown,
-        // or the widget's own destroy() would tear down a link the buyer was
-        // just shown.
-        const clearIndex = block.indexOf('self.clearCompany()');
-        const showIndex = block.indexOf('showSearchForCompanyLink(');
-        expect(showIndex).toBeGreaterThan(clearIndex);
+    test('the address-area mount still gets the button — the opt-out is per mount', () => {
+        const addressSrc = readSource('view/frontend/web/js/view/address-autocomplete.js');
+        expect(addressSrc).toContain('onManualEntryActivated:');
+        expect(addressSrc).not.toContain('manualEntryEnabled:');
     });
 
     test('the shared model exports the button helpers this surface depends on', () => {

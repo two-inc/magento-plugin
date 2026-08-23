@@ -208,6 +208,13 @@ define([
         showSoleTrader: ko.observable(false),
         showWhatIsTwo: ko.observable(false),
         showModeTab: ko.observable(false),
+        // Which of the three peer company-capture options is active
+        // (TWO-25503): 'registered' | 'soletrader' | 'manual'. Drives only
+        // the chip control's selected state — each mode's own behaviour still
+        // hangs off showSoleTrader / the live select2 binding, so this must
+        // be written by every route into a mode, including the in-dropdown
+        // "Search for company" link.
+        captureMode: ko.observable('registered'),
         termsAccepted: ko.observable(false), // Observable for terms accepted state
         BVCompanyRegex: /(?:^|\s)B(?:\.)?V(?:\.)?$/i,
 
@@ -1907,17 +1914,14 @@ define([
                         // isAddressSearchEnabled alone — see addressLookup().
                         self.addressLookup(selectedItem);
                     },
-                    onManualEntryActivated: function () {
-                        self.clearCompany();
-                        // Focused too, not just shown: clearCompany() tears
-                        // the select2 widget down through
-                        // destroyCompanySearchWidget(), which removes the
-                        // manual-entry button — the element that had focus —
-                        // from the document. Nothing else in that teardown
-                        // path refocuses anything, so a buyer who reached the
-                        // button by keyboard is otherwise dropped back to
-                        // `<body>` with no visible focus at all.
-                        self._companySearchControl.showSearchForCompanyLink(true);
+                    // TWO-25503: on this surface manual entry is a peer chip
+                    // in the mode control, so the in-dropdown button is not
+                    // built at all — it was the separately worded escape
+                    // hatch the chip replaces. The address-area mount keeps
+                    // it: that surface has no mode control.
+                    manualEntryEnabled: false,
+                    onReturnToSearch: function () {
+                        self.captureMode('registered');
                     },
                     onBound: function () {
                         $('#select2-company_name-container').text(self.companyName());
@@ -2122,11 +2126,19 @@ define([
             return this.openIframe({ autoselect: false });
         },
 
-        registeredOrganisationMode() {
-            // Read BEFORE the flag is flipped: this method is both the
-            // "leave sole trader" action and the tile's own initialiser
-            // (initObservable() calls it), and those two need different
-            // behaviour below.
+        /**
+         * Leave sole-trader mode, discarding the identity it captured.
+         *
+         * Shared by the two chips that can be clicked while sole trader is
+         * active (registered, manual entry). A no-op in the other two modes,
+         * which is what makes it safe on initObservable()'s own call.
+         *
+         * @returns {boolean} whether sole-trader mode was actually left
+         */
+        leaveSoleTraderMode() {
+            // Read BEFORE the flag is flipped: the discard below is what
+            // separates an actual departure from sole-trader mode from the
+            // no-op call the other two modes make.
             const wasSoleTrader = this.showSoleTrader();
             this.showSoleTrader(false);
             this.showPopupMessage(false);
@@ -2137,11 +2149,12 @@ define([
                 // registered organisation, so carrying them across the mode
                 // switch would submit one identity under the other's mode —
                 // getData() would otherwise post the sole trader's number
-                // under whatever name the buyer then searches for.
+                // under whatever name the buyer then supplies.
                 //
-                // Before enableCompanySearch(), not after: clearCompany()
-                // ends in destroyCompanySearchWidget(), which would otherwise
-                // tear down the widget that call had just rebuilt.
+                // Runs before the caller's own enableCompanySearch():
+                // clearCompany() ends in destroyCompanySearchWidget(), which
+                // would otherwise tear down the widget that call had just
+                // rebuilt.
                 this.clearCompany();
                 // The address half of the same discard (TWO-25461 §5). Without
                 // it the sole trader's registered address stays in the form and
@@ -2153,14 +2166,68 @@ define([
                 // mode has an address to write again.
                 adoptedSoleTraderIds.clear();
             }
-            this.enableCompanySearch();
+            return wasSoleTrader;
+        },
+
+        /**
+         * @param {object} [options]
+         * @param {boolean} [options.openDropdown] land the buyer in an open
+         *        search box. Set only by the chip: the other two callers are
+         *        the tile's own initialiser and a billing-country change that
+         *        retired the sole-trader option, and neither is the buyer
+         *        asking to search — popping a dropdown open there would steal
+         *        focus from whatever they were doing.
+         */
+        registeredOrganisationMode(options) {
+            this.leaveSoleTraderMode();
+            this.captureMode('registered');
+            this.enableCompanySearch(options);
+            if (this._companySearchControl) {
+                // The link and this chip are two routes to the same place, so
+                // the link retires whenever search mode is (re-)entered.
+                this._companySearchControl.hideSearchForCompanyLink();
+            }
             this.fillCustomerData();
+        },
+
+        /**
+         * Enter manual company entry — the third peer option (TWO-25503).
+         *
+         * Does exactly what the in-dropdown "My company is not on the list"
+         * button used to do on this surface, minus the need to open the picker
+         * first: abandon the company in play and tear the widget down, which
+         * leaves the company-name input a plain text field the buyer can type
+         * into. The address fields are core's own and were always visible, so
+         * nothing has to be revealed here.
+         *
+         * With no organisation number, isCompanyCaptured() stays false and
+         * placeOrder()'s submit gate refuses the order — unchanged by this
+         * being reachable in one click.
+         */
+        manualEntryMode() {
+            this.leaveSoleTraderMode();
+            this.captureMode('manual');
+            if (this._companySearchControl) {
+                // Before the teardown: cancelling leaves a search still on the
+                // wire, whose late response would otherwise run select2's
+                // highlight bookkeeping over a destroyed picker.
+                this._companySearchControl.abortActiveRequest();
+            }
+            this.clearCompany();
+            if (this._companySearchControl) {
+                this._companySearchControl.showSearchForCompanyLink();
+            }
+            // clearCompany() destroys the widget, removing whatever had focus
+            // with it; land it on the plain-text field the buyer is now being
+            // asked to type into.
+            $(this.companyNameSelector).trigger('focus');
         },
 
         // Enter the sole-trader UI. No token/buyer work here — that is owned
         // by the chip-click handler.
         enterSoleTraderUi() {
             this.showSoleTrader(true);
+            this.captureMode('soletrader');
             // Resolve the link BEFORE clearCompany(), which tears the widget
             // down and nulls _$companyNameField.
             const $searchForCompany = this.searchForCompanyLink();
