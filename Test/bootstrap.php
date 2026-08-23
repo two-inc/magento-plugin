@@ -124,6 +124,12 @@ require_once __DIR__ . '/Stubs/InvoiceUpload.php';
 // the stub file.
 require_once __DIR__ . '/Stubs/ConfigStructureSynthesisFixtures.php';
 
+// Order-tax read surface (OrderTaxManagementInterface + its data
+// interfaces, CommonTaxCollector's item-type constants) with real
+// signatures, so the shipping tax rate Magento declares is mockable;
+// per-symbol guards live inside the stub file.
+require_once __DIR__ . '/Stubs/OrderTax.php';
+
 // URL builder with a real getUrl() (mock target) so ComposeOrder's
 // merchant_urls construction is exercisable; per-symbol guard lives inside.
 require_once __DIR__ . '/Stubs/FrameworkUrl.php';

@@ -10,11 +10,13 @@ namespace Two\Gateway\Service\Order;
 use Magento\Catalog\Helper\Image;
 use Magento\Catalog\Model\ResourceModel\Category\CollectionFactory as CategoryCollection;
 use Magento\Checkout\Model\Session as CheckoutSession;
+use Magento\Framework\Exception\InputException;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Url;
 use Magento\Sales\Api\OrderItemRepositoryInterface;
 use Magento\Sales\Model\Order;
 use Magento\Store\Model\App\Emulation;
+use Magento\Tax\Api\OrderTaxManagementInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
@@ -39,7 +41,8 @@ class ComposeOrder extends OrderService
         Url $url,
         LogRepository $logRepository,
         CheckoutSession $checkoutSession,
-        FeeLineProviderPool $feeLineProviderPool
+        FeeLineProviderPool $feeLineProviderPool,
+        OrderTaxManagementInterface $orderTaxManagement
     ) {
         parent::__construct(
             $imageHelper,
@@ -49,7 +52,8 @@ class ComposeOrder extends OrderService
             $appEmulation,
             $url,
             $logRepository,
-            $feeLineProviderPool
+            $feeLineProviderPool,
+            $orderTaxManagement
         );
         $this->checkoutSession = $checkoutSession;
     }
@@ -125,6 +129,10 @@ class ComposeOrder extends OrderService
         // FeeLineProviderInterface) and, failing that, any genuinely
         // untaxed residual. See Order::reconcileOtherCharges() docblock.
         $lineItems = $this->reconcileOtherCharges($lineItems, $order, $grossTotal, $taxTotal);
+
+        // Last gate before the amounts go on the wire: every line's declared
+        // tax has to follow from its own declared rate and net.
+        $this->validateTaxReconciliation($lineItems);
 
         // Compose the final payload for the API call. Fields that may
         // legitimately be blank are NOT listed here — they go through the
@@ -222,16 +230,34 @@ class ComposeOrder extends OrderService
 
     /**
      * Get the buyer's selected term from checkout, validated against configured terms.
+     *
+     * A term the buyer picked but the merchant no longer offers is refused,
+     * not quietly swapped for the default (TWO-25503): the buyer agreed to
+     * pay on a specific term, and placing the order on a different one is a
+     * changed contract they never saw. Same check and same failure mode as
+     * the chip-click endpoint (Model\Webapi\TermSelection).
+     *
+     * No selection at all is a different case — the checkout simply never
+     * sent one, so the default term applies.
+     *
+     * @throws InputException when the selected term is no longer available
      */
     private function getSelectedTermDays(array $additionalData, ?int $storeId = null): int
     {
         $selected = (int)($additionalData['selectedTerm'] ?? 0);
-        $allowedTerms = $this->configRepository->getAllBuyerTerms($storeId);
-
-        if ($selected > 0 && in_array($selected, $allowedTerms, true)) {
-            return $selected;
+        if ($selected <= 0) {
+            return $this->configRepository->getDefaultPaymentTerm($storeId);
         }
-        return $this->configRepository->getDefaultPaymentTerm($storeId);
+
+        if (!$this->configRepository->isBuyerTermAvailable($selected, $storeId)) {
+            $this->logRepository->addErrorLog(
+                'UnavailablePaymentTerm',
+                sprintf('Selected payment term %d is not offered for store %d.', $selected, (int)$storeId)
+            );
+            throw new InputException(__('Selected payment term is not available.'));
+        }
+
+        return $selected;
     }
 
     /**

@@ -98,8 +98,7 @@ class TermSelection implements TermSelectionInterface
         // reference a term the merchant never offered. Validate
         // BEFORE any state mutation so an invalid call doesn't poison
         // the session even on the throw path.
-        $allowedTerms = $this->configRepository->getAllBuyerTerms($storeId);
-        if (!in_array($termDays, $allowedTerms, true)) {
+        if (!$this->configRepository->isBuyerTermAvailable($termDays, $storeId)) {
             throw new InputException(__('Selected payment term is not available.'));
         }
 

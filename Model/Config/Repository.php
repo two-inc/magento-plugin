@@ -245,6 +245,26 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
+    public function getDefaultShippingTaxRate(?int $storeId = null): ?float
+    {
+        $configured = $this->getConfig($this->path('default_shipping_tax_rate'), $storeId);
+        // Same read-path convention as getSurchargeConfig()'s limit: anything
+        // that is not a usable non-negative number resolves to absent, so a
+        // hand-edited row or config:set cannot turn junk into a declared 0%.
+        // A genuine 0 stays a declaration.
+        if (!is_scalar($configured) || $configured === '' || !is_numeric($configured)) {
+            return null;
+        }
+        $rate = (float)$configured;
+        if (!is_finite($rate) || $rate < 0) {
+            return null;
+        }
+        return $rate;
+    }
+
+    /**
+     * @inheritDoc
+     */
     public function isDepartmentEnabled(?int $storeId = null): bool
     {
         return $this->isSetFlag($this->path('enable_department'), $storeId);
@@ -554,6 +574,14 @@ class Repository implements RepositoryInterface
         $terms = array_unique($terms);
         sort($terms);
         return $terms;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isBuyerTermAvailable(int $termDays, ?int $storeId = null): bool
+    {
+        return in_array($termDays, $this->getAllBuyerTerms($storeId), true);
     }
 
     public function getDefaultPaymentTerm(?int $storeId = null): int

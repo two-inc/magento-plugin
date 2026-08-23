@@ -123,6 +123,45 @@ admin can act on it. The visibility flag is threaded from `afterSave()`
 into `validateValue()` and pinned there by
 `testProductionAfterSaveWiresTheLimitColumnVisibilityIntoTheZeroRule`.
 
+## An optional constructor argument is NOT autowired
+
+A constructor parameter with a default of `null` is left at its default by
+the object manager — it is never resolved from its type hint. Adding a
+dependency that way and relying on DI to fill it in gets you a silent
+`null` at runtime while every unit test (constructor skipped) still passes.
+`bin/magento dev:di:info <class>` reports it as `"_vn_": "string 1"`
+(value null) instead of `"_i_"` (instance); that is the check.
+
+`Service\Order::$orderTaxManagement` is declared optional for constructor
+BC and named explicitly in `etc/di.xml` on the abstract parent, which all
+four `Compose*` subclasses inherit. `Service\Order::$feeLineProviderPool`
+is the same shape but has no `etc/di.xml` argument, so it resolves to null
+in production and its `?? new FeeLineProviderPool([])` fallback — an empty
+pool — is what actually runs; the registered `AmastyExtraFee` provider
+never fires.
+
+## The plugin never derives a tax rate from amounts
+
+A line's `tax_rate` is whatever the store's tax engine declared for that
+line, relayed verbatim. `tax / net` is a different statement: rounding,
+combined rates and a discounted base all put the quotient on a rate no tax
+rule declares, and Two validates the declared rate against the line's own
+amounts.
+
+Product lines read `tax_percent` off the item. Shipping has no such column,
+so `getTaxRateShipping()` reads the shipping-typed item out of
+`OrderTaxManagementInterface::getOrderTaxDetails()` and sums its applied
+taxes. Nothing declared and no shipping tax charged is 0% — a store whose
+shipping is untaxed records no tax row at all, and 0% is a statement rather
+than a guess. Nothing declared but tax charged is the only narrow path that
+consults the "Default Shipping Tax Rate" admin field, and with that unset
+the order is refused rather than given an assumed rate.
+
+`validateTaxReconciliation()` closes the same loop at composition time: a
+line whose declared tax does not follow from its own declared rate and net,
+within 0.02 currency units, declines the checkout with a generic buyer
+notice. It never corrects the numbers.
+
 ## DI registration scope for Structure / Config Reader plugins
 
 **Plugins that target `Magento\Config\Model\Config\Structure\Reader`

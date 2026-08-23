@@ -153,6 +153,19 @@ interface RepositoryInterface
     public function isTaxSubtotalsEnabled(?int $storeId = null): bool;
 
     /**
+     * Merchant-declared fallback shipping tax rate, as a percentage.
+     *
+     * Only consulted when Magento's tax engine declares no rate at all for a
+     * taxed shipping line (TWO-25503). NULL when unset — the plugin refuses
+     * the order rather than assuming a rate.
+     *
+     * @param int|null $storeId
+     *
+     * @return float|null
+     */
+    public function getDefaultShippingTaxRate(?int $storeId = null): ?float;
+
+    /**
      * Check if department is enabled
      *
      * @param int|null $storeId
@@ -305,6 +318,19 @@ interface RepositoryInterface
      * @return array
      */
     public function getAllBuyerTerms(?int $storeId = null): array;
+
+    /**
+     * Whether a term duration is one the merchant currently offers.
+     *
+     * Single owner of the availability check, shared by the chip-click
+     * endpoint and final order composition (TWO-25503).
+     *
+     * @param int $termDays
+     * @param int|null $storeId
+     *
+     * @return bool
+     */
+    public function isBuyerTermAvailable(int $termDays, ?int $storeId = null): bool;
 
     /**
      * Get default payment term

@@ -293,3 +293,6 @@
 "A limit of 0 is not allowed. To charge nothing on a term, set the fixed amount and the percentage for that term to 0 instead.","En grense på 0 er ikke tillatt. Hvis du ikke vil belaste noe for en termin, setter du terminens faste beløp og prosent til 0 i stedet."
 "The limit applies to the whole fee: the percentage and the fixed amount together, not the percentage alone.","Grensen gjelder hele gebyret: prosenten og det faste beløpet til sammen, ikke bare prosenten."
 "%1 days - %2: value must be a number.","%1 dager - %2: verdien må være et tall."
+"Default Shipping Tax Rate (%)","Standard MVA-sats for frakt (%)"
+"Only used when a shipping method charges tax but Magento declares no rate for it. Leave empty to refuse such orders instead of assuming a rate.","Brukes kun når en fraktmetode belaster MVA, men Magento ikke oppgir noen sats for den. La feltet stå tomt for å avvise slike ordrer i stedet for å anta en sats."
+"This order could not be placed. Please contact the merchant.","Denne ordren kunne ikke opprettes. Ta kontakt med selgeren."

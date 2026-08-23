@@ -538,6 +538,15 @@
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/{{code}}/enable_tax_subtotals</config_path>
                 </field>
+                <field id="default_shipping_tax_rate" translate="label" type="text" sortOrder="40"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Default Shipping Tax Rate (%)</label>
+                    <comment>Only used when a shipping method charges tax but Magento declares no rate for it. Leave empty to refuse such orders instead of assuming a rate.</comment>
+                    <backend_model>Two\Gateway\Model\Config\Backend\LocaleDecimal</backend_model>
+                    <validate>validate-zero-or-greater</validate>
+                    <config_path>payment/{{code}}/default_shipping_tax_rate</config_path>
+                </field>
             </group>
         </section>
         <!-- F. Diagnostics -->

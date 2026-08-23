@@ -45,6 +45,15 @@
             <argument name="settingsProvider" xsi:type="object">Two\Gateway\Service\Merchant\SettingsProvider\Proxy</argument>
         </arguments>
     </type>
+    <!--
+        Configured on the abstract parent so all four Compose* subclasses
+        inherit it.
+    -->
+    <type name="Two\Gateway\Service\Order">
+        <arguments>
+            <argument name="orderTaxManagement" xsi:type="object">Magento\Tax\Api\OrderTaxManagementInterface</argument>
+        </arguments>
+    </type>
     <preference for="Two\Gateway\Api\Log\RepositoryInterface"
                 type="Two\Gateway\Model\Log\Repository"/>
     <preference for="Two\Gateway\Api\Webapi\SoleTraderInterface"
