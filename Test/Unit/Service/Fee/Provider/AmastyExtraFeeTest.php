@@ -3,8 +3,6 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Service\Fee\Provider;
 
-use Magento\Framework\Api\SearchCriteriaInterface;
-use Magento\Framework\Api\SearchResultsInterface;
 use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
@@ -76,60 +74,17 @@ class AmastyExtraFeeTest extends TestCase
     /** Stub repository that returns the given order for any get() call. */
     private function repositoryReturning(OrderInterface $order): OrderRepositoryInterface
     {
-        return new class ($order) implements OrderRepositoryInterface {
-            private OrderInterface $order;
-
-            public function __construct(OrderInterface $order)
-            {
-                $this->order = $order;
-            }
-
-            public function get($id): OrderInterface
-            {
-                return $this->order;
-            }
-
-            public function getList(SearchCriteriaInterface $searchCriteria): SearchResultsInterface
-            {
-                throw new \LogicException('not used by this provider');
-            }
-
-            public function save(OrderInterface $order): OrderInterface
-            {
-                throw new \LogicException('not used by this provider');
-            }
-
-            public function delete(OrderInterface $order): bool
-            {
-                throw new \LogicException('not used by this provider');
-            }
-        };
+        $repository = $this->createMock(OrderRepositoryInterface::class);
+        $repository->method('get')->willReturn($order);
+        return $repository;
     }
 
     /** Stub repository whose get() always misses, as for an unpersisted/deleted order. */
     private function repositoryFindingNothing(): OrderRepositoryInterface
     {
-        return new class implements OrderRepositoryInterface {
-            public function get($id): OrderInterface
-            {
-                throw new NoSuchEntityException(__('No such order.'));
-            }
-
-            public function getList(SearchCriteriaInterface $searchCriteria): SearchResultsInterface
-            {
-                throw new \LogicException('not used by this provider');
-            }
-
-            public function save(OrderInterface $order): OrderInterface
-            {
-                throw new \LogicException('not used by this provider');
-            }
-
-            public function delete(OrderInterface $order): bool
-            {
-                throw new \LogicException('not used by this provider');
-            }
-        };
+        $repository = $this->createMock(OrderRepositoryInterface::class);
+        $repository->method('get')->willThrowException(new NoSuchEntityException(__('No such order.')));
+        return $repository;
     }
 
     public function testReturnsNoLineForNonOrderEntity(): void
