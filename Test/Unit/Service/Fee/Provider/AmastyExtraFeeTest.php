@@ -94,12 +94,12 @@ class AmastyExtraFeeTest extends TestCase
                 throw new \LogicException('not used by this provider');
             }
 
-            public function save(OrderInterface $entity): OrderInterface
+            public function save(OrderInterface $order): OrderInterface
             {
                 throw new \LogicException('not used by this provider');
             }
 
-            public function delete(OrderInterface $entity): bool
+            public function delete(OrderInterface $order): bool
             {
                 throw new \LogicException('not used by this provider');
             }
@@ -120,12 +120,12 @@ class AmastyExtraFeeTest extends TestCase
                 throw new \LogicException('not used by this provider');
             }
 
-            public function save(OrderInterface $entity): OrderInterface
+            public function save(OrderInterface $order): OrderInterface
             {
                 throw new \LogicException('not used by this provider');
             }
 
-            public function delete(OrderInterface $entity): bool
+            public function delete(OrderInterface $order): bool
             {
                 throw new \LogicException('not used by this provider');
             }
