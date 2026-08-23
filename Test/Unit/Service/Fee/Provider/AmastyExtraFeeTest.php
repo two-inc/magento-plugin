@@ -3,32 +3,48 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Service\Fee\Provider;
 
+use Magento\Framework\Api\SearchCriteriaInterface;
+use Magento\Framework\Api\SearchResultsInterface;
+use Magento\Framework\Exception\NoSuchEntityException;
+use Magento\Sales\Api\Data\OrderInterface;
+use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order as OrderModel;
 use Magento\Sales\Model\Order\Creditmemo;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Service\Fee\Provider\AmastyExtraFee;
 
 /**
- * Amasty\Extrafee\Plugin\Order\OrderRepository populates
- * amextrafee_fee_amount/amextrafee_tax_amount extension attributes on
- * every order load, but only when amasty/module-extra-fee is actually
- * installed — on a merchant without it, the generated
- * OrderExtensionInterface never gained those methods at all. Covers both
- * that absence and the ordinary no-fee-on-this-order case, plus the
- * itemization arithmetic for a taxed and an untaxed fee.
+ * ComposeOrder hands this provider $payment->getOrder() — the in-memory
+ * object from the current placement transaction, never loaded through
+ * OrderRepositoryInterface — so Amasty\Extrafee\Plugin\Order\OrderRepository
+ * (which only populates the amextrafee_fee_amount/amextrafee_tax_amount
+ * extension attributes on afterGet/afterGetList) never ran on it. Every
+ * itemization scenario here goes through a reload via a stub repository to
+ * cover that. Also covers: no Amasty getters generated (not installed),
+ * order not yet persisted, and the reload finding nothing.
  */
 class AmastyExtraFeeTest extends TestCase
 {
-    private AmastyExtraFee $provider;
-
-    protected function setUp(): void
+    private function providerWithRepository(OrderRepositoryInterface $orderRepository): AmastyExtraFee
     {
-        $this->provider = new AmastyExtraFee();
+        return new AmastyExtraFee($orderRepository);
     }
 
-    private function orderWithExtensionAttributes($extensionAttributes): OrderModel
+    private function unpersistedOrder(): OrderModel
+    {
+        return new OrderModel();
+    }
+
+    private function persistedOrder(int $entityId): OrderModel
     {
         $order = new OrderModel();
+        $order->setEntityId($entityId);
+        return $order;
+    }
+
+    private function orderWithExtensionAttributes(int $entityId, $extensionAttributes): OrderModel
+    {
+        $order = $this->persistedOrder($entityId);
         $order->setExtensionAttributes($extensionAttributes);
         return $order;
     }
@@ -57,33 +73,124 @@ class AmastyExtraFeeTest extends TestCase
         };
     }
 
+    /** Stub repository that returns the given order for any get() call. */
+    private function repositoryReturning(OrderInterface $order): OrderRepositoryInterface
+    {
+        return new class ($order) implements OrderRepositoryInterface {
+            private OrderInterface $order;
+
+            public function __construct(OrderInterface $order)
+            {
+                $this->order = $order;
+            }
+
+            public function get($id): OrderInterface
+            {
+                return $this->order;
+            }
+
+            public function getList(SearchCriteriaInterface $searchCriteria): SearchResultsInterface
+            {
+                throw new \LogicException('not used by this provider');
+            }
+
+            public function save(OrderInterface $entity): OrderInterface
+            {
+                throw new \LogicException('not used by this provider');
+            }
+
+            public function delete(OrderInterface $entity): bool
+            {
+                throw new \LogicException('not used by this provider');
+            }
+        };
+    }
+
+    /** Stub repository whose get() always misses, as for an unpersisted/deleted order. */
+    private function repositoryFindingNothing(): OrderRepositoryInterface
+    {
+        return new class implements OrderRepositoryInterface {
+            public function get($id): OrderInterface
+            {
+                throw new NoSuchEntityException(__('No such order.'));
+            }
+
+            public function getList(SearchCriteriaInterface $searchCriteria): SearchResultsInterface
+            {
+                throw new \LogicException('not used by this provider');
+            }
+
+            public function save(OrderInterface $entity): OrderInterface
+            {
+                throw new \LogicException('not used by this provider');
+            }
+
+            public function delete(OrderInterface $entity): bool
+            {
+                throw new \LogicException('not used by this provider');
+            }
+        };
+    }
+
+    public function testReturnsNoLineForNonOrderEntity(): void
+    {
+        $provider = $this->providerWithRepository($this->repositoryFindingNothing());
+
+        $this->assertSame(
+            [],
+            $provider->getFeeLines(new Creditmemo()),
+            'a Creditmemo/Invoice entity is out of scope for this provider'
+        );
+    }
+
+    public function testReturnsNoLineForAnUnpersistedOrder(): void
+    {
+        $provider = $this->providerWithRepository($this->repositoryFindingNothing());
+
+        $this->assertSame(
+            [],
+            $provider->getFeeLines($this->unpersistedOrder()),
+            'no entity ID means nothing to reload — never reach the repository'
+        );
+    }
+
+    public function testReturnsNoLineWhenTheReloadFindsNoOrder(): void
+    {
+        $provider = $this->providerWithRepository($this->repositoryFindingNothing());
+
+        $this->assertSame(
+            [],
+            $provider->getFeeLines($this->persistedOrder(1)),
+            'NoSuchEntityException on reload means nothing to itemize'
+        );
+    }
+
     /**
      * @dataProvider noLineScenarioProvider
      */
-    public function testReturnsNoLineWhen($entity, string $description): void
+    public function testReturnsNoLineWhen($extensionAttributes, string $description): void
     {
-        $this->assertSame([], $this->provider->getFeeLines($entity), $description);
+        $reloadedOrder = $this->orderWithExtensionAttributes(1, $extensionAttributes);
+        $provider = $this->providerWithRepository($this->repositoryReturning($reloadedOrder));
+
+        $this->assertSame([], $provider->getFeeLines($this->persistedOrder(1)), $description);
     }
 
     /** @return array<string, array{mixed, string}> */
     public function noLineScenarioProvider(): array
     {
         return [
-            'not an order entity' => [
-                new Creditmemo(),
-                'a Creditmemo/Invoice entity is out of scope for this provider',
-            ],
-            'order has no extension attributes at all' => [
-                $this->orderWithExtensionAttributes(null),
+            'reloaded order has no extension attributes at all' => [
+                null,
                 'getExtensionAttributes() returning null means nothing to itemize',
             ],
-            'order extension attributes lack the Amasty getters' => [
-                $this->orderWithExtensionAttributes(new class {
-                }),
+            'reloaded order extension attributes lack the Amasty getters' => [
+                new class {
+                },
                 'no amasty/module-extra-fee installed — the getters were never generated',
             ],
-            'order has the Amasty getters but no fee was selected' => [
-                $this->orderWithExtensionAttributes($this->amastyExtensionAttributes(0.0, 0.0)),
+            'reloaded order has the Amasty getters but no fee was selected' => [
+                $this->amastyExtensionAttributes(0.0, 0.0),
                 'a zero fee amount means this order has no Amasty fee, not a fee worth £0',
             ],
         ];
@@ -94,9 +201,13 @@ class AmastyExtraFeeTest extends TestCase
      */
     public function testItemizesFeeAmount(float $netAmount, float $taxAmount, array $expectedLine, string $description): void
     {
-        $order = $this->orderWithExtensionAttributes($this->amastyExtensionAttributes($netAmount, $taxAmount));
+        $reloadedOrder = $this->orderWithExtensionAttributes(
+            1,
+            $this->amastyExtensionAttributes($netAmount, $taxAmount)
+        );
+        $provider = $this->providerWithRepository($this->repositoryReturning($reloadedOrder));
 
-        $this->assertSame([$expectedLine], $this->provider->getFeeLines($order), $description);
+        $this->assertSame([$expectedLine], $provider->getFeeLines($this->persistedOrder(1)), $description);
     }
 
     /** @return array<string, array{float, float, array, string}> */

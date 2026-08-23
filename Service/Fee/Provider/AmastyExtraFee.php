@@ -7,6 +7,9 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Service\Fee\Provider;
 
+use Magento\Framework\Exception\NoSuchEntityException;
+use Magento\Sales\Api\Data\OrderExtensionInterface;
+use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order as OrderModel;
 use Two\Gateway\Api\Fee\FeeLineProviderInterface;
 
@@ -19,21 +22,31 @@ use Two\Gateway\Api\Fee\FeeLineProviderInterface;
  * — there is no order-level per-option breakdown to itemize even if we
  * wanted one.
  *
- * Amasty\Extrafee\Plugin\Order\OrderRepository plugs afterGet/afterGetList
- * on the core order repository and populates these OrderInterface
- * extension attributes from its own quote-fee table on every load, so
- * they're already present on any $entity that reached us via
- * OrderRepositoryInterface — no direct dependency on Amasty's module here.
- * Because that plugin (and the extension attributes it fills in) only
- * exists when amasty/module-extra-fee is actually installed, the getters
- * are guarded with method_exists() rather than an instanceof/interface
- * check: on a merchant without the extension, the generated
- * OrderExtensionInterface simply never gained these methods.
+ * Amasty\Extrafee\Plugin\Order\OrderRepository populates these
+ * OrderInterface extension attributes from its own quote-fee table, but
+ * ONLY on afterGet/afterGetList of the core order repository. The $entity
+ * ComposeOrder hands us is $payment->getOrder() — the in-memory object
+ * from the current placement transaction, never loaded through
+ * OrderRepositoryInterface — so Amasty's plugin has not run on it and its
+ * extension attributes are never populated. Reloading by entity ID here
+ * forces that plugin to run; the order row is already persisted by the
+ * time ComposeOrder executes (see its docblock), so the reload finds it.
+ * No direct dependency on Amasty's module either way — this only ever
+ * touches the OrderInterface extension attributes, guarded with
+ * method_exists() since they only exist when amasty/module-extra-fee is
+ * actually installed.
  */
 class AmastyExtraFee implements FeeLineProviderInterface
 {
     private const NET_AMOUNT_GETTER = 'getAmextrafeeFeeAmount';
     private const TAX_AMOUNT_GETTER = 'getAmextrafeeTaxAmount';
+
+    private OrderRepositoryInterface $orderRepository;
+
+    public function __construct(OrderRepositoryInterface $orderRepository)
+    {
+        $this->orderRepository = $orderRepository;
+    }
 
     /**
      * @param OrderModel|OrderModel\Invoice|OrderModel\Creditmemo $entity
@@ -41,11 +54,11 @@ class AmastyExtraFee implements FeeLineProviderInterface
      */
     public function getFeeLines($entity): array
     {
-        if (!$entity instanceof OrderModel) {
+        if (!$entity instanceof OrderModel || !$entity->getEntityId()) {
             return [];
         }
 
-        $extensionAttributes = $entity->getExtensionAttributes();
+        $extensionAttributes = $this->reloadedExtensionAttributes((int)$entity->getEntityId());
         if ($extensionAttributes === null || !method_exists($extensionAttributes, self::NET_AMOUNT_GETTER)) {
             return [];
         }
@@ -78,6 +91,15 @@ class AmastyExtraFee implements FeeLineProviderInterface
             'quantity' => 1,
             'quantity_unit' => 'sc',
         ]];
+    }
+
+    private function reloadedExtensionAttributes(int $orderId): ?OrderExtensionInterface
+    {
+        try {
+            return $this->orderRepository->get($orderId)->getExtensionAttributes();
+        } catch (NoSuchEntityException $e) {
+            return null;
+        }
     }
 
     private function roundAmt(float $amt, int $dp = 2): string
