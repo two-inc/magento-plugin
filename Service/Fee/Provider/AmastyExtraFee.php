@@ -8,7 +8,6 @@ declare(strict_types=1);
 namespace Two\Gateway\Service\Fee\Provider;
 
 use Magento\Framework\Exception\NoSuchEntityException;
-use Magento\Sales\Api\Data\OrderExtensionInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order as OrderModel;
 use Two\Gateway\Api\Fee\FeeLineProviderInterface;
@@ -93,7 +92,13 @@ class AmastyExtraFee implements FeeLineProviderInterface
         ]];
     }
 
-    private function reloadedExtensionAttributes(int $orderId): ?OrderExtensionInterface
+    /**
+     * Untyped rather than OrderExtensionInterface: everything past this
+     * point only ever duck-types via method_exists(), since Amasty's
+     * getters are codegen'd onto the real interface at build time and
+     * this class has no compile-time dependency on that codegen.
+     */
+    private function reloadedExtensionAttributes(int $orderId): ?object
     {
         try {
             return $this->orderRepository->get($orderId)->getExtensionAttributes();
