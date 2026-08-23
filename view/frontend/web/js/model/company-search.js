@@ -2390,7 +2390,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             // sets `display: block`.
             $container.append(
                 `<span class="${UNAVAILABLE_CLASS}" role="alert">` +
-                    $t('Company search is unavailable. Try again, or enter details manually.') +
+                    $t('Company search is temporarily unavailable. Please try again, or enter details manually.') +
                     '</span>'
             );
         },

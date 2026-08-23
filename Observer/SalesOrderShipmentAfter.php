@@ -28,6 +28,7 @@ use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Invoice\UploadService;
 use Two\Gateway\Service\Order\ComposeShipment;
+use Two\Gateway\Service\Order\LifecycleEventDispatcher;
 
 /**
  * After Order Shipment Save Observer
@@ -93,6 +94,9 @@ class SalesOrderShipmentAfter implements ObserverInterface
     /** @var LogRepository */
     private $logRepository;
 
+    /** @var LifecycleEventDispatcher */
+    private $lifecycleEvents;
+
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
@@ -104,7 +108,8 @@ class SalesOrderShipmentAfter implements ObserverInterface
         TransactionFactory $transactionFactory,
         \Two\Gateway\Api\BrandOverlayRegistryInterface $overlayRegistry,
         UploadService $invoiceUploadService,
-        LogRepository $logRepository
+        LogRepository $logRepository,
+        LifecycleEventDispatcher $lifecycleEvents
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
@@ -117,6 +122,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
         $this->overlayRegistry = $overlayRegistry;
         $this->invoiceUploadService = $invoiceUploadService;
         $this->logRepository = $logRepository;
+        $this->lifecycleEvents = $lifecycleEvents;
     }
 
     /**
@@ -274,6 +280,10 @@ class SalesOrderShipmentAfter implements ObserverInterface
         }
 
         $this->addStatusToOrderHistory($order, $comment->render());
+        $this->lifecycleEvents->dispatchCompleted($order, [
+            'fulfilled_order_id' => $response['fulfilled_order']['id'],
+            'partial' => !empty($response['remained_order']),
+        ]);
     }
 
     /**

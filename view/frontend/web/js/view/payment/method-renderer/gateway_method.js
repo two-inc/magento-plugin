@@ -250,6 +250,7 @@ define([
             this.companyRequiredMessage = config.companyRequiredMessage;
             this.generalErrorMessage = config.generalErrorMessage;
             this.invalidEmailListMessage = config.invalidEmailListMessage;
+            this.termUnavailableMessage = config.termUnavailableMessage;
             this.soleTraderErrorMessage = config.soleTraderErrorMessage;
             this.isOrderIntentEnabled = config.isOrderIntentEnabled;
             // TWO-25326 §7.1: the ONE admin setting that decides where the
@@ -770,6 +771,40 @@ define([
                     });
                 }, duration);
             }
+        },
+        /**
+         * TWO-25503: whether the term the buyer picked is still one the server
+         * offers.
+         *
+         * `availableBuyerTerms` is a render-time snapshot taken in
+         * initialize(); the LIVE set is the key set of
+         * surchargeModel.termSurcharges(), which /surcharges and /select-term
+         * refresh as the quote changes and as the merchant's offerable terms
+         * change. Nothing compared the two, so a term withdrawn after render
+         * was posted anyway and only refused server-side.
+         *
+         * An empty live map is the loading state, not "no terms" (see
+         * termOptions) — treating it as unavailable would refuse a legitimate
+         * submit whenever a /surcharges fetch is in flight. A selection of 0
+         * (no default term configured) is likewise left alone: that quote never
+         * had a term to lose.
+         *
+         * @returns {boolean}
+         */
+        isSelectedTermStillAvailable: function () {
+            var terms = this.availableBuyerTerms || [];
+            if (!terms.length) {
+                return true;
+            }
+            var selected = this.selectedTerm();
+            if (!selected) {
+                return true;
+            }
+            var live = surchargeModel.termSurcharges();
+            if (!live || !Object.keys(live).length) {
+                return true;
+            }
+            return Object.prototype.hasOwnProperty.call(live, String(selected));
         },
         validateEmails: function () {
             const emails = this.invoiceEmails();
@@ -1374,6 +1409,15 @@ define([
                 this.showErrorMessage(
                     $t('The shipping method is missing. Select the shipping method and try again.')
                 );
+                return;
+            }
+
+            // Refuse a placement the backend is certain to reject because the
+            // selected term is no longer on offer — see
+            // isSelectedTermStillAvailable(). The buyer has to reselect, so say
+            // that rather than posting and surfacing an API error.
+            if (!this.isSelectedTermStillAvailable()) {
+                this.showErrorMessage(this.termUnavailableMessage);
                 return;
             }
 

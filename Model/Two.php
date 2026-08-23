@@ -36,9 +36,11 @@ use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
+use Two\Gateway\Service\Order\LifecycleEventDispatcher;
 use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
+use Two\Gateway\Service\Order\SurchargeCalculator;
 use Two\Gateway\Service\UrlCookie;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 
@@ -146,6 +148,14 @@ class Two extends AbstractMethod
      */
     private $apiKeyStatus;
     /**
+     * @var SurchargeCalculator
+     */
+    private $surchargeCalculator;
+    /**
+     * @var LifecycleEventDispatcher
+     */
+    private $lifecycleEvents;
+    /**
      * Per-store memo for isAmastyCheckoutStore(); isAvailable() fires many
      * times per page and the detection reads config + core_config_data.
      *
@@ -178,6 +188,8 @@ class Two extends AbstractMethod
      * @param MerchantMinimumResolver $merchantMinimumResolver
      * @param ConfigDataCollectionFactory $configDataCollectionFactory
      * @param ApiKeyStatus $apiKeyStatus
+     * @param SurchargeCalculator $surchargeCalculator
+     * @param LifecycleEventDispatcher $lifecycleEvents
      * @param AbstractResource|null $resource
      * @param AbstractDb|null $resourceCollection
      * @param array $data
@@ -207,6 +219,8 @@ class Two extends AbstractMethod
         MerchantMinimumResolver $merchantMinimumResolver,
         ConfigDataCollectionFactory $configDataCollectionFactory,
         ApiKeyStatus $apiKeyStatus,
+        SurchargeCalculator $surchargeCalculator,
+        LifecycleEventDispatcher $lifecycleEvents,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -240,6 +254,8 @@ class Two extends AbstractMethod
         $this->merchantMinimumResolver = $merchantMinimumResolver;
         $this->configDataCollectionFactory = $configDataCollectionFactory;
         $this->apiKeyStatus = $apiKeyStatus;
+        $this->surchargeCalculator = $surchargeCalculator;
+        $this->lifecycleEvents = $lifecycleEvents;
     }
 
     /**
@@ -256,6 +272,7 @@ class Two extends AbstractMethod
     {
         $order = $payment->getOrder();
         $this->assertOrderMeetsMinimum($order);
+        $this->assertSurchargeResolvable($order);
         $additionalInformation = $payment->getAdditionalInformation();
         $this->assertOrganizationNumberPresent($additionalInformation);
         $this->urlCookie->delete();
@@ -350,6 +367,12 @@ class Two extends AbstractMethod
             $paymentUrl .= $separator . http_build_query($brandParams);
         }
         $this->urlCookie->set($paymentUrl);
+        $this->lifecycleEvents->dispatchCreated($order, [
+            'order_reference' => $orderReference,
+            'state' => $response['state'] ?? null,
+            'status' => $response['status'] ?? null,
+            'external_order_status' => $response['external_order_status'] ?? null,
+        ]);
         return $this;
     }
 
@@ -547,6 +570,7 @@ class Two extends AbstractMethod
                     $order->getStatus(),
                     __('%1 order has been marked as cancelled', $this->brandRegistry->getProductName())
                 );
+                $this->lifecycleEvents->dispatchCancelled($order);
             }
 
             $this->orderRepository->save($order);
@@ -670,6 +694,10 @@ class Two extends AbstractMethod
         }
 
         $this->addStatusToOrderHistory($order, $comment->render());
+        $this->lifecycleEvents->dispatchCompleted($order, [
+            'fulfilled_order_id' => $response['fulfilled_order']['id'],
+            'partial' => !empty($response['remained_order']),
+        ]);
     }
 
     /**
@@ -740,6 +768,10 @@ class Two extends AbstractMethod
             $response['refund_no']
         );
         $order->addStatusToHistory($order->getStatus(), $comment->render())->save();
+        $this->lifecycleEvents->dispatchRefunded($order, [
+            'refund_no' => $response['refund_no'] ?? null,
+            'amount' => $response['amount'],
+        ]);
         return $this;
     }
 
@@ -809,6 +841,23 @@ class Two extends AbstractMethod
             $this->logRepository->addDebugLog(
                 sprintf('%s hidden from checkout: API key verification failed', $this->_code),
                 ['status' => $status['status'], 'http_status' => $status['code']]
+            );
+            return false;
+        }
+        // TWO-25503: an FX rate the surcharge needs but cannot get makes THIS
+        // method unofferable, nothing more. It used to throw out of
+        // SurchargeCalculator::convertAmount() inside the totals collector, so
+        // every collectTotals() with the method already selected errored the
+        // whole checkout. Fail closed here instead, the same stance an
+        // unprojectable platform minimum takes, and placement re-checks it.
+        //
+        // Placed BEFORE the Amasty bypass for the same reason the api-key check
+        // is: the bypass defers only the MINIMUM-ORDER gate to the client, and
+        // there is no client-side equivalent of this one.
+        if (!$this->isSurchargeResolvable($quote, $storeId)) {
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: surcharge FX rate unavailable', $this->_code),
+                []
             );
             return false;
         }
@@ -1001,6 +1050,50 @@ class Two extends AbstractMethod
             if ($orderValue + 0.0001 < $display['amount']) {
                 throw new LocalizedException($this->minimumOrderMessage($display, $order));
             }
+        }
+    }
+
+    /**
+     * Whether the surcharge for a quote's currency can be priced at all —
+     * see SurchargeCalculator::isSurchargeResolvable().
+     */
+    private function isSurchargeResolvable(?CartInterface $quote, ?int $storeId): bool
+    {
+        if (!$quote instanceof \Magento\Quote\Model\Quote) {
+            return true;
+        }
+        $store = $quote->getStore();
+        $currency = (string)($quote->getQuoteCurrencyCode()
+            ?: ($store !== null ? $store->getBaseCurrencyCode() : ''));
+        if ($currency === '') {
+            return true;
+        }
+        return $this->surchargeCalculator->isSurchargeResolvable($currency, $storeId);
+    }
+
+    /**
+     * Placement backstop for the same FX gate isAvailable() applies. A hidden
+     * method can still be submitted (JS disabled, direct API call, a rate that
+     * disappeared after selection), and letting that through would place the
+     * order with the surcharge silently zeroed — the merchant's fee lost with
+     * no line item and no error. Refuse instead, with the same message an
+     * unavailable method gives.
+     *
+     * @throws LocalizedException when no FX rate is available for the surcharge
+     */
+    private function assertSurchargeResolvable(Order $order): void
+    {
+        $storeId = $order->getStoreId() !== null ? (int)$order->getStoreId() : null;
+        $store = $order->getStore();
+        $currency = (string)($order->getOrderCurrencyCode()
+            ?: ($store !== null ? $store->getBaseCurrencyCode() : ''));
+        if ($currency === '') {
+            return;
+        }
+        if (!$this->surchargeCalculator->isSurchargeResolvable($currency, $storeId)) {
+            throw new LocalizedException(
+                __('Invoice purchase with %1 is not available for this order.', $this->brandRegistry->getProductName())
+            );
         }
     }
 

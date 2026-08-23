@@ -157,6 +157,19 @@ class SurchargeGrid extends Value
         // the admin can act on it.
         $limitColumnVisible = $this->savedSurchargeTypeHasPercentage($groups, $scope, $scopeId);
 
+        // TWO-25503: the per-cell zero rule below only ever sees the cells the
+        // grid POSTED, i.e. the terms currently selected in "Payment terms".
+        // A term deselected while the surcharge was fixed-only keeps its stored
+        // limit row, and that row is read at runtime — so a legacy zero there
+        // clamps the fee to nothing the moment percentage mode comes back on,
+        // with nothing in the admin having said so. Scan them at the point the
+        // column becomes live instead, before anything is written, so the save
+        // fails intact rather than half-applied. Reselecting the term in
+        // "Payment terms" brings the cell back into the grid to be cleared.
+        if ($limitColumnVisible) {
+            $this->assertNoStaleZeroLimits(array_keys($gridValues), $scope, $scopeId);
+        }
+
         foreach ($gridValues as $days => $fields) {
             if (!is_array($fields)) {
                 continue;
@@ -230,6 +243,64 @@ class SurchargeGrid extends Value
         }
 
         return in_array($type, [SurchargeType::PERCENTAGE, SurchargeType::FIXED_AND_PERCENTAGE], true);
+    }
+
+    /**
+     * Refuse the save when a term OUTSIDE the posted grid carries a stored
+     * limit that rounds away at money precision — the same value
+     * validateValue() refuses per cell, applied to the terms the grid did not
+     * render.
+     *
+     * Scope-local, like deleteScopeCells(): a store-scope save must not fail
+     * over a default-scope value the merchant is not editing.
+     *
+     * @param array<int, int|string> $postedDays term keys present in the POSTed grid
+     * @throws LocalizedException
+     */
+    private function assertNoStaleZeroLimits(array $postedDays, string $scope, int $scopeId): void
+    {
+        $posted = array_map('intval', $postedDays);
+        $conn = $this->resourceConnection->getConnection();
+        $rows = $conn->fetchPairs(
+            $conn->select()
+                ->from($conn->getTableName('core_config_data'), ['path', 'value'])
+                ->where('scope = ?', $scope)
+                ->where('scope_id = ?', $scopeId)
+                ->where('path LIKE ?', 'payment/' . $this->methodCode() . '/surcharge%')
+                ->where('path REGEXP ?', 'surcharge_[0-9]+_limit$')
+        );
+
+        $stale = [];
+        foreach ($rows as $path => $value) {
+            if (!preg_match('/surcharge_([0-9]+)_limit$/', (string)$path, $matches)) {
+                continue;
+            }
+            $days = (int)$matches[1];
+            if (in_array($days, $posted, true)) {
+                continue;
+            }
+            $raw = str_replace(',', '.', (string)$value);
+            // Junk and empty are NOT reported: Repository::getSurchargeConfig()
+            // resolves both to absent, i.e. no cap, so neither suppresses a fee.
+            if ($raw === '' || !is_numeric($raw) || !is_finite((float)$raw)) {
+                continue;
+            }
+            if (round((float)$raw, self::MONEY_DECIMALS) === 0.0) {
+                $stale[] = $days;
+            }
+        }
+
+        if ($stale) {
+            sort($stale);
+            throw new LocalizedException(
+                __(
+                    'A limit of 0 is stored for payment terms not shown in the grid (%1 days), and a'
+                    . ' percentage surcharge would clamp those terms to no fee at all. Select those'
+                    . ' terms in the Payment terms setting to clear their limit, then save again.',
+                    implode(', ', $stale)
+                )
+            );
+        }
     }
 
     /**

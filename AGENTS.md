@@ -123,6 +123,15 @@ admin can act on it. The visibility flag is threaded from `afterSave()`
 into `validateValue()` and pinned there by
 `testProductionAfterSaveWiresTheLimitColumnVisibilityIntoTheZeroRule`.
 
+A term the grid does not render at all — one deselected from "Payment
+terms" — is a different case, because no cell for it is POSTED and the
+per-cell rule therefore never sees it. `assertNoStaleZeroLimits()` scans
+those stored rows at the scope being saved whenever the Limit column
+becomes live, and refuses the save naming the terms. That is not the
+dead end above: reselecting the term brings its cell back into the grid,
+where it can be cleared. The scan runs before the write loop so a refusal
+leaves nothing half-applied.
+
 ## An optional constructor argument is NOT autowired
 
 A constructor parameter with a default of `null` is left at its default by

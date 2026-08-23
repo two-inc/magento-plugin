@@ -152,12 +152,35 @@ class SurchargeTest extends TestCase
     private function stubBaseline(): void
     {
         $this->config->method('getSurchargeType')->willReturn('percentage');
+        $this->surchargeCalculator->method('isSurchargeResolvable')->willReturn(true);
         $this->session->setTwoSelectedTerm(30);
         $this->surchargeCalculator->method('calculate')->willReturn([
             'amount' => 100.0,
             'tax_rate' => 21.0, // legacy flat rate from config, via pricing result
             'description' => 'Payment terms fee - 30 days',
         ]);
+    }
+
+    /**
+     * TWO-25503: an unresolvable surcharge FX rate withdraws the payment
+     * method (Two::isAvailable) — it must not error the totals collection,
+     * which runs on every quote change while the method is still selected and
+     * so made checkout unrecoverable.
+     */
+    public function testAnUnresolvableFxRateClearsTheSurchargeInsteadOfThrowing(): void
+    {
+        $this->config->method('getSurchargeType')->willReturn('percentage');
+        $this->surchargeCalculator->method('isSurchargeResolvable')->willReturn(false);
+        $this->surchargeCalculator->expects($this->never())->method('calculate');
+        $this->session->setTwoSelectedTerm(30);
+        $this->session->setTwoSurchargeAmount(100.0);
+
+        $total = new Total(['grand_total' => 1000.0, 'base_grand_total' => 1000.0]);
+        $this->collector->collect($this->makeQuote(), $this->makeShippingAssignment(), $total);
+
+        $this->assertEqualsWithDelta(1000.0, $total->getGrandTotal(), 1e-9);
+        $this->assertEqualsWithDelta(0.0, (float)$total->getData('two_surcharge_amount'), 1e-9);
+        $this->assertEqualsWithDelta(0.0, (float)$this->session->getTwoSurchargeAmount(), 1e-9);
     }
 
     public function testEngineTaxUsedWhenTaxClassConfigured(): void
