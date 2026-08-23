@@ -3,92 +3,46 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Service\Fee\Provider;
 
-use Magento\Framework\Exception\NoSuchEntityException;
-use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order as OrderModel;
 use Magento\Sales\Model\Order\Creditmemo;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Service\Fee\Provider\AmastyExtraFee;
+use Two\Gateway\Service\Fee\Provider\AmastyExtraFeeQuoteReader;
 
 /**
- * ComposeOrder hands this provider $payment->getOrder() — the in-memory
- * object from the current placement transaction, never loaded through
- * OrderRepositoryInterface — so Amasty\Extrafee\Plugin\Order\OrderRepository
- * (which only populates the amextrafee_fee_amount/amextrafee_tax_amount
- * extension attributes on afterGet/afterGetList) never ran on it. Every
- * itemization scenario here goes through a reload via a stub repository to
- * cover that. Also covers: no Amasty getters generated (not installed),
- * order not yet persisted, and the reload finding nothing.
+ * AmastyExtraFee reads Amasty's fee by quote_id (via AmastyExtraFeeQuoteReader,
+ * mocked here) rather than loading the order, because ComposeOrder hands it
+ * the order mid-placement - before OrderRepositoryInterface::save() gives it
+ * an entity_id. Covers: non-order entity, no quote_id yet, the reader
+ * finding nothing (not installed or no fee selected), and the itemization
+ * arithmetic for a taxed and an untaxed fee.
  */
 class AmastyExtraFeeTest extends TestCase
 {
-    private function providerWithRepository(OrderRepositoryInterface $orderRepository): AmastyExtraFee
+    private function providerWithReader(AmastyExtraFeeQuoteReader $reader): AmastyExtraFee
     {
-        return new AmastyExtraFee($orderRepository);
+        return new AmastyExtraFee($reader);
     }
 
-    private function unpersistedOrder(): OrderModel
-    {
-        return new OrderModel();
-    }
-
-    private function persistedOrder(int $entityId): OrderModel
+    private function orderWithQuoteId(?int $quoteId): OrderModel
     {
         $order = new OrderModel();
-        $order->setEntityId($entityId);
+        if ($quoteId !== null) {
+            $order->setQuoteId($quoteId);
+        }
         return $order;
     }
 
-    private function orderWithExtensionAttributes(int $entityId, $extensionAttributes): OrderModel
+    private function readerReturning(?array $fee): AmastyExtraFeeQuoteReader
     {
-        $order = $this->persistedOrder($entityId);
-        $order->setExtensionAttributes($extensionAttributes);
-        return $order;
-    }
-
-    private function amastyExtensionAttributes(float $feeAmount, float $taxAmount)
-    {
-        return new class ($feeAmount, $taxAmount) {
-            private float $feeAmount;
-            private float $taxAmount;
-
-            public function __construct(float $feeAmount, float $taxAmount)
-            {
-                $this->feeAmount = $feeAmount;
-                $this->taxAmount = $taxAmount;
-            }
-
-            public function getAmextrafeeFeeAmount(): float
-            {
-                return $this->feeAmount;
-            }
-
-            public function getAmextrafeeTaxAmount(): float
-            {
-                return $this->taxAmount;
-            }
-        };
-    }
-
-    /** Stub repository that returns the given order for any get() call. */
-    private function repositoryReturning(OrderModel $order): OrderRepositoryInterface
-    {
-        $repository = $this->createMock(OrderRepositoryInterface::class);
-        $repository->method('get')->willReturn($order);
-        return $repository;
-    }
-
-    /** Stub repository whose get() always misses, as for an unpersisted/deleted order. */
-    private function repositoryFindingNothing(): OrderRepositoryInterface
-    {
-        $repository = $this->createMock(OrderRepositoryInterface::class);
-        $repository->method('get')->willThrowException(new NoSuchEntityException(__('No such order.')));
-        return $repository;
+        $reader = $this->createMock(AmastyExtraFeeQuoteReader::class);
+        $reader->method('getFeeByQuoteId')->willReturn($fee);
+        return $reader;
     }
 
     public function testReturnsNoLineForNonOrderEntity(): void
     {
-        $provider = $this->providerWithRepository($this->repositoryFindingNothing());
+        $provider = $this->providerWithReader($this->readerReturning(null));
 
         $this->assertSame(
             [],
@@ -97,54 +51,45 @@ class AmastyExtraFeeTest extends TestCase
         );
     }
 
-    public function testReturnsNoLineForAnUnpersistedOrder(): void
+    /**
+     * @dataProvider noQuoteIdScenarioProvider
+     */
+    public function testReturnsNoLineWhenThereIsNoQuoteIdYet(?int $quoteId, string $description): void
     {
-        $provider = $this->providerWithRepository($this->repositoryFindingNothing());
+        $provider = $this->providerWithReader($this->readerReturning(['net_amount' => 5.99, 'tax_amount' => 1.2]));
 
-        $this->assertSame(
-            [],
-            $provider->getFeeLines($this->unpersistedOrder()),
-            'no entity ID means nothing to reload — never reach the repository'
-        );
+        $this->assertSame([], $provider->getFeeLines($this->orderWithQuoteId($quoteId)), $description);
     }
 
-    public function testReturnsNoLineWhenTheReloadFindsNoOrder(): void
+    /** @return array<string, array{int|null, string}> */
+    public function noQuoteIdScenarioProvider(): array
     {
-        $provider = $this->providerWithRepository($this->repositoryFindingNothing());
-
-        $this->assertSame(
-            [],
-            $provider->getFeeLines($this->persistedOrder(1)),
-            'NoSuchEntityException on reload means nothing to itemize'
-        );
+        return [
+            'no quote_id set at all' => [null, 'never reach the reader without a quote_id'],
+            'quote_id is zero' => [0, 'a zero quote_id is not a real quote'],
+        ];
     }
 
     /**
      * @dataProvider noLineScenarioProvider
      */
-    public function testReturnsNoLineWhen($extensionAttributes, string $description): void
+    public function testReturnsNoLineWhen(?array $fee, string $description): void
     {
-        $reloadedOrder = $this->orderWithExtensionAttributes(1, $extensionAttributes);
-        $provider = $this->providerWithRepository($this->repositoryReturning($reloadedOrder));
+        $provider = $this->providerWithReader($this->readerReturning($fee));
 
-        $this->assertSame([], $provider->getFeeLines($this->persistedOrder(1)), $description);
+        $this->assertSame([], $provider->getFeeLines($this->orderWithQuoteId(1)), $description);
     }
 
-    /** @return array<string, array{mixed, string}> */
+    /** @return array<string, array{array|null, string}> */
     public function noLineScenarioProvider(): array
     {
         return [
-            'reloaded order has no extension attributes at all' => [
+            'reader finds nothing' => [
                 null,
-                'getExtensionAttributes() returning null means nothing to itemize',
+                'Amasty not installed, or no fee row for this quote - either way, nothing to itemize',
             ],
-            'reloaded order extension attributes lack the Amasty getters' => [
-                new class {
-                },
-                'no amasty/module-extra-fee installed — the getters were never generated',
-            ],
-            'reloaded order has the Amasty getters but no fee was selected' => [
-                $this->amastyExtensionAttributes(0.0, 0.0),
+            'reader finds a zero fee' => [
+                ['net_amount' => 0.0, 'tax_amount' => 0.0],
                 'a zero fee amount means this order has no Amasty fee, not a fee worth £0',
             ],
         ];
@@ -155,13 +100,11 @@ class AmastyExtraFeeTest extends TestCase
      */
     public function testItemizesFeeAmount(float $netAmount, float $taxAmount, array $expectedLine, string $description): void
     {
-        $reloadedOrder = $this->orderWithExtensionAttributes(
-            1,
-            $this->amastyExtensionAttributes($netAmount, $taxAmount)
+        $provider = $this->providerWithReader(
+            $this->readerReturning(['net_amount' => $netAmount, 'tax_amount' => $taxAmount])
         );
-        $provider = $this->providerWithRepository($this->repositoryReturning($reloadedOrder));
 
-        $this->assertSame([$expectedLine], $provider->getFeeLines($this->persistedOrder(1)), $description);
+        $this->assertSame([$expectedLine], $provider->getFeeLines($this->orderWithQuoteId(1)), $description);
     }
 
     /** @return array<string, array{float, float, array, string}> */
