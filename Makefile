@@ -234,8 +234,8 @@ patch: bumpver-patch
 minor: bumpver-minor
 ## Bump major version
 major: bumpver-major
-PHPUNIT_VERSION := 9.6.34
-PHPUNIT_SHA256  := e7264ae61fe58a487c2bd741905b85940d8fbc2b32cf4a279949b6d9a172a06a
+PHPUNIT_VERSION := 10.5.64
+PHPUNIT_SHA256  := a823d916151f628dd9943ccc81a98bcfbba9c5babf53f27be6c7dccc89f8ee23
 
 ## Run PHPUnit tests
 test:
