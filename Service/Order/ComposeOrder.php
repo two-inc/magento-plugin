@@ -39,7 +39,7 @@ class ComposeOrder extends OrderService
         Url $url,
         LogRepository $logRepository,
         CheckoutSession $checkoutSession,
-        ?FeeLineProviderPool $feeLineProviderPool = null
+        FeeLineProviderPool $feeLineProviderPool
     ) {
         parent::__construct(
             $imageHelper,
