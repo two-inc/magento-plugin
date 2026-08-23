@@ -54,7 +54,7 @@
 "Enable company search in address entry","Aktivera företagssökning vid adressinmatning"
 "Enable order intent","Aktivera orderavsikt"
 "Enable payment method","Aktivera betalningsmetod"
-"Enable tax subtotals","Aktivera delsummor för skatt"
+"Validate tax subtotals","Validera delsummor för skatt"
 "Enter company name to search","Ange företagsnamn för att söka"
 "Enter details manually","Ange detaljer manuellt"
 "Environment","Miljö"

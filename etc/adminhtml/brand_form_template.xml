@@ -533,7 +533,7 @@
                 <field id="enable_tax_subtotals" translate="label" type="select" sortOrder="30"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Enable tax subtotals</label>
+                    <label>Validate tax subtotals</label>
                     <comment>Add optional tax_subtotals metadata to order creation payload to enforce additional validation (recommended).</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/{{code}}/enable_tax_subtotals</config_path>

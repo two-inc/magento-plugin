@@ -55,7 +55,7 @@
 "Enable company search in address entry","Aktiver firmasøk i adresseskjemaet"
 "Enable order intent","Aktiver ordrehensikt"
 "Enable payment method","Aktiver betalingsmåte"
-"Enable tax subtotals","Aktiver delsummer for avgifter"
+"Validate tax subtotals","Valider delsummer for avgifter"
 "Enter company name to search","Skriv inn firmanavn for å søke"
 "Enter details manually","Skriv inn detaljer manuelt"
 "Environment","Miljø"

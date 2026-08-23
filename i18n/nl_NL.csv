@@ -55,7 +55,7 @@
 "Enable company search in address entry","Bedrijf zoeken bij adresinvoer inschakelen"
 "Enable order intent","Bestelintentie inschakelen"
 "Enable payment method","Betaalmethode inschakelen"
-"Enable tax subtotals","BTW-subtotalen inschakelen"
+"Validate tax subtotals","BTW-subtotalen valideren"
 "Enter company name to search","Voer bedrijfsnaam in om te zoeken"
 "Enter details manually","Gegevens handmatig invoeren"
 "Environment","Omgeving"
