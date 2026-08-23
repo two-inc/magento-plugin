@@ -6,9 +6,9 @@ namespace Two\Gateway\Test\Unit\Block\Adminhtml\System\Config\Field;
 use Magento\Backend\Block\Template\Context;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
 
 /**
  * The admin API-key panel's status message.
@@ -29,18 +29,14 @@ class ApiKeyCheckTest extends TestCase
         $this->apiKeyStatus = $this->createMock(ApiKeyStatus::class);
     }
 
-    private function build(string $apiKey = 'test-api-key'): ApiKeyCheck
+    private function build(): ApiKeyCheck
     {
-        $configRepository = $this->createMock(ConfigRepository::class);
-        $configRepository->method('getApiKey')->willReturn($apiKey);
-
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
         $brandRegistry->method('getProductName')->willReturn('Acme Pay');
 
         return new ApiKeyCheck(
-            $configRepository,
             $this->apiKeyStatus,
-            $brandRegistry,
+            new ApiKeyStatusMessage($brandRegistry),
             $this->createMock(Context::class)
         );
     }
@@ -127,11 +123,12 @@ class ApiKeyCheckTest extends TestCase
 
     public function testMissingKeyIsAWarningNotAnError(): void
     {
-        // No key stored is not a failure to report against the service, and
-        // must not trigger a verification call at all.
-        $this->apiKeyStatus->expects($this->never())->method('refresh');
+        // No key stored is not a failure to report against the service.
+        $this->apiKeyStatus->method('refresh')->willReturn(
+            ['status' => ApiKeyStatus::NOT_CONFIGURED, 'code' => null, 'merchant' => null]
+        );
 
-        $result = $this->build('')->getApiKeyStatus();
+        $result = $this->build()->getApiKeyStatus();
 
         $this->assertSame('warning', $result['status']);
         $this->assertStringContainsString('missing', (string)$result['message']);

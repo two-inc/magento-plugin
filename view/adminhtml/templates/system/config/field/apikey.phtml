@@ -12,7 +12,11 @@ use Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck;
  */
 $status = $block->getApiKeyStatus();
 ?>
-<div>
+<div class="two-api-key-verify"
+     data-verify-url="<?= $block->escapeHtmlAttr($block->getVerifyUrl()); ?>"
+     data-field-id="<?= $block->escapeHtmlAttr($block->getApiKeyFieldId()); ?>"
+     data-scope="<?= $block->escapeHtmlAttr($block->getScope()); ?>"
+     data-scope-id="<?= (int)$block->getScopeId(); ?>">
     <span><?= $block->escapeHtml($status['message']); ?></span>
     <span class="api-key-status-icon <?= $block->escapeHtmlAttr('api-key-' . $status['status']); ?>"></span>
     <?php
@@ -29,4 +33,13 @@ $status = $block->getApiKeyStatus();
             <?= $block->escapeHtml($status['merchant_id']); ?><?php if (!empty($status['merchant_short_name'])): ?> &middot; <?= $block->escapeHtml($status['merchant_short_name']); ?><?php endif; ?>
         </div>
     <?php endif; ?>
+    <?php
+    // Verdict for a key being typed right now. Rendered empty and owned by
+    // api-key-verify.js, so the server-rendered status above stays as the
+    // record of the SAVED key.
+    ?>
+    <div class="two-api-key-verify__live" style="display: none;">
+        <span class="two-api-key-verify__message"></span>
+        <span class="two-api-key-verify__icon api-key-status-icon"></span>
+    </div>
 </div>

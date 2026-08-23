@@ -437,7 +437,7 @@ describe('the payment tile shows the number as an uneditable label, not a field'
         // `elements()` skips `:disabled` only). So a state that is both empty
         // and locked is a validation error with no buyer action that clears it.
         //
-        // Reached by entering sole-trader mode where the prefetch did NOT match
+        // Reached by entering sole-trader mode where the lookup did NOT match
         // a buyer: enterSoleTraderUi() blanks the input and the autofill never
         // lands, because fillCompanyData() early-returns unless BOTH name and
         // number are non-empty. Keying `readonly` on the mode alone stranded the
@@ -456,7 +456,7 @@ describe('the payment tile shows the number as an uneditable label, not a field'
     test('a prior search does not leave the name locked after switching to sole trader', () => {
         // Same trap by a different route: a captured company, THEN the mode
         // switch. enterSoleTraderUi() → clearCompany() blanks the input AND the
-        // number, and on the unmatched-prefetch branch nothing refills either.
+        // number, and on the unmatched-lookup branch nothing refills either.
         const { renderer } = loadRendererOnly();
 
         renderer.applyCompanyData(
@@ -557,10 +557,13 @@ describe('what each capture mode puts in front of the buyer', () => {
         expect(companyIdLabel(renderer)).toEqual({ visible: true, text: '12345678' });
     });
 
-    test('sole-trader mode: the minted name and synthetic number are embedded the same way', () => {
+    test('sole-trader mode: the minted name and synthetic number are embedded the same way', async () => {
         const { renderer } = loadRendererOnly();
 
-        renderer.prefetched = {
+        // No email in the form, so lookupSoleTrader() short-circuits and the
+        // preset result below is what the chip click acts on.
+        renderer.getEmail = function () { return ''; };
+        renderer.soleTraderLookup = {
             ready: true,
             matches: true,
             buyer: {
@@ -568,7 +571,7 @@ describe('what each capture mode puts in front of the buyer', () => {
                 company_name: 'Sole Trader Example'
             }
         };
-        renderer.soleTraderMode();
+        await renderer.soleTraderMode();
         approveIntent(renderer);
 
         expect(renderedValue('company_name', renderer)).toBe('Sole Trader Example');
@@ -623,7 +626,7 @@ describe('what each capture mode puts in front of the buyer', () => {
     test('leaving sole-trader mode clears the sole-trader identity (the control was never hidden)', () => {
         const { renderer } = loadRendererOnly();
 
-        renderer.prefetched = {
+        renderer.soleTraderLookup = {
             ready: true,
             matches: true,
             buyer: {
@@ -1219,34 +1222,16 @@ describe('an accepted organisation number still reaches the order', () => {
         expect(renderer.getData().additional_data.companyName).toBe('First Example Ltd');
     });
 
-    test('the sole-trader synthetic number reaches getData() via applyPrefetch', () => {
+    test('the sole-trader synthetic number reaches getData() via the chip click', async () => {
         // The autofill endpoint MINTS this number; it is never picked from a
-        // registry and never typed. applyPrefetch() is the path that lands it.
+        // registry and never typed. The chip click is the only path that
+        // lands it.
         const { renderer } = loadRendererOnly();
 
-        renderer.prefetched = {
-            ready: true,
-            buyer: {
-                organization_number: 'ST-SYNTH-001',
-                company_name: 'Sole Trader Example'
-            },
-            matches: true
-        };
-
-        renderer.applyPrefetch();
-
-        expect(renderer.companyId()).toBe('ST-SYNTH-001');
-        expect(renderer.getData().additional_data.companyId).toBe('ST-SYNTH-001');
-        expect(renderer.getData().additional_data.companyName).toBe('Sole Trader Example');
-    });
-
-    test('the sole-trader synthetic number reaches getData() via the chip click', () => {
-        // soleTraderMode() is the SECOND route that lands a minted number, and
-        // it is a separate call site from applyPrefetch(). Verified by mutation
-        // that the applyPrefetch test above does not cover it.
-        const { renderer } = loadRendererOnly();
-
-        renderer.prefetched = {
+        // No email in the form, so lookupSoleTrader() short-circuits and the
+        // preset result below is what the chip click acts on.
+        renderer.getEmail = function () { return ''; };
+        renderer.soleTraderLookup = {
             ready: true,
             matches: true,
             buyer: {
@@ -1255,10 +1240,11 @@ describe('an accepted organisation number still reaches the order', () => {
             }
         };
 
-        renderer.soleTraderMode();
+        await renderer.soleTraderMode();
 
         expect(renderer.companyId()).toBe('ST-SYNTH-003');
         expect(renderer.getData().additional_data.companyId).toBe('ST-SYNTH-003');
+        expect(renderer.getData().additional_data.companyName).toBe('Chip Click Example');
     });
 
     test('the sole-trader number survives with no write to any company_id node', () => {

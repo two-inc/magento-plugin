@@ -99,15 +99,11 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * select2 ships its own English `inputTooShort` message, hard-coded
      * inside the vendored bundle and phrased as the REMAINING character
      * count. Neither is acceptable: the vendored bundle is not ours to edit
-     * and its literals never reach Magento's translation dictionaries. The
-     * address-step picker overrides it via select2's `language.inputTooShort`
-     * option with this instead — a plugin-owned, translatable string quoting
-     * a FIXED threshold.
-     *
-     * The payment-step picker does NOT. It passes `minimumInputLength` only,
-     * so it still renders select2's built-in English remaining-count text.
-     * That is deliberately out of scope here; this change covers the
-     * address-step surface only.
+     * and its literals never reach Magento's translation dictionaries. Both
+     * pickers override it via select2's `language.inputTooShort` option with
+     * this instead — a plugin-owned, translatable string quoting a FIXED
+     * threshold — through the shared `buildLanguageOptions()` that
+     * CompanySearchControl passes at its single mount point.
      *
      * Resolved per call, not once at module load, because Magento's JS
      * dictionary can arrive after this module is defined. Magento's `$t`

@@ -6,12 +6,11 @@
  * registered ADDRESS, not just their identity.
  *
  * `fetchBuyer()` (`/autofill/v1/buyer/current`) has always answered with the
- * buyer's address beside their organisation number and company name, and all
- * three call sites that consumed it read the two identity fields and threw the
+ * buyer's address beside their organisation number and company name, and the
+ * call sites that consumed it read the two identity fields and threw the
  * address away — so a buyer who had just enrolled was asked to retype an
- * address the plugin was holding. The three sites are the passive prefetch, the
- * chip click resolving against an already-prefetched buyer, and the popup's
- * post-signup `ACCEPTED` message; they now share one write-back,
+ * address the plugin was holding. The two sites are the chip click's own lookup
+ * and the popup's post-signup `ACCEPTED` message; they share one write-back,
  * `adoptSoleTraderBuyer()`.
  *
  * The GATE is the part most likely to be "tidied" back into a bug, and it has
@@ -109,8 +108,8 @@ function loadRenderer(buyer, options) {
     };
     renderer.isAddressAreaCompanySearchEnabled = !!opts.addressAreaSearchEnabled;
     renderer.isOrderIntentEnabled = false;
-    renderer.prefetched = { ready: false, buyer: null, matches: false };
-    renderer.prefetchedEmail = null;
+    renderer.soleTraderLookup = { ready: false, buyer: null, matches: false };
+    renderer.soleTraderLookupEmail = null;
     renderer.getEmail = () => ENTERED_EMAIL;
     renderer.getTokens = () => Promise.resolve({ delegation_token: 'dt', autofill_token: 'at' });
     renderer.fetchBuyer = () => Promise.resolve(buyer);
@@ -145,26 +144,27 @@ function settle() {
 }
 
 describe('every path that adopts a sole trader writes their address', () => {
-    test('the passive prefetch writes it', () => {
+    test('the chip click resolves the buyer and writes it', () => {
         const { renderer, applied } = loadRenderer(BUYER);
         renderer.showModeTab(true);
 
-        return renderer.prefetchSoleTrader().then(() => {
+        return renderer.soleTraderMode().then(() => {
             expect(applied).toEqual([BILLING]);
             expect(renderer.companyId()).toBe(BUYER.organization_number);
             expect(renderer.showSoleTrader()).toBe(true);
         });
     });
 
-    test('the chip click against an already-prefetched buyer writes it', () => {
+    test('a repeated chip click against the already-resolved buyer writes it', () => {
         const { renderer, applied } = loadRenderer(BUYER);
-        renderer.prefetched = { ready: true, buyer: BUYER, matches: true };
+        renderer.soleTraderLookup = { ready: true, buyer: BUYER, matches: true };
+        renderer.soleTraderLookupEmail = renderer.getEmail();
 
-        renderer.soleTraderMode();
-
-        expect(applied).toEqual([BILLING]);
-        expect(renderer.companyName()).toBe(BUYER.company_name);
-        expect(renderer.showPopupMessage()).toBe(false);
+        return renderer.soleTraderMode().then(() => {
+            expect(applied).toEqual([BILLING]);
+            expect(renderer.companyName()).toBe(BUYER.company_name);
+            expect(renderer.showPopupMessage()).toBe(false);
+        });
     });
 
     test('a completed signup writes it', () => {
@@ -180,7 +180,7 @@ describe('every path that adopts a sole trader writes their address', () => {
         });
     });
 
-    test('a prefetch that resolves NO matching buyer writes nothing', () => {
+    test('a lookup that resolves NO matching buyer writes nothing', () => {
         const { renderer, applied } = loadRenderer({
             email: 'someone.else@example.com',
             organization_number: BUYER.organization_number,
@@ -189,7 +189,7 @@ describe('every path that adopts a sole trader writes their address', () => {
         });
         renderer.showModeTab(true);
 
-        return renderer.prefetchSoleTrader().then(() => {
+        return renderer.lookupSoleTrader().then(() => {
             expect(applied).toEqual([]);
         });
     });
@@ -301,7 +301,7 @@ describe('what the write-back does with an awkward buyer record', () => {
 describe('re-entrancy', () => {
     test('a repeated adoption writes the address once and starts no second intent', () => {
         // The popup can post ACCEPTED more than once (double submit, a reopened
-        // window) and a re-render can replay the prefetch. A replay must not
+        // window) and a re-render can replay the lookup. A replay must not
         // overwrite a correction the buyer made to the address after the first
         // write, and the order intent stays behind fillCompanyData()'s
         // in-flight guard rather than gaining a trigger of its own here.
@@ -368,7 +368,7 @@ describe('the state the write-back has to survive', () => {
     test.each([
         [false, 'the buyer is not in sole-trader mode'],
         [true, 'the buyer IS in sole-trader mode and must stay there']
-    ])('a superseded prefetch records nothing and adopts nothing (%p: %s)', (soleTrader) => {
+    ])('a superseded lookup records nothing and adopts nothing (%p: %s)', (soleTrader) => {
         // The buyer corrects their email mid-flight. The first chain resolves
         // LAST, against an email that is no longer in the form. Superseded after
         // its tokens are minted, so every guard downstream is genuinely
@@ -387,17 +387,17 @@ describe('the state the write-back has to survive', () => {
                 releaseTokens = () => resolve({ delegation_token: 'dt', autofill_token: 'at' });
             });
 
-        const chain = renderer.prefetchSoleTrader();
-        renderer._prefetchGeneration += 1;
+        const chain = renderer.lookupSoleTrader();
+        renderer._soleTraderLookupGeneration += 1;
         releaseTokens();
 
         return chain.then(() => {
-            // Not recorded: a chip click reads `prefetched` and would otherwise
-            // adopt the buyer belonging to the email the buyer replaced.
-            expect(renderer.prefetched).toEqual({ ready: false, buyer: null, matches: false });
+            // Not recorded: a chip click reads `soleTraderLookup` and would
+            // otherwise adopt the buyer belonging to the replaced email.
+            expect(renderer.soleTraderLookup).toEqual({ ready: false, buyer: null, matches: false });
             expect(applied).toEqual([]);
-            // Not acted on: applyPrefetch() would read a non-match and revert
-            // sole-trader mode, stranding the newer buyer's address.
+            // The mode is left exactly as it was: a superseded chain never
+            // moves the buyer between modes.
             expect(renderer.showSoleTrader()).toBe(soleTrader);
             // And a chip click still finds nothing to adopt.
             renderer.soleTraderMode();
@@ -414,13 +414,13 @@ describe('the state the write-back has to survive', () => {
                 failTokens = () => reject(new Error('token mint failed'));
             });
 
-        const chain = renderer.prefetchSoleTrader();
-        renderer._prefetchGeneration += 1;
-        renderer.prefetched = { ready: true, buyer: BUYER, matches: true };
+        const chain = renderer.lookupSoleTrader();
+        renderer._soleTraderLookupGeneration += 1;
+        renderer.soleTraderLookup = { ready: true, buyer: BUYER, matches: true };
         failTokens();
 
         return chain.then(() => {
-            expect(renderer.prefetched.buyer).toBe(BUYER);
+            expect(renderer.soleTraderLookup.buyer).toBe(BUYER);
         });
     });
 
@@ -454,18 +454,18 @@ describe('the state the write-back has to survive', () => {
         });
     });
 
-    test('a completed signup supersedes a prefetch still in flight', () => {
+    test('a completed signup supersedes a lookup still in flight', () => {
         // Otherwise the pre-auth chain lands after the adoption, disagrees with
         // the authenticated identity, and reverts both the mode and the address
         // that adoption just wrote.
         const { renderer, listeners } = loadRenderer(BUYER);
         const handler = messageHandler(renderer, listeners);
         renderer.showSoleTrader(true);
-        renderer._prefetchGeneration = 7;
+        renderer._soleTraderLookupGeneration = 7;
 
         handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED' });
 
-        expect(renderer._prefetchGeneration).toBe(8);
+        expect(renderer._soleTraderLookupGeneration).toBe(8);
     });
 
     test('a throw in the address write leaves the identity filled and the write retryable', () => {

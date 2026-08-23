@@ -200,11 +200,11 @@ define([
         // docblock for why it is not per-instance.
         orderIntentInProgress: orderIntentInProgress,
         showPopupMessage: ko.observable(false),
-        // True for the duration of prefetchSoleTrader()'s token-mint +
+        // True for the duration of lookupSoleTrader()'s token-mint +
         // buyer-lookup round trip (TWO-25461 §7). Drives the in-field
         // spinner; not the popup-open state, which showPopupMessage/
         // showSoleTrader already cover.
-        soleTraderPrefetchInFlight: ko.observable(false),
+        soleTraderLookupInFlight: ko.observable(false),
         showSoleTrader: ko.observable(false),
         showWhatIsTwo: ko.observable(false),
         showModeTab: ko.observable(false),
@@ -214,13 +214,11 @@ define([
         initialize: function () {
             this._super();
 
-            // Autofill prefetch result for the entered email (belt-and-braces
-            // for the sole-trader chip): mint tokens + read the buyer on the
-            // Two cookie when sole trader becomes available, so the chip click
-            // can resolve synchronously. ready=false until the first prefetch
-            // resolves; matches=true when that buyer owns the entered email.
-            this.prefetched = { ready: false, buyer: null, matches: false };
-            this.prefetchedEmail = null;
+            // Autofill lookup result for the entered email, recorded by the
+            // sole-trader chip click. ready=false until that lookup resolves;
+            // matches=true when the buyer it found owns the entered email.
+            this.soleTraderLookup = { ready: false, buyer: null, matches: false };
+            this.soleTraderLookupEmail = null;
 
             // Brand-overlay config: read once at initialize time, keyed on
             // this.getCode() so acme_payment, two_payment, etc each pull
@@ -421,7 +419,7 @@ define([
          * the only mode where this node is a plain text box holding a captured
          * name, but entering that mode does not guarantee a name has been
          * captured: enterSoleTraderUi() blanks the input, and the autofill that
-         * refills it only lands when the prefetch matched a buyer. On the
+         * refills it only lands when the chip's lookup matched a buyer. On the
          * unmatched branch the buyer is sent to signup and may abandon it, and
          * fillCompanyData() early-returns unless BOTH name and number are
          * non-empty — so keying on the mode alone left a BLANK, `readonly`,
@@ -588,8 +586,8 @@ define([
          * URL would have left `countryCode()` empty there, and it drives two
          * more things:
          *
-         *  - getSupportedCompanyTypes() → showModeTab()/prefetchSoleTrader(),
-         *    so the Business / Sole trader tab never appeared at all;
+         *  - getSupportedCompanyTypes() → showModeTab(), so the Business /
+         *    Sole trader tab never appeared at all;
          *  - clearCompanyForCountryChange(), so a company captured under the
          *    previous country survived a switch (TWO-24867's protection,
          *    silently absent on this checkout).
@@ -936,8 +934,8 @@ define([
          * easy to conflate and are NOT the same thing:
          *
          *  - a company-search pick on this step;
-         *  - the sole-trader autofill response (applyPrefetch(), soleTraderMode(),
-         *    and the postMessage handler);
+         *  - the sole-trader autofill response (soleTraderMode() and the
+         *    postMessage handler);
          *  - the address step's `companyData` customer-data notification, which
          *    is the only surviving route for a HAND-TYPED number, and the address
          *    step enables it only where the registry holds no identifier;
@@ -1084,10 +1082,6 @@ define([
                 if (self.countryCode() !== countryCode) return;
                 if (types.includes('SOLE_TRADER')) {
                     self.showModeTab(true);
-                    // Prefetch the autofill buyer for the entered email so a known
-                    // sole trader is auto-selected and the chip click can open the
-                    // signup popup synchronously. No-op when the email is unknown.
-                    self.prefetchSoleTrader();
                 } else {
                     if (self.showSoleTrader()) {
                         self.registeredOrganisationMode();
@@ -1250,9 +1244,9 @@ define([
                 ));
             // NOT authoritative: this is a one-shot read of a localStorage
             // section that outlives page loads and previous orders, and
-            // fillCustomerData() is re-callable (registeredOrganisationMode(),
-            // reached from applyPrefetch()). A stale `{companyName,
-            // companyId: ''}` row must not overwrite a live payment-step pick.
+            // fillCustomerData() is re-callable (registeredOrganisationMode()).
+            // A stale `{companyName, companyId: ''}` row must not overwrite a
+            // live payment-step pick.
             this.applyCompanyData(customerData.get('companyData')());
 
             this._customerDataSubs.push(customerData
@@ -1792,43 +1786,21 @@ define([
         /**
          * Fill the billing address form from a picked company.
          *
-         * TWO-25326: autofill needs BOTH settings on, and this method is
-         * where the second one is applied. "Autofill company address"
-         * (`enable_address_search` → isAddressSearchEnabled) is the gate
-         * inside companySearch.lookupCompanyAddress(); "Enable company
-         * search in address entry" (`enable_company_search` →
-         * isAddressAreaCompanySearchEnabled) is the gate here.
+         * TWO-25503: address autofill is gated on its own dedicated admin
+         * setting alone — "Autofill company address" (`enable_address_search`
+         * → isAddressSearchEnabled), applied inside
+         * companySearch.lookupCompanyAddress(). This method adds no gate of
+         * its own.
          *
-         * The reason is positional rather than a second opinion on the same
-         * question. The setting places the control, and the merchant who has
-         * put it in the payment tile has said the buyer completes their
-         * address by hand — so a pick made there is not pre-filling a form
-         * the buyer is about to work in, it is rewriting one they are already
-         * done with. Autofill belongs to the address-entry location alone.
-         *
-         * Keyed on the SETTING, deliberately, not on whether an address form
-         * happens to be on screen. TWO-25326 states the rule that way: with
-         * company search in address entry off, a pick never fills an address,
-         * whatever "Autofill company address" says. The cost is that a
-         * virtual cart under that setting loses the tile autofill TWO-25193
-         * added, even though its billing form is genuinely blank; that is the
-         * rule as specified, not an oversight.
-         *
-         * With the setting ON, autofill still fires from the tile in the
-         * saved-address / virtual-cart fallback, where the tile is the only
-         * search location (isTileCompanySearchActive() — note that predicate
-         * is true in BOTH tile cases, so it does not on its own distinguish
-         * the gated one).
-         *
-         * Deliberately NOT folded into the server-side isAddressSearchEnabled
-         * flag: that reads one setting and is shared with the address-area
-         * picker (TWO-25202), and the condition being added is about WHICH
-         * picker is asking, which only the caller knows.
+         * Never on placement. "Enable company search in address entry"
+         * (`enable_company_search`) decides WHERE the search control is
+         * mounted, and where a merchant put the control is not an answer to
+         * whether they want the address filled — so the tile picker and the
+         * address-area picker now obey the same single setting. Under the
+         * previous placement gate a merchant with search in the payment tile
+         * got no autofill at all, "Autofill company address" notwithstanding.
          */
         addressLookup: function (selectedCompany) {
-            if (!this.isAddressAreaCompanySearchEnabled) {
-                return null;
-            }
             // Scoped like the sole-trader write-back, and for the same reason:
             // this is the TILE's picker, so it writes as the billing/invoice
             // role, and the payment step has more than one address form in the
@@ -1887,11 +1859,8 @@ define([
                         // none of its own.
                         self.applyCompanyData({ companyId, companyName }, { authoritative: true });
                         // TWO-25193: the payment-tile picker used to stop
-                        // here, leaving the billing address blank. Two gates
-                        // now — addressLookup()'s own positional one, then the
-                        // shared isAddressSearchEnabled gate it delegates to.
-                        // See its doc comment for why the tile carries one the
-                        // address-area picker does not.
+                        // here, leaving the billing address blank. Gated on
+                        // isAddressSearchEnabled alone — see addressLookup().
                         self.addressLookup(selectedItem);
                     },
                     onManualEntryActivated: function () {
@@ -2055,7 +2024,7 @@ define([
         },
 
         // True once the signup URL can be built. Both tokens are minted
-        // together by prefetchSoleTrader(), and neither is optional in the
+        // together by lookupSoleTrader(), and neither is optional in the
         // URL — an empty one produces a signup link the hosted flow rejects.
         hasSignupTokens() {
             return !!(this.delegationToken && this.autofillToken);
@@ -2144,8 +2113,8 @@ define([
             this.fillCustomerData();
         },
 
-        // Enter the sole-trader UI. No token/buyer work here — that is owned by
-        // the email-driven prefetch and the chip-click handler.
+        // Enter the sole-trader UI. No token/buyer work here — that is owned
+        // by the chip-click handler.
         enterSoleTraderUi() {
             this.showSoleTrader(true);
             // Resolve the link BEFORE clearCompany(), which tears the widget
@@ -2155,54 +2124,50 @@ define([
             $searchForCompany.hide();
         },
 
-        // Sole-trader chip click. Resolves against the prefetched autofill
-        // result so the signup popup (when needed) opens in the same
-        // synchronous gesture as the click and is not popup-blocker-killed.
+        /**
+         * Sole-trader chip click — the ONLY entry point to sole-trader
+         * autofill (TWO-25503). Nothing is minted, looked up or adopted off
+         * the back of email entry alone: the chip click is the buyer asking,
+         * and the same explicit-click rule the company-search chip follows.
+         *
+         * A resolved-and-matching buyer is adopted; anything else sends the
+         * buyer to signup. The popup therefore opens after an await and can
+         * be blocker-killed, which is what showPopupMessage()'s link fallback
+         * is for — but only once the tokens exist, since a link built with an
+         * empty businessToken/autofillToken is rejected by the hosted flow.
+         */
         soleTraderMode() {
             this.enterSoleTraderUi();
-            const pf = this.prefetched;
-            if (pf.ready && pf.matches && pf.buyer) {
-                this.adoptSoleTraderBuyer(pf.buyer);
-            } else if (pf.ready) {
-                // Resolved with no matching buyer → signup. Opening here keeps
-                // the gesture intact; if the browser blocks it, show the link.
+            return this.lookupSoleTrader().then(() => {
+                const pf = this.soleTraderLookup;
+                if (pf.ready && pf.matches && pf.buyer) {
+                    this.adoptSoleTraderBuyer(pf.buyer);
+                    return;
+                }
                 const win = this.openIframe();
-                // Blocked popup → offer the link, but only if it can build a
-                // valid signup URL. A prefetch that resolved through its catch
-                // reaches here READY with no tokens minted, and a link to
-                // `businessToken=&autofillToken=` is worse than none.
                 this.showPopupMessage(!win && this.hasSignupTokens());
-            } else {
-                // Prefetch not ready (payment selected before email entered):
-                // kick it off and offer the link as the fallback — but only
-                // once the tokens it needs exist. Offered before they are
-                // minted, the link builds a signup URL with empty
-                // businessToken/autofillToken, which the hosted flow rejects.
-                this.prefetchSoleTrader().then(() => {
-                    this.showPopupMessage(this.hasSignupTokens());
-                });
-            }
+            });
         },
 
         // Mint tokens + read the buyer on the Two cookie for the entered email.
-        // Deduped per email so re-renders don't re-mint. A matching buyer
-        // auto-selects Sole trader and prefills via applyPrefetch().
+        // Deduped per email so a repeated chip click doesn't re-mint — the
+        // recorded result stands.
         //
         // Always returns a promise, including on the skip paths, so a caller
         // can sequence on the tokens being minted.
-        prefetchSoleTrader() {
+        lookupSoleTrader() {
             if (!this.showModeTab()) {
                 return Promise.resolve();
             }
             const email = (this.getEmail() || '').trim();
-            if (!email || email === this.prefetchedEmail) {
+            if (!email || email === this.soleTraderLookupEmail) {
                 return Promise.resolve();
             }
-            this.prefetchedEmail = email;
-            this.prefetched = { ready: false, buyer: null, matches: false };
+            this.soleTraderLookupEmail = email;
+            this.soleTraderLookup = { ready: false, buyer: null, matches: false };
             // Spinner covers the whole round trip; cleared on every terminal
             // branch below (success, failure) via .finally(), never a timeout.
-            this.soleTraderPrefetchInFlight(true);
+            this.soleTraderLookupInFlight(true);
             // A chain is tied to the email it started for. An edit starts a
             // second one, the two settle in no guaranteed order, and the loser
             // must not record its buyer or act on it: `matches` is computed
@@ -2211,9 +2176,9 @@ define([
             // and — before this guard — left the OTHER buyer's address in the
             // form with no identity beside it. The minted token travels as a
             // local for the same reason.
-            const generation = (this._prefetchGeneration || 0) + 1;
-            this._prefetchGeneration = generation;
-            const isCurrent = () => this._prefetchGeneration === generation;
+            const generation = (this._soleTraderLookupGeneration || 0) + 1;
+            this._soleTraderLookupGeneration = generation;
+            const isCurrent = () => this._soleTraderLookupGeneration === generation;
             return this.getTokens()
                 .then((json) => {
                     if (!isCurrent()) return null;
@@ -2221,23 +2186,19 @@ define([
                     this.autofillToken = json.autofill_token;
                     return this.resolveBuyer(false, json.autofill_token, isCurrent);
                 })
-                .then(() => {
-                    if (!isCurrent()) return;
-                    this.applyPrefetch();
-                })
                 .catch(() => {
                     if (!isCurrent()) return;
-                    this.prefetched = { ready: true, buyer: null, matches: false };
+                    this.soleTraderLookup = { ready: true, buyer: null, matches: false };
                 })
                 .finally(() => {
                     // Guarded on THIS call's email (review finding): an
                     // earlier, still-outstanding call's .finally must not
                     // clear the flag out from under a newer call that started
                     // after an email edit — flightDepth-style ref-counting
-                    // without needing a counter, since prefetchedEmail
+                    // without needing a counter, since soleTraderLookupEmail
                     // already identifies "the current one".
-                    if (this.prefetchedEmail === email) {
-                        this.soleTraderPrefetchInFlight(false);
+                    if (this.soleTraderLookupEmail === email) {
+                        this.soleTraderLookupInFlight(false);
                     }
                 });
         },
@@ -2261,7 +2222,7 @@ define([
         },
 
         /**
-         * Read the buyer on the Two cookie and record it as the prefetch
+         * Read the buyer on the Two cookie and record it as the lookup
          * result, resolving to it.
          *
          * `authenticated` is the difference between the two contexts that
@@ -2277,11 +2238,11 @@ define([
          *
          * @param {boolean} authenticated buyer already proved this identity
          * @param {string} [autofillToken] token this lookup belongs to — the
-         *        prefetch passes the one IT minted, so a superseded chain cannot
+         *        lookup passes the one IT minted, so a superseded chain cannot
          *        read the cookie under a newer chain's token
          * @param {function(): boolean} [isCurrent] answers whether this lookup is
          *        still the live one; a superseded lookup resolves to its result
-         *        without recording it as the prefetch
+         *        without recording it as the lookup result
          * @returns {Promise<object>} the result, recorded unless superseded
          */
         resolveBuyer(authenticated, autofillToken, isCurrent) {
@@ -2299,7 +2260,7 @@ define([
                 }
                 const resolved = { ready: true, buyer: buyer, matches: matches };
                 if (isCurrent && !isCurrent()) return resolved;
-                this.prefetched = resolved;
+                this.soleTraderLookup = resolved;
                 return resolved;
             });
         },
@@ -2309,9 +2270,9 @@ define([
          * into the tile, and the registered ADDRESS into the checkout address
          * form (TWO-25461 §5).
          *
-         * The single write-back path for all three contexts that resolve a buyer:
-         * the passive prefetch, the chip click against an already resolved
-         * prefetch, and the popup's post-signup `ACCEPTED` message.
+         * The single write-back path for both contexts that resolve a buyer:
+         * the chip click's own lookup, and the popup's post-signup `ACCEPTED`
+         * message.
          *
          * NOT gated on `isAddressAreaCompanySearchEnabled` or the server-side
          * `isAddressSearchEnabled`, per §5: those gate an ORDINARY
@@ -2319,8 +2280,8 @@ define([
          * off wherever company search is not mounted in the address area —
          * which is exactly where the sole-trader entry point lives.
          *
-         * The address is written ONCE PER IDENTITY. All three paths can fire for
-         * the same buyer (a prefetch then a chip click, a repeated `ACCEPTED`),
+         * The address is written ONCE PER IDENTITY. Both paths can fire for
+         * the same buyer (a repeated chip click, a repeated `ACCEPTED`),
          * and a replay must not overwrite a correction the buyer made to the
          * address after the first write. Adopting a DIFFERENT identity writes
          * again, and leaving sole-trader mode re-arms it.
@@ -2386,19 +2347,6 @@ define([
             companySearch.applyAddress(source, companySearch.billingRoleFormRoot());
             return true;
         },
-        // React to a resolved prefetch: a matching buyer auto-selects Sole
-        // trader and prefills; a non-match reverts an active Sole-trader
-        // selection to Registered organisation.
-        applyPrefetch() {
-            const pf = this.prefetched;
-            if (pf.matches && pf.buyer) {
-                this.enterSoleTraderUi();
-                this.adoptSoleTraderBuyer(pf.buyer);
-            } else if (this.showSoleTrader()) {
-                this.registeredOrganisationMode();
-            }
-        },
-
         popupMessageListener() {
             // Kept so dispose() can detach it. A re-rendering checkout (Amasty
             // and Fire Checkout both rebuild the method list) otherwise stacks
@@ -2420,12 +2368,12 @@ define([
                         // popup, so re-read and autofill whatever identity
                         // that produced, staying in sole-trader mode. No
                         // email-match check — see resolveBuyer().
-                        // Supersede any prefetch still in flight. Its `matches`
+                        // Supersede any lookup still in flight. Its `matches`
                         // is computed against the form's email, so a late
                         // pre-auth answer would disagree with the identity the
                         // buyer just authenticated, revert sole-trader mode and
                         // take this adoption's address back out with it.
-                        this._prefetchGeneration = (this._prefetchGeneration || 0) + 1;
+                        this._soleTraderLookupGeneration = (this._soleTraderLookupGeneration || 0) + 1;
                         this.resolveBuyer(true).then((pf) => {
                             if (pf.matches && pf.buyer) {
                                 this.adoptSoleTraderBuyer(pf.buyer);

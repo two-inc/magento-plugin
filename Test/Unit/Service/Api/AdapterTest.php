@@ -331,4 +331,42 @@ class AdapterTest extends TestCase
         $this->assertSame('api_translator', $result['error_source']);
         $this->assertSame('Translator failure', $result['error_message']);
     }
+
+    /**
+     * @dataProvider apiKeySources
+     */
+    public function testTheAuthenticationHeaderComesFromTheOverrideWhenOneIsGiven(
+        ?string $override,
+        string $expectedKey,
+        string $description
+    ): void {
+        $this->curl->method('getStatus')->willReturn(200);
+        $this->curl->method('getBody')->willReturn('{"id":"abc"}');
+
+        $headers = [];
+        $this->curl->method('addHeader')->willReturnCallback(
+            function ($name, $value) use (&$headers) {
+                $headers[$name] = $value;
+            }
+        );
+
+        $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET', null, $override);
+
+        $this->assertSame($expectedKey, $headers['X-API-Key'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: string|null, 1: string, 2: string}>
+     */
+    public static function apiKeySources(): array
+    {
+        return [
+            'stored key' => [null, 'test-key', 'no override uses the configured key'],
+            'candidate key' => [
+                'candidate-key',
+                'candidate-key',
+                'an override authenticates with an unsaved candidate instead',
+            ],
+        ];
+    }
 }

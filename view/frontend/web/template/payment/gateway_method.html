@@ -340,7 +340,7 @@
                             class="input-text"
                         />
                         <!--
-                            In-flight spinner for prefetchSoleTrader()'s token-mint
+                            In-flight spinner for lookupSoleTrader()'s token-mint
                             + buyer-lookup round trip (TWO-25461 §7). Lives inside
                             this field's own `.control` (see
                             `.two-sole-trader-field-control` in style.css for the
@@ -353,7 +353,7 @@
                         <span
                             class="two-sole-trader-prefetch-spinner"
                             aria-hidden="true"
-                            data-bind="visible: soleTraderPrefetchInFlight"
+                            data-bind="visible: soleTraderLookupInFlight"
                         ></span>
                         <!--
                             The captured organisation number, as plain text

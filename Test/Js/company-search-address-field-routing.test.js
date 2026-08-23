@@ -376,7 +376,7 @@ describe('a region lands wherever the address format can hold it', () => {
     });
 
     test('a repeated write does not grow the city on every pass', () => {
-        // The sole-trader write-back is genuinely re-entrant: a second prefetch
+        // The sole-trader write-back is genuinely re-entrant: a second lookup
         // and a repeated popup `ACCEPTED` both replay it.
         const { model, field } = load();
         const address = { city: 'Ashford', region: 'Kent', street: 'Mill Lane' };

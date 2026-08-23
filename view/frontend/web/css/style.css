@@ -531,7 +531,7 @@
 }
 
 /*
- * Anchors the in-field sole-trader prefetch spinner below (TWO-25461 §7) —
+ * Anchors the in-field sole-trader lookup spinner below (TWO-25461 §7) —
  * same role `.select2-search--dropdown` plays for `.two-company-search__spinner`.
  */
 .two-sole-trader-field-control {
@@ -539,7 +539,7 @@
 }
 
 /*
- * In-flight spinner for the sole-trader prefetch round trip. Same 16x16
+ * In-flight spinner for the sole-trader lookup round trip. Same 16x16
  * `loader.gif` and absolute-inside-the-field positioning as
  * `.two-company-search__spinner` — kept as its own flat class rather than
  * reused verbatim, since that one's selector must stay untouched for overlay
