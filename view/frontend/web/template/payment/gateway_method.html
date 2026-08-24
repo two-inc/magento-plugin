@@ -356,16 +356,29 @@
                             where the field can be both empty and locked is a
                             validation error the buyer has no way to clear.
                             See TWO-25288.
+
+                            `required` is likewise BOUND, not static, to
+                            `isTileCompanySearchActive()` — the same condition
+                            the wrapper's `visible:` binding above uses. `visible`
+                            only sets `display:none` on the wrapper; it does not
+                            touch this input's `required` attribute, and native
+                            HTML5 constraint validation still blocks form
+                            submission on a required field that is not rendered,
+                            silently (no bubble, since there's nowhere to point
+                            it). jQuery Validation's own `elements()` already
+                            skips hidden fields, so this only closes the native
+                            validation gap, but native validation runs first and
+                            was the one actually blocking Place Order. TWO-25503.
                         -->
                         <input
                             type="text"
                             id="company_name"
                             name="payment[company_name]"
-                            required="true"
                             data-bind='
                             attr: {
                                 title: $t("Company Name"),
-                                readonly: isCompanyNameReadOnly()
+                                readonly: isCompanyNameReadOnly(),
+                                required: isTileCompanySearchActive()
                             },
                             value: companyName'
                             class="input-text"

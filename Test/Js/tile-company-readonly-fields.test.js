@@ -469,28 +469,34 @@ describe('the payment tile shows the number as an uneditable label, not a field'
         expect(isReadOnly('company_name', renderer)).toBe(false);
     });
 
-    test('the name field keeps its required flag and its submit name', () => {
-        // Address-step name capture is Magento core's `company` attribute, gated
-        // on `customer/address/company_show`, which this module does not own — so
-        // weakening this input could leave a shop with no company-name capture.
+    test('the name field binds required to isTileCompanySearchActive(), not a static flag', () => {
+        // TWO-25503: a static `required="true"` stayed on this input even once
+        // `isTileCompanySearchActive()` went false and the `visible:` binding on
+        // the wrapper hid it — `visible` only sets `display:none`, it does not
+        // touch `required`, and a hidden required field still blocks native
+        // HTML5 form submission silently (no bubble, since it can't be pointed
+        // at). Bound `required` to the same predicate as `visible` closes that;
+        // a static attribute here is exactly the regression this pins against.
         const tag = inputTag('company_name');
 
-        expect(hasAttribute(tag, 'required')).toBe(true);
+        expect(hasAttribute(tag, 'required')).toBe(false);
+        expect(tag).toMatch(/required:\s*isTileCompanySearchActive\(\)/);
         expect(tag).toMatch(/name="payment\[company_name\]"/);
         expect(tag).toMatch(/value:\s*companyName\b/);
     });
 
-    test('company_name is still the only required input in the payment form', () => {
+    test('company_name is still the only input whose required state jQuery Validation would enforce', () => {
         // Pins what `$(formSelector).valid()` enforces. The number is
         // deliberately not a validatable input at all any more.
         const markup = withoutComments(readTemplate());
 
-        // Every spelling jQuery Validation would honour, not just
-        // `required="true"`: a bare `required`, `required="required"`, and the
+        // Every spelling jQuery Validation would honour: a bare `required`,
+        // `required="required"`, a bound `required:` in `attr`, and the
         // `data-validate` form all count.
         const requiredInputs = (markup.match(/<input\b[^>]*>/g) || []).filter(function (tag) {
             return (
                 hasAttribute(tag, 'required') ||
+                /\brequired:\s*[A-Za-z_$]/.test(tag) ||
                 /data-validate\s*=\s*["'][^"']*required/.test(tag)
             );
         });
