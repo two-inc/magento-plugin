@@ -784,6 +784,16 @@ abstract class Order
      * happen — both cases are real, just at different points in the same
      * conversion.
      *
+     * Matches on amount, not identity: the first applied rate whose
+     * implied tax reconciles the residual wins, with no proof that rate
+     * specifically produced this residual rather than some other taxable
+     * amount on the order. On an order with several distinct tax classes
+     * this is a real (if narrow) way to attribute the wrong tax_rate/
+     * tax_class_name to the residual — two rates would have to coincide
+     * with the same net/tax split for that to happen. The emitted
+     * gross/net/tax amounts stay correct either way; only the reported
+     * rate label could be wrong.
+     *
      * @param OrderModel|OrderModel\Invoice|OrderModel\Creditmemo $entity
      * @return float|null The verified rate as a percent (e.g. 20.0), or
      *                     null if no applied rate reconciles the residual.
