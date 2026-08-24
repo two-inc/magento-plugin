@@ -141,13 +141,10 @@ dependency that way and relying on DI to fill it in gets you a silent
 `bin/magento dev:di:info <class>` reports it as `"_vn_": "string 1"`
 (value null) instead of `"_i_"` (instance); that is the check.
 
-`Service\Order::$orderTaxManagement` is declared optional for constructor
-BC and named explicitly in `etc/di.xml` on the abstract parent, which all
-four `Compose*` subclasses inherit. `Service\Order::$feeLineProviderPool`
-is the same shape but has no `etc/di.xml` argument, so it resolves to null
-in production and its `?? new FeeLineProviderPool([])` fallback — an empty
-pool — is what actually runs; the registered `AmastyExtraFee` provider
-never fires.
+`Service\Order::$orderTaxManagement` and `Service\Order::$feeLineProviderPool`
+are both declared optional for constructor BC and both named explicitly in
+`etc/di.xml` on the abstract parent, which all four `Compose*` subclasses
+inherit.
 
 ## The plugin never derives a tax rate from amounts
 
@@ -158,18 +155,29 @@ rule declares, and Two validates the declared rate against the line's own
 amounts.
 
 Product lines read `tax_percent` off the item. Shipping has no such column,
-so `getTaxRateShipping()` reads the shipping-typed item out of
-`OrderTaxManagementInterface::getOrderTaxDetails()` and sums its applied
-taxes. Nothing declared and no shipping tax charged is 0% — a store whose
-shipping is untaxed records no tax row at all, and 0% is a statement rather
-than a guess. Nothing declared but tax charged is the only narrow path that
-consults the "Default Shipping Tax Rate" admin field, and with that unset
-the order is refused rather than given an assumed rate.
+so `getTaxRateShipping()` reads the shipping-typed entry out of the order's
+`item_applied_taxes` extension attribute and sums its applied taxes, falling
+back to `OrderTaxManagementInterface::getOrderTaxDetails()`. The extension
+attribute is what makes this work at PLACEMENT time: composition runs from
+`Two::authorize()` inside `Order::place()`, before the order is saved, so it
+has no entity id and the `sales_order_tax_item` rows the management interface
+reads do not exist yet. That interface stays the source for the post-save
+consumers (capture, refund).
+
+Nothing declared and no shipping tax charged is 0% — a store whose shipping
+is untaxed records no tax row at all, and 0% is a statement rather than a
+guess. Nothing declared but tax charged consults the "Default Shipping Tax
+Rate" admin field, and with that unset the order is refused rather than
+given an assumed rate.
 
 `validateTaxReconciliation()` closes the same loop at composition time: a
-line whose declared tax does not follow from its own declared rate and net,
-within 0.02 currency units, declines the checkout with a generic buyer
-notice. It never corrects the numbers.
+line whose declared tax does not follow from its own declared rate and net
+declines the checkout with a generic buyer notice. It never corrects the
+numbers. The tolerance is not a flat 0.02 — it carries a per-unit term for
+the "Unit Price" tax algorithm (which rounds per unit and sums) and a small
+fraction-of-net term, and a discounted line may reconcile against
+`net + discount` as well as `net`, because "Before Discount" tax calculation
+taxes the undiscounted base.
 
 ## DI registration scope for Structure / Config Reader plugins
 

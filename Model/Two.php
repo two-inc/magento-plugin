@@ -695,7 +695,7 @@ class Two extends AbstractMethod
 
         $this->addStatusToOrderHistory($order, $comment->render());
         $this->lifecycleEvents->dispatchCompleted($order, [
-            'fulfilled_order_id' => $response['fulfilled_order']['id'],
+            'fulfilled_order_id' => $response['fulfilled_order']['id'] ?? null,
             'partial' => !empty($response['remained_order']),
         ]);
     }
@@ -848,8 +848,12 @@ class Two extends AbstractMethod
         // method unofferable, nothing more. It used to throw out of
         // SurchargeCalculator::convertAmount() inside the totals collector, so
         // every collectTotals() with the method already selected errored the
-        // whole checkout. Fail closed here instead, the same stance an
-        // unprojectable platform minimum takes, and placement re-checks it.
+        // whole checkout. Withdraw the method here instead. The gate is only
+        // as strong as the currency it can resolve: with no concrete quote or
+        // no currency code it cannot judge, and offers the method — which is
+        // why assertSurchargeResolvable() re-checks at placement, where the
+        // order's own currency is available. An unresolvable rate therefore
+        // fails at submit rather than at render, never silently.
         //
         // Placed BEFORE the Amasty bypass for the same reason the api-key check
         // is: the bypass defers only the MINIMUM-ORDER gate to the client, and
@@ -1055,7 +1059,8 @@ class Two extends AbstractMethod
 
     /**
      * Whether the surcharge for a quote's currency can be priced at all —
-     * see SurchargeCalculator::isSurchargeResolvable().
+     * see SurchargeCalculator::isSurchargeResolvable(). True when there is no
+     * currency to judge by; assertSurchargeResolvable() is the backstop.
      */
     private function isSurchargeResolvable(?CartInterface $quote, ?int $storeId): bool
     {

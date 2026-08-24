@@ -1843,13 +1843,14 @@ define([
          * companySearch.lookupCompanyAddress(). This method adds no gate of
          * its own.
          *
-         * Never on placement. "Enable company search in address entry"
-         * (`enable_company_search`) decides WHERE the search control is
-         * mounted, and where a merchant put the control is not an answer to
-         * whether they want the address filled — so the tile picker and the
-         * address-area picker now obey the same single setting. Under the
-         * previous placement gate a merchant with search in the payment tile
-         * got no autofill at all, "Autofill company address" notwithstanding.
+         * Where the control SITS never gates it. "Enable company search in
+         * address entry" (`enable_company_search`) decides where the search
+         * control is mounted, and where a merchant put the control is not an
+         * answer to whether they want the address filled — so the tile picker
+         * and the address-area picker obey the same single setting. Under the
+         * previous location-based gate a merchant with search in the payment
+         * tile got no autofill at all, "Autofill company address"
+         * notwithstanding.
          */
         addressLookup: function (selectedCompany) {
             // Scoped like the sole-trader write-back, and for the same reason:
@@ -1868,11 +1869,14 @@ define([
          *
          * @param {object} [options]
          * @param {boolean} [options.openDropdown] open the picker as soon as
-         *        the widget is bound. Set only by the "Search for company"
-         *        link: returning to search mode should land the buyer in the
-         *        search box, not on a closed picker they must click again.
-         *        Leave it off for the initial render, where popping a dropdown
-         *        open unasked would steal focus from the payment form.
+         *        the widget is bound, passed straight through to the control's
+         *        own bind(). Left off on every route through this file: the
+         *        initial render and a retired sole-trader option are not the
+         *        buyer asking to search, and popping a dropdown open there
+         *        steals focus from the payment form. The in-dropdown "Search
+         *        for company" link opens its own picker inside
+         *        company-search-control.js rather than coming back through
+         *        here.
          */
         enableCompanySearch: function (options) {
             // TWO-25326 §7.1: don't bind the tile's own live search widget
@@ -2171,12 +2175,8 @@ define([
 
         /**
          * @param {object} [options]
-         * @param {boolean} [options.openDropdown] land the buyer in an open
-         *        search box. Set only by the chip: the other two callers are
-         *        the tile's own initialiser and a billing-country change that
-         *        retired the sole-trader option, and neither is the buyer
-         *        asking to search — popping a dropdown open there would steal
-         *        focus from whatever they were doing.
+         * @param {boolean} [options.openDropdown] passed straight to
+         *        enableCompanySearch() — see there.
          */
         registeredOrganisationMode(options) {
             this.leaveSoleTraderMode();

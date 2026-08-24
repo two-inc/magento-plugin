@@ -116,6 +116,28 @@ class LifecycleEventDispatcherTest extends TestCase
     }
 
     /**
+     * The created event fires during placement, before the order has an
+     * entity id. Multishipping places several orders in one request, so
+     * without a second key every order after the first would be deduped away.
+     */
+    public function testUnsavedOrdersAreDistinguishedByIncrementId(): void
+    {
+        $events = $this->makeEventManager();
+        $dispatcher = new LifecycleEventDispatcher($events, $this->createMock(LogRepository::class));
+
+        $first = new Order();
+        $first->setData('increment_id', '100000001');
+        $second = new Order();
+        $second->setData('increment_id', '100000002');
+
+        $dispatcher->dispatchCreated($first);
+        $dispatcher->dispatchCreated($second);
+        $dispatcher->dispatchCreated($first);
+
+        $this->assertCount(2, $events->dispatched);
+    }
+
+    /**
      * A broken third-party observer must not turn a successful refund (or
      * fulfilment, or cancellation) into an error the merchant sees.
      */

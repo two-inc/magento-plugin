@@ -281,7 +281,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
 
         $this->addStatusToOrderHistory($order, $comment->render());
         $this->lifecycleEvents->dispatchCompleted($order, [
-            'fulfilled_order_id' => $response['fulfilled_order']['id'],
+            'fulfilled_order_id' => $response['fulfilled_order']['id'] ?? null,
             'partial' => !empty($response['remained_order']),
         ]);
     }

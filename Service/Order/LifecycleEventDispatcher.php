@@ -90,7 +90,11 @@ class LifecycleEventDispatcher
      */
     private function dispatch(string $event, Order $order, array $twoData): void
     {
-        $key = $event . ':' . (string)$order->getEntityId();
+        // Increment id when there is no entity id yet: the created event
+        // fires during placement, and under multishipping one request places
+        // several orders — keyed on a null entity id they would all collapse
+        // into the first one's slot.
+        $key = $event . ':' . (string)($order->getEntityId() ?: $order->getIncrementId());
         if (isset($this->dispatched[$key])) {
             return;
         }

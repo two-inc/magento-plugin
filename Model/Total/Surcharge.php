@@ -190,9 +190,10 @@ class Surcharge extends AbstractTotal
             ?: $quote->getStore()->getBaseCurrencyCode();
 
         // TWO-25503: a missing FX rate is a per-METHOD failure, not a checkout
-        // failure. The calculator used to throw here and, because collectTotals
-        // runs on every quote change with the method still selected, that made
-        // checkout unrecoverable rather than merely making Two unusable.
+        // failure. Unguarded, the calculate() call below threw out of its own
+        // convertAmount() and, because collectTotals runs on every quote change
+        // with the method still selected, that made checkout unrecoverable
+        // rather than merely making Two unusable.
         // Two::isAvailable() withdraws the method on the same condition, and
         // Two::authorize() refuses placement, so clearing the surcharge here
         // cannot leak an unpriced order past the gate.
