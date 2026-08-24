@@ -350,10 +350,13 @@ describe('payment-step company picker (gateway_method.js)', () => {
     });
 
     /**
-     * TWO-25503: autofill is gated on "Autofill company address" alone, never
-     * on where the search control is mounted. With "Enable company search in
-     * address entry" OFF the tile is the control's primary home, and a pick
-     * there must still fill the address.
+     * This module and the renderer add no gate of their own beyond
+     * `config.isAddressSearchEnabled` — the coupling with "Enable company
+     * search in address entry" is enforced upstream, server-side
+     * (Model\Config\Repository::isAddressSearchEnabled, TWO-25503), so the
+     * flag ConfigProvider hands down is already the resolved value. This
+     * fixture sets it `true` directly to pin that the JS layer itself does
+     * not re-derive or second-guess it from `isAddressAreaCompanySearchEnabled`.
      */
     test('still fires the detail call when company search sits in the tile', () => {
         const recorder = makeRecorder();

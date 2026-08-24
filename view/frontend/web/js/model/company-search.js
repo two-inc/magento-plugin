@@ -1801,14 +1801,11 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * first address into the checkout address form.
          *
          * No-op unless `config.isAddressSearchEnabled` is true. That flag is
-         * server-side the single `enable_address_search` admin setting
-         * (Model\Config\Repository::isAddressSearchEnabled), and this gate is
-         * the one both pickers share.
-         *
-         * The payment-tile picker adds a second, positional gate of its own
-         * before calling in — see gateway_method.js::addressLookup(). Do not
-         * move that gate down here: it depends on which picker is asking,
-         * which this model cannot see.
+         * server-side the AND of `enable_address_search` and
+         * `enable_company_search` (Model\Config\Repository::isAddressSearchEnabled,
+         * TWO-25503) — company search relocated to the payment tile retires
+         * the convenience autofill exists for — and this single gate is the
+         * one both pickers share. Neither picker adds a gate of its own.
          *
          * @param {object} config brand config subtree
          * @param {object} selectedCompany select2 result item (needs lookupId)

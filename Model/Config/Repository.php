@@ -525,12 +525,15 @@ class Repository implements RepositoryInterface
      */
     public function isAddressSearchEnabled(?int $storeId = null): bool
     {
-        // Single source of truth for the shared gate (TWO-25202).
-        // `enable_company_search` is deliberately NOT part of this: it decides
-        // where the search control lives (isCompanySearchEnabled). The
-        // payment-tile picker's extra positional condition lives client-side —
-        // see the interface doc comment.
-        return $this->isSetFlag($this->path('enable_address_search'), $storeId);
+        // TWO-25503: `enable_company_search` OFF relocates company search to
+        // the payment tile — it does not disable it — but it retires the
+        // convenience "Autofill company address" exists for, so autofill is
+        // OFF too. Gating the READ, not just the admin save
+        // (AddressSearchToggle), so a row stored before this coupling
+        // existed — or written by config:set/import — can never disagree
+        // with what the admin form shows (matches the PrestaShop resolver).
+        return $this->isCompanySearchEnabled($storeId)
+            && $this->isSetFlag($this->path('enable_address_search'), $storeId);
     }
 
     /**

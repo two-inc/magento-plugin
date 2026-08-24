@@ -360,8 +360,12 @@
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
                     <label>Autofill company address</label>
-                    <comment>Autocomplete address based on selected country and company. Applies wherever the buyer picks a company, whether the search sits in address entry or in the payment method.</comment>
+                    <comment>Autocomplete address based on selected country and company. Unavailable while company search is not in the address entry section — with search relocated to the payment method there is no address step left for it to fill.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\AddressSearchToggle</backend_model>
+                    <depends>
+                        <field id="enable_company_search">1</field>
+                    </depends>
                     <config_path>payment/{{code}}/enable_address_search</config_path>
                 </field>
             </group>

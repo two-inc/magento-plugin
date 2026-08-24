@@ -266,16 +266,13 @@ interface RepositoryInterface
     /**
      * Check if address autocomplete is enabled
      *
-     * Reads `enable_address_search` alone (TWO-25202) and does NOT depend on
-     * `enable_company_search`, which decides WHERE the company-search control
-     * lives (isCompanySearchEnabled).
-     *
-     * This is the shared "may autofill at all" answer, not the whole rule.
-     * The payment-tile picker applies a second, positional condition
-     * client-side — the tile does not autofill when it is the control's
-     * primary home, because the buyer has already completed the address step
-     * by then. See gateway_method.js::addressLookup(). Keep that condition
-     * there: it turns on which picker is asking, which this method cannot see.
+     * `enable_address_search` ANDed with `enable_company_search` (TWO-25503):
+     * `enable_company_search` OFF relocates the company-search control to the
+     * payment tile rather than disabling search, but it retires the
+     * convenience this setting exists for, so autofill is forced off with it.
+     * The stored value is also pinned off on save
+     * (Model\Config\Backend\AddressSearchToggle) — this AND is belt-and-
+     * suspenders for a row stored before the coupling existed.
      *
      * @param int|null $storeId
      *

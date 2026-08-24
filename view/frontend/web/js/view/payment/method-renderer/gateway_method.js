@@ -1837,20 +1837,19 @@ define([
         /**
          * Fill the billing address form from a picked company.
          *
-         * TWO-25503: address autofill is gated on its own dedicated admin
-         * setting alone — "Autofill company address" (`enable_address_search`
-         * → isAddressSearchEnabled), applied inside
+         * Gated entirely by `isAddressSearchEnabled`, applied inside
          * companySearch.lookupCompanyAddress(). This method adds no gate of
-         * its own.
+         * its own: the tile picker and the address-area picker obey the same
+         * single, already-resolved flag.
          *
-         * Where the control SITS never gates it. "Enable company search in
-         * address entry" (`enable_company_search`) decides where the search
-         * control is mounted, and where a merchant put the control is not an
-         * answer to whether they want the address filled — so the tile picker
-         * and the address-area picker obey the same single setting. Under the
-         * previous location-based gate a merchant with search in the payment
-         * tile got no autofill at all, "Autofill company address"
-         * notwithstanding.
+         * That flag is itself the AND of "Autofill company address"
+         * (`enable_address_search`) and "Enable company search in address
+         * entry" (`enable_company_search`) — see
+         * Model\Config\Repository::isAddressSearchEnabled(), TWO-25503.
+         * Company search relocating to the payment tile (the latter OFF)
+         * retires the convenience autofill exists for, so a merchant running
+         * search from the tile gets no autofill either, regardless of the
+         * dedicated setting.
          */
         addressLookup: function (selectedCompany) {
             // Scoped like the sole-trader write-back, and for the same reason:

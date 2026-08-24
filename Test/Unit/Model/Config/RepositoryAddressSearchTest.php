@@ -16,12 +16,11 @@ use Two\Gateway\Model\Provenance;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
- * TWO-25202: this method reads `enable_address_search` alone. That is the
- * shared gate, not the whole feature rule — TWO-25326 added a positional
- * condition for the payment-tile picker in gateway_method.js::addressLookup(),
- * client-side and deliberately not here.
- * `enable_company_search` keeps its own separate job (the shipping-step
- * company-search widget) and must not influence address lookup.
+ * TWO-25503: `isAddressSearchEnabled()` is the AND of `enable_address_search`
+ * and `enable_company_search`. `enable_company_search` OFF relocates company
+ * search to the payment tile rather than disabling it, but it retires the
+ * convenience "Autofill company address" exists for, so autofill is forced
+ * off with it.
  */
 class RepositoryAddressSearchTest extends TestCase
 {
@@ -67,10 +66,10 @@ class RepositoryAddressSearchTest extends TestCase
      */
     public static function toggleCombinationsProvider(): array
     {
-        // company, address, expected — expected always tracks address.
+        // company, address, expected — expected is the AND of the two.
         return [
             'both on' => [true, true, true],
-            'company off, address on' => [false, true, true],
+            'company off, address on' => [false, true, false],
             'company on, address off' => [true, false, false],
             'both off' => [false, false, false],
         ];
@@ -79,7 +78,7 @@ class RepositoryAddressSearchTest extends TestCase
     /**
      * @dataProvider toggleCombinationsProvider
      */
-    public function testIsAddressSearchEnabledFollowsAddressFlagAlone(
+    public function testIsAddressSearchEnabledIsTheAndOfBothFlags(
         bool $company,
         bool $address,
         bool $expected
@@ -92,14 +91,19 @@ class RepositoryAddressSearchTest extends TestCase
         $this->assertSame($expected, $this->repository->isAddressSearchEnabled());
     }
 
-    public function testIsAddressSearchEnabledNeverReadsTheCompanySearchFlag(): void
+    /**
+     * Short-circuits on the company flag: a stale/junk `enable_address_search`
+     * row never gets read once company search is not in the address area,
+     * matching the PrestaShop resolver's "gate the read" approach.
+     */
+    public function testIsAddressSearchEnabledNeverReadsTheAddressFlagWhenCompanySearchIsOff(): void
     {
         $this->scopeConfig->expects($this->once())
             ->method('isSetFlag')
-            ->with(self::ADDRESS_PATH, ScopeInterface::SCOPE_STORE, null)
-            ->willReturn(true);
+            ->with(self::COMPANY_PATH, ScopeInterface::SCOPE_STORE, null)
+            ->willReturn(false);
 
-        $this->assertTrue($this->repository->isAddressSearchEnabled());
+        $this->assertFalse($this->repository->isAddressSearchEnabled());
     }
 
     public function testIsCompanySearchEnabledStillReadsItsOwnFlag(): void
