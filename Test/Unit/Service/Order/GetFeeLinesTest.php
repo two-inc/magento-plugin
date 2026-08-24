@@ -9,11 +9,9 @@ use Two\Gateway\Service\Order;
 
 /**
  * Order::getFeeLines() is a thin passthrough to the injected
- * FeeLineProviderPool. The null-coalescing "no pool means an empty one"
- * default lives ONLY in __construct() — this test injects a real (empty)
- * pool via reflection to exercise the same real-world shape a caller going
- * through the constructor gets, rather than duplicating the default in the
- * getter itself.
+ * FeeLineProviderPool. This test injects a pool via reflection rather than
+ * the constructor, since Order is abstract and this double skips the
+ * constructor entirely (see setUp()).
  */
 class GetFeeLinesTest extends TestCase
 {
@@ -54,8 +52,6 @@ class GetFeeLinesTest extends TestCase
 
     public function testEmptyPoolReturnsNoLines(): void
     {
-        // Mirrors the constructor's default when nothing is registered in
-        // etc/di.xml (the current, zero-provider state).
         $this->injectPool(new FeeLineProviderPool([]));
 
         $this->assertSame([], $this->orderService->getFeeLines(new \stdClass()));

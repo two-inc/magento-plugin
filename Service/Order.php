@@ -84,7 +84,7 @@ abstract class Order
      * @param Emulation $appEmulation
      * @param Url $url
      * @param LogRepository $logRepository
-     * @param FeeLineProviderPool|null $feeLineProviderPool
+     * @param FeeLineProviderPool $feeLineProviderPool
      */
     public function __construct(
         Image $imageHelper,
@@ -94,7 +94,7 @@ abstract class Order
         Emulation $appEmulation,
         Url $url,
         LogRepository $logRepository,
-        ?FeeLineProviderPool $feeLineProviderPool = null
+        FeeLineProviderPool $feeLineProviderPool
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -103,25 +103,19 @@ abstract class Order
         $this->appEmulation = $appEmulation;
         $this->url = $url;
         $this->logRepository = $logRepository;
-        // Nullable + defaulted: keeps every existing getMockForAbstractClass()
-        // test (constructor skipped) and any direct instantiation working
-        // without having to know about this dependency.
-        $this->feeLineProviderPool = $feeLineProviderPool ?? new FeeLineProviderPool([]);
+        $this->feeLineProviderPool = $feeLineProviderPool;
     }
 
     /**
      * Fee lines from registered FeeLineProviderInterface implementations
-     * (see Api\Fee\FeeLineProviderInterface). Empty by default — no
-     * providers are registered in etc/di.xml yet.
+     * (see Api\Fee\FeeLineProviderInterface).
      *
      * @param OrderModel|OrderModel\Invoice|OrderModel\Creditmemo $entity
      * @return array[]
      */
     public function getFeeLines($entity): array
     {
-        // The null-coalescing default lives ONLY in __construct() (single
-        // source of truth for "no pool injected means an empty one"). A
-        // test double built via getMockForAbstractClass() with the
+        // A test double built via getMockForAbstractClass() with the
         // constructor skipped must inject a pool via reflection before
         // calling this — see Test/Unit/Service/Order/GetFeeLinesTest.php.
         return $this->feeLineProviderPool->getFeeLines($entity);
