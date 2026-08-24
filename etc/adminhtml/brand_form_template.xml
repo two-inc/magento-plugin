@@ -527,7 +527,7 @@
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
                     <label>Fulfilment order status</label>
-                    <comment>If fulfilment trigger is On Completion, select one or more order statuses which can trigger fulfilment.</comment>
+                    <comment model="Two\Gateway\Model\Config\Comment\FulfillOrderStatus"/>
                     <source_model>Two\Gateway\Model\Config\Source\FulfillOrderStatus</source_model>
                     <depends>
                         <field id="fulfill_trigger">complete</field>

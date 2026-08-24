@@ -427,10 +427,10 @@
                     <source_model>Two\Gateway\Model\Config\Source\FulfillTrigger</source_model>
                     <config_path>payment/two_payment/fulfill_trigger</config_path>
                 </field>
-                <field id="fulfill_order_status" translate="label comment" type="multiselect" sortOrder="20" showInDefault="1"
+                <field id="fulfill_order_status" translate="label" type="multiselect" sortOrder="20" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Fulfilment order status</label>
-                    <comment><![CDATA[If fulfilment trigger is On Completion, select one or more order statuses which can trigger fulfilment. <strong>Leave this empty and no order status triggers fulfilment, so Two is never notified that an order was fulfilled.</strong>]]></comment>
+                    <comment model="Two\Gateway\Model\Config\Comment\FulfillOrderStatus"/>
                     <source_model>Two\Gateway\Model\Config\Source\FulfillOrderStatus</source_model>
                     <depends>
                         <field id="fulfill_trigger">complete</field>
