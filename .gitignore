@@ -23,7 +23,6 @@ composer.lock
 
 # Local dev config
 .env
-.env.local
 .frpc.pid
 
 # Python

@@ -3,7 +3,6 @@
 # ==============================================================================
 
 -include .env
--include .env.local
 
 CONTAINER  := magento
 IMAGE      := michielgerritsen/magento-project-community-edition

@@ -167,7 +167,7 @@ For testing integrations that require HTTPS callbacks (e.g. the Two checkout flo
 The proxy needs an `FRP_AUTH_TOKEN` to connect to the FRP server. The `start-proxy.sh` script resolves the token in this order:
 
 1. **Command-line argument:** `./start-proxy.sh <token>`
-2. **Environment variable:** `export FRP_AUTH_TOKEN=<token>` (or set it in `.env.local`)
+2. **Environment variable:** `export FRP_AUTH_TOKEN=<token>` (or set it in `.env`)
 3. **GCP Secret Manager:** falls back to `gcloud secrets versions access latest --secret=FRP_AUTH_TOKEN --project=two-beta`
 
 Edit `frpc.toml` to point at your FRP server, then provide the token via any of the methods above.

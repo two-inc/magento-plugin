@@ -400,7 +400,7 @@ class Repository implements RepositoryInterface
      * Get brand version for checkout page URL decoration.
      *
      * Resolved by Makefile: 'qa' for @two.inc gcloud users, empty otherwise.
-     * Overridable via TWO_BRAND_VERSION in .env.local. Returns empty in
+     * Overridable via TWO_BRAND_VERSION in .env. Returns empty in
      * production — see getBrand().
      *
      * @return string
