@@ -39,13 +39,13 @@ class FeeLineProviderPool
     /**
      * @param FeeLineProviderInterface[] $providers
      * @param LogRepository|null $logRepository Nullable purely for
-     *        hand-instantiated/test convenience (e.g. the empty-pool
-     *        default built inline in Order.php, where a throw/malformed
-     *        line is impossible with zero providers). NOT a "silent
-     *        logging mode" toggle — any real DI-constructed pool gets one
-     *        auto-wired via the existing Api\Log\RepositoryInterface
-     *        preference in etc/di.xml, since di.xml only names the
-     *        `providers` argument explicitly.
+     *        hand-instantiated/test convenience (e.g. an empty pool built
+     *        inline in a test, where a throw/malformed line is impossible
+     *        with zero providers). NOT a "silent logging mode" toggle —
+     *        any real DI-constructed pool gets one auto-wired via the
+     *        existing Api\Log\RepositoryInterface preference in
+     *        etc/di.xml, since di.xml only names the `providers` argument
+     *        explicitly.
      */
     public function __construct(array $providers = [], ?LogRepository $logRepository = null)
     {
