@@ -590,21 +590,28 @@ abstract class Order
      *
      * The PRIMARY mechanism is a registered FeeLineProviderInterface
      * (see getFeeLines() / Api\Fee\FeeLineProviderInterface): a provider
-     * that knows a specific fee's real per-fee tax rate. Callers are
-     * expected to merge getFeeLines() into $lineItems before calling this
-     * method, so this only ever has to reconcile what no provider
-     * recognized.
+     * that knows a specific fee's real per-fee tax rate directly (e.g. by
+     * reading a vendor's own table). Callers are expected to merge
+     * getFeeLines() into $lineItems before calling this method, so this
+     * only ever has to reconcile what no provider recognized.
      *
-     * That means whatever residual reaches here has an UNKNOWN tax
-     * rate — we cannot honestly itemize it without a provider. We only
-     * auto-emit a synthetic line when the residual is genuinely
-     * untaxed (residual tax rounds to zero — a 0% line is always a
-     * valid statement, never a guess). Any residual with a non-zero tax
-     * component is a real fee we can't safely itemize blind: submitting
-     * a blended/guessed tax_rate risks Two's API rejecting the payload
-     * (or worse, silently accepting a wrong VAT rate), so instead this
-     * logs a loud warning and leaves it unreconciled — visibility over
-     * a guess.
+     * The SECONDARY mechanism, for a residual WITH tax that no provider
+     * claimed, is findVerifiedResidualTaxRate(): rather than guess a rate,
+     * it checks whether Magento's own tax engine already vouches for one
+     * (see that method's docblock). This covers any well-behaved
+     * total-collector extension without needing a per-vendor provider —
+     * only an extension that computes its own tax outside Magento's tax
+     * engine still needs a FeeLineProviderInterface.
+     *
+     * Only once BOTH of those come up empty do we fall back further: a
+     * synthetic line is auto-emitted when the residual is genuinely
+     * untaxed (residual tax rounds to zero — a 0% line is always a valid
+     * statement, never a guess). Any remaining residual with a real,
+     * unverifiable non-zero tax component is a fee we can't safely
+     * itemize blind: submitting a blended/guessed tax_rate risks Two's
+     * API rejecting the payload (or worse, silently accepting a wrong VAT
+     * rate), so instead this logs a loud warning and leaves it
+     * unreconciled — visibility over a guess.
      *
      * Returns null when there's nothing to reconcile (or the residual
      * can't be safely reconciled), so an ordinary order never gets a
@@ -636,11 +643,12 @@ abstract class Order
      *                          (products, shipping, surcharge, entity-native
      *                          adjustment lines, and any FeeLineProviderInterface
      *                          output already merged in).
+     * @param OrderModel|OrderModel\Invoice|OrderModel\Creditmemo $entity
      * @param float $grandTotal The entity's own aggregate gross/grand total.
      * @param float $taxTotal The entity's own aggregate tax total.
      * @return array|null
      */
-    public function getOtherChargesLineItem(array $lineItems, float $grandTotal, float $taxTotal): ?array
+    public function getOtherChargesLineItem(array $lineItems, $entity, float $grandTotal, float $taxTotal): ?array
     {
         $knownGross = 0.0;
         $knownTax = 0.0;
@@ -675,15 +683,40 @@ abstract class Order
 
         $residualTax = round($taxTotal - $knownTax, 2);
         if (abs($residualTax) > $epsilon) {
-            // Non-zero tax on an unrecognized residual: we don't know its
-            // real rate. Guessing one is worse than not reconciling —
-            // surface it loudly instead so it can be diagnosed and, if it
-            // recurs, given a real FeeLineProviderInterface.
+            $residualNet = round($residualGross - $residualTax, 2);
+            $verifiedRate = $this->findVerifiedResidualTaxRate($entity, $residualNet, $residualTax, $epsilon);
+            if ($verifiedRate !== null) {
+                return [
+                    'order_item_id' => 'other_charges',
+                    'name' => (string)__('Other charges'),
+                    'description' => (string)__('Other charges'),
+                    'type' => 'OTHER',
+                    'image_url' => '',
+                    'product_page_url' => '',
+                    'gross_amount' => $this->roundAmt($residualGross),
+                    'net_amount' => $this->roundAmt($residualNet),
+                    'tax_amount' => $this->roundAmt($residualTax),
+                    'discount_amount' => '0.00',
+                    'tax_rate' => $this->roundAmt($verifiedRate / 100, 6),
+                    'tax_class_name' => 'VAT ' . $this->roundAmt($verifiedRate) . '%',
+                    'unit_price' => $this->roundAmt($residualNet, 6),
+                    'quantity' => 1,
+                    'quantity_unit' => 'sc',
+                ];
+            }
+
+            // Non-zero tax on an unrecognized residual, and no rate
+            // Magento's own tax engine vouches for reconciles it either:
+            // we don't know its real rate. Guessing one is worse than not
+            // reconciling — surface it loudly instead so it can be
+            // diagnosed and, if it recurs, given a real
+            // FeeLineProviderInterface.
             $this->logRepository->addErrorLog(
                 'UnreconciledOtherCharges',
                 sprintf(
                     'grand_total exceeds sum(line_items) by %.2F with a non-zero tax '
-                    . 'component (%.2F) that no FeeLineProviderInterface recognized. '
+                    . 'component (%.2F) that no FeeLineProviderInterface recognized and '
+                    . 'no applied tax rate on the order reconciles. '
                     . 'Not auto-itemizing an unverified tax rate.',
                     $residualGross,
                     $residualTax
@@ -716,6 +749,62 @@ abstract class Order
     }
 
     /**
+     * Looks for a genuine, Magento-verified tax rate that reconciles a
+     * taxed residual, so a taxed residual doesn't have to be either a
+     * registered FeeLineProviderInterface's job or thrown away
+     * unreconciled.
+     *
+     * Any total-collector extension that correctly integrates with
+     * Magento's tax engine — Magento's own Weee, or a well-built
+     * third-party fee module — registers its tax via the same
+     * `applied_taxes` quote-address total data Magento's own
+     * product/shipping tax uses. Magento copies that onto the order's own
+     * extension attributes during quote-to-order conversion
+     * (Magento\Tax\Model\Quote\ToOrderConverter::afterConvert(), a plugin
+     * on Quote\Address\ToOrder::convert()) — which runs during
+     * QuoteManagement::submitQuote(), well before Order::place() calls
+     * authorize(). So it's already sitting on the in-memory $entity this
+     * class is handed, with no entity_id needed and no vendor coupling:
+     * if a rate Magento itself applied would produce exactly this
+     * residual's tax on this residual's net amount, that rate is real,
+     * not invented.
+     *
+     * Only Order carries this extension attribute (populated from the
+     * quote it was converted from) — Invoice/Creditmemo don't, so this
+     * can't help reconcile a residual on those entities.
+     *
+     * @param OrderModel|OrderModel\Invoice|OrderModel\Creditmemo $entity
+     * @return float|null The verified rate as a percent (e.g. 20.0), or
+     *                     null if no applied rate reconciles the residual.
+     */
+    private function findVerifiedResidualTaxRate($entity, float $residualNet, float $residualTax, float $epsilon): ?float
+    {
+        if (!$entity instanceof OrderModel) {
+            return null;
+        }
+
+        $extensionAttributes = $entity->getExtensionAttributes();
+        $appliedTaxes = $extensionAttributes ? $extensionAttributes->getAppliedTaxes() : null;
+        if (!$appliedTaxes) {
+            return null;
+        }
+
+        foreach ($appliedTaxes as $appliedTax) {
+            $percent = is_array($appliedTax) ? ($appliedTax['percent'] ?? null) : null;
+            if (!$percent) {
+                continue;
+            }
+
+            $impliedTax = round($residualNet * (float)$percent / 100, 2);
+            if (abs($impliedTax - $residualTax) <= $epsilon) {
+                return (float)$percent;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Shared glue for ComposeOrder/ComposeCapture/ComposeRefund: merge any
      * registered FeeLineProviderInterface output into $lineItems, then
      * append the getOtherChargesLineItem() fallback if it has anything to
@@ -735,7 +824,7 @@ abstract class Order
             $lineItems[] = $feeLine;
         }
 
-        $otherCharges = $this->getOtherChargesLineItem($lineItems, $grandTotal, $taxTotal);
+        $otherCharges = $this->getOtherChargesLineItem($lineItems, $entity, $grandTotal, $taxTotal);
         if ($otherCharges) {
             $lineItems[] = $otherCharges;
         }

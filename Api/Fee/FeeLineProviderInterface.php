@@ -11,13 +11,20 @@ namespace Two\Gateway\Api\Fee;
  * Contract for a provider that itemizes ONE specific known third-party
  * fee-type total — a totals-collector amount that bumps grand_total the
  * same way Magento's own shipping total does, without being a quote/order
- * item (e.g. Amasty's "Extra Fee" module) — into real line item(s) with
- * that fee's actual gross/net/tax amounts and tax rate.
+ * item — into real line item(s) with that fee's actual gross/net/tax
+ * amounts and tax rate, by reading that fee directly from the vendor's
+ * own data.
+ *
+ * Only needed for a fee extension that computes its OWN tax outside
+ * Magento's tax engine. An extension that registers its tax with Magento
+ * normally (e.g. via the quote address's `applied_taxes` total data —
+ * Amasty's "Extra Fee" module included) is already reconciled generically
+ * by Order::findVerifiedResidualTaxRate(), with no provider needed. See
+ * that method's docblock.
  *
  * Registered providers run before Order::getOtherChargesLineItem()'s
- * generic residual fallback, so any residual the fallback still has to
- * reconcile is smaller (or gone), and the fallback never has to guess at
- * an unknown fee's real tax rate.
+ * fallback chain, so any residual it still has to reconcile is smaller
+ * (or gone).
  *
  * No providers are registered by default (see etc/di.xml): building one
  * for a specific extension requires that extension's real field/table

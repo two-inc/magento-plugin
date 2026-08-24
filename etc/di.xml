@@ -14,20 +14,23 @@
         implementations, each of which itemizes ONE known third-party
         fee (a totals-collector amount bumping grand_total without a
         quote/order item, e.g. Amasty's "Extra Fee" module) into real
-        line item(s) with that fee's actual tax rate.
+        line item(s) with that fee's actual tax rate, by reading that
+        fee directly from the vendor's own data.
+
+        This is now needed only for a fee extension that computes its
+        own tax WITHOUT registering it with Magento's tax engine —
+        Service\Order::findVerifiedResidualTaxRate() already reconciles
+        any extension that does integrate properly (Amasty's Extra Fee
+        included), with no per-vendor provider required. See that
+        method's docblock.
 
         Add providers here, one <item> per provider, once that
         extension's real field/table names are verified against an
-        actual install, not guessed at. On any order without a given
-        provider's fee, Service\Order::getOtherChargesLineItem() remains
-        the fallback, and only for the genuinely-untaxed case — see its
-        docblock.
+        actual install, not guessed at.
     -->
     <type name="Two\Gateway\Service\Fee\FeeLineProviderPool">
         <arguments>
-            <argument name="providers" xsi:type="array">
-                <item name="amastyExtraFee" xsi:type="object">Two\Gateway\Service\Fee\Provider\AmastyExtraFee</item>
-            </argument>
+            <argument name="providers" xsi:type="array"/>
         </arguments>
     </type>
     <!--

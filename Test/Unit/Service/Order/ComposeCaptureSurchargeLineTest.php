@@ -113,7 +113,7 @@ class ComposeCaptureSurchargeLineTest extends TestCase
         // fixture), invoice.tax_amount = 2.00 (surcharge VAT) — exactly
         // what the real collector leaves behind for a surcharge-only
         // invoice with no product/shipping lines.
-        $result = $this->composeCapture->getOtherChargesLineItem($items, 12.00, 2.00);
+        $result = $this->composeCapture->getOtherChargesLineItem($items, $invoice, 12.00, 2.00);
 
         $this->assertNull($result);
     }

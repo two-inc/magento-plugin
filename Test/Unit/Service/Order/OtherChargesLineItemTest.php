@@ -8,19 +8,23 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Order;
 
 /**
- * SECONDARY fallback reconciliation for any third-party totals-collector
- * amount (e.g. Amasty's "Extra Fee" module) that bumps grand_total the
- * same way Magento's own shipping total does, without being a
- * quote/order item — so it never appears in line_items even though it
- * is included in the aggregate total we report to Two.
+ * Fallback reconciliation for any third-party totals-collector amount
+ * (e.g. Amasty's "Extra Fee" module) that bumps grand_total the same way
+ * Magento's own shipping total does, without being a quote/order item —
+ * so it never appears in line_items even though it is included in the
+ * aggregate total we report to Two.
  *
- * The PRIMARY mechanism is a registered FeeLineProviderInterface with
- * real per-fee knowledge (see FeeLineProviderPoolTest); this fallback
- * only ever sees what no provider recognized, so it does not know the
- * residual's real tax rate. It therefore only auto-emits a synthetic
- * line when the residual is genuinely untaxed (0% is always a valid,
- * honest statement); a residual with a non-zero tax component is
- * logged as a warning and left unreconciled rather than guessed at.
+ * Three tiers, tried in order:
+ *  1. A registered FeeLineProviderInterface with real per-fee knowledge
+ *     (see FeeLineProviderPoolTest) — not exercised here.
+ *  2. findVerifiedResidualTaxRate(): a taxed residual is reconciled using
+ *     a rate Magento's own tax engine already applied to the order (see
+ *     VerifiedResidualTaxRateTest) — most cases in this file pass a
+ *     non-Order entity, which is exactly how this tier no-ops.
+ *  3. The residual is genuinely untaxed (0% is always a valid, honest
+ *     statement) — auto-emitted. Anything left with a real,
+ *     unreconcilable tax component is logged as a warning and left
+ *     unreconciled rather than guessed at.
  *
  * Covers:
  *  (a) an ordinary order/invoice/creditmemo with no untracked total
@@ -28,8 +32,8 @@ use Two\Gateway\Service\Order;
  *      rounding noise);
  *  (b) an untaxed untracked total produces exactly one correctly
  *      computed synthetic line;
- *  (c) a TAXED untracked total is NOT auto-itemized — it's logged and
- *      left for a real FeeLineProviderInterface instead of guessed at.
+ *  (c) a TAXED untracked total that neither tier 1 nor tier 2 can verify
+ *      is NOT auto-itemized — it's logged instead of guessed at.
  */
 class OtherChargesLineItemTest extends TestCase
 {
@@ -75,7 +79,7 @@ class OtherChargesLineItemTest extends TestCase
         ];
 
         // grand_total exactly matches sum(line_items.gross_amount)
-        $result = $this->orderService->getOtherChargesLineItem($lineItems, 150.00, 30.00);
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, new \stdClass(), 150.00, 30.00);
 
         $this->assertNull($result);
     }
@@ -89,7 +93,7 @@ class OtherChargesLineItemTest extends TestCase
         ];
 
         // 0.004 residual is float/rounding noise, not an untracked total.
-        $result = $this->orderService->getOtherChargesLineItem($lineItems, 100.004, 20.00);
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, new \stdClass(), 100.004, 20.00);
 
         $this->assertNull($result);
     }
@@ -108,7 +112,7 @@ class OtherChargesLineItemTest extends TestCase
 
         // sum(gross) = 100.00, sum(tax) = 20.00; drift of 0.04 is within the
         // scaled epsilon of 0.05 for 10 lines.
-        $result = $this->orderService->getOtherChargesLineItem($lineItems, 100.04, 20.00);
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, new \stdClass(), 100.04, 20.00);
 
         $this->assertNull($result);
     }
@@ -121,7 +125,7 @@ class OtherChargesLineItemTest extends TestCase
 
         $lineItems = array_fill(0, 10, $this->productLine('10.00', '2.00'));
 
-        $result = $this->orderService->getOtherChargesLineItem($lineItems, 100.06, 20.00);
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, new \stdClass(), 100.06, 20.00);
 
         $this->assertNotNull($result);
         $this->assertSame('0.06', $result['gross_amount']);
@@ -138,7 +142,7 @@ class OtherChargesLineItemTest extends TestCase
         $lineItems = array_fill(0, 500, $this->productLine('10.00', '2.00'));
 
         // sum(gross) = 5000.00; residual of 1.50 exceeds the 1.00 ceiling.
-        $result = $this->orderService->getOtherChargesLineItem($lineItems, 5001.50, 1000.00);
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, new \stdClass(), 5001.50, 1000.00);
 
         $this->assertNotNull($result);
         $this->assertSame('1.50', $result['gross_amount']);
@@ -153,7 +157,7 @@ class OtherChargesLineItemTest extends TestCase
         // A 0.90 residual is realistic rounding noise for 500 independently
         // rounded lines (well under the uncapped 2.50 bound) and still
         // under the 1.00 ceiling — must not fire.
-        $result = $this->orderService->getOtherChargesLineItem($lineItems, 5000.90, 1000.00);
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, new \stdClass(), 5000.90, 1000.00);
 
         $this->assertNull($result);
     }
@@ -162,7 +166,7 @@ class OtherChargesLineItemTest extends TestCase
     {
         $this->logRepository->expects($this->never())->method('addErrorLog');
 
-        $result = $this->orderService->getOtherChargesLineItem([], 0.0, 0.0);
+        $result = $this->orderService->getOtherChargesLineItem([], new \stdClass(), 0.0, 0.0);
 
         $this->assertNull($result);
     }
@@ -178,7 +182,7 @@ class OtherChargesLineItemTest extends TestCase
         ];
 
         // Simulated tax-exempt untracked fee: gross == net, no tax.
-        $result = $this->orderService->getOtherChargesLineItem($lineItems, 108.50, 0.00);
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, new \stdClass(), 108.50, 0.00);
 
         $this->assertNotNull($result);
         $this->assertSame('other_charges', $result['order_item_id']);
@@ -204,7 +208,7 @@ class OtherChargesLineItemTest extends TestCase
             $this->productLine('100.00', '20.00'),
         ];
 
-        $result = $this->orderService->getOtherChargesLineItem($lineItems, 95.00, 20.00);
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, new \stdClass(), 95.00, 20.00);
 
         $this->assertNull($result);
     }
@@ -229,7 +233,7 @@ class OtherChargesLineItemTest extends TestCase
         $grandTotal = 100.00 + 12.00; // 112.00
         $taxTotal = 20.00 + 2.00;     // 22.00
 
-        $result = $this->orderService->getOtherChargesLineItem($lineItems, $grandTotal, $taxTotal);
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, new \stdClass(), $grandTotal, $taxTotal);
 
         $this->assertNull($result);
     }
@@ -243,7 +247,7 @@ class OtherChargesLineItemTest extends TestCase
         ];
 
         // Residual tax of 0.004 rounds to 0.00 — still the safe, untaxed case.
-        $result = $this->orderService->getOtherChargesLineItem($lineItems, 112.00, 20.004);
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, new \stdClass(), 112.00, 20.004);
 
         $this->assertNotNull($result);
         $this->assertSame('0.00', $result['tax_amount']);
