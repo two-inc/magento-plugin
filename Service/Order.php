@@ -590,6 +590,17 @@ abstract class Order
      * combined rate (e.g. state + city) reports as the single rate the buyer
      * was charged, matching how getTaxRateItem() reads tax_percent.
      *
+     * Two sources, in this order:
+     *
+     * 1. The order's own `item_applied_taxes` extension attribute. At
+     *    PLACEMENT time (ComposeOrder, reached from Two::authorize() inside
+     *    Order::place(), before the order is ever saved) this is the only
+     *    source that exists — the sales_order_tax_item rows are written by
+     *    Magento\Tax\Model\Plugin\OrderSave on save, and the order has no
+     *    entity id yet to read them by.
+     * 2. sales_order_tax_item via OrderTaxManagementInterface, for the
+     *    post-save consumers (ComposeCapture, ComposeRefund).
+     *
      * @param OrderModel|CreditmemoModel $entity
      * @return float|null
      */
@@ -597,9 +608,16 @@ abstract class Order
     {
         // A creditmemo/invoice relays its parent order's declared rate —
         // a refund does not re-derive tax.
-        $orderId = method_exists($entity, 'getOrder') && $entity->getOrder()
-            ? (int)$entity->getOrder()->getId()
-            : (int)$entity->getId();
+        $order = method_exists($entity, 'getOrder') && $entity->getOrder()
+            ? $entity->getOrder()
+            : $entity;
+
+        $percent = $this->getAppliedShippingTaxPercent($order);
+        if ($percent !== null) {
+            return $percent;
+        }
+
+        $orderId = (int)$order->getId();
         if ($orderId <= 0) {
             return null;
         }
@@ -620,6 +638,49 @@ abstract class Order
             }
             foreach ($taxItem->getAppliedTaxes() ?? [] as $appliedTax) {
                 $percent = ($percent ?? 0.0) + (float)$appliedTax->getPercent();
+            }
+        }
+
+        return $percent;
+    }
+
+    /**
+     * Shipping tax percentage off the order's own `item_applied_taxes`
+     * extension attribute, or NULL when it carries no shipping entry.
+     *
+     * Two element shapes, both handled: nested arrays before the order is
+     * saved (Magento\Tax\Model\Quote\ToOrderConverter builds them during
+     * quote->order conversion) and OrderTaxDetailsItemInterface objects
+     * after it (Magento\Sales\Model\OrderRepository repopulates the same
+     * attribute on load).
+     *
+     * @param OrderModel|CreditmemoModel $order
+     * @return float|null
+     */
+    private function getAppliedShippingTaxPercent($order): ?float
+    {
+        if (!method_exists($order, 'getExtensionAttributes')) {
+            return null;
+        }
+        $extensionAttributes = $order->getExtensionAttributes();
+        if ($extensionAttributes === null
+            || !method_exists($extensionAttributes, 'getItemAppliedTaxes')) {
+            return null;
+        }
+
+        $percent = null;
+        foreach ($extensionAttributes->getItemAppliedTaxes() ?? [] as $taxItem) {
+            $type = is_array($taxItem) ? ($taxItem['type'] ?? null) : $taxItem->getType();
+            if ($type !== CommonTaxCollector::ITEM_TYPE_SHIPPING) {
+                continue;
+            }
+            $appliedTaxes = is_array($taxItem)
+                ? ($taxItem['applied_taxes'] ?? [])
+                : ($taxItem->getAppliedTaxes() ?? []);
+            foreach ($appliedTaxes as $appliedTax) {
+                $percent = ($percent ?? 0.0) + (float)(
+                    is_array($appliedTax) ? ($appliedTax['percent'] ?? 0) : $appliedTax->getPercent()
+                );
             }
         }
 

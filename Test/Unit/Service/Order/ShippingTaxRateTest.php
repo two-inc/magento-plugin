@@ -209,4 +209,125 @@ class ShippingTaxRateTest extends TestCase
 
         $this->assertSame(0.0, $rate);
     }
+
+    /**
+     * An order composed at PLACEMENT time has no id and no tax rows: it is
+     * still inside Two::authorize(), called from Order::place() before
+     * orderRepository->save(). The rate has to come off the order's own
+     * item_applied_taxes extension attribute, which quote->order conversion
+     * populated, and the persisted read must not even be attempted.
+     *
+     * @dataProvider placementAppliedTaxes
+     */
+    public function testThePlacementPathReadsTheUnsavedOrdersOwnAppliedTaxes(
+        array $itemAppliedTaxes,
+        ?float $expected,
+        string $case
+    ): void {
+        $orderService = $this->getMockForAbstractClass(Order::class, [], '', false);
+        $configRepository = $this->createMock(ConfigRepository::class);
+        // Refuse rather than fall back, so a rate that fails to come off the
+        // extension attribute cannot be masked by the configured default.
+        $configRepository->method('getDefaultShippingTaxRate')->willReturn(null);
+        $orderService->configRepository = $configRepository;
+        $this->setProperty($orderService, 'logRepository', $this->createMock(LogRepository::class));
+
+        $taxManagement = $this->createMock(OrderTaxManagementInterface::class);
+        $taxManagement->expects($this->never())->method('getOrderTaxDetails');
+        $this->setProperty($orderService, 'orderTaxManagement', $taxManagement);
+
+        $entity = $this->unsavedEntity(25.00, $itemAppliedTaxes);
+
+        if ($expected === null) {
+            $this->expectException(LocalizedException::class);
+            $orderService->getTaxRateShipping($entity);
+            return;
+        }
+
+        $this->assertSame($expected, $orderService->getTaxRateShipping($entity), $case);
+    }
+
+    public function placementAppliedTaxes(): array
+    {
+        return [
+            [
+                [['type' => 'shipping', 'applied_taxes' => [['percent' => 25.0]]]],
+                0.25,
+                'single declared shipping rate',
+            ],
+            [
+                [['type' => 'shipping', 'applied_taxes' => [['percent' => 6.0], ['percent' => 2.5]]]],
+                0.085,
+                'combined rates sum to what the buyer paid',
+            ],
+            [
+                [
+                    ['type' => 'product', 'applied_taxes' => [['percent' => 12.0]]],
+                    ['type' => 'shipping', 'applied_taxes' => [['percent' => 25.0]]],
+                ],
+                0.25,
+                'the product-typed entry is not the shipping rate',
+            ],
+            [
+                [['type' => 'product', 'applied_taxes' => [['percent' => 12.0]]]],
+                null,
+                'no shipping entry at all: refused, never the product rate',
+            ],
+        ];
+    }
+
+    /**
+     * An order whose id is null and whose extension attribute carries the
+     * shipping-typed entry from quote->order conversion.
+     */
+    private function unsavedEntity(float $shippingTax, array $itemAppliedTaxes): object
+    {
+        return new class ($shippingTax, $itemAppliedTaxes) {
+            private $shippingTax;
+            private $extensionAttributes;
+
+            public function __construct(float $shippingTax, array $itemAppliedTaxes)
+            {
+                $this->shippingTax = $shippingTax;
+                $this->extensionAttributes = new class ($itemAppliedTaxes) {
+                    private $itemAppliedTaxes;
+
+                    public function __construct(array $itemAppliedTaxes)
+                    {
+                        $this->itemAppliedTaxes = $itemAppliedTaxes;
+                    }
+
+                    public function getItemAppliedTaxes(): array
+                    {
+                        return $this->itemAppliedTaxes;
+                    }
+                };
+            }
+
+            public function getShippingTaxAmount(): float
+            {
+                return $this->shippingTax;
+            }
+
+            public function getExtensionAttributes(): object
+            {
+                return $this->extensionAttributes;
+            }
+
+            public function getId(): ?int
+            {
+                return null;
+            }
+
+            public function getStoreId(): int
+            {
+                return 1;
+            }
+
+            public function getIncrementId(): string
+            {
+                return '100000008';
+            }
+        };
+    }
 }
