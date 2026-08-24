@@ -45,8 +45,9 @@ function loadRenderer() {
                     opened.push({ url: url, target: target, features: features });
                     // A truthy handle, as a browser that did NOT block the
                     // popup returns — the caller reads it to decide whether to
-                    // fall back to the link.
-                    return { closed: false };
+                    // fall back to the link. `close()` because a re-launch
+                    // closes the handle it is replacing.
+                    return { closed: false, close: function () {} };
                 }
             },
             // getAutofillData() base64-encodes the buyer payload. The vm
@@ -262,5 +263,44 @@ describe('sole-trader signup popup (TWO-25461)', () => {
         await expect(noTab.lookupSoleTrader.call(noTab)).resolves.toBeUndefined();
         await expect(noEmail.lookupSoleTrader.call(noEmail)).resolves.toBeUndefined();
         await expect(deduped.lookupSoleTrader.call(deduped)).resolves.toBeUndefined();
+    });
+
+    test('a second chip click while the first lookup is still in flight opens signup once', async () => {
+        // The dedupe key is written synchronously, so the second click used to
+        // resume immediately on a lookup that had recorded nothing and minted
+        // nothing: no adoption, no popup, and no fallback link either, since
+        // that needs the tokens too. It must wait on the outstanding chain.
+        const { component, opened } = loadRenderer();
+        let resolveTokens;
+        let mints = 0;
+        const ctx = makeContext(component, {
+            getTokens: function () {
+                mints += 1;
+                return new Promise((resolve) => {
+                    resolveTokens = resolve;
+                });
+            }
+        });
+
+        const first = ctx.soleTraderMode.call(ctx);
+        const second = ctx.soleTraderMode.call(ctx);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // Still minting. Neither click may have reached a decision yet — a
+        // recorded showPopupMessage() here is the dead end: the second click
+        // resumed on an empty lookup, so it neither opened a popup nor offered
+        // the link.
+        expect(ctx.popupMessageStates).toEqual([]);
+        expect(opened).toEqual([]);
+
+        resolveTokens({ delegation_token: 'dt-1', autofill_token: 'at-1' });
+        await Promise.all([first, second]);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(mints).toBe(1);
+        expect(opened.length).toBeGreaterThan(0);
+        opened.forEach(({ url }) => {
+            expect(new URL(url).searchParams.get('businessToken')).toBe('dt-1');
+        });
     });
 });

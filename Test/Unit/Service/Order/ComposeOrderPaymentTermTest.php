@@ -122,4 +122,101 @@ class ComposeOrderPaymentTermTest extends TestCase
 
         $this->assertSame(30, $payload['terms']['duration_days']);
     }
+
+    /**
+     * A term that is not a number casts to 0 and silently takes the default —
+     * the same swapped contract an unavailable term would be, so it is
+     * refused the same way.
+     */
+    public function testANonNumericSelectionBlocksTheOrder(): void
+    {
+        $composeOrder = $this->makeComposeOrder([14, 30]);
+        $this->logRepository->expects($this->once())->method('addErrorLog');
+
+        $this->expectException(InputException::class);
+        $composeOrder->execute($this->makeOrder(), 'ref', ['selectedTerm' => 'thirty']);
+    }
+
+    /**
+     * The payload's term and the term the surcharge was priced on come from
+     * two independent sources (additionalData vs the session `/select-term`
+     * writes). Placing on one while charging the other one's fee is the
+     * failure mode; a session holding no term cannot cross-check and must not
+     * fail a valid order.
+     *
+     * @dataProvider pricedTerms
+     */
+    public function testTheComposedTermIsCrossCheckedAgainstThePricedTerm(
+        int $pricedTerm,
+        array $additionalData,
+        ?int $expectedDays,
+        string $case
+    ): void {
+        $composeOrder = $this->makeComposeOrder([14, 30]);
+        $this->setSessionTerm($composeOrder, $pricedTerm);
+
+        if ($expectedDays === null) {
+            $this->expectException(InputException::class);
+            $composeOrder->execute($this->makeOrder(), 'ref', $additionalData);
+            return;
+        }
+
+        $payload = $composeOrder->execute($this->makeOrder(), 'ref', $additionalData);
+        $this->assertSame($expectedDays, $payload['terms']['duration_days'], $case);
+    }
+
+    public function pricedTerms(): array
+    {
+        return [
+            [14, ['selectedTerm' => 14], 14, 'both sources agree'],
+            [30, [], 30, 'no selection, priced on the default'],
+            [0, ['selectedTerm' => 14], 14, 'nothing priced: nothing to contradict'],
+            [30, ['selectedTerm' => 14], null, 'priced on one term, composing another'],
+            [14, [], null, 'priced on a term the payload would default away from'],
+        ];
+    }
+
+    /**
+     * @param ComposeOrder|\PHPUnit\Framework\MockObject\MockObject $composeOrder
+     */
+    private function setSessionTerm($composeOrder, int $termDays): void
+    {
+        $session = new class ($termDays) {
+            private $termDays;
+
+            public function __construct(int $termDays)
+            {
+                $this->termDays = $termDays;
+            }
+
+            public function getTwoSelectedTerm(): int
+            {
+                return $this->termDays;
+            }
+
+            public function getTwoSurchargeAmount(): float
+            {
+                return 0.0;
+            }
+
+            public function getTwoSurchargeTax(): float
+            {
+                return 0.0;
+            }
+
+            public function getTwoSurchargeDescription(): string
+            {
+                return '';
+            }
+
+            public function getTwoSurchargeTaxRate(): float
+            {
+                return 0.0;
+            }
+        };
+
+        $property = new \ReflectionProperty(ComposeOrder::class, 'checkoutSession');
+        $property->setAccessible(true);
+        $property->setValue($composeOrder, $session);
+    }
 }

@@ -240,16 +240,33 @@ class ComposeOrder extends OrderService
      * No selection at all is a different case — the checkout simply never
      * sent one, so the default term applies.
      *
-     * @throws InputException when the selected term is no longer available
+     * The term is also cross-checked against the one the SURCHARGE was
+     * priced on. Two independent sources reach placement: the payload's term
+     * comes from `additionalData`, while Model\Total\Surcharge prices the fee
+     * off the session term that `/select-term` writes. A `/select-term` call
+     * that failed mid-flow leaves them disagreeing, and the order would then
+     * be placed on one term carrying the other one's fee. Only enforced when
+     * the session actually holds a term — a cleared session (multi-tab
+     * logout, GC) has nothing to compare and must not fail a valid order.
+     *
+     * @throws InputException when the selected term is unavailable, not
+     *                        numeric, or disagrees with the priced term
      */
     private function getSelectedTermDays(array $additionalData, ?int $storeId = null): int
     {
-        $selected = (int)($additionalData['selectedTerm'] ?? 0);
-        if ($selected <= 0) {
-            return $this->configRepository->getDefaultPaymentTerm($storeId);
+        $raw = $additionalData['selectedTerm'] ?? null;
+        if ($raw !== null && $raw !== '' && !is_numeric($raw)) {
+            // A non-numeric term casts to 0 and silently takes the default —
+            // a changed contract, so refuse it like an unavailable one.
+            $this->logRepository->addErrorLog(
+                'NonNumericPaymentTerm',
+                sprintf('Selected payment term is not numeric for store %d.', (int)$storeId)
+            );
+            throw new InputException(__('Selected payment term is not available.'));
         }
 
-        if (!$this->configRepository->isBuyerTermAvailable($selected, $storeId)) {
+        $selected = (int)$raw;
+        if ($selected > 0 && !$this->configRepository->isBuyerTermAvailable($selected, $storeId)) {
             $this->logRepository->addErrorLog(
                 'UnavailablePaymentTerm',
                 sprintf('Selected payment term %d is not offered for store %d.', $selected, (int)$storeId)
@@ -257,7 +274,23 @@ class ComposeOrder extends OrderService
             throw new InputException(__('Selected payment term is not available.'));
         }
 
-        return $selected;
+        $resolved = $selected > 0 ? $selected : $this->configRepository->getDefaultPaymentTerm($storeId);
+
+        $pricedTerm = (int)$this->checkoutSession->getTwoSelectedTerm();
+        if ($pricedTerm > 0 && $pricedTerm !== $resolved) {
+            $this->logRepository->addErrorLog(
+                'PaymentTermMismatch',
+                sprintf(
+                    'Order composes term %d but the surcharge was priced on term %d for store %d.',
+                    $resolved,
+                    $pricedTerm,
+                    (int)$storeId
+                )
+            );
+            throw new InputException(__('Selected payment term is not available.'));
+        }
+
+        return $resolved;
     }
 
     /**

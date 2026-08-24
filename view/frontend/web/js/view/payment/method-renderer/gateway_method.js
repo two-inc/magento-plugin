@@ -2246,6 +2246,14 @@ define([
          * be blocker-killed, which is what showPopupMessage()'s link fallback
          * is for — but only once the tokens exist, since a link built with an
          * empty businessToken/autofillToken is rejected by the hosted flow.
+         *
+         * That async open is the accepted tradeoff of minting on the click
+         * rather than up front, and it follows PrestaShop, which opens off
+         * the same chained-fetch continuation and backs it with an on-page
+         * prompt. (WooCommerce takes the other side: it mints once per page,
+         * so its open stays inside the gesture. Here the chip click is the
+         * only thing that mints at all — the explicit-click rule above — so
+         * no mint can precede it.)
          */
         soleTraderMode() {
             this.enterSoleTraderUi();
@@ -2265,14 +2273,19 @@ define([
         // recorded result stands.
         //
         // Always returns a promise, including on the skip paths, so a caller
-        // can sequence on the tokens being minted.
+        // can sequence on the tokens being minted. A duplicate call returns
+        // the OUTSTANDING chain rather than a resolved promise: the dedupe key
+        // is set synchronously, so a second click landing mid-flight would
+        // otherwise resume immediately on a lookup that has recorded nothing
+        // and minted nothing — no adoption, no popup, and no link fallback
+        // either, since that needs the tokens too.
         lookupSoleTrader() {
             if (!this.showModeTab()) {
                 return Promise.resolve();
             }
             const email = (this.getEmail() || '').trim();
             if (!email || email === this.soleTraderLookupEmail) {
-                return Promise.resolve();
+                return this._soleTraderLookupChain || Promise.resolve();
             }
             this.soleTraderLookupEmail = email;
             this.soleTraderLookup = { ready: false, buyer: null, matches: false };
@@ -2290,7 +2303,7 @@ define([
             const generation = (this._soleTraderLookupGeneration || 0) + 1;
             this._soleTraderLookupGeneration = generation;
             const isCurrent = () => this._soleTraderLookupGeneration === generation;
-            return this.getTokens()
+            this._soleTraderLookupChain = this.getTokens()
                 .then((json) => {
                     if (!isCurrent()) return null;
                     this.delegationToken = json.delegation_token;
@@ -2312,6 +2325,8 @@ define([
                         this.soleTraderLookupInFlight(false);
                     }
                 });
+
+            return this._soleTraderLookupChain;
         },
 
         // Read the buyer on the Two cookie; resolves to the buyer or null. No
