@@ -208,7 +208,7 @@ describe('the company-capture mode control offers three peer options', function 
 
     test('it holds three chips, in the order the siblings present them', () => {
         expect(control.match(/class="mode_item"/g)).toHaveLength(3);
-        const order = ['Registered Organisation', 'Sole Trader', 'Enter manually'].map(
+        const order = ['Registered company', 'Sole trader', 'Enter manually'].map(
             function (label) {
                 return control.indexOf("i18n: '" + label + "'");
             }
@@ -220,8 +220,8 @@ describe('the company-capture mode control offers three peer options', function 
     });
 
     test.each([
-        ['Registered Organisation', 'registered'],
-        ['Sole Trader', 'soletrader'],
+        ['Registered company', 'registered'],
+        ['Sole trader', 'soletrader'],
         ['Enter manually', 'manual']
     ])('the %s chip is selected by captureMode, never statically', (label, mode) => {
         const chip = chipMarkup(control, label);
@@ -232,15 +232,15 @@ describe('the company-capture mode control offers three peer options', function 
     });
 
     test.each([
-        ['Registered Organisation', 'registeredOrganisationMode({ openDropdown: true })'],
-        ['Sole Trader', 'soleTraderMode()'],
+        ['Registered company', 'registeredOrganisationMode({ openDropdown: true })'],
+        ['Sole trader', 'soleTraderMode()'],
         ['Enter manually', 'manualEntryMode()']
     ])('the %s chip is clickable and calls its own transition', (label, call) => {
         expect(chipMarkup(control, label)).toContain('click: () => ' + call);
     });
 
     test('sole trader is offered only where the registry supports it', () => {
-        expect(chipIsGatedOn(control, 'Sole Trader', 'showModeTab')).toBe(true);
+        expect(chipIsGatedOn(control, 'Sole trader', 'showModeTab')).toBe(true);
     });
 
     test('manual entry is offered only where the tile owns the company field', () => {
@@ -250,9 +250,9 @@ describe('the company-capture mode control offers three peer options', function 
     });
 
     test('registered is offered unconditionally — it is the way out of the other two', () => {
-        expect(chipIsGatedOn(control, 'Registered Organisation', 'showModeTab')).toBe(false);
+        expect(chipIsGatedOn(control, 'Registered company', 'showModeTab')).toBe(false);
         expect(
-            chipIsGatedOn(control, 'Registered Organisation', 'isTileCompanySearchActive()')
+            chipIsGatedOn(control, 'Registered company', 'isTileCompanySearchActive()')
         ).toBe(false);
     });
 
