@@ -217,16 +217,21 @@ class ApiKeyStatus
      * verdict and gates checkout, so a candidate's outcome must never be
      * able to land in it or be served from it.
      *
+     * `$mode` verifies against an environment that is not the stored one —
+     * a sandbox->production switch and the new production key arrive in the
+     * same admin save, and verifying the new key against the old
+     * environment is a guaranteed 401 (TWO-25503).
+     *
      * @return array{status: string, code: int|null, merchant: array<string,mixed>|null}
      */
-    public function verifyCandidate(string $apiKey, ?int $storeId = null): array
+    public function verifyCandidate(string $apiKey, ?int $storeId = null, ?string $mode = null): array
     {
         if ($apiKey === '') {
             return self::notConfigured();
         }
 
         return self::categorize(
-            $this->apiAdapter->execute(self::ENDPOINT, [], 'GET', $storeId, $apiKey)
+            $this->apiAdapter->execute(self::ENDPOINT, [], 'GET', $storeId, $apiKey, $mode)
         );
     }
 

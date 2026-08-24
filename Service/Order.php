@@ -52,6 +52,21 @@ abstract class Order
     private const TAX_FORMULA_TOLERANCE = 0.02;
 
     /**
+     * Per-unit component of the same tolerance, for the "Unit Price" tax
+     * algorithm: Magento rounds each unit's tax and sums, so the line-level
+     * residual is bounded by half a cent per unit.
+     */
+    private const TAX_UNIT_ROUNDING_TOLERANCE = 0.005;
+
+    /**
+     * Fraction-of-net component of the same tolerance. The rate goes on the
+     * wire at 6dp (see the `tax_rate` roundAmt calls), so on a large net the
+     * declared rate's own precision is worth more than a cent. Deliberately
+     * far too small to hide a wrong rate, which is off by whole basis points.
+     */
+    private const TAX_RATE_PRECISION_TOLERANCE = 0.0000005;
+
+    /**
      * @var ConfigRepository
      */
     public $configRepository;
@@ -695,7 +710,8 @@ abstract class Order
      * line's numbers, so an internally-inconsistent line has to stop the
      * checkout: the buyer sees a generic notice and the detail goes to the
      * log. Tolerance is in currency units, the same convention as
-     * getOtherChargesLineItem()'s epsilon.
+     * getOtherChargesLineItem()'s epsilon — see lineTaxTolerance() for what
+     * widens it, and the "before discount" base below.
      *
      * @param array $lineItems Composed payload line items.
      * @return void
@@ -707,9 +723,19 @@ abstract class Order
             $net = (float)($lineItem['net_amount'] ?? 0);
             $tax = (float)($lineItem['tax_amount'] ?? 0);
             $rate = (float)($lineItem['tax_rate'] ?? 0);
+            $tolerance = $this->lineTaxTolerance($lineItem, $net);
 
+            // Under tax/calculation/apply_after_discount = 0 ("Before
+            // Discount") Magento taxes the UNDISCOUNTED base while net_amount
+            // is already net of the discount, so the line reconciles against
+            // net + discount rather than net. Both bases are accepted; the
+            // residual is measured against whichever the line actually used.
+            $discount = abs((float)($lineItem['discount_amount'] ?? 0));
             $discrepancy = abs($tax - $net * $rate);
-            if ($discrepancy <= self::TAX_FORMULA_TOLERANCE) {
+            if ($discount > 0) {
+                $discrepancy = min($discrepancy, abs($tax - ($net + $discount) * $rate));
+            }
+            if ($discrepancy <= $tolerance) {
                 continue;
             }
 
@@ -724,13 +750,37 @@ abstract class Order
                     $net,
                     $net * $rate,
                     $discrepancy,
-                    self::TAX_FORMULA_TOLERANCE
+                    $tolerance
                 )
             );
             throw new LocalizedException(
                 __('This order could not be placed. Please contact the merchant.')
             );
         }
+    }
+
+    /**
+     * Per-line reconciliation tolerance, in currency units.
+     *
+     * TAX_FORMULA_TOLERANCE alone assumes the line's tax was rounded once,
+     * on the line. Under tax/calculation/algorithm = "Unit Price" Magento
+     * rounds per UNIT and sums, so the line-level residual grows with
+     * quantity — up to half a cent per unit. The net-proportional term covers
+     * the declared rate's own 6dp precision, which on a large net is itself
+     * worth more than a cent.
+     *
+     * @param array $lineItem
+     * @param float $net
+     * @return float
+     */
+    private function lineTaxTolerance(array $lineItem, float $net): float
+    {
+        $quantity = max(1.0, (float)($lineItem['quantity'] ?? 1));
+
+        return max(
+            self::TAX_FORMULA_TOLERANCE,
+            self::TAX_UNIT_ROUNDING_TOLERANCE * $quantity
+        ) + self::TAX_RATE_PRECISION_TOLERANCE * abs($net);
     }
 
     /**

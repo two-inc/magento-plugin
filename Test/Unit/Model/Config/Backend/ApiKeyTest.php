@@ -155,7 +155,7 @@ class ApiKeyTest extends TestCase
     ): void {
         $this->apiKeyStatus->expects($this->once())
             ->method('verifyCandidate')
-            ->with(self::CANDIDATE, $expectedStoreId)
+            ->with(self::CANDIDATE, $expectedStoreId, null)
             ->willReturn(['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => null]);
 
         $model = $this->build([
@@ -179,6 +179,59 @@ class ApiKeyTest extends TestCase
             'singular store spelling' => ['store', 7, 7, 'the config layer uses both spellings'],
             'default' => ['default', 0, null, 'the default scope has no store'],
             'website' => ['websites', 3, null, 'website scope stays on the default environment'],
+        ];
+    }
+
+    /**
+     * Switching environment and pasting that environment's key is ONE admin
+     * action. Verifying against the committed mode would call the OLD
+     * environment, get a 401 and fail the whole section save on a key that is
+     * perfectly good.
+     *
+     * @dataProvider submittedModes
+     */
+    public function testTheCandidateIsVerifiedAgainstTheModeBeingSaved(
+        array $fieldsetData,
+        ?string $expectedMode,
+        string $description
+    ): void {
+        $this->apiKeyStatus->expects($this->once())
+            ->method('verifyCandidate')
+            ->with(self::CANDIDATE, null, $expectedMode)
+            ->willReturn(['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => null]);
+
+        $model = $this->build([
+            'value' => self::CANDIDATE,
+            'scope' => 'default',
+            'fieldset_data' => $fieldsetData,
+        ]);
+
+        $model->beforeSave();
+
+        $this->assertSame('encrypted:' . self::CANDIDATE, $model->getValue(), $description);
+    }
+
+    /**
+     * @return array<string, array{0: array, 1: string|null, 2: string}>
+     */
+    public static function submittedModes(): array
+    {
+        return [
+            'switching to production' => [
+                ['mode' => 'production', 'api_key' => self::CANDIDATE],
+                'production',
+                'the environment being saved is the one the key is checked against',
+            ],
+            'switching to sandbox' => [
+                ['mode' => 'sandbox', 'api_key' => self::CANDIDATE],
+                'sandbox',
+                'the same in the other direction',
+            ],
+            'mode inherited, not submitted' => [
+                ['api_key' => self::CANDIDATE],
+                null,
+                'nothing submitted leaves the stored environment to decide',
+            ],
         ];
     }
 }

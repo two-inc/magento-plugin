@@ -80,7 +80,11 @@ class ApiKey extends Encrypted
             return;
         }
 
-        $result = $this->apiKeyStatus->verifyCandidate($candidate, $this->resolveStoreId());
+        $result = $this->apiKeyStatus->verifyCandidate(
+            $candidate,
+            $this->resolveStoreId(),
+            $this->submittedMode()
+        );
 
         // ONLY a definitive upstream rejection aborts the save. An unreachable
         // or erroring service cannot be told apart from a bad key, and blocking
@@ -91,6 +95,23 @@ class ApiKey extends Encrypted
         }
 
         parent::beforeSave();
+    }
+
+    /**
+     * The `mode` value being saved alongside this key, or NULL when the same
+     * request is not setting one.
+     *
+     * Switching environment and pasting that environment's key is ONE admin
+     * action, and the committed mode is still the old one while this runs —
+     * verifying against it rejects a perfectly good key and fails the whole
+     * section save. `mode` is a sibling field in the same group
+     * (two_general/general), so the submitted value is on this model.
+     */
+    private function submittedMode(): ?string
+    {
+        $mode = $this->getFieldsetDataValue('mode');
+
+        return is_string($mode) && $mode !== '' ? $mode : null;
     }
 
     /**
