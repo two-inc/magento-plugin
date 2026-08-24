@@ -143,8 +143,15 @@ const BASE_CONFIG = {
     checkoutApiUrl: 'https://api.example.test',
     companySearchLimit: 50,
     isCompanySearchEnabled: true,
-    isAddressSearchEnabled: true
+    isAddressSearchEnabled: true,
+    orderIntentConfig: {
+        extensionPlatformName: 'magento2',
+        extensionDBVersion: '1.0.0'
+    }
 };
+
+const LOOKUP_URL =
+    'https://api.example.test/companies/v2/company/lookup-abc-123?client=magento2&client_v=1.0.0';
 
 describe('company-search shared module', () => {
     test('processResults carries lookup_id through as lookupId', () => {
@@ -186,7 +193,7 @@ describe('company-search shared module', () => {
 
         expect(recorder.ajax).toHaveLength(1);
         expect(recorder.ajax[0].url).toBe(
-            'https://api.example.test/companies/v2/company/lookup-abc-123'
+            LOOKUP_URL
         );
 
         recorder.doneCallbacks.forEach(function (cb) {
@@ -310,7 +317,7 @@ describe('payment-step company picker (gateway_method.js)', () => {
         ]);
         expect(recorder.ajax).toHaveLength(1);
         expect(recorder.ajax[0].url).toBe(
-            'https://api.example.test/companies/v2/company/lookup-abc-123'
+            LOOKUP_URL
         );
 
         recorder.doneCallbacks.forEach(function (cb) {
@@ -367,7 +374,7 @@ describe('payment-step company picker (gateway_method.js)', () => {
         ]);
         expect(recorder.ajax).toHaveLength(1);
         expect(recorder.ajax[0].url).toBe(
-            'https://api.example.test/companies/v2/company/lookup-abc-123'
+            LOOKUP_URL
         );
 
         recorder.doneCallbacks.forEach(function (cb) {
@@ -446,7 +453,7 @@ describe('shipping-step company picker (address-autocomplete.js)', () => {
 
         expect(recorder.ajax).toHaveLength(1);
         expect(recorder.ajax[0].url).toBe(
-            'https://api.example.test/companies/v2/company/lookup-abc-123'
+            LOOKUP_URL
         );
     });
 
@@ -517,8 +524,8 @@ describe('shipping-step company picker (address-autocomplete.js)', () => {
 
         // Both companies were looked up — the second pick is not skipped.
         expect(recorder.ajax.map(function (call) { return call.url; })).toEqual([
-            'https://api.example.test/companies/v2/company/lookup-abc-123',
-            'https://api.example.test/companies/v2/company/lookup-def-456'
+            LOOKUP_URL,
+            'https://api.example.test/companies/v2/company/lookup-def-456?client=magento2&client_v=1.0.0'
         ]);
 
         // Last write per field is the second company's data, unconditionally.

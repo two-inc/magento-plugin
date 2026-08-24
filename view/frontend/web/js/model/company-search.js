@@ -1559,7 +1559,8 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          *
          * @param {object} options
          * @param {object} options.config brand config subtree; needs
-         *        `checkoutApiUrl` and `companySearchLimit`
+         *        `checkoutApiUrl`, `companySearchLimit` and `orderIntentConfig`
+         *        (for `extensionPlatformName`/`extensionDBVersion`)
          * @param {function(): (string|undefined)} options.getCountryCode
          *        returns the current ISO country code (any case)
          * @param {function(boolean)} [options.onSearching] called with true
@@ -1586,7 +1587,13 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                         country: getCountryCode()?.toUpperCase(),
                         limit: config.companySearchLimit,
                         offset: ((params.page || 1) - 1) * config.companySearchLimit,
-                        q: unescape(params.term)
+                        q: unescape(params.term),
+                        // Identifies the calling plugin to this unauthenticated
+                        // browser-facing endpoint, avoiding a CORS preflight per
+                        // keystroke — same params/source as gateway_method.js's
+                        // order_intent call.
+                        client: config.orderIntentConfig?.extensionPlatformName,
+                        client_v: config.orderIntentConfig?.extensionDBVersion
                     });
                     return `${config.checkoutApiUrl}/companies/v2/company?${queryParams.toString()}`;
                 },
@@ -1813,10 +1820,14 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             if (!selectedCompany || !selectedCompany.lookupId) return null;
 
             const self = this;
+            const queryParams = new URLSearchParams({
+                client: config.orderIntentConfig?.extensionPlatformName,
+                client_v: config.orderIntentConfig?.extensionDBVersion
+            });
             const addressResponse = $.ajax({
                 dataType: 'json',
                 timeout: REQUEST_TIMEOUT_MS,
-                url: `${config.checkoutApiUrl}/companies/v2/company/${selectedCompany.lookupId}`
+                url: `${config.checkoutApiUrl}/companies/v2/company/${selectedCompany.lookupId}?${queryParams.toString()}`
             });
             addressResponse.done(function (response) {
                 if (response && response.addresses && response.addresses.length) {
