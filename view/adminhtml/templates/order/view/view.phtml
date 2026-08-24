@@ -14,17 +14,6 @@
         <div class="admin__page-section-content">
             <div>
                 <table width="100%">
-                    <?php $twoOrderId = $block->getTwoOrderId(); ?>
-                    <?php if ($twoOrderId != ''): ?>
-                        <tr>
-                            <td>
-                                <strong><?= $block->escapeHtml(__('Order ID')); ?></strong>
-                            </td>
-                            <td>
-                                <?= $block->escapeHtml($twoOrderId); ?>
-                            </td>
-                        </tr>
-                    <?php endif; ?>
                     <?php $fulfillments = $block->getTwoOrderFulfillments(); ?>
                     <?php if (!empty($fulfillments['fulfilled_orders'])): ?>
                         <tr>

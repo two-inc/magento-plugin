@@ -81,18 +81,6 @@ class View extends OrderView
     }
 
     /**
-     * Get Two Order ID
-     *
-     * @param array $data
-     *
-     * @return string
-     */
-    public function getTwoOrderId(): string
-    {
-        return $this->getOrder()->getTwoOrderId();
-    }
-
-    /**
      * Get Method from Payment
      *
      * @return string
