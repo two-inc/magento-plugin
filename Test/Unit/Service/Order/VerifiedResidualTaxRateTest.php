@@ -19,6 +19,15 @@ use Two\Gateway\Service\Order;
  * extension (Magento's own Weee, or a third-party fee module like
  * Amasty's Extra Fee that integrates with the tax engine properly) shows
  * up here with no vendor-specific code needed.
+ *
+ * Each entry's shape depends on exactly when it's read: right after the
+ * quote-to-order conversion plugin it's a plain array, but
+ * QuoteManagement::submitQuote() immediately re-merges that converted
+ * order into a fresh one via DataObjectHelper::mergeDataObjects() — which
+ * rehydrates the array into Magento\Tax\Model\Sales\Order\Tax objects
+ * (confirmed live: this is the shape ComposeOrder's $entity actually
+ * carries). Both shapes are covered here — this isn't defensive padding
+ * for a case that can't happen, both are real.
  */
 class VerifiedResidualTaxRateTest extends TestCase
 {
@@ -73,6 +82,29 @@ class VerifiedResidualTaxRateTest extends TestCase
     }
 
     /**
+     * The real-world shape: what ComposeOrder's $entity actually carries
+     * post-mergeDataObjects() (see class docblock), stood in for here by
+     * a minimal object exposing just getPercent() — the only accessor
+     * findVerifiedResidualTaxRate() calls.
+     */
+    private function appliedTaxObject(float $percent): object
+    {
+        return new class ($percent) {
+            private float $percent;
+
+            public function __construct(float $percent)
+            {
+                $this->percent = $percent;
+            }
+
+            public function getPercent(): float
+            {
+                return $this->percent;
+            }
+        };
+    }
+
+    /**
      * @dataProvider verifiedRateScenarioProvider
      */
     public function testTaxedResidualMatchingAnAppliedRateIsItemized(
@@ -110,17 +142,29 @@ class VerifiedResidualTaxRateTest extends TestCase
     public function verifiedRateScenarioProvider(): array
     {
         return [
-            'single applied rate matches exactly' => [
+            'single applied rate matches exactly (array shape)' => [
                 [['percent' => 20]],
                 '0.200000',
                 'VAT 20.00%',
                 'the only applied rate on the order reconciles the residual',
             ],
-            'one of several applied rates matches' => [
+            'one of several applied rates matches (array shape)' => [
                 [['percent' => 5], ['percent' => 20], ['percent' => 17.5]],
                 '0.200000',
                 'VAT 20.00%',
                 'must find the matching rate, not just try the first one',
+            ],
+            'single applied rate matches exactly (object shape)' => [
+                [$this->appliedTaxObject(20)],
+                '0.200000',
+                'VAT 20.00%',
+                'the real-world post-mergeDataObjects() shape ComposeOrder actually sees',
+            ],
+            'one of several applied rates matches (object shape)' => [
+                [$this->appliedTaxObject(5), $this->appliedTaxObject(20), $this->appliedTaxObject(17.5)],
+                '0.200000',
+                'VAT 20.00%',
+                'must find the matching rate among objects too, not just try the first one',
             ],
         ];
     }

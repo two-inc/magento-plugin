@@ -773,6 +773,17 @@ abstract class Order
      * quote it was converted from) — Invoice/Creditmemo don't, so this
      * can't help reconcile a residual on those entities.
      *
+     * Each applied-tax entry's shape depends on exactly when it's read:
+     * right after ToOrderConverter::afterConvert() it's a plain array
+     * (that's all the plugin sets), but QuoteManagement::submitQuote()
+     * immediately re-merges the converted order into a fresh one via
+     * DataObjectHelper::mergeDataObjects() — which rehydrates the array
+     * into Magento\Tax\Model\Sales\Order\Tax objects (confirmed live:
+     * this is what the $entity ComposeOrder actually receives carries).
+     * Handling both shapes isn't defensive padding for a case that can't
+     * happen — both cases are real, just at different points in the same
+     * conversion.
+     *
      * @param OrderModel|OrderModel\Invoice|OrderModel\Creditmemo $entity
      * @return float|null The verified rate as a percent (e.g. 20.0), or
      *                     null if no applied rate reconciles the residual.
@@ -790,7 +801,13 @@ abstract class Order
         }
 
         foreach ($appliedTaxes as $appliedTax) {
-            $percent = is_array($appliedTax) ? ($appliedTax['percent'] ?? null) : null;
+            if (is_array($appliedTax)) {
+                $percent = $appliedTax['percent'] ?? null;
+            } elseif (is_object($appliedTax) && method_exists($appliedTax, 'getPercent')) {
+                $percent = $appliedTax->getPercent();
+            } else {
+                $percent = null;
+            }
             if (!$percent) {
                 continue;
             }
