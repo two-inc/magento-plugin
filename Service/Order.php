@@ -731,9 +731,14 @@ abstract class Order
             // net + discount rather than net. Both bases are accepted; the
             // residual is measured against whichever the line actually used.
             $discount = abs((float)($lineItem['discount_amount'] ?? 0));
+            $base = $net;
             $discrepancy = abs($tax - $net * $rate);
             if ($discount > 0) {
-                $discrepancy = min($discrepancy, abs($tax - ($net + $discount) * $rate));
+                $discountedBaseDiscrepancy = abs($tax - ($net + $discount) * $rate);
+                if ($discountedBaseDiscrepancy < $discrepancy) {
+                    $discrepancy = $discountedBaseDiscrepancy;
+                    $base = $net + $discount;
+                }
             }
             if ($discrepancy <= $tolerance) {
                 continue;
@@ -742,13 +747,13 @@ abstract class Order
             $this->logRepository->addErrorLog(
                 'TaxReconciliationFailed',
                 sprintf(
-                    'Line %s declares tax %.2F but rate %.6F on net %.2F implies %.2F '
+                    'Line %s declares tax %.2F but rate %.6F on base %.2F implies %.2F '
                     . '(off by %.2F, tolerance %.2F).',
                     $lineItem['order_item_id'] ?? 'unknown',
                     $tax,
                     $rate,
-                    $net,
-                    $net * $rate,
+                    $base,
+                    $base * $rate,
                     $discrepancy,
                     $tolerance
                 )

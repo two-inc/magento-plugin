@@ -2284,7 +2284,13 @@ define([
                 return Promise.resolve();
             }
             const email = (this.getEmail() || '').trim();
-            if (!email || email === this.soleTraderLookupEmail) {
+            if (!email) {
+                // Nothing to look up — never hand back an in-flight chain for
+                // a DIFFERENT email, which the caller would wrongly treat as
+                // this (empty) attempt's own result.
+                return Promise.resolve();
+            }
+            if (email === this.soleTraderLookupEmail) {
                 return this._soleTraderLookupChain || Promise.resolve();
             }
             this.soleTraderLookupEmail = email;

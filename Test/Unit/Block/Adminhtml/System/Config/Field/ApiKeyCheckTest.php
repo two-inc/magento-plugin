@@ -213,4 +213,32 @@ class ApiKeyCheckTest extends TestCase
 
         $this->build()->getApiKeyStatus();
     }
+
+    // ── Scope reads the config Form block, not the fieldset ─────────────
+
+    public function testScopeReadsTheConfigFormBlockNotTheElementsFieldset(): void
+    {
+        // addField() sets the element's own form to the fieldset, which
+        // carries no scope — the config Form BLOCK is what the renderer is
+        // bound to via setForm($this) at render time, so getForm() here must
+        // resolve to that block, never the element's.
+        // The stub DataObject's magic getter does not underscore-convert
+        // camelCase like the real one does, so the key here is "scopeId"
+        // (what getScopeId() actually looks up), not "scope_id".
+        $configFormBlock = new \Magento\Framework\DataObject(['scope' => 'stores', 'scopeId' => 3]);
+
+        $block = $this->build();
+        $block->setForm($configFormBlock);
+
+        $this->assertSame('stores', $block->getScope());
+        $this->assertSame(3, $block->getScopeId());
+    }
+
+    public function testScopeDefaultsWhenNoFormIsBound(): void
+    {
+        $block = $this->build();
+
+        $this->assertSame('default', $block->getScope());
+        $this->assertSame(0, $block->getScopeId());
+    }
 }

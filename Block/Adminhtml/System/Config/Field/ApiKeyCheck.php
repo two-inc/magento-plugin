@@ -96,19 +96,22 @@ class ApiKeyCheck extends Field
 
     /**
      * Current Configuration scope (default / websites / stores).
+     *
+     * Not the element's own form — `addField()` sets that to the fieldset,
+     * which carries no scope. The config Form BLOCK is what the renderer
+     * itself is bound to (`AbstractForm::setForm($this)` at render time),
+     * so `$this->getForm()` is the one with `getScope()`/`getScopeId()`.
      */
     public function getScope(): string
     {
-        $element = $this->getData('element');
-        $form = $element ? $element->getForm() : null;
+        $form = $this->getForm();
         $scope = $form ? (string)$form->getScope() : '';
         return $scope !== '' ? $scope : 'default';
     }
 
     public function getScopeId(): int
     {
-        $element = $this->getData('element');
-        $form = $element ? $element->getForm() : null;
+        $form = $this->getForm();
         return $form ? (int)$form->getScopeId() : 0;
     }
 

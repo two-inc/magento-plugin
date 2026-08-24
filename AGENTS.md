@@ -146,13 +146,17 @@ are both declared optional for constructor BC and both named explicitly in
 `etc/di.xml` on the abstract parent, which all four `Compose*` subclasses
 inherit.
 
-## The plugin never derives a tax rate from amounts
+## The order/tax composition path never derives a tax rate from amounts
 
 A line's `tax_rate` is whatever the store's tax engine declared for that
 line, relayed verbatim. `tax / net` is a different statement: rounding,
 combined rates and a discounted base all put the quotient on a rate no tax
 rule declares, and Two validates the declared rate against the line's own
 amounts.
+
+(`Service\Fee\Provider\AmastyExtraFee` derives its own rate this way, but
+that provider requires a persisted order id and never runs from the
+validated placement path — see the DI section below.)
 
 Product lines read `tax_percent` off the item. Shipping has no such column,
 so `getTaxRateShipping()` reads the shipping-typed entry out of the order's
