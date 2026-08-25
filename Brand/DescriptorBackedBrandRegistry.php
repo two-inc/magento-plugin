@@ -46,19 +46,19 @@ class DescriptorBackedBrandRegistry implements BrandRegistryInterface
         return $this->activeBrandResolver->resolve()->getCheckoutUrlTemplate();
     }
 
-    public function getAvailablePaymentTerms(): array
-    {
-        return $this->activeBrandResolver->resolve()->getAvailablePaymentTerms();
-    }
-
-    public function getSurchargeFixedMax(): ?array
-    {
-        return $this->activeBrandResolver->resolve()->getSurchargeFixedMax();
-    }
-
     public function getSurchargeRoundingSteps(): array
     {
         return $this->activeBrandResolver->resolve()->getSurchargeRoundingSteps();
+    }
+
+    public function isIntentApprovedNoticeEnabled(): bool
+    {
+        return $this->activeBrandResolver->resolve()->isIntentApprovedNoticeEnabled();
+    }
+
+    public function getIntentApprovedNotice(): ?string
+    {
+        return $this->activeBrandResolver->resolve()->getIntentApprovedNotice();
     }
 
     public function getSignUpUrl(): string

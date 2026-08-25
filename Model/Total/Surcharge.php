@@ -15,7 +15,11 @@ use Magento\Quote\Model\Quote\Address\Total\AbstractTotal;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Source\SurchargeType;
+use Two\Gateway\Service\Order\MerchantMinimumResolver;
+use Two\Gateway\Service\Order\MinimumOrderGate;
+use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Service\Order\SurchargeCalculator;
+use Two\Gateway\Service\Order\SurchargeTaxCalculator;
 
 /**
  * Quote total collector for the Two payment terms surcharge.
@@ -45,9 +49,29 @@ class Surcharge extends AbstractTotal
     private $surchargeCalculator;
 
     /**
+     * @var SurchargeTaxCalculator
+     */
+    private $surchargeTaxCalculator;
+
+    /**
      * @var LogRepository
      */
     private $logRepository;
+
+    /**
+     * @var MinimumOrderGate
+     */
+    private $minimumOrderGate;
+
+    /**
+     * @var MinimumOrderProvider
+     */
+    private $minimumOrderProvider;
+
+    /**
+     * @var MerchantMinimumResolver
+     */
+    private $merchantMinimumResolver;
 
     /**
      * @var array<string, true> set of payment-method codes (as keys) that
@@ -62,13 +86,21 @@ class Surcharge extends AbstractTotal
         CheckoutSession $checkoutSession,
         ConfigRepository $configRepository,
         SurchargeCalculator $surchargeCalculator,
+        SurchargeTaxCalculator $surchargeTaxCalculator,
         LogRepository $logRepository,
+        MinimumOrderGate $minimumOrderGate,
+        MinimumOrderProvider $minimumOrderProvider,
+        MerchantMinimumResolver $merchantMinimumResolver,
         array $allowedMethods = ['two_payment']
     ) {
         $this->checkoutSession = $checkoutSession;
         $this->configRepository = $configRepository;
         $this->surchargeCalculator = $surchargeCalculator;
+        $this->surchargeTaxCalculator = $surchargeTaxCalculator;
         $this->logRepository = $logRepository;
+        $this->minimumOrderGate = $minimumOrderGate;
+        $this->minimumOrderProvider = $minimumOrderProvider;
+        $this->merchantMinimumResolver = $merchantMinimumResolver;
         $this->allowedMethods = array_fill_keys($allowedMethods, true);
         $this->setCode('two_surcharge');
     }
@@ -111,6 +143,31 @@ class Surcharge extends AbstractTotal
         }
 
         $storeId = (int)$quote->getStoreId();
+
+        // Re-check the same min-order gate that decides whether the payment
+        // method is offered (Two::isAvailable() -> MinimumOrderGate). Totals
+        // recollect on every shipping-method change, so a shipping switch
+        // that drops the basket below the minimum must clear the surcharge
+        // here too — otherwise the payment method disappears from checkout
+        // while the surcharge it introduced keeps being recomputed and
+        // re-applied against the still-selected (but now ineligible) method
+        // on the quote, since nothing else deselects it.
+        $store = $quote->getStore();
+        $baseCurrency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
+        $platformMinimum = $this->minimumOrderProvider->getMinimum($storeId);
+        $merchantMinimum = $this->merchantMinimumResolver->resolve(
+            $paymentMethod,
+            $baseCurrency,
+            $platformMinimum,
+            $storeId
+        );
+        if (!$this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum)) {
+            $this->logRepository->addDebugLog('TotalCollector: skipped (below minimum order)', []);
+            $this->clearSessionSurcharge();
+            $this->clearTotalSurcharge($total, $quote);
+            return $this;
+        }
+
         $surchargeType = $this->configRepository->getSurchargeType($storeId);
 
         if ($surchargeType === SurchargeType::NONE) {
@@ -131,6 +188,20 @@ class Surcharge extends AbstractTotal
         $grandTotal = (float)$total->getGrandTotal();
         $currency = $quote->getQuoteCurrencyCode()
             ?: $quote->getStore()->getBaseCurrencyCode();
+
+        // TWO-25503: a missing FX rate is a per-METHOD failure, not a checkout
+        // failure. Unguarded, the calculate() call below threw out of its own
+        // convertAmount() and, because collectTotals runs on every quote change
+        // with the method still selected, that made checkout unrecoverable
+        // rather than merely making Two unusable.
+        // Two::isAvailable() withdraws the method on the same condition, and
+        // Two::authorize() refuses placement, so clearing the surcharge here
+        // cannot leak an unpriced order past the gate.
+        if (!$this->surchargeCalculator->isSurchargeResolvable((string)$currency, $storeId)) {
+            $this->clearSessionSurcharge();
+            $this->clearTotalSurcharge($total, $quote);
+            return $this;
+        }
 
         $country = $this->resolveBuyerCountry($quote);
 
@@ -192,14 +263,50 @@ class Surcharge extends AbstractTotal
         // contract (Money 2dp / UnitPrice 6dp / Rate 6dp / Quantity 8dp).
         // ComposeOrder / ComposeRefund / ComposeCapture / ComposeShipment
         // do the per-field outbound rounding via roundAmt().
-        $taxRate = $result['tax_rate'] / 100;
-        $taxAmount = round($netAmount * $taxRate, 6);
+        $baseToQuoteRate = (float)$quote->getBaseToQuoteRate() ?: 1.0;
+        $baseNetAmount = round($netAmount / $baseToQuoteRate, 6);
+
+        // Tax: destination-aware via Magento's tax rules engine when a
+        // surcharge Product Tax Class is configured (TWO-25072), else the
+        // legacy flat admin-configured percentage from the pricing result.
+        $surchargeTaxClassId = $this->configRepository->getSurchargeTaxClassId($storeId);
+        if ($surchargeTaxClassId !== null) {
+            try {
+                $taxResult = $this->surchargeTaxCalculator->calculateForQuote(
+                    $quote,
+                    $shippingAssignment,
+                    $netAmount,
+                    $baseNetAmount,
+                    $surchargeTaxClassId,
+                    $storeId
+                );
+            } catch (\Exception $e) {
+                // Same posture as the surcharge calculation above: never
+                // silently zero the tax on unexpected failure — surface a
+                // user-facing error rather than under-charge the buyer.
+                $this->logRepository->addErrorLog('TotalCollector: surcharge tax calculation failed', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+                $this->clearSessionSurcharge();
+                throw new \Magento\Framework\Exception\LocalizedException(
+                    __('Unable to calculate payment terms surcharge. Please try again in a moment.'),
+                    $e
+                );
+            }
+            $taxAmount = round($taxResult['tax_amount'], 6);
+            $baseTaxAmount = round($taxResult['base_tax_amount'], 6);
+            $taxRatePercent = (float)$taxResult['tax_rate'];
+        } else {
+            $taxRatePercent = (float)$result['tax_rate'];
+            $taxAmount = round($netAmount * $taxRatePercent / 100, 6);
+            $baseTaxAmount = round($taxAmount / $baseToQuoteRate, 6);
+        }
+
         $grossAmount = round($netAmount + $taxAmount, 6);
 
         // Convert to base currency for base_* fields (order totals/tax reports)
-        $baseToQuoteRate = (float)$quote->getBaseToQuoteRate() ?: 1.0;
-        $baseGrossAmount = round($grossAmount / $baseToQuoteRate, 6);
-        $baseTaxAmount = round($taxAmount / $baseToQuoteRate, 6);
+        $baseGrossAmount = round($baseNetAmount + $baseTaxAmount, 6);
 
         $total->setGrandTotal($grandTotal + $grossAmount);
         $total->setBaseGrandTotal((float)$total->getBaseGrandTotal() + $baseGrossAmount);
@@ -212,13 +319,12 @@ class Surcharge extends AbstractTotal
         // collector runs on every shipping/address change, and a clobber on
         // a speculative pass (no items, no two_payment, etc.) would zero a
         // valid value set by an earlier pass for the placement address.
-        $baseNetAmount = round($netAmount / $baseToQuoteRate, 6);
         $total->setData('two_surcharge_amount', $netAmount);
         $total->setData('base_two_surcharge_amount', $baseNetAmount);
         $total->setData('two_surcharge_tax_amount', $taxAmount);
         $total->setData('base_two_surcharge_tax_amount', $baseTaxAmount);
         $total->setData('two_surcharge_description', $result['description']);
-        $total->setData('two_surcharge_tax_rate', $result['tax_rate']);
+        $total->setData('two_surcharge_tax_rate', $taxRatePercent);
 
         // Note: setData/setTitle/setValue on $total here doesn't propagate to
         // segment building. Magento's TotalsReader::fetch() builds fresh Total
@@ -231,7 +337,7 @@ class Surcharge extends AbstractTotal
         $this->checkoutSession->setTwoSurchargeTax($taxAmount);
         $this->checkoutSession->setTwoSurchargeGross($grossAmount);
         $this->checkoutSession->setTwoSurchargeDescription($result['description']);
-        $this->checkoutSession->setTwoSurchargeTaxRate($result['tax_rate']);
+        $this->checkoutSession->setTwoSurchargeTaxRate($taxRatePercent);
 
         $this->logRepository->addDebugLog('TotalCollector: applied', [
             'net' => $netAmount,

@@ -19,6 +19,11 @@
         <column xsi:type="decimal" name="base_two_surcharge_invoiced" scale="6" precision="20" nullable="true" comment="Two Surcharge Invoiced (base currency)"/>
         <column xsi:type="decimal" name="two_surcharge_refunded" scale="6" precision="20" nullable="true" comment="Two Surcharge Refunded (order currency)"/>
         <column xsi:type="decimal" name="base_two_surcharge_refunded" scale="6" precision="20" nullable="true" comment="Two Surcharge Refunded (base currency)"/>
+        <column xsi:type="varchar" name="two_invoice_id" nullable="true" length="255" comment="Two invoice id (from fulfilments response), used for self-invoice upload"/>
+        <column xsi:type="varchar" name="two_invoice_upload_status" nullable="true" length="32" comment="Two self-invoice upload status: NOT_APPLICABLE/UPLOADING/UPLOADED/FAILED"/>
+        <column xsi:type="varchar" name="two_invoice_upload_reference" nullable="true" length="255" comment="Two self-invoice upload reference (from signed-URL step)"/>
+        <column xsi:type="timestamp" name="two_invoice_uploaded_at" nullable="true" comment="Two self-invoice upload completion timestamp"/>
+        <column xsi:type="text" name="two_invoice_upload_error" nullable="true" comment="Two self-invoice upload last error message"/>
     </table>
     <table name="quote">
         <column xsi:type="decimal" name="two_surcharge_amount" scale="6" precision="20" nullable="true" comment="Two Surcharge Amount (quote currency, net)"/>

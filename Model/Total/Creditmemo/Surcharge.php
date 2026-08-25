@@ -115,7 +115,7 @@ class Surcharge extends AbstractTotal
 
         // Grand total gets the surcharge net plus the tax delta. The base
         // surcharge VAT is already in tax_amount via Magento's native tax
-        // propagation (re-adding the full VAT was the ABN-443 double-count);
+        // propagation (re-adding the full VAT was the surcharge-VAT double-count);
         // we only move the Tax line and grand total by the override delta so
         // both stay consistent with the surcharge actually refunded.
         $creditmemo->setGrandTotal((float)$creditmemo->getGrandTotal() + $amount + $taxDelta);

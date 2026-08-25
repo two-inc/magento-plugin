@@ -15,40 +15,45 @@
         <payment>
             <two_payment>
                 <active>1</active>
-                <!--
-                    When a brand overlay (e.g. ABN_Gateway) is installed
-                    alongside Two_Gateway, hide the `two_payment` admin
-                    config section by default. Merchants who want both
-                    parent-brand and overlay-brand payment methods
-                    configurable in admin can disable the hide:
-                      bin/magento config:set payment/two_payment/hide_when_overlay_installed 0
-                      bin/magento cache:flush
-                    Has no effect when no overlay is registered.
-                -->
-                <hide_when_overlay_installed>1</hide_when_overlay_installed>
-                <version>2.1.2</version>
+                <version>2.2.1</version>
                 <title>Two - Buy Now Pay Later on Invoice Terms</title>
                 <sort_order>-10</sort_order>
                 <mode>sandbox</mode>
                 <invoice_type>FUNDED_INVOICE</invoice_type>
                 <merchant_minimum_order_basis>gross</merchant_minimum_order_basis>
-                <days_on_invoice>14</days_on_invoice>
                 <finalize_purchase>1</finalize_purchase>
                 <enable_order_intent>1</enable_order_intent>
-                <enable_invoice_emails>0</enable_invoice_emails>
+                <enable_invoice_emails>1</enable_invoice_emails>
                 <enable_tax_subtotals>1</enable_tax_subtotals>
                 <fulfill_trigger>shipment</fulfill_trigger>
                 <fulfill_order_status>complete</fulfill_order_status>
                 <enable_company_search>1</enable_company_search>
                 <enable_address_search>1</enable_address_search>
                 <enable_department>1</enable_department>
-                <enable_order_note>0</enable_order_note>
+                <enable_order_note>1</enable_order_note>
                 <enable_project>1</enable_project>
-                <enable_po_number>0</enable_po_number>
+                <enable_po_number>1</enable_po_number>
+                <vendor_site_name/>
+                <subtitle/>
+                <!-- TWO-25386: show_about_link defaults ON. display_tooltips
+                     default ON preserves Magento's prior behaviour — the optional
+                     checkout field inputs rendered their title-attribute
+                     tooltip unconditionally before this flag existed. -->
+                <show_about_link>1</show_about_link>
+                <display_tooltips>1</display_tooltips>
+                <skip_confirm_nonce_check>0</skip_confirm_nonce_check>
+                <clear_settings_on_uninstall>0</clear_settings_on_uninstall>
+                <!-- TWO-25386: default OFF — TLS verification ON/secure. -->
+                <disable_ssl_verify>0</disable_ssl_verify>
                 <payment_terms_type>standard</payment_terms_type>
                 <payment_terms_duration_days/>
                 <payment_terms>14,30,60,90</payment_terms>
-                <default_payment_term>30</default_payment_term>
+                <!-- No static default: the merchant API's due_in_days seeds the
+                     admin field's default (see the DefaultPaymentTerm
+                     frontend_model), and an empty stored value lets the runtime
+                     resolver tell "admin never chose" from "admin chose", so an
+                     explicit admin choice is never silently overridden by the
+                     API (TWO-24859). -->
                 <surcharge_type>none</surcharge_type>
                 <surcharge_differential>0</surcharge_differential>
                 <surcharge_line_description>Payment terms fee - %1 days</surcharge_line_description>
@@ -68,9 +73,16 @@
             flips the default to 1 in lockstep with a brand overlay's
             data-only release (which deletes the overlay's renderer-bootstrap
             JS). Design v6 §16.3 specifies these as per-layer debugging
-            knobs, not a rollback mechanism. Layers shipped in
-            subsequent PRs (payment_xml, csp, admin_form) will add
-            their own siblings here.
+            knobs, not a rollback mechanism.
+
+            Admin-form synthesis deliberately has NO flag here: its
+            gate was removed in magento-plugin PR #181 (the admin-tab-
+            vanishes bug) after
+            an `isSetFlag` read during a cold-cache admin request
+            no-op'd the plugin and poisoned the Structure cache.
+            Synthesis of the per-brand admin Configuration section is
+            unconditional; see
+            Plugin/Magento/Config/Model/Config/Structure/Reader/SynthesiseBrandAdminForm.php.
         -->
         <two_brand_synthesis>
             <checkout_renderers>
@@ -83,24 +95,19 @@
                 <enabled>0</enabled>
             </csp>
             <!--
-                Layer C/3: per-brand admin Configuration section
-                synthesis. While enabled, the Structure\Reader plugin
-                clones the etc/adminhtml/brand_form_template.xml,
-                stamps in each brand's identity, and appends a section
-                per brand. Skips any brand whose intended section id
-                already exists statically (so a brand whose overlay
-                module still ships its own etc/adminhtml/system.xml
-                stays on the static surface — first-writer-wins).
-                Default 1 since the brand overlay strip-down: the
-                overlay no longer ships its own system.xml, so synthesis
-                is the sole source of the per-brand admin tab. Flip to
-                0 only to debug — vanilla Two installs have no overlay
-                brands registered, so synthesis is a no-op for them
-                regardless.
+                `two_brand_synthesis/hide_payment_section/enabled` is
+                deliberately NOT declared here. It is a rollout switch
+                (hide the vanilla two_* admin sections when a brand
+                overlay is installed), moved out of the merchant-owned
+                `payment/two_payment/` namespace by TWO-25191. Its
+                default (1 = hide) lives in
+                Plugin/Config/Structure/HidePaymentSection.php so that
+                an unset value stays distinguishable from an explicit
+                `0` — which is what lets that class fall back to the
+                legacy `payment/two_payment/hide_when_overlay_installed`
+                path for merchants who set it before the move.
+                Declaring a default here would break that fallback.
             -->
-            <admin_form>
-                <enabled>1</enabled>
-            </admin_form>
         </two_brand_synthesis>
     </default>
 </config>

@@ -84,7 +84,7 @@ class MerchantMinimumOrder extends Value
 
         $normalised = str_replace(',', '.', $value);
         if (!is_numeric($normalised) || (float)$normalised < 0) {
-            throw new LocalizedException(__('Minimum Order Value must be a non-negative number.'));
+            throw new LocalizedException(__('Minimum order value must be a non-negative number.'));
         }
         $this->setValue($normalised);
 
@@ -124,7 +124,7 @@ class MerchantMinimumOrder extends Value
                 $platformMinimum['currency']
             );
             throw new LocalizedException(__(
-                'Minimum Order Value must be at least the platform minimum of %1, %2 tax.',
+                'Minimum order value must be at least the platform minimum of %1, %2 tax.',
                 $floorDisplay === $nativeDisplay ? $floorDisplay : sprintf('%s (%s)', $floorDisplay, $nativeDisplay),
                 $platformMinimum['basis'] === 'gross' ? __('including') : __('excluding')
             ));

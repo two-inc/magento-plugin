@@ -14,16 +14,46 @@ use Two\Gateway\Api\BrandOverlayRegistryInterface;
 
 /**
  * Hide every vanilla Two_Gateway admin config section (`two_general`,
- * `two_payment`, `two_search`, `two_version`) when:
- *   - At least one brand overlay (e.g. ABN_Gateway) is registered, AND
- *   - `payment/two_payment/hide_when_overlay_installed` resolves to truthy.
+ * `two_checkout_fields`, `two_search`, `two_payment`,
+ * `two_order_management`, `two_version` — TWO-25386's A-F regroup:
+ * General/Checkout Fields/Company Lookup/Payment Terms/Order
+ * Management/Diagnostics) when:
+ *   - At least one brand overlay (e.g. Overlay_Gateway) is registered, AND
+ *   - `two_brand_synthesis/hide_payment_section/enabled` resolves to truthy.
  *
  * Both conditions default to true on overlay-installed merchants
- * (registry populated by overlay DI, config default = 1). Merchants
- * who want the parent-brand admin surfaces back can opt out with:
+ * (registry populated by overlay DI, flag default = 1). Merchants
+ * who want the parent-brand admin surfaces back can opt out by adding
+ * the value to `app/etc/env.php` (or `app/etc/config.php`) and flushing:
  *
- *     bin/magento config:set payment/two_payment/hide_when_overlay_installed 0
+ *     'system' => ['default' => ['two_brand_synthesis' =>
+ *         ['hide_payment_section' => ['enabled' => 0]]]]
+ *
  *     bin/magento cache:flush
+ *
+ * NOTE: `bin/magento config:set` does NOT work for this path, and never
+ * did for its predecessor either — `config:set`/`config:show` validate
+ * the path against the admin `system.xml` structure, and this flag has
+ * no admin field by design. Verified on Magento 2.4.6:
+ * `The "..." path doesn't exist. Verify and try again.` The old docblock
+ * and `etc/config.xml` comment both advertised a `config:set` recipe
+ * that could not have worked. A `core_config_data` row inserted by hand
+ * is the other route that ScopeConfig honours.
+ *
+ * The flag used to live at `payment/two_payment/hide_when_overlay_installed`
+ * (TWO-25191 moved it). That namespace is merchant-owned — every other
+ * key under it is a real merchant setting with an admin field — whereas
+ * this is a deploy/rollout switch, so it belongs next to the other
+ * `two_brand_synthesis` rollout knobs.
+ *
+ * Neither path carries an `etc/config.xml` default: the default lives in
+ * DEFAULT_HIDE below, so an absent (null) value is distinguishable from
+ * an explicit `0`, which is what makes the legacy-path fallback in
+ * `shouldHide()` work at all. Read order is new path, then legacy path,
+ * then DEFAULT_HIDE — so an install that set the old path before the move
+ * keeps its choice. The LEGACY_HIDE_FLAG_PATH read can be deleted once
+ * the brand-synthesis rollout completes and any remaining
+ * `core_config_data` / env.php entries on the old path are migrated.
  *
  * Plugs into `Section::isVisible()` rather than `Structure::getElement()`.
  * The sidebar render path iterates `Structure::getTabs()` and per-tab
@@ -44,8 +74,17 @@ use Two\Gateway\Api\BrandOverlayRegistryInterface;
  */
 class HidePaymentSection
 {
-    private const HIDE_FLAG_PATH = 'payment/two_payment/hide_when_overlay_installed';
-    private const TARGET_SECTIONS = ['two_general', 'two_payment', 'two_search', 'two_version'];
+    private const HIDE_FLAG_PATH = 'two_brand_synthesis/hide_payment_section/enabled';
+    private const LEGACY_HIDE_FLAG_PATH = 'payment/two_payment/hide_when_overlay_installed';
+    private const DEFAULT_HIDE = true;
+    private const TARGET_SECTIONS = [
+        'two_general',
+        'two_checkout_fields',
+        'two_search',
+        'two_payment',
+        'two_order_management',
+        'two_version',
+    ];
 
     public function __construct(
         private readonly BrandOverlayRegistryInterface $overlayRegistry,
@@ -77,6 +116,17 @@ class HidePaymentSection
         if (!$this->overlayRegistry->isOverlayInstalled()) {
             return false;
         }
-        return (bool)$this->scopeConfig->getValue(self::HIDE_FLAG_PATH);
+
+        foreach ([self::HIDE_FLAG_PATH, self::LEGACY_HIDE_FLAG_PATH] as $path) {
+            $value = $this->scopeConfig->getValue($path);
+            // Only an ABSENT value falls through to the next path. `0` is a
+            // deliberate merchant opt-out and must win over the legacy read
+            // and over DEFAULT_HIDE alike.
+            if ($value !== null && $value !== '') {
+                return (bool)$value;
+            }
+        }
+
+        return self::DEFAULT_HIDE;
     }
 }

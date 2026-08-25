@@ -79,6 +79,69 @@ if (!interface_exists(\Magento\Framework\App\CacheInterface::class, false)) {
 if (!class_exists(\Magento\Framework\Serialize\Serializer\Json::class, false)) {
     require_once __DIR__ . '/Stubs/JsonSerializer.php';
 }
+// Tax rules engine API surface (TaxCalculationInterface, QuoteDetails*
+// data objects and their factories) with real signatures — required so
+// SurchargeTaxCalculator tests get functioning factories/data bags
+// instead of empty catch-all stubs. NoSuchEntityException must extend
+// LocalizedException/\Exception to be throwable, so this loads after
+// the LocalizedException stub above.
+if (!interface_exists(\Magento\Tax\Api\TaxCalculationInterface::class, false)) {
+    require_once __DIR__ . '/Stubs/LocalizedException.php';
+    require_once __DIR__ . '/Stubs/TaxEngine.php';
+}
+// Quote total-collection surface (AbstractTotal with typed collect()
+// signature, Total data bag, checkout Session magic bag) — required so
+// Model\Total\Surcharge can be instantiated and collected in tests.
+if (!class_exists(\Magento\Quote\Model\Quote\Address\Total::class, false)) {
+    require_once __DIR__ . '/Stubs/QuoteTotals.php';
+}
+// Config backend-model base class (Model/Config/Backend/* beforeSave
+// validation) — extends the DataObject stub, so loads after it.
+if (!class_exists(\Magento\Framework\App\Config\Value::class, false)) {
+    require_once __DIR__ . '/Stubs/ConfigValue.php';
+}
+
+// Admin AJAX controller surface (backend action + JSON result/factory) and
+// the encrypted config backend base class, which extends the Value stub
+// above; per-symbol guards live inside the stub file.
+require_once __DIR__ . '/Stubs/AdminAjaxController.php';
+// Admin scope-resolution collaborators for config source models
+// (request params, store manager, Product Tax Class option source);
+// per-symbol guards live inside the stub file.
+require_once __DIR__ . '/Stubs/AdminScope.php';
+
+// Admin system-config field renderer surface, so Block/Adminhtml/System/
+// Config/Field/* can be constructed and their real _getElementHtml() bodies
+// exercised. Loads after the DataObject stub, which the element extends.
+require_once __DIR__ . '/Stubs/AdminConfigField.php';
+
+// Self-invoice-upload collaborators (Status\History/HistoryFactory,
+// OrderRepositoryInterface, SearchCriteriaBuilder, Pdf\Invoice) for
+// Service/Invoice/UploadService.php and Cron/ProcessInvoiceUploads.php;
+// per-symbol guards live inside the stub file.
+require_once __DIR__ . '/Stubs/InvoiceUpload.php';
+
+// Config\Structure\Converter (real convert() signature), Module\Dir (real
+// getDir() + MODULE_ETC_DIR) and Psr\Log\LoggerInterface (real PSR-3
+// methods) — needed so SynthesiseBrandAdminFormProviderTokenTest can mock
+// specific methods; the catch-all below creates method-less stubs, which
+// PHPUnit cannot configure via ->method(). Per-symbol guards live inside
+// the stub file.
+require_once __DIR__ . '/Stubs/ConfigStructureSynthesisFixtures.php';
+
+// Order-tax read surface (OrderTaxManagementInterface + its data
+// interfaces, CommonTaxCollector's item-type constants) with real
+// signatures, so the shipping tax rate Magento declares is mockable;
+// per-symbol guards live inside the stub file.
+require_once __DIR__ . '/Stubs/OrderTax.php';
+
+// URL builder with a real getUrl() (mock target) so ComposeOrder's
+// merchant_urls construction is exercisable; per-symbol guard lives inside.
+require_once __DIR__ . '/Stubs/FrameworkUrl.php';
+
+// Payment-method base class with a real isAvailable() and a declared
+// $_scopeConfig, so Model\Two's availability gates are testable.
+require_once __DIR__ . '/Stubs/PaymentMethod.php';
 
 // Catch-all autoloader for remaining Magento classes/interfaces.
 // Creates empty stubs so that type hints, extends, and implements resolve.

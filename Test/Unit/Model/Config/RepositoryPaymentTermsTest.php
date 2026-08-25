@@ -12,6 +12,8 @@ use Magento\Tax\Model\Calculation as TaxCalculation;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Config\Repository;
+use Two\Gateway\Model\Provenance;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 
 class RepositoryPaymentTermsTest extends TestCase
 {
@@ -20,6 +22,9 @@ class RepositoryPaymentTermsTest extends TestCase
 
     /** @var TaxCalculation|\PHPUnit\Framework\MockObject\MockObject */
     private $taxCalculation;
+
+    /** @var SettingsProvider|\PHPUnit\Framework\MockObject\MockObject */
+    private $settingsProvider;
 
     /** @var Repository */
     private $repository;
@@ -35,13 +40,20 @@ class RepositoryPaymentTermsTest extends TestCase
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
         $brandRegistry->method('getCode')->willReturn('two_payment');
 
+        // Unstubbed getDefaultTerm() returns null, so the default-term
+        // tests below exercise the config-based fallback; the API-default
+        // cases stub it explicitly.
+        $this->settingsProvider = $this->createMock(SettingsProvider::class);
+
         $this->repository = new Repository(
             $this->scopeConfig,
             $this->createMock(EncryptorInterface::class),
             $this->createMock(UrlInterface::class),
             $this->createMock(ProductMetadataInterface::class),
             $this->taxCalculation,
-            $brandRegistry
+            $brandRegistry,
+            $this->settingsProvider,
+            $this->createMock(Provenance::class)
         );
     }
 
@@ -178,7 +190,7 @@ class RepositoryPaymentTermsTest extends TestCase
 
     public function testGetDefaultPaymentTermPreselectsSingleAvailableTermDespiteStaleDefault(): void
     {
-        // ABN-439: with a single available term, that term must always be the
+        // With a single available term, that term must always be the
         // default (and therefore preselected), even if a stale
         // default_payment_term points at a term that's no longer available.
         $this->stubConfig([
@@ -199,6 +211,49 @@ class RepositoryPaymentTermsTest extends TestCase
             'payment/two_payment/payment_terms_duration_days' => '',
         ]);
         $this->assertEquals(30, $this->repository->getDefaultPaymentTerm());
+    }
+
+    public function testGetDefaultPaymentTermAdminChoiceWinsOverApi(): void
+    {
+        // An explicit admin-configured default (when offered) is the
+        // admin's own choice and must NOT be silently overridden by the
+        // merchant's due_in_days (TWO-24859). The API default only seeds
+        // the field when the admin hasn't chosen — see the unset test.
+        $this->settingsProvider->method('getDefaultTerm')->willReturn(90);
+        $this->stubConfig([
+            'payment/two_payment/default_payment_term' => '30',
+            'payment/two_payment/payment_terms' => '30,60,90',
+            'payment/two_payment/payment_terms_duration_days' => '',
+        ]);
+        $this->assertEquals(30, $this->repository->getDefaultPaymentTerm());
+    }
+
+    public function testGetDefaultPaymentTermUsesApiDefaultWhenAdminUnset(): void
+    {
+        // No explicit admin choice (config.xml carries no static default):
+        // fall back to the merchant's due_in_days when it is an offered
+        // term, so a never-touched install matches what the admin field
+        // pre-selects.
+        $this->settingsProvider->method('getDefaultTerm')->willReturn(60);
+        $this->stubConfig([
+            'payment/two_payment/default_payment_term' => '',
+            'payment/two_payment/payment_terms' => '30,60,90',
+            'payment/two_payment/payment_terms_duration_days' => '',
+        ]);
+        $this->assertEquals(60, $this->repository->getDefaultPaymentTerm());
+    }
+
+    public function testGetDefaultPaymentTermIgnoresApiTermOutsideOfferedTerms(): void
+    {
+        // due_in_days is not guaranteed to be an offered term; when it
+        // isn't, fall through (here to the admin-configured default).
+        $this->settingsProvider->method('getDefaultTerm')->willReturn(14);
+        $this->stubConfig([
+            'payment/two_payment/default_payment_term' => '60',
+            'payment/two_payment/payment_terms' => '30,60,90',
+            'payment/two_payment/payment_terms_duration_days' => '',
+        ]);
+        $this->assertEquals(60, $this->repository->getDefaultPaymentTerm());
     }
 
     // ── getSurchargeType ─────────────────────────────────────────────
@@ -243,21 +298,21 @@ class RepositoryPaymentTermsTest extends TestCase
         $this->assertEquals('Extended terms fee', $this->repository->getSurchargeLineDescription());
     }
 
-    // ── getSurchargeTaxRate ──────────────────────────────────────────
+    // ── getCustomSurchargeTaxRate (deprecated flat rate) ─────────────
 
-    public function testGetSurchargeTaxRateReturnsExplicitValue(): void
+    public function testGetCustomSurchargeTaxRateReturnsExplicitValue(): void
     {
         $this->stubConfig(['payment/two_payment/surcharge_tax_rate' => '21']);
-        $this->assertEquals(21.0, $this->repository->getSurchargeTaxRate());
+        $this->assertEquals(21.0, $this->repository->getCustomSurchargeTaxRate());
     }
 
-    public function testGetSurchargeTaxRateExplicitZeroMeansTaxExempt(): void
+    public function testGetCustomSurchargeTaxRateExplicitZeroMeansTaxExempt(): void
     {
         $this->stubConfig(['payment/two_payment/surcharge_tax_rate' => '0']);
-        $this->assertEquals(0.0, $this->repository->getSurchargeTaxRate());
+        $this->assertEquals(0.0, $this->repository->getCustomSurchargeTaxRate());
     }
 
-    public function testGetSurchargeTaxRateFallsBackToDefaultRate(): void
+    public function testGetCustomSurchargeTaxRateFallsBackToDefaultRate(): void
     {
         $this->stubConfig([
             'payment/two_payment/surcharge_tax_rate' => null,
@@ -271,16 +326,86 @@ class RepositoryPaymentTermsTest extends TestCase
             ->with($rateRequest)
             ->willReturn(25.0);
 
-        $this->assertEquals(25.0, $this->repository->getSurchargeTaxRate());
+        $this->assertEquals(25.0, $this->repository->getCustomSurchargeTaxRate());
     }
 
-    public function testGetSurchargeTaxRateReturnsZeroWhenNoTaxRulesConfigured(): void
+    public function testGetCustomSurchargeTaxRateReturnsZeroWhenNoTaxRulesConfigured(): void
     {
         $this->stubConfig([
             'payment/two_payment/surcharge_tax_rate' => null,
             'tax/classes/default_product_tax_class' => null,
         ]);
-        $this->assertEquals(0.0, $this->repository->getSurchargeTaxRate());
+        $this->assertEquals(0.0, $this->repository->getCustomSurchargeTaxRate());
+    }
+
+    // ── hasCustomSurchargeTaxRate ────────────────────────────────────
+
+    public function testHasCustomSurchargeTaxRateTrueForRealValue(): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_tax_rate' => '21.5']);
+        $this->assertTrue($this->repository->hasCustomSurchargeTaxRate());
+    }
+
+    public function testHasCustomSurchargeTaxRateTrueForConfiguredZero(): void
+    {
+        // Falsy-zero guard: a configured rate of 0 is still a real value.
+        $this->stubConfig(['payment/two_payment/surcharge_tax_rate' => '0']);
+        $this->assertTrue($this->repository->hasCustomSurchargeTaxRate());
+    }
+
+    public function testHasCustomSurchargeTaxRateFalseWhenUnset(): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_tax_rate' => null]);
+        $this->assertFalse($this->repository->hasCustomSurchargeTaxRate());
+    }
+
+    public function testHasCustomSurchargeTaxRateFalseForInitialEmptyString(): void
+    {
+        // etc/config.xml ships an empty <surcharge_tax_rate/> node, so an
+        // untouched install reads '' (not null) — that is NOT a real value.
+        $this->stubConfig(['payment/two_payment/surcharge_tax_rate' => '']);
+        $this->assertFalse($this->repository->hasCustomSurchargeTaxRate());
+    }
+
+    // ── getSurchargeTaxClassId ──────────────────────────────────────
+
+    public function testGetSurchargeTaxClassIdReturnsConfiguredClass(): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_tax_class' => '4']);
+        $this->assertSame(4, $this->repository->getSurchargeTaxClassId());
+    }
+
+    public function testGetSurchargeTaxClassIdZeroIsValidNoneSelection(): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_tax_class' => '0']);
+        $this->assertSame(0, $this->repository->getSurchargeTaxClassId());
+    }
+
+    public function testGetSurchargeTaxClassIdNullWhenUnset(): void
+    {
+        $this->stubConfig([]);
+        $this->assertNull($this->repository->getSurchargeTaxClassId());
+    }
+
+    public function testGetSurchargeTaxClassIdNullOnUnselectedPlaceholder(): void
+    {
+        // The source model's placeholder option saves an empty string.
+        $this->stubConfig(['payment/two_payment/surcharge_tax_class' => '']);
+        $this->assertNull($this->repository->getSurchargeTaxClassId());
+    }
+
+    public function testGetSurchargeTaxClassIdNullOnDeprecatedCustomTreatment(): void
+    {
+        // "custom" routes to the deprecated flat-rate path — and must
+        // NEVER int-cast to 0, which would silently mean "None"/untaxed.
+        $this->stubConfig(['payment/two_payment/surcharge_tax_class' => 'custom']);
+        $this->assertNull($this->repository->getSurchargeTaxClassId());
+    }
+
+    public function testGetSurchargeTaxClassIdNullOnUnknownNonNumericToken(): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_tax_class' => 'garbage']);
+        $this->assertNull($this->repository->getSurchargeTaxClassId());
     }
 
     // ── getSurchargeConfig ──────────────────────────────────────────
@@ -299,13 +424,143 @@ class RepositoryPaymentTermsTest extends TestCase
         $this->assertEquals(25.50, $config['limit']);
     }
 
-    public function testGetSurchargeConfigDefaultsToZero(): void
+    public function testGetSurchargeConfigDefaultsAmountsToZeroAndLimitToNull(): void
     {
         $this->stubConfig([]);
         $config = $this->repository->getSurchargeConfig(60);
         $this->assertEquals(0, $config['percentage']);
         $this->assertEquals(0, $config['fixed']);
-        $this->assertEquals(0.0, $config['limit']);
+        // `limit` defaults to NULL, not 0.0 — the two are not interchangeable:
+        // null means "no cap" (uncapped percentage) while 0.0 is a real cap of
+        // zero that suppresses the surcharge. The previous assertEquals(0.0, ...)
+        // passed only because PHP's loose comparison treats null == 0.0.
+        $this->assertNull($config['limit']);
+    }
+
+    /**
+     * A stored zero is a REAL cap and must survive the read verbatim. A cap of
+     * zero clamps the buyer fee to zero; absence is what means uncapped. This
+     * is the assertion that stops the junk guard below being "simplified" into
+     * a truthiness test, which would turn a zero cap into an uncapped
+     * percentage — the overcharge TWO-25289 exists to close.
+     */
+    public function testGetSurchargeConfigRelaysAStoredZeroLimitVerbatim(): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_30_limit' => '0']);
+        $config = $this->repository->getSurchargeConfig(30);
+        $this->assertNotNull($config['limit'], 'a stored zero is a cap, not an absent cap');
+        $this->assertSame(0.0, $config['limit']);
+    }
+
+    /**
+     * Junk in the stored limit reads as ABSENT, never as a cap.
+     *
+     * The admin grid refuses all of these on save, but the row can still be
+     * written by a hand edit, `bin/magento config:set` or a config import.
+     * Before the guard, `abc` cast to a hard cap of 0.0 and suppressed the fee
+     * outright, and `-10` was relayed as a negative cap that the pricing
+     * request is refused for.
+     *
+     * @dataProvider unusableStoredLimits
+     * @param mixed $stored
+     */
+    public function testGetSurchargeConfigTreatsAnUnusableStoredLimitAsAbsent($stored): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_30_limit' => $stored]);
+        $this->assertNull($this->repository->getSurchargeConfig(30)['limit']);
+    }
+
+    /**
+     * @return array<string, array{0: mixed}>
+     */
+    public static function unusableStoredLimits(): array
+    {
+        return [
+            'non-numeric casts to a fee-suppressing zero' => ['abc'],
+            'negative is refused upstream' => ['-10'],
+            'empty string means no limit' => [''],
+            'whitespace-only means no limit' => ['   '],
+            'non-finite breaks serialisation' => ['1e400'],
+        ];
+    }
+
+    /**
+     * A non-scalar stored limit reads as absent WITHOUT attempting a string
+     * cast. The same hand-edit and import routes that can store junk can store
+     * an array, and casting one to string is a PHP warning rather than an
+     * error — so the null result alone does not pin the guard (the cast yields
+     * "Array", which is non-numeric and lands on null anyway). The assertion
+     * that has to hold is that no diagnostic is raised at all.
+     */
+    public function testGetSurchargeConfigTreatsANonScalarStoredLimitAsAbsentWithoutADiagnostic(): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_30_limit' => ['50']]);
+
+        $raised = [];
+        set_error_handler(
+            static function ($severity, $message) use (&$raised) {
+                $raised[] = $message;
+                return true;
+            }
+        );
+        try {
+            $limit = $this->repository->getSurchargeConfig(30)['limit'];
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertNull($limit);
+        $this->assertSame([], $raised, 'a non-scalar limit must not be cast to string');
+    }
+
+    // ── isBuyerTermAvailable ─────────────────────────────────────────
+
+    /**
+     * @dataProvider buyerTermAvailability
+     */
+    public function testIsBuyerTermAvailable(int $termDays, bool $expected, string $case): void
+    {
+        $this->stubConfig([
+            'payment/two_payment/payment_terms' => '14,30',
+            'payment/two_payment/payment_terms_duration_days' => '21',
+        ]);
+
+        $this->assertSame($expected, $this->repository->isBuyerTermAvailable($termDays), $case);
+    }
+
+    public function buyerTermAvailability(): array
+    {
+        return [
+            [14, true, 'a term from the multiselect'],
+            [21, true, 'the custom duration'],
+            [90, false, 'a term the merchant does not offer'],
+            [0, false, 'no term at all'],
+        ];
+    }
+
+    // ── getDefaultShippingTaxRate ────────────────────────────────────
+
+    /**
+     * @dataProvider shippingTaxRateFallbacks
+     */
+    public function testGetDefaultShippingTaxRate($stored, ?float $expected, string $case): void
+    {
+        $this->stubConfig(['payment/two_payment/default_shipping_tax_rate' => $stored]);
+
+        $this->assertSame($expected, $this->repository->getDefaultShippingTaxRate(), $case);
+    }
+
+    public function shippingTaxRateFallbacks(): array
+    {
+        return [
+            ['25', 25.0, 'a configured rate'],
+            ['0', 0.0, 'a declared zero rate is a declaration, not an absence'],
+            [null, null, 'never configured'],
+            ['', null, 'the empty initial config node'],
+            ['abc', null, 'junk from a hand-edited row or config:set'],
+            ['-10', null, 'a negative rate is not a rate'],
+            [['25'], null, 'a non-scalar value'],
+        ];
     }
 
     // ── getPaymentTermsType (retained) ──────────────────────────────

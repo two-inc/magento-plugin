@@ -142,6 +142,26 @@ class AdapterTest extends TestCase
 
         $this->assertEquals(400, $result['error_code']);
         $this->assertStringContainsString('Invalid API response from Two.', $result['error_message']);
+        // The real status is preserved rather than being swallowed by the
+        // catch-all. Callers that categorise failures need it: without a
+        // status, an empty-bodied 5xx is indistinguishable from a transport
+        // failure, so a service outage would be reported to the merchant as
+        // "could not be reached" instead of "the service errored".
+        $this->assertSame(500, $result['http_status']);
+    }
+
+    public function testTransportFailureCarriesNoHttpStatus(): void
+    {
+        // The counterpart to the case above, and the reason it matters: when
+        // no HTTP exchange completes at all, there is no status to report.
+        // The absence of http_status is what distinguishes the two.
+        $this->curl->method('getStatus')
+            ->willThrowException(new \RuntimeException('Error in transfer'));
+
+        $result = $this->adapter->execute('/v1/order', ['amount' => 100]);
+
+        $this->assertEquals(400, $result['error_code']);
+        $this->assertArrayNotHasKey('http_status', $result);
     }
 
     // ── Edge cases ──────────────────────────────────────────────────────
@@ -190,6 +210,63 @@ class AdapterTest extends TestCase
 
         $this->assertEquals(400, $result['error_code']);
         $this->assertEquals('Connection failed', $result['error_message']);
+    }
+
+    // ── TWO-25386: SSL verification toggle ───────────────────────────────
+
+    public function testSslVerificationIsOnByDefault(): void
+    {
+        $this->curl->method('getStatus')->willReturn(200);
+        $this->curl->method('getBody')->willReturn('{}');
+        $this->configRepository->method('isSslVerificationDisabled')->willReturn(false);
+
+        $calls = [];
+        $this->curl->method('setOption')->willReturnCallback(function ($opt, $val) use (&$calls) {
+            $calls[$opt] = $val;
+        });
+
+        $this->adapter->execute('/v1/order', ['amount' => 100]);
+
+        $this->assertSame(2, $calls[CURLOPT_SSL_VERIFYHOST]);
+        $this->assertSame(true, $calls[CURLOPT_SSL_VERIFYPEER]);
+    }
+
+    public function testSslVerificationDisabledWhenToggleIsOn(): void
+    {
+        $this->curl->method('getStatus')->willReturn(200);
+        $this->curl->method('getBody')->willReturn('{}');
+        $this->configRepository->method('isSslVerificationDisabled')->willReturn(true);
+
+        $calls = [];
+        $this->curl->method('setOption')->willReturnCallback(function ($opt, $val) use (&$calls) {
+            $calls[$opt] = $val;
+        });
+
+        $this->adapter->execute('/v1/order', ['amount' => 100]);
+
+        $this->assertSame(0, $calls[CURLOPT_SSL_VERIFYHOST]);
+        $this->assertSame(0, $calls[CURLOPT_SSL_VERIFYPEER]);
+    }
+
+    /**
+     * disable_ssl_verify is store-view-scoped (showInWebsite="1"
+     * showInStore="1" in system.xml), same as the other scoped calls this
+     * method already makes (getMode($storeId), getApiKey($storeId)). The
+     * check must resolve at the caller's store, not default/global scope —
+     * otherwise a store-level override (e.g. to work around a corporate
+     * proxy) is silently ignored.
+     */
+    public function testSslVerificationCheckIsScopedToTheCallersStore(): void
+    {
+        $this->curl->method('getStatus')->willReturn(200);
+        $this->curl->method('getBody')->willReturn('{}');
+
+        $this->configRepository->expects($this->once())
+            ->method('isSslVerificationDisabled')
+            ->with(7)
+            ->willReturn(false);
+
+        $this->adapter->execute('/v1/order', ['amount' => 100], 'POST', 7);
     }
 
     // ── ApiTranslator hook ──────────────────────────────────────────────
@@ -253,5 +330,43 @@ class AdapterTest extends TestCase
         $this->assertSame(502, $result['error_code']);
         $this->assertSame('api_translator', $result['error_source']);
         $this->assertSame('Translator failure', $result['error_message']);
+    }
+
+    /**
+     * @dataProvider apiKeySources
+     */
+    public function testTheAuthenticationHeaderComesFromTheOverrideWhenOneIsGiven(
+        ?string $override,
+        string $expectedKey,
+        string $description
+    ): void {
+        $this->curl->method('getStatus')->willReturn(200);
+        $this->curl->method('getBody')->willReturn('{"id":"abc"}');
+
+        $headers = [];
+        $this->curl->method('addHeader')->willReturnCallback(
+            function ($name, $value) use (&$headers) {
+                $headers[$name] = $value;
+            }
+        );
+
+        $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET', null, $override);
+
+        $this->assertSame($expectedKey, $headers['X-API-Key'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: string|null, 1: string, 2: string}>
+     */
+    public static function apiKeySources(): array
+    {
+        return [
+            'stored key' => [null, 'test-key', 'no override uses the configured key'],
+            'candidate key' => [
+                'candidate-key',
+                'candidate-key',
+                'an override authenticates with an unsaved candidate instead',
+            ],
+        ];
     }
 }

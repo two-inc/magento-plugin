@@ -9,6 +9,57 @@
         xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
     <preference for="Two\Gateway\Api\Config\RepositoryInterface"
                 type="Two\Gateway\Model\Config\Repository"/>
+    <!--
+        FeeLineProviderPool aggregates Api\Fee\FeeLineProviderInterface
+        implementations, each of which itemizes ONE known third-party
+        fee (a totals-collector amount bumping grand_total without a
+        quote/order item, e.g. Amasty's "Extra Fee" module) into real
+        line item(s) with that fee's actual tax rate, by reading that
+        fee directly from the vendor's own data.
+
+        This is now needed only for a fee extension that computes its
+        own tax WITHOUT registering it with Magento's tax engine —
+        Service\Order::findVerifiedResidualTaxRate() already reconciles
+        any extension that does integrate properly (Amasty's Extra Fee
+        included), with no per-vendor provider required. See that
+        method's docblock.
+
+        Add providers here, one <item> per provider, once that
+        extension's real field/table names are verified against an
+        actual install, not guessed at.
+    -->
+    <type name="Two\Gateway\Service\Fee\FeeLineProviderPool">
+        <arguments>
+            <argument name="providers" xsi:type="array">
+                <item name="amastyExtraFee" xsi:type="object">Two\Gateway\Service\Fee\Provider\AmastyExtraFee</item>
+            </argument>
+            <!-- Optional-with-null-default, so named here or every rejected
+                 provider line goes unreported. See the AGENTS.md note. -->
+            <argument name="logRepository" xsi:type="object">Two\Gateway\Api\Log\RepositoryInterface</argument>
+        </arguments>
+    </type>
+    <!--
+        SettingsProvider resolves the merchant record via the API key
+        this Repository owns, so it is injected as a \Proxy to break the
+        construction cycle (Repository → SettingsProvider → RecordProvider
+        → ConfigRepository). The proxy defers instantiation until
+        getDefaultPaymentTerm() first reads the merchant's default term.
+    -->
+    <type name="Two\Gateway\Model\Config\Repository">
+        <arguments>
+            <argument name="settingsProvider" xsi:type="object">Two\Gateway\Service\Merchant\SettingsProvider\Proxy</argument>
+        </arguments>
+    </type>
+    <!--
+        Configured on the abstract parent so all four Compose* subclasses
+        inherit it.
+    -->
+    <type name="Two\Gateway\Service\Order">
+        <arguments>
+            <argument name="feeLineProviderPool" xsi:type="object">Two\Gateway\Service\Fee\FeeLineProviderPool</argument>
+            <argument name="orderTaxManagement" xsi:type="object">Magento\Tax\Api\OrderTaxManagementInterface</argument>
+        </arguments>
+    </type>
     <preference for="Two\Gateway\Api\Log\RepositoryInterface"
                 type="Two\Gateway\Model\Log\Repository"/>
     <preference for="Two\Gateway\Api\Webapi\SoleTraderInterface"
@@ -102,7 +153,7 @@
 
     <!--
         Payment-method codes that engage the surcharge quote-total collector.
-        Brand overlays (e.g. ABN_Gateway) append their own code via a
+        Brand overlays (e.g. Overlay_Gateway) append their own code via a
         matching <type> entry in their own etc/di.xml — Magento merges
         named-array DI items across modules so the list grows additively.
     -->
@@ -154,8 +205,8 @@
         CLI invocations of bin/magento populate the adminhtml-scoped
         structure cache key using the CLI process's DI graph, which
         doesn't load adminhtml-area plugins. Cache then serves the
-        un-synthesised result to admin web requests and the ABN admin
-        tab vanishes (ABN-415). The plugin's `afterRead` is a no-op
+        un-synthesised result to admin web requests and the brand-overlay
+        admin tab vanishes. The plugin's `afterRead` is a no-op
         on non-Reader read paths; safe to register globally.
     -->
     <type name="Magento\Config\Model\Config\Structure\Reader">

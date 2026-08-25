@@ -94,7 +94,6 @@
     font-weight: 500;
 }
 
-
 .terms-container {
     margin-top: 1.5rem;
     padding: 1rem;
@@ -113,12 +112,96 @@
     padding: 5px;
 }
 
+/*
+ * The manual-entry button (#30.x.15), a SIBLING of the company-search
+ * results list rather than a row inside it — see buildManualEntryButton() in
+ * company-search.js for why. It is a real `<button>`, so full-width/
+ * left-aligned/appearance-reset styling here is what makes it read as a
+ * plain-text row of its own rather than as a form control.
+ *
+ * A SINGLE FLAT CLASS: overlay stylesheets hook rows like this flat and win
+ * on load order, and qualifying the selector here would outscore them with
+ * nothing in CI to notice.
+ */
+.two-company-search__manual-entry {
+    display: block;
+    width: 100%;
+    border: none;
+    border-top: 1px solid #e8e8e8;
+    background: none;
+    margin: 0;
+    padding: 8px 12px;
+    text-align: left;
+    color: var(--color-blue2);
+    font: inherit;
+    cursor: pointer;
+    /*
+     * This repo has already fixed this exact bug twice on other elements
+     * (`.search_for_company` below, the dropdown-row selectors further down
+     * this file): Luma themes routinely apply a blanket uppercase
+     * `text-transform`, broad enough to catch a bare `<button>`, and
+     * frequently `!important` itself for CTA-style text. Unlike the old
+     * `<li role="option">` this replaces, this IS a real `<button>` now, so
+     * it is squarely inside that broad-selector blast radius.
+     */
+    text-transform: none !important;
+}
+
+.two-company-search__manual-entry:hover {
+    background-color: #f5f5f5;
+}
+
+/*
+ * Native `<button>` focus indicator. Stated as a positive rule rather than
+ * left to the UA default outline: this single flat class is deliberately
+ * unscoped (see the class-level comment above) so an overlay/theme
+ * `button:focus { outline: none }` — which this stylesheet itself applies to
+ * two OTHER controls just below — can win on load order alone, silently
+ * leaving the only keyboard-reachable affordance in this dropdown with no
+ * focus indicator at all. `:focus-visible` keeps it out of the way for a
+ * mouse click while still showing it for Tab. The offset keeps the ring
+ * inside the button's own edges, which sit flush with the dropdown border at
+ * `width: 100%`.
+ */
+.two-company-search__manual-entry:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: -2px;
+    background-color: #f5f5f5;
+}
+
+/*
+ * The "Search for company" return-to-search control (`search_for_company` in
+ * address-autocomplete.js / gateway_method.js). It carries `role="button"
+ * tabindex="0"` and Enter/Space keydown handling in JS (a11y fix), but that
+ * only makes it FOCUSABLE and ACTIVATABLE — the CSS side of the same
+ * accessibility work never landed alongside it:
+ *
+ *  - `text-transform: none !important`: this is a plain `<div>`, not a native
+ *    element a host theme would normally style, but plenty of Luma themes
+ *    apply casing rules broadly enough (e.g. `.field ~ div, [role="button"]`)
+ *    to catch it anyway, and a theme's own rule is routinely `!important`
+ *    itself for exactly this kind of CTA-style text.
+ *  - the reserved-space dotted border + `:focus` colour gives Tab-users a
+ *    visible focus indicator, which a bare `role="button"` div otherwise has
+ *    none of by default (unlike a real `<button>`, which gets the browser's
+ *    native focus ring). The border is reserved (transparent) even when not
+ *    focused so gaining focus never changes this element's box size.
+ */
 .search_for_company {
     text-align: right;
     cursor: pointer;
     padding-top: 5px;
     color: var(--color-blue2);
     right: 4px;
+    text-transform: none !important;
+    border: 1px dotted transparent;
+    padding-left: 2px;
+    padding-right: 2px;
+}
+
+.search_for_company:focus {
+    outline: none;
+    border-color: #808080 !important;
 }
 
 .two-payment-method {
@@ -128,6 +211,8 @@
 .mode_selector {
     display: flex;
     justify-content: center;
+    /* Three peer options (TWO-25503) no longer fit one line in a narrow tile. */
+    flex-wrap: wrap;
     gap: 12px;
     margin-bottom: 20px;
     padding: 12px 6px;
@@ -260,7 +345,7 @@
 
 /*
  * Chip colour palette matches the `.mode_item` toggle elsewhere on the
- * checkout page (Registered Organisation / Sole Trader): solid Two-brand
+ * checkout page (the company-capture mode options): solid Two-brand
  * blue (`--color-blue2`) for the selected state, white fill with blue
  * text for unselected. Brand overlays that ship a different palette
  * (e.g. a brand overlay's palette) override these rules from their own
@@ -276,7 +361,10 @@
     background: var(--color-white);
     color: var(--color-blue2);
     cursor: pointer;
-    transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+    transition:
+        border-color 0.15s ease,
+        background-color 0.15s ease,
+        color 0.15s ease;
     min-width: 80px;
     font-family: inherit;
     position: relative;
@@ -335,12 +423,231 @@
     animation: two-term-chip-dot 1.4s infinite ease-in-out both;
 }
 
-.two-term-chip__loading > span:nth-child(2) { animation-delay: 0.2s; }
-.two-term-chip__loading > span:nth-child(3) { animation-delay: 0.4s; }
+.two-term-chip__loading > span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+.two-term-chip__loading > span:nth-child(3) {
+    animation-delay: 0.4s;
+}
 
 @keyframes two-term-chip-dot {
-    0%, 80%, 100% { opacity: 0.2; }
-    40%          { opacity: 1; }
+    0%,
+    80%,
+    100% {
+        opacity: 0.2;
+    }
+    40% {
+        opacity: 1;
+    }
+}
+
+/*
+ * Company-search chrome.
+ *
+ * Both live inside select2's own search box (`.select2-search--dropdown`,
+ * which for a single-select is where the buyer actually types), so the
+ * spinner reads as "this field is working" rather than "the page is busy",
+ * and the unavailable notice sits with the field it describes.
+ *
+ * The spinner is the same loading GIF the PrestaShop plugin already ships,
+ * painted as a `background-image` on one childless element (TWO-25288).
+ */
+.select2-search--dropdown {
+    position: relative;
+}
+
+/*
+ * THE SELECTOR MUST STAY A SINGLE FLAT CLASS.
+ *
+ * Overlay stylesheets hook this indicator with flat single-class rules, and
+ * win only because they load later at equal specificity. Qualifying this
+ * selector (e.g. `.select2-search--dropdown .two-company-search__spinner`)
+ * would outscore those overrides and silently kill them, with nothing in CI
+ * failing to tell you.
+ *
+ * The figure is a `background-image`, not an `<img>`: an `<img>` would need a
+ * resolved URL plumbed through Magento's asset helper into the markup, while
+ * a stylesheet `url()` resolves relative to the published stylesheet. Static
+ * content deploy puts `css/` and `images/` side by side under this module's
+ * directory, so `../images/` reaches the asset.
+ *
+ * Sizing is a fixed 16px because the asset is natively 16x16 and scaling it
+ * up only blurs it.
+ */
+.two-company-search__spinner {
+    position: absolute;
+    top: calc(50% - 8px);
+    right: 12px;
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    pointer-events: none;
+    background-image: url("../images/loader.gif");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 16px 16px;
+}
+
+/*
+ * Order-intent spinner, TILE-LOCAL (TWO-25326).
+ *
+ * Deliberately NOT `position: absolute` like the company-search field spinner
+ * above: that one is pinned inside a specific input's `.control`, whereas this
+ * one is a row in the tile's normal flow, next to the order-intent notices. In
+ * flow it needs no positioned ancestor, which is what keeps it working
+ * unchanged across the themes that restyle the tile (Amasty, Fire Checkout)
+ * without any of them having to opt in.
+ *
+ * Same 16x16 `loader.gif` as the field spinner, same `../images/` reasoning —
+ * see the comment on `.two-company-search__spinner`.
+ */
+.two-order-intent-spinner {
+    display: inline-block;
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    background-image: url("../images/loader.gif");
+    background-repeat: no-repeat;
+    background-position: left center;
+    background-size: 16px 16px;
+}
+
+/*
+ * The row the spinner now sits in, with the "Checking availability" sentence
+ * beside it (TWO-25326, 2026-08-05 four-platform convergence — all four
+ * plugins show the same figure and the same sentence). The row owns the
+ * vertical margin the spinner used to carry itself, so the figure and the text
+ * cannot drift apart when a theme restyles either one.
+ */
+.two-order-intent-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+}
+
+.two-order-intent-loading__text {
+    color: #495057;
+    font-size: 1.3rem;
+    line-height: 1.4;
+}
+
+/*
+ * Anchors the in-field sole-trader lookup spinner below (TWO-25461 §7) —
+ * same role `.select2-search--dropdown` plays for `.two-company-search__spinner`.
+ */
+.two-sole-trader-field-control {
+    position: relative;
+}
+
+/*
+ * In-flight spinner for the sole-trader lookup round trip. Same 16x16
+ * `loader.gif` and absolute-inside-the-field positioning as
+ * `.two-company-search__spinner` — kept as its own flat class rather than
+ * reused verbatim, since that one's selector must stay untouched for overlay
+ * stylesheets (see its comment).
+ */
+.two-sole-trader-prefetch-spinner {
+    position: absolute;
+    top: calc(50% - 8px);
+    right: 12px;
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    pointer-events: none;
+    background-image: url("../images/loader.gif");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 16px 16px;
+}
+
+/*
+ * "Select a different sole trader" link (TWO-25461 §7) — a plain text-link
+ * button, same visual weight as the tile's other secondary affordances.
+ */
+.two-select-different-sole-trader {
+    margin-top: 6px;
+}
+
+.two-select-different-sole-trader__link {
+    background: none;
+    border: none;
+    padding: 0;
+    color: #1979c3;
+    font-size: 1.3rem;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.two-company-search__unavailable {
+    display: block;
+    margin-top: 6px;
+    padding: 6px 8px;
+    border-radius: 3px;
+    background: #fdf0d5;
+    color: #6f4900;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+/*
+ * Company-search combobox: placeholder / selected-value text and result-row
+ * vertical alignment.
+ *
+ * Scoped by ADJACENT SIBLING from the backing input, not by select2's own
+ * generated element ids: select2 4.1 derives those from the backing
+ * element's `id` attribute when it has one, or `name + 2 random characters`
+ * when it doesn't (`generateId()` in the vendored select2.min.js) — the
+ * address-step company field carries no explicit `id` (only `name`), so an
+ * `#select2-company-container`-style selector is NOT a stable target for it
+ * (confirmed by review — flagged before this shipped as select2-id-scoped
+ * dead CSS with nothing to catch the drift). `input[name] + .select2-container`
+ * has no such dependency: select2 always inserts its container immediately
+ * after the original element (`insertAfter()`, confirmed in the vendored
+ * bundle), regardless of what id it ends up generating.
+ *
+ * Some Luma themes apply a blanket `text-transform: uppercase` broad enough
+ * to catch select2's own rendered span, and give the selection box a custom
+ * height with no matching line-height on the rendered text, leaving it a few
+ * pixels off true vertical centre. `!important` because a theme's own
+ * form-control casing/height rules are routinely `!important` themselves.
+ *
+ * Flex + `align-items: center` on both the outer selection box AND the
+ * rendered span (not just the outer box) matters: centring only the outer
+ * box centres the BOX, not text sitting off-centre within it from a
+ * theme-supplied height with the wrong line-height.
+ */
+#shipping-new-address-form input[name='company'] + .select2-container .select2-selection--single,
+#two_gateway_form input#company_name + .select2-container .select2-selection--single {
+    display: flex;
+    align-items: center;
+}
+
+#shipping-new-address-form input[name='company'] + .select2-container .select2-selection__rendered,
+#two_gateway_form input#company_name + .select2-container .select2-selection__rendered {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    text-transform: none !important;
+    line-height: normal;
+}
+
+/*
+ * Result rows in the dropdown itself (company names picked from the
+ * search), same class of bug: a theme's list/option styling can apply
+ * uppercase and an icon/text baseline mismatch to `.select2-results__option`.
+ * select2 detaches the dropdown to `<body>` on open (outside either form's
+ * own DOM subtree), so this cannot be scoped by ancestry from the field the
+ * way the selection-box rules above are. `dropdownCssClass:
+ * 'two-company-search-dropdown'` (set on BOTH pickers' `.select2({...})`
+ * init — address-autocomplete.js and gateway_method.js) is select2's own
+ * supported hook for exactly this, and — unlike an id — is not subject to
+ * select2's id-generation fallback at all.
+ */
+.two-company-search-dropdown .select2-results__option {
+    display: flex;
+    align-items: center;
+    text-transform: none !important;
 }
 
 .two-term-chip--single {
@@ -376,4 +683,160 @@
     box-sizing: border-box;
     transition: all 100ms ease-in-out;
     width: 100%;
+}
+
+/*
+ * Theme specific css for fire checkout on the payment term chips.
+ *
+ * Fire Checkout's own stylesheet (Swissup_Firecheckout/css/firecheckout-light.css)
+ * lays out every field inside the payment tile as a label/control row:
+ *
+ *   .firecheckout .payment-method-content div.field       { display: inline-block; width: 100% }
+ *   .firecheckout .payment-method-content div.field > .label { float: left; width: auto }
+ *
+ * The floated label leaves the chip container beside it rather than under it.
+ * Making the field a column flex container puts the container back below the
+ * label, and float has no effect on a flex item so the label unfloats too.
+ *
+ * The selector has to carry `.payment-method-content div.field` as well: Fire's
+ * rule scores 0-3-1, so the shorter `.firecheckout .two-term-chips` (0-2-0) that
+ * this replaces lost on specificity and never applied. Adding the chip class on
+ * top of Fire's own selector scores 0-4-1 and wins without `!important`.
+ *
+ * Everything here stays inside `.firecheckout`, so Luma and Hyva are untouched.
+ */
+.firecheckout .payment-method-content div.field.two-term-chips {
+    display: flex;
+    flex-direction: column;
+}
+
+/*
+ * Persistent "order intent approved" notice, rendered inline inside the
+ * payment tile (see view/frontend/web/template/payment/gateway_method.html).
+ * Replaces the transient checkout message-region treatment, which checkout
+ * cleared on every update.
+ *
+ * Deliberately low-key: this is reassurance, not a call to action, and it
+ * sits directly under the term chips. Brand overlays that ship their own
+ * palette override these rules from their own style.css, which loads after
+ * this one.
+ */
+.two-order-intent-message {
+    margin: 0 0 1.5em;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+    background: #fff;
+    color: #495057;
+    font-size: 1.3rem;
+    line-height: 1.4;
+}
+
+/*
+ * TWO-25326 (2026-08-05, four-platform convergence): the palette is now the
+ * SEMANTIC one PrestaShop already uses — success green for an approval, danger
+ * red for a decline, and the box's own neutral colours for an error — rather
+ * than this module's brand blue for approval and a warm red for decline. The
+ * point of the change is that a buyer meeting two of the four plugins reads
+ * the same colour for the same outcome; the flat background (no gradient, no
+ * shadow) is Luma's rendering of it.
+ */
+.two-order-intent-message.approved {
+    border-color: #28a745;
+    background: #d4edda;
+    color: #155724;
+}
+
+/*
+ * TWO-25326 §7.3 (2026-08-03 ruling): the "not approved" counterpart to
+ * `.approved` above, added when the standalone company label was removed
+ * and its name/number folded into this sentence instead. Recoloured
+ * 2026-08-05 to PrestaShop's danger red for cross-platform convergence
+ * (see the note on `.approved`); it is still this box's own styling and
+ * not Magento's `.message-error`, because a business decline is not an
+ * error the buyer caused.
+ */
+.two-order-intent-message.declined {
+    border-color: #dc3545;
+    background: #f8d7da;
+    color: #721c24;
+}
+
+/*
+ * The check itself failed (TWO-25326, 2026-08-05). Same container, and
+ * deliberately the base neutral palette rather than a third colour: matching
+ * PrestaShop, which strips its approved/declined classes for this case. The
+ * rule exists explicitly, with nothing but the base values in it, so the
+ * error state is greppable next to its siblings and a later edit to the base
+ * cannot silently repaint it.
+ */
+.two-order-intent-message.error {
+    border-color: #e9ecef;
+    background: #fff;
+    color: #495057;
+}
+
+/*
+ * The company-NAME input's read-only affordance. `readonly` is bound and true
+ * in sole-trader mode only (see gateway_method.html), and `readonly` alone
+ * renders identically to a normal input in most themes — an input the buyer
+ * cannot type into but which looks like they can is worse than either state
+ * on its own.
+ *
+ * Scoped to this module's own form rather than written as a bare
+ * `input[readonly]`: this stylesheet is loaded for the whole storefront and
+ * an unscoped rule would repaint every read-only input on the page, none of
+ * which this module owns.
+ */
+#two_gateway_form input.input-text[readonly] {
+    background-color: #f5f5f5;
+    color: #666666;
+    cursor: default;
+}
+
+/*
+ * TWO-25288. The address-step "Company Number" field (injected by
+ * Plugin/Model/Checkout/LayoutProcessorPlugin.php) stays in the UI-registry
+ * render tree — `visible: true` — because
+ * view/frontend/web/js/view/address-autocomplete.js resolves it through
+ * `uiRegistry.get()`. It is hidden purely visually here, so the DOM node and
+ * its value stay intact and still submit as
+ * shippingAddress.custom_attributes.company_id.
+ */
+.two-company-id-hidden,
+.fieldset .field.two-company-id-hidden {
+    display: none !important;
+}
+
+/*
+ * The captured company number, rendered as a plain text label rather than
+ * an editable input, under EITHER of the two mounts the shared
+ * company-search control can live on:
+ *
+ *  - the address step (TWO-25326 §5) — appended into the company field's
+ *    `.control` by address-autocomplete.js's renderCompanyIdText(), only
+ *    once a search result has actually been selected;
+ *  - the payment tile (TWO-25326, 2026-08-04 ruling, Bug B) — a KO `<div>`
+ *    in gateway_method.html, `visible`-bound to
+ *    `isCompanyCaptured() && isTileCompanySearchActive()
+ *    && displayCompanyId() !== ''` — the last conjunct is TWO-25326's
+ *    display filter, which withholds the whole label for an internal
+ *    `TWO:`-prefixed number rather than rendering a blank one.
+ *
+ * Both are absent before selection and absent in manual-entry mode
+ * (name-only capture). `text-align: end` rather than `right` so it follows
+ * the writing direction on RTL store views instead of pinning to the
+ * physical right edge.
+ *
+ * `.control` is the input's own containing box on both mounts, so aligning
+ * to its end edge lines the number up with the input's end edge exactly.
+ */
+.two-company-id-text {
+    display: block;
+    text-align: end;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    color: #666666;
+    font-size: 12px;
+    word-break: break-word;
 }

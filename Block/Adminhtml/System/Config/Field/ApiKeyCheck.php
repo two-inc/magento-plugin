@@ -10,12 +10,23 @@ namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Service\Api\Adapter;
-use Two\Gateway\Model\Two;
+use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
 
 /**
- * Render version field html element in Stores Configuration
+ * Renders the API-key verification result in Stores Configuration, and
+ * carries the wiring (endpoint URL, target field id, active scope) the
+ * live re-verification JS binds to.
+ *
+ * Verification at page load is deliberately a LIVE check
+ * (ApiKeyStatus::refresh) rather than a cached read: an admin on this page
+ * is asking about the key in front of them right now. refresh() also
+ * writes its result forward into the shared cache, so a key corrected on
+ * this page takes effect at checkout immediately instead of after the
+ * cache TTL expires.
+ *
+ * Wording comes from {@see ApiKeyStatusMessage}, shared with the live
+ * verification endpoint and the save-time guard.
  */
 class ApiKeyCheck extends Field
 {
@@ -25,75 +36,83 @@ class ApiKeyCheck extends Field
     protected $_template = 'Two_Gateway::system/config/field/apikey.phtml';
 
     /**
-     * @var ConfigRepository
+     * @var ApiKeyStatus
      */
-    private $configRepository;
+    private $apiKeyStatus;
 
     /**
-     * @var Two
+     * @var ApiKeyStatusMessage
      */
-    private $two;
+    private $statusMessage;
 
     /**
-     * @var Adapter
-     */
-    private $adapter;
-
-    /**
-     * Version constructor.
-     *
-     * @param ConfigRepository $configRepository
-     * @param Adapter $adapter
-     * @param Two $two
+     * @param ApiKeyStatus $apiKeyStatus
+     * @param ApiKeyStatusMessage $statusMessage
      * @param Context $context
      * @param array $data
      */
     public function __construct(
-        ConfigRepository $configRepository,
-        Adapter $adapter,
-        Two $two,
+        ApiKeyStatus $apiKeyStatus,
+        ApiKeyStatusMessage $statusMessage,
         Context $context,
         array $data = []
     ) {
-        $this->configRepository = $configRepository;
-        $this->adapter = $adapter;
-        $this->two = $two;
+        $this->apiKeyStatus = $apiKeyStatus;
+        $this->statusMessage = $statusMessage;
         parent::__construct($context, $data);
     }
 
     /**
-     * Get extension version
+     * Verification outcome for the stored API key as
+     * ['message' => Phrase, 'status' => 'success'|'warning'|'error'],
+     * plus 'merchant_id' and 'merchant_short_name' on success only.
      *
-     * @return string
+     * @return array
      */
     public function getApiKeyStatus(): array
     {
-        if (!$this->configRepository->getApiKey()) {
-            return [
-                'message' => __('API key is missing'),
-                'status' => 'warning'
-            ];
-        }
+        return $this->statusMessage->describe($this->apiKeyStatus->refresh());
+    }
 
-        $result = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
-        $error = $this->two->getErrorFromResponse($result);
-        if ($error) {
-            return [
-                'message' => __('API key is not valid'),
-                'status' => 'error',
-                'error' => $error
-            ];
-        } else {
-            // verify_api_key returns {id, short_name}; surface both so the
-            // merchant can confirm at a glance which account the key resolves to.
-            return [
-                'message' => __('API key is valid'),
-                'status' => 'success',
-                'merchant_id' => is_array($result) && isset($result['id']) ? (string)$result['id'] : '',
-                'merchant_short_name' => is_array($result) && isset($result['short_name'])
-                    ? (string)$result['short_name'] : ''
-            ];
-        }
+    /**
+     * Endpoint the live verification JS posts a candidate key to.
+     */
+    public function getVerifyUrl(): string
+    {
+        return $this->getUrl('two/config/verifyApiKey');
+    }
+
+    /**
+     * Html id of the API key input this panel reports on. This renderer is
+     * the `api_key_check` sibling of that field, so its own element id
+     * minus the suffix names it.
+     */
+    public function getApiKeyFieldId(): string
+    {
+        $element = $this->getData('element');
+        $id = $element ? (string)$element->getHtmlId() : '';
+        return preg_replace('/_check$/', '', $id) ?? '';
+    }
+
+    /**
+     * Current Configuration scope (default / websites / stores).
+     *
+     * Not the element's own form — `addField()` sets that to the fieldset,
+     * which carries no scope. The config Form BLOCK is what the renderer
+     * itself is bound to (`AbstractForm::setForm($this)` at render time),
+     * so `$this->getForm()` is the one with `getScope()`/`getScopeId()`.
+     */
+    public function getScope(): string
+    {
+        $form = $this->getForm();
+        $scope = $form ? (string)$form->getScope() : '';
+        return $scope !== '' ? $scope : 'default';
+    }
+
+    public function getScopeId(): int
+    {
+        $form = $this->getForm();
+        return $form ? (int)$form->getScopeId() : 0;
     }
 
     /**
@@ -110,6 +129,7 @@ class ApiKeyCheck extends Field
      */
     public function _getElementHtml(AbstractElement $element)
     {
+        $this->setData('element', $element);
         return $this->_toHtml();
     }
 }

@@ -15,6 +15,7 @@ use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\Locale\AdminDecimalFormatter;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
  * Renders payment terms as individual checkboxes instead of a multiselect.
@@ -33,6 +34,9 @@ class PaymentTermsCheckboxes extends Field
     /** @var BrandRegistryInterface */
     private $brandRegistry;
 
+    /** @var SettingsProvider */
+    private $settingsProvider;
+
     /** @var StoreManagerInterface */
     private $storeManager;
 
@@ -45,6 +49,7 @@ class PaymentTermsCheckboxes extends Field
     public function __construct(
         Context $context,
         BrandRegistryInterface $brandRegistry,
+        SettingsProvider $settingsProvider,
         StoreManagerInterface $storeManager,
         ScopeConfigInterface $scopeConfig,
         AdminDecimalFormatter $decimalFormatter,
@@ -52,6 +57,7 @@ class PaymentTermsCheckboxes extends Field
     ) {
         parent::__construct($context, $data);
         $this->brandRegistry = $brandRegistry;
+        $this->settingsProvider = $settingsProvider;
         $this->storeManager = $storeManager;
         $this->scopeConfig = $scopeConfig;
         $this->decimalFormatter = $decimalFormatter;
@@ -67,11 +73,23 @@ class PaymentTermsCheckboxes extends Field
     }
 
     /**
-     * Get available payment terms from the constant.
+     * Get the merchant's offerable payment terms from the merchant API.
      */
     public function getAvailableTerms(): array
     {
-        return $this->brandRegistry->getAvailablePaymentTerms();
+        return $this->settingsProvider->getAvailableTerms($this->resolveStoreId());
+    }
+
+    /**
+     * Store id for the active config scope, or null for website/default
+     * scope — used to resolve the per-store API key when reading
+     * merchant settings.
+     */
+    private function resolveStoreId(): ?int
+    {
+        return $this->getScope() === 'stores' && $this->getScopeId() > 0
+            ? $this->getScopeId()
+            : null;
     }
 
     /**

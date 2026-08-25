@@ -26,6 +26,9 @@ class SurchargeCalculatorTest extends TestCase
     /** @var CurrencyRatesProviderInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $ratesProvider;
 
+    /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
+    private $log;
+
     /** @var SurchargeCalculator */
     private $calculator;
 
@@ -43,10 +46,64 @@ class SurchargeCalculatorTest extends TestCase
             ->onlyMethods(['execute'])
             ->getMock();
 
-        $log = $this->createMock(LogRepository::class);
+        $this->log = $this->createMock(LogRepository::class);
         $this->ratesProvider = $this->createMock(CurrencyRatesProviderInterface::class);
 
-        $this->calculator = new SurchargeCalculator($this->config, $this->adapter, $log, $this->ratesProvider);
+        $this->calculator = new SurchargeCalculator(
+            $this->config,
+            $this->adapter,
+            $this->log,
+            $this->ratesProvider
+        );
+    }
+
+    /**
+     * TWO-25503: a missing FX rate makes the METHOD unofferable, so callers
+     * need to ask before converting anything. Given/When/Then per case.
+     *
+     * @dataProvider resolvabilityProvider
+     */
+    public function testIsSurchargeResolvable(
+        string $type,
+        string $fixedCurrency,
+        string $orderCurrency,
+        ?float $rate,
+        float $fixed,
+        ?float $limit,
+        bool $expected,
+        string $case
+    ): void {
+        $this->config->method('getSurchargeType')->willReturn($type);
+        $this->config->method('getSurchargeFixedCurrency')->willReturn($fixedCurrency);
+        $this->config->method('getAllBuyerTerms')->willReturn([14, 30]);
+        $this->config->method('getSurchargeConfig')->willReturn([
+            'percentage' => 2.0,
+            'fixed' => $fixed,
+            'limit' => $limit,
+        ]);
+        $this->ratesProvider->method('getRate')->willReturn($rate);
+
+        $this->assertSame(
+            $expected,
+            $this->calculator->isSurchargeResolvable($orderCurrency, 1),
+            $case
+        );
+    }
+
+    public function resolvabilityProvider(): array
+    {
+        return [
+            [SurchargeType::NONE, 'EUR', 'NOK', null, 10.0, 50.0, true, 'no surcharge configured needs no rate'],
+            [SurchargeType::FIXED, 'EUR', 'EUR', null, 10.0, null, true, 'same currency needs no rate'],
+            [SurchargeType::FIXED, '', 'NOK', null, 10.0, null, true, 'no fixed currency stored needs no rate'],
+            [SurchargeType::FIXED, 'EUR', 'NOK', 11.5, 10.0, null, true, 'a fixed fee with a rate resolves'],
+            [SurchargeType::FIXED, 'EUR', 'NOK', null, 10.0, null, false, 'a fixed fee with no rate does not'],
+            [SurchargeType::FIXED, 'EUR', 'NOK', null, 0.0, null, true, 'a zero fixed fee is never converted'],
+            [SurchargeType::PERCENTAGE, 'EUR', 'NOK', null, 0.0, null, true, 'an uncapped percentage is never converted'],
+            [SurchargeType::PERCENTAGE, 'EUR', 'NOK', null, 0.0, 50.0, false, 'a capped percentage with no rate does not'],
+            [SurchargeType::PERCENTAGE, 'EUR', 'NOK', 11.5, 0.0, 50.0, true, 'a capped percentage with a rate resolves'],
+            [SurchargeType::FIXED_AND_PERCENTAGE, 'EUR', 'NOK', null, 0.0, 50.0, false, 'a combined cap with no rate does not'],
+        ];
     }
 
     private function stubCommonConfig(string $type, bool $differential = false): void
@@ -55,7 +112,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('isSurchargeDifferential')->willReturn($differential);
         $this->config->method('getPaymentTermsType')->willReturn('standard');
         $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
+        $this->config->method('getCustomSurchargeTaxRate')->willReturn(0.0);
     }
 
     private function stubSurchargeConfig(float $percentage = 0, float $fixed = 0, ?float $limit = null): void
@@ -562,7 +619,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('getDefaultPaymentTerm')->willReturn(30);
         $this->config->method('getPaymentTermsType')->willReturn('end_of_month');
         $this->config->method('getSurchargeLineDescription')->willReturn('Payment terms fee');
-        $this->config->method('getSurchargeTaxRate')->willReturn(0.0);
+        $this->config->method('getCustomSurchargeTaxRate')->willReturn(0.0);
         $this->stubSurchargeConfig(100);
 
         $this->adapter->expects($this->once())
@@ -592,7 +649,7 @@ class SurchargeCalculatorTest extends TestCase
         $this->config->method('isSurchargeDifferential')->willReturn(false);
         $this->config->method('getPaymentTermsType')->willReturn('standard');
         $this->config->method('getSurchargeLineDescription')->willReturn('Extended terms fee - %1 days');
-        $this->config->method('getSurchargeTaxRate')->willReturn(25.0);
+        $this->config->method('getCustomSurchargeTaxRate')->willReturn(25.0);
         $this->stubSurchargeConfig(0, 10);
         $this->stubFixedCurrency('NOK');
 
@@ -691,6 +748,323 @@ class SurchargeCalculatorTest extends TestCase
         $this->expectExceptionMessage('Cannot convert surcharge from NOK to GBP');
 
         $this->calculator->calculate(1000.0, 30, 'NO', 'GBP');
+    }
+
+    public function testFailClosedFxErrorIsLoggedWithCurrencyPairAndTerm(): void
+    {
+        // The buyer sees a checkout error either way; without this log ops and
+        // the merchant see nothing at all and a bad currency pair reads as an
+        // unexplained drop-off.
+        $this->stubCommonConfig(SurchargeType::FIXED);
+        $this->stubSurchargeConfig(0, 10);
+        $this->stubFixedCurrency('NOK');
+        $this->ratesProvider->method('getRate')->willReturn(null);
+
+        $this->log->expects($this->once())
+            ->method('addErrorLog')
+            ->with(
+                'Surcharge FX conversion failed: no rate available',
+                $this->callback(function ($context) {
+                    return $context['from_currency'] === 'NOK'
+                        && $context['to_currency'] === 'GBP'
+                        && $context['selected_term'] === 45;
+                })
+            );
+
+        $this->expectException(\Magento\Framework\Exception\LocalizedException::class);
+
+        $this->calculator->calculate(1000.0, 45, 'NO', 'GBP');
+    }
+
+    // ── A configured limit of 0 is a real cap of zero, sent as `cap => 0.0` ──
+
+    public function testConfiguredCapOfZeroIsSentAsZeroCap(): void
+    {
+        // A limit of exactly 0 caps the fee at nothing, i.e. charges no
+        // surcharge, and `cap => 0.0` is how the API is told that — 0 clamps
+        // rather than uncaps. TWO-25269 briefly threw a LocalizedException here
+        // on the false premise that a zero cap would relay an uncapped
+        // percentage; that guard is gone and must not come back. This test is
+        // its headstone.
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50, 0, 0.0);
+        $this->stubFixedCurrency('NOK');
+
+        $this->log->expects($this->never())->method('addErrorLog');
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    $share = $payload['buyer_fee_share'];
+                    return array_key_exists('cap', $share)
+                        && $share['cap'] === 0.0
+                        && $share['percentage'] === 50.0;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0.0]);
+
+        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+
+        $this->assertEquals(0.0, $result['amount']);
+    }
+
+    public function testZeroCapNeedsNoFxRateEvenAcrossCurrencies(): void
+    {
+        // Pins convertAmount()'s `$amount === 0.0` early return: a zero limit
+        // must reach the API as `cap => 0.0` on a cross-currency order with NO
+        // rate available for the pair. Without that early return this mock's
+        // getRate() returns null and checkout hard-fails, so a percentage-only
+        // merchant with limit 0 and an unrated pair would break. PERCENTAGE
+        // (not mixed) so nothing else needs a rate either.
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50, 0, 0.0);
+        $this->stubFixedCurrency('NOK');
+        $this->ratesProvider->method('getRate')->willReturn(null);
+
+        $this->log->expects($this->never())->method('addErrorLog');
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return $payload['buyer_fee_share']['cap'] === 0.0;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0.0]);
+
+        $this->calculator->calculate(1000.0, 90, 'NO', 'SEK');
+    }
+
+    public function testZeroCapIsSentAlongsideTheConvertedFixedSurcharge(): void
+    {
+        // Payload-level guard for the mixed type: `cap => 0.0` is sent verbatim
+        // and does NOT disturb the FX-converted `surcharge`.
+        //
+        // API-side (not pinnable from here — the adapter is mocked): the cap
+        // clamps the SUM of the fixed passthrough and the percentage
+        // contribution, so a limit of 0 zeroes the configured Fixed fee too,
+        // not just the percentage part. Easy to misread as "Limit only bounds
+        // the %", and reachable straight from the admin grid.
+        $this->stubCommonConfig(SurchargeType::FIXED_AND_PERCENTAGE);
+        $this->stubSurchargeConfig(50, 5, 0.0);
+        $this->stubFixedCurrency('NOK');
+        $this->stubFxRate('NOK', 1.1);
+
+        $this->log->expects($this->never())->method('addErrorLog');
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    $share = $payload['buyer_fee_share'];
+                    return $share['cap'] === 0.0
+                        && abs($share['surcharge'] - 5.5) < 0.0001;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0.0]);
+
+        $this->calculator->calculate(1000.0, 90, 'NO', 'SEK');
+    }
+
+    public function testZeroLimitInFixedOnlyModeSendsNoCap(): void
+    {
+        // `cap` sits behind a $hasPercentage gate: a stale zero limit left over
+        // from a previous surcharge type must not leak into a fixed-only fee,
+        // which is constant and has nothing to clamp.
+        $this->stubCommonConfig(SurchargeType::FIXED);
+        $this->stubSurchargeConfig(0, 10, 0.0);
+        $this->stubFixedCurrency('NOK');
+
+        $this->log->expects($this->never())->method('addErrorLog');
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    return !array_key_exists('cap', $payload['buyer_fee_share']);
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 10.0]);
+
+        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+
+        $this->assertEquals(10.0, $result['amount']);
+    }
+
+    // ── An ABSENT cap is legitimate: uncapped percentage must still charge ──
+
+    public function testAbsentLimitSendsUncappedPercentageSurcharge(): void
+    {
+        // REGRESSION GUARD. "No cap defined" is a valid, common configuration
+        // and is distinct from a cap of 0: an absent limit must send no `cap`
+        // key at all so the percentage is applied uncapped, with no error.
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50, 0, null);
+        $this->stubFixedCurrency('NOK');
+
+        $this->log->expects($this->never())->method('addErrorLog');
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    $share = $payload['buyer_fee_share'];
+                    return !array_key_exists('cap', $share)
+                        && $share['percentage'] === 50.0;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 25.0]);
+
+        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+
+        $this->assertEquals(25.0, $result['amount']);
+    }
+
+    public function testAbsentLimitSendsUncappedFixedAndPercentageSurcharge(): void
+    {
+        // Same for the mixed type, where a `surcharge` FX conversion also runs
+        // — an absent cap must not disturb it.
+        $this->stubCommonConfig(SurchargeType::FIXED_AND_PERCENTAGE);
+        $this->stubSurchargeConfig(50, 5, null);
+        $this->stubFixedCurrency('NOK');
+        $this->stubFxRate('NOK', 1.1);
+
+        $this->log->expects($this->never())->method('addErrorLog');
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) {
+                    $share = $payload['buyer_fee_share'];
+                    return !array_key_exists('cap', $share)
+                        && $share['percentage'] === 50.0
+                        && abs($share['surcharge'] - 5.5) < 0.0001;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 30.0]);
+
+        $result = $this->calculator->calculate(1000.0, 60, 'NO', 'SEK');
+
+        $this->assertEquals(30.0, $result['amount']);
+    }
+
+    public function testCapAndSurchargeAreRoundedToTwoDecimalPlacesOnTheWire(): void
+    {
+        // The API refuses monetary values finer than two decimal places
+        // rather than rounding them, so an unrounded FX conversion was
+        // rejected upstream and reached the buyer as a generic
+        // "temporarily unavailable" error (TWO-25289).
+        //
+        // 349 * 0.0872 = 30.4328 → 30.43 for both components.
+        $this->stubCommonConfig(SurchargeType::FIXED_AND_PERCENTAGE);
+        $this->stubSurchargeConfig(50, 349, 349);
+        $this->stubFixedCurrency('NOK');
+        $this->stubFxRate('NOK', 0.0872);
+
+        $this->log->expects($this->never())->method('addErrorLog');
+
+        $sent = null;
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) use (&$sent) {
+                    $sent = $payload['buyer_fee_share'];
+
+                    return true;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 30.43]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'SEK');
+
+        $this->assertSame(30.43, $sent['cap']);
+        $this->assertSame(30.43, $sent['surcharge']);
+    }
+
+    public function testOverPreciseConfigIsRoundedEvenWithNoCurrencyConversion(): void
+    {
+        // No FX involved (config currency === order currency), but an admin
+        // can type more precision than the API accepts, so the
+        // no-conversion path needs the same 2dp gate (TWO-25289).
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50, 0, 10.999);
+        $this->stubFixedCurrency('SEK');
+
+        $this->log->expects($this->never())->method('addErrorLog');
+
+        $sent = null;
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) use (&$sent) {
+                    $sent = $payload['buyer_fee_share']['cap'];
+
+                    return true;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 11.0]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'SEK');
+
+        $this->assertSame(11.0, $sent);
+    }
+
+    public function testASubCentCapRoundsDownToZeroWhichIsAcceptedScope(): void
+    {
+        // 0.01 NOK under a 0.0001 rate is 0.000001, which rounds to 0.00 and
+        // therefore suppresses the fee entirely. Deliberate, and pinned so it
+        // is a decision rather than a surprise: sub-cent caps, away-from-zero
+        // rounding and zero-decimal currencies are all explicitly out of
+        // scope (TWO-25289). Rounding half-up beats the alternative of
+        // shipping a >2dp value the API rejects outright.
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50, 0, 0.01);
+        $this->stubFixedCurrency('NOK');
+        $this->stubFxRate('NOK', 0.0001);
+
+        $this->log->expects($this->never())->method('addErrorLog');
+
+        $sent = null;
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with(
+                '/v1/pricing/order/fee',
+                $this->callback(function ($payload) use (&$sent) {
+                    $sent = $payload['buyer_fee_share']['cap'];
+
+                    return true;
+                })
+            )
+            ->willReturn(['buyer_fee_share' => 0.0]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'SEK');
+
+        $this->assertSame(0.0, $sent);
+    }
+
+    public function testConversionForwardsStoreScopeToRateLookup(): void
+    {
+        // FX rates are fetched with the store-scoped API key (TWO-25103):
+        // dropping the store id would resolve the default scope's key and
+        // break multi-store installs with per-store keys.
+        $this->stubCommonConfig(SurchargeType::FIXED);
+        $this->stubSurchargeConfig(0, 10);
+        $this->stubFixedCurrency('NOK');
+        $this->ratesProvider->expects($this->atLeastOnce())->method('getRate')
+            ->with('NOK', 'SEK', 7)
+            ->willReturn(1.1);
+        $this->adapter->method('execute')->willReturn(['buyer_fee_share' => 11.0]);
+
+        $this->calculator->calculate(1000.0, 30, 'NO', 'SEK', 7);
     }
 
     public function testNoConversionWhenFixedCurrencyEmpty(): void

@@ -42,33 +42,49 @@ interface BrandRegistryInterface
     public function getCheckoutUrlTemplate(): string;
 
     /**
-     * Buyer-selectable payment terms (in days) supported by this
-     * brand's commercial agreement.
-     *
-     * @return int[]
-     */
-    public function getAvailablePaymentTerms(): array;
-
-    /**
-     * Maximum allowed value of a fixed-amount surcharge configured
-     * by the merchant, expressed in a specific currency. Returning
-     * null means there is no upper bound — any positive value is
-     * acceptable. Calling code must interpret null as "no max" and
-     * skip the upper-bound check.
-     *
-     * @return array{amount: float, currency: string}|null
-     */
-    public function getSurchargeFixedMax(): ?array;
-
-    /**
      * Buyer-surcharge rounding steps (in major currency units) offered
-     * in the admin "Rounding Step" dropdown, ascending. Brand overlays
+     * in the admin "Rounding step" dropdown, ascending. Brand overlays
      * narrow the set via brand.xml <surcharge_rounding_steps>; the
      * default binding returns the parent default set. Never empty.
      *
      * @return float[]
      */
     public function getSurchargeRoundingSteps(): array;
+
+    /**
+     * Whether the buyer-facing "order intent approved" reassurance
+     * notice is rendered at all. Sourced from brand.xml
+     * <intent_approved_notice_enabled>; absent means the documented
+     * default `true`, so a brand overlay that declares nothing keeps the
+     * notice ON.
+     *
+     * `false` suppresses the notice entirely — no DOM element is emitted
+     * at all, not an empty wrapper.
+     */
+    public function isIntentApprovedNoticeEnabled(): bool;
+
+    /**
+     * Per-brand COPY override for the buyer-facing "order intent
+     * approved" reassurance notice rendered inline in the checkout
+     * payment tile. Sourced from brand.xml <intent_approved_notice>.
+     * Wording only — it is NOT an off switch; see
+     * isIntentApprovedNoticeEnabled() for that.
+     *
+     *  - `null`  — no override (element absent, empty or whitespace-only):
+     *              platform default translated copy. Never ''.
+     *  - non-''  — used verbatim as the company-known copy template
+     *              (%1 = brand product name, %2 = buyer company name).
+     */
+    public function getIntentApprovedNotice(): ?string;
+
+    /**
+     * Deliberately absent: the buyer-facing "order intent NOT approved"
+     * notice is NEVER brand-overridable (2026-08-04 ruling, TWO-25326).
+     * Every brand renders the platform default declined/not-available
+     * copy. Do not add a getIntentDeclinedNotice()-style hook here; a
+     * brand overlay that wants different declined-notice wording is a
+     * ruling change, not a code change.
+     */
 
     /**
      * Short brand tag used to decorate non-production checkout URLs

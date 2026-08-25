@@ -28,6 +28,7 @@ const JS_FILES = [
     'view/frontend/requirejs-config.js',
     'view/frontend/web/js/action/set-shipping-information-mixin.js',
     'view/frontend/web/js/model/brand-config.js',
+    'view/frontend/web/js/model/company-search-control.js',
     'view/frontend/web/js/model/new-customer-address-mixin.js',
     'view/frontend/web/js/model/surcharge.js',
     'view/frontend/web/js/view/address-autocomplete.js',

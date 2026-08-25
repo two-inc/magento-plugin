@@ -6,7 +6,7 @@
  * gateway_method KO renderer. The whole point of this helper is that
  * the renderer reads its config from `window.checkoutConfig.payment[<code>]`
  * instead of a hardcoded `.two_payment` subtree, so brand-overlay
- * packages (abn-plugin et al) can reuse the same renderer without
+ * packages (overlay-plugin et al) can reuse the same renderer without
  * forking it.
  */
 
@@ -34,7 +34,7 @@ describe('Two_Gateway/js/model/brand-config', () => {
 
     it('returns an empty object when the requested code is missing', () => {
         window.checkoutConfig = { payment: { two_payment: { foo: 1 } } };
-        expect(getBrandConfig('abn_payment')).toEqual({});
+        expect(getBrandConfig('overlay_payment')).toEqual({});
     });
 
     it('reads the two_payment subtree by code', () => {
@@ -43,23 +43,23 @@ describe('Two_Gateway/js/model/brand-config', () => {
         expect(getBrandConfig('two_payment')).toBe(twoSubtree);
     });
 
-    it('reads the abn_payment subtree by code (brand overlay)', () => {
-        const abnSubtree = { paymentTermsMessage: 'ABN terms', isOrderIntentEnabled: false };
+    it('reads the overlay_payment subtree by code (brand overlay)', () => {
+        const overlaySubtree = { paymentTermsMessage: 'Overlay terms', isOrderIntentEnabled: false };
         window.checkoutConfig = {
-            payment: { two_payment: { foo: 1 }, abn_payment: abnSubtree }
+            payment: { two_payment: { foo: 1 }, overlay_payment: overlaySubtree }
         };
-        expect(getBrandConfig('abn_payment')).toBe(abnSubtree);
+        expect(getBrandConfig('overlay_payment')).toBe(overlaySubtree);
     });
 
     it('does not leak data across codes — each subtree is independent', () => {
         window.checkoutConfig = {
             payment: {
                 two_payment: { paymentTermsMessage: 'Two' },
-                abn_payment: { paymentTermsMessage: 'ABN' }
+                overlay_payment: { paymentTermsMessage: 'Overlay' }
             }
         };
         expect(getBrandConfig('two_payment').paymentTermsMessage).toBe('Two');
-        expect(getBrandConfig('abn_payment').paymentTermsMessage).toBe('ABN');
+        expect(getBrandConfig('overlay_payment').paymentTermsMessage).toBe('Overlay');
     });
 
     describe('getActiveTwoBrandCode', () => {
@@ -87,24 +87,24 @@ describe('Two_Gateway/js/model/brand-config', () => {
             expect(getBrandConfig.getActiveTwoBrandCode()).toBe('two_payment');
         });
 
-        it('returns the brand-overlay code (abn_payment) on an ABN install', () => {
+        it('returns the brand-overlay code (overlay_payment) on an overlay install', () => {
             window.checkoutConfig = {
                 payment: {
                     checkmo: { title: 'Check / Money order' },
-                    abn_payment: { redirectUrlCookieCode: 'abn_redirect_url', brand: 'abn' }
+                    overlay_payment: { redirectUrlCookieCode: 'overlay_redirect_url', brand: 'overlay' }
                 }
             };
-            expect(getBrandConfig.getActiveTwoBrandCode()).toBe('abn_payment');
+            expect(getBrandConfig.getActiveTwoBrandCode()).toBe('overlay_payment');
         });
 
         it('ignores subtrees with a falsy redirectUrlCookieCode', () => {
             window.checkoutConfig = {
                 payment: {
                     two_payment: { redirectUrlCookieCode: '' },
-                    abn_payment: { redirectUrlCookieCode: 'abn_redirect_url' }
+                    overlay_payment: { redirectUrlCookieCode: 'overlay_redirect_url' }
                 }
             };
-            expect(getBrandConfig.getActiveTwoBrandCode()).toBe('abn_payment');
+            expect(getBrandConfig.getActiveTwoBrandCode()).toBe('overlay_payment');
         });
     });
 
@@ -115,13 +115,13 @@ describe('Two_Gateway/js/model/brand-config', () => {
         });
 
         it('returns the active brand subtree by reference', () => {
-            const abnSubtree = {
-                redirectUrlCookieCode: 'abn_redirect_url',
-                checkoutApiUrl: 'https://abn.example/api',
-                brand: 'abn'
+            const overlaySubtree = {
+                redirectUrlCookieCode: 'overlay_redirect_url',
+                checkoutApiUrl: 'https://overlay.example/api',
+                brand: 'overlay'
             };
-            window.checkoutConfig = { payment: { abn_payment: abnSubtree } };
-            expect(getBrandConfig.getActiveTwoBrandConfig()).toBe(abnSubtree);
+            window.checkoutConfig = { payment: { overlay_payment: overlaySubtree } };
+            expect(getBrandConfig.getActiveTwoBrandConfig()).toBe(overlaySubtree);
         });
     });
 });

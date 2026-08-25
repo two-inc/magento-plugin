@@ -98,6 +98,8 @@ make install TWO_API_BASE_URL=http://localhost:8000 TWO_CHECKOUT_BASE_URL=http:/
 
 In production mode these are ignored — the URLs are derived from the `mode` setting in the admin panel (sandbox/staging/production).
 
+`make install`, `make run` and `make debug` print the resolved API / checkout-page hosts (honouring the overrides above and the developer-mode gate) in their status block, so you can see at a glance which real hosts your local instance will actually talk to without having to run `dev/probe-hosts.php` yourself.
+
 Run `make help` to see all available targets.
 
 ### Local-dev perf — disabled modules and what breaks
@@ -165,7 +167,7 @@ For testing integrations that require HTTPS callbacks (e.g. the Two checkout flo
 The proxy needs an `FRP_AUTH_TOKEN` to connect to the FRP server. The `start-proxy.sh` script resolves the token in this order:
 
 1. **Command-line argument:** `./start-proxy.sh <token>`
-2. **Environment variable:** `export FRP_AUTH_TOKEN=<token>` (or set it in `.env.local`)
+2. **Environment variable:** `export FRP_AUTH_TOKEN=<token>` (or set it in `.env`)
 3. **GCP Secret Manager:** falls back to `gcloud secrets versions access latest --secret=FRP_AUTH_TOKEN --project=two-beta`
 
 Edit `frpc.toml` to point at your FRP server, then provide the token via any of the methods above.
@@ -199,25 +201,54 @@ make test-e2e TWO_API_KEY=<your-key>
 
 ## Releases
 
-Releases are cut automatically once CI passes on `main`.
+The version is computed on the pull request that lands on `staging`, from that PR's own commits. `main` computes nothing — it tags the version already in the tree and cuts the GitHub Release.
 
-### Tagging (automatic, gated on CI)
+### The version-bump convention
+
+| Change | What happens |
+|---|---|
+| PR into `staging` | the version is computed from that PR's own commits and committed onto the PR's branch (`.github/workflows/version-bump.yml`) |
+| merge into `staging` | nothing — the merge brings in the version its PR computed |
+| `staging` into `main` | nothing is computed; `main` tags the version already in the tree and cuts the GitHub Release |
+
+With `M` the version on `origin/main` and `C` the version on the PR head, the PR's own commits (`origin/staging..HEAD`, `--no-merges`) decide the candidate: a `!` type or a `BREAKING CHANGE:` footer gives `(M.major + 1).0.0`, a `feat:` gives `M.major.(M.minor + 1).0`, and anything else — `fix` and `chore`/`docs`/`ci`/`test`/`refactor` alike — gives `M.major.M.minor.(M.patch + 1)`. The result is clamped with `max(C, candidate)`, which makes it idempotent (a re-run, the `synchronize` the bump commit itself fires, or a second fix commit on the same PR all write nothing) and means the version can never regress while `main` is behind `staging`.
+
+A **major** is an explicit escape hatch, and overrides the rule above. Two independent signals, the higher wins:
+
+- **Declared** — a root `.next-major` file whose first whitespace-delimited token is the target major, with a short human reason on the same line:
+
+  ```
+  3  # overlay migration, 3.0.0 release
+  ```
+
+  Reviewable in the PR that decides it, so a *planned* major with no single breaking commit still lands as a major. The file is never cleared by CI: it disarms itself once the major it names has shipped. A declaration that has fallen *below the major on `main`* is a hard CI failure — delete or raise it.
+
+- **Discovered** — a `!` on a conventional-commit type (`feat!:`, `TWO-1/fix(scope)!:`) or a `BREAKING CHANGE:` footer in **this PR's own commits** only. Deliberately not the cumulative `main..staging` range: a break that already landed on `staging` must not be re-discovered by every later PR.
+
+The new version for a major is exactly `<target>.0.0`, so a declaration may skip more than one major.
+
+`.github/scripts/decide-bump-level.sh` owns this decision, is unit-tested by `.github/scripts/test-decide-bump-level.sh`, and is shared byte-identically across the plugin repos. It logs the full decision — inputs included — to the workflow log on every run.
+
+### Bumping (on the PR) and tagging (on `main`)
+
+`.github/workflows/version-bump.yml` runs on every `pull_request` into `staging`. It:
+
+1. Runs the unit tests for the computation, then computes an absolute version with `.github/scripts/decide-bump-level.sh origin/staging HEAD`.
+2. If that version differs from the one on the PR head, runs `bumpver update --set-version <X.Y.Z> --no-tag-commit --no-push` to rewrite `composer.json`, `etc/config.xml` and `bumpver.toml`, and pushes the commit onto the PR's own branch under the org GitHub App identity. Otherwise it writes nothing.
+
+The push goes out under the App token rather than `GITHUB_TOKEN` for two reasons: `GITHUB_TOKEN` pushes do not trigger workflows, so CI would never re-run on the bump SHA; and the App holds the ruleset bypass. Because the commit lands on a feature branch, it is outside `terraform-managed-branch-protection` (which targets only `refs/heads/{main,release,staging}`) entirely.
 
 `.github/workflows/release.yml` is triggered by the `CI` workflow completing on `main`. When CI's conclusion is `success`, it:
 
-1. Skips itself if the head commit is already a `chore: Bump version` commit, or if the SHA already carries a numeric tag.
-2. Reads conventional-commit types in `<previous-tag>..HEAD` to pick the bump level:
-   - `BREAKING CHANGE:` / `<type>!:` → **major**
-   - `feat:` → **minor**
-   - everything else → **patch**
+1. Skips itself if the branch tip drifted from the SHA CI signed off on, or if the SHA already carries a numeric tag. (That last check is what makes the merge-back a no-op: after a `main` release fast-forwards into `staging`, staging's tip already carries the tag.)
+2. Reads the version out of `bumpver.toml` — it does not compute or bump one.
+3. Tags `X.Y.Z` (bare numeric, matching the established tag convention), pushes the tag, and creates a GitHub Release with a bucketed changelog (Breaking / Features / Fixes / Internals / Other).
 
-   Linear ticket prefixes are supported (e.g. `INF-123/feat:`).
-3. Runs `bumpver update --<level> --no-tag-commit --no-push` to rewrite `composer.json`, `etc/config.xml`, and `bumpver.toml`.
-4. Tags `X.Y.Z` (bare numeric, matching the established tag convention), pushes the bump commit and tag under the org GitHub App identity, and creates a GitHub Release with a bucketed changelog (Breaking / Features / Fixes / Internals / Other) — so reading the Release page reveals at a glance why the bump was a major / minor / patch.
+`.github/workflows/merge-back.yml` keeps `staging` fast-forwarded to match `main` after each release (falling back to a sync PR if the two have diverged).
 
-`.github/workflows/merge-back.yml` keeps `develop` fast-forwarded to match `main` after each release. `.github/workflows/auto-pr.yml` keeps a rolling sync PR open from `develop` to `main` with a preview of the next release notes — the same bucketing the actual Release page uses.
+`.github/workflows/auto-pr.yml` runs on every push to `staging` (a merge is a push) and keeps a single rolling `staging → main` promotion PR open, no-opping when one already exists or when `staging` is not ahead of `main`.
 
-To trigger a release, merge the rolling sync PR into `main`. CI runs on the merged commit; once green, `release.yml` fires.
+To trigger a release, merge that `staging → main` PR. CI runs on the merged commit; once green, `release.yml` fires.
 
 ## Links
 

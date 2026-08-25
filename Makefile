@@ -2,7 +2,7 @@
 # Development environment
 # ==============================================================================
 
--include .env.local
+-include .env
 
 CONTAINER  := magento
 IMAGE      := michielgerritsen/magento-project-community-edition
@@ -44,6 +44,20 @@ install: clean
 		community-engineering/language-sv_se \
 		community-engineering/language-fi_fi \
 		community-engineering/language-da_dk
+	# The base image's own entrypoint independently bootstraps Magento (4x
+	# `magerun2 config:store:set` for the base URL, then a cache:flush) as
+	# soon as its MySQL/Elasticsearch wait loop clears - a window that can
+	# still be open here since it isn't gated by the `bin/magento --version`
+	# check above. Each of those bootstraps can autoload-generate classes
+	# under generated/code, racing the rm -rf below and intermittently
+	# leaving it unable to rmdir a directory a magerun2 process just wrote
+	# a new file into ("Directory not empty"). Wait for 3 consecutive
+	# clean samples (the observed gaps between magerun2 calls are ~1-2s)
+	# before it's safe to touch generated/code.
+	@clean=0; while [ $$clean -lt 3 ]; do \
+		docker exec $(CONTAINER) pgrep -f magerun2 >/dev/null 2>&1 && clean=0 || clean=$$((clean+1)); \
+		sleep 1; \
+	done
 	docker exec $(CONTAINER) rm -rf /data/generated/code
 	docker exec $(CONTAINER) php bin/magento module:disable \
 		Magento_AdminAdobeImsTwoFactorAuth Magento_TwoFactorAuth \
@@ -60,8 +74,11 @@ install: clean
 	# it). Even un-licensed it should be quiet at runtime in dev.
 	docker exec $(CONTAINER) php bin/magento module:enable Two_Gateway
 	docker exec $(CONTAINER) php bin/magento setup:upgrade
-	docker exec $(CONTAINER) php bin/magento deploy:mode:set developer
 	docker exec $(CONTAINER) php bin/magento setup:di:compile
+	docker exec $(CONTAINER) php bin/magento deploy:mode:set developer
+	# di:compile resets Magento to production mode as a side effect, so
+	# deploy:mode:set developer must run AFTER it, or developer mode gets
+	# silently clobbered back to production. See the overlay repo's 66062d8.
 	# Local-dev perf: merge + minify JS/CSS so RequireJS doesn't fan out into
 	# ~200 individual file fetches. Stays in developer mode (no static deploy
 	# step), but the request count drops to ~20 and the storefront's KO
@@ -71,6 +88,10 @@ install: clean
 	docker exec $(CONTAINER) php bin/magento config:set dev/js/merge_files 1
 	docker exec $(CONTAINER) php bin/magento config:set dev/js/minify_files 1
 	docker exec $(CONTAINER) php bin/magento config:set dev/css/merge_css_files 1
+	# The base image's sample-data admin account is always past-due on
+	# Magento's 90-day default password lifetime the moment a fresh
+	# container starts, bouncing every non-My-Account admin page.
+	docker exec $(CONTAINER) php bin/magento config:set admin/security/password_lifetime 0
 	# Pre-bake all theme JS/CSS so RequireJS XHRs hit plain file IO instead
 	# of falling through Magento's pub/static.php router (a full bootstrap
 	# per asset). Without this, RequireJS's ~hundreds of runtime-loaded
@@ -95,6 +116,7 @@ install: clean
 	fi; \
 	echo " Credentials:   exampleuser / examplepassword123"; \
 	echo " Xdebug:        installed (activate with 'make debug')"; \
+	dev/print-resolved-hosts.sh $(CONTAINER); \
 	echo "========================================="
 
 ## Update payment config: make configure TWO_API_KEY=xxx
@@ -128,6 +150,7 @@ run:
 		echo " Proxy admin:   $$PROXY_URL/admin"; \
 	fi; \
 	echo " Credentials:   exampleuser / examplepassword123"; \
+	dev/print-resolved-hosts.sh $(CONTAINER); \
 	echo "========================================="
 
 ## Start Magento with Xdebug and caches disabled for hot reload
@@ -159,6 +182,7 @@ debug:
 	fi; \
 	echo " Credentials:   exampleuser / examplepassword123"; \
 	echo " Mode:          debug (Xdebug + caches disabled)"; \
+	dev/print-resolved-hosts.sh $(CONTAINER); \
 	echo "========================================="
 
 ## Stop Magento container and FRP proxy
@@ -193,8 +217,19 @@ logs:
 # ==============================================================================
 
 ## Create a versioned zip archive
+# The zip carries a `.two-deployed-commit` build stamp: a zip-dropped
+# install (unpacked straight into app/code) has neither a .git gitlink nor a
+# Composer registry entry, so the stamp is the only provenance signal
+# Model/Provenance.php can find there. It is written into a mktemp dir OUTSIDE
+# the repo and injected with `git archive --add-file`, so the working tree is
+# never dirtied and the stamp can't accidentally get committed.
 archive:
-	eval $$(bumpver show --environ) && git archive --format zip HEAD > magento-plugin-$${CURRENT_VERSION}.zip
+	eval $$(bumpver show --environ) \
+	  && stampdir=$$(mktemp -d) \
+	  && trap 'rm -rf "$$stampdir"' EXIT \
+	  && git rev-parse --short HEAD > "$$stampdir/.two-deployed-commit" \
+	  && git archive --format zip --add-file="$$stampdir/.two-deployed-commit" HEAD \
+	       > magento-plugin-$${CURRENT_VERSION}.zip
 bumpver-%:
 	SKIP=commit-msg bumpver update --$*
 ## Bump patch version
@@ -203,8 +238,8 @@ patch: bumpver-patch
 minor: bumpver-minor
 ## Bump major version
 major: bumpver-major
-PHPUNIT_VERSION := 9.6.34
-PHPUNIT_SHA256  := e7264ae61fe58a487c2bd741905b85940d8fbc2b32cf4a279949b6d9a172a06a
+PHPUNIT_VERSION := 10.5.64
+PHPUNIT_SHA256  := a823d916151f628dd9943ccc81a98bcfbba9c5babf53f27be6c7dccc89f8ee23
 
 ## Run PHPUnit tests
 test:

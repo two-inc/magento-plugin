@@ -6,6 +6,10 @@
 # Artifacts
 index.html
 *.zip
+# Build-time provenance stamp injected into the release zip by `make archive`.
+# Normally written to a temp dir outside the repo; ignored here so a manual or
+# in-tree stamp can never be committed.
+.two-deployed-commit
 
 # Direnv
 .direnv/
@@ -18,7 +22,7 @@ vendor/
 composer.lock
 
 # Local dev config
-.env.local
+.env
 .frpc.pid
 
 # Python
@@ -34,3 +38,4 @@ plans/
 node_modules/
 
 .worktrees/
+.review/

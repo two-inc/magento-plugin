@@ -22,12 +22,6 @@
         <sign_up_url>https://portal.two.inc/auth/merchant/signup</sign_up_url>
         <documentation_url>https://docs.two.inc/developer-portal/plugins/magento</documentation_url>
         <api_base_url>https://api.two.inc</api_base_url>
-        <available_payment_terms>
-            <term>14</term>
-            <term>30</term>
-            <term>60</term>
-            <term>90</term>
-        </available_payment_terms>
         <surcharge_rounding_steps>
             <step>0.10</step>
             <step>0.50</step>
@@ -35,6 +29,12 @@
             <step>5.00</step>
             <step>10.00</step>
         </surcharge_rounding_steps>
+        <!--
+            Declared explicitly even though `true` is the documented
+            default: the base plugin states its position rather than
+            relying on the absence of a declaration.
+        -->
+        <intent_approved_notice_enabled>true</intent_approved_notice_enabled>
         <admin_resource>Magento_Sales::config_sales</admin_resource>
         <module_label_chain>
             <module label="Payment Method">Two_Gateway</module>

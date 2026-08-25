@@ -37,6 +37,6 @@
         etc/adminhtml/di.xml. Registering the plugin here meant CLI-driven
         cache writes never invoked synthesis; the cache then served the
         un-synthesised result to subsequent admin web requests and the
-        ABN admin tab disappeared (ABN-415).
+        brand-overlay admin tab disappeared.
     -->
 </config>

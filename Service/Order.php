@@ -24,13 +24,48 @@ use Magento\Sales\Model\Order\Creditmemo\Item as CreditmemoItem;
 use Magento\Sales\Model\Order\Invoice\Item as InvoiceItem;
 use Magento\Sales\Model\Order\Item as OrderItem;
 use Magento\Store\Model\App\Emulation;
+use Magento\Tax\Api\OrderTaxManagementInterface;
+use Magento\Tax\Model\Sales\Total\Quote\CommonTaxCollector;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Service\Fee\FeeLineProviderPool;
 
 /**
  * Abstract order class
  */
 abstract class Order
 {
+    /**
+     * Ceiling on getOtherChargesLineItem()'s per-line-count epsilon. Bounds
+     * the worst case of "a genuine small untaxed fee vanishes silently on
+     * a large order" to this amount, regardless of how many line items the
+     * order has. See that method's docblock.
+     */
+    private const OTHER_CHARGES_EPSILON_CEILING = 1.00;
+
+    /**
+     * Tolerance, in currency units, on tax == net * rate for a single line.
+     * Same value and convention as the sibling plugins (TWO-25503): wide
+     * enough for per-line 2dp rounding on either side of the equation,
+     * narrow enough that a wrong rate or a wrong tax amount never passes.
+     */
+    private const TAX_FORMULA_TOLERANCE = 0.02;
+
+    /**
+     * Per-unit component of the same tolerance, for the "Unit Price" tax
+     * algorithm: Magento rounds each unit's tax and sums, so the line-level
+     * residual is bounded by half a cent per unit.
+     */
+    private const TAX_UNIT_ROUNDING_TOLERANCE = 0.005;
+
+    /**
+     * Fraction-of-net component of the same tolerance. The rate goes on the
+     * wire at 6dp (see the `tax_rate` roundAmt calls), so on a large net the
+     * declared rate's own precision is worth more than a cent. Deliberately
+     * far too small to hide a wrong rate, which is off by whole basis points.
+     */
+    private const TAX_RATE_PRECISION_TOLERANCE = 0.0000005;
+
     /**
      * @var ConfigRepository
      */
@@ -55,6 +90,18 @@ abstract class Order
      * @var OrderItemRepositoryInterface
      */
     private $orderItemRepository;
+    /**
+     * @var LogRepository
+     */
+    protected $logRepository;
+    /**
+     * @var FeeLineProviderPool
+     */
+    private $feeLineProviderPool;
+    /**
+     * @var OrderTaxManagementInterface
+     */
+    private $orderTaxManagement;
 
     /**
      * Order constructor.
@@ -65,6 +112,9 @@ abstract class Order
      * @param OrderItemRepositoryInterface $orderItemRepository
      * @param Emulation $appEmulation
      * @param Url $url
+     * @param LogRepository $logRepository
+     * @param FeeLineProviderPool $feeLineProviderPool
+     * @param OrderTaxManagementInterface $orderTaxManagement
      */
     public function __construct(
         Image $imageHelper,
@@ -72,7 +122,10 @@ abstract class Order
         CategoryCollection $categoryCollectionFactory,
         OrderItemRepositoryInterface $orderItemRepository,
         Emulation $appEmulation,
-        Url $url
+        Url $url,
+        LogRepository $logRepository,
+        FeeLineProviderPool $feeLineProviderPool,
+        OrderTaxManagementInterface $orderTaxManagement
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -80,6 +133,24 @@ abstract class Order
         $this->orderItemRepository = $orderItemRepository;
         $this->appEmulation = $appEmulation;
         $this->url = $url;
+        $this->logRepository = $logRepository;
+        $this->feeLineProviderPool = $feeLineProviderPool;
+        $this->orderTaxManagement = $orderTaxManagement;
+    }
+
+    /**
+     * Fee lines from registered FeeLineProviderInterface implementations
+     * (see Api\Fee\FeeLineProviderInterface).
+     *
+     * @param OrderModel|OrderModel\Invoice|OrderModel\Creditmemo $entity
+     * @return array[]
+     */
+    public function getFeeLines($entity): array
+    {
+        // A test double built via getMockForAbstractClass() with the
+        // constructor skipped must inject a pool via reflection before
+        // calling this — see Test/Unit/Service/Order/GetFeeLinesTest.php.
+        return $this->feeLineProviderPool->getFeeLines($entity);
     }
 
     /**
@@ -295,13 +366,42 @@ abstract class Order
     /**
      * Get discount amount before tax
      *
+     * Fails loud (log + throw) on a genuinely negative discount instead of
+     * letting a bad value from an upstream cart-rule bug flow silently into
+     * the Two API payload. Never clamps.
+     *
      * @param OrderItem|InvoiceItem|CreditmemoItem $item
      *
      * @return float
+     * @throws LocalizedException when the discount is negative at currency precision
      */
     public function getDiscountAmountItem($item): float
     {
-        return (float)$item->getDiscountAmount() - (float)$item->getDiscountTaxCompensationAmount();
+        // Compute at native float precision — never round the inputs first.
+        // Early per-component rounding is the phantom-negative trap
+        // (TWO-24741). The returned value stays native so the payload
+        // boundary keeps its single roundAmt() call.
+        $discountAmount = (float)$item->getDiscountAmount()
+            - (float)$item->getDiscountTaxCompensationAmount();
+
+        // Sign-check at the currency precision the payload will actually
+        // send: sub-cent float residue is not a data error; a discount that
+        // is still negative after the boundary round is.
+        if (round($discountAmount, 2) < 0) {
+            $message = sprintf(
+                'Negative discount amount %.6F for order item %s (sku %s): '
+                . 'discount %.6F - discount tax compensation %.6F',
+                $discountAmount,
+                $item->getId(),
+                $item->getSku(),
+                (float)$item->getDiscountAmount(),
+                (float)$item->getDiscountTaxCompensationAmount()
+            );
+            $this->logRepository->addErrorLog('NegativeDiscountGuard', $message);
+            throw new LocalizedException(__($message));
+        }
+
+        return $discountAmount;
     }
 
     /**
@@ -347,6 +447,8 @@ abstract class Order
      */
     public function getShippingLineOrder(OrderModel $order): array
     {
+        $taxRate = $this->getTaxRateShipping($order);
+
         return [
             'order_item_id' => 'shipping',
             'name' => 'Shipping - ' . $order->getShippingDescription(),
@@ -358,9 +460,9 @@ abstract class Order
             'net_amount' => $this->roundAmt($this->getNetAmountShipping($order)),
             'tax_amount' => $this->roundAmt($this->getTaxAmountShipping($order)),
             'discount_amount' => $this->roundAmt($this->getDiscountAmountShipping($order)),
-            'tax_rate' => $this->roundAmt($this->getTaxRateShipping($order), 6),
+            'tax_rate' => $this->roundAmt($taxRate, 6),
             'unit_price' => $this->roundAmt($this->getUnitPriceShipping($order), 6),
-            'tax_class_name' => 'VAT ' . $this->roundAmt($this->getTaxRateShipping($order) * 100) . '%',
+            'tax_class_name' => 'VAT ' . $this->roundAmt($taxRate * 100) . '%',
             'quantity' => 1,
             'qty_to_ship' => 1, //need for partial shipment
             'quantity_unit' => 'sc',
@@ -397,12 +499,36 @@ abstract class Order
     }
 
     /**
+     * Get shipping discount amount before tax
+     *
+     * Fails loud (log + throw) on a genuinely negative shipping discount —
+     * same guard as getDiscountAmountItem(), parallel surface.
+     *
      * @param OrderModel|CreditmemoModel $entity
      * @return float
+     * @throws LocalizedException when the discount is negative at currency precision
      */
     public function getDiscountAmountShipping($entity): float
     {
-        return (float)$entity->getShippingDiscountAmount() - (float)$entity->getShippingDiscountTaxCompensationAmount();
+        // Native-precision compute, single round at the payload boundary —
+        // see getDiscountAmountItem() for the rounding-order rationale.
+        $discountAmount = (float)$entity->getShippingDiscountAmount()
+            - (float)$entity->getShippingDiscountTaxCompensationAmount();
+
+        if (round($discountAmount, 2) < 0) {
+            $message = sprintf(
+                'Negative shipping discount amount %.6F for entity %s: '
+                . 'shipping discount %.6F - shipping discount tax compensation %.6F',
+                $discountAmount,
+                $entity->getIncrementId(),
+                (float)$entity->getShippingDiscountAmount(),
+                (float)$entity->getShippingDiscountTaxCompensationAmount()
+            );
+            $this->logRepository->addErrorLog('NegativeDiscountGuard', $message);
+            throw new LocalizedException(__($message));
+        }
+
+        return $discountAmount;
     }
 
     /**
@@ -415,12 +541,251 @@ abstract class Order
     }
 
     /**
+     * Shipping tax rate as a fraction, relayed from Magento's tax engine.
+     *
+     * Never derived from the amounts (TWO-25503). A rate computed as
+     * tax/net is a different statement from the rate the store actually
+     * applied: rounding, mixed rates and a discounted shipping base all
+     * make the quotient land somewhere no tax rule declares, and Two
+     * validates the declared rate against the line's own numbers.
+     *
      * @param OrderModel|CreditmemoModel $entity
      * @return float
+     * @throws LocalizedException when shipping is taxed, no rate is declared
+     *                            and the merchant configured no fallback
      */
     public function getTaxRateShipping($entity): float
     {
-        return ($entity->getShippingInclTax() / $entity->getShippingAmount()) - 1;
+        $declaredPercent = $this->getDeclaredShippingTaxPercent($entity);
+        if ($declaredPercent !== null) {
+            return $declaredPercent / 100;
+        }
+
+        // A shipping line carrying no tax needs no declaration: 0% is a
+        // statement, not a guess. This is also the ordinary shape of a
+        // store whose shipping is not taxed at all — no tax rule applied
+        // means no rate to look up.
+        if (round($this->getTaxAmountShipping($entity), 2) === 0.0) {
+            return 0.0;
+        }
+
+        $storeId = (int)$entity->getStoreId();
+        $fallbackPercent = $this->configRepository->getDefaultShippingTaxRate($storeId);
+        if ($fallbackPercent === null) {
+            $this->logRepository->addErrorLog(
+                'ShippingTaxRateUnresolvable',
+                sprintf(
+                    'Shipping is taxed (%.2F) on entity %s but Magento declares no rate for it, '
+                    . 'and no default shipping tax rate is configured. Refusing rather than deriving a rate.',
+                    $this->getTaxAmountShipping($entity),
+                    $entity->getIncrementId()
+                )
+            );
+            throw new LocalizedException(
+                __('This order could not be placed. Please contact the merchant.')
+            );
+        }
+
+        $this->logRepository->addDebugLog(
+            'ShippingTaxRateFallback',
+            sprintf(
+                'Using the configured default shipping tax rate %.6F%% for entity %s: '
+                . 'Magento declared no rate for a taxed shipping line.',
+                $fallbackPercent,
+                $entity->getIncrementId()
+            )
+        );
+
+        return $fallbackPercent / 100;
+    }
+
+    /**
+     * The shipping tax percentage Magento's own tax engine recorded for the
+     * order, or NULL when it recorded none. Summed across applied taxes so a
+     * combined rate (e.g. state + city) reports as the single rate the buyer
+     * was charged, matching how getTaxRateItem() reads tax_percent.
+     *
+     * Two sources, in this order:
+     *
+     * 1. The order's own `item_applied_taxes` extension attribute. At
+     *    PLACEMENT time (ComposeOrder, reached from Two::authorize() inside
+     *    Order::place(), before the order is ever saved) this is the only
+     *    source that exists — the sales_order_tax_item rows are written by
+     *    Magento\Tax\Model\Plugin\OrderSave on save, and the order has no
+     *    entity id yet to read them by.
+     * 2. sales_order_tax_item via OrderTaxManagementInterface, for the
+     *    post-save consumers (ComposeCapture, ComposeRefund).
+     *
+     * @param OrderModel|CreditmemoModel $entity
+     * @return float|null
+     */
+    private function getDeclaredShippingTaxPercent($entity): ?float
+    {
+        // A creditmemo/invoice relays its parent order's declared rate —
+        // a refund does not re-derive tax.
+        $order = method_exists($entity, 'getOrder') && $entity->getOrder()
+            ? $entity->getOrder()
+            : $entity;
+
+        $percent = $this->getAppliedShippingTaxPercent($order);
+        if ($percent !== null) {
+            return $percent;
+        }
+
+        $orderId = (int)$order->getId();
+        if ($orderId <= 0) {
+            return null;
+        }
+
+        try {
+            $details = $this->orderTaxManagement->getOrderTaxDetails($orderId);
+        } catch (Exception $exception) {
+            // No tax record for this order (or the read failed): treated as
+            // "nothing declared" so the caller's fallback/refuse path owns
+            // the decision rather than this method inventing a rate.
+            return null;
+        }
+
+        $percent = null;
+        foreach ($details->getItems() ?? [] as $taxItem) {
+            if ($taxItem->getType() !== CommonTaxCollector::ITEM_TYPE_SHIPPING) {
+                continue;
+            }
+            foreach ($taxItem->getAppliedTaxes() ?? [] as $appliedTax) {
+                $percent = ($percent ?? 0.0) + (float)$appliedTax->getPercent();
+            }
+        }
+
+        return $percent;
+    }
+
+    /**
+     * Shipping tax percentage off the order's own `item_applied_taxes`
+     * extension attribute, or NULL when it carries no shipping entry.
+     *
+     * Two element shapes, both handled: nested arrays before the order is
+     * saved (Magento\Tax\Model\Quote\ToOrderConverter builds them during
+     * quote->order conversion) and OrderTaxDetailsItemInterface objects
+     * after it (Magento\Sales\Model\OrderRepository repopulates the same
+     * attribute on load).
+     *
+     * @param OrderModel|CreditmemoModel $order
+     * @return float|null
+     */
+    private function getAppliedShippingTaxPercent($order): ?float
+    {
+        if (!method_exists($order, 'getExtensionAttributes')) {
+            return null;
+        }
+        $extensionAttributes = $order->getExtensionAttributes();
+        if ($extensionAttributes === null
+            || !method_exists($extensionAttributes, 'getItemAppliedTaxes')) {
+            return null;
+        }
+
+        $percent = null;
+        foreach ($extensionAttributes->getItemAppliedTaxes() ?? [] as $taxItem) {
+            $type = is_array($taxItem) ? ($taxItem['type'] ?? null) : $taxItem->getType();
+            if ($type !== CommonTaxCollector::ITEM_TYPE_SHIPPING) {
+                continue;
+            }
+            $appliedTaxes = is_array($taxItem)
+                ? ($taxItem['applied_taxes'] ?? [])
+                : ($taxItem->getAppliedTaxes() ?? []);
+            foreach ($appliedTaxes as $appliedTax) {
+                $percent = ($percent ?? 0.0) + (float)(
+                    is_array($appliedTax) ? ($appliedTax['percent'] ?? 0) : $appliedTax->getPercent()
+                );
+            }
+        }
+
+        return $percent;
+    }
+
+    /**
+     * Refuse any line whose declared tax does not reconcile with its own
+     * declared rate and net amount (TWO-25503).
+     *
+     * The plugin never derives a rate from amounts and never corrects a
+     * line's numbers, so an internally-inconsistent line has to stop the
+     * checkout: the buyer sees a generic notice and the detail goes to the
+     * log. Tolerance is in currency units, the same convention as
+     * getOtherChargesLineItem()'s epsilon — see lineTaxTolerance() for what
+     * widens it, and the "before discount" base below.
+     *
+     * @param array $lineItems Composed payload line items.
+     * @return void
+     * @throws LocalizedException when a line's tax does not reconcile
+     */
+    public function validateTaxReconciliation(array $lineItems): void
+    {
+        foreach ($lineItems as $lineItem) {
+            $net = (float)($lineItem['net_amount'] ?? 0);
+            $tax = (float)($lineItem['tax_amount'] ?? 0);
+            $rate = (float)($lineItem['tax_rate'] ?? 0);
+            $tolerance = $this->lineTaxTolerance($lineItem, $net);
+
+            // Under tax/calculation/apply_after_discount = 0 ("Before
+            // Discount") Magento taxes the UNDISCOUNTED base while net_amount
+            // is already net of the discount, so the line reconciles against
+            // net + discount rather than net. Both bases are accepted; the
+            // residual is measured against whichever the line actually used.
+            $discount = abs((float)($lineItem['discount_amount'] ?? 0));
+            $base = $net;
+            $discrepancy = abs($tax - $net * $rate);
+            if ($discount > 0) {
+                $discountedBaseDiscrepancy = abs($tax - ($net + $discount) * $rate);
+                if ($discountedBaseDiscrepancy < $discrepancy) {
+                    $discrepancy = $discountedBaseDiscrepancy;
+                    $base = $net + $discount;
+                }
+            }
+            if ($discrepancy <= $tolerance) {
+                continue;
+            }
+
+            $this->logRepository->addErrorLog(
+                'TaxReconciliationFailed',
+                sprintf(
+                    'Line %s declares tax %.2F but rate %.6F on base %.2F implies %.2F '
+                    . '(off by %.2F, tolerance %.2F).',
+                    $lineItem['order_item_id'] ?? 'unknown',
+                    $tax,
+                    $rate,
+                    $base,
+                    $base * $rate,
+                    $discrepancy,
+                    $tolerance
+                )
+            );
+            throw new LocalizedException(
+                __('This order could not be placed. Please contact the merchant.')
+            );
+        }
+    }
+
+    /**
+     * Per-line reconciliation tolerance, in currency units.
+     *
+     * TAX_FORMULA_TOLERANCE alone assumes the line's tax was rounded once,
+     * on the line. Under tax/calculation/algorithm = "Unit Price" Magento
+     * rounds per UNIT and sums, so the line-level residual grows with
+     * quantity — up to half a cent per unit. The net-proportional term covers
+     * the declared rate's own 6dp precision, which on a large net is itself
+     * worth more than a cent.
+     *
+     * @param array $lineItem
+     * @param float $net
+     * @return float
+     */
+    private function lineTaxTolerance(array $lineItem, float $net): float
+    {
+        $quantity = max(1.0, (float)($lineItem['quantity'] ?? 1));
+
+        return max(
+            self::TAX_FORMULA_TOLERANCE,
+            self::TAX_UNIT_ROUNDING_TOLERANCE * $quantity
+        ) + self::TAX_RATE_PRECISION_TOLERANCE * abs($net);
     }
 
     /**
@@ -482,6 +847,289 @@ abstract class Order
                     : $billingAddress->getCompany(),
             ]
         ];
+    }
+
+    /**
+     * SECONDARY fallback for any total-collector amount that inflates
+     * grand_total without being itemized elsewhere.
+     *
+     * Magento only lets us itemize what we know about: product items,
+     * shipping, our own surcharge. A third-party extension that adds a
+     * fee the same way Magento adds shipping — a totals-collector amount
+     * bumping grand_total, but not a quote/order item (e.g. Amasty's
+     * "Extra Fee" module) — is invisible to every getLineItems*() method
+     * above, while still being included in the aggregate total we report.
+     * That leaves sum(line_items) != grand_total.
+     *
+     * The PRIMARY mechanism is a registered FeeLineProviderInterface
+     * (see getFeeLines() / Api\Fee\FeeLineProviderInterface): a provider
+     * that knows a specific fee's real per-fee tax rate directly (e.g. by
+     * reading a vendor's own table). Callers are expected to merge
+     * getFeeLines() into $lineItems before calling this method, so this
+     * only ever has to reconcile what no provider recognized.
+     *
+     * The SECONDARY mechanism, for a residual WITH tax that no provider
+     * claimed, is findVerifiedResidualTaxRate(): rather than guess a rate,
+     * it checks whether Magento's own tax engine already vouches for one
+     * (see that method's docblock). This covers any well-behaved
+     * total-collector extension without needing a per-vendor provider —
+     * only an extension that computes its own tax outside Magento's tax
+     * engine still needs a FeeLineProviderInterface.
+     *
+     * Only once BOTH of those come up empty do we fall back further: a
+     * synthetic line is auto-emitted when the residual is genuinely
+     * untaxed (residual tax rounds to zero — a 0% line is always a valid
+     * statement, never a guess). Any remaining residual with a real,
+     * unverifiable non-zero tax component is a fee we can't safely
+     * itemize blind: submitting a blended/guessed tax_rate risks Two's
+     * API rejecting the payload (or worse, silently accepting a wrong VAT
+     * rate), so instead this logs a loud warning and leaves it
+     * unreconciled — visibility over a guess.
+     *
+     * Returns null when there's nothing to reconcile (or the residual
+     * can't be safely reconciled), so an ordinary order never gets a
+     * synthetic line.
+     *
+     * Two more guards, both there to stop this firing on completely
+     * ordinary orders that have nothing to do with a third-party fee:
+     *
+     *  - The epsilon scales with $lineItems' count (min 0.01, +0.005 per
+     *    line, capped at self::OTHER_CHARGES_EPSILON_CEILING). Every
+     *    gross_amount here is independently roundAmt()'d to 2dp; summing N
+     *    independently-rounded values can legitimately drift from the
+     *    entity's own higher-precision aggregate column by up to ~N*0.005
+     *    (the same bound ComposeRefund's own line-summing comment already
+     *    documents) with zero third-party extension involved. A flat
+     *    1-cent epsilon would false-positive on any large multi-item
+     *    order — but leaving it uncapped would let a genuine small
+     *    untaxed fee vanish silently (no log at all — this is the
+     *    "ordinary rounding noise" branch, deliberately quiet) on a large
+     *    enough order. The ceiling bounds that worst case.
+     *  - Only a POSITIVE residual (grand_total > known items) is ever
+     *    auto-emitted. A negative residual means known items already
+     *    exceed grand_total, which isn't a "fee we forgot" — it's more
+     *    likely a bug in our own line-item math (e.g. double-counting)
+     *    than a legitimate negative-amount fee. Paper over it with a
+     *    synthetic line and the real bug goes undiagnosed; log it instead.
+     *
+     * @param array $lineItems Line items already built for this entity
+     *                          (products, shipping, surcharge, entity-native
+     *                          adjustment lines, and any FeeLineProviderInterface
+     *                          output already merged in).
+     * @param OrderModel|OrderModel\Invoice|OrderModel\Creditmemo $entity
+     * @param float $grandTotal The entity's own aggregate gross/grand total.
+     * @param float $taxTotal The entity's own aggregate tax total.
+     * @return array|null
+     */
+    public function getOtherChargesLineItem(array $lineItems, $entity, float $grandTotal, float $taxTotal): ?array
+    {
+        $knownGross = 0.0;
+        $knownTax = 0.0;
+        foreach ($lineItems as $lineItem) {
+            $knownGross += (float)($lineItem['gross_amount'] ?? 0);
+            $knownTax += (float)($lineItem['tax_amount'] ?? 0);
+        }
+
+        $epsilon = min(max(0.01, 0.005 * count($lineItems)), self::OTHER_CHARGES_EPSILON_CEILING);
+
+        $residualGross = round($grandTotal - $knownGross, 2);
+        if (abs($residualGross) <= $epsilon) {
+            // Ordinary rounding noise, not an untracked total.
+            return null;
+        }
+
+        if ($residualGross < 0) {
+            // Known items already exceed grand_total. Not a fee we
+            // forgot — more likely our own line-item math double-counted
+            // something. Surface it; don't invent a negative-amount line
+            // to paper over a bug that needs diagnosing.
+            $this->logRepository->addErrorLog(
+                'UnreconciledOtherCharges',
+                sprintf(
+                    'sum(line_items.gross_amount) exceeds grand_total by %.2F. '
+                    . 'Not auto-itemizing a negative correction line.',
+                    abs($residualGross)
+                )
+            );
+            return null;
+        }
+
+        $residualTax = round($taxTotal - $knownTax, 2);
+        if (abs($residualTax) > $epsilon) {
+            $residualNet = round($residualGross - $residualTax, 2);
+            $verifiedRate = $this->findVerifiedResidualTaxRate($entity, $residualNet, $residualTax, $epsilon);
+            if ($verifiedRate !== null) {
+                return [
+                    'order_item_id' => 'other_charges',
+                    'name' => (string)__('Other charges'),
+                    'description' => (string)__('Other charges'),
+                    'type' => 'OTHER',
+                    'image_url' => '',
+                    'product_page_url' => '',
+                    'gross_amount' => $this->roundAmt($residualGross),
+                    'net_amount' => $this->roundAmt($residualNet),
+                    'tax_amount' => $this->roundAmt($residualTax),
+                    'discount_amount' => '0.00',
+                    'tax_rate' => $this->roundAmt($verifiedRate / 100, 6),
+                    'tax_class_name' => 'VAT ' . $this->roundAmt($verifiedRate) . '%',
+                    'unit_price' => $this->roundAmt($residualNet, 6),
+                    'quantity' => 1,
+                    'quantity_unit' => 'sc',
+                ];
+            }
+
+            // Non-zero tax on an unrecognized residual, and no rate
+            // Magento's own tax engine vouches for reconciles it either:
+            // we don't know its real rate. Guessing one is worse than not
+            // reconciling — surface it loudly instead so it can be
+            // diagnosed and, if it recurs, given a real
+            // FeeLineProviderInterface.
+            $this->logRepository->addErrorLog(
+                'UnreconciledOtherCharges',
+                sprintf(
+                    'grand_total exceeds sum(line_items) by %.2F with a non-zero tax '
+                    . 'component (%.2F) that no FeeLineProviderInterface recognized and '
+                    . 'no applied tax rate on the order reconciles. '
+                    . 'Not auto-itemizing an unverified tax rate.',
+                    $residualGross,
+                    $residualTax
+                )
+            );
+            return null;
+        }
+
+        // Residual tax is zero (or rounds to it) — a 0% line is always a
+        // valid, honest statement, safe to auto-emit without a provider.
+        $residualNet = $residualGross;
+
+        return [
+            'order_item_id' => 'other_charges',
+            'name' => (string)__('Other charges'),
+            'description' => (string)__('Other charges'),
+            'type' => 'OTHER',
+            'image_url' => '',
+            'product_page_url' => '',
+            'gross_amount' => $this->roundAmt($residualGross),
+            'net_amount' => $this->roundAmt($residualNet),
+            'tax_amount' => '0.00',
+            'discount_amount' => '0.00',
+            'tax_rate' => '0.000000',
+            'tax_class_name' => 'VAT 0%',
+            'unit_price' => $this->roundAmt($residualNet, 6),
+            'quantity' => 1,
+            'quantity_unit' => 'sc',
+        ];
+    }
+
+    /**
+     * Looks for a genuine, Magento-verified tax rate that reconciles a
+     * taxed residual, so a taxed residual doesn't have to be either a
+     * registered FeeLineProviderInterface's job or thrown away
+     * unreconciled.
+     *
+     * Any total-collector extension that correctly integrates with
+     * Magento's tax engine — Magento's own Weee, or a well-built
+     * third-party fee module — registers its tax via the same
+     * `applied_taxes` quote-address total data Magento's own
+     * product/shipping tax uses. Magento copies that onto the order's own
+     * extension attributes during quote-to-order conversion
+     * (Magento\Tax\Model\Quote\ToOrderConverter::afterConvert(), a plugin
+     * on Quote\Address\ToOrder::convert()) — which runs during
+     * QuoteManagement::submitQuote(), well before Order::place() calls
+     * authorize(). So it's already sitting on the in-memory $entity this
+     * class is handed, with no entity_id needed and no vendor coupling:
+     * if a rate Magento itself applied would produce exactly this
+     * residual's tax on this residual's net amount, that rate is real,
+     * not invented.
+     *
+     * Only Order carries this extension attribute (populated from the
+     * quote it was converted from) — Invoice/Creditmemo don't, so this
+     * can't help reconcile a residual on those entities.
+     *
+     * Each applied-tax entry's shape depends on exactly when it's read:
+     * right after ToOrderConverter::afterConvert() it's a plain array
+     * (that's all the plugin sets), but QuoteManagement::submitQuote()
+     * immediately re-merges the converted order into a fresh one via
+     * DataObjectHelper::mergeDataObjects() — which rehydrates the array
+     * into Magento\Tax\Model\Sales\Order\Tax objects (confirmed live:
+     * this is what the $entity ComposeOrder actually receives carries).
+     * Handling both shapes isn't defensive padding for a case that can't
+     * happen — both cases are real, just at different points in the same
+     * conversion.
+     *
+     * Matches on amount, not identity: the first applied rate whose
+     * implied tax reconciles the residual wins, with no proof that rate
+     * specifically produced this residual rather than some other taxable
+     * amount on the order. On an order with several distinct tax classes
+     * this is a real (if narrow) way to attribute the wrong tax_rate/
+     * tax_class_name to the residual — two rates would have to coincide
+     * with the same net/tax split for that to happen. The emitted
+     * gross/net/tax amounts stay correct either way; only the reported
+     * rate label could be wrong.
+     *
+     * @param OrderModel|OrderModel\Invoice|OrderModel\Creditmemo $entity
+     * @return float|null The verified rate as a percent (e.g. 20.0), or
+     *                     null if no applied rate reconciles the residual.
+     */
+    private function findVerifiedResidualTaxRate($entity, float $residualNet, float $residualTax, float $epsilon): ?float
+    {
+        if (!$entity instanceof OrderModel) {
+            return null;
+        }
+
+        $extensionAttributes = $entity->getExtensionAttributes();
+        $appliedTaxes = $extensionAttributes ? $extensionAttributes->getAppliedTaxes() : null;
+        if (!$appliedTaxes) {
+            return null;
+        }
+
+        foreach ($appliedTaxes as $appliedTax) {
+            if (is_array($appliedTax)) {
+                $percent = $appliedTax['percent'] ?? null;
+            } elseif (is_object($appliedTax) && method_exists($appliedTax, 'getPercent')) {
+                $percent = $appliedTax->getPercent();
+            } else {
+                $percent = null;
+            }
+            if (!$percent) {
+                continue;
+            }
+
+            $impliedTax = round($residualNet * (float)$percent / 100, 2);
+            if (abs($impliedTax - $residualTax) <= $epsilon) {
+                return (float)$percent;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Shared glue for ComposeOrder/ComposeCapture/ComposeRefund: merge any
+     * registered FeeLineProviderInterface output into $lineItems, then
+     * append the getOtherChargesLineItem() fallback if it has anything to
+     * reconcile. One call site instead of three near-identical ones, so a
+     * future change to the merge order/logic only needs to happen once.
+     *
+     * @param array $lineItems Line items already built for this entity.
+     * @param OrderModel|OrderModel\Invoice|OrderModel\Creditmemo $entity
+     * @param float $grandTotal The entity's own aggregate gross/grand total.
+     * @param float $taxTotal The entity's own aggregate tax total.
+     * @return array $lineItems with fee-provider output and/or the residual
+     *               fallback appended.
+     */
+    protected function reconcileOtherCharges(array $lineItems, $entity, float $grandTotal, float $taxTotal): array
+    {
+        foreach ($this->getFeeLines($entity) as $feeLine) {
+            $lineItems[] = $feeLine;
+        }
+
+        $otherCharges = $this->getOtherChargesLineItem($lineItems, $entity, $grandTotal, $taxTotal);
+        if ($otherCharges) {
+            $lineItems[] = $otherCharges;
+        }
+
+        return $lineItems;
     }
 
     /**
