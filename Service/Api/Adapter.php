@@ -65,17 +65,24 @@ class Adapter
      * @param array $payload
      * @param string $method
      * @param int|null $storeId Optional store scope for API key resolution (default: default scope)
+     * @param string|null $apiKeyOverride Key to authenticate with instead of the stored one, for
+     *        verifying a candidate key that has not been saved yet
+     * @param string|null $modeOverride Environment to call instead of the stored one, for verifying
+     *        a candidate key against a mode submitted in the same admin save
      * @return array
      */
     public function execute(
         string $endpoint,
         array $payload = [],
         string $method = 'POST',
-        ?int $storeId = null
+        ?int $storeId = null,
+        ?string $apiKeyOverride = null,
+        ?string $modeOverride = null
     ): array {
         try {
             $this->logRepository->addDebugLog(sprintf('API call: %s %s', $method, $endpoint), $payload);
-            $mode = $storeId !== null ? $this->configRepository->getMode($storeId) : null;
+            $mode = $modeOverride
+                ?: ($storeId !== null ? $this->configRepository->getMode($storeId) : null);
             $url = $this->configRepository->addVersionDataInURL(
                 sprintf('%s%s', $this->configRepository->getCheckoutApiUrl($mode), $endpoint)
             );
@@ -87,7 +94,7 @@ class Adapter
                 $url,
                 [
                     'Content-Type' => 'application/json',
-                    'X-API-Key' => $this->configRepository->getApiKey($storeId),
+                    'X-API-Key' => $apiKeyOverride ?? $this->configRepository->getApiKey($storeId),
                 ],
                 $body
             );

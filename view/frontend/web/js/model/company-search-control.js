@@ -54,6 +54,14 @@ define(['jquery', 'Two_Gateway/js/model/company-search'], function ($, companySe
      *        dropdown. `selectedItem` is select2's result item
      *        (`{id, text, html, companyId, lookupId}` — see
      *        company-search.js's `processResults`).
+     * @param {boolean} [options.manualEntryEnabled=true] build the
+     *        "My company is not on the list" button inside the dropdown. The
+     *        payment tile turns this OFF (TWO-25503): manual entry is a peer
+     *        chip in its mode control, and a second, differently worded route
+     *        to the same mode is what that control replaced.
+     * @param {function} [options.onReturnToSearch] called when the "Search
+     *        for company" link puts the buyer back in search mode, for a
+     *        mount that tracks the active mode itself.
      * @param {function(object, object)} [options.onManualEntryActivated]
      *        called with ($field, bindToken) once the buyer has actually
      *        activated the "My company is not on the list" button. Owns
@@ -83,7 +91,9 @@ define(['jquery', 'Two_Gateway/js/model/company-search'], function ($, companySe
         this.config = options.config;
         this.getCountryCode = options.getCountryCode || function () { return ''; };
         this.onSelect = options.onSelect || function () {};
+        this.manualEntryEnabled = options.manualEntryEnabled !== false;
         this.onManualEntryActivated = options.onManualEntryActivated || function () {};
+        this.onReturnToSearch = options.onReturnToSearch || function () {};
         this.onBound = options.onBound || function () {};
         this.templateSelectionFallback = options.templateSelectionFallback || function () { return ''; };
         this.searchForCompanyText = options.searchForCompanyText || '';
@@ -190,9 +200,11 @@ define(['jquery', 'Two_Gateway/js/model/company-search'], function ($, companySe
                         // own scroll/clip and needs no selection-cancelling
                         // dance — its own click handler is the only thing
                         // that activates it.
-                        companySearch.attachManualEntryButton($field, bindToken, function () {
-                            self.onManualEntryActivated($field, bindToken);
-                        });
+                        if (self.manualEntryEnabled) {
+                            companySearch.attachManualEntryButton($field, bindToken, function () {
+                                self.onManualEntryActivated($field, bindToken);
+                            });
+                        }
                         document.querySelector('.select2-search__field').focus();
                     })
                     .on('select2:close' + companySearch.EVENT_NS, function () {
@@ -265,6 +277,7 @@ define(['jquery', 'Two_Gateway/js/model/company-search'], function ($, companySe
             if ($el.length && $el.get(0).style.display === 'none') return;
             self.bind({ openDropdown: true });
             $link.hide();
+            self.onReturnToSearch();
         };
 
         $link
@@ -307,6 +320,16 @@ define(['jquery', 'Two_Gateway/js/model/company-search'], function ($, companySe
         if (!this._$searchForCompanyLink) return;
         this._$searchForCompanyLink.show();
         if (focus) this._$searchForCompanyLink.trigger('focus');
+    };
+
+    /**
+     * Retire the "Search for company" return link — for a mount that offers a
+     * second route back into search mode (the payment tile's registered
+     * chip, TWO-25503) and must not leave two live affordances for it.
+     */
+    CompanySearchControl.prototype.hideSearchForCompanyLink = function () {
+        if (!this._$searchForCompanyLink) return;
+        this._$searchForCompanyLink.hide();
     };
 
     /**

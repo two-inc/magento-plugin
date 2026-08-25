@@ -61,7 +61,7 @@
                        showInStore="1">
                     <label>API key</label>
                     <comment>API key for sandbox environment is available on your merchant portal (however please reach out to integration@two.inc for access to production keys).</comment>
-                    <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\ApiKey</backend_model>
                     <validate>required-entry</validate>
                     <depends>
                         <field id="active">1</field>
@@ -267,8 +267,12 @@
                 <field id="enable_address_search" translate="label comment" type="select" sortOrder="20" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Autofill company address</label>
-                    <comment>Autocomplete address based on selected country and company. Only takes effect when company search in address entry is also enabled.</comment>
+                    <comment>Autocomplete address based on selected country and company. Unavailable while company search is not in the address entry section — with search relocated to the payment method there is no address step left for it to fill.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\AddressSearchToggle</backend_model>
+                    <depends>
+                        <field id="enable_company_search">1</field>
+                    </depends>
                     <config_path>payment/two_payment/enable_address_search</config_path>
                 </field>
             </group>
@@ -423,10 +427,10 @@
                     <source_model>Two\Gateway\Model\Config\Source\FulfillTrigger</source_model>
                     <config_path>payment/two_payment/fulfill_trigger</config_path>
                 </field>
-                <field id="fulfill_order_status" translate="label comment" type="multiselect" sortOrder="20" showInDefault="1"
+                <field id="fulfill_order_status" translate="label" type="multiselect" sortOrder="20" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Fulfilment order status</label>
-                    <comment>If fulfilment trigger is On Completion, select one or more order statuses which can trigger fulfilment.</comment>
+                    <comment model="Two\Gateway\Model\Config\Comment\FulfillOrderStatus"/>
                     <source_model>Two\Gateway\Model\Config\Source\FulfillOrderStatus</source_model>
                     <depends>
                         <field id="fulfill_trigger">complete</field>
@@ -435,10 +439,18 @@
                 </field>
                 <field id="enable_tax_subtotals" translate="label comment" type="select" sortOrder="30" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Enable tax subtotals</label>
+                    <label>Validate tax subtotals</label>
                     <comment>Add optional tax_subtotals metadata to order creation payload to enforce additional validation (recommended).</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/enable_tax_subtotals</config_path>
+                </field>
+                <field id="default_shipping_tax_rate" translate="label comment" type="text" sortOrder="40"
+                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Default Shipping Tax Rate (%)</label>
+                    <comment>Only used when a shipping method charges tax but Magento declares no rate for it. Leave empty to refuse such orders instead of assuming a rate.</comment>
+                    <backend_model>Two\Gateway\Model\Config\Backend\LocaleDecimal</backend_model>
+                    <validate>validate-zero-or-greater</validate>
+                    <config_path>payment/two_payment/default_shipping_tax_rate</config_path>
                 </field>
             </group>
         </section>

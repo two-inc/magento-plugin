@@ -45,8 +45,9 @@ function loadRenderer() {
                     opened.push({ url: url, target: target, features: features });
                     // A truthy handle, as a browser that did NOT block the
                     // popup returns — the caller reads it to decide whether to
-                    // fall back to the link.
-                    return { closed: false };
+                    // fall back to the link. `close()` because a re-launch
+                    // closes the handle it is replacing.
+                    return { closed: false, close: function () {} };
                 }
             },
             // getAutofillData() base64-encodes the buyer payload. The vm
@@ -84,11 +85,10 @@ function makeContext(component, overrides) {
             return next;
         },
         popupMessageStates: shown,
-        prefetched: { ready: false, buyer: null, matches: false },
-        prefetchedEmail: null,
+        soleTraderLookup: { ready: false, buyer: null, matches: false },
+        soleTraderLookupEmail: null,
         enterSoleTraderUi: function () {},
         fillCompanyData: function () {},
-        applyPrefetch: function () {},
         fetchBuyer: function () { return Promise.resolve(null); }
     });
     return Object.assign(ctx, overrides || {});
@@ -188,8 +188,8 @@ describe('sole-trader signup popup (TWO-25461)', () => {
         expect(opened).toEqual([]);
     });
 
-    test('the not-ready branch offers the link only after the tokens land', async () => {
-        const { component } = loadRenderer();
+    test('the chip click opens signup only once the tokens have landed', async () => {
+        const { component, opened } = loadRenderer();
         let resolveTokens;
         const ctx = makeContext(component, {
             getTokens: function () {
@@ -200,19 +200,21 @@ describe('sole-trader signup popup (TWO-25461)', () => {
         });
 
         ctx.soleTraderMode.call(ctx);
-        // Still minting: the link must not be on offer yet, because
-        // openIframe() could only build an empty-token URL from here.
-        expect(ctx.popupMessageStates).toEqual([]);
+        // Still minting: nothing may open yet, because openIframe() could
+        // only build an empty-token URL from here.
+        expect(opened).toEqual([]);
         expect(ctx.hasSignupTokens.call(ctx)).toBe(false);
 
         resolveTokens({ delegation_token: 'dt-1', autofill_token: 'at-1' });
-        // soleTraderMode() returns nothing, so the whole chain — getTokens() →
-        // fetchBuyer() → applyPrefetch() → showPopupMessage() — has to be
-        // drained by yielding to the macrotask queue rather than awaited.
+        // Yield to the macrotask queue rather than awaiting the returned
+        // promise: the chain also settles fetchBuyer(), whose own microtasks
+        // run after soleTraderMode()'s.
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(ctx.hasSignupTokens.call(ctx)).toBe(true);
-        expect(ctx.popupMessageStates[ctx.popupMessageStates.length - 1]).toBe(true);
+        expect(opened).toHaveLength(1);
+        // The popup was NOT blocked, so the fallback link stays withdrawn.
+        expect(ctx.popupMessageStates).toEqual([false]);
     });
 
     test.each([
@@ -220,9 +222,9 @@ describe('sole-trader signup popup (TWO-25461)', () => {
             description: 'a blocked popup with tokens minted offers the link' },
         { delegationToken: '', autofillToken: '', expected: false,
             description: 'a failed token mint offers no link at all' }
-    ])('blocked-popup branch: $description', ({ delegationToken, autofillToken, expected }) => {
+    ])('blocked-popup branch: $description', async ({ delegationToken, autofillToken, expected }) => {
         // The resolved-but-no-match branch. `window.open` returning null is a
-        // browser-blocked popup; tokens absent means the prefetch resolved
+        // browser-blocked popup; tokens absent means the lookup resolved
         // through its catch, which leaves `ready` true and nothing minted.
         const opened = [];
         const component = loadAmdModule(
@@ -242,24 +244,63 @@ describe('sole-trader signup popup (TWO-25461)', () => {
         const ctx = makeContext(component, {
             delegationToken: delegationToken,
             autofillToken: autofillToken,
-            prefetched: { ready: true, buyer: null, matches: false }
+            soleTraderLookup: { ready: true, buyer: null, matches: false }
         });
 
-        ctx.soleTraderMode.call(ctx);
+        await ctx.soleTraderMode.call(ctx);
 
         expect(ctx.popupMessageStates).toEqual([expected]);
     });
 
-    test('prefetchSoleTrader resolves a promise on its skip paths', async () => {
+    test('lookupSoleTrader resolves a promise on its skip paths', async () => {
         const { component } = loadRenderer();
         // The not-ready branch sequences on this promise, so a skip path
         // returning undefined would throw on `.then`.
         const noTab = makeContext(component, { showModeTab: function () { return false; } });
         const noEmail = makeContext(component, { getEmail: function () { return '   '; } });
-        const deduped = makeContext(component, { prefetchedEmail: 'ola@example.com' });
+        const deduped = makeContext(component, { soleTraderLookupEmail: 'ola@example.com' });
 
-        await expect(noTab.prefetchSoleTrader.call(noTab)).resolves.toBeUndefined();
-        await expect(noEmail.prefetchSoleTrader.call(noEmail)).resolves.toBeUndefined();
-        await expect(deduped.prefetchSoleTrader.call(deduped)).resolves.toBeUndefined();
+        await expect(noTab.lookupSoleTrader.call(noTab)).resolves.toBeUndefined();
+        await expect(noEmail.lookupSoleTrader.call(noEmail)).resolves.toBeUndefined();
+        await expect(deduped.lookupSoleTrader.call(deduped)).resolves.toBeUndefined();
+    });
+
+    test('a second chip click while the first lookup is still in flight opens signup once', async () => {
+        // The dedupe key is written synchronously, so the second click used to
+        // resume immediately on a lookup that had recorded nothing and minted
+        // nothing: no adoption, no popup, and no fallback link either, since
+        // that needs the tokens too. It must wait on the outstanding chain.
+        const { component, opened } = loadRenderer();
+        let resolveTokens;
+        let mints = 0;
+        const ctx = makeContext(component, {
+            getTokens: function () {
+                mints += 1;
+                return new Promise((resolve) => {
+                    resolveTokens = resolve;
+                });
+            }
+        });
+
+        const first = ctx.soleTraderMode.call(ctx);
+        const second = ctx.soleTraderMode.call(ctx);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // Still minting. Neither click may have reached a decision yet — a
+        // recorded showPopupMessage() here is the dead end: the second click
+        // resumed on an empty lookup, so it neither opened a popup nor offered
+        // the link.
+        expect(ctx.popupMessageStates).toEqual([]);
+        expect(opened).toEqual([]);
+
+        resolveTokens({ delegation_token: 'dt-1', autofill_token: 'at-1' });
+        await Promise.all([first, second]);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(mints).toBe(1);
+        expect(opened.length).toBeGreaterThan(0);
+        opened.forEach(({ url }) => {
+            expect(new URL(url).searchParams.get('businessToken')).toBe('dt-1');
+        });
     });
 });

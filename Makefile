@@ -2,7 +2,7 @@
 # Development environment
 # ==============================================================================
 
--include .env.local
+-include .env
 
 CONTAINER  := magento
 IMAGE      := michielgerritsen/magento-project-community-edition
@@ -88,6 +88,10 @@ install: clean
 	docker exec $(CONTAINER) php bin/magento config:set dev/js/merge_files 1
 	docker exec $(CONTAINER) php bin/magento config:set dev/js/minify_files 1
 	docker exec $(CONTAINER) php bin/magento config:set dev/css/merge_css_files 1
+	# The base image's sample-data admin account is always past-due on
+	# Magento's 90-day default password lifetime the moment a fresh
+	# container starts, bouncing every non-My-Account admin page.
+	docker exec $(CONTAINER) php bin/magento config:set admin/security/password_lifetime 0
 	# Pre-bake all theme JS/CSS so RequireJS XHRs hit plain file IO instead
 	# of falling through Magento's pub/static.php router (a full bootstrap
 	# per asset). Without this, RequireJS's ~hundreds of runtime-loaded
@@ -234,8 +238,8 @@ patch: bumpver-patch
 minor: bumpver-minor
 ## Bump major version
 major: bumpver-major
-PHPUNIT_VERSION := 9.6.34
-PHPUNIT_SHA256  := e7264ae61fe58a487c2bd741905b85940d8fbc2b32cf4a279949b6d9a172a06a
+PHPUNIT_VERSION := 10.5.64
+PHPUNIT_SHA256  := a823d916151f628dd9943ccc81a98bcfbba9c5babf53f27be6c7dccc89f8ee23
 
 ## Run PHPUnit tests
 test:

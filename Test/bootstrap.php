@@ -100,6 +100,11 @@ if (!class_exists(\Magento\Quote\Model\Quote\Address\Total::class, false)) {
 if (!class_exists(\Magento\Framework\App\Config\Value::class, false)) {
     require_once __DIR__ . '/Stubs/ConfigValue.php';
 }
+
+// Admin AJAX controller surface (backend action + JSON result/factory) and
+// the encrypted config backend base class, which extends the Value stub
+// above; per-symbol guards live inside the stub file.
+require_once __DIR__ . '/Stubs/AdminAjaxController.php';
 // Admin scope-resolution collaborators for config source models
 // (request params, store manager, Product Tax Class option source);
 // per-symbol guards live inside the stub file.
@@ -123,6 +128,12 @@ require_once __DIR__ . '/Stubs/InvoiceUpload.php';
 // PHPUnit cannot configure via ->method(). Per-symbol guards live inside
 // the stub file.
 require_once __DIR__ . '/Stubs/ConfigStructureSynthesisFixtures.php';
+
+// Order-tax read surface (OrderTaxManagementInterface + its data
+// interfaces, CommonTaxCollector's item-type constants) with real
+// signatures, so the shipping tax rate Magento declares is mockable;
+// per-symbol guards live inside the stub file.
+require_once __DIR__ . '/Stubs/OrderTax.php';
 
 // URL builder with a real getUrl() (mock target) so ComposeOrder's
 // merchant_urls construction is exercisable; per-symbol guard lives inside.

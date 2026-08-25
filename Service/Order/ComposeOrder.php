@@ -10,11 +10,13 @@ namespace Two\Gateway\Service\Order;
 use Magento\Catalog\Helper\Image;
 use Magento\Catalog\Model\ResourceModel\Category\CollectionFactory as CategoryCollection;
 use Magento\Checkout\Model\Session as CheckoutSession;
+use Magento\Framework\Exception\InputException;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Url;
 use Magento\Sales\Api\OrderItemRepositoryInterface;
 use Magento\Sales\Model\Order;
 use Magento\Store\Model\App\Emulation;
+use Magento\Tax\Api\OrderTaxManagementInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Fee\FeeLineProviderPool;
@@ -39,7 +41,8 @@ class ComposeOrder extends OrderService
         Url $url,
         LogRepository $logRepository,
         CheckoutSession $checkoutSession,
-        FeeLineProviderPool $feeLineProviderPool
+        FeeLineProviderPool $feeLineProviderPool,
+        OrderTaxManagementInterface $orderTaxManagement
     ) {
         parent::__construct(
             $imageHelper,
@@ -49,7 +52,8 @@ class ComposeOrder extends OrderService
             $appEmulation,
             $url,
             $logRepository,
-            $feeLineProviderPool
+            $feeLineProviderPool,
+            $orderTaxManagement
         );
         $this->checkoutSession = $checkoutSession;
     }
@@ -125,6 +129,10 @@ class ComposeOrder extends OrderService
         // FeeLineProviderInterface) and, failing that, any genuinely
         // untaxed residual. See Order::reconcileOtherCharges() docblock.
         $lineItems = $this->reconcileOtherCharges($lineItems, $order, $grossTotal, $taxTotal);
+
+        // Last gate before the amounts go on the wire: every line's declared
+        // tax has to follow from its own declared rate and net.
+        $this->validateTaxReconciliation($lineItems);
 
         // Compose the final payload for the API call. Fields that may
         // legitimately be blank are NOT listed here — they go through the
@@ -222,16 +230,67 @@ class ComposeOrder extends OrderService
 
     /**
      * Get the buyer's selected term from checkout, validated against configured terms.
+     *
+     * A term the buyer picked but the merchant no longer offers is refused,
+     * not quietly swapped for the default (TWO-25503): the buyer agreed to
+     * pay on a specific term, and placing the order on a different one is a
+     * changed contract they never saw. Same check and same failure mode as
+     * the chip-click endpoint (Model\Webapi\TermSelection).
+     *
+     * No selection at all is a different case — the checkout simply never
+     * sent one, so the default term applies.
+     *
+     * The term is also cross-checked against the one the SURCHARGE was
+     * priced on. Two independent sources reach placement: the payload's term
+     * comes from `additionalData`, while Model\Total\Surcharge prices the fee
+     * off the session term that `/select-term` writes. A `/select-term` call
+     * that failed mid-flow leaves them disagreeing, and the order would then
+     * be placed on one term carrying the other one's fee. Only enforced when
+     * the session actually holds a term — a cleared session (multi-tab
+     * logout, GC) has nothing to compare and must not fail a valid order.
+     *
+     * @throws InputException when the selected term is unavailable, not
+     *                        numeric, or disagrees with the priced term
      */
     private function getSelectedTermDays(array $additionalData, ?int $storeId = null): int
     {
-        $selected = (int)($additionalData['selectedTerm'] ?? 0);
-        $allowedTerms = $this->configRepository->getAllBuyerTerms($storeId);
-
-        if ($selected > 0 && in_array($selected, $allowedTerms, true)) {
-            return $selected;
+        $raw = $additionalData['selectedTerm'] ?? null;
+        if ($raw !== null && $raw !== '' && !is_numeric($raw)) {
+            // A non-numeric term casts to 0 and silently takes the default —
+            // a changed contract, so refuse it like an unavailable one.
+            $this->logRepository->addErrorLog(
+                'NonNumericPaymentTerm',
+                sprintf('Selected payment term is not numeric for store %d.', (int)$storeId)
+            );
+            throw new InputException(__('Selected payment term is not available.'));
         }
-        return $this->configRepository->getDefaultPaymentTerm($storeId);
+
+        $selected = (int)$raw;
+        if ($selected > 0 && !$this->configRepository->isBuyerTermAvailable($selected, $storeId)) {
+            $this->logRepository->addErrorLog(
+                'UnavailablePaymentTerm',
+                sprintf('Selected payment term %d is not offered for store %d.', $selected, (int)$storeId)
+            );
+            throw new InputException(__('Selected payment term is not available.'));
+        }
+
+        $resolved = $selected > 0 ? $selected : $this->configRepository->getDefaultPaymentTerm($storeId);
+
+        $pricedTerm = (int)$this->checkoutSession->getTwoSelectedTerm();
+        if ($pricedTerm > 0 && $pricedTerm !== $resolved) {
+            $this->logRepository->addErrorLog(
+                'PaymentTermMismatch',
+                sprintf(
+                    'Order composes term %d but the surcharge was priced on term %d for store %d.',
+                    $resolved,
+                    $pricedTerm,
+                    (int)$storeId
+                )
+            );
+            throw new InputException(__('Selected payment term is not available.'));
+        }
+
+        return $resolved;
     }
 
     /**

@@ -245,6 +245,26 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
+    public function getDefaultShippingTaxRate(?int $storeId = null): ?float
+    {
+        $configured = $this->getConfig($this->path('default_shipping_tax_rate'), $storeId);
+        // Same read-path convention as getSurchargeConfig()'s limit: anything
+        // that is not a usable non-negative number resolves to absent, so a
+        // hand-edited row or config:set cannot turn junk into a declared 0%.
+        // A genuine 0 stays a declaration.
+        if (!is_scalar($configured) || $configured === '' || !is_numeric($configured)) {
+            return null;
+        }
+        $rate = (float)$configured;
+        if (!is_finite($rate) || $rate < 0) {
+            return null;
+        }
+        return $rate;
+    }
+
+    /**
+     * @inheritDoc
+     */
     public function isDepartmentEnabled(?int $storeId = null): bool
     {
         return $this->isSetFlag($this->path('enable_department'), $storeId);
@@ -380,7 +400,7 @@ class Repository implements RepositoryInterface
      * Get brand version for checkout page URL decoration.
      *
      * Resolved by Makefile: 'qa' for @two.inc gcloud users, empty otherwise.
-     * Overridable via TWO_BRAND_VERSION in .env.local. Returns empty in
+     * Overridable via TWO_BRAND_VERSION in .env. Returns empty in
      * production — see getBrand().
      *
      * @return string
@@ -505,12 +525,15 @@ class Repository implements RepositoryInterface
      */
     public function isAddressSearchEnabled(?int $storeId = null): bool
     {
-        // Single source of truth for the shared gate (TWO-25202).
-        // `enable_company_search` is deliberately NOT part of this: it decides
-        // where the search control lives (isCompanySearchEnabled). The
-        // payment-tile picker's extra positional condition lives client-side —
-        // see the interface doc comment.
-        return $this->isSetFlag($this->path('enable_address_search'), $storeId);
+        // TWO-25503: `enable_company_search` OFF relocates company search to
+        // the payment tile — it does not disable it — but it retires the
+        // convenience "Autofill company address" exists for, so autofill is
+        // OFF too. Gating the READ, not just the admin save
+        // (AddressSearchToggle), so a row stored before this coupling
+        // existed — or written by config:set/import — can never disagree
+        // with what the admin form shows (matches the PrestaShop resolver).
+        return $this->isCompanySearchEnabled($storeId)
+            && $this->isSetFlag($this->path('enable_address_search'), $storeId);
     }
 
     /**
@@ -554,6 +577,14 @@ class Repository implements RepositoryInterface
         $terms = array_unique($terms);
         sort($terms);
         return $terms;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isBuyerTermAvailable(int $termDays, ?int $storeId = null): bool
+    {
+        return in_array($termDays, $this->getAllBuyerTerms($storeId), true);
     }
 
     public function getDefaultPaymentTerm(?int $storeId = null): int

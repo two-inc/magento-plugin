@@ -6,9 +6,9 @@ namespace Two\Gateway\Test\Unit\Block\Adminhtml\System\Config\Field;
 use Magento\Backend\Block\Template\Context;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
 
 /**
  * The admin API-key panel's status message.
@@ -29,18 +29,14 @@ class ApiKeyCheckTest extends TestCase
         $this->apiKeyStatus = $this->createMock(ApiKeyStatus::class);
     }
 
-    private function build(string $apiKey = 'test-api-key'): ApiKeyCheck
+    private function build(): ApiKeyCheck
     {
-        $configRepository = $this->createMock(ConfigRepository::class);
-        $configRepository->method('getApiKey')->willReturn($apiKey);
-
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
         $brandRegistry->method('getProductName')->willReturn('Acme Pay');
 
         return new ApiKeyCheck(
-            $configRepository,
             $this->apiKeyStatus,
-            $brandRegistry,
+            new ApiKeyStatusMessage($brandRegistry),
             $this->createMock(Context::class)
         );
     }
@@ -127,11 +123,12 @@ class ApiKeyCheckTest extends TestCase
 
     public function testMissingKeyIsAWarningNotAnError(): void
     {
-        // No key stored is not a failure to report against the service, and
-        // must not trigger a verification call at all.
-        $this->apiKeyStatus->expects($this->never())->method('refresh');
+        // No key stored is not a failure to report against the service.
+        $this->apiKeyStatus->method('refresh')->willReturn(
+            ['status' => ApiKeyStatus::NOT_CONFIGURED, 'code' => null, 'merchant' => null]
+        );
 
-        $result = $this->build('')->getApiKeyStatus();
+        $result = $this->build()->getApiKeyStatus();
 
         $this->assertSame('warning', $result['status']);
         $this->assertStringContainsString('missing', (string)$result['message']);
@@ -215,5 +212,33 @@ class ApiKeyCheckTest extends TestCase
         $this->apiKeyStatus->expects($this->never())->method('getStatus');
 
         $this->build()->getApiKeyStatus();
+    }
+
+    // ── Scope reads the config Form block, not the fieldset ─────────────
+
+    public function testScopeReadsTheConfigFormBlockNotTheElementsFieldset(): void
+    {
+        // addField() sets the element's own form to the fieldset, which
+        // carries no scope — the config Form BLOCK is what the renderer is
+        // bound to via setForm($this) at render time, so getForm() here must
+        // resolve to that block, never the element's.
+        // The stub DataObject's magic getter does not underscore-convert
+        // camelCase like the real one does, so the key here is "scopeId"
+        // (what getScopeId() actually looks up), not "scope_id".
+        $configFormBlock = new \Magento\Framework\DataObject(['scope' => 'stores', 'scopeId' => 3]);
+
+        $block = $this->build();
+        $block->setForm($configFormBlock);
+
+        $this->assertSame('stores', $block->getScope());
+        $this->assertSame(3, $block->getScopeId());
+    }
+
+    public function testScopeDefaultsWhenNoFormIsBound(): void
+    {
+        $block = $this->build();
+
+        $this->assertSame('default', $block->getScope());
+        $this->assertSame(0, $block->getScopeId());
     }
 }

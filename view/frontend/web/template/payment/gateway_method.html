@@ -171,35 +171,68 @@
             data-bind="text: orderIntentErrorNotice"
         ></div>
         <!-- /ko -->
-        <!-- ko if: showModeTab -->
-        <!-- ko ifnot: showSoleTrader -->
+        <!--
+            TWO-25503: ONE control offering the three company-capture options
+            as peers, matching WooCommerce and PrestaShop. It replaces a
+            two-item tab bar (registered / sole trader) plus a separately
+            worded "My company is not on the list" button inside the search
+            dropdown, which made manual entry reachable only by opening the
+            picker and rejecting its results.
+
+            Deviation from WC/PS, forced rather than chosen: both siblings
+            build the chip group INSIDE the open picker, as a sibling of the
+            results list, because their picker stays alive across every mode.
+            Magento's sole-trader and manual modes both tear the select2
+            widget down (enterSoleTraderUi/clearCompany), so chips living in
+            the dropdown would be unreachable from exactly the two modes that
+            need a way back. They therefore stay in this persistent control.
+
+            Which chips render is per-option, not per-control:
+              - registered is unconditional — it is also the way OUT of the
+                other two, and that has to work on a checkout whose search
+                control lives in the address area;
+              - sole trader follows showModeTab (the billing country's
+                registry supports SOLE_TRADER);
+              - manual entry follows isTileCompanySearchActive(), because it
+                acts on the tile's own company-name field; where the address
+                area owns the search control instead, manual entry belongs to
+                that mount and its own in-dropdown button.
+        -->
+        <!-- ko if: showModeTab() || isTileCompanySearchActive() -->
         <div class="mode_selector" data-element="popup-message">
-            <span class="mode_item" data-element="selected-element">
-                <!-- ko i18n: 'Registered Organisation' --><!-- /ko -->
-            </span>
             <span
                 class="mode_item"
-                data-element="click-element"
-                data-bind="event: { click: () => soleTraderMode() }"
+                data-bind="
+                    attr: { 'data-element': captureMode() === 'registered' ? 'selected-element' : 'click-element' },
+                    event: { click: () => registeredOrganisationMode({ openDropdown: true }) }
+                "
             >
-                <!-- ko i18n: 'Sole Trader' --><!-- /ko -->
+                <!-- ko i18n: 'Registered company' --><!-- /ko -->
             </span>
+            <!-- ko if: showModeTab -->
+            <span
+                class="mode_item"
+                data-bind="
+                    attr: { 'data-element': captureMode() === 'soletrader' ? 'selected-element' : 'click-element' },
+                    event: { click: () => soleTraderMode() }
+                "
+            >
+                <!-- ko i18n: 'Sole trader' --><!-- /ko -->
+            </span>
+            <!-- /ko -->
+            <!-- ko if: isTileCompanySearchActive() -->
+            <span
+                class="mode_item"
+                data-bind="
+                    attr: { 'data-element': captureMode() === 'manual' ? 'selected-element' : 'click-element' },
+                    event: { click: () => manualEntryMode() }
+                "
+            >
+                <!-- ko i18n: 'Enter manually' --><!-- /ko -->
+            </span>
+            <!-- /ko -->
         </div>
         <!-- /ko -->
-
-        <!-- ko if: showSoleTrader -->
-        <div class="mode_selector" data-element="popup-message">
-            <span
-                class="mode_item"
-                data-element="click-element"
-                data-bind="event: { click: () => registeredOrganisationMode() }"
-            >
-                <!-- ko i18n: 'Registered Organisation' --><!-- /ko -->
-            </span>
-            <span class="mode_item" data-element="selected-element">
-                <!-- ko i18n: 'Sole Trader' --><!-- /ko -->
-            </span>
-        </div>
 
         <!-- ko if: showPopupMessage -->
         <div class="sole_trader_note" data-element="sole-trader">
@@ -222,8 +255,6 @@
                 </span>
             </div>
         </div>
-        <!-- /ko -->
-        <!-- /ko -->
         <!-- /ko -->
 
         <!-- ko foreach: getRegion('messages') -->
@@ -325,22 +356,35 @@
                             where the field can be both empty and locked is a
                             validation error the buyer has no way to clear.
                             See TWO-25288.
+
+                            `required` is likewise BOUND, not static, to
+                            `isTileCompanySearchActive()` — the same condition
+                            the wrapper's `visible:` binding above uses. `visible`
+                            only sets `display:none` on the wrapper; it does not
+                            touch this input's `required` attribute, and native
+                            HTML5 constraint validation still blocks form
+                            submission on a required field that is not rendered,
+                            silently (no bubble, since there's nowhere to point
+                            it). jQuery Validation's own `elements()` already
+                            skips hidden fields, so this only closes the native
+                            validation gap, but native validation runs first and
+                            was the one actually blocking Place Order. TWO-25503.
                         -->
                         <input
                             type="text"
                             id="company_name"
                             name="payment[company_name]"
-                            required="true"
                             data-bind='
                             attr: {
                                 title: $t("Company Name"),
-                                readonly: isCompanyNameReadOnly()
+                                readonly: isCompanyNameReadOnly(),
+                                required: isTileCompanySearchActive()
                             },
                             value: companyName'
                             class="input-text"
                         />
                         <!--
-                            In-flight spinner for prefetchSoleTrader()'s token-mint
+                            In-flight spinner for lookupSoleTrader()'s token-mint
                             + buyer-lookup round trip (TWO-25461 §7). Lives inside
                             this field's own `.control` (see
                             `.two-sole-trader-field-control` in style.css for the
@@ -353,7 +397,7 @@
                         <span
                             class="two-sole-trader-prefetch-spinner"
                             aria-hidden="true"
-                            data-bind="visible: soleTraderPrefetchInFlight"
+                            data-bind="visible: soleTraderLookupInFlight"
                         ></span>
                         <!--
                             The captured organisation number, as plain text

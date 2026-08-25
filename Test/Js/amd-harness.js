@@ -229,6 +229,7 @@ function defaultMocks() {
             CompanySearchControlMock.prototype.isBound = function () { return false; };
             CompanySearchControlMock.prototype.getField = function () { return this._field || {}; };
             CompanySearchControlMock.prototype.showSearchForCompanyLink = function () {};
+            CompanySearchControlMock.prototype.hideSearchForCompanyLink = function () {};
             CompanySearchControlMock.prototype.getSearchForCompanyLink = function () {
                 return { length: 0 };
             };

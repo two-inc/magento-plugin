@@ -123,6 +123,66 @@ admin can act on it. The visibility flag is threaded from `afterSave()`
 into `validateValue()` and pinned there by
 `testProductionAfterSaveWiresTheLimitColumnVisibilityIntoTheZeroRule`.
 
+A term the grid does not render at all — one deselected from "Payment
+terms" — is a different case, because no cell for it is POSTED and the
+per-cell rule therefore never sees it. `assertNoStaleZeroLimits()` scans
+those stored rows at the scope being saved whenever the Limit column
+becomes live, and refuses the save naming the terms. That is not the
+dead end above: reselecting the term brings its cell back into the grid,
+where it can be cleared. The scan runs before the write loop so a refusal
+leaves nothing half-applied.
+
+## An optional constructor argument is NOT autowired
+
+A constructor parameter with a default of `null` is left at its default by
+the object manager — it is never resolved from its type hint. Adding a
+dependency that way and relying on DI to fill it in gets you a silent
+`null` at runtime while every unit test (constructor skipped) still passes.
+`bin/magento dev:di:info <class>` reports it as `"_vn_": "string 1"`
+(value null) instead of `"_i_"` (instance); that is the check.
+
+`Service\Order::$orderTaxManagement` and `Service\Order::$feeLineProviderPool`
+are both declared optional for constructor BC and both named explicitly in
+`etc/di.xml` on the abstract parent, which all four `Compose*` subclasses
+inherit.
+
+## The order/tax composition path never derives a tax rate from amounts
+
+A line's `tax_rate` is whatever the store's tax engine declared for that
+line, relayed verbatim. `tax / net` is a different statement: rounding,
+combined rates and a discounted base all put the quotient on a rate no tax
+rule declares, and Two validates the declared rate against the line's own
+amounts.
+
+(`Service\Fee\Provider\AmastyExtraFee` derives its own rate this way, but
+that provider requires a persisted order id and never runs from the
+validated placement path — see the DI section below.)
+
+Product lines read `tax_percent` off the item. Shipping has no such column,
+so `getTaxRateShipping()` reads the shipping-typed entry out of the order's
+`item_applied_taxes` extension attribute and sums its applied taxes, falling
+back to `OrderTaxManagementInterface::getOrderTaxDetails()`. The extension
+attribute is what makes this work at PLACEMENT time: composition runs from
+`Two::authorize()` inside `Order::place()`, before the order is saved, so it
+has no entity id and the `sales_order_tax_item` rows the management interface
+reads do not exist yet. That interface stays the source for the post-save
+consumers (capture, refund).
+
+Nothing declared and no shipping tax charged is 0% — a store whose shipping
+is untaxed records no tax row at all, and 0% is a statement rather than a
+guess. Nothing declared but tax charged consults the "Default Shipping Tax
+Rate" admin field, and with that unset the order is refused rather than
+given an assumed rate.
+
+`validateTaxReconciliation()` closes the same loop at composition time: a
+line whose declared tax does not follow from its own declared rate and net
+declines the checkout with a generic buyer notice. It never corrects the
+numbers. The tolerance is not a flat 0.02 — it carries a per-unit term for
+the "Unit Price" tax algorithm (which rounds per unit and sums) and a small
+fraction-of-net term, and a discounted line may reconcile against
+`net + discount` as well as `net`, because "Before Discount" tax calculation
+taxes the undiscounted base.
+
 ## DI registration scope for Structure / Config Reader plugins
 
 **Plugins that target `Magento\Config\Model\Config\Structure\Reader`

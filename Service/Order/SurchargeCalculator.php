@@ -199,6 +199,70 @@ class SurchargeCalculator
     }
 
     /**
+     * TWO-25503: whether every FX conversion the surcharge could need for an
+     * order in $orderCurrency is currently resolvable.
+     *
+     * A missing rate used to reach the buyer as a checkout-blocking
+     * LocalizedException out of convertAmount(), from inside the totals
+     * collector — so the whole checkout errored on every collectTotals() with
+     * the method already selected, with nothing the buyer could do about it.
+     * The correct stance is the one isAvailable() takes for an unprojectable
+     * platform minimum: fail closed on THIS payment method only and let the
+     * buyer use another. Callers use this to make that decision before any
+     * conversion is attempted.
+     *
+     * Config-only and rate-lookup-only — deliberately no pricing API call, so
+     * it is cheap enough for isAvailable(), which runs on every render of the
+     * payment-method list.
+     *
+     * A conversion is only NEEDED when some term actually carries a non-zero
+     * fixed amount or cap: convertAmount() short-circuits a zero, and the rate
+     * is per currency PAIR, so one lookup answers for every term.
+     */
+    public function isSurchargeResolvable(string $orderCurrency, ?int $storeId = null): bool
+    {
+        $surchargeType = $this->configRepository->getSurchargeType($storeId);
+        if ($surchargeType === SurchargeType::NONE) {
+            return true;
+        }
+
+        $fixedCurrency = $this->configRepository->getSurchargeFixedCurrency($storeId);
+        if ($fixedCurrency === '' || $fixedCurrency === $orderCurrency) {
+            return true;
+        }
+
+        $hasPercentage = in_array($surchargeType, [SurchargeType::PERCENTAGE, SurchargeType::FIXED_AND_PERCENTAGE]);
+        $hasFixed = in_array($surchargeType, [SurchargeType::FIXED, SurchargeType::FIXED_AND_PERCENTAGE]);
+
+        $needsConversion = false;
+        foreach ($this->configRepository->getAllBuyerTerms($storeId) as $days) {
+            $config = $this->configRepository->getSurchargeConfig((int)$days, $storeId);
+            if ($hasFixed && (float)$config['fixed'] !== 0.0) {
+                $needsConversion = true;
+                break;
+            }
+            if ($hasPercentage && $config['limit'] !== null && (float)$config['limit'] !== 0.0) {
+                $needsConversion = true;
+                break;
+            }
+        }
+        if (!$needsConversion) {
+            return true;
+        }
+
+        if ($this->ratesProvider->getRate($fixedCurrency, $orderCurrency, $storeId) !== null) {
+            return true;
+        }
+
+        $this->logRepository->addErrorLog('Surcharge unresolvable: no FX rate available', [
+            'from_currency' => $fixedCurrency,
+            'to_currency' => $orderCurrency,
+            'store_id' => $storeId,
+        ]);
+        return false;
+    }
+
+    /**
      * Build the buyer_fee_share block for the pricing request.
      *
      * Maps merchant config to the API schema:

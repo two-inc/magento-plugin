@@ -106,7 +106,7 @@ class ComposeCapture extends OrderService
         }
 
         if ($order->getShippingAmount() != 0) {
-            $taxRate = round((1.0 * $order->getShippingTaxAmount() / $order->getShippingAmount()), 6);
+            $taxRate = $this->getTaxRateShipping($order);
             $items[] = [
                 'order_item_id' => 'shipping',
                 'name' => 'Shipping - ' . $order->getShippingMethod(),
@@ -118,7 +118,7 @@ class ComposeCapture extends OrderService
                 'net_amount' => $this->roundAmt($this->getNetAmountShipping($order)),
                 'tax_amount' => $this->roundAmt((float)$order->getShippingTaxAmount()),
                 'discount_amount' => $this->roundAmt($this->getDiscountAmountShipping($order)),
-                'tax_rate' => $this->roundAmt((1.0 * $order->getShippingTaxAmount() / $order->getShippingAmount()), 6),
+                'tax_rate' => $this->roundAmt($taxRate, 6),
                 'unit_price' => $this->roundAmt($this->getUnitPriceShipping($order), 6),
                 'tax_class_name' => 'VAT ' . $this->roundAmt($taxRate * 100) . '%',
                 'quantity' => 1,

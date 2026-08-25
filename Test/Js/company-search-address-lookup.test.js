@@ -143,8 +143,15 @@ const BASE_CONFIG = {
     checkoutApiUrl: 'https://api.example.test',
     companySearchLimit: 50,
     isCompanySearchEnabled: true,
-    isAddressSearchEnabled: true
+    isAddressSearchEnabled: true,
+    orderIntentConfig: {
+        extensionPlatformName: 'magento2',
+        extensionDBVersion: '1.0.0'
+    }
 };
+
+const LOOKUP_URL =
+    'https://api.example.test/companies/v2/company/lookup-abc-123?client=magento2&client_v=1.0.0';
 
 describe('company-search shared module', () => {
     test('processResults carries lookup_id through as lookupId', () => {
@@ -186,7 +193,7 @@ describe('company-search shared module', () => {
 
         expect(recorder.ajax).toHaveLength(1);
         expect(recorder.ajax[0].url).toBe(
-            'https://api.example.test/companies/v2/company/lookup-abc-123'
+            LOOKUP_URL
         );
 
         recorder.doneCallbacks.forEach(function (cb) {
@@ -264,9 +271,9 @@ describe('payment-step company picker (gateway_method.js)', () => {
      * `isAddressAreaCompanySearchEnabled` defaults to true — the
      * saved-address / virtual-cart fallback, where "Enable company search in
      * address entry" is ON but there is no address-area form to host the
-     * control, so the tile hosts it AND owns the (still-empty) billing
-     * address form it fills. Pass false for the other tile case, where the
-     * setting is OFF and the tile is the control's primary home.
+     * control. Pass false for the other tile case, where the setting is OFF
+     * and the tile is the control's primary home. Since TWO-25503 neither
+     * value gates autofill; it still decides whether the tile binds a picker.
      */
     function makeRendererContext(component, config, filled, addressAreaEnabled) {
         return Object.assign(Object.create(component.prototype || {}), {
@@ -310,7 +317,7 @@ describe('payment-step company picker (gateway_method.js)', () => {
         ]);
         expect(recorder.ajax).toHaveLength(1);
         expect(recorder.ajax[0].url).toBe(
-            'https://api.example.test/companies/v2/company/lookup-abc-123'
+            LOOKUP_URL
         );
 
         recorder.doneCallbacks.forEach(function (cb) {
@@ -343,17 +350,15 @@ describe('payment-step company picker (gateway_method.js)', () => {
     });
 
     /**
-     * TWO-25326. With "Enable company search in address entry" OFF the tile is
-     * the control's primary home, which means the buyer has ALREADY completed
-     * and confirmed the address step before they can pick a company. Autofill
-     * must not fire there, whatever "Autofill company address" says — writing
-     * then would silently overwrite an address the buyer entered themselves.
-     *
-     * `isAddressSearchEnabled` is left ON deliberately: this pins the
-     * conjunction, so a fix that merely re-read the address-search flag would
-     * not pass.
+     * This module and the renderer add no gate of their own beyond
+     * `config.isAddressSearchEnabled` — the coupling with "Enable company
+     * search in address entry" is enforced upstream, server-side
+     * (Model\Config\Repository::isAddressSearchEnabled, TWO-25503), so the
+     * flag ConfigProvider hands down is already the resolved value. This
+     * fixture sets it `true` directly to pin that the JS layer itself does
+     * not re-derive or second-guess it from `isAddressAreaCompanySearchEnabled`.
      */
-    test('makes no detail call when company search in address entry is off', () => {
+    test('still fires the detail call when company search sits in the tile', () => {
         const recorder = makeRecorder();
         const $ = makeSpyJQuery(recorder);
         const { component } = loadRenderer(recorder, $);
@@ -361,15 +366,50 @@ describe('payment-step company picker (gateway_method.js)', () => {
         const ctx = makeRendererContext(component, BASE_CONFIG, filled, false);
 
         expect(BASE_CONFIG.isAddressSearchEnabled).toBe(true);
+        expect(ctx.isAddressAreaCompanySearchEnabled).toBe(false);
 
         ctx.enableCompanySearch();
         const mapped = recorder.select2Options.ajax.processResults(SEARCH_RESPONSE).results[0];
         recorder.handlers['select2:select']({ params: { data: mapped } });
 
-        // The pick itself still lands — only the address autofill is gated.
         expect(filled).toEqual([
             { companyId: '12345678', companyName: 'Example Trading Ltd' }
         ]);
+        expect(recorder.ajax).toHaveLength(1);
+        expect(recorder.ajax[0].url).toBe(
+            LOOKUP_URL
+        );
+
+        recorder.doneCallbacks.forEach(function (cb) {
+            cb({ addresses: [{ city: 'London' }] });
+        });
+        expect(recorder.written).toEqual(
+            expect.arrayContaining([['input[name="city"]', 'London']])
+        );
+    });
+
+    /**
+     * The companion to the test above: with the placement gate gone, the
+     * dedicated setting is the ONLY thing left holding autofill back, and it
+     * has to hold in the tile-hosted case too.
+     */
+    test('makes no detail call in the tile when address search is disabled', () => {
+        const recorder = makeRecorder();
+        const $ = makeSpyJQuery(recorder);
+        const { component } = loadRenderer(recorder, $);
+        const filled = [];
+        const ctx = makeRendererContext(
+            component,
+            Object.assign({}, BASE_CONFIG, { isAddressSearchEnabled: false }),
+            filled,
+            false
+        );
+
+        ctx.enableCompanySearch();
+        const mapped = recorder.select2Options.ajax.processResults(SEARCH_RESPONSE).results[0];
+        recorder.handlers['select2:select']({ params: { data: mapped } });
+
+        expect(filled).toHaveLength(1);
         expect(recorder.ajax).toHaveLength(0);
         expect(recorder.written).toHaveLength(0);
     });
@@ -416,7 +456,7 @@ describe('shipping-step company picker (address-autocomplete.js)', () => {
 
         expect(recorder.ajax).toHaveLength(1);
         expect(recorder.ajax[0].url).toBe(
-            'https://api.example.test/companies/v2/company/lookup-abc-123'
+            LOOKUP_URL
         );
     });
 
@@ -487,8 +527,8 @@ describe('shipping-step company picker (address-autocomplete.js)', () => {
 
         // Both companies were looked up — the second pick is not skipped.
         expect(recorder.ajax.map(function (call) { return call.url; })).toEqual([
-            'https://api.example.test/companies/v2/company/lookup-abc-123',
-            'https://api.example.test/companies/v2/company/lookup-def-456'
+            LOOKUP_URL,
+            'https://api.example.test/companies/v2/company/lookup-def-456?client=magento2&client_v=1.0.0'
         ]);
 
         // Last write per field is the second company's data, unconditionally.

@@ -5,8 +5,8 @@
  * TWO-25461. Two buyer-identity lookups share one helper and must NOT share
  * one rule.
  *
- * `prefetchSoleTrader()` is PASSIVE and pre-auth: it reads whatever buyer the
- * Two cookie happens to identify before the buyer has proved anything, so a
+ * `lookupSoleTrader()` is pre-auth: it reads whatever buyer the Two cookie
+ * happens to identify before the buyer has proved anything, so a
  * buyer only counts when its email equals the one entered on the checkout
  * form. That check is correct there and is pinned below as a regression guard.
  *
@@ -24,6 +24,8 @@
 
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const { loadAmdModule } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
@@ -34,7 +36,7 @@ const ENTERED_EMAIL = 'entered@example.com';
  * Load the renderer and give it the state `initialize()` would have set up.
  * The harness returns the spec object itself, so it doubles as the `this` the
  * methods run against, complete with its own observables — but `initialize()`
- * never runs, so `_brandConfig` / `prefetched` have to be supplied here.
+ * never runs, so `_brandConfig` / `soleTraderLookup` have to be supplied here.
  *
  * @param {object|null} buyer what the stubbed `fetchBuyer()` resolves to
  * @returns {object} { renderer, listeners }
@@ -51,8 +53,8 @@ function loadRenderer(buyer) {
     });
 
     renderer._brandConfig = { checkoutPageUrl: CHECKOUT_PAGE_URL };
-    renderer.prefetched = { ready: false, buyer: null, matches: false };
-    renderer.prefetchedEmail = null;
+    renderer.soleTraderLookup = { ready: false, buyer: null, matches: false };
+    renderer.soleTraderLookupEmail = null;
     renderer.getEmail = () => ENTERED_EMAIL;
     renderer.getTokens = () =>
         Promise.resolve({ delegation_token: 'dt', autofill_token: 'at' });
@@ -99,8 +101,8 @@ describe('resolveBuyer applies the email-match rule only pre-authentication', ()
                 expect(pf.ready).toBe(true);
                 expect(pf.buyer).toBe(buyer);
                 // Recorded on the component, not just returned: soleTraderMode()
-                // reads `this.prefetched` on a later click.
-                expect(renderer.prefetched).toBe(pf);
+                // reads `this.soleTraderLookup` on a later click.
+                expect(renderer.soleTraderLookup).toBe(pf);
             });
         }
     );
@@ -164,7 +166,28 @@ describe('a completed signup autofills whatever identity it authenticated', () =
     });
 });
 
-describe('the passive prefetch still refuses a buyer it cannot tie to the form', () => {
+describe('email entry alone never triggers the lookup (TWO-25503)', () => {
+    /**
+     * The removed email-driven prefetch is invisible to every behavioural
+     * fixture here: reinstating it would auto-adopt a sole trader with no chip
+     * click and still leave the chip-click tests green. Pinning the call sites
+     * in the source is what catches that.
+     */
+    test('lookupSoleTrader is called from soleTraderMode and nowhere else', () => {
+        const src = fs.readFileSync(
+            path.resolve(__dirname, '..', '..', RENDERER),
+            'utf8'
+        );
+        // Guard against a rename silently emptying this check.
+        expect(src).toContain('lookupSoleTrader() {');
+
+        const callSites = src.split('\n').filter((line) => /lookupSoleTrader\(\)[.;]/.test(line));
+        expect(callSites).toHaveLength(1);
+        expect(callSites[0]).toContain('return this.lookupSoleTrader().then(');
+    });
+});
+
+describe('the chip lookup still refuses a buyer it cannot tie to the form', () => {
     test('a mismatched cookie buyer does not prefill the company', () => {
         const { renderer } = loadRenderer({
             email: 'someone.else@example.com',
@@ -173,8 +196,8 @@ describe('the passive prefetch still refuses a buyer it cannot tie to the form',
         });
         renderer.showModeTab(true);
 
-        return renderer.prefetchSoleTrader().then(() => {
-            expect(renderer.prefetched.matches).toBe(false);
+        return renderer.lookupSoleTrader().then(() => {
+            expect(renderer.soleTraderLookup.matches).toBe(false);
             expect(renderer.companyId()).toBe('');
             expect(renderer.companyName()).toBe('');
             expect(renderer.showSoleTrader()).toBe(false);
@@ -185,8 +208,8 @@ describe('the passive prefetch still refuses a buyer it cannot tie to the form',
         const { renderer } = loadRenderer(Object.assign({ email: ENTERED_EMAIL }, SOLE_TRADER));
         renderer.showModeTab(true);
 
-        return renderer.prefetchSoleTrader().then(() => {
-            expect(renderer.prefetched.matches).toBe(true);
+        return renderer.soleTraderMode().then(() => {
+            expect(renderer.soleTraderLookup.matches).toBe(true);
             expect(renderer.companyId()).toBe(SOLE_TRADER.organization_number);
             expect(renderer.companyName()).toBe(SOLE_TRADER.company_name);
             expect(renderer.showSoleTrader()).toBe(true);

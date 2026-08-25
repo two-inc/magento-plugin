@@ -41,10 +41,23 @@ namespace Magento\Config\Block\System\Config\Form {
             /** @var array */
             protected $data;
 
+            /** @var mixed the config Form block, bound via setForm() at render time */
+            private $form;
+
             public function __construct(Context $context, array $data = [])
             {
                 $this->context = $context;
                 $this->data = $data;
+            }
+
+            public function setForm($form): void
+            {
+                $this->form = $form;
+            }
+
+            public function getForm()
+            {
+                return $this->form;
             }
 
             /**

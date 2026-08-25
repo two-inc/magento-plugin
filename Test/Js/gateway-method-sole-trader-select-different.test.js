@@ -4,7 +4,7 @@
  *
  * TWO-25461 §7 — the two UX gaps left after the popup-launch bugfixes
  * (PR #343): the "select a different sole trader" link/autoselect param,
- * and the in-flight spinner for the prefetch round trip.
+ * and the in-flight spinner for the chip lookup's round trip.
  */
 
 'use strict';
@@ -210,7 +210,7 @@ describe('at most one sole-trader popup is ever live (TWO-25461 review finding)'
     });
 });
 
-describe('sole-trader prefetch in-flight spinner (TWO-25461 §7)', () => {
+describe('sole-trader lookup in-flight spinner (TWO-25461 §7)', () => {
     test('the spinner flag is true while the round trip is outstanding, false once it settles (success)', async () => {
         const { component } = loadRenderer();
         let resolveTokens;
@@ -218,10 +218,9 @@ describe('sole-trader prefetch in-flight spinner (TWO-25461 §7)', () => {
         const ctx = makeContext(component, {
             enterSoleTraderUi: function () {},
             fillCompanyData: function () {},
-            applyPrefetch: function () {},
             fetchBuyer: function () { return Promise.resolve(null); },
-            prefetchedEmail: null,
-            soleTraderPrefetchInFlight: function (next) {
+            soleTraderLookupEmail: null,
+            soleTraderLookupInFlight: function (next) {
                 if (!arguments.length) return states.length ? states[states.length - 1] : false;
                 states.push(next);
                 return next;
@@ -231,7 +230,7 @@ describe('sole-trader prefetch in-flight spinner (TWO-25461 §7)', () => {
             }
         });
 
-        const flight = ctx.prefetchSoleTrader.call(ctx);
+        const flight = ctx.lookupSoleTrader.call(ctx);
         expect(states).toEqual([true]);
 
         resolveTokens({ delegation_token: 'dt-1', autofill_token: 'at-1' });
@@ -244,7 +243,7 @@ describe('sole-trader prefetch in-flight spinner (TWO-25461 §7)', () => {
         const { component } = loadRenderer();
         const states = [];
         const ctx = makeContext(component, {
-            soleTraderPrefetchInFlight: function (next) {
+            soleTraderLookupInFlight: function (next) {
                 if (!arguments.length) return states.length ? states[states.length - 1] : false;
                 states.push(next);
                 return next;
@@ -252,20 +251,20 @@ describe('sole-trader prefetch in-flight spinner (TWO-25461 §7)', () => {
             getTokens: function () { return Promise.reject(new Error('mint failed')); }
         });
 
-        await ctx.prefetchSoleTrader.call(ctx);
+        await ctx.lookupSoleTrader.call(ctx);
 
         expect(states).toEqual([true, false]);
     });
 
     test('the template renders the spinner inside the company-name field control, bound to the flag', () => {
         const template = fs.readFileSync(path.resolve(__dirname, '..', '..', TEMPLATE), 'utf8');
-        expect(template).toContain('soleTraderPrefetchInFlight');
+        expect(template).toContain('soleTraderLookupInFlight');
         expect(template).toContain('two-sole-trader-prefetch-spinner');
     });
 
     test('an earlier call settling after a newer one started does not clear the flag out from under it (review finding)', async () => {
-        // Buyer edits the email again before the FIRST prefetch resolves: a
-        // second prefetchSoleTrader() call fires for the new email. If the
+        // Buyer edits the email again before the FIRST lookup resolves: a
+        // second lookupSoleTrader() call fires for the new email. If the
         // first call's chain happens to settle after the second one starts,
         // its own .finally() must not flip the shared flag to false while
         // the second request is still genuinely outstanding.
@@ -278,11 +277,10 @@ describe('sole-trader prefetch in-flight spinner (TWO-25461 §7)', () => {
         const ctx = makeContext(component, {
             enterSoleTraderUi: function () {},
             fillCompanyData: function () {},
-            applyPrefetch: function () {},
             fetchBuyer: function () { return Promise.resolve(null); },
-            prefetchedEmail: null,
+            soleTraderLookupEmail: null,
             getEmail: function () { return emails[callIndex]; },
-            soleTraderPrefetchInFlight: function (next) {
+            soleTraderLookupInFlight: function (next) {
                 if (!arguments.length) return states.length ? states[states.length - 1] : false;
                 states.push(next);
                 return next;
@@ -295,9 +293,9 @@ describe('sole-trader prefetch in-flight spinner (TWO-25461 §7)', () => {
             }
         });
 
-        const firstFlight = ctx.prefetchSoleTrader.call(ctx);
+        const firstFlight = ctx.lookupSoleTrader.call(ctx);
         callIndex = 1;
-        const secondFlight = ctx.prefetchSoleTrader.call(ctx);
+        const secondFlight = ctx.lookupSoleTrader.call(ctx);
 
         // Resolve the FIRST (older) call while the second is still pending.
         resolveFirst({ delegation_token: 'dt-1', autofill_token: 'at-1' });
@@ -305,11 +303,11 @@ describe('sole-trader prefetch in-flight spinner (TWO-25461 §7)', () => {
 
         // The second request is still genuinely in flight — the spinner
         // must still read true, not have been cleared by the stale first call.
-        expect(ctx.soleTraderPrefetchInFlight()).toBe(true);
+        expect(ctx.soleTraderLookupInFlight()).toBe(true);
 
         resolveSecond({ delegation_token: 'dt-2', autofill_token: 'at-2' });
         await secondFlight;
 
-        expect(ctx.soleTraderPrefetchInFlight()).toBe(false);
+        expect(ctx.soleTraderLookupInFlight()).toBe(false);
     });
 });

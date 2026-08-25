@@ -30,7 +30,12 @@
     -->
     <type name="Two\Gateway\Service\Fee\FeeLineProviderPool">
         <arguments>
-            <argument name="providers" xsi:type="array"/>
+            <argument name="providers" xsi:type="array">
+                <item name="amastyExtraFee" xsi:type="object">Two\Gateway\Service\Fee\Provider\AmastyExtraFee</item>
+            </argument>
+            <!-- Optional-with-null-default, so named here or every rejected
+                 provider line goes unreported. See the AGENTS.md note. -->
+            <argument name="logRepository" xsi:type="object">Two\Gateway\Api\Log\RepositoryInterface</argument>
         </arguments>
     </type>
     <!--
@@ -43,6 +48,16 @@
     <type name="Two\Gateway\Model\Config\Repository">
         <arguments>
             <argument name="settingsProvider" xsi:type="object">Two\Gateway\Service\Merchant\SettingsProvider\Proxy</argument>
+        </arguments>
+    </type>
+    <!--
+        Configured on the abstract parent so all four Compose* subclasses
+        inherit it.
+    -->
+    <type name="Two\Gateway\Service\Order">
+        <arguments>
+            <argument name="feeLineProviderPool" xsi:type="object">Two\Gateway\Service\Fee\FeeLineProviderPool</argument>
+            <argument name="orderTaxManagement" xsi:type="object">Magento\Tax\Api\OrderTaxManagementInterface</argument>
         </arguments>
     </type>
     <preference for="Two\Gateway\Api\Log\RepositoryInterface"

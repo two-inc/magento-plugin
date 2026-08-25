@@ -210,6 +210,32 @@ class ApiKeyStatus
     }
 
     /**
+     * A live verification of a key that is NOT the stored one — a candidate
+     * being typed into, or submitted to, the admin settings page.
+     *
+     * Neither cached nor memoised: the cache is keyed on the stored key's
+     * verdict and gates checkout, so a candidate's outcome must never be
+     * able to land in it or be served from it.
+     *
+     * `$mode` verifies against an environment that is not the stored one —
+     * a sandbox->production switch and the new production key arrive in the
+     * same admin save, and verifying the new key against the old
+     * environment is a guaranteed 401 (TWO-25503).
+     *
+     * @return array{status: string, code: int|null, merchant: array<string,mixed>|null}
+     */
+    public function verifyCandidate(string $apiKey, ?int $storeId = null, ?string $mode = null): array
+    {
+        if ($apiKey === '') {
+            return self::notConfigured();
+        }
+
+        return self::categorize(
+            $this->apiAdapter->execute(self::ENDPOINT, [], 'GET', $storeId, $apiKey, $mode)
+        );
+    }
+
+    /**
      * True only when the stored API key currently verifies. Every failure
      * category is false: a buyer must not be offered a payment method
      * whose integration cannot be confirmed to work, whatever the reason

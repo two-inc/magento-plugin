@@ -211,6 +211,8 @@
 .mode_selector {
     display: flex;
     justify-content: center;
+    /* Three peer options (TWO-25503) no longer fit one line in a narrow tile. */
+    flex-wrap: wrap;
     gap: 12px;
     margin-bottom: 20px;
     padding: 12px 6px;
@@ -343,7 +345,7 @@
 
 /*
  * Chip colour palette matches the `.mode_item` toggle elsewhere on the
- * checkout page (Registered Organisation / Sole Trader): solid Two-brand
+ * checkout page (the company-capture mode options): solid Two-brand
  * blue (`--color-blue2`) for the selected state, white fill with blue
  * text for unselected. Brand overlays that ship a different palette
  * (e.g. a brand overlay's palette) override these rules from their own
@@ -531,7 +533,7 @@
 }
 
 /*
- * Anchors the in-field sole-trader prefetch spinner below (TWO-25461 §7) —
+ * Anchors the in-field sole-trader lookup spinner below (TWO-25461 §7) —
  * same role `.select2-search--dropdown` plays for `.two-company-search__spinner`.
  */
 .two-sole-trader-field-control {
@@ -539,7 +541,7 @@
 }
 
 /*
- * In-flight spinner for the sole-trader prefetch round trip. Same 16x16
+ * In-flight spinner for the sole-trader lookup round trip. Same 16x16
  * `loader.gif` and absolute-inside-the-field positioning as
  * `.two-company-search__spinner` — kept as its own flat class rather than
  * reused verbatim, since that one's selector must stay untouched for overlay

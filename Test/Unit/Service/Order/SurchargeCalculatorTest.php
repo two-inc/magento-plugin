@@ -57,6 +57,55 @@ class SurchargeCalculatorTest extends TestCase
         );
     }
 
+    /**
+     * TWO-25503: a missing FX rate makes the METHOD unofferable, so callers
+     * need to ask before converting anything. Given/When/Then per case.
+     *
+     * @dataProvider resolvabilityProvider
+     */
+    public function testIsSurchargeResolvable(
+        string $type,
+        string $fixedCurrency,
+        string $orderCurrency,
+        ?float $rate,
+        float $fixed,
+        ?float $limit,
+        bool $expected,
+        string $case
+    ): void {
+        $this->config->method('getSurchargeType')->willReturn($type);
+        $this->config->method('getSurchargeFixedCurrency')->willReturn($fixedCurrency);
+        $this->config->method('getAllBuyerTerms')->willReturn([14, 30]);
+        $this->config->method('getSurchargeConfig')->willReturn([
+            'percentage' => 2.0,
+            'fixed' => $fixed,
+            'limit' => $limit,
+        ]);
+        $this->ratesProvider->method('getRate')->willReturn($rate);
+
+        $this->assertSame(
+            $expected,
+            $this->calculator->isSurchargeResolvable($orderCurrency, 1),
+            $case
+        );
+    }
+
+    public function resolvabilityProvider(): array
+    {
+        return [
+            [SurchargeType::NONE, 'EUR', 'NOK', null, 10.0, 50.0, true, 'no surcharge configured needs no rate'],
+            [SurchargeType::FIXED, 'EUR', 'EUR', null, 10.0, null, true, 'same currency needs no rate'],
+            [SurchargeType::FIXED, '', 'NOK', null, 10.0, null, true, 'no fixed currency stored needs no rate'],
+            [SurchargeType::FIXED, 'EUR', 'NOK', 11.5, 10.0, null, true, 'a fixed fee with a rate resolves'],
+            [SurchargeType::FIXED, 'EUR', 'NOK', null, 10.0, null, false, 'a fixed fee with no rate does not'],
+            [SurchargeType::FIXED, 'EUR', 'NOK', null, 0.0, null, true, 'a zero fixed fee is never converted'],
+            [SurchargeType::PERCENTAGE, 'EUR', 'NOK', null, 0.0, null, true, 'an uncapped percentage is never converted'],
+            [SurchargeType::PERCENTAGE, 'EUR', 'NOK', null, 0.0, 50.0, false, 'a capped percentage with no rate does not'],
+            [SurchargeType::PERCENTAGE, 'EUR', 'NOK', 11.5, 0.0, 50.0, true, 'a capped percentage with a rate resolves'],
+            [SurchargeType::FIXED_AND_PERCENTAGE, 'EUR', 'NOK', null, 0.0, 50.0, false, 'a combined cap with no rate does not'],
+        ];
+    }
+
     private function stubCommonConfig(string $type, bool $differential = false): void
     {
         $this->config->method('getSurchargeType')->willReturn($type);

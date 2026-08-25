@@ -421,13 +421,14 @@ class SurchargeGridTest extends TestCase
      * The model is built without its constructor and has only the
      * dependencies this path touches injected: at the default scope with no
      * merchant surcharge limit, the store manager and the FX rates provider
-     * are never reached, and the resource connection is only used by the
-     * inherit purge.
+     * are never reached.
      *
      * @param array<int, array<string, string>> $grid
+     * @param array<string, string> $storedLimitRows stored surcharge_*_limit
+     *        rows at this scope, as the aggregate stale-zero scan reads them
      * @return list<array{0: string, 1: string}> the (path, value) pairs saved
      */
-    private function runProductionAfterSave(string $postedType, array $grid): array
+    private function runProductionAfterSave(string $postedType, array $grid, array $storedLimitRows = []): array
     {
         $config = $this->getMockBuilder(ScopeConfigInterface::class)->getMock();
         $config->method('getValue')->willReturnCallback(
@@ -465,6 +466,7 @@ class SurchargeGridTest extends TestCase
         $inject(SurchargeGrid::class, 'brandRegistry', $brand);
         $inject(SurchargeGrid::class, 'settingsProvider', $settings);
         $inject(SurchargeGrid::class, 'configWriter', $writer);
+        $inject(SurchargeGrid::class, 'resourceConnection', $this->makeResourceConnection($storedLimitRows));
 
         $model->setData('scope', 'default');
         $model->setData('scope_id', 0);
@@ -521,6 +523,181 @@ class SurchargeGridTest extends TestCase
         $this->runProductionAfterSave('fixed_and_percentage', [
             30 => ['fixed' => '10', 'percentage' => '25', 'limit' => '0'],
         ]);
+    }
+
+    /**
+     * A resource connection whose surcharge_*_limit lookup returns the given
+     * rows, for the aggregate stale-zero scan.
+     *
+     * @param array<string, string> $rows path => stored value
+     */
+    private function makeResourceConnection(array $rows): object
+    {
+        // A hand-rolled fluent stub, not a mock: Select builds from() and
+        // where() through Zend_Db_Select's __call, so PHPUnit cannot configure
+        // them.
+        $select = new class {
+            public function from(...$args)
+            {
+                return $this;
+            }
+
+            public function where(...$args)
+            {
+                return $this;
+            }
+        };
+
+        $connection = new class ($select, $rows) {
+            private $select;
+            private $rows;
+
+            public function __construct($select, array $rows)
+            {
+                $this->select = $select;
+                $this->rows = $rows;
+            }
+
+            public function getTableName($name)
+            {
+                return $name;
+            }
+
+            public function select()
+            {
+                return $this->select;
+            }
+
+            public function fetchPairs($select)
+            {
+                return $this->rows;
+            }
+
+            public function fetchCol($select)
+            {
+                return [];
+            }
+        };
+
+        return new class ($connection) {
+            private $connection;
+
+            public function __construct($connection)
+            {
+                $this->connection = $connection;
+            }
+
+            public function getConnection()
+            {
+                return $this->connection;
+            }
+        };
+    }
+
+    /**
+     * TWO-25503: the per-cell zero rule only sees POSTED cells, so a term
+     * deselected from "Payment terms" keeps a stored zero limit that nothing
+     * validates — and it is read at runtime, clamping that term's fee to
+     * nothing the moment percentage mode is switched back on. Enabling
+     * percentage must surface it instead.
+     */
+    public function testEnablingPercentageRefusesAStaleZeroLimitOnAnUnshownTerm(): void
+    {
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('90 days');
+        $this->runProductionAfterSave(
+            'fixed_and_percentage',
+            [30 => ['fixed' => '10', 'percentage' => '25', 'limit' => '50']],
+            ['payment/two_payment/surcharge_90_limit' => '0']
+        );
+    }
+
+    /**
+     * Nothing is written when the scan refuses: the save must fail intact
+     * rather than half-applied, which is why the scan runs before the write
+     * loop rather than inside it.
+     */
+    public function testTheStaleZeroScanRefusesBeforeAnythingIsWritten(): void
+    {
+        $saved = [];
+        try {
+            $saved = $this->runProductionAfterSave(
+                'percentage',
+                [30 => ['percentage' => '25', 'limit' => '50']],
+                ['payment/two_payment/surcharge_90_limit' => '0']
+            );
+            $this->fail('the stale zero must be refused');
+        } catch (LocalizedException $e) {
+            $this->assertSame([], $saved);
+        }
+    }
+
+    /**
+     * A sub-cent stored limit rounds away at money precision exactly as an
+     * explicit 0 does, so the scan must judge it the same way — otherwise the
+     * cap still arrives as 0.00 and suppresses the fee.
+     */
+    public function testTheStaleZeroScanRefusesASubCentStoredLimit(): void
+    {
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('60 days');
+        $this->runProductionAfterSave(
+            'percentage',
+            [30 => ['percentage' => '25']],
+            ['payment/two_payment/surcharge_60_limit' => '0.004']
+        );
+    }
+
+    /**
+     * The scan is scoped to terms the grid did NOT post. A zero on a POSTED
+     * term is the per-cell rule's business, and reporting it twice would name
+     * the wrong remedy (that cell is visible and clearable in place).
+     */
+    public function testTheStaleZeroScanIgnoresTermsThePostedGridCovers(): void
+    {
+        $saved = $this->runProductionAfterSave(
+            'percentage',
+            [30 => ['percentage' => '25', 'limit' => '50']],
+            ['payment/two_payment/surcharge_30_limit' => '0']
+        );
+
+        $this->assertContains(['payment/two_payment/surcharge_30_limit', '50'], $saved);
+    }
+
+    /**
+     * Junk and negatives resolve to ABSENT on the read path
+     * (Repository::getSurchargeConfig), i.e. no cap, so neither suppresses a
+     * fee and neither is the merchant's problem to clear.
+     */
+    public function testTheStaleZeroScanIgnoresNonNumericAndEmptyStoredLimits(): void
+    {
+        $saved = $this->runProductionAfterSave(
+            'percentage',
+            [30 => ['percentage' => '25']],
+            [
+                'payment/two_payment/surcharge_60_limit' => 'abc',
+                'payment/two_payment/surcharge_90_limit' => '',
+                'payment/two_payment/surcharge_14_limit' => '50',
+            ]
+        );
+
+        $this->assertContains(['payment/two_payment/surcharge_30_percentage', '25'], $saved);
+    }
+
+    /**
+     * The mirror case: with no percentage component the Limit column is not
+     * live, so an unshown term's legacy zero is not yet clamping anything and
+     * must not block an unrelated save.
+     */
+    public function testAFixedOnlySaveIsNotBlockedByAStaleZeroLimit(): void
+    {
+        $saved = $this->runProductionAfterSave(
+            'fixed',
+            [30 => ['fixed' => '10']],
+            ['payment/two_payment/surcharge_90_limit' => '0']
+        );
+
+        $this->assertContains(['payment/two_payment/surcharge_30_fixed', '10'], $saved);
     }
 
     /**

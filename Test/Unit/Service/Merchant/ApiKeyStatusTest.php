@@ -217,6 +217,87 @@ class ApiKeyStatusTest extends TestCase
         $this->assertFalse($this->build('')->isVerified());
     }
 
+    // ── verifyCandidate ─────────────────────────────────────────────────
+
+    public function testCandidateIsVerifiedWithItsOwnKeyNotTheStoredOne(): void
+    {
+        // Given a stored key; when a different candidate is verified; then the
+        // candidate authenticates the call.
+        $this->apiAdapter->expects($this->once())
+            ->method('execute')
+            ->with(ApiKeyStatus::ENDPOINT, [], 'GET', 7, 'candidate-key')
+            ->willReturn(['id' => 'abc-123']);
+
+        $status = $this->build('stored-key')->verifyCandidate('candidate-key', 7);
+
+        $this->assertSame(ApiKeyStatus::OK, $status['status']);
+    }
+
+    /**
+     * @dataProvider candidateOutcomes
+     * @param array<string,mixed> $apiResponse
+     */
+    public function testCandidateOutcomeIsCategorized(
+        array $apiResponse,
+        string $expectedStatus,
+        string $description
+    ): void {
+        $this->apiAdapter->method('execute')->willReturn($apiResponse);
+
+        $status = $this->build()->verifyCandidate('candidate-key');
+
+        $this->assertSame($expectedStatus, $status['status'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: array<string,mixed>, 1: string, 2: string}>
+     */
+    public static function candidateOutcomes(): array
+    {
+        return [
+            'ok' => [['id' => 'abc-123'], ApiKeyStatus::OK, 'a candidate that verifies'],
+            'rejected' => [['http_status' => 401], ApiKeyStatus::INVALID_KEY, 'a candidate rejected upstream'],
+            'service down' => [['http_status' => 503], ApiKeyStatus::SERVICE_ERROR, 'the service erroring'],
+            'no exchange' => [
+                ['error_code' => 400, 'error_message' => 'Error in transfer'],
+                ApiKeyStatus::UNREACHABLE,
+                'no HTTP exchange completing',
+            ],
+        ];
+    }
+
+    public function testCandidateVerdictNeitherReadsNorWritesTheCache(): void
+    {
+        // The cache is keyed on the STORED key's verdict and gates checkout, so
+        // an unsaved candidate must not be able to reach it in either direction.
+        $this->cache->expects($this->never())->method('load');
+        $this->cache->expects($this->never())->method('save');
+        $this->apiAdapter->method('execute')->willReturn(['http_status' => 401]);
+
+        $this->build()->verifyCandidate('candidate-key');
+    }
+
+    public function testRepeatedCandidateChecksAreNotMemoised(): void
+    {
+        // Each keystroke's verdict is its own live answer — a memo would pin
+        // the first candidate's verdict onto every later one.
+        $this->apiAdapter->expects($this->exactly(2))->method('execute')->willReturn(['id' => 'abc-123']);
+
+        $service = $this->build();
+        $service->verifyCandidate('candidate-key');
+        $service->verifyCandidate('candidate-key');
+    }
+
+    public function testAnEmptyCandidateMakesNoCall(): void
+    {
+        $this->apiAdapter->expects($this->never())->method('execute');
+
+        $this->assertSame(
+            ApiKeyStatus::NOT_CONFIGURED,
+            $this->build()->verifyCandidate('')['status']
+        );
+    }
+
     // ── Caching ─────────────────────────────────────────────────────────
 
     public function testSuccessIsCachedForTheFullLifetime(): void

@@ -513,6 +513,56 @@ class RepositoryPaymentTermsTest extends TestCase
         $this->assertSame([], $raised, 'a non-scalar limit must not be cast to string');
     }
 
+    // ── isBuyerTermAvailable ─────────────────────────────────────────
+
+    /**
+     * @dataProvider buyerTermAvailability
+     */
+    public function testIsBuyerTermAvailable(int $termDays, bool $expected, string $case): void
+    {
+        $this->stubConfig([
+            'payment/two_payment/payment_terms' => '14,30',
+            'payment/two_payment/payment_terms_duration_days' => '21',
+        ]);
+
+        $this->assertSame($expected, $this->repository->isBuyerTermAvailable($termDays), $case);
+    }
+
+    public function buyerTermAvailability(): array
+    {
+        return [
+            [14, true, 'a term from the multiselect'],
+            [21, true, 'the custom duration'],
+            [90, false, 'a term the merchant does not offer'],
+            [0, false, 'no term at all'],
+        ];
+    }
+
+    // ── getDefaultShippingTaxRate ────────────────────────────────────
+
+    /**
+     * @dataProvider shippingTaxRateFallbacks
+     */
+    public function testGetDefaultShippingTaxRate($stored, ?float $expected, string $case): void
+    {
+        $this->stubConfig(['payment/two_payment/default_shipping_tax_rate' => $stored]);
+
+        $this->assertSame($expected, $this->repository->getDefaultShippingTaxRate(), $case);
+    }
+
+    public function shippingTaxRateFallbacks(): array
+    {
+        return [
+            ['25', 25.0, 'a configured rate'],
+            ['0', 0.0, 'a declared zero rate is a declaration, not an absence'],
+            [null, null, 'never configured'],
+            ['', null, 'the empty initial config node'],
+            ['abc', null, 'junk from a hand-edited row or config:set'],
+            ['-10', null, 'a negative rate is not a rate'],
+            [['25'], null, 'a non-scalar value'],
+        ];
+    }
+
     // ── getPaymentTermsType (retained) ──────────────────────────────
 
     public function testGetPaymentTermsTypeDefaultsToStandard(): void

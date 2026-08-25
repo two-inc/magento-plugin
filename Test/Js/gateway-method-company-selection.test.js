@@ -409,8 +409,8 @@ describe('a company picked on the shipping step reaches the payment step', () =>
     test('a stale name-only section read does not clobber a live pick', () => {
         // `companyData` is a localStorage customer-data section, so a
         // `{companyName, companyId: ''}` row outlives page loads and previous
-        // orders — and fillCustomerData() is re-callable (applyPrefetch() →
-        // registeredOrganisationMode()). Treating the one-shot READ as a
+        // orders — and fillCustomerData() is re-callable via
+        // registeredOrganisationMode(). Treating the one-shot READ as a
         // selection therefore let a stale row overwrite a live payment-step
         // pick's name and blank its organisation number. Before the routing
         // existed this shape was a harmless no-op on the read path; it has to

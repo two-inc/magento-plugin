@@ -29,9 +29,11 @@ use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
+use Two\Gateway\Service\Order\LifecycleEventDispatcher;
 use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
+use Two\Gateway\Service\Order\SurchargeCalculator;
 use Two\Gateway\Service\UrlCookie;
 
 /**
@@ -91,6 +93,8 @@ class GenericPaymentMethod extends Two
         MerchantMinimumResolver $merchantMinimumResolver,
         ConfigDataCollectionFactory $configDataCollectionFactory,
         ApiKeyStatus $apiKeyStatus,
+        SurchargeCalculator $surchargeCalculator,
+        LifecycleEventDispatcher $lifecycleEvents,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -120,6 +124,8 @@ class GenericPaymentMethod extends Two
             $merchantMinimumResolver,
             $configDataCollectionFactory,
             $apiKeyStatus,
+            $surchargeCalculator,
+            $lifecycleEvents,
             $resource,
             $resourceCollection,
             $data

@@ -20,7 +20,11 @@ const BASE_CONFIG = {
     checkoutApiUrl: 'https://api.example.test',
     companySearchLimit: 50,
     isCompanySearchEnabled: true,
-    isAddressSearchEnabled: true
+    isAddressSearchEnabled: true,
+    orderIntentConfig: {
+        extensionPlatformName: 'magento2',
+        extensionDBVersion: '1.0.0'
+    }
 };
 
 const SEARCH_RESPONSE = {
@@ -389,6 +393,35 @@ describe('request envelope', () => {
 
         expect(recorder.ajax).toHaveLength(1);
         expect(recorder.ajax[0].timeout).toBe(30000);
+    });
+
+    // Both unauthenticated-from-browser endpoints must identify the calling
+    // plugin the same way gateway_method.js's order_intent call does, so the
+    // API can skip a CORS preflight per keystroke.
+    test.each([
+        [
+            'company search',
+            () => {
+                const companySearch = loadCompanySearch(makeQueryDouble().$);
+                return buildOptions(companySearch, makeHooks()).url({ page: 1, term: 'exa' });
+            },
+            'search url'
+        ],
+        [
+            'address lookup by id',
+            () => {
+                const { $, recorder } = makeQueryDouble();
+                const companySearch = loadCompanySearch($);
+                companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
+                return recorder.ajax[0].url;
+            },
+            'lookup url'
+        ]
+    ])('%s carries client/client_v (%s)', (_label, buildUrl, _desc) => {
+        const params = new URLSearchParams(buildUrl().split('?')[1]);
+
+        expect(params.get('client')).toBe('magento2');
+        expect(params.get('client_v')).toBe('1.0.0');
     });
 });
 

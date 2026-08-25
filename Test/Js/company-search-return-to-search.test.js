@@ -28,8 +28,9 @@
  *    click the link) and asserts the pre-click state is closed and unfocused.
  *    A surface that never bound the link would fail there rather than
  *    presenting as green. The two surfaces offer manual entry differently —
- *    a cancellable results row on the shipping step, a link below the results
- *    on the payment step — so each drives its own production route.
+ *    a button inside the dropdown on the shipping step, a peer chip in the
+ *    mode control on the payment step — so each drives its own production
+ *    route.
  *  - Two negative pins guard the obvious over-reach: the FIRST bind (initial
  *    checkout render) must not open anything, and a later `$.async` re-fire
  *    must not re-open it under a buyer who has moved on.
@@ -484,13 +485,15 @@ function loadPayment($) {
  * itself runs synchronously when fired directly, with nothing left to flush.
  */
 function enterManualPayment($, ctx) {
-    expect(typeof ctx.__companySearchMock.__lastOnActivate).toBe('function');
-    ctx.__companySearchMock.__lastOnActivate();
-    // No deferred callback to flush any more: the defer this helper used to
-    // trigger lived in the surface's own select2:selecting handler, which is
-    // gone. Nothing queued here means the callback ran synchronously, not
-    // that it never ran — the widget-gone assertions in reachManualMode()
-    // are what actually prove it fired.
+    // TWO-25503: this surface reaches manual entry from its mode control's
+    // own chip, not from a button inside the dropdown — the shared button is
+    // opted out here, so `__lastOnActivate` is never handed one.
+    expect(ctx.__companySearchMock.__lastOnActivate).toBeUndefined();
+    ctx.manualEntryMode();
+    expect(ctx.captureMode()).toBe('manual');
+    // Nothing queued means the transition ran synchronously, not that it
+    // never ran — the widget-gone assertions in reachManualMode() are what
+    // actually prove it fired.
     expect(ctx.__flushDeferred()).toBe(0);
 }
 

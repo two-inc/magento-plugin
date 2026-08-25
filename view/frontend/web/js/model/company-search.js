@@ -99,15 +99,11 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * select2 ships its own English `inputTooShort` message, hard-coded
      * inside the vendored bundle and phrased as the REMAINING character
      * count. Neither is acceptable: the vendored bundle is not ours to edit
-     * and its literals never reach Magento's translation dictionaries. The
-     * address-step picker overrides it via select2's `language.inputTooShort`
-     * option with this instead — a plugin-owned, translatable string quoting
-     * a FIXED threshold.
-     *
-     * The payment-step picker does NOT. It passes `minimumInputLength` only,
-     * so it still renders select2's built-in English remaining-count text.
-     * That is deliberately out of scope here; this change covers the
-     * address-step surface only.
+     * and its literals never reach Magento's translation dictionaries. Both
+     * pickers override it via select2's `language.inputTooShort` option with
+     * this instead — a plugin-owned, translatable string quoting a FIXED
+     * threshold — through the shared `buildLanguageOptions()` that
+     * CompanySearchControl passes at its single mount point.
      *
      * Resolved per call, not once at module load, because Magento's JS
      * dictionary can arrive after this module is defined. Magento's `$t`
@@ -1563,7 +1559,8 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          *
          * @param {object} options
          * @param {object} options.config brand config subtree; needs
-         *        `checkoutApiUrl` and `companySearchLimit`
+         *        `checkoutApiUrl`, `companySearchLimit` and `orderIntentConfig`
+         *        (for `extensionPlatformName`/`extensionDBVersion`)
          * @param {function(): (string|undefined)} options.getCountryCode
          *        returns the current ISO country code (any case)
          * @param {function(boolean)} [options.onSearching] called with true
@@ -1590,7 +1587,13 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                         country: getCountryCode()?.toUpperCase(),
                         limit: config.companySearchLimit,
                         offset: ((params.page || 1) - 1) * config.companySearchLimit,
-                        q: unescape(params.term)
+                        q: unescape(params.term),
+                        // Identifies the calling plugin to this unauthenticated
+                        // browser-facing endpoint, avoiding a CORS preflight per
+                        // keystroke — same params/source as gateway_method.js's
+                        // order_intent call.
+                        client: config.orderIntentConfig?.extensionPlatformName,
+                        client_v: config.orderIntentConfig?.extensionDBVersion
                     });
                     return `${config.checkoutApiUrl}/companies/v2/company?${queryParams.toString()}`;
                 },
@@ -1798,14 +1801,11 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * first address into the checkout address form.
          *
          * No-op unless `config.isAddressSearchEnabled` is true. That flag is
-         * server-side the single `enable_address_search` admin setting
-         * (Model\Config\Repository::isAddressSearchEnabled), and this gate is
-         * the one both pickers share.
-         *
-         * The payment-tile picker adds a second, positional gate of its own
-         * before calling in — see gateway_method.js::addressLookup(). Do not
-         * move that gate down here: it depends on which picker is asking,
-         * which this model cannot see.
+         * server-side the AND of `enable_address_search` and
+         * `enable_company_search` (Model\Config\Repository::isAddressSearchEnabled,
+         * TWO-25503) — company search relocated to the payment tile retires
+         * the convenience autofill exists for — and this single gate is the
+         * one both pickers share. Neither picker adds a gate of its own.
          *
          * @param {object} config brand config subtree
          * @param {object} selectedCompany select2 result item (needs lookupId)
@@ -1817,10 +1817,14 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             if (!selectedCompany || !selectedCompany.lookupId) return null;
 
             const self = this;
+            const queryParams = new URLSearchParams({
+                client: config.orderIntentConfig?.extensionPlatformName,
+                client_v: config.orderIntentConfig?.extensionDBVersion
+            });
             const addressResponse = $.ajax({
                 dataType: 'json',
                 timeout: REQUEST_TIMEOUT_MS,
-                url: `${config.checkoutApiUrl}/companies/v2/company/${selectedCompany.lookupId}`
+                url: `${config.checkoutApiUrl}/companies/v2/company/${selectedCompany.lookupId}?${queryParams.toString()}`
             });
             addressResponse.done(function (response) {
                 if (response && response.addresses && response.addresses.length) {
@@ -2394,7 +2398,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             // sets `display: block`.
             $container.append(
                 `<span class="${UNAVAILABLE_CLASS}" role="alert">` +
-                    $t('Company search is unavailable. Try again, or enter details manually.') +
+                    $t('Company search is temporarily unavailable. Please try again, or enter details manually.') +
                     '</span>'
             );
         },

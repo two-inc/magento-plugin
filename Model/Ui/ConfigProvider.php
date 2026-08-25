@@ -285,6 +285,12 @@ class ConfigProvider implements ConfigProviderInterface
                         $this->brandRegistry->getProductName()
                     ),
                     'invalidEmailListMessage' => __('Please ensure that your invoice email address list only contains valid email addresses separated by commas.'),
+                    // TWO-25503: shown when the term selected at render time is
+                    // no longer among the terms the server offers at submit —
+                    // see the renderer's isSelectedTermStillAvailable().
+                    'termUnavailableMessage' => __(
+                        'The payment terms you selected are no longer available. Please select your payment terms again.'
+                    ),
                     'paymentTermsMessage' => __(
                         'I accept the %1 and authorize %2 to process my data automatically.',
                         sprintf('<a href="%s" target="_blank">%s</a>', $paymentTermsLink, $paymentTerms),
