@@ -673,6 +673,19 @@ define([
             );
         },
         /**
+         * TWO-25503: manual entry cannot capture a company number and Two's
+         * payment method requires one, so it is offered only where the
+         * address-step lookup — the only path that captures a number — is
+         * available.
+         *
+         * @returns {boolean}
+         */
+        showManualEntryChip: function () {
+            return (
+                this.isAddressAreaCompanySearchEnabled && this.isTileCompanySearchActive()
+            );
+        },
+        /**
          * Guarded read of orderIntentApprovedNotice() for the template's
          * `ko if`. The observable is created in
          * initOrderIntentApprovedNotice() rather than in `defaults` (see the
