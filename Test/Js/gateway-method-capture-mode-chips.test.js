@@ -9,7 +9,7 @@
  * inside the search dropdown, so a buyer who wanted to type a name by hand
  * had to open the picker and reject its results first. WooCommerce and
  * PrestaShop both offer all three as peer options in one control; this pins
- * Magento doing the same.
+ * Magento doing the same, each chip subject to its own gate.
  *
  * Mutation-resistance notes:
  *
@@ -243,11 +243,29 @@ describe('the company-capture mode control offers three peer options', function 
         expect(chipIsGatedOn(control, 'Sole trader', 'showModeTab')).toBe(true);
     });
 
-    test('manual entry is offered only where the tile owns the company field', () => {
+    test('manual entry is offered only where showManualEntryChip() allows it', () => {
         expect(
-            chipIsGatedOn(control, 'Enter manually', 'isTileCompanySearchActive()')
+            chipIsGatedOn(control, 'Enter manually', 'showManualEntryChip()')
         ).toBe(true);
     });
+
+    test.each([
+        [true, true, true, 'setting on, tile owns the field'],
+        [true, false, false, 'setting on, address area owns the field'],
+        [false, true, false, 'setting off, tile owns the field'],
+        [false, false, false, 'setting off, address area owns the field']
+    ])(
+        'showManualEntryChip() with setting %s and tile-active %s is %s (%s)',
+        (settingEnabled, tileActive, expected) => {
+            const { renderer } = loadRenderer();
+            const context = {
+                isAddressAreaCompanySearchEnabled: settingEnabled,
+                isTileCompanySearchActive: function () { return tileActive; }
+            };
+
+            expect(renderer.showManualEntryChip.call(context)).toBe(expected);
+        }
+    );
 
     test('registered is offered unconditionally — it is the way out of the other two', () => {
         expect(chipIsGatedOn(control, 'Registered company', 'showModeTab')).toBe(false);
