@@ -14,7 +14,7 @@
  * Mirrors PrestaShop's `TwoCompanySearch` class: ONE implementation of the
  * select2 wiring, configured entirely through the constructor options
  * below, never duplicated per mount. `address-autocomplete.js` (shipping
- * step) and `gateway_method.js` (payment tile) each construct exactly one
+ * step) and `company-capture.js` (payment tile) each construct exactly one
  * instance of this class rather than each rolling their own `.select2({…})`
  * call — see those two files' `enableCompanySearch()` for the call sites.
  *

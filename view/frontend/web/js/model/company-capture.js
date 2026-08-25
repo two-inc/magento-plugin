@@ -63,11 +63,6 @@ define([
         this._countryWatcherNs = null;
     }
 
-    /** Start the feed that keeps the search country current. */
-    CompanyCapture.prototype.init = function () {
-        this.watchAddressFormCountry();
-    };
-
     CompanyCapture.prototype.dispose = function () {
         // Destroy the company-search widget with the mount that owns it.
         // Without this a re-render that REUSES the input node (rather than

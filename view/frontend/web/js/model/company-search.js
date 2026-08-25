@@ -7,8 +7,7 @@
  * Shared company-search primitives for the two select2 company pickers
  * in checkout: the shipping-step one (`view/address-autocomplete.js`,
  * a Magento_Ui form Component) and the payment-step one
- * (`view/payment/method-renderer/gateway_method.js`, a payment
- * renderer).
+ * (`model/company-capture.js`, the payment tile's mount).
  *
  * Only the genuinely identical parts live here — the search request,
  * the result mapping (including `lookup_id`, whose omission on the
