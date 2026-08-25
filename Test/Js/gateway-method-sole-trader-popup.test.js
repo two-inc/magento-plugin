@@ -24,6 +24,7 @@ const path = require('path');
 const { loadAmdModule, defaultMocks } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
+const SOLE_TRADER_MODEL = 'view/frontend/web/js/model/sole-trader.js';
 const TEMPLATE = 'view/frontend/web/template/payment/gateway_method.html';
 const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
 
@@ -60,23 +61,22 @@ function loadRenderer() {
 }
 
 /**
- * A `this` context standing in for a live renderer, carrying just the members
- * the popup-launch path reads.
+ * A `this` context standing in for a live renderer — the HOST — plus the
+ * SoleTrader collaborator it lazily mounts, between them carrying just the
+ * members the popup-launch path reads.
  *
  * @param {object} component the loaded renderer
- * @param {object} [overrides] members to replace on top
+ * @param {object} [hostOverrides] members to replace on the renderer
+ * @param {object} [soleTraderOverrides] members to replace on the collaborator
  * @returns {object} the context
  */
-function makeContext(component, overrides) {
+function makeContext(component, hostOverrides, soleTraderOverrides) {
     const shown = [];
     const ctx = Object.assign({}, component, {
         _brandConfig: { checkoutPageUrl: CHECKOUT_PAGE_URL },
-        delegationToken: '',
-        autofillToken: '',
         companyName: function () { return 'Ola Nordmann'; },
         getEmail: function () { return 'ola@example.com'; },
         getTelephone: function () { return '+4712345678'; },
-        getAutofillData: function () { return 'AUTOFILL'; },
         showModeTab: function () { return true; },
         showSoleTrader: function () { return true; },
         showPopupMessage: function (next) {
@@ -85,19 +85,23 @@ function makeContext(component, overrides) {
             return next;
         },
         popupMessageStates: shown,
-        soleTraderLookup: { ready: false, buyer: null, matches: false },
-        soleTraderLookupEmail: null,
-        enterSoleTraderUi: function () {},
-        fillCompanyData: function () {},
-        fetchBuyer: function () { return Promise.resolve(null); }
+        fillCompanyData: function () {}
     });
-    return Object.assign(ctx, overrides || {});
+    Object.assign(ctx, hostOverrides || {});
+    Object.assign(ctx.soleTrader(), {
+        delegationToken: '',
+        autofillToken: '',
+        getAutofillData: function () { return 'AUTOFILL'; },
+        enterSoleTraderUi: function () {},
+        fetchBuyer: function () { return Promise.resolve(null); }
+    }, soleTraderOverrides || {});
+    return ctx;
 }
 
 describe('sole-trader signup popup (TWO-25461)', () => {
     test('the popup is opened at the 700x805 the hosted flow needs', () => {
         const { component, opened } = loadRenderer();
-        const ctx = makeContext(component, {
+        const ctx = makeContext(component, {}, {
             delegationToken: 'dt-1',
             autofillToken: 'at-1'
         });
@@ -113,11 +117,11 @@ describe('sole-trader signup popup (TWO-25461)', () => {
         expect(opened[0].features).not.toContain('610');
     });
 
-    test('the renderer source carries no 610-wide window feature anywhere', () => {
+    test('the popup-launch source carries no 610-wide window feature anywhere', () => {
         // The behavioural assertion above only sees the one call site the
         // fixture reaches. This covers the value being reintroduced on a path
         // no fixture takes (a second launch helper, a brand branch).
-        const src = fs.readFileSync(path.resolve(__dirname, '..', '..', RENDERER), 'utf8');
+        const src = fs.readFileSync(path.resolve(__dirname, '..', '..', SOLE_TRADER_MODEL), 'utf8');
         expect(src).not.toContain('width=610');
     });
 
@@ -150,14 +154,14 @@ describe('sole-trader signup popup (TWO-25461)', () => {
 
     test('the removed overlay leaves no hideIframe reference behind', () => {
         const template = fs.readFileSync(path.resolve(__dirname, '..', '..', TEMPLATE), 'utf8');
-        const src = fs.readFileSync(path.resolve(__dirname, '..', '..', RENDERER), 'utf8');
+        const src = fs.readFileSync(path.resolve(__dirname, '..', '..', SOLE_TRADER_MODEL), 'utf8');
         expect(template).not.toContain('hideIframe');
         expect(src).not.toContain('hideIframe');
     });
 
     test('the signup URL carries both tokens once they are minted', () => {
         const { component, opened } = loadRenderer();
-        const ctx = makeContext(component, {
+        const ctx = makeContext(component, {}, {
             delegationToken: 'dt-1',
             autofillToken: 'at-1'
         });
@@ -195,7 +199,7 @@ describe('sole-trader signup popup (TWO-25461)', () => {
                 btoa: global.btoa
             }
         );
-        const ctx = makeContext(component, { delegationToken: 'dt-1', autofillToken: 'at-1' });
+        const ctx = makeContext(component, {}, { delegationToken: 'dt-1', autofillToken: 'at-1' });
 
         ctx.openIframe.call(ctx);
 
@@ -227,11 +231,11 @@ describe('sole-trader signup popup (TWO-25461)', () => {
                 btoa: global.btoa
             }
         );
-        const ctx = makeContext(component, {
-            delegationToken: 'dt-1',
-            autofillToken: 'at-1',
-            countryCode: function () { return 'gb'; }
-        });
+        const ctx = makeContext(
+            component,
+            { countryCode: function () { return 'gb'; } },
+            { delegationToken: 'dt-1', autofillToken: 'at-1' }
+        );
 
         ctx.openIframe.call(ctx);
 
@@ -244,7 +248,7 @@ describe('sole-trader signup popup (TWO-25461)', () => {
         ['autofill token missing', 'dt-1', '', ]
     ])('no popup is opened while %s', (_label, delegationToken, autofillToken) => {
         const { component, opened } = loadRenderer();
-        const ctx = makeContext(component, {
+        const ctx = makeContext(component, {}, {
             delegationToken: delegationToken,
             autofillToken: autofillToken
         });
@@ -258,7 +262,7 @@ describe('sole-trader signup popup (TWO-25461)', () => {
     test('the chip click opens signup only once the tokens have landed', async () => {
         const { component, opened } = loadRenderer();
         let resolveTokens;
-        const ctx = makeContext(component, {
+        const ctx = makeContext(component, {}, {
             getTokens: function () {
                 return new Promise((resolve) => {
                     resolveTokens = resolve;
@@ -308,7 +312,7 @@ describe('sole-trader signup popup (TWO-25461)', () => {
                 btoa: global.btoa
             }
         );
-        const ctx = makeContext(component, {
+        const ctx = makeContext(component, {}, {
             delegationToken: delegationToken,
             autofillToken: autofillToken,
             soleTraderLookup: { ready: true, buyer: null, matches: false }
@@ -325,7 +329,7 @@ describe('sole-trader signup popup (TWO-25461)', () => {
         // returning undefined would throw on `.then`.
         const noTab = makeContext(component, { showModeTab: function () { return false; } });
         const noEmail = makeContext(component, { getEmail: function () { return '   '; } });
-        const deduped = makeContext(component, { soleTraderLookupEmail: 'ola@example.com' });
+        const deduped = makeContext(component, {}, { soleTraderLookupEmail: 'ola@example.com' });
 
         await expect(noTab.lookupSoleTrader.call(noTab)).resolves.toBeUndefined();
         await expect(noEmail.lookupSoleTrader.call(noEmail)).resolves.toBeUndefined();
@@ -340,7 +344,7 @@ describe('sole-trader signup popup (TWO-25461)', () => {
         const { component, opened } = loadRenderer();
         let resolveTokens;
         let mints = 0;
-        const ctx = makeContext(component, {
+        const ctx = makeContext(component, {}, {
             getTokens: function () {
                 mints += 1;
                 return new Promise((resolve) => {

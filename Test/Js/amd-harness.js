@@ -449,6 +449,20 @@ function makeSurchargeMock() {
  *        `.focus()`) to hit real nodes passes jsdom's own `document` here.
  * @returns {*} the factory's return value (KO component, mixin wrap, etc)
  */
+/**
+ * Repo-relative path of the file behind a `Two_Gateway/...` AMD name, or null
+ * when there is no such file.
+ *
+ * @param {string} name AMD dep name
+ * @returns {?string}
+ */
+function resolveTwoGatewayModule(name) {
+    const match = /^Two_Gateway\/(js\/.+)$/.exec(name);
+    if (!match) return null;
+    const relPath = `view/frontend/web/${match[1]}.js`;
+    return fs.existsSync(path.resolve(__dirname, '..', '..', relPath)) ? relPath : null;
+}
+
 function loadAmdModule(relPath, extraMocks, extraGlobals) {
     const absPath = path.resolve(__dirname, '..', '..', relPath);
     const src = fs.readFileSync(absPath, 'utf8');
@@ -463,6 +477,18 @@ function loadAmdModule(relPath, extraMocks, extraGlobals) {
         } else if (Array.isArray(deps)) {
             const resolved = deps.map(function (name) {
                 if (!(name in mocks)) {
+                    // A sibling Two_Gateway model with no mock entry is loaded
+                    // for real, under this call's own mocks and globals. A
+                    // collaborator the module under test delegates to has to
+                    // see the same doubles the test set up — its own `window`,
+                    // `fetch` and quote — or a spy the test installed is
+                    // invisible to it. Anything with a `defaultMocks()` entry
+                    // still resolves to that entry, so this only reaches
+                    // modules nothing has deliberately stubbed.
+                    const sibling = resolveTwoGatewayModule(name);
+                    if (sibling) {
+                        return loadAmdModule(sibling, extraMocks, extraGlobals);
+                    }
                     throw new Error(
                         `AMD harness: unmocked dep "${name}" required by ${relPath}. ` +
                         `Add a mock entry to defaultMocks() or pass via extraMocks.`

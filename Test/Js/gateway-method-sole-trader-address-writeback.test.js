@@ -34,6 +34,13 @@ const SEARCH = 'view/frontend/web/js/model/company-search.js';
 const CHECKOUT_PAGE_URL = 'https://checkout.example';
 const ENTERED_EMAIL = 'entered@example.com';
 
+/**
+ * Stand-in for the signup popup's own window. `popupMessageListener()` ignores
+ * a message from anything other than the popup it is currently tracking, so
+ * every fixture message below has to claim to come from this one.
+ */
+const POPUP = { popup: 'the tracked signup window' };
+
 const BILLING = {
     street: 'Mill Lane',
     building: 'Mill House',
@@ -108,11 +115,12 @@ function loadRenderer(buyer, options) {
     };
     renderer.isAddressAreaCompanySearchEnabled = !!opts.addressAreaSearchEnabled;
     renderer.isOrderIntentEnabled = false;
-    renderer.soleTraderLookup = { ready: false, buyer: null, matches: false };
-    renderer.soleTraderLookupEmail = null;
     renderer.getEmail = () => ENTERED_EMAIL;
-    renderer.getTokens = () => Promise.resolve({ delegation_token: 'dt', autofill_token: 'at' });
-    renderer.fetchBuyer = () => Promise.resolve(buyer);
+
+    const soleTrader = renderer.soleTrader();
+    soleTrader.getTokens = () => Promise.resolve({ delegation_token: 'dt', autofill_token: 'at' });
+    soleTrader.fetchBuyer = () => Promise.resolve(buyer);
+    soleTrader._soleTraderPopupWindow = POPUP;
 
     return {
         renderer: renderer,
@@ -157,8 +165,8 @@ describe('every path that adopts a sole trader writes their address', () => {
 
     test('a repeated chip click against the already-resolved buyer writes it', () => {
         const { renderer, applied } = loadRenderer(BUYER);
-        renderer.soleTraderLookup = { ready: true, buyer: BUYER, matches: true };
-        renderer.soleTraderLookupEmail = renderer.getEmail();
+        renderer.soleTrader().soleTraderLookup = { ready: true, buyer: BUYER, matches: true };
+        renderer.soleTrader().soleTraderLookupEmail = renderer.getEmail();
 
         return renderer.soleTraderMode().then(() => {
             expect(applied).toEqual([BILLING]);
@@ -172,7 +180,7 @@ describe('every path that adopts a sole trader writes their address', () => {
         const handler = messageHandler(renderer, listeners);
         renderer.showSoleTrader(true);
 
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED' });
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
 
         return settle().then(() => {
             expect(applied).toEqual([BILLING]);
@@ -382,19 +390,19 @@ describe('the state the write-back has to survive', () => {
         renderer.fillCustomerData = function () {};
         renderer.clearCompany = function () {};
         let releaseTokens;
-        renderer.getTokens = () =>
+        renderer.soleTrader().getTokens = () =>
             new Promise((resolve) => {
                 releaseTokens = () => resolve({ delegation_token: 'dt', autofill_token: 'at' });
             });
 
         const chain = renderer.lookupSoleTrader();
-        renderer._soleTraderLookupGeneration += 1;
+        renderer.soleTrader()._soleTraderLookupGeneration += 1;
         releaseTokens();
 
         return chain.then(() => {
             // Not recorded: a chip click reads `soleTraderLookup` and would
             // otherwise adopt the buyer belonging to the replaced email.
-            expect(renderer.soleTraderLookup).toEqual({ ready: false, buyer: null, matches: false });
+            expect(renderer.soleTrader().soleTraderLookup).toEqual({ ready: false, buyer: null, matches: false });
             expect(applied).toEqual([]);
             // The mode is left exactly as it was: a superseded chain never
             // moves the buyer between modes.
@@ -409,18 +417,18 @@ describe('the state the write-back has to survive', () => {
         const { renderer } = loadRenderer(BUYER);
         renderer.showModeTab(true);
         let failTokens;
-        renderer.getTokens = () =>
+        renderer.soleTrader().getTokens = () =>
             new Promise((resolve, reject) => {
                 failTokens = () => reject(new Error('token mint failed'));
             });
 
         const chain = renderer.lookupSoleTrader();
-        renderer._soleTraderLookupGeneration += 1;
-        renderer.soleTraderLookup = { ready: true, buyer: BUYER, matches: true };
+        renderer.soleTrader()._soleTraderLookupGeneration += 1;
+        renderer.soleTrader().soleTraderLookup = { ready: true, buyer: BUYER, matches: true };
         failTokens();
 
         return chain.then(() => {
-            expect(renderer.soleTraderLookup.buyer).toBe(BUYER);
+            expect(renderer.soleTrader().soleTraderLookup.buyer).toBe(BUYER);
         });
     });
 
@@ -442,7 +450,7 @@ describe('the state the write-back has to survive', () => {
             }
         );
         renderer._brandConfig = { checkoutApiUrl: 'https://api.example' };
-        renderer.autofillToken = 'newer-chain-token';
+        renderer.soleTrader().autofillToken = 'newer-chain-token';
 
         return renderer.fetchBuyer('own-chain-token').then(() => {
             expect(requests).toEqual(['own-chain-token']);
@@ -461,17 +469,17 @@ describe('the state the write-back has to survive', () => {
         const { renderer, listeners } = loadRenderer(BUYER);
         const handler = messageHandler(renderer, listeners);
         renderer.showSoleTrader(true);
-        renderer._soleTraderLookupGeneration = 7;
+        renderer.soleTrader()._soleTraderLookupGeneration = 7;
 
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED' });
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
 
-        expect(renderer._soleTraderLookupGeneration).toBe(8);
+        expect(renderer.soleTrader()._soleTraderLookupGeneration).toBe(8);
     });
 
     test('a throw in the address write leaves the identity filled and the write retryable', () => {
         const { renderer, applied } = loadRenderer(BUYER);
         let fail = true;
-        renderer.writeSoleTraderAddress = function (buyer) {
+        renderer.soleTrader().writeSoleTraderAddress = function (buyer) {
             if (fail) throw new Error('DOM write failed');
             applied.push(buyer.billing_address);
             return true;
@@ -505,6 +513,6 @@ describe('the state the write-back has to survive', () => {
         renderer.dispose();
 
         expect(removed).toEqual([{ name: 'message', fn: bound[0].fn }]);
-        expect(renderer._popupMessageHandler).toBeNull();
+        expect(renderer.soleTrader()._popupMessageHandler).toBeNull();
     });
 });

@@ -66,8 +66,9 @@ describe('the sole-trader write-back includes the buyer\'s phone number', () => 
         const renderer = loadRenderer(BUYER, '');
         const buyer = Object.assign({}, BUYER, { phone_number: '+442012345678' });
         let calls = 0;
-        const original = renderer.writeSoleTraderPhone.bind(renderer);
-        renderer.writeSoleTraderPhone = function (b) {
+        const soleTrader = renderer.soleTrader();
+        const original = soleTrader.writeSoleTraderPhone.bind(soleTrader);
+        soleTrader.writeSoleTraderPhone = function (b) {
             calls += 1;
             return original(b);
         };
