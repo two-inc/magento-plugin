@@ -88,6 +88,10 @@ install: clean
 	docker exec $(CONTAINER) php bin/magento config:set dev/js/merge_files 1
 	docker exec $(CONTAINER) php bin/magento config:set dev/js/minify_files 1
 	docker exec $(CONTAINER) php bin/magento config:set dev/css/merge_css_files 1
+	# The base image's sample-data admin account is always past-due on
+	# Magento's 90-day default password lifetime the moment a fresh
+	# container starts, bouncing every non-My-Account admin page.
+	docker exec $(CONTAINER) php bin/magento config:set admin/security/password_lifetime 0
 	# Pre-bake all theme JS/CSS so RequireJS XHRs hit plain file IO instead
 	# of falling through Magento's pub/static.php router (a full bootstrap
 	# per asset). Without this, RequireJS's ~hundreds of runtime-loaded
