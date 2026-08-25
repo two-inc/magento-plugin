@@ -21,7 +21,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { loadAmdModule } = require('./amd-harness');
+const { loadAmdModule, defaultMocks } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
 const TEMPLATE = 'view/frontend/web/template/payment/gateway_method.html';
@@ -169,6 +169,73 @@ describe('sole-trader signup popup (TWO-25461)', () => {
         expect(url.origin + url.pathname).toBe(CHECKOUT_PAGE_URL + '/soletrader/signup');
         expect(url.searchParams.get('businessToken')).toBe('dt-1');
         expect(url.searchParams.get('autofillToken')).toBe('at-1');
+    });
+
+    test.each([
+        ['US', 'US', 'US'],
+        ['GB', 'gb', 'GB'],
+        ['no billing country resolved', '', null]
+    ])('the signup URL country param (%s)', (_label, billingCountryId, expectedParam) => {
+        const opened = [];
+        const component = loadAmdModule(
+            RENDERER,
+            {
+                'Magento_Checkout/js/model/quote': Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
+                    billingAddress: function () { return { countryId: billingCountryId }; }
+                })
+            },
+            {
+                window: {
+                    checkoutConfig: { payment: {} },
+                    open: function (url, target, features) {
+                        opened.push({ url: url, target: target, features: features });
+                        return { closed: false };
+                    }
+                },
+                btoa: global.btoa
+            }
+        );
+        const ctx = makeContext(component, { delegationToken: 'dt-1', autofillToken: 'at-1' });
+
+        ctx.openIframe.call(ctx);
+
+        const url = new URL(opened[0].url);
+        expect(url.searchParams.get('country')).toBe(expectedParam);
+    });
+
+    test('the country param is sourced from the quote billing address, not the DOM-fed countryCode observable', () => {
+        // PDEV-4669: a self-selected DOM value must not be able to dodge the
+        // country-specific identity step. countryCode() is fed in part by a
+        // live DOM watcher (watchAddressFormCountry()) and must be ignored
+        // here even when it disagrees with the quote's own billing address.
+        const opened = [];
+        const component = loadAmdModule(
+            RENDERER,
+            {
+                'Magento_Checkout/js/model/quote': Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
+                    billingAddress: function () { return { countryId: 'US' }; }
+                })
+            },
+            {
+                window: {
+                    checkoutConfig: { payment: {} },
+                    open: function (url, target, features) {
+                        opened.push({ url: url, target: target, features: features });
+                        return { closed: false };
+                    }
+                },
+                btoa: global.btoa
+            }
+        );
+        const ctx = makeContext(component, {
+            delegationToken: 'dt-1',
+            autofillToken: 'at-1',
+            countryCode: function () { return 'gb'; }
+        });
+
+        ctx.openIframe.call(ctx);
+
+        expect(new URL(opened[0].url).searchParams.get('country')).toBe('US');
     });
 
     test.each([

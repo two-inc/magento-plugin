@@ -2112,7 +2112,17 @@ define([
             if (options && options.autoselect === false) {
                 brandParams += '&autoselect=false';
             }
-            const URL = `${this._brandConfig.checkoutPageUrl}/soletrader/signup?businessToken=${this.delegationToken}&autofillToken=${this.autofillToken}&autofillData=${data}${brandParams}`;
+            // PDEV-4669: the popup only renders its country-specific identity
+            // step (e.g. US Onfido biometric consent) when the URL carries
+            // `&country=`; without it the popup silently defaulted its whole
+            // form to GB. Sourced from the quote's own billing address — the
+            // same server-resolved value getAutofillData() already puts in
+            // billing_address.country_code — not from countryCode(), which
+            // is partly DOM-fed and would let a buyer dodge the extra step
+            // by picking a different country client-side.
+            const country = (quote.billingAddress().countryId || '').toUpperCase();
+            const countryParam = country ? `&country=${encodeURIComponent(country)}` : '';
+            const URL = `${this._brandConfig.checkoutPageUrl}/soletrader/signup?businessToken=${this.delegationToken}&autofillToken=${this.autofillToken}&autofillData=${data}${brandParams}${countryParam}`;
             const windowFeatures =
                 'location=yes,resizable=yes,scrollbars=yes,status=yes, height=805, width=700';
             this._soleTraderPopupWindow = window.open(URL, '_blank', windowFeatures);
