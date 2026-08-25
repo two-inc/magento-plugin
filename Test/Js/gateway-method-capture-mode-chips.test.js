@@ -9,7 +9,7 @@
  * inside the search dropdown, so a buyer who wanted to type a name by hand
  * had to open the picker and reject its results first. WooCommerce and
  * PrestaShop both offer all three as peer options in one control; this pins
- * Magento doing the same.
+ * Magento doing the same, each chip subject to its own gate.
  *
  * Mutation-resistance notes:
  *

@@ -8,9 +8,9 @@
  * company-search-manual-entry.test.js — this file covers only what is
  * specific to the payment-tile surface (`gateway_method.js`): it must
  * construct the ONE shared control (company-search-control.js), and it must
- * opt that control's in-dropdown button OUT, because on this surface manual
- * entry is a peer chip in the mode control instead. The address-area mount,
- * which has no mode control, keeps the button.
+ * opt that control's in-dropdown button OUT, because on this surface the mode
+ * control is the only route to manual entry. The address-area mount, which
+ * has no mode control, keeps the button.
  *
  * TWO-25326 rebuild: the select2 wiring itself — including where
  * `attachManualEntryButton`/`detachManualEntryButton` are actually called —
@@ -80,12 +80,11 @@ describe('gateway_method.js payment-tile surface (structural fix, #30.x.15)', fu
     });
 
     /*
-     * TWO-25503 reversed the direction of this surface's manual-entry glue.
-     * The in-dropdown button was the ONLY route to manual entry here, and it
-     * is now none of it: manual entry is a peer chip in the mode control, so
-     * this surface opts the shared button out and owns the mode transition
-     * itself. The behavioural half — what manualEntryMode() actually does —
-     * is pinned in gateway-method-capture-mode-chips.test.js.
+     * TWO-25503: the mode control is this surface's only route to manual
+     * entry, so it opts the shared button out and owns the mode transition
+     * itself. The behavioural half — what manualEntryMode() actually does,
+     * and when the chip offering it renders — is pinned in
+     * gateway-method-capture-mode-chips.test.js.
      */
     test('this surface opts the shared in-dropdown button out entirely', () => {
         expect(src).toContain('manualEntryEnabled: false');

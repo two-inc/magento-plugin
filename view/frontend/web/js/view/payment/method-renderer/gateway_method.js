@@ -673,15 +673,15 @@ define([
             );
         },
         /**
-         * TWO-25503: manual entry cannot capture a company number and Two's
-         * payment method requires one, so it is offered only where the
-         * address-step lookup — the only path that captures a number — is
-         * available.
+         * TWO-25503: a manually typed name carries no company number, which
+         * Two's payment method requires, and with the address-area setting
+         * off no address-step lookup exists on the checkout to capture one —
+         * so manual entry is a dead end there and is not offered.
          *
          * @returns {boolean}
          */
         showManualEntryChip: function () {
-            return (
+            return !!(
                 this.isAddressAreaCompanySearchEnabled && this.isTileCompanySearchActive()
             );
         },
@@ -1930,11 +1930,12 @@ define([
                         // isAddressSearchEnabled alone — see addressLookup().
                         self.addressLookup(selectedItem);
                     },
-                    // TWO-25503: on this surface manual entry is a peer chip
-                    // in the mode control, so the in-dropdown button is not
-                    // built at all — it was the separately worded escape
-                    // hatch the chip replaces. The address-area mount keeps
-                    // it: that surface has no mode control.
+                    // TWO-25503: on this surface the mode control is the only
+                    // route to manual entry, so the separately worded
+                    // in-dropdown escape hatch is not built at all — where
+                    // showManualEntryChip() is false the tile offers no
+                    // manual entry. The address-area mount keeps the button:
+                    // that surface has no mode control.
                     manualEntryEnabled: false,
                     onReturnToSearch: function () {
                         self.captureMode('registered');

@@ -193,9 +193,12 @@
                 control lives in the address area;
               - sole trader follows showModeTab (the billing country's
                 registry supports SOLE_TRADER);
-              - manual entry follows showManualEntryChip(), which additionally
-                requires the address-area company-search setting, because a
-                manually typed name carries no company number.
+              - manual entry follows showManualEntryChip(): it acts on the
+                tile's own company-name field, so where the address area owns
+                the search control instead it belongs to that mount and its
+                own in-dropdown button; and with the address-area setting off
+                it is not offered at all, because no address-step lookup then
+                exists to supply the company number the method requires.
         -->
         <!-- ko if: showModeTab() || isTileCompanySearchActive() -->
         <div class="mode_selector" data-element="popup-message">
