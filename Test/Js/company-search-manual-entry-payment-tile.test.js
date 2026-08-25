@@ -32,6 +32,11 @@ const path = require('path');
 
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
 const SURFACE_PATH = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
+// The tile's mount spans two files: the Knockout renderer and the
+// company-capture control it delegates the search mount to. Both halves are
+// "this surface", so the assertions below read them together — a select2
+// wiring rolled by either one is the defect they exist to catch.
+const CAPTURE_PATH = 'view/frontend/web/js/model/company-capture.js';
 const CONTROL_PATH = 'view/frontend/web/js/model/company-search-control.js';
 
 function readSource(relPath) {
@@ -43,7 +48,7 @@ describe('gateway_method.js payment-tile surface (structural fix, #30.x.15)', fu
     let controlSrc;
 
     beforeAll(function () {
-        src = readSource(SURFACE_PATH);
+        src = readSource(SURFACE_PATH) + '\n' + readSource(CAPTURE_PATH);
         controlSrc = readSource(CONTROL_PATH);
     });
 

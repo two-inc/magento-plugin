@@ -1238,11 +1238,11 @@ describe('re-render safety of the select2 binding', () => {
 
         ctx.enableCompanySearch();
         expect(ctx.searchForCompanyLink().length).toBe(1);
-        expect(ctx._companySearchControl.isBound()).toBe(true);
+        expect(ctx.companyCapture()._companySearchControl.isBound()).toBe(true);
 
         ctx.destroyCompanySearchWidget();
 
-        expect(ctx._companySearchControl.isBound()).toBe(false);
+        expect(ctx.companyCapture()._companySearchControl.isBound()).toBe(false);
         expect(ctx.searchForCompanyLink().length).toBe(1);
     });
 

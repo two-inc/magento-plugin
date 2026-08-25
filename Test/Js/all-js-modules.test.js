@@ -28,6 +28,7 @@ const JS_FILES = [
     'view/frontend/requirejs-config.js',
     'view/frontend/web/js/action/set-shipping-information-mixin.js',
     'view/frontend/web/js/model/brand-config.js',
+    'view/frontend/web/js/model/company-capture.js',
     'view/frontend/web/js/model/company-search-control.js',
     'view/frontend/web/js/model/sole-trader.js',
     'view/frontend/web/js/model/new-customer-address-mixin.js',
