@@ -123,7 +123,7 @@
             </group>
             <group id="availability" translate="label comment" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                    showInStore="1">
-                <label>Availability &amp; Minimum Order</label>
+                <label>Availability</label>
                 <field id="sallowspecific" translate="label comment" type="select" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="0" canRestore="1">
                     <label>Country availability</label>
                     <comment>Choose whether to enable this payment method for all allowed countries or only specific ones.</comment>

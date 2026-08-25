@@ -188,7 +188,7 @@
             <group id="availability" translate="label" type="text" sortOrder="20"
                    showInDefault="1" showInWebsite="1" showInStore="1"
                    brand_code="{{code}}">
-                <label>Availability &amp; Minimum Order</label>
+                <label>Availability</label>
                 <field id="sallowspecific" translate="label comment" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="0"
                        canRestore="1" brand_code="{{code}}">
