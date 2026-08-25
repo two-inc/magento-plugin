@@ -30,9 +30,7 @@
     -->
     <type name="Two\Gateway\Service\Fee\FeeLineProviderPool">
         <arguments>
-            <argument name="providers" xsi:type="array">
-                <item name="amastyExtraFee" xsi:type="object">Two\Gateway\Service\Fee\Provider\AmastyExtraFee</item>
-            </argument>
+            <argument name="providers" xsi:type="array"/>
             <!-- Optional-with-null-default, so named here or every rejected
                  provider line goes unreported. See the AGENTS.md note. -->
             <argument name="logRepository" xsi:type="object">Two\Gateway\Api\Log\RepositoryInterface</argument>
@@ -97,11 +95,6 @@
     <preference for="Two\Gateway\Api\ApiTranslatorInterface"
                 type="Two\Gateway\Model\ApiTranslator\NullApiTranslator"/>
 
-    <type name="Two\Gateway\Logger\Handler">
-        <arguments>
-            <argument name="filesystem" xsi:type="object">Magento\Framework\Filesystem\Driver\File</argument>
-        </arguments>
-    </type>
     <type name="Two\Gateway\Logger\ErrorLogger">
         <arguments>
             <argument name="name" xsi:type="string">TwoError</argument>
