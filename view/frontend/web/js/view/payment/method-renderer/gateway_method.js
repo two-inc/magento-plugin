@@ -2444,7 +2444,9 @@ define([
                 // with no address on it — leaves the next attempt free to try
                 // again rather than consuming the single chance.
                 try {
-                    if (this.writeSoleTraderAddress(buyer) && identity) {
+                    const addressWritten = this.writeSoleTraderAddress(buyer);
+                    this.writeSoleTraderPhone(buyer);
+                    if (addressWritten && identity) {
                         adoptedSoleTraderIds.add(identity);
                     }
                 } catch (error) {
@@ -2477,6 +2479,17 @@ define([
             console.debug({ logger: 'twoPayment.writeSoleTraderAddress', source });
             companySearch.applyAddress(source, companySearch.billingRoleFormRoot());
             return true;
+        },
+        /**
+         * Write the buyer's own phone number into checkout. Not routed through
+         * applyAddress() — that write deliberately never touches telephone,
+         * correct for a registry number that is not the buyer's own, but this
+         * record IS the buyer's own verified data (TWO-25503).
+         *
+         * @param {object} buyer `/autofill/v1/buyer/current` record
+         */
+        writeSoleTraderPhone(buyer) {
+            this.fillTelephone(buyer.phone_number);
         },
         popupMessageListener() {
             // Kept so dispose() can detach it. A re-rendering checkout (Amasty
