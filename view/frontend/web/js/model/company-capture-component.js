@@ -147,8 +147,7 @@ define([
      * A country change invalidates the captured company (TWO-24867): a registry
      * number means nothing outside the registry that issued it. Re-resolves
      * sole-trader availability for the new country.
-     */
-    /**
+     *
      * @param {string} [observedCountry] the country the buyer just selected,
      *        where a caller has a fresher answer than the quote does
      */
