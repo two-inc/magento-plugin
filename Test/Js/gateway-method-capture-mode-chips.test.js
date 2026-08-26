@@ -58,6 +58,8 @@ function load(options) {
         this.bind = function (bindOptions) { control.binds.push(bindOptions || {}); };
         this.destroy = function () { control.destroys += 1; return true; };
         this.abortActiveRequest = function () { control.aborts += 1; };
+        this.showSearchForCompanyLink = function () {};
+        this.hideSearchForCompanyLink = function () {};
         this.isBound = function () { return control.binds.length > 0; };
         this.getField = function () { return $(); };
     };

@@ -59,6 +59,8 @@ function load(options) {
         this.bind = function (bindOptions) { record.binds.push(bindOptions || {}); };
         this.destroy = function () { record.destroys += 1; return true; };
         this.abortActiveRequest = function () {};
+        this.showSearchForCompanyLink = function () {};
+        this.hideSearchForCompanyLink = function () {};
         this.isBound = function () { return record.binds.length > 0; };
         this.getField = function () { return $(); };
         Object.defineProperty(this, 'fieldSelector', {

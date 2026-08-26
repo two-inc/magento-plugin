@@ -313,6 +313,12 @@ define([
                     return self.countryCode();
                 },
                 searchForCompanyText: $t('Search for company'),
+                // What the field reads when nothing is selected yet: select2
+                // renders its own display node, so the placeholder attribute on
+                // the input underneath is never the one the buyer sees.
+                templateSelectionFallback: function () {
+                    return $t('Enter company name to search');
+                },
                 // The chips are this component's only route to manual entry, on
                 // every mount, so the separately worded in-dropdown button is
                 // not built at all. That divergence between the two old mounts
@@ -475,6 +481,9 @@ define([
         }
         identity.clearNumber();
         $(this._boundSelector).val('').attr('type', 'text').trigger('focus');
+        // The in-field route back, beside the chip that does the same thing:
+        // a buyer who typed into this field is looking at it, not at the chips.
+        if (this._control) this._control.showSearchForCompanyLink();
         this.syncChips();
     };
 

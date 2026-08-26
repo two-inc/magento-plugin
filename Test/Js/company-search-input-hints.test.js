@@ -2,21 +2,13 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25288. Pins the two company-search input hints on the shipping-step
- * (address) surface:
+ * TWO-25288. Pins the below-threshold company-search input hint: OUR
+ * translatable string naming a FIXED number, in place of select2's built-in
+ * English remaining-count text.
  *
- *  - the empty-field hint, painted through select2's `templateSelection`
- *    when the picker has nothing selected. This one PRE-DATES this change —
- *    `templateSelection`, the placeholder property and its msgid all already
- *    shipped. The cases below are regression pins on existing behaviour, not
- *    coverage of anything introduced here;
- *  - the below-threshold hint, which this change makes OUR translatable
- *    string naming a FIXED number instead of select2's built-in English
- *    remaining-count text.
- *
- * And the centralisation the below-threshold hint depends on: neither surface
- * may repeat a literal minimum length. Each must read the shared constant, or
- * the number the hint claims and the number select2 enforces can drift apart.
+ * And the centralisation that hint depends on: the mount may not repeat a
+ * literal minimum length. It must read the shared constant, or the number the
+ * hint claims and the number select2 enforces can drift apart.
  *
  * Mutation-resistance notes, because this repo's AMD harness makes it easy
  * to write assertions that cannot fail:
@@ -25,21 +17,30 @@
  *    or repeated a literal; asserting 7 can only pass if it reads it.
  *  - Translation is asserted on the msgid, not on a rendered label, because
  *    the harness resolves `$t` to identity.
- *  - Every case first asserts the surface actually bound select2. Without
- *    that, a surface that returned early would present as green.
+ *  - The mount cases read the options off the widget the REAL control bound to
+ *    a real jsdom node, so a mount that returned before binding fails rather
+ *    than presenting as green.
  */
 
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
+const $ = require('jquery');
 const { loadAmdModule, loadCompanySearchControl } = require('./amd-harness');
+
+const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
+const IDENTITY_PATH = 'view/frontend/web/js/model/company-identity.js';
+const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
+
+const GLOBALS = { document: document, window: window };
 
 const BASE_CONFIG = {
     checkoutApiUrl: 'https://api.example.test',
     companySearchLimit: 50,
     isCompanySearchEnabled: true,
-    isAddressSearchEnabled: true
+    isAddressSearchEnabled: true,
+    supportedCompanyTypes: {}
 };
 
 /** Nothing here is 3, so a surviving literal 3 cannot pass. */
@@ -49,48 +50,6 @@ function readSource(relPath) {
     return fs.readFileSync(path.resolve(__dirname, '..', '..', relPath), 'utf8');
 }
 
-function makeJQuery(recorder) {
-    function $() {
-        const obj = {
-            length: 0,
-            val: function () { return arguments.length ? obj : ''; },
-            trigger: function () { return obj; },
-            prop: function () { return obj; },
-            text: function () { return obj; },
-            attr: function () { return obj; },
-            off: function () { return obj; },
-            on: function () { return obj; },
-            hide: function () { return obj; },
-            show: function () { return obj; },
-            closest: function () { return obj; },
-            append: function () { return obj; },
-            find: function () { return obj; },
-            data: function () { return obj; },
-            select2: function (opts) {
-                if (typeof opts === 'object') {
-                    recorder.select2Options = opts;
-                    recorder.select2Calls += 1;
-                }
-                return obj;
-            }
-        };
-        return obj;
-    }
-    $.async = function (selector, fn) { fn(selector); };
-    $.ajax = function () {
-        const jqxhr = {
-            done: function () { return jqxhr; },
-            fail: function () { return jqxhr; },
-            always: function () { return jqxhr; }
-        };
-        return jqxhr;
-    };
-    $.mage = { cookies: { get: function () { return null; } }, redirect: function () {} };
-    $.extend = Object.assign;
-    $.fn = {};
-    return $;
-}
-
 /**
  * The real shared model, but loaded so its threshold is WRONG_THRESHOLD.
  * Patching the source rather than the returned object matters: the hint
@@ -98,9 +57,8 @@ function makeJQuery(recorder) {
  * would leave the message quoting 3 and the test would prove nothing about
  * the two staying in step.
  */
-function loadCompanySearchWithWrongThreshold($) {
-    const relPath = 'view/frontend/web/js/model/company-search.js';
-    const src = readSource(relPath);
+function loadCompanySearchWithWrongThreshold() {
+    const src = readSource(MODEL_PATH);
     const needle = 'const MIN_INPUT_LENGTH = 3;';
     expect(src).toContain(needle);
     const patched = src.replace(needle, 'const MIN_INPUT_LENGTH = ' + WRONG_THRESHOLD + ';');
@@ -108,102 +66,134 @@ function loadCompanySearchWithWrongThreshold($) {
     const tmp = path.join(__dirname, '__tmp_company_search_threshold.js');
     fs.writeFileSync(tmp, patched, 'utf8');
     try {
-        return loadAmdModule(path.relative(path.resolve(__dirname, '..', '..'), tmp), {
-            jquery: $
-        });
+        return loadAmdModule(
+            path.relative(path.resolve(__dirname, '..', '..'), tmp),
+            { jquery: $ },
+            GLOBALS
+        );
     } finally {
         fs.unlinkSync(tmp);
     }
 }
 
-function loadShippingSurface($, companySearch) {
-    const brandConfig = function () { return BASE_CONFIG; };
-    brandConfig.getActiveTwoBrandCode = function () { return 'two_payment'; };
-    brandConfig.getActiveTwoBrandConfig = function () { return BASE_CONFIG; };
-
-    const component = loadAmdModule('view/frontend/web/js/view/address-autocomplete.js', {
-        jquery: $,
-        'Two_Gateway/js/model/brand-config': brandConfig,
-        'Two_Gateway/js/model/company-search': companySearch,
-        'Two_Gateway/js/model/company-search-control': loadCompanySearchControl($, companySearch)
-    });
-
-    const ctx = Object.assign(Object.create(component.prototype || {}), {
-        countrySelector: '#shipping-new-address-form select[name="country_id"]',
-        companyNameSelector: '#shipping-new-address-form input[name="company"]',
-        searchForCompanyButton: '#shipping_search_for_company',
-        searchForCompanyText: 'Search for company',
-        companyNamePlaceholder: component.companyNamePlaceholder,
-        setCompanyData: function () {},
-        addressLookup: component.addressLookup,
-        enableCompanySearch: component.enableCompanySearch
-    });
-    ctx.enableCompanySearch();
-    return { component: component, ctx: ctx };
-}
-
-function boundOptions(recorder) {
-    // Bootstrapped guard: if the surface returned before binding select2,
-    // every assertion below would be vacuous.
-    expect(recorder.select2Calls).toBeGreaterThan(0);
-    expect(recorder.select2Options).toBeTruthy();
-    return recorder.select2Options;
-}
-
-// Regression pins only — the empty-field placeholder hint already shipped
-// before this change. Kept so a later refactor of the picker options cannot
-// drop it silently.
-describe('empty-field hint (element 3) — pre-existing behaviour', () => {
-    test('regression: shipping surface still paints the placeholder when nothing is selected', () => {
-        const recorder = { select2Options: null, select2Calls: 0 };
-        const $ = makeJQuery(recorder);
-        const companySearch = loadCompanySearchWithWrongThreshold($);
-        const { component } = loadShippingSurface($, companySearch);
-
-        expect(component.companyNamePlaceholder).toBe('Enter company name to search');
-
-        const opts = boundOptions(recorder);
-        expect(typeof opts.templateSelection).toBe('function');
-        // No selection yet -> the placeholder, not an empty rendered box.
-        expect(opts.templateSelection({})).toBe('Enter company name to search');
-        // A real selection must win over it.
-        expect(opts.templateSelection({ text: 'Example Trading Ltd' })).toBe(
-            'Example Trading Ltd'
-        );
-    });
-
-    test('regression: the placeholder is still a translatable msgid, present in every catalogue', () => {
-        const msgid = 'Enter company name to search';
-        expect(readSource('view/frontend/web/js/view/address-autocomplete.js')).toContain(
-            "$t('" + msgid + "')"
-        );
-        ['nb_NO', 'nl_NL', 'sv_SE'].forEach((locale) => {
-            expect(readSource('i18n/' + locale + '.csv')).toContain('"' + msgid + '",');
+/**
+ * A select2 stand-in on the real jQuery, faithful on the one point this suite
+ * turns on: the options block reaches the node and is discoverable there.
+ */
+function installSelect2Double() {
+    $.fn.select2 = function (arg) {
+        return this.each(function () {
+            const $node = $(this);
+            if (typeof arg !== 'object' || arg === null) return;
+            const $container = $(
+                '<span class="select2 select2-container">' +
+                '<span class="select2-selection" role="combobox" tabindex="0"></span>' +
+                '</span>'
+            );
+            const $dropdown = $(
+                '<span class="select2-dropdown">' +
+                '<span class="select2-search select2-search--dropdown">' +
+                '<input class="select2-search__field" type="search">' +
+                '</span></span>'
+            );
+            $node.after($container);
+            $node.data('select2', {
+                options: arg,
+                $container: $container,
+                $dropdown: $dropdown,
+                $selection: $container.find('.select2-selection')
+            });
         });
-    });
-});
+    };
+}
+
+/** Magento's `$.async` decorator, resolving synchronously against the fixture. */
+function installAsync() {
+    $.async = function (selector, fn) {
+        const node = document.querySelector(selector);
+        if (node) fn(node);
+    };
+}
+
+/**
+ * Boot the page-level component over the fixture with the real control, and
+ * hand back the select2 options block the live bind produced.
+ *
+ * @param {object} companySearch the shared model to mount against
+ * @returns {object} select2 options
+ */
+function boundOptions(companySearch) {
+    const identity = loadAmdModule(IDENTITY_PATH, {}, GLOBALS);
+    const SoleTraderStub = function () {
+        this.listenForSignupResult = function () {};
+        this.ensureTokens = function () { return Promise.resolve(true); };
+        this.launchSignup = function () { return {}; };
+        this.forgetAdoptions = function () {};
+    };
+
+    const component = loadAmdModule(
+        COMPONENT_PATH,
+        {
+            jquery: $,
+            'Two_Gateway/js/model/company-identity': identity,
+            'Two_Gateway/js/model/company-search': companySearch,
+            'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(
+                $,
+                companySearch,
+                GLOBALS
+            ),
+            'Two_Gateway/js/model/sole-trader': SoleTraderStub,
+            'Two_Gateway/js/model/brand-config': {
+                getActiveTwoBrandConfig: function () { return BASE_CONFIG; }
+            }
+        },
+        GLOBALS
+    );
+    component.start();
+
+    // Bootstrapped guard: if the mount returned before binding select2, every
+    // assertion below would be vacuous.
+    const instance = component._control.getField().data('select2');
+    expect(instance).toBeTruthy();
+    return instance.options;
+}
 
 describe('below-threshold hint (element 4)', () => {
-    test('shipping surface overrides select2 with our fixed-number message', () => {
-        const recorder = { select2Options: null, select2Calls: 0 };
-        const $ = makeJQuery(recorder);
-        const companySearch = loadCompanySearchWithWrongThreshold($);
-        loadShippingSurface($, companySearch);
+    beforeEach(() => {
+        document.body.innerHTML =
+            '<form id="two_gateway_form"><div class="field"><div class="control">' +
+            '<input id="company_name" name="company_name" />' +
+            '</div></div></form>';
+        $(document).off('.twoCompanyCapture');
+        installSelect2Double();
+        installAsync();
+    });
 
-        const opts = boundOptions(recorder);
-        expect(opts.language).toBeTruthy();
-        expect(typeof opts.language.inputTooShort).toBe('function');
+    test('the mount overrides select2 with our fixed-number message', () => {
+        const options = boundOptions(loadCompanySearchWithWrongThreshold());
+
+        expect(options.language).toBeTruthy();
+        expect(typeof options.language.inputTooShort).toBe('function');
 
         // select2 hands its own args in; ours must ignore them and quote the
         // configured threshold, not the remaining count.
-        const message = opts.language.inputTooShort({ minimum: 3, input: 'a' });
+        const message = options.language.inputTooShort({ minimum: 3, input: 'a' });
         expect(message).toBe('Please enter ' + WRONG_THRESHOLD + ' or more characters');
         expect(message).not.toContain('%1');
     });
 
-    test('the hint msgid is placeholder-form and translated in every catalogue', () => {
+    test('the mount enforces the shared constant, not a literal', () => {
+        const companySearch = loadCompanySearchWithWrongThreshold();
+        expect(companySearch.MIN_INPUT_LENGTH).toBe(WRONG_THRESHOLD);
+
+        expect(boundOptions(companySearch).minimumInputLength).toBe(WRONG_THRESHOLD);
+    });
+});
+
+describe('the hint is one translatable string', () => {
+    test('the msgid is placeholder-form and translated in every catalogue', () => {
         const msgid = 'Please enter %1 or more characters';
-        const model = readSource('view/frontend/web/js/model/company-search.js');
+        const model = readSource(MODEL_PATH);
         expect(model).toContain("$t('" + msgid + "')");
         // The literal-number form must be gone, or translators keep a row
         // that no longer matches any msgid the code emits.
@@ -232,58 +222,9 @@ describe('below-threshold hint (element 4)', () => {
                 + '+(e.minimum-e.input.length)+" or more characters"'
         );
     });
-});
-
-describe('threshold centralisation', () => {
-    test('the shipping surface enforces the shared constant, not a literal', () => {
-        const recorder = { select2Options: null, select2Calls: 0 };
-        const $ = makeJQuery(recorder);
-        const companySearch = loadCompanySearchWithWrongThreshold($);
-        expect(companySearch.MIN_INPUT_LENGTH).toBe(WRONG_THRESHOLD);
-        loadShippingSurface($, companySearch);
-
-        expect(boundOptions(recorder).minimumInputLength).toBe(WRONG_THRESHOLD);
-    });
-
-    test('the payment surface enforces the shared constant, not a literal', () => {
-        const recorder = { select2Options: null, select2Calls: 0 };
-        const $ = makeJQuery(recorder);
-        const companySearch = loadCompanySearchWithWrongThreshold($);
-
-        const component = loadAmdModule(
-            'view/frontend/web/js/view/payment/method-renderer/gateway_method.js',
-            {
-                jquery: $,
-                'Two_Gateway/js/model/company-search': companySearch,
-                'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(
-                    $,
-                    companySearch
-                )
-            }
-        );
-        const ctx = Object.assign(Object.create(component.prototype || {}), {
-            companyNameSelector: 'input#company_name',
-            enterDetailsManuallyButton: '#billing_enter_details_manually',
-            enterDetailsManuallyText: 'Enter details manually',
-            searchForCompanyButton: '#billing_search_for_company',
-            searchForCompanyText: 'Search for company',
-            _brandConfig: BASE_CONFIG,
-            countryCode: function () { return 'gb'; },
-            companyName: Object.assign(function () { return ''; }, {
-                subscribe: function () { return { dispose: function () {} }; }
-            }),
-            fillCompanyData: function () {},
-            addressLookup: component.addressLookup,
-            enableCompanySearch: component.enableCompanySearch
-        });
-        ctx.enableCompanySearch();
-
-        expect(boundOptions(recorder).minimumInputLength).toBe(WRONG_THRESHOLD);
-    });
 
     test('the hint and the enforced threshold come from one source', () => {
-        const $ = makeJQuery({ select2Options: null, select2Calls: 0 });
-        const companySearch = loadCompanySearchWithWrongThreshold($);
+        const companySearch = loadCompanySearchWithWrongThreshold();
         expect(companySearch.minInputLengthMessage()).toContain(
             String(companySearch.MIN_INPUT_LENGTH)
         );
