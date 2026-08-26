@@ -23,7 +23,7 @@
 const fs = require('fs');
 const path = require('path');
 const $ = require('jquery');
-const { loadAmdModule, defaultMocks } = require('./amd-harness');
+const { loadAmdModule, defaultMocks, installAsyncSimulation } = require('./amd-harness');
 
 const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
@@ -49,6 +49,10 @@ function readSource(relPath) {
  */
 function load(options) {
     const opts = options || {};
+    // The component watches for its host node, so the suite needs the
+    // observer simulation rather than real jQuery's absent `$.async`.
+    installAsyncSimulation($);
+    $.async.reset();
     const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
     const controls = [];
     const soleTrader = { instances: 0, listeners: 0, ensured: 0 };
@@ -95,7 +99,7 @@ function load(options) {
                         isCompanySearchEnabled: opts.isCompanySearchEnabled !== false,
                         checkoutApiUrl: 'https://api.example',
                         checkoutPageUrl: 'https://checkout.example',
-                        supportedCompanyTypes: {}
+                        supportedCompanyTypes: { gb: ['SOLE_TRADER'] }
                     };
                 }
             },
@@ -104,14 +108,25 @@ function load(options) {
                 defaultMocks()['Magento_Checkout/js/model/quote'],
                 {
                     isVirtual: function () { return !!opts.isVirtual; },
-                    billingAddress: function () { return { countryId: 'GB' }; }
+                    // `deferCountry` reproduces a guest checkout at boot: the
+                    // quote carries no address yet, so the country is only
+                    // readable once a form exists to read it from.
+                    billingAddress: function () {
+                        return opts.deferCountry ? null : { countryId: 'GB' };
+                    }
                 }
             ),
             'Two_Gateway/js/model/company-search': Object.assign(
                 {},
                 defaultMocks()['Two_Gateway/js/model/company-search'],
                 {
-                    currentAddressFormCountry: function () { return 'gb'; },
+                    currentAddressFormCountry: function () {
+                        if (!opts.deferCountry) return 'gb';
+                        // Read the live DOM, so this answers '' until the form
+                        // carrying the select actually renders.
+                        const select = document.querySelector('select[name="country_id"]');
+                        return select ? String(select.value || '').toLowerCase() : '';
+                    },
                     revertAutofilledAddress: function () {},
                     billingRoleFormRoot: function () { return null; },
                     applyAddress: function () {},
@@ -434,5 +449,46 @@ describe('an adopted sole trader never inherits half of the previous company', (
         ]
     ])('a sole trader with %p adopts as %p (%s)', (buyer, expected) => {
         expect(adoptOver(buyer)).toEqual(expected);
+    });
+});
+
+describe('the host arriving after boot still gets a mount', () => {
+    test('a checkout whose address form renders after start() still mounts and shows chips', () => {
+        // The sidebar this boots from renders before the shipping form, and a
+        // guest quote carries no billing address yet — so start()'s own attempt
+        // finds no host and nothing else re-drives it. Reproduced live on
+        // staging as a checkout with no company search and no chips at all.
+        document.body.innerHTML = '';
+        const { component, controls } = load();
+
+        component.start();
+        expect(controls).toHaveLength(0);
+
+        mountAddressForm();
+        $.async.fireAll();
+
+        expect(controls).toHaveLength(1);
+        expect(document.querySelectorAll('.two-company-mode-chip')).toHaveLength(3);
+    });
+
+    test('sole-trader availability resolves once a country is readable', async () => {
+        document.body.innerHTML = '';
+        const { component, identity } = load({ deferCountry: true });
+
+        component.start();
+        expect(identity.soleTraderAvailable()).toBe(false);
+
+        document.body.innerHTML =
+            '<form id="shipping-new-address-form">' +
+            '<select name="country_id"><option value="GB" selected>GB</option></select>' +
+            '<div class="field"><div class="control"><input name="company" /></div></div>' +
+            '</form>';
+        $.async.fireAll();
+        // The registry answer arrives on a promise, so the chip cannot be
+        // offered in the same tick the host appears.
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(identity.soleTraderAvailable()).toBe(true);
     });
 });

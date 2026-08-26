@@ -94,8 +94,23 @@ define([
         // address yet, which is what still lets that genuine first resolution
         // through.
         this._lastCountry = this.countryCode();
+        this.watchForMountHost();
         this.refreshMount();
         this.refreshSoleTraderAvailability();
+    };
+
+    /**
+     * Mount when a host field appears: this boots from the sidebar, before any
+     * address form exists, and no quote event re-drives it for a guest.
+     */
+    CompanyCaptureComponent.prototype.watchForMountHost = function () {
+        const self = this;
+        [ADDRESS_FIELD_SELECTOR, TILE_FIELD_SELECTOR].forEach(function (selector) {
+            $.async(selector, function () {
+                self.refreshMount();
+                if (!identity.soleTraderAvailable()) self.refreshSoleTraderAvailability();
+            });
+        });
     };
 
     /** @returns {object} the active brand's checkout config subtree */
