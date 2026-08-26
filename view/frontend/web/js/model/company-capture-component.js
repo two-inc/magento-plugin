@@ -547,7 +547,13 @@ define([
             { authoritative: true }
         );
         identity.soleTraderAdopted(true);
-        if (this._panel) this._panel.setDisplayText(identity.companyName());
+        if (this._panel) {
+            this._panel.setDisplayText(identity.companyName());
+            // The popover was only held open so the chip stayed reachable while
+            // the signup was up. The signup has answered, the company is in the
+            // field, and there is nothing left in the popover to act on.
+            this._panel.close();
+        }
         this.syncChips();
     };
 

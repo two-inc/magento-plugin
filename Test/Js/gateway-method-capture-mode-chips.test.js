@@ -451,6 +451,23 @@ describe('an adopted sole trader is shown in the company field', () => {
         expect(document.querySelector('#company_name').value).toBe('Jane Smith Trading');
         expect(changes).toBe(1);
     });
+
+    test('the popover closes once the signup has answered', () => {
+        mountTileField();
+        const { component } = load();
+        component.start();
+        chip('registered').click();
+        chip('soletrader').click();
+        expect(dropdown().hasAttribute('hidden')).toBe(false);
+
+        component.adoptSoleTrader({
+            organization_number: 'TWO:ST:GB:1',
+            company_name: 'Jane Smith Trading'
+        });
+
+        // Held open only so the chip stayed reachable while the signup was up.
+        expect(dropdown().hasAttribute('hidden')).toBe(true);
+    });
 });
 
 describe('the component is constructed once per page', () => {
