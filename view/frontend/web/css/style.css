@@ -208,7 +208,7 @@
     display: list-item;
 }
 
-.two-company-mode-chips {
+.mode_selector {
     display: flex;
     justify-content: center;
     /* Three peer options (TWO-25503) no longer fit one line in a narrow tile. */
@@ -220,26 +220,28 @@
     color: var(--color-brownie-vanilla);
 }
 
-.two-company-mode-chip {
+.mode_selector .mode_item {
     text-decoration: none;
     text-underline-offset: 2px;
     text-align: center;
     padding: 5px 10px;
     border-radius: 5px;
     border: 1px solid var(--color-gray89);
+}
+
+.mode_selector [data-element='click-element'] {
     color: var(--color-blue2);
     background-color: var(--color-white);
     cursor: pointer;
-    font-family: inherit;
 }
 
-.two-company-mode-chip--selected {
+.mode_selector [data-element='selected-element'] {
     color: var(--color-white);
     background-color: var(--color-blue2);
 }
 
 /* Sole trader part */
-.two-sole-trader-note {
+.sole_trader_note {
     display: flex;
     justify-content: flex-end;
     gap: 12px;
@@ -250,7 +252,12 @@
     color: var(--color-brownie-vanilla);
 }
 
-.two-sole-trader-note__link {
+.sole_trader_note svg {
+    width: 20px;
+    height: 20px;
+}
+
+.sole_trader_note [data-element='click-element'] {
     color: var(--color-blue2);
     text-decoration: underline;
     text-underline-offset: 2px;
@@ -259,6 +266,69 @@
 
 [data-element='error-message'] {
     margin-bottom: 24px !important;
+}
+
+.popup_message [data-element='click-element'] {
+    color: var(--color-blue2);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+}
+
+.sole_trader_note .iframe-parent {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    z-index: 50;
+    transform: translate(-50%, -200%);
+
+    width: calc(90% - 40px);
+    height: calc(90% - 40px);
+    max-width: 1280px;
+    max-height: 1024px;
+    padding: 20px;
+
+    border-radius: 8px;
+    border: 1px solid var(--color-gray89);
+    background-color: var(--color-white);
+    box-shadow:
+        0 4px 6px -1px rgb(0 0 0 / 0.1),
+        0 2px 4px -2px rgb(0 0 0 / 0.1);
+
+    transition: 0.65s;
+}
+
+.sole_trader_note iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
+.sole_trader_note .overlay {
+    position: fixed;
+    right: 0;
+    top: 0;
+    z-index: 49;
+
+    display: block;
+    height: 100%;
+    width: 100%;
+
+    opacity: 0;
+    visibility: hidden;
+    background-color: rgba(0, 0, 0, 0.7);
+
+    transition: 0.65s;
+    cursor: pointer;
+}
+
+.sole_trader_note.show .iframe-parent {
+    transform: translate(-50%, -50%);
+}
+
+.sole_trader_note.show .overlay {
+    opacity: 1;
+    visibility: visible;
 }
 
 /* Payment term chips */
@@ -274,7 +344,7 @@
 }
 
 /*
- * Chip colour palette matches the `.two-company-mode-chip` toggle elsewhere on the
+ * Chip colour palette matches the `.mode_item` toggle elsewhere on the
  * checkout page (the company-capture mode options): solid Two-brand
  * blue (`--color-blue2`) for the selected state, white fill with blue
  * text for unselected. Brand overlays that ship a different palette
@@ -748,7 +818,7 @@
  *    once a search result has actually been selected;
  *  - the payment tile (TWO-25326, 2026-08-04 ruling, Bug B) — a KO `<div>`
  *    in gateway_method.html, `visible`-bound to
- *    `isCompanyCaptured() && isTileCompanyFieldVisible()
+ *    `isCompanyCaptured() && isTileCompanySearchActive()
  *    && displayCompanyId() !== ''` — the last conjunct is TWO-25326's
  *    display filter, which withholds the whole label for an internal
  *    `TWO:`-prefixed number rather than rendering a blank one.
@@ -769,11 +839,4 @@
     color: #666666;
     font-size: 12px;
     word-break: break-word;
-}
-
-/* Ours, not the theme's: a bare `.hidden` is defined by Luma but not by every
-   one-page checkout, and a chip that fails to hide offers a mode the buyer's
-   country cannot serve. */
-.two-hidden {
-    display: none !important;
 }

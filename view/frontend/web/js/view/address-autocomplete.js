@@ -4,15 +4,15 @@
  */
 define([
     'jquery',
-    'ko',
     'mage/translate',
     'underscore',
     'Magento_Ui/js/form/form',
     'Magento_Customer/js/customer-data',
     'Magento_Checkout/js/model/step-navigator',
     'uiRegistry',
-    'Two_Gateway/js/model/company-identity',
+    'Two_Gateway/js/model/brand-config',
     'Two_Gateway/js/model/company-search',
+    'Two_Gateway/js/model/company-search-control',
     // `$.async`, used below — it decorates jQuery as a side effect and takes no
     // factory parameter, hence LAST in the list. Declared rather than relied on
     // transitively: it only resolved because a knockout bootstrap dependency
@@ -20,17 +20,24 @@ define([
     'Magento_Ui/js/lib/view/utils/async'
 ], function (
     $,
-    ko,
     $t,
     _,
     Component,
     customerData,
     stepNavigator,
     uiRegistry,
-    identity,
-    companySearch
+    brandConfig,
+    companySearch,
+    CompanySearchControl
 ) {
     'use strict';
+
+    // Resolve the active Two-family brand subtree so overlays
+    // (acme_payment, …) get their own checkoutApiUrl /
+    // isCompanySearchEnabled / companySearchLimit instead of falling
+    // through to an empty object when the vanilla `two_payment` key
+    // isn't present.
+    const config = brandConfig.getActiveTwoBrandConfig();
 
     // Our own event namespace, separate from company-search's. The picker
     // teardown paths clear `companySearch.EVENT_NS` off the company-name input
@@ -41,8 +48,12 @@ define([
     return Component.extend({
         countrySelector: '#shipping-new-address-form select[name="country_id"]',
         companyNameSelector: '#shipping-new-address-form input[name="company"]',
+        companyNameLabel: 'div[name="shippingAddress.company"] label',
         companyIdSelector: '#shipping-new-address-form input[name="custom_attributes[company_id]"]',
         shippingTelephoneSelector: '#shipping-new-address-form input[name="telephone"]',
+        companyNamePlaceholder: $t('Enter company name to search'),
+        searchForCompanyText: $t('Search for company'),
+        searchForCompanyButton: '#shipping_search_for_company',
         initialize: function () {
             let self = this;
             this._super();
@@ -77,7 +88,7 @@ define([
                     );
                 }
             );
-            this.watchCapturedIdentity();
+            this.enableCompanySearch();
             this.enableManualCompanyId();
             const setTwoTelephone = (e) => customerData.set('shippingTelephone', e.target.value);
             $.async(self.shippingTelephoneSelector, function (telephoneSelector) {
@@ -116,9 +127,18 @@ define([
          * and surfaced to the buyer as a generic failure with nothing on screen
          * explaining which field was wrong.
          *
-         * The picker is not touched here at all: it belongs to the page-level
-         * capture component, which watches the same select and re-resolves the
-         * country per request.
+         * What this deliberately does NOT do is re-bind the picker. The
+         * PrestaShop equivalent recreates its autocomplete here because that
+         * widget captures the country at construction; this one does not —
+         * `getCountryCode` (enableCompanySearch() below) reads the select on
+         * every request, so the next search already carries the new country.
+         * (The payment tile's own picker reads the same select first, via
+         * companySearch.currentAddressFormCountry() — see currentCountryCode()
+         * in gateway_method.js.)
+         * Re-binding would tear down and rebuild select2 for no behavioural
+         * gain, and would drag a buyer sitting in manual-entry mode back into
+         * search mode. Pinned by the "search after a switch uses the new
+         * country" test rather than left as a claim.
          */
         onCountryChanged: function () {
             const countryCode = this.currentCountryCode();
@@ -132,6 +152,13 @@ define([
             if (previous === countryCode) {
                 this.toggleCompanyVisibility();
                 return;
+            }
+            // First, before the state it might repaint is cleared: a search
+            // issued under the OLD country is still on the wire for up to 30s,
+            // and its results would populate a dropdown the buyer reads as
+            // results for the new one.
+            if (this._companySearchControl) {
+                this._companySearchControl.abortActiveRequest();
             }
             companySearch.revertAutofilledAddress();
             // Clears the name input, the number field, and the published
@@ -181,17 +208,8 @@ define([
                 companyCountry: this.currentCountryCode()
             });
         },
-        /**
-         * Mirror a captured identity onto the address step: the published
-         * section, the name input, the `company_id` field, and the label.
-         *
-         * @param {string} [companyId]
-         * @param {string} [companyName]
-         */
         setCompanyData: function (companyId = '', companyName = '') {
             console.debug({ logger: 'addressAutocomplete.setCompanyData', companyId, companyName });
-            this._appliedCompanyId = companyId;
-            this._appliedCompanyName = companyName;
             this.publishCompanyData(companyId, companyName);
             $('.select2-selection__rendered').text(companyName);
             $(this.companyNameSelector).val(companyName);
@@ -405,17 +423,13 @@ define([
          *
          * Three states, and only one of them shows anything:
          *
-         *  - a captured identity -> the number, right-aligned;
-         *  - nothing captured yet -> nothing (§5: "not visible before a result
-         *    is selected");
+         *  - search mode, a result selected -> the number, right-aligned;
+         *  - search mode, nothing selected yet -> nothing (§5: "not visible
+         *    before a result is selected");
          *  - manual-entry mode -> nothing, ever, whatever the number field
          *    happens to still hold. Manual entry is name-only capture per the
          *    three-mode model, so a number rendered here would be claiming a
          *    registry identity the buyer never picked.
-         *
-         * Keyed on the capture mode rather than on select2 being present: the
-         * page-level component owns the mount and can bind it after a restored
-         * number has already been rendered, with nothing to trigger a repaint.
          *
          * Rebuilt from scratch on each call rather than toggled: the label is
          * a single text node with no state worth preserving, and a `.remove()`
@@ -432,7 +446,7 @@ define([
             const $control = $field.closest('.control');
             if (!$control.length) return;
             $control.find('.' + this.companyIdTextClass).remove();
-            if (identity.captureMode() === 'manual') return;
+            if (!this.isCompanySearchActive()) return;
             // Through the shared display formatter, so an internal
             // `TWO:`-prefixed identifier renders NO label at all rather than
             // a label the buyer cannot make sense of (TWO-25326). Same
@@ -606,6 +620,10 @@ define([
                 // …and paint the number label for that same case. A reload
                 // restores the number into this field from the provider, not
                 // through setCompanyData(), so nothing else would render it.
+                // Called from BOTH sides of the race deliberately: the picker's
+                // own bind (enableCompanySearch) also renders, because the
+                // label needs select2 present AND the number present and
+                // neither `$.async` can be relied on to resolve second.
                 self.renderCompanyIdText();
                 self.watchCompanyIdComponent();
             });
@@ -627,50 +645,118 @@ define([
                     });
             });
         },
+        setAddressData: function (address) {
+            companySearch.applyAddress(address);
+        },
+        addressLookup: function (selectedCompany) {
+            return companySearch.lookupCompanyAddress(config, selectedCompany);
+        },
         /**
-         * Follow the page-level captured identity: this step no longer owns a
-         * picker, but it still owns the `company_id` field, its persistence
-         * through the checkoutProvider, and the `companyData` section.
+         * Hand the company-name input back to the buyer.
          *
-         * Deferred by one turn so that the name and the number — separate
-         * observables, written back to back — are published together rather
-         * than as a name under the previous company's number.
+         * Clears the company in play first: whatever they type next is a
+         * different company from the one the picker had, and the published
+         * section is what the payment step credit-checks.
+         *
+         * @param {object} $companyNameField the node THIS bind owns — not the
+         *        document-wide selector, so a re-rendered form's picker is
+         *        never the one torn down
          */
-        watchCapturedIdentity: function () {
+        enterDetailsManually: function ($companyNameField) {
+            // First, before anything else touches the widget. Cancelling the
+            // selection leaves the dropdown open, so a search still on the
+            // wire would come back up to 30s later and run select2's
+            // highlight and scroll bookkeeping over a torn-down picker.
+            this._companySearchControl.abortActiveRequest();
+            this.setCompanyData();
+            // Tears down the widget (detach manual-entry button, drop our
+            // handlers, select2('destroy')) — the mechanics shared with the
+            // payment tile's own teardown, owned by the control now.
+            this._companySearchControl.destroy();
+            $companyNameField.attr('type', 'text');
+            $companyNameField.val('');
+            this._companySearchControl.showSearchForCompanyLink();
+            // After the destroy above, not before: renderCompanyIdText()
+            // decides on isCompanySearchActive(), which only reports
+            // manual-entry once select2 is actually gone from the node.
+            this.renderCompanyIdText();
+            // select2('destroy') removes the manual-entry button — the
+            // element that had focus when the buyer activated it — from the
+            // document, and destroy() does not route through select2's own
+            // `close` handler (which is what normally refocuses the
+            // combobox). Left alone, focus falls back to `<body>` with
+            // nothing visible focused; land it on the plain-text field this
+            // just became instead.
+            $companyNameField.trigger('focus');
+        },
+        /**
+         * (Re-)bind the company-search picker to the company-name input.
+         *
+         * @param {object} [options]
+         * @param {boolean} [options.openDropdown] open the picker as soon as
+         *        the widget is bound. Set only by the "Search for company"
+         *        link: returning to search mode should land the buyer in the
+         *        search box, not on a closed picker they must click again.
+         *        Leave it off for the initial checkout bind, where popping a
+         *        dropdown open unasked would steal focus from the form.
+         */
+        enableCompanySearch: function (options) {
+            if (!config.isCompanySearchEnabled) return;
             const self = this;
-            // One live watcher, belonging to the CURRENT view: the identity
-            // singleton outlives every re-render of this step, so a watcher
-            // left in place would keep a superseded view painting the form.
-            if (
-                identity._addressStepWatcher &&
-                typeof identity._addressStepWatcher.dispose === 'function'
-            ) {
-                identity._addressStepWatcher.dispose();
-            }
-            const captured = ko
-                .computed(function () {
-                    // Manual entry is the buyer's own typing, published by the
-                    // company-number field's own change handler, so nothing is
-                    // mirrored for it here.
-                    if (identity.captureMode() === 'manual') {
-                        return { companyId: '', companyName: '' };
+            // ONE instance for this component, mirroring PrestaShop's single
+            // `TwoCompanySearch` construction site: every subsequent call
+            // (re-render, "Search for company" reactivation) re-binds THIS
+            // instance rather than constructing a second one. `companyIdSelector`'s
+            // id is static per address form, so a single fixed `id` on the
+            // return link (rather than container-scoping, which the payment
+            // tile needs for its multi-brand case) is the right lookup here.
+            if (!this._companySearchControl) {
+                this._companySearchControl = new CompanySearchControl({
+                    fieldSelector: self.companyNameSelector,
+                    config: config,
+                    getCountryCode: function () {
+                        return $(self.countrySelector).val();
+                    },
+                    templateSelectionFallback: function () {
+                        return self.companyNamePlaceholder;
+                    },
+                    searchForCompanyId: self.searchForCompanyButton.replace('#', ''),
+                    searchForCompanyText: self.searchForCompanyText,
+                    onSelect: function (selectedItem, $companyNameField) {
+                        $('.select2-selection__rendered').text(selectedItem.id);
+                        self.setCompanyData(selectedItem.companyId, selectedItem.text);
+                        // Gate lives in companySearch.lookupCompanyAddress
+                        // (config.isAddressSearchEnabled = the single
+                        // `enable_address_search` setting). This picker only
+                        // exists when company search in address entry is on,
+                        // so that one gate is the whole rule here — the
+                        // payment-tile picker adds a second, positional one
+                        // of its own (company-capture.js::addressLookup()).
+                        self.addressLookup(selectedItem);
+                    },
+                    onManualEntryActivated: function ($companyNameField) {
+                        self.enterDetailsManually($companyNameField);
+                    },
+                    onBound: function ($companyNameField) {
+                        // Re-derive on every bind: a re-render rebuilds the
+                        // `.control` this label lives in, so a label written
+                        // on a previous bind is gone by now.
+                        self.renderCompanyIdText();
+                        // Set initial placeholder text for the company search
+                        if (!$companyNameField.val()) {
+                            $companyNameField
+                                .closest('.field')
+                                .find('.select2-selection__rendered')
+                                .text(self.companyNamePlaceholder);
+                        }
+                        if ($companyNameField.val()) {
+                            // pre-fill on checkout render
+                            $('.select2-selection__rendered').text($companyNameField.val());
+                        }
                     }
-                    return {
-                        companyId: identity.companyId(),
-                        companyName: identity.companyName()
-                    };
-                })
-                .extend({ rateLimit: 0 });
-            identity._addressStepWatcher = captured;
-            captured.subscribe(function (value) {
-                if (
-                    value.companyId === self._appliedCompanyId &&
-                    value.companyName === self._appliedCompanyName
-                ) {
-                    return;
-                }
-                self.setCompanyData(value.companyId, value.companyName);
-            });
+                });
+            }
+            this._companySearchControl.bind(options);
         }
     });
 });
