@@ -33,6 +33,7 @@ const path = require('path');
 const { loadAmdModule } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
+const CAPTURE = 'view/frontend/web/js/model/company-capture.js';
 const TEMPLATE = 'view/frontend/web/template/payment/gateway_method.html';
 
 function readSource(relPath) {
@@ -161,7 +162,7 @@ function makeControlDouble() {
  * does not model — and both are asserted on, so a transition dropping the
  * call fails rather than passing quietly.
  *
- * @returns {object} `{ renderer, dom, control, enableCalls, revertCalls }`
+ * @returns {object} `{ renderer, capture, dom, control, enableCalls, revertCalls }`
  */
 function loadRenderer() {
     const dom = makeFieldDom();
@@ -175,9 +176,13 @@ function loadRenderer() {
         }
     });
     renderer.getCode = function () { return 'two_payment'; };
-    renderer._companySearchControl = makeControlDouble();
+    // The search control and the mode transitions live on the renderer's
+    // CompanyCapture, so the doubles have to be installed there — a stub on the
+    // renderer's delegate is never consulted by CompanyCapture's own calls.
+    const capture = renderer.companyCapture();
+    capture._companySearchControl = makeControlDouble();
     const enableCalls = [];
-    renderer.enableCompanySearch = function (options) { enableCalls.push(options); };
+    capture.enableCompanySearch = function (options) { enableCalls.push(options); };
     renderer.fillCustomerData = function () {};
     // Every test starts from the state a fresh tile is in. The observables
     // live on the shared component literal, so a previous test's mode would
@@ -187,8 +192,9 @@ function loadRenderer() {
     renderer.companyId('');
     return {
         renderer: renderer,
+        capture: capture,
         dom: dom,
-        control: renderer._companySearchControl,
+        control: capture._companySearchControl,
         enableCalls: enableCalls,
         revertCalls: revertCalls
     };
@@ -257,13 +263,11 @@ describe('the company-capture mode control offers three peer options', function 
     ])(
         'showManualEntryChip() with setting %s and tile-active %s is %s (%s)',
         (settingEnabled, tileActive, expected) => {
-            const { renderer } = loadRenderer();
-            const context = {
-                isAddressAreaCompanySearchEnabled: settingEnabled,
-                isTileCompanySearchActive: function () { return tileActive; }
-            };
+            const { renderer, capture } = loadRenderer();
+            renderer.isAddressAreaCompanySearchEnabled = settingEnabled;
+            capture.isTileCompanySearchActive = function () { return tileActive; };
 
-            expect(renderer.showManualEntryChip.call(context)).toBe(expected);
+            expect(renderer.showManualEntryChip()).toBe(expected);
         }
     );
 
@@ -367,7 +371,7 @@ describe('switching between the three capture modes', function () {
     });
 
     test('the "Search for company" link and the registered chip agree on the mode', () => {
-        const src = readSource(RENDERER);
+        const src = readSource(CAPTURE);
         const hookIndex = src.indexOf('onReturnToSearch: function');
         expect(hookIndex).toBeGreaterThan(-1);
         expect(src.slice(hookIndex, hookIndex + 200)).toContain("captureMode('registered')");

@@ -29,14 +29,23 @@ const path = require('path');
 const { loadAmdModule } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
+const SOLE_TRADER_MODEL = 'view/frontend/web/js/model/sole-trader.js';
 const CHECKOUT_PAGE_URL = 'https://checkout.example';
 const ENTERED_EMAIL = 'entered@example.com';
+
+/**
+ * Stand-in for the signup popup's own window. `popupMessageListener()` ignores
+ * a message from anything other than the popup it is currently tracking, so
+ * every fixture message below has to claim to come from this one.
+ */
+const POPUP = { popup: 'the tracked signup window' };
 
 /**
  * Load the renderer and give it the state `initialize()` would have set up.
  * The harness returns the spec object itself, so it doubles as the `this` the
  * methods run against, complete with its own observables — but `initialize()`
- * never runs, so `_brandConfig` / `soleTraderLookup` have to be supplied here.
+ * never runs, so `_brandConfig` has to be supplied here. The transport stubs
+ * go on the SoleTrader collaborator, which is what owns them.
  *
  * @param {object|null} buyer what the stubbed `fetchBuyer()` resolves to
  * @returns {object} { renderer, listeners }
@@ -53,12 +62,13 @@ function loadRenderer(buyer) {
     });
 
     renderer._brandConfig = { checkoutPageUrl: CHECKOUT_PAGE_URL };
-    renderer.soleTraderLookup = { ready: false, buyer: null, matches: false };
-    renderer.soleTraderLookupEmail = null;
     renderer.getEmail = () => ENTERED_EMAIL;
-    renderer.getTokens = () =>
+
+    const soleTrader = renderer.soleTrader();
+    soleTrader.getTokens = () =>
         Promise.resolve({ delegation_token: 'dt', autofill_token: 'at' });
-    renderer.fetchBuyer = () => Promise.resolve(buyer);
+    soleTrader.fetchBuyer = () => Promise.resolve(buyer);
+    soleTrader._soleTraderPopupWindow = POPUP;
 
     return { renderer: renderer, listeners: listeners };
 }
@@ -102,7 +112,7 @@ describe('resolveBuyer applies the email-match rule only pre-authentication', ()
                 expect(pf.buyer).toBe(buyer);
                 // Recorded on the component, not just returned: soleTraderMode()
                 // reads `this.soleTraderLookup` on a later click.
-                expect(renderer.soleTraderLookup).toBe(pf);
+                expect(renderer.soleTrader().soleTraderLookup).toBe(pf);
             });
         }
     );
@@ -120,7 +130,7 @@ describe('a completed signup autofills whatever identity it authenticated', () =
         renderer.showSoleTrader(true);
         renderer.showPopupMessage(true);
 
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED' });
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
 
         // The handler is async inside; let the resolveBuyer promise settle.
         return Promise.resolve().then(() => Promise.resolve().then(() => {
@@ -139,7 +149,7 @@ describe('a completed signup autofills whatever identity it authenticated', () =
 
         renderer.showSoleTrader(true);
 
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED' });
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
 
         return Promise.resolve().then(() => Promise.resolve().then(() => {
             expect(renderer.companyId()).toBe('');
@@ -156,8 +166,8 @@ describe('a completed signup autofills whatever identity it authenticated', () =
 
         renderer.showSoleTrader(true);
 
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED' });
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED' });
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
 
         return Promise.resolve().then(() => Promise.resolve().then(() => {
             expect(renderer.companyId()).toBe(SOLE_TRADER.organization_number);
@@ -175,11 +185,11 @@ describe('email entry alone never triggers the lookup (TWO-25503)', () => {
      */
     test('lookupSoleTrader is called from soleTraderMode and nowhere else', () => {
         const src = fs.readFileSync(
-            path.resolve(__dirname, '..', '..', RENDERER),
+            path.resolve(__dirname, '..', '..', SOLE_TRADER_MODEL),
             'utf8'
         );
         // Guard against a rename silently emptying this check.
-        expect(src).toContain('lookupSoleTrader() {');
+        expect(src).toContain('SoleTrader.prototype.lookupSoleTrader = function ()');
 
         const callSites = src.split('\n').filter((line) => /lookupSoleTrader\(\)[.;]/.test(line));
         expect(callSites).toHaveLength(1);
@@ -197,7 +207,7 @@ describe('the chip lookup still refuses a buyer it cannot tie to the form', () =
         renderer.showModeTab(true);
 
         return renderer.lookupSoleTrader().then(() => {
-            expect(renderer.soleTraderLookup.matches).toBe(false);
+            expect(renderer.soleTrader().soleTraderLookup.matches).toBe(false);
             expect(renderer.companyId()).toBe('');
             expect(renderer.companyName()).toBe('');
             expect(renderer.showSoleTrader()).toBe(false);
@@ -209,7 +219,7 @@ describe('the chip lookup still refuses a buyer it cannot tie to the form', () =
         renderer.showModeTab(true);
 
         return renderer.soleTraderMode().then(() => {
-            expect(renderer.soleTraderLookup.matches).toBe(true);
+            expect(renderer.soleTrader().soleTraderLookup.matches).toBe(true);
             expect(renderer.companyId()).toBe(SOLE_TRADER.organization_number);
             expect(renderer.companyName()).toBe(SOLE_TRADER.company_name);
             expect(renderer.showSoleTrader()).toBe(true);

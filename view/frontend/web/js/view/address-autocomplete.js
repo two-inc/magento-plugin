@@ -731,7 +731,7 @@ define([
                         // exists when company search in address entry is on,
                         // so that one gate is the whole rule here — the
                         // payment-tile picker adds a second, positional one
-                        // of its own (gateway_method.js::addressLookup()).
+                        // of its own (company-capture.js::addressLookup()).
                         self.addressLookup(selectedItem);
                     },
                     onManualEntryActivated: function ($companyNameField) {

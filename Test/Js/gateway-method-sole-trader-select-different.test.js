@@ -14,6 +14,7 @@ const path = require('path');
 const { loadAmdModule } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
+const SOLE_TRADER_MODEL = 'view/frontend/web/js/model/sole-trader.js';
 const TEMPLATE = 'view/frontend/web/template/payment/gateway_method.html';
 const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
 
@@ -36,19 +37,32 @@ function loadRenderer() {
     return { component: component, opened: opened };
 }
 
-function makeContext(component, overrides) {
+/**
+ * A `this` context standing in for a live renderer — the HOST — plus the
+ * SoleTrader collaborator it lazily mounts, which owns the tokens, the lookup
+ * record and the transport.
+ *
+ * @param {object} component the loaded renderer
+ * @param {object} [hostOverrides] members to replace on the renderer
+ * @param {object} [soleTraderOverrides] members to replace on the collaborator
+ * @returns {object} the context
+ */
+function makeContext(component, hostOverrides, soleTraderOverrides) {
     const ctx = Object.assign({}, component, {
         _brandConfig: { checkoutPageUrl: CHECKOUT_PAGE_URL },
-        delegationToken: 'dt-1',
-        autofillToken: 'at-1',
         companyName: function () { return 'Ola Nordmann'; },
         getEmail: function () { return 'ola@example.com'; },
         getTelephone: function () { return '+4712345678'; },
-        getAutofillData: function () { return 'AUTOFILL'; },
         showModeTab: function () { return true; },
         showSoleTrader: function () { return true; }
     });
-    return Object.assign(ctx, overrides || {});
+    Object.assign(ctx, hostOverrides || {});
+    Object.assign(ctx.soleTrader(), {
+        delegationToken: 'dt-1',
+        autofillToken: 'at-1',
+        getAutofillData: function () { return 'AUTOFILL'; }
+    }, soleTraderOverrides || {});
+    return ctx;
 }
 
 describe('select a different sole trader (TWO-25461 §7)', () => {
@@ -89,7 +103,7 @@ describe('select a different sole trader (TWO-25461 §7)', () => {
 
     test('no popup opens when tokens are not minted, even for a re-signup', () => {
         const { component, opened } = loadRenderer();
-        const ctx = makeContext(component, { delegationToken: '', autofillToken: '' });
+        const ctx = makeContext(component, {}, { delegationToken: '', autofillToken: '' });
 
         const handle = ctx.selectDifferentSoleTrader.call(ctx);
 
@@ -109,8 +123,8 @@ describe('select a different sole trader (TWO-25461 §7)', () => {
         expect(linkIndex).toBeGreaterThan(fieldIndex);
     });
 
-    test('the renderer source carries no width=610 anywhere (regression guard shared with #343)', () => {
-        const src = fs.readFileSync(path.resolve(__dirname, '..', '..', RENDERER), 'utf8');
+    test('the popup-launch source carries no width=610 anywhere (regression guard shared with #343)', () => {
+        const src = fs.readFileSync(path.resolve(__dirname, '..', '..', SOLE_TRADER_MODEL), 'utf8');
         expect(src).not.toContain('width=610');
     });
 });
@@ -191,7 +205,11 @@ describe('at most one sole-trader popup is ever live (TWO-25461 review finding)'
             Promise.resolve({ matches: true, buyer: { organization_number: '1', company_name: 'X' } })
         );
         const fillCompanyData = jest.fn();
-        const ctx = makeContext(component, { resolveBuyer: resolveBuyer, fillCompanyData: fillCompanyData });
+        const ctx = makeContext(
+            component,
+            { fillCompanyData: fillCompanyData },
+            { resolveBuyer: resolveBuyer }
+        );
 
         ctx.openIframe.call(ctx); // opens and tracks handle A as the live popup
         const staleWindow = { fake: 'a stand-in for handle A' };
@@ -215,20 +233,24 @@ describe('sole-trader lookup in-flight spinner (TWO-25461 §7)', () => {
         const { component } = loadRenderer();
         let resolveTokens;
         const states = [];
-        const ctx = makeContext(component, {
-            enterSoleTraderUi: function () {},
-            fillCompanyData: function () {},
-            fetchBuyer: function () { return Promise.resolve(null); },
-            soleTraderLookupEmail: null,
-            soleTraderLookupInFlight: function (next) {
-                if (!arguments.length) return states.length ? states[states.length - 1] : false;
-                states.push(next);
-                return next;
+        const ctx = makeContext(
+            component,
+            {
+                fillCompanyData: function () {},
+                soleTraderLookupInFlight: function (next) {
+                    if (!arguments.length) return states.length ? states[states.length - 1] : false;
+                    states.push(next);
+                    return next;
+                }
             },
-            getTokens: function () {
-                return new Promise((resolve) => { resolveTokens = resolve; });
+            {
+                enterSoleTraderUi: function () {},
+                fetchBuyer: function () { return Promise.resolve(null); },
+                getTokens: function () {
+                    return new Promise((resolve) => { resolveTokens = resolve; });
+                }
             }
-        });
+        );
 
         const flight = ctx.lookupSoleTrader.call(ctx);
         expect(states).toEqual([true]);
@@ -242,14 +264,17 @@ describe('sole-trader lookup in-flight spinner (TWO-25461 §7)', () => {
     test('the spinner flag is cleared even when the round trip fails', async () => {
         const { component } = loadRenderer();
         const states = [];
-        const ctx = makeContext(component, {
-            soleTraderLookupInFlight: function (next) {
-                if (!arguments.length) return states.length ? states[states.length - 1] : false;
-                states.push(next);
-                return next;
+        const ctx = makeContext(
+            component,
+            {
+                soleTraderLookupInFlight: function (next) {
+                    if (!arguments.length) return states.length ? states[states.length - 1] : false;
+                    states.push(next);
+                    return next;
+                }
             },
-            getTokens: function () { return Promise.reject(new Error('mint failed')); }
-        });
+            { getTokens: function () { return Promise.reject(new Error('mint failed')); } }
+        );
 
         await ctx.lookupSoleTrader.call(ctx);
 
@@ -274,24 +299,28 @@ describe('sole-trader lookup in-flight spinner (TWO-25461 §7)', () => {
         let resolveSecond;
         const emails = ['first@example.com', 'second@example.com'];
         let callIndex = 0;
-        const ctx = makeContext(component, {
-            enterSoleTraderUi: function () {},
-            fillCompanyData: function () {},
-            fetchBuyer: function () { return Promise.resolve(null); },
-            soleTraderLookupEmail: null,
-            getEmail: function () { return emails[callIndex]; },
-            soleTraderLookupInFlight: function (next) {
-                if (!arguments.length) return states.length ? states[states.length - 1] : false;
-                states.push(next);
-                return next;
-            },
-            getTokens: function () {
-                if (callIndex === 0) {
-                    return new Promise((resolve) => { resolveFirst = resolve; });
+        const ctx = makeContext(
+            component,
+            {
+                fillCompanyData: function () {},
+                getEmail: function () { return emails[callIndex]; },
+                soleTraderLookupInFlight: function (next) {
+                    if (!arguments.length) return states.length ? states[states.length - 1] : false;
+                    states.push(next);
+                    return next;
                 }
-                return new Promise((resolve) => { resolveSecond = resolve; });
+            },
+            {
+                enterSoleTraderUi: function () {},
+                fetchBuyer: function () { return Promise.resolve(null); },
+                getTokens: function () {
+                    if (callIndex === 0) {
+                        return new Promise((resolve) => { resolveFirst = resolve; });
+                    }
+                    return new Promise((resolve) => { resolveSecond = resolve; });
+                }
             }
-        });
+        );
 
         const firstFlight = ctx.lookupSoleTrader.call(ctx);
         callIndex = 1;

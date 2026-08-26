@@ -569,7 +569,7 @@ describe('what each capture mode puts in front of the buyer', () => {
         // No email in the form, so lookupSoleTrader() short-circuits and the
         // preset result below is what the chip click acts on.
         renderer.getEmail = function () { return ''; };
-        renderer.soleTraderLookup = {
+        renderer.soleTrader().soleTraderLookup = {
             ready: true,
             matches: true,
             buyer: {
@@ -632,7 +632,7 @@ describe('what each capture mode puts in front of the buyer', () => {
     test('leaving sole-trader mode clears the sole-trader identity (the control was never hidden)', () => {
         const { renderer } = loadRendererOnly();
 
-        renderer.soleTraderLookup = {
+        renderer.soleTrader().soleTraderLookup = {
             ready: true,
             matches: true,
             buyer: {
@@ -1237,7 +1237,7 @@ describe('an accepted organisation number still reaches the order', () => {
         // No email in the form, so lookupSoleTrader() short-circuits and the
         // preset result below is what the chip click acts on.
         renderer.getEmail = function () { return ''; };
-        renderer.soleTraderLookup = {
+        renderer.soleTrader().soleTraderLookup = {
             ready: true,
             matches: true,
             buyer: {

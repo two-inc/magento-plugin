@@ -38,6 +38,7 @@
 const { loadAmdModule, defaultMocks } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
+const CAPTURE = 'view/frontend/web/js/model/company-capture.js';
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
 
 /**
@@ -291,12 +292,14 @@ describe('payment-tile company search sources the country the buyer selected (TW
         b.watchAddressFormCountry();
 
         expect($.delegated).toHaveLength(2);
-        expect(a._countryWatcherNs).not.toBe(b._countryWatcherNs);
+        expect(a.companyCapture()._countryWatcherNs).not.toBe(
+            b.companyCapture()._countryWatcherNs
+        );
 
-        Object.assign(a, { _super: function () {}, destroyCompanySearchWidget: function () {} });
+        Object.assign(a, { _super: function () {} });
         a.dispose();
         expect($.delegated).toHaveLength(1);
-        expect($.delegated[0].events).toContain(b._countryWatcherNs);
+        expect($.delegated[0].events).toContain(b.companyCapture()._countryWatcherNs);
     });
 
     test('falls back to the DOM where there is NO resolved country yet, and to the observable where there is no select', () => {
@@ -348,11 +351,14 @@ describe('payment-tile company search sources the country the buyer selected (TW
         });
         const ctx = Object.assign({}, component, {
             countryCode: plainObservable(''),
-            _brandConfig: { checkoutApiUrl: 'https://api.example.test', companySearchLimit: 10 },
-            isTileCompanySearchActive: function () {
-                return true;
-            }
+            _brandConfig: { checkoutApiUrl: 'https://api.example.test', companySearchLimit: 10 }
         });
+        // On the capture, not the host: enableCompanySearch() gates on its own
+        // isTileCompanySearchActive(), so an override on the renderer is never
+        // read and the tile-active path would be reached only incidentally.
+        ctx.companyCapture().isTileCompanySearchActive = function () {
+            return true;
+        };
 
         ctx.enableCompanySearch();
         expect(captured).not.toBeNull();
@@ -364,10 +370,13 @@ describe('payment-tile company search sources the country the buyer selected (TW
         const fs = require('fs');
         const path = require('path');
         const src = fs.readFileSync(path.resolve(__dirname, '..', '..', RENDERER), 'utf8');
+        const captureSrc = fs.readFileSync(path.resolve(__dirname, '..', '..', CAPTURE), 'utf8');
         // The tile's CompanySearchControl construction — pinned so a drift
         // back to `self.countryCode()` fails here rather than only showing up
         // as a wrong country on one checkout variant nobody re-tests.
-        const getter = src.match(/getCountryCode:\s*function\s*\(\)\s*\{\s*return\s+([^;]+);/);
+        const getter = captureSrc.match(
+            /getCountryCode:\s*function\s*\(\)\s*\{\s*return\s+([^;]+);/
+        );
         expect(getter).not.toBeNull();
         expect(getter[1].trim()).toBe('self.searchCountryCode()');
 

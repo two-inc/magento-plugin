@@ -454,7 +454,6 @@ function loadPayment($) {
         })(),
         fillCompanyData: function () {},
         applyCompanyData: function () {},
-        addressLookup: function () { return null; },
         clearCompany: component.clearCompany,
         disableCompanySearch: component.disableCompanySearch,
         destroyCompanySearchWidget: component.destroyCompanySearchWidget,
@@ -473,6 +472,10 @@ function loadPayment($) {
         },
         __companySearchMock: companySearchMock
     });
+    // On the capture, not the host: the tile's pick handler calls its own
+    // addressLookup(), so an override on the renderer would never run and the
+    // real one would reach the quote's address objects this fixture omits.
+    ctx.companyCapture().addressLookup = function () { return null; };
     return { component: component, ctx: ctx };
 }
 
@@ -525,12 +528,17 @@ function reachManualMode($, ctx, enterManual, searchLink) {
     expect(focusedSearchField()).toBeNull();
 }
 
+// The last entry resolves the surface's shared control: the shipping step
+// holds it on the component itself, the payment tile on the CompanyCapture it
+// delegates the mount to.
 describe.each([
     ['shipping-step picker (address-autocomplete.js)', buildShippingDom, loadShipping,
-        enterManualShipping, '#shipping_search_for_company'],
+        enterManualShipping, '#shipping_search_for_company',
+        function (ctx) { return ctx._companySearchControl; }],
     ['payment-step picker (gateway_method.js)', buildPaymentDom, loadPayment,
-        enterManualPayment, '.search_for_company']
-])('%s — returning to search mode', (_name, buildDom, load, enterManual, searchLink) => {
+        enterManualPayment, '.search_for_company',
+        function (ctx) { return ctx.companyCapture()._companySearchControl; }]
+])('%s — returning to search mode', (_name, buildDom, load, enterManual, searchLink, controlOf) => {
     let $;
     let ctx;
 
@@ -658,15 +666,14 @@ describe.each([
         // (company-search-control.js), not on the surface's
         // `enableCompanySearch()` — spy on the control's `bind()` instead;
         // it is the re-activation entry point the guard has to gate.
-        ctx._companySearchControl.bind = jest.fn(ctx._companySearchControl.bind.bind(
-            ctx._companySearchControl
-        ));
+        const control = controlOf(ctx);
+        control.bind = jest.fn(control.bind.bind(control));
 
         $(searchLink).first().trigger('keydown', { key: 'Enter', which: 13, preventDefault: function () {} });
-        expect(ctx._companySearchControl.bind).toHaveBeenCalledTimes(1);
+        expect(control.bind).toHaveBeenCalledTimes(1);
 
         click($, searchLink);
 
-        expect(ctx._companySearchControl.bind).toHaveBeenCalledTimes(1);
+        expect(control.bind).toHaveBeenCalledTimes(1);
     });
 });

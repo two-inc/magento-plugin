@@ -7,8 +7,7 @@
  * Shared company-search primitives for the two select2 company pickers
  * in checkout: the shipping-step one (`view/address-autocomplete.js`,
  * a Magento_Ui form Component) and the payment-step one
- * (`view/payment/method-renderer/gateway_method.js`, a payment
- * renderer).
+ * (`model/company-capture.js`, the payment tile's mount).
  *
  * Only the genuinely identical parts live here — the search request,
  * the result mapping (including `lookup_id`, whose omission on the
@@ -86,8 +85,8 @@ define(['jquery', 'mage/translate'], function ($, $t) {
     /**
      * select2's `dropdownCssClass` option for both company-search pickers
      * (address step and payment tile). A single exported constant, same
-     * reason as MIN_INPUT_LENGTH above: the two call sites (`select2({...})`
-     * in address-autocomplete.js and gateway_method.js) must agree with
+     * reason as MIN_INPUT_LENGTH above: the two mounts (address-autocomplete.js
+     * and company-capture.js, both via company-search-control.js) must agree with
      * style.css's dropdown-row selector, and a hardcoded literal at each
      * site can drift silently if one is renamed without the others.
      */
@@ -971,7 +970,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * The catch-all can still resolve a select the buyer has not touched (core
      * renders the new-address form inside a HIDDEN modal for a customer with
      * saved addresses). That is why the only consumer, searchCountryCode() in
-     * gateway_method.js, reads this AFTER its own observable rather than before
+     * company-capture.js, reads this AFTER its own observable rather than before
      * — see that method for the full reasoning.
      *
      * @type {string[]}

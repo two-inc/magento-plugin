@@ -453,10 +453,14 @@ describe('tile company-search re-binds on an address-type switch (found in adver
 
         const enableCalls = [];
         const destroyCalls = [];
-        renderer.enableCompanySearch = function () {
+        // Installed on the CompanyCapture rather than the renderer:
+        // refreshTileCompanySearchBinding() is its method and calls its own
+        // enable/destroy, so a stub on the renderer's delegate never runs.
+        const capture = renderer.companyCapture();
+        capture.enableCompanySearch = function () {
             enableCalls.push(1);
         };
-        renderer.destroyCompanySearchWidget = function () {
+        capture.destroyCompanySearchWidget = function () {
             destroyCalls.push(1);
         };
 
