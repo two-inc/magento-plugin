@@ -15,19 +15,18 @@
  * mount and its popup handle destroyed underneath the buyer mid-flow.
  *
  * Owns:
- *  - the three chips (Registered company / Sole trader / Enter manually),
- *    built in JS as a sibling of the field they act on, the way both sibling
- *    platforms build theirs;
- *  - the one `CompanySearchControl` and WHERE it is mounted, re-pointing it
+ *  - the three modes (Registered company / Sole trader / Enter manually) and
+ *    what each one means;
+ *  - the one `CompanySearchPanel` and WHERE it is mounted, re-pointing it
  *    between the address step and the payment tile as the checkout changes
  *    shape;
  *  - the billing country the search runs against, and the sole-trader
  *    availability answer for it.
  *
- * Does NOT own: the identity it captures (company-identity.js), the
- * sole-trader flow (sole-trader.js), or the transport and address write-back
- * (company-search.js). Same split as WooCommerce's
- * `twoincCompanyCapture` / `twoincSoleTrader` / search internals.
+ * Does NOT own: the chips' markup or the popover they live in
+ * (company-search-panel.js), the identity it captures (company-identity.js),
+ * the sole-trader flow (sole-trader.js), or the transport and address
+ * write-back (company-search.js).
  */
 define([
     'jquery',
@@ -38,20 +37,10 @@ define([
     'Two_Gateway/js/model/brand-config',
     'Two_Gateway/js/model/company-identity',
     'Two_Gateway/js/model/company-search',
-    'Two_Gateway/js/model/company-search-control',
+    'Two_Gateway/js/model/company-search-panel',
     'Two_Gateway/js/model/sole-trader'
-], function ($, ko, quote, url, $t, brandConfig, identity, companySearch, CompanySearchControl, SoleTrader) {
+], function ($, ko, quote, url, $t, brandConfig, identity, companySearch, CompanySearchPanel, SoleTrader) {
     'use strict';
-
-    /** Where the chips group is inserted, and how its members are found. */
-    const CHIPS_WRAPPER_CLASS = 'two-company-mode-chips';
-    const CHIP_CLASS = 'two-company-mode-chip';
-    const CHIP_SELECTED_CLASS = 'two-company-mode-chip--selected';
-
-    // This plugin's own, because a bare `.hidden` is a theme's to define or not
-    // — Luma ships one, several one-page checkouts do not, and a chip that
-    // silently fails to hide offers the buyer a mode the country cannot serve.
-    const HIDDEN_CLASS = 'two-hidden';
 
     /** The address step's company field — core's own markup. */
     const ADDRESS_FIELD_SELECTOR = '#shipping-new-address-form input[name="company"]';
@@ -64,9 +53,9 @@ define([
 
     function CompanyCaptureComponent() {
         this._config = null;
-        this._control = null;
+        this._panel = null;
         this._soleTrader = null;
-        /** Selector the control is currently bound at, so a re-point is a no-op when nothing moved. */
+        /** Selector the panel is currently bound at, so a re-point is a no-op when nothing moved. */
         this._boundSelector = null;
         this._countryWatcherBound = false;
         /** Availability answers per lower-cased ISO country, for the page's lifetime. */
@@ -206,7 +195,7 @@ define([
         if (hadCountry) {
             // A search still on the wire would answer for the country the buyer
             // just left and repopulate what this call is clearing.
-            if (this._control) this._control.abortActiveRequest();
+            if (this._panel) this._panel.abortActiveRequest();
             identity.clear();
             companySearch.revertAutofilledAddress();
             this._soleTrader.forgetAdoptions();
@@ -320,8 +309,7 @@ define([
     };
 
     /**
-     * Point the one control at wherever it currently belongs, and put the chips
-     * beside it.
+     * Point the one panel at wherever it currently belongs.
      *
      * Called on every event that can change the checkout's shape — a payment
      * tile rendering, an address switching between new and saved, a cart going
@@ -331,47 +319,47 @@ define([
         const selector = this.mountSelector();
         if (!selector) return;
         // A tile replaced under this same selector needs no re-point from here:
-        // the control keeps one `$.async` observer per selector for the page's
-        // life, and that observer re-initialises on the replacement itself.
-        if (selector === this._boundSelector && this._control && this._control.isBound()) {
+        // the panel keeps one `$.async` observer per selector for the page's
+        // life, and that observer rebuilds on the replacement itself.
+        if (selector === this._boundSelector && this._panel && this._panel.isBound()) {
             this.syncChips();
             return;
         }
         this._boundSelector = selector;
-        this.mountControl(selector);
+        this.mountPanel(selector);
         this.syncChips();
     };
 
     /**
-     * Build the control on first use and bind it at `selector`.
+     * Build the panel on first use and anchor it at `selector`.
      *
      * One instance for the page's whole life: `bind()` re-points the existing
-     * widget, which is how the control was always meant to be re-used, and
-     * building a second would leave two pickers writing to one identity.
+     * panel, and building a second would leave two popovers writing to one
+     * identity.
      *
      * @param {string} selector
      */
-    CompanyCaptureComponent.prototype.mountControl = function (selector) {
+    CompanyCaptureComponent.prototype.mountPanel = function (selector) {
         const self = this;
-        if (!this._control) {
-            this._control = new CompanySearchControl({
+        if (!this._panel) {
+            this._panel = new CompanySearchPanel({
                 fieldSelector: selector,
                 config: this._config,
                 getCountryCode: function () {
                     return self.countryCode();
                 },
-                searchForCompanyText: $t('Search for company'),
-                // What the field reads when nothing is selected yet: select2
-                // renders its own display node, so the placeholder attribute on
-                // the input underneath is never the one the buyer sees.
-                templateSelectionFallback: function () {
-                    return $t('Enter company name to search');
+                getChips: function () {
+                    return self.chipDefinitions();
                 },
-                // The chips are this component's only route to manual entry, on
-                // every mount, so the separately worded in-dropdown button is
-                // not built at all. That divergence between the two old mounts
-                // is what the single component removes.
-                manualEntryEnabled: false,
+                isChipVisible: function (mode) {
+                    return self.isModeOffered(mode);
+                },
+                getSelectedMode: function () {
+                    return identity.captureMode();
+                },
+                getDisplayText: function () {
+                    return identity.companyName();
+                },
                 onSelect: function (selectedItem) {
                     // Authoritative: a pick must overwrite the previous
                     // company's number even when the new one has none.
@@ -384,112 +372,64 @@ define([
                         selectedItem,
                         companySearch.billingRoleFormRoot()
                     );
-                },
-                onReturnToSearch: function () {
-                    identity.captureMode('registered');
                     self.syncChips();
-                },
-                // select2 renders its own display node on every bind, so a
-                // re-mount over an already-captured company shows an empty box
-                // unless the current name is painted back into it.
-                onBound: function () {
-                    $('#select2-company_name-container').text(identity.companyName());
                 }
             });
         } else {
-            this._control.fieldSelector = selector;
+            this._panel.fieldSelector = selector;
         }
-        this._control.bind();
-    };
-
-    /** The node the chips are inserted after — the field's own `.field` wrapper. */
-    CompanyCaptureComponent.prototype.chipsAnchor = function () {
-        const $field = $(this._boundSelector);
-        if (!$field.length) return $();
-        const $wrapper = $field.closest('.field');
-        return $wrapper.length ? $wrapper : $field;
+        this._panel.bind();
     };
 
     // ----------------------------------------------------------------- chips
 
     /**
-     * Build the chips group once and keep it beside the live mount.
+     * The three modes, in display order, as the panel renders them.
      *
-     * Built in JS, as a sibling of the field they act on — the same shape
-     * WooCommerce (`syncSoleTraderChip`/`syncManualEntryButton`) and
-     * PrestaShop (`renderChipSelection`) both ship. They were previously
-     * rendered by the payment tile's Knockout template, which is what tied
-     * them to a surface that is destroyed on every totals change.
+     * @returns {Array<{mode: string, text: string, onActivate: function}>}
      */
-    CompanyCaptureComponent.prototype.syncChips = function () {
-        const $anchor = this.chipsAnchor();
-        if (!$anchor.length) return;
-        let $chips = $('.' + CHIPS_WRAPPER_CLASS);
-        if (!$chips.length) {
-            $chips = this.buildChips();
-        }
-        if ($chips.prev()[0] !== $anchor[0]) {
-            $chips.insertAfter($anchor);
-        }
-        $chips
-            .find('[data-two-chip="soletrader"]')
-            .toggleClass(HIDDEN_CLASS, !identity.soleTraderAvailable());
-        $chips
-            .find('[data-two-chip="manual"]')
-            .toggleClass(HIDDEN_CLASS, !this.showManualEntryChip());
-        const mode = identity.captureMode();
-        $chips.find('.' + CHIP_CLASS).each(function () {
-            const $chip = $(this);
-            $chip.toggleClass(CHIP_SELECTED_CLASS, $chip.attr('data-two-chip') === mode);
-        });
-        return $chips;
+    CompanyCaptureComponent.prototype.chipDefinitions = function () {
+        const self = this;
+        return [
+            {
+                mode: 'registered',
+                text: $t('Registered company'),
+                onActivate: function () { self.registeredMode({ openDropdown: true }); }
+            },
+            {
+                mode: 'soletrader',
+                text: $t('Sole trader'),
+                onActivate: function () { self.soleTraderMode(); }
+            },
+            {
+                mode: 'manual',
+                text: $t('Enter manually'),
+                onActivate: function () { self.manualEntryMode(); }
+            }
+        ];
     };
 
     /**
-     * Manual entry needs somewhere for the registry number to come from later,
-     * and with company search out of the address step there is no such lookup
-     * on the checkout — so a typed name would be a dead end and is not offered.
+     * Whether a mode is offered on this checkout at all.
      *
+     * Sole trader follows the billing country's registry. Manual entry needs
+     * somewhere for the registry number to come from later, and with company
+     * search out of the address step there is no such lookup on the checkout —
+     * so a typed name would be a dead end and is not offered.
+     *
+     * @param {string} mode
      * @returns {boolean}
      */
-    CompanyCaptureComponent.prototype.showManualEntryChip = function () {
-        return !!this._config.isCompanySearchEnabled;
+    CompanyCaptureComponent.prototype.isModeOffered = function (mode) {
+        if (mode === 'soletrader') return !!identity.soleTraderAvailable();
+        if (mode === 'manual') return !!this._config.isCompanySearchEnabled;
+        return true;
     };
 
-    /** @returns {object} the chips group, detached */
-    CompanyCaptureComponent.prototype.buildChips = function () {
-        const self = this;
-        const $chips = $('<div></div>').addClass(CHIPS_WRAPPER_CLASS);
-        const chips = [
-            { mode: 'registered', text: $t('Registered company'), run: function () { self.registeredMode({ openDropdown: true }); } },
-            { mode: 'soletrader', text: $t('Sole trader'), run: function () { self.soleTraderMode(); } },
-            { mode: 'manual', text: $t('Enter manually'), run: function () { self.manualEntryMode(); } }
-        ];
-        chips.forEach(function (chip) {
-            $('<button type="button"></button>')
-                .addClass(CHIP_CLASS)
-                .attr('data-two-chip', chip.mode)
-                .attr('data-element', 'click-element')
-                .text(chip.text)
-                // Bound on the element rather than delegated: a delegated
-                // handler was proven not to reach these buttons on every
-                // checkout, and a chip that silently does nothing is worse than
-                // one that is not offered. Propagation stops here because
-                // one-page checkouts bind collapse handlers above this node.
-                .on('click', function (event) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    chip.run();
-                })
-                .on('keydown', function (event) {
-                    if (event.which !== 13 && event.which !== 32) return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    chip.run();
-                })
-                .appendTo($chips);
-        });
-        return $chips;
+    /** Repaint the chips for the current mode and availability. */
+    CompanyCaptureComponent.prototype.syncChips = function () {
+        if (!this._panel) return;
+        this._panel.syncChips();
     };
 
     // ----------------------------------------------------------------- modes
@@ -505,15 +445,18 @@ define([
         this.leaveSoleTraderMode();
         identity.captureMode('registered');
         this.refreshMount();
-        if (this._control && options && options.openDropdown) {
-            this._control.bind({ openDropdown: true });
+        if (this._panel) {
+            // Manual entry leaves the field typeable and the panel shut; coming
+            // back has to make it a trigger again before opening it.
+            this._panel.reclaimField();
+            if (options && options.openDropdown) this._panel.bind({ open: true });
         }
         this.syncChips();
     };
 
     /**
-     * Manual entry: abandon the company in play and tear the picker down,
-     * leaving the field a plain text input the buyer can type into.
+     * Manual entry: abandon the company in play and hand the field back as a
+     * plain text input the buyer can type into.
      *
      * With no registry number `isCaptured()` stays false and the order is
      * refused server-side — unchanged by this being one click away.
@@ -521,17 +464,14 @@ define([
     CompanyCaptureComponent.prototype.manualEntryMode = function () {
         this.leaveSoleTraderMode();
         identity.captureMode('manual');
-        if (this._control) {
-            // Before the teardown: a search still on the wire would otherwise
-            // run select2's bookkeeping over a destroyed picker.
-            this._control.abortActiveRequest();
-            this._control.destroy();
+        if (this._panel) {
+            // Before the release: a search still on the wire would otherwise
+            // paint results into a panel the buyer has closed.
+            this._panel.abortActiveRequest();
+            this._panel.releaseField();
         }
         identity.clearNumber();
-        $(this._boundSelector).val('').attr('type', 'text').trigger('focus');
-        // The in-field route back, beside the chip that does the same thing:
-        // a buyer who typed into this field is looking at it, not at the chips.
-        if (this._control) this._control.showSearchForCompanyLink();
+        $(this._boundSelector).val('').trigger('focus');
         this.syncChips();
     };
 
@@ -544,7 +484,9 @@ define([
         if (!wasAdopted) {
             identity.captureMode('soletrader');
             identity.clearNumber();
-            if (this._control) this._control.destroy();
+            // Closed, not destroyed: the panel carries the chips, which are the
+            // buyer's only route back out of a signup they abandon.
+            if (this._panel) this._panel.close();
             this.syncChips();
         }
         // Re-clicking once adopted is the same re-signup the "select a
@@ -592,6 +534,7 @@ define([
             { authoritative: true }
         );
         identity.soleTraderAdopted(true);
+        if (this._panel) this._panel.setDisplayText(identity.companyName());
         this.syncChips();
     };
 

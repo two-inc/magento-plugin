@@ -195,11 +195,10 @@
             >
                 <!--
                     One of the two hosts the page-level company-capture
-                    component mounts its search control and its mode chips at;
-                    the address step is the other. `visible:`, not `if:` — the
-                    component resolves its mount by this node's presence in the
-                    DOM, and `if:` would destroy and rebuild it underneath a
-                    live select2 binding.
+                    component anchors its popover at; the address step is the
+                    other. `visible:`, not `if:` — the component resolves its
+                    mount by this node's presence in the DOM, and `if:` would
+                    destroy and rebuild it underneath a live panel.
                 -->
                 <div
                     class="field field-text required"

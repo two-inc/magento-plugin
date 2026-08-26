@@ -106,137 +106,12 @@
     padding: 1rem !important;
 }
 
-.enter_details_manually {
-    cursor: pointer;
-    color: var(--color-blue2);
-    padding: 5px;
-}
 
-/*
- * The manual-entry button (#30.x.15), a SIBLING of the company-search
- * results list rather than a row inside it — see buildManualEntryButton() in
- * company-search.js for why. It is a real `<button>`, so full-width/
- * left-aligned/appearance-reset styling here is what makes it read as a
- * plain-text row of its own rather than as a form control.
- *
- * A SINGLE FLAT CLASS: overlay stylesheets hook rows like this flat and win
- * on load order, and qualifying the selector here would outscore them with
- * nothing in CI to notice.
- */
-.two-company-search__manual-entry {
-    display: block;
-    width: 100%;
-    border: none;
-    border-top: 1px solid #e8e8e8;
-    background: none;
-    margin: 0;
-    padding: 8px 12px;
-    text-align: left;
-    color: var(--color-blue2);
-    font: inherit;
-    cursor: pointer;
-    /*
-     * This repo has already fixed this exact bug twice on other elements
-     * (`.search_for_company` below, the dropdown-row selectors further down
-     * this file): Luma themes routinely apply a blanket uppercase
-     * `text-transform`, broad enough to catch a bare `<button>`, and
-     * frequently `!important` itself for CTA-style text. Unlike the old
-     * `<li role="option">` this replaces, this IS a real `<button>` now, so
-     * it is squarely inside that broad-selector blast radius.
-     */
-    text-transform: none !important;
-}
-
-.two-company-search__manual-entry:hover {
-    background-color: #f5f5f5;
-}
-
-/*
- * Native `<button>` focus indicator. Stated as a positive rule rather than
- * left to the UA default outline: this single flat class is deliberately
- * unscoped (see the class-level comment above) so an overlay/theme
- * `button:focus { outline: none }` — which this stylesheet itself applies to
- * two OTHER controls just below — can win on load order alone, silently
- * leaving the only keyboard-reachable affordance in this dropdown with no
- * focus indicator at all. `:focus-visible` keeps it out of the way for a
- * mouse click while still showing it for Tab. The offset keeps the ring
- * inside the button's own edges, which sit flush with the dropdown border at
- * `width: 100%`.
- */
-.two-company-search__manual-entry:focus-visible {
-    outline: 2px solid currentColor;
-    outline-offset: -2px;
-    background-color: #f5f5f5;
-}
-
-/*
- * The "Search for company" return-to-search control (`search_for_company` in
- * address-autocomplete.js / gateway_method.js). It carries `role="button"
- * tabindex="0"` and Enter/Space keydown handling in JS (a11y fix), but that
- * only makes it FOCUSABLE and ACTIVATABLE — the CSS side of the same
- * accessibility work never landed alongside it:
- *
- *  - `text-transform: none !important`: this is a plain `<div>`, not a native
- *    element a host theme would normally style, but plenty of Luma themes
- *    apply casing rules broadly enough (e.g. `.field ~ div, [role="button"]`)
- *    to catch it anyway, and a theme's own rule is routinely `!important`
- *    itself for exactly this kind of CTA-style text.
- *  - the reserved-space dotted border + `:focus` colour gives Tab-users a
- *    visible focus indicator, which a bare `role="button"` div otherwise has
- *    none of by default (unlike a real `<button>`, which gets the browser's
- *    native focus ring). The border is reserved (transparent) even when not
- *    focused so gaining focus never changes this element's box size.
- */
-.search_for_company {
-    text-align: right;
-    cursor: pointer;
-    padding-top: 5px;
-    color: var(--color-blue2);
-    right: 4px;
-    text-transform: none !important;
-    border: 1px dotted transparent;
-    padding-left: 2px;
-    padding-right: 2px;
-}
-
-.search_for_company:focus {
-    outline: none;
-    border-color: #808080 !important;
-}
 
 .two-payment-method {
     display: list-item;
 }
 
-.two-company-mode-chips {
-    display: flex;
-    justify-content: center;
-    /* Three peer options (TWO-25503) no longer fit one line in a narrow tile. */
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-bottom: 20px;
-    padding: 12px 6px;
-    border-bottom: 1px solid var(--color-gray89);
-    color: var(--color-brownie-vanilla);
-}
-
-.two-company-mode-chip {
-    text-decoration: none;
-    text-underline-offset: 2px;
-    text-align: center;
-    padding: 5px 10px;
-    border-radius: 5px;
-    border: 1px solid var(--color-gray89);
-    color: var(--color-blue2);
-    background-color: var(--color-white);
-    cursor: pointer;
-    font-family: inherit;
-}
-
-.two-company-mode-chip--selected {
-    color: var(--color-white);
-    background-color: var(--color-blue2);
-}
 
 /* Sole trader part */
 .two-sole-trader-note {
@@ -371,52 +246,6 @@
     }
 }
 
-/*
- * Company-search chrome.
- *
- * Both live inside select2's own search box (`.select2-search--dropdown`,
- * which for a single-select is where the buyer actually types), so the
- * spinner reads as "this field is working" rather than "the page is busy",
- * and the unavailable notice sits with the field it describes.
- *
- * The spinner is the same loading GIF the PrestaShop plugin already ships,
- * painted as a `background-image` on one childless element (TWO-25288).
- */
-.select2-search--dropdown {
-    position: relative;
-}
-
-/*
- * THE SELECTOR MUST STAY A SINGLE FLAT CLASS.
- *
- * Overlay stylesheets hook this indicator with flat single-class rules, and
- * win only because they load later at equal specificity. Qualifying this
- * selector (e.g. `.select2-search--dropdown .two-company-search__spinner`)
- * would outscore those overrides and silently kill them, with nothing in CI
- * failing to tell you.
- *
- * The figure is a `background-image`, not an `<img>`: an `<img>` would need a
- * resolved URL plumbed through Magento's asset helper into the markup, while
- * a stylesheet `url()` resolves relative to the published stylesheet. Static
- * content deploy puts `css/` and `images/` side by side under this module's
- * directory, so `../images/` reaches the asset.
- *
- * Sizing is a fixed 16px because the asset is natively 16x16 and scaling it
- * up only blurs it.
- */
-.two-company-search__spinner {
-    position: absolute;
-    top: calc(50% - 8px);
-    right: 12px;
-    display: inline-block;
-    width: 16px;
-    height: 16px;
-    pointer-events: none;
-    background-image: url("../images/loader.gif");
-    background-repeat: no-repeat;
-    background-position: center;
-    background-size: 16px 16px;
-}
 
 /*
  * Order-intent spinner, TILE-LOCAL (TWO-25326).
@@ -463,8 +292,8 @@
 }
 
 /*
- * Anchors the in-field sole-trader lookup spinner below (TWO-25461 §7) —
- * same role `.select2-search--dropdown` plays for `.two-company-search__spinner`.
+ * Anchors the in-field sole-trader lookup spinner below (TWO-25461 §7) — the
+ * same role `.two-company-dropdown__search` plays for the search spinner.
  */
 .two-sole-trader-field-control {
     position: relative;
@@ -473,7 +302,7 @@
 /*
  * In-flight spinner for the sole-trader lookup round trip. Same 16x16
  * `loader.gif` and absolute-inside-the-field positioning as
- * `.two-company-search__spinner` — kept as its own flat class rather than
+ * `.two-company-dropdown__spinner` — kept as its own flat class rather than
  * reused verbatim, since that one's selector must stay untouched for overlay
  * stylesheets (see its comment).
  */
@@ -509,76 +338,7 @@
     cursor: pointer;
 }
 
-.two-company-search__unavailable {
-    display: block;
-    margin-top: 6px;
-    padding: 6px 8px;
-    border-radius: 3px;
-    background: #fdf0d5;
-    color: #6f4900;
-    font-size: 12px;
-    line-height: 1.4;
-}
 
-/*
- * Company-search combobox: placeholder / selected-value text and result-row
- * vertical alignment.
- *
- * Scoped by ADJACENT SIBLING from the backing input, not by select2's own
- * generated element ids: select2 4.1 derives those from the backing
- * element's `id` attribute when it has one, or `name + 2 random characters`
- * when it doesn't (`generateId()` in the vendored select2.min.js) — the
- * address-step company field carries no explicit `id` (only `name`), so an
- * `#select2-company-container`-style selector is NOT a stable target for it
- * (confirmed by review — flagged before this shipped as select2-id-scoped
- * dead CSS with nothing to catch the drift). `input[name] + .select2-container`
- * has no such dependency: select2 always inserts its container immediately
- * after the original element (`insertAfter()`, confirmed in the vendored
- * bundle), regardless of what id it ends up generating.
- *
- * Some Luma themes apply a blanket `text-transform: uppercase` broad enough
- * to catch select2's own rendered span, and give the selection box a custom
- * height with no matching line-height on the rendered text, leaving it a few
- * pixels off true vertical centre. `!important` because a theme's own
- * form-control casing/height rules are routinely `!important` themselves.
- *
- * Flex + `align-items: center` on both the outer selection box AND the
- * rendered span (not just the outer box) matters: centring only the outer
- * box centres the BOX, not text sitting off-centre within it from a
- * theme-supplied height with the wrong line-height.
- */
-#shipping-new-address-form input[name='company'] + .select2-container .select2-selection--single,
-#two_gateway_form input#company_name + .select2-container .select2-selection--single {
-    display: flex;
-    align-items: center;
-}
-
-#shipping-new-address-form input[name='company'] + .select2-container .select2-selection__rendered,
-#two_gateway_form input#company_name + .select2-container .select2-selection__rendered {
-    display: flex;
-    align-items: center;
-    height: 100%;
-    text-transform: none !important;
-    line-height: normal;
-}
-
-/*
- * Result rows in the dropdown itself (company names picked from the
- * search), same class of bug: a theme's list/option styling can apply
- * uppercase and an icon/text baseline mismatch to `.select2-results__option`.
- * select2 detaches the dropdown to `<body>` on open (outside either form's
- * own DOM subtree), so this cannot be scoped by ancestry from the field the
- * way the selection-box rules above are. `dropdownCssClass:
- * 'two-company-search-dropdown'` (set on BOTH pickers' `.select2({...})`
- * init — address-autocomplete.js and gateway_method.js) is select2's own
- * supported hook for exactly this, and — unlike an id — is not subject to
- * select2's id-generation fallback at all.
- */
-.two-company-search-dropdown .select2-results__option {
-    display: flex;
-    align-items: center;
-    text-transform: none !important;
-}
 
 .two-term-chip--single {
     border-color: var(--color-blue2);
@@ -597,22 +357,6 @@
     font-size: 14px;
     font-weight: 500;
     opacity: 1;
-}
-
-/* Theme specific css for fire checkout on select2 */
-.firecheckout .select2-container {
-    width: 100% !important;
-}
-
-.firecheckout .select2-container--default .select2-selection--single {
-    background-color: inherit !important;
-    border: 2px solid #f2f5f7;
-    border-radius: 3px;
-    height: 50px;
-    padding: 1em 0em;
-    box-sizing: border-box;
-    transition: all 100ms ease-in-out;
-    width: 100%;
 }
 
 /*
@@ -776,4 +520,149 @@
    country cannot serve. */
 .two-hidden {
     display: none !important;
+}
+
+/*
+ * The company-capture popover (TWO-25503).
+ *
+ * One anchored panel holding the query field, the results and the mode chips.
+ * Absolutely positioned so opening it never reflows the address form behind it
+ * — the chips are inside it, so nothing of this control occupies the form's
+ * flow while it is closed.
+ */
+.two-company-field-wrap {
+    display: block;
+    position: relative;
+}
+
+.two-company-dropdown {
+    position: absolute;
+    z-index: 100;
+    top: 100%;
+    left: 0;
+    right: 0;
+    box-sizing: border-box;
+    padding: 8px;
+    border: 1px solid var(--color-gray89);
+    border-radius: 3px;
+    background: var(--color-white);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.two-company-dropdown[hidden] {
+    display: none;
+}
+
+/* Anchors the spinner inside the query field. */
+.two-company-dropdown__search {
+    position: relative;
+}
+
+.two-company-dropdown__query {
+    box-sizing: border-box;
+    width: 100%;
+    /* Room for the spinner, which overlays the field's right-hand end. */
+    padding-right: 34px;
+    /* Luma themes routinely uppercase form text broadly enough to catch this,
+       and their own rule is as routinely `!important`. */
+    text-transform: none !important;
+}
+
+/*
+ * A `background-image` on a childless element rather than an `<img>`: a
+ * stylesheet `url()` resolves relative to the published stylesheet, where an
+ * `<img>` would need a resolved URL plumbed through Magento's asset helper
+ * into the markup. Static content deploy puts `css/` and `images/` side by
+ * side under this module's directory. Fixed 16px because the asset is natively
+ * 16x16 and scaling it up only blurs it.
+ *
+ * Shown only while a search is actually on the wire, via a modifier on the
+ * element itself rather than a parent state class: overlay stylesheets hook
+ * this indicator with flat single-class rules and win only on load order at
+ * equal specificity, so a descendant selector here would silently outscore
+ * them with nothing in CI to notice.
+ */
+.two-company-dropdown__spinner {
+    display: none;
+    position: absolute;
+    top: calc(50% - 8px);
+    right: 12px;
+    width: 16px;
+    height: 16px;
+    pointer-events: none;
+    background-image: url("../images/loader.gif");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 16px 16px;
+}
+
+.two-company-dropdown__spinner--active {
+    display: inline-block;
+}
+
+/*
+ * The scroll lives on the results host, not on the rows, so the chips below it
+ * stay outside the scroll container and reachable without scrolling past up to
+ * 50 results.
+ */
+.two-company-dropdown__results {
+    max-height: 240px;
+    overflow-y: auto;
+    margin-top: 8px;
+}
+
+.two-company-dropdown__row {
+    padding: 6px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    text-transform: none !important;
+}
+
+.two-company-dropdown__row:hover,
+.two-company-dropdown__row--active {
+    background-color: #f5f5f5;
+}
+
+/* Too-short, no matches, or the search being down. */
+.two-company-dropdown__message {
+    padding: 6px 8px;
+    color: var(--color-brownie-vanilla);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+/*
+ * The mode chips, inside the panel and after the results — the tab order the
+ * DOM already describes, and the reason the panel exists in this shape at all.
+ */
+.two-company-mode-chips {
+    display: flex;
+    justify-content: center;
+    /* Three peer options no longer fit one line in a narrow tile. */
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--color-gray89);
+}
+
+.two-company-mode-chip {
+    text-align: center;
+    padding: 5px 10px;
+    border-radius: 5px;
+    border: 1px solid var(--color-gray89);
+    color: var(--color-blue2);
+    background-color: var(--color-white);
+    cursor: pointer;
+    font-family: inherit;
+    text-transform: none !important;
+}
+
+.two-company-mode-chip--selected {
+    color: var(--color-white);
+    background-color: var(--color-blue2);
+}
+
+.two-company-mode-chip.two-hidden {
+    display: none;
 }

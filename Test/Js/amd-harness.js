@@ -142,7 +142,9 @@ function defaultMocks() {
         'Two_Gateway/js/model/company-search': {
             REQUEST_TIMEOUT_MS: 30000,
             SEARCH_DEBOUNCE_MS: 300,
-            buildSearchAjaxOptions: function () { return {}; },
+            searchCompanies: function () {
+                return Promise.resolve({ items: [], unavailable: false, aborted: false });
+            },
             lookupCompanyAddress: function () { return null; },
             applyAddress: function () {},
             applyTelephone: function () { return false; },
@@ -153,7 +155,6 @@ function defaultMocks() {
             billingRoleFormRoot: function () { return null; },
             isDegradedResponse: function () { return false; },
             clearResultCache: function () {},
-            EVENT_NS: '.twoCompanySearch',
             MIN_INPUT_LENGTH: 3,
             // Derived from this mock's own MIN_INPUT_LENGTH so the harness
             // does not reintroduce the literal the real module centralises.
@@ -162,27 +163,12 @@ function defaultMocks() {
             minInputLengthMessage: function () {
                 return 'Please enter ' + this.MIN_INPUT_LENGTH + ' or more characters';
             },
-            // TWO-25326 §1 wording, mirrored here so a call site that reads
-            // it through the mock gets the same string the real module
-            // returns rather than select2's vendored "No results found".
+            // TWO-25326 §1 wording, mirrored here so a call site that reads it
+            // through the mock gets the same string the real module returns.
             noResultsMessage: function () {
                 return 'No matches found';
             },
-            buildLanguageOptions: function () {
-                const self = this;
-                return {
-                    inputTooShort: function () { return self.minInputLengthMessage(); },
-                    noResults: function () { return self.noResultsMessage(); }
-                };
-            },
-            attachOpenOnType: function () {},
-            getSearchFieldContainer: function () { return null; },
             abortActiveRequest: function () { return false; },
-            attachManualEntryButton: function () {},
-            detachManualEntryButton: function () {},
-            syncManualEntryButton: function () { return null; },
-            buildManualEntryButton: function () { return null; },
-            markSearchBinding: function () {},
             // TWO-25326 display helpers. DELEGATED to the real module, not
             // reimplemented: call sites READ their return value to decide
             // whether to render a label or brackets at all, so an inert '' would
@@ -203,9 +189,6 @@ function defaultMocks() {
             // address-form country read has to supply the real module (or its
             // own double) the same way it already does for the search itself.
             currentAddressFormCountry: function () { return ''; },
-            clearSearchChrome: function () {},
-            setSearching: function () {},
-            setUnavailable: function () {},
             // Two-address mirror (TWO-25461 §2). Exactly the three members
             // `view/address-autocomplete.js` calls, and no more: a mock member
             // with no production caller is a surface that drifts silently. The
@@ -219,26 +202,28 @@ function defaultMocks() {
             mirrorFieldsToSecondaryAddresses: function () { return 0; },
             captureSecondaryAddressBaseline: function () {}
         },
-        // Inert default, same convention as the company-search mock above:
-        // a constructor whose instances no-op every method. Tests that
-        // exercise the real select2 wiring load the real
-        // company-search-control.js module and pass it via extraMocks so
-        // they control the jQuery/select2 it closes over.
-        'Two_Gateway/js/model/company-search-control': (function () {
-            function CompanySearchControlMock() {
+        // Inert default, same convention as the company-search mock above: a
+        // constructor whose instances no-op every method. Tests that exercise
+        // the real panel load company-search-panel.js and pass it via
+        // extraMocks, so they control the jQuery it closes over.
+        'Two_Gateway/js/model/company-search-panel': (function () {
+            function CompanySearchPanelMock() {
                 this._field = null;
             }
-            CompanySearchControlMock.prototype.bind = function () {};
-            CompanySearchControlMock.prototype.destroy = function () { return false; };
-            CompanySearchControlMock.prototype.abortActiveRequest = function () { return false; };
-            CompanySearchControlMock.prototype.isBound = function () { return false; };
-            CompanySearchControlMock.prototype.getField = function () { return this._field || {}; };
-            CompanySearchControlMock.prototype.showSearchForCompanyLink = function () {};
-            CompanySearchControlMock.prototype.hideSearchForCompanyLink = function () {};
-            CompanySearchControlMock.prototype.getSearchForCompanyLink = function () {
-                return { length: 0 };
-            };
-            return CompanySearchControlMock;
+            CompanySearchPanelMock.prototype.bind = function () {};
+            CompanySearchPanelMock.prototype.open = function () {};
+            CompanySearchPanelMock.prototype.close = function () {};
+            CompanySearchPanelMock.prototype.isOpen = function () { return false; };
+            CompanySearchPanelMock.prototype.destroy = function () {};
+            CompanySearchPanelMock.prototype.syncChips = function () {};
+            CompanySearchPanelMock.prototype.setDisplayText = function () {};
+            CompanySearchPanelMock.prototype.releaseField = function () {};
+            CompanySearchPanelMock.prototype.reclaimField = function () {};
+            CompanySearchPanelMock.prototype.abortActiveRequest = function () { return false; };
+            CompanySearchPanelMock.prototype.isBound = function () { return false; };
+            CompanySearchPanelMock.prototype.getField = function () { return this._field || {}; };
+            CompanySearchPanelMock.prototype.getBindToken = function () { return null; };
+            return CompanySearchPanelMock;
         })(),
         'Two_Gateway/js/model/brand-config': (function () {
             function getBrandConfig(code) {
@@ -260,8 +245,7 @@ function defaultMocks() {
                 return code ? getBrandConfig(code) : {};
             };
             return getBrandConfig;
-        }()),
-        'Two_Gateway/select2-4.1.0/js/select2.min': function () {}
+        }())
     };
 }
 
@@ -332,7 +316,6 @@ function makeJQueryMock() {
             trigger: function () { return obj; },
             valid: function () { return true; },
             validate: function () { return obj; },
-            select2: function () { return obj; },
             modal: function () { return obj; },
             mage: function () { return obj; }
         };
@@ -614,11 +597,6 @@ function loadAmdModule(relPath, extraMocks, extraGlobals, siblingCache) {
         document: {
             addEventListener: function () {},
             createElement: function () { return {}; },
-            // Enough of a node for the focus call the company-search
-            // pickers (address-step and payment-tile) make when their
-            // dropdown opens. Without it, any test that triggers
-            // `select2:open` dies inside the harness rather than exercising
-            // the handler.
             querySelector: function () { return { focus: function () {} }; }
         },
         // Passed through from the jsdom test environment so a module that
@@ -663,37 +641,31 @@ function loadAmdModule(relPath, extraMocks, extraGlobals, siblingCache) {
 }
 
 /**
- * Load the REAL `company-search-control.js` class, closed over the given
- * jQuery (usually a test's own recording/spy double) and the given
- * `company-search.js` mock/real-module.
+ * Load the REAL `company-search-panel.js` class, closed over the given jQuery
+ * (usually real jQuery over a jsdom fixture) and the given `company-search.js`
+ * mock/real-module.
  *
- * Every test that wants to observe the actual select2 wiring — the
- * `.select2({...})` call, its `select2:open`/`select2:close`/`select2:select`
- * handlers, the manual-entry button, the "Search for company" link — has to
- * load this for real, exactly as it already has to load the real
- * `company-search.js` for the same reason: TWO-25326's rebuild moved that
- * wiring out of `address-autocomplete.js` / `gateway_method.js` and into
- * this one shared class, so the default inert mock (a no-op stub, same
- * convention as the `company-search` default) proves nothing about it.
+ * Every test that wants to observe the actual popover — the panel DOM it
+ * builds, its open/close, the query field, the result rows, the chips inside
+ * it — has to load this for real: the harness's default is an inert no-op
+ * stub, same convention as the `company-search` default, and proves nothing
+ * about any of that.
  *
  * @param {object} $ jQuery (real or a test double)
  * @param {object} [companySearchMock] `company-search.js` module/mock —
  *        defaults to the harness's own inert mock, same as any other dep.
  * @param {object} [extraGlobals] forwarded to `loadAmdModule` — pass
- *        `{ document: document, window: window }` for any test that expects
- *        the `select2:open` handler's real focus call (`document
- *        .querySelector('.select2-search__field').focus()`) to land on the
- *        REAL jsdom document, the same real-globals requirement this line
- *        had before TWO-25326 moved it out of the two surface files.
- * @returns {Function} the CompanySearchControl constructor
+ *        `{ document: document, window: window }` for any test that builds the
+ *        panel against the REAL jsdom document.
+ * @returns {Function} the CompanySearchPanel constructor
  */
-function loadCompanySearchControl($, companySearchMock, extraGlobals) {
+function loadCompanySearchPanel($, companySearchMock, extraGlobals) {
     const extraMocks = { jquery: $ };
     if (companySearchMock) {
         extraMocks['Two_Gateway/js/model/company-search'] = companySearchMock;
     }
     return loadAmdModule(
-        'view/frontend/web/js/model/company-search-control.js',
+        'view/frontend/web/js/model/company-search-panel.js',
         extraMocks,
         extraGlobals
     );
@@ -702,6 +674,6 @@ function loadCompanySearchControl($, companySearchMock, extraGlobals) {
 module.exports = {
     loadAmdModule: loadAmdModule,
     defaultMocks: defaultMocks,
-    loadCompanySearchControl: loadCompanySearchControl,
+    loadCompanySearchPanel: loadCompanySearchPanel,
     installAsyncSimulation: installAsyncSimulation
 };
