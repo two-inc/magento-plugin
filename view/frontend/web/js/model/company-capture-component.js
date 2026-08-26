@@ -141,11 +141,12 @@ define([
         if (this._countryWatcherBound) return;
         this._countryWatcherBound = true;
         const self = this;
-        $(document).on('change.twoCompanyCapture', 'select[name="country_id"]', function () {
-            // The buyer's own selection, not the quote: core saves the address
-            // asynchronously, so the quote still holds the country they just
-            // left and a change would read as no change at all.
-            self.onCountryChanged(companySearch.currentAddressFormCountry());
+        $(document).on('change.twoCompanyCapture', 'select[name="country_id"]', function (event) {
+            // The select the buyer actually touched, not a document scan: core
+            // saves asynchronously so the quote still holds the country they
+            // just left, and a shipping-first scan answers for the wrong form
+            // when it is the billing country that changed.
+            self.onCountryChanged(String($(event.target).val() || '').toLowerCase());
         });
     };
 
@@ -288,10 +289,31 @@ define([
      * tile rendering, an address switching between new and saved, a cart going
      * virtual. Cheap and idempotent when nothing moved.
      */
+    /**
+     * The control is bound to a node that is still ON THE PAGE.
+     *
+     * A payment tile is replaced wholesale on every totals change, so the node
+     * the widget bound to is detached while the selector that found it is
+     * unchanged. The jQuery object still has a length and still carries select2
+     * data, so the control's own `isBound()` cannot tell the difference — only
+     * the document can.
+     *
+     * @returns {boolean}
+     */
+    CompanyCaptureComponent.prototype.isMountLive = function (selector) {
+        if (!this._control || !this._control.isBound()) return false;
+        const bound = this._control.getField()[0];
+        // Identity, not presence: a tile replaced by an innerHTML assignment or
+        // a native replaceChild leaves the old node detached with its select2
+        // data intact, so the control cannot tell on its own that the node the
+        // selector now finds is a different one.
+        return !!bound && bound === $(selector)[0];
+    };
+
     CompanyCaptureComponent.prototype.refreshMount = function () {
         const selector = this.mountSelector();
         if (!selector) return;
-        if (selector === this._boundSelector && this._control && this._control.isBound()) {
+        if (selector === this._boundSelector && this.isMountLive(selector)) {
             this.syncChips();
             return;
         }
@@ -542,7 +564,13 @@ define([
      * @param {object} buyer `/autofill/v1/buyer/current` record
      */
     CompanyCaptureComponent.prototype.adoptSoleTrader = function (buyer) {
-        identity.write({ companyId: buyer.organization_number, companyName: buyer.company_name });
+        // Authoritative: a sole trader with no registry number of their own must
+        // not inherit the number of whatever company was captured before them,
+        // which a non-authoritative write leaves standing.
+        identity.write(
+            { companyId: buyer.organization_number, companyName: buyer.company_name },
+            { authoritative: true }
+        );
         identity.soleTraderAdopted(true);
         this.syncChips();
     };

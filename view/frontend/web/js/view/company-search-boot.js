@@ -56,6 +56,10 @@ define([
          */
         _onCheckoutShapeChanged: function () {
             setTimeout(function () {
+                // The quote is the only signal for a country the buyer never
+                // typed — a saved address, or one core resolved for them. The
+                // form's own `change` never fires for either.
+                companyCapture.onCountryChanged();
                 companyCapture.refreshMount();
             }, 0);
         },

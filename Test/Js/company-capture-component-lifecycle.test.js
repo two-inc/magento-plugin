@@ -54,15 +54,21 @@ function load(options) {
     const soleTrader = { instances: 0, listeners: 0, ensured: 0 };
 
     const ControlStub = function (config) {
-        const record = { fieldSelector: config.fieldSelector, binds: [], destroys: 0 };
+        const record = { fieldSelector: config.fieldSelector, binds: [], destroys: 0, boundNode: null };
         controls.push(record);
-        this.bind = function (bindOptions) { record.binds.push(bindOptions || {}); };
+        const self = this;
+        this.bind = function (bindOptions) {
+            record.binds.push(bindOptions || {});
+            record.boundNode = $(self.fieldSelector)[0] || null;
+        };
         this.destroy = function () { record.destroys += 1; return true; };
         this.abortActiveRequest = function () {};
         this.showSearchForCompanyLink = function () {};
         this.hideSearchForCompanyLink = function () {};
-        this.isBound = function () { return record.binds.length > 0; };
-        this.getField = function () { return $(); };
+        // Mirrors the real control: it reports itself bound off the node it
+        // captured, which survives that node being detached.
+        this.isBound = function () { return !!record.boundNode; };
+        this.getField = function () { return record.boundNode ? $(record.boundNode) : $(); };
         Object.defineProperty(this, 'fieldSelector', {
             get: function () { return record.fieldSelector; },
             set: function (next) { record.fieldSelector = next; }
@@ -259,7 +265,7 @@ describe('exactly one search control exists', () => {
         expect(controls[0].binds.length).toBeGreaterThan(1);
     });
 
-    test('re-pointing at the mount already bound does not re-bind', () => {
+    test('re-pointing at the same live node does not re-bind', () => {
         mountTile();
         const { component, controls } = load();
         component.start();
@@ -269,6 +275,24 @@ describe('exactly one search control exists', () => {
         component.refreshMount();
 
         expect(controls[0].binds).toHaveLength(bindsAfterStart);
+    });
+
+    test('a tile replaced under an unchanged selector re-binds onto the new node', () => {
+        // Amasty and Fire Checkout replace the tile subtree outright. The old
+        // node keeps its select2 data, so the control still reports itself
+        // bound — leaving the buyer a plain input with no picker, permanently,
+        // because the selector never changes again.
+        mountTile();
+        const { component, controls } = load();
+        component.start();
+        const bindsAfterStart = controls[0].binds.length;
+
+        document.body.innerHTML = '';
+        mountTile();
+        component.refreshMount();
+
+        expect(controls[0].binds.length).toBeGreaterThan(bindsAfterStart);
+        expect(controls[0].boundNode).toBe(document.querySelector('#company_name'));
     });
 });
 
