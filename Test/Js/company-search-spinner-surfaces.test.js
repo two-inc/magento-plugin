@@ -2,230 +2,270 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25288. Proves, for EACH of the two Luma surfaces independently, that
- * the searching state actually reaches visible spinner markup.
+ * TWO-25288. Proves that the searching state actually reaches visible spinner
+ * markup at the mount, and leaves again when the request settles.
  *
- * Both surfaces drive the spinner through a shared model, so it is easy to
- * assume "the model is tested, therefore both surfaces work". That does not
- * follow: each surface wires its own `onSearching` callback and stamps its
- * own bind token, and a surface whose wiring is present but not connected to
- * markup would show no spinner at all while every model-level test stayed
- * green. The default AMD harness stubs `setSearching` to a no-op, so no other
- * suite covers this path.
+ * The spinner is driven through a shared model, so it is easy to assume "the
+ * model is tested, therefore the mount works". That does not follow: the mount
+ * wires its own `onSearching` callback and stamps its own bind token, and a
+ * mount whose wiring is present but not connected to markup would show no
+ * spinner at all while every model-level test stayed green. The default AMD
+ * harness stubs `setSearching` to a no-op, so no other suite covers this path.
  *
- * Method: load the REAL company-search model into the REAL surface module
- * (the injection route amd-harness.js documents), call enableCompanySearch(),
- * then drive the real select2 `transport` the surface built — which is what
- * fires `onSearching(true)` internally. Appends land in a recording stand-in
- * for select2's runtime-created `.select2-search--dropdown`.
+ * Method: mount the REAL component onto real jsdom nodes with the REAL control
+ * and the REAL model, then drive the select2 `transport` the control built —
+ * which is what fires `onSearching(true)` internally. The spinner is then read
+ * off the document, not off a call log: a mount that reported "searching" to
+ * nothing would fail here.
  */
 
 'use strict';
 
+const $ = require('jquery');
 const { loadAmdModule, loadCompanySearchControl } = require('./amd-harness');
+
+const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
+const IDENTITY_PATH = 'view/frontend/web/js/model/company-identity.js';
+const SEARCH_PATH = 'view/frontend/web/js/model/company-search.js';
+
+const GLOBALS = { document: document, window: window };
+const SPINNER_SELECTOR = '.two-company-search__spinner';
 
 const BASE_CONFIG = {
     checkoutApiUrl: 'https://api.example.test',
     companySearchLimit: 50,
     isCompanySearchEnabled: true,
-    isAddressSearchEnabled: true
+    isAddressSearchEnabled: true,
+    supportedCompanyTypes: {}
 };
 
-/** Stands in for select2's own search box, recording what gets appended. */
-function makeSearchBox() {
-    const appended = [];
-    const box = {
-        length: 1,
-        appended: appended,
-        append: function (html) {
-            appended.push(html);
-            return box;
-        },
-        find: function (selector) {
-            const needle = selector.replace(/^\./, '');
-            const hits = appended.filter((h) => h.indexOf(needle) !== -1);
-            return {
-                length: hits.length,
-                remove: function () {
-                    hits.forEach((h) => appended.splice(appended.indexOf(h), 1));
-                }
-            };
-        }
-    };
-    return box;
-}
-
-function makeJQuery(recorder) {
-    function $() {
-        const obj = {
-            length: 0,
-            val: function (v) {
-                if (arguments.length) return obj;
-                return '';
+/**
+ * `$.ajax` replaced with jqXHRs the test settles by hand, so each outcome is
+ * driven explicitly rather than inferred from a timer.
+ *
+ * @returns {Array} the requests handed out, newest last
+ */
+function installAjaxDouble() {
+    const requests = [];
+    $.ajax = function (options) {
+        const bound = { done: [], fail: [], always: [] };
+        const jqxhr = {
+            options: options,
+            aborted: false,
+            done: function (fn) { bound.done.push(fn); return jqxhr; },
+            fail: function (fn) { bound.fail.push(fn); return jqxhr; },
+            always: function (fn) { bound.always.push(fn); return jqxhr; },
+            abort: function () {
+                jqxhr.aborted = true;
+                jqxhr.settleFail('abort');
             },
-            trigger: function () { return obj; },
-            prop: function () { return obj; },
-            text: function () { return obj; },
-            attr: function () { return obj; },
-            off: function () { return obj; },
-            hide: function () { return obj; },
-            show: function () { return obj; },
-            closest: function () { return obj; },
-            append: function () { return obj; },
-            data: function (key, value) {
-                if (arguments.length > 1) {
-                    recorder.data[key] = value;
-                    return obj;
-                }
-                return recorder.data[key];
+            settleDone: function (data) {
+                bound.done.forEach(function (fn) { fn(data); });
+                bound.always.forEach(function (fn) { fn(); });
             },
-            // The chrome walks $field.data('select2').$dropdown.find(...).
-            find: function (selector) {
-                if (selector === '.select2-search--dropdown') return recorder.searchBox;
-                return obj;
-            },
-            select2: function (opts) {
-                if (typeof opts === 'object') {
-                    recorder.select2Options = opts;
-                    // select2 stashes its instance on the node; the dropdown
-                    // is created by select2 itself, not by any repo template.
-                    recorder.data['select2'] = { $dropdown: obj };
-                }
-                return obj;
-            },
-            on: function (evt, handler) {
-                recorder.handlers[evt.split('.')[0]] = handler;
-                return obj;
+            settleFail: function (textStatus) {
+                bound.fail.forEach(function (fn) {
+                    fn({ status: textStatus === 'timeout' ? 0 : 500 }, textStatus);
+                });
+                bound.always.forEach(function (fn) { fn(); });
             }
         };
-        return obj;
-    }
-    $.async = function (selector, fn) { fn(selector); };
-    $.ajax = function () {
-        const jqxhr = {
-            done: function () { return jqxhr; },
-            fail: function () { return jqxhr; },
-            always: function () { return jqxhr; }
-        };
+        requests.push(jqxhr);
         return jqxhr;
     };
-    $.mage = { cookies: { get: function () { return null; } }, redirect: function () {} };
-    $.Deferred = function () {
-        const d = {
-            resolve: function () { return d; },
-            promise: function () { return d; },
-            done: function () { return d; },
-            fail: function () { return d; },
-            always: function () { return d; }
-        };
-        return d;
+    return requests;
+}
+
+/**
+ * A select2 stand-in on the real jQuery, faithful on the points this suite
+ * turns on: the instance is discoverable via `.data('select2')`, its
+ * `$dropdown` holds a real search box the chrome can be written into, and
+ * re-init destroys the previous instance the way select2 4.1's constructor
+ * does.
+ */
+function installSelect2Double() {
+    $.fn.select2 = function (arg) {
+        return this.each(function () {
+            const $node = $(this);
+            const instance = $node.data('select2');
+
+            if (typeof arg === 'object' && arg !== null) {
+                if (instance) $node.select2('destroy');
+                const $container = $(
+                    '<span class="select2 select2-container">' +
+                    '<span class="select2-selection" role="combobox" tabindex="0"></span>' +
+                    '</span>'
+                );
+                const $dropdown = $(
+                    '<span class="select2-dropdown">' +
+                    '<span class="select2-search select2-search--dropdown">' +
+                    '<input class="select2-search__field" type="search">' +
+                    '</span>' +
+                    '<span class="select2-results">' +
+                    '<ul class="select2-results__options" role="listbox"></ul>' +
+                    '</span></span>'
+                );
+                $node.after($container);
+                $node.data('select2', {
+                    options: arg,
+                    $container: $container,
+                    $dropdown: $dropdown,
+                    $selection: $container.find('.select2-selection'),
+                    dataAdapter: { _queryTimeout: null }
+                });
+                return;
+            }
+            if (arg === 'destroy') {
+                if (!instance) return;
+                instance.$dropdown.remove();
+                instance.$container.remove();
+                $node.removeData('select2');
+                $node.off('.select2');
+                return;
+            }
+            if (arg === 'open') {
+                // Matches select2 4.1: a method call on an unbound element is
+                // an error, not a silent no-op.
+                if (!instance) throw new Error('select2: no instance bound to this element');
+                $('body').append(instance.$dropdown);
+                instance.$container.addClass('select2-container--open');
+                $node.trigger('select2:open');
+                return;
+            }
+            if (arg === 'close') {
+                if (!instance) return;
+                instance.$dropdown.detach();
+                instance.$container.removeClass('select2-container--open');
+                $node.trigger('select2:close');
+                return;
+            }
+            throw new Error('select2 double: unsupported command ' + arg);
+        });
     };
-    $.extend = Object.assign;
-    $.fn = {};
-    return $;
 }
 
-function makeRecorder() {
-    return { data: {}, handlers: {}, select2Options: null, searchBox: makeSearchBox() };
+/** Magento's `$.async` decorator, resolving synchronously against the fixture. */
+function installAsync() {
+    $.async = function (selector, fn) {
+        $.asyncCalls.push({ selector: selector, fn: fn });
+        const node = document.querySelector(selector);
+        if (node) fn(node);
+    };
+    $.asyncCalls = [];
 }
 
-function loadCompanySearch($) {
-    return loadAmdModule('view/frontend/web/js/model/company-search.js', { jquery: $ });
+/**
+ * Boot the page-level component over the fixture, with the real control and
+ * the real model.
+ *
+ * Loaded fresh per test: the component and the identity are page-level
+ * singletons, so a shared load would carry one case's bind into the next.
+ *
+ * @returns {object} `{ component, companySearch }`
+ */
+function mount() {
+    const identity = loadAmdModule(IDENTITY_PATH, {}, GLOBALS);
+    const companySearch = loadAmdModule(SEARCH_PATH, { jquery: $ }, GLOBALS);
+    const SoleTraderStub = function () {
+        this.listenForSignupResult = function () {};
+        this.ensureTokens = function () { return Promise.resolve(true); };
+        this.launchSignup = function () { return {}; };
+        this.forgetAdoptions = function () {};
+    };
+
+    const component = loadAmdModule(
+        COMPONENT_PATH,
+        {
+            jquery: $,
+            'Two_Gateway/js/model/company-identity': identity,
+            'Two_Gateway/js/model/company-search': companySearch,
+            'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(
+                $,
+                companySearch,
+                GLOBALS
+            ),
+            'Two_Gateway/js/model/sole-trader': SoleTraderStub,
+            'Two_Gateway/js/model/brand-config': {
+                getActiveTwoBrandConfig: function () { return BASE_CONFIG; }
+            }
+        },
+        GLOBALS
+    );
+    component.start();
+    return { component: component, companySearch: companySearch };
 }
 
-/** The assertion both surfaces must satisfy. */
-function assertSpinnerReachesMarkup(recorder, companySearch) {
-    companySearch.clearResultCache();
-    const transport = recorder.select2Options.ajax.transport;
-    expect(typeof transport).toBe('function');
+/** The ajax block the live bind handed select2. */
+function boundTransport(component) {
+    const instance = component._control.getField().data('select2');
+    expect(instance).toBeTruthy();
+    return instance.options.ajax.transport;
+}
 
-    // Nothing painted until a search actually starts.
-    expect(recorder.searchBox.appended).toHaveLength(0);
+function spinners() {
+    return document.querySelectorAll(SPINNER_SELECTOR);
+}
 
-    // onSearching is closure-internal, so drive the real search path: the
-    // transport select2 would call, which fires onSearching(true) itself.
-    const handle = transport(
+/** Start a real search through the transport the live bind built. */
+function startSearch(component, requests) {
+    const handle = boundTransport(component)(
         { url: 'https://api.example.test/companies/v2/company?q=exa' },
         function () {},
         function () {}
     );
     expect(handle).toBeTruthy();
-
-    expect(recorder.searchBox.appended).toHaveLength(1);
-    const host = document.createElement('div');
-    host.innerHTML = recorder.searchBox.appended[0];
-    const spinner = host.querySelector('.two-company-search__spinner');
-    expect(spinner).not.toBeNull();
-    expect(spinner.children).toHaveLength(0);
-    expect(spinner.getAttribute('aria-hidden')).toBe('true');
+    expect(requests).toHaveLength(1);
+    return requests[0];
 }
 
-test('SHIPPING surface: searching state reaches visible spinner markup', () => {
-    const recorder = makeRecorder();
-    const $ = makeJQuery(recorder);
-    const companySearch = loadCompanySearch($);
+describe('the searching state reaches visible spinner markup', () => {
+    let requests;
+    let mounted;
 
-    const brandConfig = function () { return BASE_CONFIG; };
-    brandConfig.getActiveTwoBrandCode = function () { return 'two_payment'; };
-    brandConfig.getActiveTwoBrandConfig = function () { return BASE_CONFIG; };
-
-    const component = loadAmdModule('view/frontend/web/js/view/address-autocomplete.js', {
-        jquery: $,
-        'Two_Gateway/js/model/brand-config': brandConfig,
-        'Two_Gateway/js/model/company-search': companySearch,
-        'Two_Gateway/js/model/company-search-control': loadCompanySearchControl($, companySearch)
+    beforeEach(() => {
+        document.body.innerHTML =
+            '<form id="two_gateway_form"><div class="field"><div class="control">' +
+            '<input id="company_name" name="company_name" />' +
+            '</div></div></form>';
+        $(document).off('.twoCompanyCapture');
+        installSelect2Double();
+        installAsync();
+        requests = installAjaxDouble();
+        mounted = mount();
+        mounted.companySearch.clearResultCache();
+        $(mounted.component._control.getField()).select2('open');
     });
 
-    const ctx = Object.assign(Object.create(component.prototype || {}), {
-        countrySelector: '#shipping-new-address-form select[name="country_id"]',
-        companyNameSelector: '#shipping-new-address-form input[name="company"]',
-        companyIdSelector:
-            '#shipping-new-address-form input[name="custom_attributes[company_id]"]',
-        searchForCompanyButton: '#shipping_search_for_company',
-        searchForCompanyText: 'Search for company',
-        companyNamePlaceholder: 'Enter company name to search',
-        setCompanyData: function () {},
-        addressLookup: component.addressLookup,
-        enableCompanySearch: component.enableCompanySearch
+    test('nothing is painted until a search actually starts', () => {
+        expect(spinners()).toHaveLength(0);
     });
 
-    ctx.enableCompanySearch();
-    assertSpinnerReachesMarkup(recorder, companySearch);
-});
+    test('a search in flight paints a childless, aria-hidden spinner into the search box', () => {
+        startSearch(mounted.component, requests);
 
-test('PAYMENT surface: searching state reaches visible spinner markup', () => {
-    const recorder = makeRecorder();
-    const $ = makeJQuery(recorder);
-    const companySearch = loadCompanySearch($);
+        expect(spinners()).toHaveLength(1);
+        const spinner = spinners()[0];
+        // The animation is a CSS background-image, so there is no inner markup
+        // for a translation or a sanitiser to mangle.
+        expect(spinner.children).toHaveLength(0);
+        expect(spinner.getAttribute('aria-hidden')).toBe('true');
+        expect(spinner.closest('.select2-search--dropdown')).not.toBeNull();
+    });
 
-    const component = loadAmdModule(
-        'view/frontend/web/js/view/payment/method-renderer/gateway_method.js',
-        {
-            jquery: $,
-            'Two_Gateway/js/model/company-search': companySearch,
-            'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(
-                $,
-                companySearch
-            )
+    test.each([
+        ['done', 'a healthy response'],
+        ['timeout', 'a timeout'],
+        ['error', 'a network failure']
+    ])('outcome %p settles the spinner (%s)', (outcome) => {
+        const request = startSearch(mounted.component, requests);
+        expect(spinners()).toHaveLength(1);
+
+        if (outcome === 'done') {
+            request.settleDone({ items: [] });
+        } else {
+            request.settleFail(outcome);
         }
-    );
 
-    const ctx = Object.assign(Object.create(component.prototype || {}), {
-        companyNameSelector: 'input#company_name',
-        enterDetailsManuallyButton: '#billing_enter_details_manually',
-        enterDetailsManuallyText: 'Enter details manually',
-        searchForCompanyButton: '#billing_search_for_company',
-        searchForCompanyText: 'Search for company',
-        _brandConfig: BASE_CONFIG,
-        countryCode: function () { return 'gb'; },
-        companyName: Object.assign(function () { return ''; }, {
-            subscribe: function () { return { dispose: function () {} }; }
-        }),
-        fillCompanyData: function () {},
-        addressLookup: component.addressLookup,
-        enableCompanySearch: component.enableCompanySearch
+        expect(spinners()).toHaveLength(0);
     });
-
-    ctx.enableCompanySearch();
-    assertSpinnerReachesMarkup(recorder, companySearch);
 });

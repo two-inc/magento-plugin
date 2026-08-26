@@ -18,8 +18,8 @@ define([
     'Two_Gateway/js/model/surcharge',
     'Two_Gateway/js/model/brand-config',
     'Two_Gateway/js/model/company-search',
-    'Two_Gateway/js/model/company-capture',
-    'Two_Gateway/js/model/sole-trader',
+    'Two_Gateway/js/model/company-identity',
+    'Two_Gateway/js/model/company-capture-component',
     'Two_Gateway/js/model/minimum-order-visibility',
     'Magento_Ui/js/lib/view/utils/async',
     'mage/validation',
@@ -39,13 +39,18 @@ define([
     surchargeModel,
     getBrandConfig,
     companySearch,
-    CompanyCapture,
-    SoleTrader,
+    identity,
+    companyCapture,
     isAboveMinimums
 ) {
     'use strict';
 
     window.quote = quote;
+
+    // The tile-side host the company-capture component binds at; the tile's own
+    // field is visible only while that component has chosen it over the address
+    // step's.
+    const TILE_COMPANY_FIELD_SELECTOR = '#two_gateway_form input#company_name';
 
     // True while a place-order request started by this renderer is in flight.
     // Deliberately module-scope rather than per-instance, because the
@@ -124,18 +129,13 @@ define([
         twoSubtitleHtml: '',
         isPaymentTermsAccepted: ko.observable(false),
         formSelector: 'form#two_gateway_form',
-        companyNameSelector: 'input#company_name',
-        searchForCompanyText: $t('Search for company'),
-        // No `searchForCompanyButton` id selector here on purpose. The
-        // shared control's own append guard is per-CONTAINER, so this
-        // renderer — pushed once per Two-family brand — would otherwise mint
-        // duplicate ids and a document-wide lookup would hand brand A's link
-        // to brand B. Use searchForCompanyLink() instead.
-        searchForCompanyLink: function () {
-            return this.companyCapture().searchForCompanyLink();
-        },
-        companyName: ko.observable(''),
-        companyId: ko.observable(''),
+        // The page-level identity's own observables, aliased onto the prototype
+        // so template bindings and getData() read the one company the buyer
+        // picked — which outlives every tile rebuild.
+        companyName: identity.companyName,
+        companyId: identity.companyId,
+        soleTraderAdopted: identity.soleTraderAdopted,
+        soleTraderBusy: identity.soleTraderBusy,
         invoiceEmails: ko.observable(''),
         project: ko.observable(''),
         department: ko.observable(''),
@@ -143,27 +143,11 @@ define([
         poNumber: ko.observable(''),
         selectedTerm: surchargeModel.selectedTerm,
         telephone: ko.observable(''),
-        countryCode: ko.observable(''),
         // Tile-local order-intent spinner flag — the module-scope observable
         // declared above, deliberately shared by every instance. See its
         // docblock for why it is not per-instance.
         orderIntentInProgress: orderIntentInProgress,
-        showPopupMessage: ko.observable(false),
-        // True for the duration of lookupSoleTrader()'s token-mint +
-        // buyer-lookup round trip (TWO-25461 §7). Drives the in-field
-        // spinner; not the popup-open state, which showPopupMessage/
-        // showSoleTrader already cover.
-        soleTraderLookupInFlight: ko.observable(false),
-        showSoleTrader: ko.observable(false),
         showWhatIsTwo: ko.observable(false),
-        showModeTab: ko.observable(false),
-        // Which of the three peer company-capture options is active
-        // (TWO-25503): 'registered' | 'soletrader' | 'manual'. Drives only
-        // the chip control's selected state — each mode's own behaviour still
-        // hangs off showSoleTrader / the live select2 binding, so this must
-        // be written by every route into a mode, including the in-dropdown
-        // "Search for company" link.
-        captureMode: ko.observable('registered'),
         termsAccepted: ko.observable(false), // Observable for terms accepted state
         BVCompanyRegex: /(?:^|\s)B(?:\.)?V(?:\.)?$/i,
 
@@ -175,16 +159,6 @@ define([
             // their own subtree from window.checkoutConfig.payment.
             this._brandConfig = getBrandConfig(this.getCode());
             var config = this._brandConfig;
-
-            // Per-country memo of the registry's supported-company-types
-            // answer (lowercased ISO → string[]), seeded server-side with
-            // the quote's billing country via ConfigProvider and extended
-            // live through GET /V1/two/supported-company-types as the
-            // buyer edits the billing address. Drives the Business /
-            // Sole trader mode tab; fetch errors fail soft (treated as
-            // business-only) and are NOT memoized, so the next country
-            // change retries.
-            this.supportedCompanyTypes = config.supportedCompanyTypes || {};
 
             this.twoSubtitleHtml = config.subtitleHtml || '';
             // TWO-25386: showWhatIsTwo is the pre-existing (unused until now)
@@ -203,13 +177,6 @@ define([
             this.termUnavailableMessage = config.termUnavailableMessage;
             this.soleTraderErrorMessage = config.soleTraderErrorMessage;
             this.isOrderIntentEnabled = config.isOrderIntentEnabled;
-            // TWO-25326 §7.1: the ONE admin setting that decides where the
-            // shared company-search control renders. ON = address area
-            // (address-autocomplete.js's job); OFF = payment tile (this
-            // renderer's job) — see isTileCompanySearchActive() below,
-            // which is also where the saved-address/virtual-cart fallback
-            // is documented.
-            this.isAddressAreaCompanySearchEnabled = !!config.isCompanySearchEnabled;
             this.isInvoiceEmailsEnabled = config.isInvoiceEmailsEnabled;
             this.isDepartmentFieldEnabled = config.isDepartmentFieldEnabled;
             this.isProjectFieldEnabled = config.isProjectFieldEnabled;
@@ -301,10 +268,8 @@ define([
                 });
             });
 
-            this.registeredOrganisationMode();
-            this.watchAddressFormCountry();
+            this.fillCustomerData();
             this.configureFormValidation();
-            this.popupMessageListener();
             return this;
         },
         /**
@@ -313,12 +278,12 @@ define([
          * doesn't accumulate live subscriptions to the singleton quote totals.
          */
         dispose: function () {
-            // The company-capture control's own teardown — the search widget
-            // this renderer bound and its delegated country watcher. Guarded
-            // rather than built here: a renderer disposed before anything
-            // reached the control has none.
-            if (this._companyCapture) {
-                this._companyCapture.dispose();
+            // The notice subscriptions are on the page-level identity, which
+            // outlives this renderer — undisposed, every re-render would leave
+            // another live subscriber writing to a destroyed instance.
+            if (this._noticeSubs) {
+                this._noticeSubs.forEach((sub) => sub.dispose());
+                this._noticeSubs = null;
             }
             if (this._twoVisibilitySub) {
                 this._twoVisibilitySub.dispose();
@@ -335,12 +300,6 @@ define([
                 this._customerDataSubs.forEach((sub) => sub.dispose());
                 this._customerDataSubs = null;
             }
-            // The sole-trader flow's own teardown — its popup `message`
-            // listener. Guarded rather than built here: a renderer disposed
-            // before anything entered that flow has none.
-            if (this._soleTrader) {
-                this._soleTrader.dispose();
-            }
             this._super();
         },
         /**
@@ -348,68 +307,46 @@ define([
          *
          * A plain function, not a computed: the template calls it inside a ko
          * `attr` binding, so ko tracks the two observables read here as
-         * dependencies of that binding and re-evaluates when either changes. No
-         * subscription to dispose, and — unlike a computed built in initialize()
-         * — it exists on renderers the unit tests load without booting.
+         * dependencies of that binding and re-evaluates when either changes.
          *
-         * Gated on `companyId()`, NOT on sole-trader mode alone. Sole trader is
-         * the only mode where this node is a plain text box holding a captured
-         * name, but entering that mode does not guarantee a name has been
-         * captured: enterSoleTraderUi() blanks the input, and the autofill that
-         * refills it only lands when the chip's lookup matched a buyer. On the
-         * unmatched branch the buyer is sent to signup and may abandon it, and
-         * fillCompanyData() early-returns unless BOTH name and number are
-         * non-empty — so keying on the mode alone left a BLANK, `readonly`,
-         * `required` input that no buyer action could satisfy and that jQuery
-         * Validation still enforces (`elements()` skips `:disabled`, not
-         * `[readonly]`). Locking only once a number has actually been captured
-         * means every state where the field is empty is a state the buyer can
-         * type into.
+         * Gated on the captured number, not on sole-trader mode alone: this
+         * input is `required` and jQuery Validation enforces that on a
+         * `[readonly]` field, so a sole trader whose signup captured nothing
+         * would otherwise face a blank, locked, unsatisfiable field.
          *
          * @returns {boolean}
          */
         isCompanyNameReadOnly: function () {
-            return this.showSoleTrader() && !!this.companyId();
+            return identity.isSoleTrader() && !!this.companyId();
         },
         /**
-         * Has a company actually been CAPTURED — name plus organisation
-         * number — as opposed to merely named?
+         * Whether the tile's own company field is the component's live mount.
+         * Hidden rather than removed when the address step is: the component
+         * resolves its mount by the field's presence in the DOM.
          *
-         * TWO-25326, 2026-08-04 ruling: this NO LONGER hides the tile's
-         * company-capture controls (the field + picker). Doug's exact
-         * words on the control's visibility: it "is controlled ONLY by the
-         * state of the 'enable search in address' admin setting ... and
-         * search control visibility is not changed for any other reason" —
-         * see isTileCompanySearchActive() and the `visible:` binding on the
-         * field wrapper in gateway_method.html, which no longer reads this
-         * method at all. Superseded here is the earlier design where
-         * capture (and, briefly, a decline-recovery carve-out on top of it)
-         * hid and re-showed that field — found in live testing to leave the
-         * control gone with no way back on the common approve path.
-         *
-         * What THIS method still gates, post-ruling:
-         *
-         *  - the org-number label underneath the field in
-         *    gateway_method.html (`.two-company-id-text`) — shown once
-         *    capture is complete, same "name AND number" rule as below,
-         *    mirroring address-autocomplete.js's renderCompanyIdText();
-         *  - placeOrder()'s client-side submit gate (§6a) — a manual,
-         *    name-only capture must not let the buyer submit.
-         *
-         * Gated on the NUMBER, not on the name alone, and that is the whole
-         * distinction:
-         *
-         *  - a registry pick and sole-trader autofill both yield a number,
-         *    so capture is complete;
-         *  - manual entry yields a name and no number. §6 says name-only
-         *    must NOT make the payment method usable, so capture is
-         *    precisely NOT complete.
+         * @returns {boolean}
+         */
+        isTileCompanyFieldVisible: function () {
+            if (!companyCapture.config()) return false;
+            return companyCapture.mountSelector() === TILE_COMPANY_FIELD_SELECTOR;
+        },
+        /**
+         * Re-point the component's mount after a quote address change, which is
+         * what makes the address step's own company field come and go. Silent
+         * before the component has booted — the sidebar hook that starts it and
+         * this renderer have no ordering guarantee, and it re-points itself on
+         * start().
+         */
+        refreshCompanyMount: function () {
+            if (companyCapture.config()) companyCapture.refreshMount();
+        },
+        /**
+         * Name AND organisation number, as opposed to merely named — a manual,
+         * name-only capture must not make the method usable. Gates the
+         * org-number label in the tile and placeOrder()'s submit check.
          *
          * A plain function, not a computed — same reasoning as
-         * isCompanyNameReadOnly() above: the template reads it inside `visible`
-         * bindings, so ko tracks both observables as dependencies of those
-         * bindings and re-evaluates when either changes. Nothing to dispose,
-         * and it exists on renderers the unit tests load without booting.
+         * isCompanyNameReadOnly() above.
          *
          * @returns {boolean}
          */
@@ -435,21 +372,6 @@ define([
          */
         displayCompanyId: function () {
             return companySearch.formatCompanyNumber(this.companyId());
-        },
-        searchCountryCode: function () {
-            return this.companyCapture().searchCountryCode();
-        },
-        billingRoleCountryCode: function () {
-            return this.companyCapture().billingRoleCountryCode();
-        },
-        watchAddressFormCountry: function () {
-            return this.companyCapture().watchAddressFormCountry();
-        },
-        isTileCompanySearchActive: function () {
-            return this.companyCapture().isTileCompanySearchActive();
-        },
-        showManualEntryChip: function () {
-            return this.companyCapture().showManualEntryChip();
         },
         /**
          * Guarded read of orderIntentApprovedNotice() for the template's
@@ -617,10 +539,7 @@ define([
             companyName = typeof companyName == 'string' && companyName ? companyName : '';
             companyId = typeof companyId == 'string' ? companyId : '';
             if (!companyName || !companyId) return;
-            this.companyName(companyName);
-            $(this.companyNameSelector).val(companyName);
-            $('#select2-company_name-container')?.text(companyName);
-            this.companyId(companyId);
+            identity.write({ companyName, companyId });
             if (this.isOrderIntentEnabled) {
                 // TWO-25347 belt-and-braces: refuse a second concurrent
                 // order_intent POST for the SAME captured company. The root
@@ -658,23 +577,10 @@ define([
                     // with no recovery short of a page reload.
                     deferred = self.placeOrderIntent();
                 } catch (error) {
-                    // Round-2 adversarial review, 2026-08-04: an earlier
-                    // version of this catch rethrew, mirroring
-                    // placeOrderBackend()'s shape — but every caller of
-                    // fillCompanyData() is an unguarded synchronous context
-                    // with its OWN statements after the call (the
-                    // select2:select handler's addressLookup() call,
-                    // updateAddress()'s project/department writes,
-                    // updateShippingAddress()/updateBillingAddress()'s
-                    // refreshTileCompanySearchBinding() call). Rethrowing
-                    // aborted all of those too, on top of leaving the buyer
-                    // with no visible sign anything went wrong (loader
-                    // flashes and vanishes, nothing else happens). Logging +
-                    // a visible message + NOT rethrowing lets the caller's
-                    // remaining statements run and gives the buyer something
-                    // to act on, at the cost of this one attempt's order
-                    // intent — strictly better than either silent failure or
-                    // aborting unrelated sibling work.
+                    // Deliberately does NOT rethrow: every caller of
+                    // fillCompanyData() is an unguarded synchronous context with
+                    // its own statements after the call, and rethrowing aborted
+                    // those too while leaving the buyer nothing to act on.
                     console.error({ logger: 'twoPayment.fillCompanyData.placeOrderIntent', error });
                     stopOrderIntentSpinner();
                     self._orderIntentInFlightFor = null;
@@ -735,38 +641,10 @@ define([
          * displayed the new company's name, and getData()/placeOrderIntent()
          * submitted the two mixed together.
          *
-         * `options.authoritative` says the name-set/id-empty shape came from
-         * an act of selection — one of the two pickers, or a live change
-         * notification on the `companyData` section, which is the shipping-step
-         * picker writing it. Only those may clear a company that is already
-         * selected. The one-shot section READ on init must not: `companyData`
-         * is a localStorage customer-data section, so it outlives page loads
-         * and previous orders, and a stale `{companyName, companyId: ''}` row
-         * would otherwise overwrite a live payment-step pick's name and blank
-         * its organisation number. Before the routing existed that shape was a
-         * harmless no-op on the read path, and it has to stay one.
-         *
-         * No editable state is derived for the organisation number. The tile
-         * does display it again (TWO-25288), but that input is `readonly`
-         * unconditionally, so there is no state to derive — and it carries no
-         * `name`, so it is a display of `companyId()` and never a writer of it.
-         *
-         * Writers of `companyId()` — four paths, not three; the last two are
-         * easy to conflate and are NOT the same thing:
-         *
-         *  - a company-search pick on this step;
-         *  - the sole-trader autofill response (soleTraderMode() and the
-         *    postMessage handler);
-         *  - the address step's `companyData` customer-data notification, which
-         *    is the only surviving route for a HAND-TYPED number, and the address
-         *    step enables it only where the registry holds no identifier;
-         *  - updateAddress(), parsing a `company_id` custom attribute off the
-         *    quote's billing/shipping address. This fires from the quote
-         *    subscriptions with no address-step interaction at all — a saved
-         *    customer address already carrying the attribute is enough.
-         *
-         * Readers: getData(), placeOrderIntent(), the authoritative guard a few
-         * lines below, and the notice-clearing subscription in initialize().
+         * `options.authoritative` says the name-set/id-empty shape came from an
+         * act of selection. The one-shot `companyData` READ on init must not be
+         * authoritative: it is a localStorage section outliving page loads, and
+         * a stale `{companyName, companyId: ''}` row would blank a live pick.
          */
         applyCompanyData: function (companyData, options) {
             const data = companyData || {};
@@ -786,7 +664,7 @@ define([
             // "wrong country" would drop a legitimate company on the first load
             // after an upgrade. They gain the stamp on the next write.
             const capturedCountry = data.companyCountry ? String(data.companyCountry) : '';
-            const currentCountry = this.countryCode();
+            const currentCountry = companyCapture.countryCode();
             if (
                 capturedCountry &&
                 currentCountry &&
@@ -837,82 +715,13 @@ define([
          */
         selectCompanyWithoutIdentifier: function (companyName) {
             console.debug({ logger: 'twoPayment.selectCompanyWithoutIdentifier', companyName });
-            this.companyName(companyName);
-            $(this.companyNameSelector).val(companyName);
-            $('#select2-company_name-container')?.text(companyName);
-            this.companyId('');
+            identity.write({ companyName, companyId: '' }, { authoritative: true });
         },
         fillTelephone: function (telephone) {
             console.debug({ logger: 'twoPayment.fillTelephone', telephone });
             telephone = typeof telephone == 'string' ? telephone : '';
             if (!telephone) return;
             this.telephone(telephone);
-        },
-        /**
-         * Forget the company currently in play, because it belongs to a
-         * country the buyer has just left (TWO-24867).
-         *
-         * Name AND number, unlike clearCompany(), which leaves `companyName()`
-         * standing for the sole-trader signup prefill. There is no such reader
-         * here: the name came out of the previous country's registry, so
-         * carrying it into a signup popup or an intent-approved notice for the
-         * new country would be asserting a company the buyer has not chosen
-         * there.
-         *
-         * The widget is deliberately left bound. disableCompanySearch() would
-         * destroy it and force the buyer to click "Search for company" again to
-         * do the very thing the switch implies they are about to do; the picker
-         * reads `searchCountryCode()` per request (see its `getCountryCode`),
-         * so the bound widget already searches the new country.
-         */
-        clearCompanyForCountryChange: function () {
-            console.debug({ logger: 'twoPayment.clearCompanyForCountryChange' });
-            // The address written for a sole trader in the previous country is
-            // reverted by the address step on the same switch, so the adoption
-            // has to be re-armed here too — otherwise the buyer who returns to
-            // that country gets the identity back with no address behind it.
-            this.soleTrader().forgetAdoptions();
-            this.companyName('');
-            this.companyId('');
-            $(this.companyNameSelector).val('');
-            // No `?.` here, unlike the two sibling writers of this node. A
-            // jQuery set is always truthy — empty or not — so the optional
-            // chain on those lines can never short-circuit, and reproducing it
-            // would imply a guard that does not exist. `.text()` on an empty
-            // set is already a no-op, which is the behaviour that was wanted.
-            $('#select2-company_name-container').text('');
-        },
-        fillCountryCode: function (countryCode) {
-            console.debug({ logger: 'twoPayment.fillCountryCode', countryCode });
-            countryCode = typeof countryCode == 'string' ? countryCode : '';
-            if (!countryCode) return;
-            const previousCountryCode = this.countryCode();
-            // A CHANGE, not the first resolution. `countryCode()` starts empty
-            // and is filled from the quote on load, and that first fill must
-            // not discard a company the quote's own address already carries —
-            // updateAddress() calls this immediately before fillCompanyData()
-            // with both values off the SAME address.
-            if (previousCountryCode && previousCountryCode !== countryCode) {
-                this.clearCompanyForCountryChange();
-            }
-            this.countryCode(countryCode);
-            var self = this;
-            this.getSupportedCompanyTypes(countryCode).then(function (types) {
-                // Guard against a stale answer when the buyer switches
-                // country again before the lookup resolves.
-                if (self.countryCode() !== countryCode) return;
-                if (types.includes('SOLE_TRADER')) {
-                    self.showModeTab(true);
-                } else {
-                    if (self.showSoleTrader()) {
-                        self.registeredOrganisationMode();
-                    }
-                    self.showModeTab(false);
-                }
-            });
-        },
-        getSupportedCompanyTypes: function (countryCode) {
-            return this.companyCapture().getSupportedCompanyTypes(countryCode);
         },
         updateAddress: function (address) {
             if (!address) return;
@@ -921,7 +730,6 @@ define([
             let companyId = '';
             let department = '';
             let project = '';
-            let countryCode = address.countryId.toLowerCase();
             if (Array.isArray(address.customAttributes)) {
                 address.customAttributes.forEach(function (item) {
                     console.debug({ logger: 'twoPayment.updateAddress', item });
@@ -939,7 +747,6 @@ define([
                     }
                 });
             }
-            this.fillCountryCode(countryCode);
             this.fillTelephone(telephone);
             this.fillCompanyData({ companyName, companyId });
             if (project) this.project(project);
@@ -950,21 +757,17 @@ define([
             if (shippingAddress.getCacheKey() == quote.billingAddress().getCacheKey()) {
                 this.updateAddress(shippingAddress);
             }
-            // Unconditional, unlike updateAddress() above: a SAVED address
-            // and a NEW address differ in whether #shipping-new-address-form
-            // exists at all, which is exactly what
-            // isTileCompanySearchActive() reads — so this has to re-run on
-            // every shipping-address change, not only the ones the cache-key
-            // check lets through.
-            this.refreshTileCompanySearchBinding();
+            // Unconditional, unlike updateAddress() above: a SAVED address and a
+            // NEW address differ in whether #shipping-new-address-form exists,
+            // which is what the component picks its mount by — so this has to
+            // re-run on every shipping-address change, not only the ones the
+            // cache-key check lets through.
+            this.refreshCompanyMount();
         },
         updateBillingAddress: function (billingAddress) {
             console.debug({ logger: 'twoPayment.updateBillingAddress', billingAddress });
             this.updateAddress(billingAddress);
-            this.refreshTileCompanySearchBinding();
-        },
-        refreshTileCompanySearchBinding: function () {
-            return this.companyCapture().refreshTileCompanySearchBinding();
+            this.refreshCompanyMount();
         },
         /**
          * TWO-25347: an earlier version of this comment called the
@@ -1012,22 +815,15 @@ define([
                 .subscribe((companyData) =>
                     self.applyCompanyData(companyData, { authoritative: true })
                 ));
-            // NOT authoritative: this is a one-shot read of a localStorage
-            // section that outlives page loads and previous orders, and
-            // fillCustomerData() is re-callable (registeredOrganisationMode()).
-            // A stale `{companyName, companyId: ''}` row must not overwrite a
-            // live payment-step pick.
+            // NOT authoritative: a one-shot read of a localStorage section that
+            // outlives page loads and previous orders, so a stale
+            // `{companyName, companyId: ''}` row must not overwrite a live pick.
             this.applyCompanyData(customerData.get('companyData')());
 
             this._customerDataSubs.push(customerData
                 .get('shippingTelephone')
                 .subscribe((telephone) => self.fillTelephone(telephone)));
             this.fillTelephone(customerData.get('shippingTelephone')());
-
-            this._customerDataSubs.push(customerData
-                .get('countryCode')
-                .subscribe((countryCode) => self.fillCountryCode(countryCode)));
-            this.fillCountryCode(customerData.get('countryCode')());
 
             this._customerDataSubs.push(
                 quote.shippingAddress.subscribe((address) => self.updateShippingAddress(address))
@@ -1073,16 +869,10 @@ define([
             // processOrderIntent*Response().
             this.messageContainer.clear();
 
-            // TWO-25326 §6a (2026-08-03 ruling): a manual (name-only, no
-            // organisation number) capture must NOT make the method usable,
-            // but the method stays SELECTABLE — this is a blocked SUBMIT,
-            // matching WC/PS/Hyvä, not a disabled/unselectable radio button.
-            // Before this, Magento had no client-side check here at all: a
-            // manual capture went silently nowhere (see
-            // isCompanyCaptured()'s doc comment for why the method still
-            // has to accept name-only submissions rather than refuse them
-            // outright — validate() does not enforce it either, since
-            // company_name has no number companion field to require).
+            // TWO-25326 §6a: a name-only capture blocks the SUBMIT, not the
+            // selection — the method stays selectable, matching WC/PS/Hyvä.
+            // validate() cannot enforce it: company_name has no number
+            // companion field to require.
             if (!this.isCompanyCaptured()) {
                 this.showErrorMessage(this.companyRequiredMessage);
                 return;
@@ -1259,12 +1049,14 @@ define([
             // edited by hand in the input clears both notices and leaves
             // them cleared, which is the correct fail-closed outcome.
             var self = this;
-            this.companyName.subscribe(function () {
-                self.clearOrderIntentNotices();
-            });
-            this.companyId.subscribe(function () {
-                self.clearOrderIntentNotices();
-            });
+            this._noticeSubs = [
+                this.companyName.subscribe(function () {
+                    self.clearOrderIntentNotices();
+                }),
+                this.companyId.subscribe(function () {
+                    self.clearOrderIntentNotices();
+                })
+            ];
         },
         /**
          * Substitute the buyer's company name/number into a
@@ -1562,12 +1354,6 @@ define([
                 }
             };
         },
-        addressLookup: function (selectedCompany) {
-            return this.companyCapture().addressLookup(selectedCompany);
-        },
-        enableCompanySearch: function (options) {
-            return this.companyCapture().enableCompanySearch(options);
-        },
         getTelephone: function () {
             const telephone = this.telephone();
             console.debug({ logger: 'twoPayment.getTelephone', telephone });
@@ -1595,94 +1381,15 @@ define([
                 });
             });
         },
-        clearCompany: function () {
-            return this.companyCapture().clearCompany();
-        },
-        destroyCompanySearchWidget: function () {
-            return this.companyCapture().destroyCompanySearchWidget();
-        },
-        disableCompanySearch: function () {
-            return this.companyCapture().disableCompanySearch();
-        },
         /**
-         * The company-capture control for this renderer — see
-         * Two_Gateway/js/model/company-capture. Built on first use for the
-         * same reason as soleTrader() below.
-         *
-         * @returns {object}
+         * "Select a different sole trader" — the tile's only sole-trader
+         * affordance. Silent before the component has booted, which is the
+         * state in which no sole trader can have been adopted anyway.
          */
-        companyCapture: function () {
-            if (!this._companyCapture) {
-                this._companyCapture = new CompanyCapture(this);
-            }
-            return this._companyCapture;
-        },
-        /**
-         * The sole-trader flow for this renderer — see
-         * Two_Gateway/js/model/sole-trader. Built on first use rather than in
-         * initialize() so the delegating methods below behave the same on a
-         * renderer that has not been booted.
-         *
-         * @returns {object}
-         */
-        soleTrader: function () {
-            if (!this._soleTrader) {
-                this._soleTrader = new SoleTrader(this);
-            }
-            return this._soleTrader;
-        },
-        getTokens() {
-            return this.soleTrader().getTokens();
-        },
-        getAutofillData() {
-            return this.soleTrader().getAutofillData();
-        },
-        hasSignupTokens() {
-            return this.soleTrader().hasSignupTokens();
-        },
-        openIframe(options) {
-            return this.soleTrader().openIframe(options);
-        },
         selectDifferentSoleTrader() {
-            return this.soleTrader().selectDifferentSoleTrader();
-        },
-        leaveSoleTraderMode() {
-            return this.soleTrader().leaveSoleTraderMode();
-        },
-
-        registeredOrganisationMode(options) {
-            return this.companyCapture().registeredOrganisationMode(options);
-        },
-        manualEntryMode() {
-            return this.companyCapture().manualEntryMode();
-        },
-
-        enterSoleTraderUi() {
-            return this.soleTrader().enterSoleTraderUi();
-        },
-        soleTraderMode() {
-            return this.soleTrader().soleTraderMode();
-        },
-        lookupSoleTrader() {
-            return this.soleTrader().lookupSoleTrader();
-        },
-        fetchBuyer(autofillToken) {
-            return this.soleTrader().fetchBuyer(autofillToken);
-        },
-        resolveBuyer(authenticated, autofillToken, isCurrent) {
-            return this.soleTrader().resolveBuyer(authenticated, autofillToken, isCurrent);
-        },
-        adoptSoleTraderBuyer(buyer) {
-            return this.soleTrader().adoptSoleTraderBuyer(buyer);
-        },
-        writeSoleTraderAddress(buyer) {
-            return this.soleTrader().writeSoleTraderAddress(buyer);
-        },
-        writeSoleTraderPhone(buyer) {
-            return this.soleTrader().writeSoleTraderPhone(buyer);
-        },
-        popupMessageListener() {
-            return this.soleTrader().popupMessageListener();
+            const soleTrader = companyCapture.soleTrader();
+            if (!soleTrader) return null;
+            return soleTrader.selectDifferentSoleTrader();
         }
     });
 });
