@@ -59,6 +59,9 @@ define([
     /** The payment tile's company field. One per Two-family brand tile. */
     const TILE_FIELD_SELECTOR = '#two_gateway_form input#company_name';
 
+    /** Any address form's country select, shipping or billing. */
+    const COUNTRY_SELECT_SELECTOR = 'select[name="country_id"]';
+
     function CompanyCaptureComponent() {
         this._config = null;
         this._control = null;
@@ -88,6 +91,7 @@ define([
         this._soleTrader = new SoleTrader(this);
         this._soleTrader.listenForSignupResult();
         this.watchAddressFormCountry();
+        this.watchForCountrySource();
         // The baseline a later change is measured against. Without it the first
         // switch reads as the first resolution and keeps a company whose
         // registry no longer applies (TWO-24867). Empty when the quote has no
@@ -110,6 +114,21 @@ define([
                 self.refreshMount();
                 if (!identity.soleTraderAvailable()) self.refreshSoleTraderAvailability();
             });
+        });
+    };
+
+    /**
+     * Resolve the country once a form can answer for it.
+     *
+     * `watchAddressFormCountry()` only hears `change`, so a buyer who accepts
+     * the default country never fires one and sole-trader availability stays
+     * unresolved. Reads through `countryCode()`, so an appearing billing form
+     * cannot impose its own default over the quote.
+     */
+    CompanyCaptureComponent.prototype.watchForCountrySource = function () {
+        const self = this;
+        $.async(COUNTRY_SELECT_SELECTOR, function () {
+            self.onCountryChanged();
         });
     };
 

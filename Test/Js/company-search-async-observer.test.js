@@ -147,6 +147,10 @@ describe('one $.async observer per selector', () => {
         for (let i = 0; i < 10; i++) control.bind();
         const beforeMutation = inits.length;
 
+        // A re-render replaces the field, which is the mutation the observers
+        // answer — the same node still sitting there is no event at all.
+        document.querySelector(FIELD_SELECTOR).remove();
+        document.querySelector('form').innerHTML = '<input id="company_name" />';
         $.async.fireAll();
 
         expect(inits.length - beforeMutation).toBe(1);
