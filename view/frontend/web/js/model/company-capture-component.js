@@ -494,9 +494,12 @@ define([
         if (!wasAdopted) {
             identity.captureMode('soletrader');
             identity.clearNumber();
-            // Closed, not destroyed: the panel carries the chips, which are the
-            // buyer's only route back out of a signup they abandon.
-            if (this._panel) this._panel.close();
+            // The popover stays OPEN behind the signup popup, so the chips stay
+            // on screen and the buyer can click Sole trader again to raise the
+            // popup rather than having to reach it through the company field —
+            // which would itself read as "focus is back on checkout" and take
+            // the popup down. It closes when they return to checkout and settle
+            // somewhere other than this control.
             this.syncChips();
         }
         // Re-clicking once adopted is the same re-signup the "select a

@@ -337,11 +337,10 @@ define([
      * them — must leave it alone, which is why this is gated on the page
      * actually having focus rather than on a blur.
      *
-     * Deferred, and cancellable, because of the one exception: clicking the
-     * Sole trader chip is a statement that the popup IS what the buyer wants.
-     * That gesture returns focus to the page first and only then reaches the
-     * chip's handler, so an immediate close would kill the popup a moment
-     * before the click asking to go back to it lands.
+     * Deferred, and gated on where focus SETTLES, because of the one exception:
+     * the capture popover stays open behind the signup, so a click landing
+     * inside it — the Sole trader chip above all — is the buyer reaching for
+     * the signup, not away from it.
      */
     SoleTrader.prototype.watchForReturnToCheckout = function () {
         if (this._returnHandler) return;
@@ -351,6 +350,8 @@ define([
             this._returnCloseTimerId = setTimeout(() => {
                 this._returnCloseTimerId = null;
                 if (typeof document.hasFocus === 'function' && !document.hasFocus()) return;
+                const panel = document.querySelector('.two-company-dropdown');
+                if (panel && panel.contains(document.activeElement)) return;
                 // The CLOSE half only: looking away from the signup is not a
                 // decision about the enrolment, which stays live and resumable
                 // with its tokens unspent.

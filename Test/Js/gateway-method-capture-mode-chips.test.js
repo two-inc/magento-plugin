@@ -307,7 +307,7 @@ describe('clicking a chip performs the real transition', () => {
         expect(document.querySelector('.two-company-dropdown__query')).not.toBeNull();
     });
 
-    test('the sole-trader chip enters the mode, closes the panel and launches signup', () => {
+    test('the sole-trader chip enters the mode, launches signup and leaves the panel up', () => {
         mountTileField();
         const { component, identity, soleTrader } = load();
         component.start();
@@ -317,10 +317,23 @@ describe('clicking a chip performs the real transition', () => {
 
         expect(identity.captureMode()).toBe('soletrader');
         expect(soleTrader.launches).toHaveLength(1);
-        expect(dropdown().hasAttribute('hidden')).toBe(true);
-        // Closed, not destroyed — the chips are the route back out of a signup
-        // the buyer abandons.
-        expect(chip('registered')).not.toBeNull();
+        // Open behind the popup, so the chip stays clickable: reaching it
+        // through the company field would read as "focus is back on checkout"
+        // and take the signup down.
+        expect(dropdown().hasAttribute('hidden')).toBe(false);
+        expect(chip('soletrader')).not.toBeNull();
+    });
+
+    test('sole-trader mode hides the query row, which answers for nothing there', () => {
+        mountTileField();
+        const { component } = load();
+        component.start();
+        chip('registered').click();
+
+        chip('soletrader').click();
+
+        const row = dropdown().querySelector('.two-company-dropdown__search');
+        expect(row.classList.contains('two-hidden')).toBe(true);
     });
 
     test('re-clicking the sole-trader chip once adopted asks for a replacement', () => {
