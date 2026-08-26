@@ -88,6 +88,12 @@ define([
         this._soleTrader = new SoleTrader(this);
         this._soleTrader.listenForSignupResult();
         this.watchAddressFormCountry();
+        // The baseline a later change is measured against. Without it the first
+        // switch reads as the first resolution and keeps a company whose
+        // registry no longer applies (TWO-24867). Empty when the quote has no
+        // address yet, which is what still lets that genuine first resolution
+        // through.
+        this._lastCountry = this.countryCode();
         this.refreshMount();
         this.refreshSoleTraderAvailability();
     };

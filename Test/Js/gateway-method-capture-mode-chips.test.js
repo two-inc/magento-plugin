@@ -341,3 +341,32 @@ describe('the component is constructed once per page', () => {
         expect(renderer).not.toContain('.start()');
     });
 });
+
+describe('the chips are the only route to manual entry', () => {
+    test('the mount opts out of the in-dropdown manual-entry button', () => {
+        // Two routes to the same mode would put a differently-worded escape
+        // hatch inside the picker, competing with the chip beside it.
+        const source = fs.readFileSync(
+            path.resolve(__dirname, '..', '..', 'view/frontend/web/js/model/company-capture-component.js'),
+            'utf8'
+        );
+        expect(source).toMatch(/manualEntryEnabled:\s*false/);
+    });
+
+    test('the control honours the opt-out and builds no button', () => {
+        const attached = [];
+        const CompanySearchControl = require('./amd-harness').loadCompanySearchControl($, {
+            attachManualEntryButton: function () { attached.push(true); },
+            buildSearchAjaxOptions: function () { return {}; }
+        }, { document: document, window: window });
+
+        const control = new CompanySearchControl({
+            fieldSelector: '#company_name',
+            config: {},
+            manualEntryEnabled: false
+        });
+
+        expect(control.manualEntryEnabled).toBe(false);
+        expect(attached).toEqual([]);
+    });
+});

@@ -11,29 +11,12 @@
  * `company-search.js` (the search request, result mapping, address
  * write-back, and the in-field chrome helpers).
  *
- * Mirrors PrestaShop's `TwoCompanySearch` class: ONE implementation of the
- * select2 wiring, configured entirely through the constructor options
- * below, never duplicated per mount. `address-autocomplete.js` (shipping
- * step) and `company-capture.js` (payment tile) each construct exactly one
- * instance of this class rather than each rolling their own `.select2({…})`
- * call — see those two files' `enableCompanySearch()` for the call sites.
- *
- * Magento's checkout is more dynamic than PrestaShop's: a payment renderer
- * is pushed once PER Two-family brand (so a checkout offering two brands has
- * two independent tile widgets alive at once), and which mount — address
- * area or tile — is the buyer's active route to search can flip at runtime
- * (virtual cart, saved address) without a page reload. Those two facts are
- * why this stays two call sites rather than PrestaShop's one
- * `TwoCheckoutManager`-owned singleton: each call site is a different
- * Knockout component with its own dispose() lifecycle already scoped to
- * "the widget THIS component bound", and forcing a page-wide singleton would
- * fight that existing multi-brand safety model rather than simplify it. The
- * mutual-exclusion invariant PrestaShop gets from a single decision point,
- * Magento gets from the existing `isCompanySearchEnabled` /
- * `isTileCompanySearchActive()` guards each call site already checks before
- * constructing or (re)binding its instance — at most one of the two mounts
- * is ever actively bound to a live select2 widget for a given brand at a
- * time.
+ * The select2 wiring, configured entirely through the constructor options
+ * below. One instance exists per checkout page, built and owned by
+ * `company-capture-component.js`, which decides where it is mounted and
+ * re-points it with `bind()` as the checkout changes shape — the address
+ * step and the payment tile are two candidate hosts for one widget, never
+ * two widgets.
  */
 define(['jquery', 'Two_Gateway/js/model/company-search'], function ($, companySearch) {
     'use strict';
