@@ -414,18 +414,28 @@ function makeJQueryMock() {
 function installAsyncSimulation($) {
     const registry = [];
     $.async = function (selector, cb) {
-        registry.push({ selector: selector, cb: cb });
-        cb($(selector)[0] || $(selector));
+        const entry = { selector: selector, cb: cb, delivered: $(selector)[0] || null };
+        registry.push(entry);
+        cb(entry.delivered || $(selector));
     };
     $.async.registrations = function (selector) {
         return selector
             ? registry.filter(function (r) { return r.selector === selector; }).length
             : registry.length;
     };
-    /** Replay every live observer, as a DOM mutation does. */
+    /**
+     * Deliver every observer whose selector now matches a node it has not seen.
+     *
+     * A real observer answers a node APPEARING, so replaying a registration
+     * whose node has not changed lets one watcher stand in for another and hides
+     * a missing one.
+     */
     $.async.fireAll = function () {
         registry.slice().forEach(function (r) {
-            cbSafe(r.cb, $(r.selector)[0] || $(r.selector));
+            const node = $(r.selector)[0];
+            if (!node || node === r.delivered) return;
+            r.delivered = node;
+            cbSafe(r.cb, node);
         });
     };
     $.async.reset = function () {

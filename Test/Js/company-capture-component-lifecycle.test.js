@@ -491,4 +491,32 @@ describe('the host arriving after boot still gets a mount', () => {
 
         expect(identity.soleTraderAvailable()).toBe(true);
     });
+
+    test('a country select arriving after the company field still resolves availability', async () => {
+        // Measured live: the company input lands 44ms before the country
+        // select, so the mount watcher asks for a country nothing can answer
+        // yet, and a buyer keeping the default country never fires the `change`
+        // that would ask again.
+        document.body.innerHTML = '';
+        const { component, identity } = load({ deferCountry: true });
+
+        component.start();
+        document.body.innerHTML =
+            '<form id="shipping-new-address-form">' +
+            '<div class="field"><div class="control"><input name="company" /></div></div>' +
+            '</form>';
+        $.async.fireAll();
+        await Promise.resolve();
+        expect(identity.soleTraderAvailable()).toBe(false);
+
+        document.querySelector('#shipping-new-address-form').insertAdjacentHTML(
+            'afterbegin',
+            '<select name="country_id"><option value="GB" selected>GB</option></select>'
+        );
+        $.async.fireAll();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(identity.soleTraderAvailable()).toBe(true);
+    });
 });
