@@ -34,7 +34,12 @@ install: clean
 		-e TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
 		-e TWO_CHECKOUT_BASE_URL=$(TWO_CHECKOUT_BASE_URL) \
 		-v $(CURDIR):/data/extensions/workdir \
+		--tmpfs /data/extensions/workdir/.worktrees \
 		$(IMAGE):$(TAG)
+	# The workdir mount above pulls in .worktrees/ too. A stale worktree left
+	# there duplicates every class under Test/ against the main checkout's
+	# copy, so composer/Magento's install-time class discovery fatals on
+	# "already declared". Shadow it with an empty tmpfs inside the container.
 	@echo "Waiting for Magento to start..."
 	@until docker exec $(CONTAINER) php bin/magento --version 2>/dev/null; do sleep 3; done
 	docker exec $(CONTAINER) composer require two-inc/magento2:@dev --no-plugins
@@ -243,14 +248,14 @@ PHPUNIT_SHA256  := a823d916151f628dd9943ccc81a98bcfbba9c5babf53f27be6c7dccc89f8e
 
 ## Run PHPUnit tests
 test:
-	docker run --rm -v $(CURDIR):/app -w /app php:8.1-cli bash -c \
+	docker run --rm -v $(CURDIR):/app --tmpfs /app/.worktrees -w /app php:8.1-cli bash -c \
 		"php -r \"copy('https://phar.phpunit.de/phpunit-$(PHPUNIT_VERSION).phar', '/tmp/phpunit.phar');\" \
 		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
 		&& php /tmp/phpunit.phar"
 
 ## Run end-to-end API tests (requires TWO_API_KEY)
 test-e2e:
-	docker run --rm -v $(CURDIR):/app -w /app \
+	docker run --rm -v $(CURDIR):/app --tmpfs /app/.worktrees -w /app \
 		-e TWO_API_KEY=$(TWO_API_KEY) \
 		-e TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
 		php:8.1-cli bash -c \
