@@ -159,6 +159,18 @@ describe('returning to registered-company search', () => {
         expect(panelIsOpen()).toBe(true);
     });
 
+    test('a return with no open request still hands the field back as a trigger', () => {
+        // Without `openDropdown` nothing re-binds the mount — the panel is
+        // already anchored where it belongs — so the reclaim is the only route
+        // from the plain input manual entry left back to a working search.
+        reachManualMode(mounted);
+
+        mounted.component.registeredMode();
+
+        $(FIELD_SELECTOR).trigger('mousedown');
+        expect(panelIsOpen()).toBe(true);
+    });
+
     test('the initial mount does not open the panel or steal focus', () => {
         expect(document.querySelectorAll(PANEL)).toHaveLength(1);
         expect(panelIsOpen()).toBe(false);

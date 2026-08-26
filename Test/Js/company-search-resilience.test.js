@@ -33,6 +33,8 @@ const ROW = '.two-company-dropdown__row';
 const SPINNER_ACTIVE = 'two-company-dropdown__spinner--active';
 
 const UNAVAILABLE_COPY = 'Company search is unavailable right now. Please try again shortly.';
+/** TWO-25326: "the search is down" must not read like "your company is not here". */
+const UNAVAILABLE_MODIFIER = 'two-company-dropdown__message--unavailable';
 
 const BASE_CONFIG = {
     checkoutApiUrl: 'https://api.example.test',
@@ -570,6 +572,52 @@ describe('what the panel paints for each outcome', () => {
 
         expect(Array.from(document.querySelectorAll(ROW)).map((row) => row.textContent))
             .toEqual(['Second']);
+    });
+
+    test.each([
+        [
+            'the search being down',
+            async () => {
+                await type('exa');
+                resolvers[0]({ items: [], unavailable: true, aborted: false });
+                await nextTick();
+            },
+            true
+        ],
+        [
+            'a genuinely empty result',
+            async () => {
+                await type('exa');
+                resolvers[0]({ items: [], unavailable: false, aborted: false });
+                await nextTick();
+            },
+            false
+        ],
+        [
+            'a term below the threshold',
+            async () => { await type('ex'); },
+            false
+        ]
+    ])('%s -> the message carries the unavailable modifier: %p', async (_label, drive, modified) => {
+        await drive();
+
+        expect(document.querySelector(MESSAGE).classList.contains(UNAVAILABLE_MODIFIER))
+            .toBe(modified);
+    });
+
+    test("a row renders the API's match highlighting, not the plain text", async () => {
+        await type('exa');
+        resolvers[0]({
+            items: [{ text: 'Example Trading Ltd', html: '<em>Exa</em>mple Trading Ltd' }],
+            unavailable: false,
+            aborted: false
+        });
+        await nextTick();
+
+        const row = document.querySelector(ROW);
+        expect(row.querySelector('em')).not.toBeNull();
+        expect(row.querySelector('em').textContent).toBe('Exa');
+        expect(row.textContent).toBe('Example Trading Ltd');
     });
 
     test('a cached answer takes down a spinner an abort left up', async () => {

@@ -58,6 +58,20 @@ function pressKey(target, key, extra) {
     return event;
 }
 
+/**
+ * What a browser actually does for a printable key: keydown, then the
+ * character lands in the field, then `input`. The panel seeds off `input`
+ * rather than keydown so that a paste and an IME composition — neither of
+ * which reports a printable `key` — take the same route.
+ */
+function typeInto(target, text, extra) {
+    const event = pressKey(target, text, extra);
+    if (event.defaultPrevented) return event;
+    target.value += text;
+    target.dispatchEvent(new window.Event('input', { bubbles: true }));
+    return event;
+}
+
 function field() {
     return document.querySelector(FIELD_SELECTOR);
 }
@@ -107,17 +121,31 @@ describe('TWO-25326 §1: any character opens the panel', () => {
         ['9', 'a digit — an org number is a valid query'],
         ['&', 'punctuation']
     ])('%p opens the panel and is seeded into the query field (%s)', (key) => {
-        const event = pressKey(field(), key);
+        typeInto(field(), key);
 
-        expect(event.defaultPrevented).toBe(true);
         expect(panel.isOpen()).toBe(true);
         // Seeded, not swallowed. Without this the buyer's first keystroke is
         // consumed by the open and they have to type the letter twice.
         expect(queryField().value).toBe(key);
+        // And not left behind in the company field, which shows the captured
+        // company rather than a half-typed query.
+        expect(field().value).toBe('');
+    });
+
+    test.each([
+        ['株式会社', 'an IME composition, which reports no printable key'],
+        ['Acme Trading', 'a paste, which reports no key at all']
+    ])('%p reaches the query field (%s)', async (text) => {
+        field().value = text;
+        field().dispatchEvent(new window.Event('input', { bubbles: true }));
+        await tick();
+
+        expect(queryField().value).toBe(text);
+        expect(searched).toEqual([text]);
     });
 
     test('the seeded character starts a search without a second keystroke', async () => {
-        pressKey(field(), 'e');
+        typeInto(field(), 'e');
         await tick();
 
         expect(searched).toEqual(['e']);

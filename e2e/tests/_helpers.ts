@@ -126,6 +126,38 @@ export async function addToCart(page: Page) {
     ]);
 }
 
+// The company control the address step renders. Scoped to the wrapper the
+// popover is built inside, because the payment tile hosts a second one.
+export const COMPANY_FIELD = '#shipping-new-address-form input[name="company"]';
+
+function companyWrap(page: Page, fieldSelector = COMPANY_FIELD) {
+    return page.locator(fieldSelector).locator('xpath=ancestor::*[contains(@class,"two-company-field-wrap")][1]');
+}
+
+// Open the popover, search, and take the first hit.
+export async function selectCompany(page: Page, query = COMPANY_QUERY, fieldSelector = COMPANY_FIELD) {
+    const wrap = companyWrap(page, fieldSelector);
+    const panel = wrap.locator('.two-company-dropdown');
+
+    await page.locator(fieldSelector).first().click();
+    // The panel carries `hidden` while closed, so visibility is the open state.
+    await expect(panel).toBeVisible({ timeout: 15_000 });
+
+    await panel.locator('input.two-company-dropdown__query').fill(query);
+
+    const firstRow = panel.locator('.two-company-dropdown__row').first();
+    await expect(firstRow).toBeVisible({ timeout: 15_000 });
+    const rowText = ((await firstRow.textContent()) || '').trim();
+    await firstRow.click();
+
+    await expect(panel).toBeHidden({ timeout: 10_000 });
+    const captured = await page.locator(fieldSelector).first().inputValue();
+    expect(captured.length).toBeGreaterThan(0);
+    // The row renders the name plus the registry identifier, the field only the
+    // name — so containment, not equality.
+    expect(rowText).toContain(captured);
+}
+
 export async function fillCheckout(page: Page) {
     await page.goto('/checkout', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#customer-email')).toBeVisible({ timeout: 30_000 });
@@ -137,11 +169,7 @@ export async function fillCheckout(page: Page) {
     await fill(page, '[name="postcode"]', '1082 PP');
     await fill(page, '[name="telephone"]', '+442071234567');
     await page.locator('[name="country_id"]').first().selectOption(COUNTRY);
-    await page.locator('.select2-selection').first().click();
-    await page.locator('.select2-search__field').first().fill(COMPANY_QUERY);
-    const firstResult = page.locator('.select2-results__option').first();
-    await expect(firstResult).toBeVisible({ timeout: 15_000 });
-    await firstResult.click();
+    await selectCompany(page);
     await expect(page.locator('[name="city"]').first()).toHaveValue(/.+/, { timeout: 15_000 });
     await waitIdle(page);
 }

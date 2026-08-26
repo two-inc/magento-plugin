@@ -411,7 +411,9 @@ define([
         // The previous session's rows would otherwise be the first thing the
         // buyer sees for a query they have not typed yet.
         this._$query.val('');
-        this._renderMessage(companySearch.minInputLengthMessage());
+        // Empty, not the too-short hint: the query field's own placeholder
+        // already carries it, and rendering both says the same thing twice.
+        this._renderMessage('');
         if (this._$field) this._$field.attr('aria-expanded', 'true');
         this._$query.trigger('focus');
     };
@@ -466,7 +468,9 @@ define([
             // answer for a term the buyer has backspaced away from.
             companySearch.abortActiveRequest(this._token);
             this._setSearching(false);
-            this._renderMessage(companySearch.minInputLengthMessage());
+            // Nothing typed yet is the placeholder's job; a partial term is
+            // where the buyer needs telling why no results came.
+            this._renderMessage(query ? companySearch.minInputLengthMessage() : '');
             return;
         }
         this._setSearching(true);

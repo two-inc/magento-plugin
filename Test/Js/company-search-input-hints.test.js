@@ -116,12 +116,17 @@ beforeEach(() => {
 });
 
 describe('below-threshold hint (element 4)', () => {
-    test('the panel quotes the shared threshold, not a remaining count', () => {
+    test('the panel quotes the shared threshold, not a remaining count', async () => {
         openPanel(loadCompanySearchWithWrongThreshold());
         const expected = 'Please enter ' + WRONG_THRESHOLD + ' or more characters';
 
-        expect($('.two-company-dropdown__message').text()).toBe(expected);
         expect($('.two-company-dropdown__query').attr('placeholder')).toBe(expected);
+        // Only once the buyer is short of the threshold rather than simply not
+        // started — the placeholder already says it for an untouched field.
+        expect($('.two-company-dropdown__message').text()).toBe('');
+        await typeQuery('ab');
+
+        expect($('.two-company-dropdown__message').text()).toBe(expected);
         expect($('.two-company-dropdown__message').text()).not.toContain('%1');
     });
 
@@ -155,6 +160,30 @@ describe('below-threshold hint (element 4)', () => {
             'Please enter ' + WRONG_THRESHOLD + ' or more characters'
         );
         expect(searched.length).toBe(1);
+    });
+});
+
+describe('the company field carries its own closed-state watermark', () => {
+    test('the panel sets it, rather than leaving the host form to', () => {
+        // On the address step core renders this field with no placeholder at
+        // all, so nothing would say what clicking it does.
+        openPanel(loadCompanySearchWithWrongThreshold());
+
+        expect($(FIELD_SELECTOR).attr('placeholder')).toBe('Enter company name to search');
+        // Not the query field's hint: that one carries the length requirement.
+        expect($(FIELD_SELECTOR).attr('placeholder'))
+            .not.toBe($('.two-company-dropdown__query').attr('placeholder'));
+    });
+
+    test('the watermark is translated in every catalogue', () => {
+        const msgid = 'Enter company name to search';
+
+        ['nb_NO', 'nl_NL', 'sv_SE'].forEach((locale) => {
+            const csv = readSource('i18n/' + locale + '.csv');
+            expect(csv).toContain('"' + msgid + '","');
+            // Magento drops rows whose translation equals the msgid.
+            expect(csv).not.toContain('"' + msgid + '","' + msgid + '"');
+        });
     });
 });
 

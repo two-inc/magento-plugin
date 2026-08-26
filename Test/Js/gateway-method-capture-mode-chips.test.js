@@ -394,6 +394,49 @@ describe('picking a result row is what captures the company', () => {
         expect(dropdown().hasAttribute('hidden')).toBe(true);
         expect(document.querySelector('#company_name').value).toBe('Acme Ltd');
     });
+
+    test('the pick is announced on the field, which is how it reaches the quote', async () => {
+        // Magento's `value:` binding reads the input on `change` only, so a
+        // silent `.val()` write leaves the quote carrying nothing.
+        mountTileField();
+        const { component } = load({
+            searchResults: [{ id: 'Acme Ltd', text: 'Acme Ltd', html: 'Acme Ltd', companyId: '1' }]
+        });
+        component.start();
+        chip('registered').click();
+
+        let changes = 0;
+        $('#company_name').on('change', () => { changes += 1; });
+
+        $('.two-company-dropdown__query').val('acme').trigger('input');
+        await new Promise((resolve) => { setTimeout(resolve, 0); });
+        $(document.querySelector('.two-company-dropdown__row')).trigger('mousedown');
+
+        expect(changes).toBe(1);
+        expect(document.querySelector('#company_name').value).toBe('Acme Ltd');
+    });
+});
+
+describe('an adopted sole trader is shown in the company field', () => {
+    test("the authenticated buyer's company name is painted and announced", () => {
+        mountTileField();
+        const { component, identity } = load();
+        component.start();
+
+        let changes = 0;
+        $('#company_name').on('change', () => { changes += 1; });
+        identity.captureMode('soletrader');
+
+        component.adoptSoleTrader({
+            organization_number: 'TWO:ST:GB:1',
+            company_name: 'Jane Smith Trading'
+        });
+
+        // The signup happens in a popup, so the field is the only place the
+        // checkout tells the buyer which identity came back.
+        expect(document.querySelector('#company_name').value).toBe('Jane Smith Trading');
+        expect(changes).toBe(1);
+    });
 });
 
 describe('the component is constructed once per page', () => {
