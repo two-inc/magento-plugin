@@ -29,10 +29,9 @@ const { loadAmdModule, defaultMocks } = require('./amd-harness');
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
 const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
-const CONTROL = 'view/frontend/web/js/model/company-search-control.js';
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
 
-/** The node the capture component mounts its one control at in these fixtures. */
+/** The node the capture component mounts its one panel at in these fixtures. */
 const TILE_FIELD_SELECTOR = '#two_gateway_form input#company_name';
 
 /**
@@ -166,13 +165,29 @@ const BRAND_CONFIG = {
  * share — the real production wiring, where the picker writes the identity and
  * the renderer reads it.
  *
- * The REAL control is mounted so `select2:select` is production's own handler:
- * a spec that called the component's callback directly would pass against a
- * control that never wired one.
+ * `pick()` drives the component's OWN `onSelect` — the callback it hands the
+ * panel — so a regression that routed selection through fillCompanyData() fails
+ * here. That the panel actually calls it when the buyer clicks a result row is
+ * pinned against real DOM in gateway-method-capture-mode-chips.test.js.
  */
 function loadRenderer() {
     const dom = makeDom();
     const identity = loadAmdModule(IDENTITY, {});
+    const panel = { options: null };
+
+    function PanelStub(panelOptions) {
+        panel.options = panelOptions;
+        this.bind = function () {};
+        this.isBound = function () { return true; };
+        this.getField = function () { return dom.$(TILE_FIELD_SELECTOR); };
+        this.close = function () {};
+        this.syncChips = function () {};
+        this.setDisplayText = function () {};
+        this.releaseField = function () {};
+        this.reclaimField = function () {};
+        this.abortActiveRequest = function () {};
+    }
+
     const companySearch = loadAmdModule(SEARCH, { jquery: dom.$ });
     const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
         billingAddress: function () { return { countryId: 'GB' }; }
@@ -186,10 +201,7 @@ function loadRenderer() {
     const component = loadAmdModule(
         COMPONENT,
         Object.assign({}, shared, {
-            'Two_Gateway/js/model/company-search-control': loadAmdModule(CONTROL, {
-                jquery: dom.$,
-                'Two_Gateway/js/model/company-search': companySearch
-            }),
+            'Two_Gateway/js/model/company-search-panel': PanelStub,
             'Two_Gateway/js/model/sole-trader': SoleTraderStub,
             'Two_Gateway/js/model/brand-config': {
                 getActiveTwoBrandConfig: function () { return BRAND_CONFIG; }
@@ -205,9 +217,9 @@ function loadRenderer() {
         })
     );
 
-    /** Drive the real select2 selection handler with one picked result. */
+    /** Hand one picked row to the component's own selection handler. */
     function pick(selected) {
-        dom.node(TILE_FIELD_SELECTOR).handlers['select2:select']({ params: { data: selected } });
+        panel.options.onSelect(selected);
     }
 
     return { renderer: renderer, component: component, identity: identity, node: dom.node, pick };

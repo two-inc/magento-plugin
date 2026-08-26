@@ -285,7 +285,6 @@
 "⚠ deployment incomplete — code newer than compiled assets; run setup:static-content:deploy","⚠ distributionen är ofullständig — koden är nyare än de kompilerade resurserna; kör setup:static-content:deploy"
 "Use Website Value","Använd webbplatsvärde"
 "Invoice purchase with %1 requires a company number. Please add your company details and try again.","Fakturaköp med %1 kräver ett organisationsnummer. Lägg till dina företagsuppgifter och försök igen."
-"My company is not on the list","Mitt företag finns inte med i listan"
 "%1 days - limit: a limit of 0 is not allowed. To charge nothing on this term, set the fixed amount and percentage to 0 instead, and leave the limit empty.","%1 dagar - gräns: en gräns på 0 är inte tillåten. Om du inte vill debitera något för denna termin sätter du fast belopp och procent till 0 i stället och lämnar gränsen tom."
 "A limit of 0 is not allowed. To charge nothing on this term, set the fixed amount and percentage to 0 instead, and leave the limit empty.","En gräns på 0 är inte tillåten. Om du inte vill debitera något för denna termin sätter du fast belopp och procent till 0 i stället och lämnar gränsen tom."
 "A limit of 0 is not allowed. To charge nothing on a term, set the fixed amount and the percentage for that term to 0 instead.","En gräns på 0 är inte tillåten. Om du inte vill debitera något för en termin sätter du terminens fasta belopp och procent till 0 i stället."

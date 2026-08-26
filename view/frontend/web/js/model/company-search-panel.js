@@ -162,6 +162,10 @@ define([
         const $wrap = this._ensureWrap($field);
         this._buildPanel($wrap);
         this._bindFieldOpeners($field);
+        // The closed-state watermark. Set here rather than left to the host
+        // form: on the address step core renders this field with no
+        // placeholder at all, so nothing would say what clicking it does.
+        $field.attr('placeholder', $t('Enter company name to search'));
         this.syncChips();
         this.setDisplayText(this.getDisplayText());
     };

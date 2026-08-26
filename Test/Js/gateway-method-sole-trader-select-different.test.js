@@ -21,7 +21,7 @@
 const fs = require('fs');
 const path = require('path');
 const $ = require('jquery');
-const { loadAmdModule, defaultMocks } = require('./amd-harness');
+const { loadAmdModule, defaultMocks, loadCompanySearchPanel } = require('./amd-harness');
 
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
@@ -127,6 +127,10 @@ function loadFlow() {
  * The real component with the real flow underneath it, booted against a
  * payment-tile company field so the chips exist to be clicked.
  *
+ * The REAL panel, not the harness default: the chips live inside the popover
+ * now, so an inert panel renders none of them and every chip case below would
+ * be reaching past the click handler it exists to drive.
+ *
  * @returns {Promise<object>} `{ component, flow, rec, identity }`
  */
 async function startStack() {
@@ -136,10 +140,35 @@ async function startStack() {
         '<input id="company_name" name="company_name" />' +
         '</div></div></form>';
     const env = makeEnv();
-    const component = loadAmdModule(COMPONENT, env.mocks, env.globals);
+    const mocks = Object.assign({}, env.mocks, {
+        'Two_Gateway/js/model/company-search-panel': loadCompanySearchPanel(
+            $,
+            env.mocks['Two_Gateway/js/model/company-search'],
+            env.globals
+        )
+    });
+    const component = loadAmdModule(COMPONENT, mocks, env.globals);
     component.start();
     await new Promise((resolve) => setTimeout(resolve, 0));
     return { component: component, flow: component.soleTrader(), rec: env.rec, identity: env.identity };
+}
+
+/**
+ * Open the popover the buyer's own way and hand back one of its chips.
+ *
+ * Clicking the field first is not setup, it is the flow: the panel is `hidden`
+ * until then, so a chip taken without it is one no buyer could have reached.
+ *
+ * @param {string} mode
+ * @returns {Element}
+ */
+function chip(mode) {
+    $('#two_gateway_form input#company_name').trigger('mousedown');
+    const node = document.querySelector(`.two-company-mode-chip[data-two-chip="${mode}"]`);
+    expect(node).not.toBeNull();
+    expect(node.closest('.two-company-dropdown').hasAttribute('hidden')).toBe(false);
+    expect(node.classList.contains('two-hidden')).toBe(false);
+    return node;
 }
 
 function autoselectOf(entry) {
@@ -168,7 +197,7 @@ describe('a re-signup offers a choice rather than the identity on screen', () =>
         identity.captureMode('soletrader');
         identity.soleTraderAdopted(true);
 
-        document.querySelector('.two-company-mode-chip[data-two-chip="soletrader"]').click();
+        chip('soletrader').click();
 
         expect(rec.opened).toHaveLength(1);
         expect(autoselectOf(rec.opened[0])).toBe('false');
@@ -177,7 +206,7 @@ describe('a re-signup offers a choice rather than the identity on screen', () =>
     test('the first sole-trader chip click carries no autoselect param', async () => {
         const { rec } = await startStack();
 
-        document.querySelector('.two-company-mode-chip[data-two-chip="soletrader"]').click();
+        chip('soletrader').click();
 
         expect(rec.opened).toHaveLength(1);
         expect(autoselectOf(rec.opened[0])).toBeNull();

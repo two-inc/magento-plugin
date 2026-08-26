@@ -394,8 +394,12 @@ define([
 
     /**
      * Show or withdraw the on-page signup prompt — the fallback route when the
-     * popup was blocked. Rendered beside the chips, which is the only surface
-     * guaranteed to be on screen whichever mount is live.
+     * popup was blocked.
+     *
+     * Anchored OUTSIDE the search popover, after the field's wrapper. The chips
+     * it used to sit beside now live inside that popover, and entering
+     * sole-trader mode closes it — so anchoring to them rendered the buyer's
+     * only route forward inside something they cannot see.
      *
      * @param {boolean} show
      */
@@ -416,9 +420,9 @@ define([
                     this.retrySignup();
                 })
                 .appendTo($prompt);
-            const $chips = $('.two-company-mode-chips');
-            if (!$chips.length) return;
-            $prompt.insertAfter($chips);
+            const $anchor = $('.two-company-field-wrap');
+            if (!$anchor.length) return;
+            $prompt.insertAfter($anchor);
         }
         $prompt.removeClass('two-hidden');
     };

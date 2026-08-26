@@ -13,7 +13,7 @@
  *   (a) the label under the company-name field on the address step
  *       (renderCompanyIdText() in address-autocomplete.js) and its payment-tile
  *       twin (`.two-company-id-text`, bound to displayCompanyId());
- *   (b) the search-results dropdown rows (processResults());
+ *   (b) the search-results rows (searchCompanies());
  *   (c) the order-intent status sentence (resolveCompanyNotice()) — where the
  *       BRACKETS the number normally sits in have to go with it, so the
  *       sentence reads "Company Name", never "Company Name ()".
@@ -28,7 +28,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { loadAmdModule } = require('./amd-harness');
+const { loadAmdModule, defaultMocks } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
@@ -90,29 +90,38 @@ describe('formatCompanyNumber — the one shared display filter (TWO-25326)', ()
     });
 });
 
-describe('(b) the search-results dropdown never renders a TWO: number', () => {
-    const companySearch = loadCompanySearch();
-
+describe('(b) the search-results rows never render a TWO: number', () => {
     /**
-     * Build the select2 ajax block and run a response through its
-     * processResults, the way the picker does.
+     * Run a response through production's own searchCompanies(), the way the
+     * panel does.
      *
      * @param {object[]} items search-response items
-     * @returns {object[]} mapped select2 results
+     * @returns {Promise<object[]>} the rows the panel would render
      */
     function results(items) {
-        const ajax = companySearch.buildSearchAjaxOptions({
+        const settlers = [];
+        const $ = defaultMocks().jquery;
+        $.ajax = function () {
+            const jqxhr = {
+                done: function (cb) { settlers.push(cb); return jqxhr; },
+                fail: function () { return jqxhr; },
+                always: function () { return jqxhr; },
+                abort: function () {}
+            };
+            return jqxhr;
+        };
+        const search = loadAmdModule(SEARCH, { jquery: $ }).searchCompanies({
             config: { checkoutApiUrl: 'https://api.example.test', companySearchLimit: 10 },
             token: {},
-            getCountryCode: function () {
-                return 'gb';
-            }
+            term: 'acme',
+            getCountryCode: function () { return 'gb'; }
         });
-        return ajax.processResults({ items: items }).results;
+        settlers.forEach(function (cb) { cb({ items: items }); });
+        return search.then(function (result) { return result.items; });
     }
 
-    test('a TWO:-prefixed identifier renders the name alone, with no empty brackets', () => {
-        const mapped = results([
+    test('a TWO:-prefixed identifier renders the name alone, with no empty brackets', async () => {
+        const mapped = await results([
             {
                 name: 'Acme Widgets Ltd',
                 highlight: '<b>Acme</b> Widgets Ltd',
@@ -129,8 +138,8 @@ describe('(b) the search-results dropdown never renders a TWO: number', () => {
         expect(mapped[0].lookupId).toBe('lookup-1');
     });
 
-    test('a genuine identifier still renders in brackets', () => {
-        const mapped = results([
+    test('a genuine identifier still renders in brackets', async () => {
+        const mapped = await results([
             {
                 name: 'Acme Widgets Ltd',
                 highlight: '<b>Acme</b> Widgets Ltd',
