@@ -13,12 +13,12 @@
  *    literal, where the cross-platform wording is "No matches found".
  *
  * Both are properties of the shared model, so both are pinned here rather
- * than twice over at the two call sites.
+ * than at the mount.
  *
- * What this file does NOT pin: that the call sites actually invoke these.
- * That is a separate failure mode — the fix existing but never being wired
- * up — and it gets its own assertions at the bottom, read off the two
- * sources, because a mocked call site would prove nothing about the real one.
+ * What this file does NOT pin: that the mount actually invokes these. That is
+ * a separate failure mode — the fix existing but never being wired up — and it
+ * gets its own assertions at the bottom, read off the real sources, because a
+ * mocked call site would prove nothing about the real one.
  */
 
 'use strict';
@@ -28,19 +28,12 @@ const path = require('path');
 const { loadAmdModule } = require('./amd-harness');
 
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
-const ADDRESS_PATH = 'view/frontend/web/js/view/address-autocomplete.js';
-// The tile's mount spans two files: the Knockout renderer and the
-// company-capture control it delegates the search mount to.
-const TILE_PATHS = [
-    'view/frontend/web/js/view/payment/method-renderer/gateway_method.js',
-    'view/frontend/web/js/model/company-capture.js'
-];
-// TWO-25326 rebuild: the select2 wiring itself (language block, open-on-type)
-// moved into ONE shared class, `company-search-control.js`, constructed by
-// each surface rather than each rolling its own `.select2({...})` call. The
-// wiring is pinned there now; the two surfaces are pinned below only to have
-// constructed the class and to no longer contain a parallel implementation.
+// The select2 wiring (language block, open-on-type) lives in ONE class, which
+// the page-level component constructs. The wiring is pinned on the class; the
+// component is pinned below only to have constructed it and to hold no
+// parallel implementation of its own.
 const CONTROL_PATH = 'view/frontend/web/js/model/company-search-control.js';
+const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
 
 function readRepoFile(relPath) {
     const contents = fs.readFileSync(path.join(__dirname, '..', '..', relPath), 'utf8');
@@ -335,18 +328,14 @@ describe('the shared control is actually wired to the shared fixes', () => {
         expect(src).not.toContain('inputTooShort: function');
     });
 
-    test('both surfaces construct the shared control rather than rolling their own select2 wiring', () => {
-        [[ADDRESS_PATH], TILE_PATHS].forEach(function (relPaths) {
-            const src = relPaths
-                .map(function (relPath) { return readRepoFile(relPath); })
-                .join('\n');
+    test('the page-level component constructs the shared control rather than rolling its own select2 wiring', () => {
+        const src = readRepoFile(COMPONENT_PATH);
 
-            expect(src).toContain('new CompanySearchControl(');
-            // A second, parallel select2 wiring would be exactly the defect
-            // TWO-25326 asked to close — one implementation, not two.
-            expect(src).not.toContain('.select2({');
-            expect(src).not.toContain('companySearch.buildLanguageOptions()');
-            expect(src).not.toContain('companySearch.attachOpenOnType(');
-        });
+        expect(src).toContain('new CompanySearchControl(');
+        // A second, parallel select2 wiring would be exactly the defect
+        // TWO-25326 asked to close — one implementation, not two.
+        expect(src).not.toContain('.select2({');
+        expect(src).not.toContain('companySearch.buildLanguageOptions()');
+        expect(src).not.toContain('companySearch.attachOpenOnType(');
     });
 });

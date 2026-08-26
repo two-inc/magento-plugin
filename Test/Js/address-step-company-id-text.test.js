@@ -177,10 +177,12 @@ function load() {
         '</form>';
 
     const $ = makeMiniQuery();
+    const identity = makeIdentityStub();
     const component = loadAmdModule(
         MODULE,
         {
             jquery: $,
+            'Two_Gateway/js/model/company-identity': identity,
             'Magento_Customer/js/customer-data': {
                 set: function () {},
                 get: function () {
@@ -197,7 +199,23 @@ function load() {
         },
         { document: document, window: window }
     );
-    return { component: component, $: $ };
+    return { component: component, $: $, identity: identity };
+}
+
+/** The page-level capture state the label decides on, as bare observables. */
+function makeIdentityStub() {
+    function observable(initial) {
+        let value = initial;
+        return function (next) {
+            if (arguments.length) value = next;
+            return value;
+        };
+    }
+    return {
+        captureMode: observable('registered'),
+        companyId: observable(''),
+        companyName: observable('')
+    };
 }
 
 /** Put select2 "on" the company-name input, i.e. search mode is active. */
@@ -288,20 +306,18 @@ describe('TWO-25326 §5: the company number is a plain text label, and only afte
 
     /**
      * The manual-entry case, and the reason renderCompanyIdText() decides on
-     * `isCompanySearchActive()` rather than only on whether a number is
-     * present: the hidden input can still be holding the previous pick's
-     * number at the moment the buyer switches to typing a name by hand.
-     * Rendering it there would attach a registry identity to a company the
-     * buyer typed themselves.
+     * the capture mode rather than only on whether a number is present: the
+     * hidden input can still be holding the previous pick's number at the
+     * moment the buyer switches to typing a name by hand. Rendering it there
+     * would attach a registry identity to a company the buyer typed themselves.
      */
     test('manual-entry mode shows no number even when one is still in the hidden input', () => {
-        const { component, $ } = load();
+        const { component, $, identity } = load();
         activateSearch($);
         component.setCompanyData('919300894', 'Example Trading AS');
         expect(labels()).toHaveLength(1);
 
-        // Manual entry: select2 is gone from the node.
-        $(NAME_SELECTOR).data('select2', undefined);
+        identity.captureMode('manual');
         $(ID_SELECTOR).val('919300894');
 
         component.renderCompanyIdText();

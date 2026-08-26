@@ -2,378 +2,371 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25503 — the three company-capture options as peers in ONE control.
+ * TWO-25503 — the three company-capture options as peers in ONE control, owned
+ * by the company-capture component.
  *
- * The tile used to present a two-item tab bar (registered organisation / sole
- * trader) and reach manual entry only through a separately worded button
- * inside the search dropdown, so a buyer who wanted to type a name by hand
- * had to open the picker and reject its results first. WooCommerce and
- * PrestaShop both offer all three as peer options in one control; this pins
- * Magento doing the same, each chip subject to its own gate.
+ * The chips are DOM, built by the component as a sibling of the field they act
+ * on, the way WooCommerce (`syncSoleTraderChip`/`syncManualEntryButton`) and
+ * PrestaShop (`renderChipSelection`) both build theirs. They are asserted here
+ * against the real nodes the component produces, not against template markup:
+ * a payment-tile template is destroyed on every totals change, which is the
+ * whole reason chip ownership moved.
  *
  * Mutation-resistance notes:
  *
- *  - the template assertions read the mode control's OWN markup slice, and
- *    each chip's selected state is asserted to be a binding against
- *    `captureMode()`. A statically selected chip — which is exactly what the
- *    old two-block markup had — fails, so re-hardcoding a selection cannot
- *    pass;
- *  - the behavioural assertions read real state after the real transition
- *    (`companyId()`, the field's value, the recorded control calls), never
- *    that a method exists. Emptying `manualEntryMode()` fails every one;
- *  - the chip gating is asserted by nesting, so moving a chip out of its
- *    `ko if` (making sole trader offerable in a country whose registry has no
- *    sole traders) fails rather than reading as green.
+ *  - selected state is read off the real class after a real mode transition,
+ *    so hardcoding a selection on one chip fails;
+ *  - each chip's gate is asserted by the node's own hidden state under both
+ *    values of its gate, so making sole trader offerable in a country whose
+ *    registry has none fails rather than reading as green;
+ *  - the click assertions drive the real handler and read the resulting mode,
+ *    never that a method exists. Emptying `manualEntryMode()` fails them.
  */
 
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
-const { loadAmdModule } = require('./amd-harness');
+const $ = require('jquery');
+const { loadAmdModule, defaultMocks } = require('./amd-harness');
 
-const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
-const CAPTURE = 'view/frontend/web/js/model/company-capture.js';
-const TEMPLATE = 'view/frontend/web/template/payment/gateway_method.html';
+const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
+const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
+const LAYOUT = 'view/frontend/layout/checkout_index_index.xml';
 
-function readSource(relPath) {
-    return fs.readFileSync(path.resolve(__dirname, '..', '..', relPath), 'utf8');
-}
-
-/**
- * The mode control's own markup, from its opening tag to its closing one.
- *
- * @param {string} template the whole template
- * @returns {string} the `.mode_selector` element
- */
-function modeControlMarkup(template) {
-    const start = template.indexOf('<div class="mode_selector"');
-    expect(start).toBeGreaterThan(-1);
-    const end = template.indexOf('</div>', start);
-    expect(end).toBeGreaterThan(start);
-    return template.slice(start, end + '</div>'.length);
-}
+const CHIP_SELECTOR = '.two-company-mode-chip';
+const SELECTED_CLASS = 'two-company-mode-chip--selected';
+const HIDDEN_CLASS = 'two-hidden';
 
 /**
- * The chip carrying a given label, from its `<span` to its `</span>`.
+ * Load the component and its identity singleton together, against the real
+ * jsdom document.
  *
- * @param {string} control the mode control's markup
- * @param {string} label the i18n source string the chip renders
- * @returns {string} the chip element
- */
-function chipMarkup(control, label) {
-    const labelIndex = control.indexOf("i18n: '" + label + "'");
-    expect(labelIndex).toBeGreaterThan(-1);
-    const start = control.lastIndexOf('<span', labelIndex);
-    const end = control.indexOf('</span>', labelIndex);
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(labelIndex);
-    return control.slice(start, end + '</span>'.length);
-}
-
-/**
- * Whether a chip sits inside a `ko if` on the given expression, and closes
- * before that block does.
+ * Loaded fresh per test on purpose: both modules are page-level singletons, so
+ * a shared load would carry one case's captured company into the next.
  *
- * @param {string} control the mode control's markup
- * @param {string} label the chip's i18n source string
- * @param {string} condition the `ko if` expression
- * @returns {boolean}
+ * @param {object} [options] `{ isCompanySearchEnabled }` on the brand config
+ * @returns {object} `{ component, identity, control, soleTrader }`
  */
-function chipIsGatedOn(control, label, condition) {
-    const open = control.indexOf('<!-- ko if: ' + condition + ' -->');
-    if (open === -1) return false;
-    const close = control.indexOf('<!-- /ko -->', open);
-    const labelIndex = control.indexOf("i18n: '" + label + "'");
-    return labelIndex > open && labelIndex < close;
-}
+function load(options) {
+    const opts = options || {};
+    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
+    const control = { binds: [], destroys: 0, aborts: 0 };
+    const soleTrader = { launches: [], ensured: 0 };
 
-/* ------------------------------------------------------------------ *
- * Renderer harness
- * ------------------------------------------------------------------ */
+    const ControlStub = function () {
+        this.bind = function (bindOptions) { control.binds.push(bindOptions || {}); };
+        this.destroy = function () { control.destroys += 1; return true; };
+        this.abortActiveRequest = function () { control.aborts += 1; };
+        this.showSearchForCompanyLink = function () {};
+        this.hideSearchForCompanyLink = function () {};
+        this.isBound = function () { return control.binds.length > 0; };
+        this.getField = function () { return $(); };
+    };
+    const SoleTraderStub = function () {
+        this.listenForSignupResult = function () {};
+        this.ensureTokens = function () { soleTrader.ensured += 1; return Promise.resolve(true); };
+        this.launchSignup = function (o) { soleTrader.launches.push(o || null); return {}; };
+        this.forgetAdoptions = function () {};
+    };
 
-/**
- * A jQuery double backed by a single record per selector, so a `val('')` or a
- * `trigger('focus')` the production code performs is readable afterwards.
- *
- * @returns {object} `{ $, nodes }` — `nodes` is selector → recorded state
- */
-function makeFieldDom() {
-    const nodes = {};
-    function nodeFor(selector) {
-        if (!nodes[selector]) {
-            nodes[selector] = { value: 'Previously Picked Ltd', triggered: [], attrs: {} };
-        }
-        return nodes[selector];
-    }
-    function $(selector) {
-        const node = typeof selector === 'string' ? nodeFor(selector) : { attrs: {}, triggered: [] };
-        const api = {
-            length: 1,
-            val: function (v) {
-                if (arguments.length === 0) return node.value;
-                node.value = v;
-                return api;
+    const component = loadAmdModule(
+        COMPONENT,
+        {
+            jquery: $,
+            'Two_Gateway/js/model/company-identity': identity,
+            'Two_Gateway/js/model/company-search-control': ControlStub,
+            'Two_Gateway/js/model/sole-trader': SoleTraderStub,
+            'Two_Gateway/js/model/brand-config': {
+                getActiveTwoBrandConfig: function () {
+                    return {
+                        isCompanySearchEnabled: opts.isCompanySearchEnabled !== false,
+                        checkoutApiUrl: 'https://api.example',
+                        checkoutPageUrl: 'https://checkout.example',
+                        supportedCompanyTypes: {}
+                    };
+                }
             },
-            trigger: function (name) { node.triggered.push(name); return api; },
-            attr: function (name, v) { node.attrs[name] = v; return api; },
-            text: function () { return api; },
-            hide: function () { return api; },
-            show: function () { return api; },
-            find: function () { return api; },
-            closest: function () { return api; },
-            on: function () { return api; },
-            off: function () { return api; }
-        };
-        return api;
-    }
-    $.async = function () {};
-    $.extend = Object.assign;
-    return { $: $, nodes: nodes };
-}
-
-/**
- * A `_companySearchControl` stand-in recording every call the mode
- * transitions make on it.
- *
- * @returns {object} the double, with a `calls` array of method names
- */
-function makeControlDouble() {
-    const calls = [];
-    return {
-        calls: calls,
-        abortActiveRequest: function () { calls.push('abortActiveRequest'); return true; },
-        destroy: function () { calls.push('destroy'); return true; },
-        getField: function () { return { attr: function () {} }; },
-        getSearchForCompanyLink: function () {
-            calls.push('getSearchForCompanyLink');
-            return { hide: function () { calls.push('hideLink'); } };
+            'Two_Gateway/js/model/company-search': Object.assign(
+                {},
+                defaultMocks()['Two_Gateway/js/model/company-search'],
+                {
+                    currentAddressFormCountry: function () { return 'gb'; },
+                    revertAutofilledAddress: function () {},
+                    billingRoleFormRoot: function () { return null; },
+                    applyAddress: function () {},
+                    lookupCompanyAddress: function () {}
+                }
+            )
         },
-        showSearchForCompanyLink: function () { calls.push('showSearchForCompanyLink'); },
-        hideSearchForCompanyLink: function () { calls.push('hideSearchForCompanyLink'); },
-        bind: function () { calls.push('bind'); }
-    };
-}
-
-/**
- * The renderer, with the collaborators the mode transitions reach for
- * replaced by recorders. `enableCompanySearch` and `fillCustomerData` are
- * stubbed because both walk the quote's address objects, which this harness
- * does not model — and both are asserted on, so a transition dropping the
- * call fails rather than passing quietly.
- *
- * @returns {object} `{ renderer, capture, dom, control, enableCalls, revertCalls }`
- */
-function loadRenderer() {
-    const dom = makeFieldDom();
-    const revertCalls = [];
-    const renderer = loadAmdModule(RENDERER, {
-        jquery: dom.$,
-        'Two_Gateway/js/model/company-search': {
-            revertAutofilledAddress: function () { revertCalls.push(1); },
-            applyAddress: function () {},
-            lookupCompanyAddress: function () { return Promise.resolve(null); }
-        }
-    });
-    renderer.getCode = function () { return 'two_payment'; };
-    // The search control and the mode transitions live on the renderer's
-    // CompanyCapture, so the doubles have to be installed there — a stub on the
-    // renderer's delegate is never consulted by CompanyCapture's own calls.
-    const capture = renderer.companyCapture();
-    capture._companySearchControl = makeControlDouble();
-    const enableCalls = [];
-    capture.enableCompanySearch = function (options) { enableCalls.push(options); };
-    renderer.fillCustomerData = function () {};
-    // Every test starts from the state a fresh tile is in. The observables
-    // live on the shared component literal, so a previous test's mode would
-    // otherwise leak into this one.
-    renderer.captureMode('registered');
-    renderer.showSoleTrader(false);
-    renderer.companyId('');
-    return {
-        renderer: renderer,
-        capture: capture,
-        dom: dom,
-        control: capture._companySearchControl,
-        enableCalls: enableCalls,
-        revertCalls: revertCalls
-    };
-}
-
-describe('the company-capture mode control offers three peer options', function () {
-    let control;
-
-    beforeAll(function () {
-        control = modeControlMarkup(readSource(TEMPLATE));
-    });
-
-    test('there is exactly one mode control, not one per mode', () => {
-        const template = readSource(TEMPLATE);
-        expect(template.match(/<div class="mode_selector"/g)).toHaveLength(1);
-    });
-
-    test('it holds three chips, in the order the siblings present them', () => {
-        expect(control.match(/class="mode_item"/g)).toHaveLength(3);
-        const order = ['Registered company', 'Sole trader', 'Enter manually'].map(
-            function (label) {
-                return control.indexOf("i18n: '" + label + "'");
-            }
-        );
-        order.forEach(function (index) {
-            expect(index).toBeGreaterThan(-1);
-        });
-        expect(order).toEqual([...order].sort((a, b) => a - b));
-    });
-
-    test.each([
-        ['Registered company', 'registered'],
-        ['Sole trader', 'soletrader'],
-        ['Enter manually', 'manual']
-    ])('the %s chip is selected by captureMode, never statically', (label, mode) => {
-        const chip = chipMarkup(control, label);
-        expect(chip).toContain("captureMode() === '" + mode + "'");
-        expect(chip).toContain("'data-element':");
-        // The two-block markup this replaced hardcoded the selected chip.
-        expect(chip).not.toMatch(/data-element\s*=\s*["']selected-element["']/);
-    });
-
-    test.each([
-        ['Registered company', 'registeredOrganisationMode({ openDropdown: true })'],
-        ['Sole trader', 'soleTraderMode()'],
-        ['Enter manually', 'manualEntryMode()']
-    ])('the %s chip is clickable and calls its own transition', (label, call) => {
-        expect(chipMarkup(control, label)).toContain('click: () => ' + call);
-    });
-
-    test('sole trader is offered only where the registry supports it', () => {
-        expect(chipIsGatedOn(control, 'Sole trader', 'showModeTab')).toBe(true);
-    });
-
-    test('manual entry is offered only where showManualEntryChip() allows it', () => {
-        expect(
-            chipIsGatedOn(control, 'Enter manually', 'showManualEntryChip()')
-        ).toBe(true);
-    });
-
-    test.each([
-        [true, true, true, 'setting on, tile owns the field'],
-        [true, false, false, 'setting on, address area owns the field'],
-        [false, true, false, 'setting off, tile owns the field'],
-        [false, false, false, 'setting off, address area owns the field']
-    ])(
-        'showManualEntryChip() with setting %s and tile-active %s is %s (%s)',
-        (settingEnabled, tileActive, expected) => {
-            const { renderer, capture } = loadRenderer();
-            renderer.isAddressAreaCompanySearchEnabled = settingEnabled;
-            capture.isTileCompanySearchActive = function () { return tileActive; };
-
-            expect(renderer.showManualEntryChip()).toBe(expected);
-        }
+        { document: document, window: window }
     );
+    return {
+        component: component,
+        identity: identity,
+        control: control,
+        soleTrader: soleTrader
+    };
+}
 
-    test('registered is offered unconditionally — it is the way out of the other two', () => {
-        expect(chipIsGatedOn(control, 'Registered company', 'showModeTab')).toBe(false);
-        expect(
-            chipIsGatedOn(control, 'Registered company', 'isTileCompanySearchActive()')
-        ).toBe(false);
+/** A field for the chips to anchor beside, in the payment tile's shape. */
+function mountTileField() {
+    document.body.innerHTML =
+        '<form id="two_gateway_form">' +
+        '<div class="field"><div class="control">' +
+        '<input id="company_name" name="company_name" />' +
+        '</div></div></form>';
+}
+
+function chips() {
+    return Array.from(document.querySelectorAll(CHIP_SELECTOR));
+}
+
+function chip(mode) {
+    return document.querySelector(`${CHIP_SELECTOR}[data-two-chip="${mode}"]`);
+}
+
+beforeEach(() => {
+    document.body.innerHTML = '';
+});
+
+describe('the company-capture component owns one mode control', () => {
+    test('there is exactly one chips group, holding three chips in sibling order', () => {
+        mountTileField();
+        const { component } = load();
+        component.start();
+
+        expect(document.querySelectorAll('.two-company-mode-chips')).toHaveLength(1);
+        expect(chips().map((node) => node.getAttribute('data-two-chip'))).toEqual([
+            'registered',
+            'soletrader',
+            'manual'
+        ]);
     });
 
-    test('the control itself renders whenever any of its chips would', () => {
-        const template = readSource(TEMPLATE);
-        const controlIndex = template.indexOf('<div class="mode_selector"');
-        const gate = template.lastIndexOf(
-            '<!-- ko if: showModeTab() || isTileCompanySearchActive() -->',
-            controlIndex
-        );
-        expect(gate).toBeGreaterThan(-1);
+    test('the chips land as a sibling of the field they act on, never inside it', () => {
+        mountTileField();
+        const { component } = load();
+        component.start();
+
+        const group = document.querySelector('.two-company-mode-chips');
+        const fieldWrapper = document.querySelector('#two_gateway_form .field');
+        expect(group.previousElementSibling).toBe(fieldWrapper);
+        expect(fieldWrapper.contains(group)).toBe(false);
+    });
+
+    test('a second start() does not build a second group', () => {
+        mountTileField();
+        const { component } = load();
+        component.start();
+        component.start();
+
+        expect(document.querySelectorAll('.two-company-mode-chips')).toHaveLength(1);
+    });
+
+    test('re-syncing moves the one group rather than building another', () => {
+        mountTileField();
+        const { component } = load();
+        component.start();
+        component.refreshMount();
+        component.syncChips();
+
+        expect(document.querySelectorAll('.two-company-mode-chips')).toHaveLength(1);
+        expect(chips()).toHaveLength(3);
     });
 });
 
-describe('switching between the three capture modes', function () {
-    test('a fresh tile starts in registered-organisation mode', () => {
-        const { renderer } = loadRenderer();
+describe('selected state tracks captureMode, never a static choice', () => {
+    test.each([
+        ['registered', 'registered company'],
+        ['soletrader', 'sole trader'],
+        ['manual', 'manual entry']
+    ])('only the %s chip carries the selected class in %s mode', (mode) => {
+        mountTileField();
+        const { component, identity } = load();
+        component.start();
 
-        expect(renderer.captureMode()).toBe('registered');
+        identity.captureMode(mode);
+        component.syncChips();
+
+        const selected = chips()
+            .filter((node) => node.classList.contains(SELECTED_CLASS))
+            .map((node) => node.getAttribute('data-two-chip'));
+        expect(selected).toEqual([mode]);
+    });
+});
+
+describe('each chip carries its own gate', () => {
+    test.each([
+        [true, false, 'the registry offers sole traders'],
+        [false, true, 'the registry offers none']
+    ])('soleTraderAvailable=%p -> sole-trader chip hidden=%p (%s)', (available, hidden) => {
+        mountTileField();
+        const { component, identity } = load();
+        component.start();
+
+        identity.soleTraderAvailable(available);
+        component.syncChips();
+
+        expect(chip('soletrader').classList.contains(HIDDEN_CLASS)).toBe(hidden);
     });
 
-    test('the manual-entry chip alone reaches manual entry', () => {
-        const { renderer, dom, control, revertCalls } = loadRenderer();
-        renderer.companyId('98765432');
+    test.each([
+        [true, false, 'company search is offered in address entry, so a number can still be captured'],
+        [false, true, 'no address-step lookup exists, so a typed name is a dead end']
+    ])('isCompanySearchEnabled=%p -> manual chip hidden=%p (%s)', (enabled, hidden) => {
+        mountTileField();
+        const { component } = load({ isCompanySearchEnabled: enabled });
+        component.start();
+        component.syncChips();
 
-        renderer.manualEntryMode();
+        expect(chip('manual').classList.contains(HIDDEN_CLASS)).toBe(hidden);
+    });
 
-        expect(renderer.captureMode()).toBe('manual');
-        // Search mode is genuinely left behind: the picked company is gone,
-        // the widget is torn down, and the field is blank and typeable.
-        expect(renderer.companyId()).toBe('');
-        expect(renderer.isCompanyCaptured()).toBe(false);
-        expect(dom.nodes['input#company_name'].value).toBe('');
-        // An in-flight search must not come back up onto a destroyed picker,
-        // so the abort has to both happen and happen first.
-        expect(control.calls).toContain('abortActiveRequest');
-        expect(control.calls).toContain('destroy');
-        expect(control.calls.indexOf('abortActiveRequest')).toBeLessThan(
-            control.calls.indexOf('destroy')
+    test('the registered chip is never gated — it is the way out of the other two', () => {
+        mountTileField();
+        const { component, identity } = load({ isCompanySearchEnabled: false });
+        component.start();
+        identity.soleTraderAvailable(false);
+        component.syncChips();
+
+        expect(chip('registered').classList.contains(HIDDEN_CLASS)).toBe(false);
+    });
+});
+
+describe('clicking a chip performs the real transition', () => {
+    test('the manual chip abandons the number and leaves a typeable field', () => {
+        mountTileField();
+        const { component, identity, control } = load();
+        component.start();
+        identity.write({ companyName: 'Example Ltd', companyId: '12345678' });
+
+        chip('manual').click();
+
+        expect(identity.captureMode()).toBe('manual');
+        expect(identity.companyId()).toBe('');
+        expect(control.destroys).toBeGreaterThan(0);
+        expect(control.aborts).toBeGreaterThan(0);
+        expect(document.querySelector('#company_name').getAttribute('type')).toBe('text');
+    });
+
+    test('the registered chip returns to search and opens the picker', () => {
+        mountTileField();
+        const { component, identity, control } = load();
+        component.start();
+        identity.captureMode('manual');
+
+        chip('registered').click();
+
+        expect(identity.captureMode()).toBe('registered');
+        expect(control.binds.some((options) => options.openDropdown === true)).toBe(true);
+    });
+
+    test('the sole-trader chip enters the mode and launches signup', () => {
+        mountTileField();
+        const { component, identity, soleTrader } = load();
+        component.start();
+
+        chip('soletrader').click();
+
+        expect(identity.captureMode()).toBe('soletrader');
+        expect(soleTrader.launches).toHaveLength(1);
+    });
+
+    test('re-clicking the sole-trader chip once adopted asks for a replacement', () => {
+        mountTileField();
+        const { component, identity, soleTrader } = load();
+        component.start();
+        identity.captureMode('soletrader');
+        identity.soleTraderAdopted(true);
+
+        chip('soletrader').click();
+
+        expect(soleTrader.launches).toEqual([{ autoselect: false }]);
+    });
+
+    test.each([
+        [13, 'Enter'],
+        [32, 'Space']
+    ])('%s activates a chip from the keyboard (%s)', (which) => {
+        mountTileField();
+        const { component, identity } = load();
+        component.start();
+
+        const event = $.Event('keydown', { which: which });
+        $(chip('manual')).trigger(event);
+
+        expect(identity.captureMode()).toBe('manual');
+    });
+
+    test('a chip click does not reach a collapse handler bound above it', () => {
+        // One-page checkouts bind their own handlers on ancestors of the field;
+        // a chip click that propagated would collapse the section it lives in.
+        mountTileField();
+        const { component } = load();
+        component.start();
+
+        let bubbled = 0;
+        document.querySelector('#two_gateway_form').addEventListener('click', () => {
+            bubbled += 1;
+        });
+        chip('manual').click();
+
+        expect(bubbled).toBe(0);
+    });
+});
+
+describe('the component is constructed once per page', () => {
+    test('the layout declares the boot component exactly once', () => {
+        const layout = fs.readFileSync(path.resolve(__dirname, '..', '..', LAYOUT), 'utf8');
+        const declarations = layout.match(/Two_Gateway\/js\/view\/company-search-boot/g) || [];
+        expect(declarations).toHaveLength(1);
+    });
+
+    test('no payment renderer constructs it — only the boot component does', () => {
+        const boot = fs.readFileSync(
+            path.resolve(__dirname, '..', '..', 'view/frontend/web/js/view/company-search-boot.js'),
+            'utf8'
         );
-        expect(control.calls).toContain('showSearchForCompanyLink');
-        // Destroying the widget removes whatever had focus with it.
-        expect(dom.nodes['input#company_name'].triggered).toContain('focus');
-        // Nothing to revert: this transition did not come from sole trader.
-        expect(revertCalls).toHaveLength(0);
+        const renderer = fs.readFileSync(
+            path.resolve(
+                __dirname,
+                '..',
+                '..',
+                'view/frontend/web/js/view/payment/method-renderer/gateway_method.js'
+            ),
+            'utf8'
+        );
+        expect(boot).toContain('.start()');
+        expect(renderer).not.toContain('.start()');
+    });
+});
+
+describe('the chips are the only route to manual entry', () => {
+    test('the mount opts out of the in-dropdown manual-entry button', () => {
+        // Two routes to the same mode would put a differently-worded escape
+        // hatch inside the picker, competing with the chip beside it.
+        const source = fs.readFileSync(
+            path.resolve(__dirname, '..', '..', 'view/frontend/web/js/model/company-capture-component.js'),
+            'utf8'
+        );
+        expect(source).toMatch(/manualEntryEnabled:\s*false/);
     });
 
-    test('manual entry from sole-trader mode discards the sole-trader identity', () => {
-        const { renderer, control, revertCalls } = loadRenderer();
-        renderer.showSoleTrader(true);
-        renderer.captureMode('soletrader');
-        renderer.companyId('ST-SYNTH-007');
-        renderer.showPopupMessage(true);
+    test('the control honours the opt-out and builds no button', () => {
+        const attached = [];
+        const CompanySearchControl = require('./amd-harness').loadCompanySearchControl($, {
+            attachManualEntryButton: function () { attached.push(true); },
+            buildSearchAjaxOptions: function () { return {}; }
+        }, { document: document, window: window });
 
-        renderer.manualEntryMode();
+        const control = new CompanySearchControl({
+            fieldSelector: '#company_name',
+            config: {},
+            manualEntryEnabled: false
+        });
 
-        expect(renderer.captureMode()).toBe('manual');
-        expect(renderer.showSoleTrader()).toBe(false);
-        expect(renderer.showPopupMessage()).toBe(false);
-        expect(renderer.companyId()).toBe('');
-        // The address half of the same discard.
-        expect(revertCalls).toHaveLength(1);
-        expect(control.calls).toContain('destroy');
-    });
-
-    test('the registered chip returns to search and lands the buyer in it', () => {
-        const { renderer, control, enableCalls } = loadRenderer();
-        renderer.manualEntryMode();
-
-        renderer.registeredOrganisationMode({ openDropdown: true });
-
-        expect(renderer.captureMode()).toBe('registered');
-        expect(enableCalls).toEqual([{ openDropdown: true }]);
-        // Two routes back into search would otherwise both stay live.
-        expect(control.calls).toContain('hideSearchForCompanyLink');
-    });
-
-    test('the init path re-enters search mode without popping the dropdown open', () => {
-        const { renderer, enableCalls } = loadRenderer();
-
-        renderer.registeredOrganisationMode();
-
-        expect(renderer.captureMode()).toBe('registered');
-        expect(enableCalls).toEqual([undefined]);
-    });
-
-    test('entering the sole-trader UI selects its chip', () => {
-        const { renderer } = loadRenderer();
-
-        renderer.enterSoleTraderUi();
-
-        expect(renderer.captureMode()).toBe('soletrader');
-        expect(renderer.showSoleTrader()).toBe(true);
-    });
-
-    test('the "Search for company" link and the registered chip agree on the mode', () => {
-        const src = readSource(CAPTURE);
-        const hookIndex = src.indexOf('onReturnToSearch: function');
-        expect(hookIndex).toBeGreaterThan(-1);
-        expect(src.slice(hookIndex, hookIndex + 200)).toContain("captureMode('registered')");
+        expect(control.manualEntryEnabled).toBe(false);
+        expect(attached).toEqual([]);
     });
 });

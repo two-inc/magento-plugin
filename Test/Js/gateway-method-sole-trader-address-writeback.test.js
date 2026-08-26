@@ -2,44 +2,39 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25461 §5: a completed sole-trader signup must write the buyer's
- * registered ADDRESS, not just their identity.
+ * TWO-25461 §5 — a completed sole-trader signup writes the buyer's registered
+ * ADDRESS, not just their identity.
  *
- * `fetchBuyer()` (`/autofill/v1/buyer/current`) has always answered with the
- * buyer's address beside their organisation number and company name, and the
- * call sites that consumed it read the two identity fields and threw the
- * address away — so a buyer who had just enrolled was asked to retype an
- * address the plugin was holding. The two sites are the chip click's own lookup
- * and the popup's post-signup `ACCEPTED` message; they share one write-back,
- * `adoptSoleTraderBuyer()`.
+ * `/autofill/v1/buyer/current` has always answered with the address beside the
+ * organisation number and company name, and the call sites that consumed it
+ * read the two identity fields and threw the address away — so a buyer who had
+ * just enrolled was asked to retype an address the plugin was holding.
  *
- * The GATE is the part most likely to be "tidied" back into a bug, and it has
- * its own case below: the write must NOT be gated on the address-lookup switch
- * that gates an ordinary company-search selection's address write. That switch
- * is legitimately off wherever company search is not mounted in the address
- * area — which is exactly where the sole-trader entry point lives — so gating
- * here leaves the write permanently dead on the shops the feature runs on.
+ * Two rules are the ones most likely to be "tidied" back into a bug, and each
+ * has its own case below:
+ *
+ *  - the write is NOT gated on the address-lookup switch that gates an ordinary
+ *    company-search selection. That switch is legitimately off wherever company
+ *    search is not mounted in the address area, which is exactly where this
+ *    flow lives, so gating here leaves the write permanently dead;
+ *  - the write happens ONCE PER IDENTITY, so a replayed ACCEPTED cannot
+ *    overwrite a correction the buyer made after the first write — and
+ *    `forgetAdoptions()` is what re-arms it.
  *
  * Field routing itself is pinned against the real shared model in
  * company-search-address-field-routing.test.js; the double here records the
- * payload handed to it, which is what this surface is responsible for.
+ * payload and the scope handed to it, which is what this surface owns.
  */
 
 'use strict';
 
-const { loadAmdModule } = require('./amd-harness');
+const $ = require('jquery');
+const { loadAmdModule, defaultMocks } = require('./amd-harness');
 
-const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
-const SEARCH = 'view/frontend/web/js/model/company-search.js';
-const CHECKOUT_PAGE_URL = 'https://checkout.example';
-const ENTERED_EMAIL = 'entered@example.com';
+const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
+const SOLE_TRADER = 'view/frontend/web/js/model/sole-trader.js';
 
-/**
- * Stand-in for the signup popup's own window. `popupMessageListener()` ignores
- * a message from anything other than the popup it is currently tracking, so
- * every fixture message below has to claim to come from this one.
- */
-const POPUP = { popup: 'the tracked signup window' };
+const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
 
 const BILLING = {
     street: 'Mill Lane',
@@ -50,469 +45,230 @@ const BILLING = {
     country_code: 'GB'
 };
 
-/** Sentinel for the scope the shared model resolves; see the scope spec. */
+const SHIPPING = { street: 'Other Lane', city: 'Elsewhere', country_code: 'GB' };
+
+/** Sentinel for the scope the shared model resolves; see the scope case. */
 const BILLING_ROLE_ROOT = { billingRoleFormRoot: true };
 
 const BUYER = {
-    email: ENTERED_EMAIL,
+    email: 'trader@example.com',
     organization_number: '999888777',
     company_name: 'Example Trader',
     billing_address: BILLING
 };
 
 /**
- * Load the renderer with a recording company-search double.
+ * The real flow against a stub host and a recording company-search double.
  *
- * @param {object|null} buyer what the stubbed `fetchBuyer()` resolves to
- * @param {object} [options] `addressAreaSearchEnabled` / `addressSearchEnabled`
- *        — the two switches the write must ignore
- * @returns {object} { renderer, applied, listeners }
+ * Loaded fresh per test on purpose: the once-per-identity guard is module-scope
+ * state, so a shared load would carry one case's adoptions into the next.
+ *
+ * @returns {object} `{ flow, rec, identity, host }`
  */
-function loadRenderer(buyer, options) {
-    const opts = options || {};
-    const applied = [];
-    const roots = [];
-    const reverts = [];
-    const listeners = [];
-    const removed = [];
+function loadFlow() {
+    /** `failAddressWrite` is flipped mid-test to model a DOM failure. */
+    const rec = { applied: [], roots: [], phones: [], adopted: [], failAddressWrite: false };
+
+    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
+    identity.captureMode('soletrader');
+
     const companySearch = Object.assign(
         {},
-        loadAmdModule(SEARCH, { jquery: require('./amd-harness').defaultMocks().jquery }),
+        defaultMocks()['Two_Gateway/js/model/company-search'],
         {
+            apiClientParams: function () { return {}; },
+            billingRoleFormRoot: function () { return BILLING_ROLE_ROOT; },
             applyAddress: function (address, root) {
-                applied.push(address);
-                roots.push(root);
+                if (rec.failAddressWrite) throw new Error('DOM write failed');
+                rec.applied.push(address);
+                rec.roots.push(root);
             },
-            billingRoleFormRoot: function () {
-                return BILLING_ROLE_ROOT;
-            },
-            revertAutofilledAddress: function () {
-                reverts.push(true);
-                return 0;
-            }
+            applyTelephone: function (phone) { rec.phones.push(phone); return true; }
         }
     );
 
-    const renderer = loadAmdModule(
-        RENDERER,
-        { 'Two_Gateway/js/model/company-search': companySearch },
+    const SoleTraderCtor = loadAmdModule(
+        SOLE_TRADER,
         {
-            window: {
-                checkoutConfig: { payment: {} },
-                addEventListener: function (name, fn) {
-                    listeners.push({ name: name, fn: fn });
-                },
-                removeEventListener: function (name, fn) {
-                    removed.push({ name: name, fn: fn });
-                }
-            }
+            jquery: $,
+            'Two_Gateway/js/model/company-identity': identity,
+            'Two_Gateway/js/model/company-search': companySearch
+        },
+        {
+            document: document,
+            window: { open: function () { return null; }, addEventListener: function () {}, removeEventListener: function () {} },
+            btoa: global.btoa,
+            setInterval: function () { return 1; },
+            clearInterval: function () {},
+            fetch: function () { return Promise.resolve({ ok: false, status: 404 }); }
         }
     );
 
-    renderer._brandConfig = {
-        checkoutPageUrl: CHECKOUT_PAGE_URL,
-        isAddressSearchEnabled: !!opts.addressSearchEnabled
+    const host = {
+        config: function () { return { checkoutPageUrl: CHECKOUT_PAGE_URL }; },
+        countryCode: function () { return 'gb'; },
+        adoptSoleTrader: function (buyer) {
+            rec.adopted.push(buyer);
+            identity.write({ companyId: buyer.organization_number, companyName: buyer.company_name });
+        },
+        abandonSoleTrader: function () {}
     };
-    renderer.isAddressAreaCompanySearchEnabled = !!opts.addressAreaSearchEnabled;
-    renderer.isOrderIntentEnabled = false;
-    renderer.getEmail = () => ENTERED_EMAIL;
 
-    const soleTrader = renderer.soleTrader();
-    soleTrader.getTokens = () => Promise.resolve({ delegation_token: 'dt', autofill_token: 'at' });
-    soleTrader.fetchBuyer = () => Promise.resolve(buyer);
-    soleTrader._soleTraderPopupWindow = POPUP;
-
-    return {
-        renderer: renderer,
-        applied: applied,
-        roots: roots,
-        reverts: reverts,
-        listeners: listeners,
-        removed: removed
-    };
+    return { flow: new SoleTraderCtor(host), rec: rec, identity: identity, host: host };
 }
 
-/**
- * The `message` handler `popupMessageListener()` binds on window.
- *
- * @param {object} renderer loaded renderer
- * @param {Array} listeners captured window listeners
- * @returns {Function} the handler
- */
-function messageHandler(renderer, listeners) {
-    renderer.popupMessageListener();
-    const bound = listeners.filter((l) => l.name === 'message');
-    expect(bound).toHaveLength(1);
-    return bound[0].fn;
-}
-
-/** Two microtask turns, which is what the ACCEPTED branch needs to settle. */
-function settle() {
-    return Promise.resolve().then(() => Promise.resolve());
-}
-
-describe('every path that adopts a sole trader writes their address', () => {
-    test('the chip click resolves the buyer and writes it', () => {
-        const { renderer, applied } = loadRenderer(BUYER);
-        renderer.showModeTab(true);
-
-        return renderer.soleTraderMode().then(() => {
-            expect(applied).toEqual([BILLING]);
-            expect(renderer.companyId()).toBe(BUYER.organization_number);
-            expect(renderer.showSoleTrader()).toBe(true);
-        });
-    });
-
-    test('a repeated chip click against the already-resolved buyer writes it', () => {
-        const { renderer, applied } = loadRenderer(BUYER);
-        renderer.soleTrader().soleTraderLookup = { ready: true, buyer: BUYER, matches: true };
-        renderer.soleTrader().soleTraderLookupEmail = renderer.getEmail();
-
-        return renderer.soleTraderMode().then(() => {
-            expect(applied).toEqual([BILLING]);
-            expect(renderer.companyName()).toBe(BUYER.company_name);
-            expect(renderer.showPopupMessage()).toBe(false);
-        });
-    });
-
-    test('a completed signup writes it', () => {
-        const { renderer, applied, listeners } = loadRenderer(BUYER);
-        const handler = messageHandler(renderer, listeners);
-        renderer.showSoleTrader(true);
-
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
-
-        return settle().then(() => {
-            expect(applied).toEqual([BILLING]);
-            expect(renderer.companyId()).toBe(BUYER.organization_number);
-        });
-    });
-
-    test('a lookup that resolves NO matching buyer writes nothing', () => {
-        const { renderer, applied } = loadRenderer({
-            email: 'someone.else@example.com',
-            organization_number: BUYER.organization_number,
-            company_name: BUYER.company_name,
-            billing_address: BILLING
-        });
-        renderer.showModeTab(true);
-
-        return renderer.lookupSoleTrader().then(() => {
-            expect(applied).toEqual([]);
-        });
-    });
+beforeEach(() => {
+    document.body.innerHTML = '';
 });
 
-describe('the write-back ignores the address-lookup switches (§5)', () => {
-    test.each([
-        [false, false, 'both switches off — the shape every current shop runs'],
-        [false, true, 'address search on, address-area company search off'],
-        [true, false, 'address-area company search on, address search off'],
-        [true, true, 'both on']
-    ])(
-        'addressArea=%p addressSearch=%p writes the address anyway (%s)',
-        (addressAreaSearchEnabled, addressSearchEnabled) => {
-            const { renderer, applied } = loadRenderer(BUYER, {
-                addressAreaSearchEnabled,
-                addressSearchEnabled
-            });
-
-            renderer.adoptSoleTraderBuyer(BUYER);
-
-            expect(applied).toEqual([BILLING]);
-        }
-    );
-
-    test('neither switch is even READ on the write path', () => {
-        // Stronger than asserting the write landed with both off: a gate added
-        // in a helper, or read through the brand config, throws here. A spec
-        // that only checked the outcome would keep passing if the flag it
-        // consulted happened to be on.
-        const { renderer, applied } = loadRenderer(BUYER);
-        const refuse = {
-            get: function () {
-                throw new Error('the address-lookup switch must not be read here');
-            }
-        };
-        Object.defineProperty(renderer, 'isAddressAreaCompanySearchEnabled', refuse);
-        Object.defineProperty(renderer._brandConfig, 'isAddressSearchEnabled', refuse);
-
-        renderer.adoptSoleTraderBuyer(BUYER);
-
-        expect(applied).toEqual([BILLING]);
-    });
-
-    test('the write is scoped to the billing-role form, not document-wide', () => {
-        // §1(a.3): the tile writes as the billing/invoice role, and the payment
-        // step has more than one address form in the DOM to get that wrong in —
-        // Luma leaves the shipping form there and core renders a billing form
-        // per payment method.
-        const { renderer, roots } = loadRenderer(BUYER);
-
-        renderer.adoptSoleTraderBuyer(BUYER);
-
-        expect(roots).toEqual([BILLING_ROLE_ROOT]);
-    });
-});
-
-describe('what the write-back does with an awkward buyer record', () => {
+describe('which address on the buyer record is written', () => {
     test.each([
         [
-            { billing_address: BILLING, shipping_address: { city: 'Elsewhere' } },
+            { billing_address: BILLING, shipping_address: SHIPPING },
             BILLING,
             'the registered billing address wins over a shipping one'
         ],
-        [
-            { shipping_address: BILLING },
-            BILLING,
-            'a shipping address is the fallback when there is no billing one'
-        ],
+        [{ shipping_address: BILLING }, BILLING, 'a shipping address is the fallback when there is no billing one'],
         [{ billing_address: null, shipping_address: BILLING }, BILLING, 'a null billing address falls back'],
         [{}, null, 'no address at all: nothing is written'],
         [{ billing_address: 'Mill House' }, null, 'a non-object address is not an address'],
         [{ billing_address: null }, null, 'a null address never blanks the form']
     ])('%p -> %p (%s)', (record, expected) => {
-        const { renderer, applied } = loadRenderer(null);
+        const { flow, rec } = loadFlow();
 
-        renderer.adoptSoleTraderBuyer(
-            Object.assign({ organization_number: '1', company_name: 'Example' }, record)
-        );
+        flow.adoptBuyer(Object.assign({ organization_number: '1', company_name: 'Example' }, record));
 
-        expect(applied).toEqual(expected === null ? [] : [expected]);
+        expect(rec.applied).toEqual(expected === null ? [] : [expected]);
     });
 
-    test('a sole trader with no trading name still gets their address', () => {
-        // fillCompanyData() refuses a nameless pair — correctly, a name/number
-        // mismatch is its own defect class — and the address write must not be
-        // collateral damage of that refusal.
-        const { renderer, applied } = loadRenderer(null);
+    test('the write is scoped to the billing-role form, not document-wide', () => {
+        // §1(a.3): this flow captures as the invoice role, and the payment step
+        // has more than one address form in the DOM to get that wrong in.
+        const { flow, rec } = loadFlow();
 
-        renderer.adoptSoleTraderBuyer({
-            organization_number: 'TWO:123',
-            company_name: '',
-            billing_address: BILLING
-        });
+        flow.adoptBuyer(BUYER);
 
-        expect(applied).toEqual([BILLING]);
-        expect(renderer.companyName()).toBe('');
-    });
-
-    test('adoption is safe against a non-buyer', () => {
-        const { renderer, applied } = loadRenderer(null);
-
-        renderer.adoptSoleTraderBuyer(null);
-        renderer.adoptSoleTraderBuyer('buyer');
-        expect(applied).toEqual([]);
-    });
-});
-
-describe('re-entrancy', () => {
-    test('a repeated adoption writes the address once and starts no second intent', () => {
-        // The popup can post ACCEPTED more than once (double submit, a reopened
-        // window) and a re-render can replay the lookup. A replay must not
-        // overwrite a correction the buyer made to the address after the first
-        // write, and the order intent stays behind fillCompanyData()'s
-        // in-flight guard rather than gaining a trigger of its own here.
-        const { renderer, applied } = loadRenderer(BUYER);
-        renderer.isOrderIntentEnabled = true;
-        let intents = 0;
-        renderer.placeOrderIntent = function () {
-            intents += 1;
-            return {
-                always: function () {
-                    return this;
-                },
-                done: function () {
-                    return this;
-                },
-                fail: function () {
-                    return this;
-                }
-            };
-        };
-        renderer.clearOrderIntentNotices = function () {};
-
-        renderer.adoptSoleTraderBuyer(BUYER);
-        renderer.adoptSoleTraderBuyer(BUYER);
-
-        expect(applied).toEqual([BILLING]);
-        expect(intents).toBe(1);
-    });
-});
-
-describe('the state the write-back has to survive', () => {
-    test('a different identity writes again; the same one does not', () => {
-        const { renderer, applied } = loadRenderer(null);
-        const other = Object.assign({}, BUYER, {
-            organization_number: '111222333',
-            billing_address: { city: 'Elsewhere', street: 'Other Lane' }
-        });
-
-        renderer.adoptSoleTraderBuyer(BUYER);
-        renderer.adoptSoleTraderBuyer(BUYER);
-        renderer.adoptSoleTraderBuyer(other);
-
-        expect(applied).toEqual([BILLING, other.billing_address]);
-    });
-
-    test('leaving sole-trader mode takes the address back and re-arms the write', () => {
-        // The identity half is already discarded on the way out; without the
-        // address half the sole trader's address goes out under whatever
-        // registered company the buyer searches for next.
-        const { renderer, applied, reverts } = loadRenderer(null);
-        renderer.enableCompanySearch = function () {};
-        renderer.fillCustomerData = function () {};
-        renderer.clearCompany = function () {};
-
-        renderer.adoptSoleTraderBuyer(BUYER);
-        renderer.showSoleTrader(true);
-        renderer.registeredOrganisationMode();
-        renderer.adoptSoleTraderBuyer(BUYER);
-
-        expect(reverts).toHaveLength(1);
-        expect(applied).toEqual([BILLING, BILLING]);
+        expect(rec.roots).toEqual([BILLING_ROLE_ROOT]);
     });
 
     test.each([
-        [false, 'the buyer is not in sole-trader mode'],
-        [true, 'the buyer IS in sole-trader mode and must stay there']
-    ])('a superseded lookup records nothing and adopts nothing (%p: %s)', (soleTrader) => {
-        // The buyer corrects their email mid-flight. The first chain resolves
-        // LAST, against an email that is no longer in the form. Superseded after
-        // its tokens are minted, so every guard downstream is genuinely
-        // exercised — bumping the generation before the first await would
-        // short-circuit the chain at its first check and prove only that one.
-        const first = Object.assign({}, BUYER, { email: 'first@example.com' });
-        const { renderer, applied } = loadRenderer(first);
-        renderer.showModeTab(true);
-        renderer.showSoleTrader(soleTrader);
-        renderer.enableCompanySearch = function () {};
-        renderer.fillCustomerData = function () {};
-        renderer.clearCompany = function () {};
-        let releaseTokens;
-        renderer.soleTrader().getTokens = () =>
-            new Promise((resolve) => {
-                releaseTokens = () => resolve({ delegation_token: 'dt', autofill_token: 'at' });
-            });
+        [null, 'a null buyer'],
+        ['buyer', 'a string'],
+        [undefined, 'nothing at all']
+    ])('%p adopts nothing (%s)', (buyer) => {
+        const { flow, rec } = loadFlow();
 
-        const chain = renderer.lookupSoleTrader();
-        renderer.soleTrader()._soleTraderLookupGeneration += 1;
-        releaseTokens();
+        flow.adoptBuyer(buyer);
 
-        return chain.then(() => {
-            // Not recorded: a chip click reads `soleTraderLookup` and would
-            // otherwise adopt the buyer belonging to the replaced email.
-            expect(renderer.soleTrader().soleTraderLookup).toEqual({ ready: false, buyer: null, matches: false });
-            expect(applied).toEqual([]);
-            // The mode is left exactly as it was: a superseded chain never
-            // moves the buyer between modes.
-            expect(renderer.showSoleTrader()).toBe(soleTrader);
-            // And a chip click still finds nothing to adopt.
-            renderer.soleTraderMode();
-            expect(applied).toEqual([]);
-        });
+        expect(rec.adopted).toEqual([]);
+        expect(rec.applied).toEqual([]);
+    });
+});
+
+describe('the write ignores the address-lookup switches (§5)', () => {
+    test('no brand config is read on the write path at all', () => {
+        // Stronger than asserting the write landed with the switches off: a gate
+        // added in a helper, or read through the brand config, throws here. A
+        // case that only checked the outcome would keep passing if the flag it
+        // consulted happened to be on.
+        const { flow, rec, host } = loadFlow();
+        host.config = function () {
+            throw new Error('the address-lookup switch must not be read here');
+        };
+
+        flow.adoptBuyer(BUYER);
+
+        expect(rec.applied).toEqual([BILLING]);
     });
 
-    test('a superseded chain that FAILS does not clobber the live result', () => {
-        const { renderer } = loadRenderer(BUYER);
-        renderer.showModeTab(true);
-        let failTokens;
-        renderer.soleTrader().getTokens = () =>
-            new Promise((resolve, reject) => {
-                failTokens = () => reject(new Error('token mint failed'));
-            });
+    test('a sole trader with no trading name still gets their address', () => {
+        // A name/number mismatch is its own defect class; the address write must
+        // not be collateral damage of the identity half being incomplete.
+        const { flow, rec, identity } = loadFlow();
 
-        const chain = renderer.lookupSoleTrader();
-        renderer.soleTrader()._soleTraderLookupGeneration += 1;
-        renderer.soleTrader().soleTraderLookup = { ready: true, buyer: BUYER, matches: true };
-        failTokens();
+        flow.adoptBuyer({ organization_number: 'TWO:123', company_name: '', billing_address: BILLING });
 
-        return chain.then(() => {
-            expect(renderer.soleTrader().soleTraderLookup.buyer).toBe(BUYER);
-        });
+        expect(rec.applied).toEqual([BILLING]);
+        expect(identity.companyName()).toBe('');
     });
+});
 
-    test('the buyer lookup goes out under the token its own chain minted', () => {
-        // The real fetchBuyer(), not the stub every other case here uses: the
-        // token parameter exists precisely so a superseded chain cannot read the
-        // cookie under a newer chain's token, and a stubbed fetchBuyer never
-        // executes the header expression that carries it.
-        const requests = [];
-        const renderer = loadAmdModule(
-            RENDERER,
+describe('the write happens once per identity', () => {
+    test.each([
+        [
+            { organization_number: '999888777', email: 'a@example.com' },
+            { organization_number: '999888777', email: 'b@example.com' },
+            1,
+            'the organisation number is the identity; the email is not'
+        ],
+        [
+            { organization_number: '999888777' },
+            { organization_number: '111222333' },
+            2,
+            'a different organisation number is a different sole trader'
+        ],
+        [
+            { email: 'a@example.com' },
+            { email: 'a@example.com' },
+            1,
+            'with no number, the email identifies the buyer'
+        ],
+        [
+            { email: 'a@example.com' },
+            { email: 'b@example.com' },
+            2,
+            'two numberless buyers are not collapsed onto one key'
+        ],
+        [
             {},
-            {
-                window: { checkoutConfig: { payment: {} }, addEventListener: function () {} },
-                fetch: function (url, options) {
-                    requests.push(options.headers['two-delegated-authority-token']);
-                    return Promise.resolve({ ok: false, status: 404 });
-                }
-            }
-        );
-        renderer._brandConfig = { checkoutApiUrl: 'https://api.example' };
-        renderer.soleTrader().autofillToken = 'newer-chain-token';
+            {},
+            2,
+            'nothing tells one numberless, emailless buyer from another, so the write repeats'
+        ]
+    ])('%p then %p -> %p writes (%s)', (first, second, expectedWrites) => {
+        const { flow, rec } = loadFlow();
 
-        return renderer.fetchBuyer('own-chain-token').then(() => {
-            expect(requests).toEqual(['own-chain-token']);
-            // No token passed → the instance's current one, which is what the
-            // post-signup lookup relies on.
-            return renderer.fetchBuyer().then(() => {
-                expect(requests).toEqual(['own-chain-token', 'newer-chain-token']);
-            });
-        });
+        flow.adoptBuyer(Object.assign({ company_name: 'Example', billing_address: BILLING }, first));
+        flow.adoptBuyer(Object.assign({ company_name: 'Example', billing_address: BILLING }, second));
+
+        expect(rec.applied).toHaveLength(expectedWrites);
     });
 
-    test('a completed signup supersedes a lookup still in flight', () => {
-        // Otherwise the pre-auth chain lands after the adoption, disagrees with
-        // the authenticated identity, and reverts both the mode and the address
-        // that adoption just wrote.
-        const { renderer, listeners } = loadRenderer(BUYER);
-        const handler = messageHandler(renderer, listeners);
-        renderer.showSoleTrader(true);
-        renderer.soleTrader()._soleTraderLookupGeneration = 7;
+    test('the identity itself is still written on every replay, only the address is guarded', () => {
+        const { flow, rec } = loadFlow();
 
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+        flow.adoptBuyer(BUYER);
+        flow.adoptBuyer(BUYER);
 
-        expect(renderer.soleTrader()._soleTraderLookupGeneration).toBe(8);
+        expect(rec.adopted).toEqual([BUYER, BUYER]);
+        expect(rec.applied).toEqual([BILLING]);
+    });
+
+    test('forgetAdoptions() re-arms the write', () => {
+        // Leaving sole-trader mode reverts the address; without the re-arm the
+        // buyer could never get it back by re-adopting the same identity.
+        const { flow, rec } = loadFlow();
+
+        flow.adoptBuyer(BUYER);
+        flow.forgetAdoptions();
+        flow.adoptBuyer(BUYER);
+
+        expect(rec.applied).toEqual([BILLING, BILLING]);
     });
 
     test('a throw in the address write leaves the identity filled and the write retryable', () => {
-        const { renderer, applied } = loadRenderer(BUYER);
-        let fail = true;
-        renderer.soleTrader().writeSoleTraderAddress = function (buyer) {
-            if (fail) throw new Error('DOM write failed');
-            applied.push(buyer.billing_address);
-            return true;
-        };
+        const { flow, rec, identity } = loadFlow();
+        rec.failAddressWrite = true;
 
-        renderer.showPopupMessage(true);
-        renderer.adoptSoleTraderBuyer(BUYER);
+        flow.adoptBuyer(BUYER);
 
-        expect(renderer.companyId()).toBe(BUYER.organization_number);
-        expect(renderer.showPopupMessage()).toBe(false);
+        expect(identity.companyId()).toBe(BUYER.organization_number);
+        expect(rec.applied).toEqual([]);
 
-        // The failure did not consume the one chance: the next adoption of the
-        // same identity tries again.
-        fail = false;
-        renderer.adoptSoleTraderBuyer(BUYER);
-        expect(applied).toEqual([BILLING]);
-    });
-
-    test('dispose detaches the popup listener, so one message adopts once', () => {
-        // A re-rendering checkout (Amasty, Fire Checkout) rebuilds the method
-        // list; a listener left behind by each render would write to the live
-        // address form once per stacked renderer.
-        const { renderer, listeners, removed } = loadRenderer(BUYER);
-        renderer.destroyCompanySearchWidget = function () {};
-        renderer._super = function () {};
-
-        renderer.popupMessageListener();
-        const bound = listeners.filter((l) => l.name === 'message');
-        expect(bound).toHaveLength(1);
-
-        renderer.dispose();
-
-        expect(removed).toEqual([{ name: 'message', fn: bound[0].fn }]);
-        expect(renderer.soleTrader()._popupMessageHandler).toBeNull();
+        // The failure did not consume the one chance: the same identity writes
+        // on the next attempt.
+        rec.failAddressWrite = false;
+        flow.adoptBuyer(BUYER);
+        expect(rec.applied).toEqual([BILLING]);
     });
 });
