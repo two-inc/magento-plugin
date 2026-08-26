@@ -264,6 +264,10 @@ define([
      *          is present yet
      */
     CompanyCaptureComponent.prototype.mountSelector = function () {
+        // No brand config means no Two method on this checkout and nothing to
+        // mount. The boot component still re-points on every totals change, so
+        // this has to answer rather than throw.
+        if (!this._config) return '';
         if (this._config.isCompanySearchEnabled && !quote.isVirtual()) {
             if ($(ADDRESS_FIELD_SELECTOR).length) return ADDRESS_FIELD_SELECTOR;
         }
