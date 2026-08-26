@@ -94,8 +94,36 @@ define([
         // address yet, which is what still lets that genuine first resolution
         // through.
         this._lastCountry = this.countryCode();
+        this.watchForMountHost();
         this.refreshMount();
         this.refreshSoleTraderAvailability();
+    };
+
+    /**
+     * Mount as soon as a host field exists, however late it arrives.
+     *
+     * This component boots from the checkout sidebar, which renders before the
+     * shipping address form and before the quote carries a billing address. So
+     * `start()`'s own attempt routinely finds no host to mount on and no
+     * country to resolve, and the events that would re-drive it — a quote
+     * address change — never fire for a guest who has not typed one yet. The
+     * result was a checkout with no company search and no chips at all.
+     *
+     * The host appearing is a DOM event, so a DOM watcher is what answers it.
+     * One per candidate selector, registered once, matching how the search
+     * control watches for its own field.
+     */
+    CompanyCaptureComponent.prototype.watchForMountHost = function () {
+        const self = this;
+        [ADDRESS_FIELD_SELECTOR, TILE_FIELD_SELECTOR].forEach(function (selector) {
+            $.async(selector, function () {
+                self.refreshMount();
+                // The country is only readable once a form carries it, and the
+                // registry answer gates whether the sole-trader chip is offered
+                // at all.
+                if (!identity.soleTraderAvailable()) self.refreshSoleTraderAvailability();
+            });
+        });
     };
 
     /** @returns {object} the active brand's checkout config subtree */

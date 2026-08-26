@@ -533,6 +533,12 @@ function loadAmdModule(relPath, extraMocks, extraGlobals, siblingCache) {
     const absPath = path.resolve(__dirname, '..', '..', relPath);
     const src = fs.readFileSync(absPath, 'utf8');
     const mocks = Object.assign({}, defaultMocks(), extraMocks || {});
+    // A test passing REAL jQuery gets the observer simulation too: real jQuery
+    // has no `$.async`, and modules that wait for a node to appear call it. A
+    // suite that only meant to use real DOM should not have to know that.
+    if (mocks.jquery && typeof mocks.jquery.async !== 'function') {
+        installAsyncSimulation(mocks.jquery);
+    }
 
     let captured;
     const define = function (deps, factory) {
