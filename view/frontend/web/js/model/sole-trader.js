@@ -66,6 +66,14 @@ define([
     const adoptedSoleTraderIds = new Set();
 
     /**
+     * Outstanding sole-trader round trips, across every mount. Module scope
+     * because the `soleTraderBusy` observable it drives is prototype-level and
+     * therefore shared by every brand tile on the checkout: a per-instance
+     * count would let one tile's settle drop another's spinner.
+     */
+    let flightDepth = 0;
+
+    /**
      * What "the same sole trader" means for that guard. The organisation number
      * where there is one; the email otherwise, so two buyers who both arrive
      * without a number are not treated as one.
@@ -108,11 +116,7 @@ define([
         // close the instant it posts, and that handler is the sole authority on
         // the outcome once it has.
         this._signupConfirming = false;
-        this._flightDepth = 0;
-        // An identity has been adopted in this sole-trader session. Not
-        // `companyId()`: fillCompanyData() writes nothing for a sole trader
-        // with no trading name of their own, whose address is still filled.
-        this._soleTraderAdopted = false;
+        this._blockedSignupOptions = null;
         this._destroyed = false;
     }
 
@@ -136,6 +140,9 @@ define([
      */
     SoleTrader.prototype.forgetAdoptions = function () {
         adoptedSoleTraderIds.clear();
+        // The identity itself is gone on both of those events — a latch left
+        // standing would answer for an identity no longer on screen.
+        this._host.soleTraderAdopted(false);
     };
 
     SoleTrader.prototype.getTokens = function () {
@@ -239,7 +246,7 @@ define([
      * re-mint is left for the next tick.
      */
     SoleTrader.prototype.refreshTokens = function () {
-        if (this._flightDepth > 0) return;
+        if (flightDepth > 0) return;
         return this.mintTokens();
     };
 
@@ -348,7 +355,7 @@ define([
             // The ACCEPTED handshake's buyer lookup can still be out; it owns
             // the outcome from here and will write the identity it resolves.
             if (this._signupConfirming) return;
-            if (this._host.showSoleTrader() && !this._soleTraderAdopted) {
+            if (this._host.showSoleTrader() && !this._host.soleTraderAdopted()) {
                 this._host.registeredOrganisationMode();
             }
         }, POPUP_CLOSE_POLL_MS);
@@ -372,22 +379,20 @@ define([
      * flagged because both can be live at once.
      */
     SoleTrader.prototype.beginFlight = function () {
-        this._flightDepth += 1;
+        flightDepth += 1;
         this._host.soleTraderBusy(true);
     };
 
     SoleTrader.prototype.settleFlight = function () {
-        this._flightDepth = Math.max(0, this._flightDepth - 1);
-        if (this._flightDepth === 0) {
+        flightDepth = Math.max(0, flightDepth - 1);
+        if (flightDepth === 0) {
             this._host.soleTraderBusy(false);
         }
     };
 
-    // "Select a different sole trader" (TWO-25461 §7). Only rendered once
-    // an identity has already been adopted (see the template's `visible:`
-    // binding), so tokens are already minted — launch the popup directly,
-    // synchronously with the click, with autoselect=false so the hosted
-    // flow doesn't silently re-pick the same registration.
+    // "Select a different sole trader" (TWO-25461 §7). autoselect=false so the
+    // hosted flow offers a choice rather than handing back the registration
+    // the buyer is asking to replace.
     SoleTrader.prototype.selectDifferentSoleTrader = function () {
         return this.launchSignup({ autoselect: false });
     };
@@ -432,7 +437,7 @@ define([
             // Re-arm the once-per-identity guard: re-entering sole-trader
             // mode has an address to write again.
             adoptedSoleTraderIds.clear();
-            this._soleTraderAdopted = false;
+            this._host.soleTraderAdopted(false);
         }
         return wasSoleTrader;
     };
@@ -441,7 +446,7 @@ define([
     // were minted when the option became available.
     SoleTrader.prototype.enterSoleTraderUi = function () {
         const host = this._host;
-        this._soleTraderAdopted = false;
+        this._host.soleTraderAdopted(false);
         host.showSoleTrader(true);
         host.captureMode('soletrader');
         // Resolve the link BEFORE clearCompany(), which tears the widget
@@ -463,7 +468,7 @@ define([
      *          were not ready
      */
     SoleTrader.prototype.soleTraderMode = function () {
-        if (this._host.showSoleTrader() && this._soleTraderAdopted) {
+        if (this._host.showSoleTrader() && this._host.soleTraderAdopted()) {
             return this.launchSignup({ autoselect: false });
         }
         this.enterSoleTraderUi();
@@ -485,8 +490,31 @@ define([
     SoleTrader.prototype.launchSignup = function (options) {
         const win = this.openIframe(options);
         this._host.showPopupMessage(!win);
-        if (!win) this.ensureTokens();
+        if (!win) {
+            // Held for retrySignup(): a blocked "select a different sole
+            // trader" that retried without them would hand the buyer back the
+            // very registration they are trying to replace.
+            this._blockedSignupOptions = options || null;
+            this.ensureTokens();
+        }
         return win;
+    };
+
+    /** The fallback link's own launch, on the terms the blocked one had. */
+    SoleTrader.prototype.retrySignup = function () {
+        return this.launchSignup(this._blockedSignupOptions);
+    };
+
+    /**
+     * Whether an identity is adopted and on screen. The one answer every
+     * surface asks — the revert decision, the chip's re-signup branch and the
+     * "select a different sole trader" link — so they cannot disagree about
+     * the same buyer.
+     *
+     * @returns {boolean}
+     */
+    SoleTrader.prototype.isSoleTraderAdopted = function () {
+        return this._host.soleTraderAdopted();
     };
 
     // Read the buyer on the Two cookie; resolves to the buyer or null.
@@ -576,7 +604,7 @@ define([
                 console.error({ logger: 'twoPayment.adoptSoleTraderBuyer', error });
             }
         }
-        this._soleTraderAdopted = true;
+        this._host.soleTraderAdopted(true);
         host.showPopupMessage(false);
     };
 

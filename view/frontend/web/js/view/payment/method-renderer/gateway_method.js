@@ -153,6 +153,12 @@ define([
         // popup being open, and the ACCEPTED handshake's own buyer lookup
         // (TWO-25461 §7). Drives the in-field spinner.
         soleTraderBusy: ko.observable(false),
+        // An identity is adopted and on screen. NOT derivable from
+        // `companyId()`: fillCompanyData() writes no identity for a sole
+        // trader with no trading name of their own, whose address is still
+        // filled — reading the field reverts their completed signup and hides
+        // their "select a different sole trader" link.
+        soleTraderAdopted: ko.observable(false),
         showSoleTrader: ko.observable(false),
         showWhatIsTwo: ko.observable(false),
         showModeTab: ko.observable(false),
@@ -1667,6 +1673,12 @@ define([
         },
         launchSignup(options) {
             return this.soleTrader().launchSignup(options);
+        },
+        retrySignup() {
+            return this.soleTrader().retrySignup();
+        },
+        isSoleTraderAdopted() {
+            return this.soleTrader().isSoleTraderAdopted();
         },
         ensureSoleTraderTokens() {
             return this.soleTrader().ensureTokens();

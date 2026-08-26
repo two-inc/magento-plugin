@@ -29,6 +29,22 @@ const TEMPLATE = 'view/frontend/web/template/payment/gateway_method.html';
 const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
 
 /**
+ * Minimal ko.observable stand-in: called with no argument it reads, with one
+ * it writes.
+ *
+ * @param {*} initial starting value
+ * @returns {Function}
+ */
+function makeObservable(initial) {
+    let value = initial;
+    return function (next) {
+        if (!arguments.length) return value;
+        value = next;
+        return next;
+    };
+}
+
+/**
  * Load the renderer with `window.open` recorded rather than performed.
  *
  * @returns {object} `{ component, opened }` — `opened` collects one
@@ -87,6 +103,7 @@ function makeContext(component, hostOverrides, soleTraderOverrides) {
         popupMessageStates: shown,
         companyId: function () { return ''; },
         soleTraderBusy: function () {},
+        soleTraderAdopted: makeObservable(false),
         registeredOrganisationMode: function () {},
         fillCompanyData: function () {}
     });
@@ -148,7 +165,7 @@ describe('sole-trader signup popup (TWO-25461)', () => {
         const { component } = loadRenderer();
         // A guard on the scan itself: a regex that silently matched nothing
         // would make the loop below vacuous.
-        expect(bound.has('launchSignup')).toBe(true);
+        expect(bound.has('retrySignup')).toBe(true);
         expect(bound.has('soleTraderMode')).toBe(true);
 
         const missing = [...bound].filter((name) => typeof component[name] !== 'function');
@@ -465,6 +482,29 @@ describe('sole-trader token refresh (TWO-25503, WooCommerce/PrestaShop parity)',
         expect(ctx.soleTrader().delegationToken).toBe('dt-2');
     });
 
+    test('the refresh tick is skipped while the ACCEPTED lookup is out and the popup is already closed', async () => {
+        // The guard is the flight count, not the popup handle: the buyer can
+        // close the window the instant it posts ACCEPTED, well before the
+        // lookup that tick would re-mint underneath has landed.
+        const { component } = loadRenderer();
+        let mints = 0;
+        const ctx = makeContext(component, {}, {
+            getTokens: function () {
+                mints += 1;
+                return Promise.resolve({ delegation_token: 'dt-1', autofill_token: 'at-1' });
+            }
+        });
+
+        await ctx.ensureSoleTraderTokens.call(ctx);
+        ctx.soleTrader().beginFlight();
+        ctx.soleTrader()._soleTraderPopupWindow = { closed: true, close: function () {} };
+
+        jest.advanceTimersByTime(30 * 60 * 1000);
+        await Promise.resolve();
+
+        expect(mints).toBe(1);
+    });
+
     test('the refresh tick is skipped while a round trip is outstanding', async () => {
         const { component } = loadRenderer();
         let mints = 0;
@@ -634,7 +674,6 @@ describe('abandoned signup popup (WooCommerce watchPopupClose parity)', () => {
         second.closed = true;
         jest.advanceTimersByTime(300);
 
-        expect(ctx.soleTrader()._flightDepth).toBe(0);
         expect(busyStates[busyStates.length - 1]).toBe(false);
     });
 
@@ -644,7 +683,6 @@ describe('abandoned signup popup (WooCommerce watchPopupClose parity)', () => {
 
         ctx.soleTrader().dispose();
 
-        expect(ctx.soleTrader()._flightDepth).toBe(0);
         expect(busyStates).toEqual([true, false]);
     });
 
@@ -657,5 +695,95 @@ describe('abandoned signup popup (WooCommerce watchPopupClose parity)', () => {
         jest.advanceTimersByTime(300);
 
         expect(reverted).toEqual([]);
+    });
+});
+
+describe('the adoption latch is the one answer every surface reads', () => {
+    test('a blocked "select a different sole trader" retries without autoselect', () => {
+        // The fallback link is the only route back from a blocked popup, and
+        // retrying with autoselect on would hand the buyer the registration
+        // they are trying to replace.
+        const opened = [];
+        const component = loadAmdModule(
+            RENDERER,
+            {},
+            {
+                window: {
+                    checkoutConfig: { payment: {} },
+                    open: function (url, target, features) {
+                        opened.push({ url: url, target: target, features: features });
+                        return null;
+                    }
+                },
+                btoa: global.btoa
+            }
+        );
+        const ctx = makeContext(component, {}, {
+            delegationToken: 'dt-1',
+            autofillToken: 'at-1'
+        });
+
+        ctx.selectDifferentSoleTrader.call(ctx);
+        expect(ctx.popupMessageStates).toEqual([true]);
+
+        ctx.retrySignup.call(ctx);
+
+        expect(opened).toHaveLength(2);
+        opened.forEach(({ url }) => {
+            expect(new URL(url).searchParams.get('autoselect')).toBe('false');
+        });
+    });
+
+    test('a blocked ordinary chip click retries with autoselect left on', () => {
+        const opened = [];
+        const component = loadAmdModule(
+            RENDERER,
+            {},
+            {
+                window: {
+                    checkoutConfig: { payment: {} },
+                    open: function (url) { opened.push({ url: url }); return null; }
+                },
+                btoa: global.btoa
+            }
+        );
+        const ctx = makeContext(component, {}, {
+            delegationToken: 'dt-1',
+            autofillToken: 'at-1'
+        });
+
+        ctx.soleTraderMode.call(ctx);
+        ctx.retrySignup.call(ctx);
+
+        expect(opened).toHaveLength(2);
+        opened.forEach(({ url }) => {
+            expect(new URL(url).searchParams.get('autoselect')).toBeNull();
+        });
+    });
+
+    test('a billing-country change drops the latch, so the chip is not a re-signup', () => {
+        // clearCompanyForCountryChange() wipes the identity; a latch left
+        // standing would answer for a buyer no longer on screen and send the
+        // next chip click down the replace-an-identity branch.
+        const { component, opened } = loadRenderer();
+        const ctx = makeContext(component, {}, {
+            delegationToken: 'dt-1',
+            autofillToken: 'at-1'
+        });
+        ctx.adoptSoleTraderBuyer.call(ctx, { organization_number: '1', company_name: 'X' });
+        expect(ctx.isSoleTraderAdopted.call(ctx)).toBe(true);
+
+        ctx.soleTrader().forgetAdoptions();
+
+        expect(ctx.isSoleTraderAdopted.call(ctx)).toBe(false);
+        ctx.soleTraderMode.call(ctx);
+        expect(new URL(opened[0].url).searchParams.get('autoselect')).toBeNull();
+    });
+
+    test('the template gates the select-different link on the latch, not the identity fields', () => {
+        // A sole trader with no trading name of their own has no companyId,
+        // so gating on the fields hid their only route to a different one.
+        const template = fs.readFileSync(path.resolve(__dirname, '..', '..', TEMPLATE), 'utf8');
+        expect(template).toContain('showSoleTrader() && soleTraderAdopted()');
     });
 });

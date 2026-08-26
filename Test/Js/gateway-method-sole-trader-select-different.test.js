@@ -18,6 +18,22 @@ const SOLE_TRADER_MODEL = 'view/frontend/web/js/model/sole-trader.js';
 const TEMPLATE = 'view/frontend/web/template/payment/gateway_method.html';
 const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
 
+/**
+ * Minimal ko.observable stand-in: called with no argument it reads, with one
+ * it writes.
+ *
+ * @param {*} initial starting value
+ * @returns {Function}
+ */
+function makeObservable(initial) {
+    let value = initial;
+    return function (next) {
+        if (!arguments.length) return value;
+        value = next;
+        return next;
+    };
+}
+
 function loadRenderer() {
     const opened = [];
     const component = loadAmdModule(
@@ -58,6 +74,7 @@ function makeContext(component, hostOverrides, soleTraderOverrides) {
         companyId: function () { return ''; },
         showPopupMessage: function () {},
         soleTraderBusy: function () {},
+        soleTraderAdopted: makeObservable(false),
         registeredOrganisationMode: function () {},
         showErrorMessage: function () {}
     });
