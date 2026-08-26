@@ -386,10 +386,62 @@ function makeJQueryMock() {
     // company-search widget itself. Specs that DO care about the widget's
     // real async/MutationObserver behaviour already supply their own richer
     // jquery double (see makeRecordingDom() in tile-company-readonly-fields.test.js).
+    installAsyncSimulation($);
+    return $;
+}
+
+/**
+ * Magento_Ui/js/lib/view/utils/async's `$.async` decorator, simulated.
+ *
+ * The real one is a MutationObserver that is never disconnected, so it keeps
+ * firing for the life of the page and every registration is permanent. A stub
+ * that only ran the callback once made observer STACKING invisible — which is
+ * how a re-bind loop that freezes checkout survived three review rounds and a
+ * green suite.
+ *
+ * `$.async.registrations` counts live observers so a test can assert a control
+ * registers one per selector, and `$.async.fireAll()` replays them the way a
+ * DOM mutation would.
+ *
+ * @param {object} $ the jQuery (or double) to install onto
+ * @returns {object} the same $
+ */
+function installAsyncSimulation($) {
+    const registry = [];
     $.async = function (selector, cb) {
-        cb($(selector));
+        registry.push({ selector: selector, cb: cb });
+        cb($(selector)[0] || $(selector));
+    };
+    $.async.registrations = function (selector) {
+        return selector
+            ? registry.filter(function (r) { return r.selector === selector; }).length
+            : registry.length;
+    };
+    /** Replay every live observer, as a DOM mutation does. */
+    $.async.fireAll = function () {
+        registry.slice().forEach(function (r) {
+            cbSafe(r.cb, $(r.selector)[0] || $(r.selector));
+        });
+    };
+    $.async.reset = function () {
+        registry.length = 0;
     };
     return $;
+}
+
+/**
+ * A replayed observer whose callback throws must not stop the rest, the same
+ * way one observer's exception does not disconnect its siblings.
+ *
+ * @param {Function} cb
+ * @param {*} node
+ */
+function cbSafe(cb, node) {
+    try {
+        cb(node);
+    } catch (error) {
+        // Surfaced by whatever the test asserts on, not by aborting the replay.
+    }
 }
 
 function makeUnderscoreMock() {
@@ -629,5 +681,6 @@ function loadCompanySearchControl($, companySearchMock, extraGlobals) {
 module.exports = {
     loadAmdModule: loadAmdModule,
     defaultMocks: defaultMocks,
-    loadCompanySearchControl: loadCompanySearchControl
+    loadCompanySearchControl: loadCompanySearchControl,
+    installAsyncSimulation: installAsyncSimulation
 };
