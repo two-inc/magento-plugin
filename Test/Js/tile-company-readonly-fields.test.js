@@ -566,18 +566,11 @@ describe('what each capture mode puts in front of the buyer', () => {
     test('sole-trader mode: the minted name and synthetic number are embedded the same way', async () => {
         const { renderer } = loadRendererOnly();
 
-        // No email in the form, so lookupSoleTrader() short-circuits and the
-        // preset result below is what the chip click acts on.
-        renderer.getEmail = function () { return ''; };
-        renderer.soleTrader().soleTraderLookup = {
-            ready: true,
-            matches: true,
-            buyer: {
-                organization_number: 'ST-SYNTH-004',
-                company_name: 'Sole Trader Example'
-            }
-        };
-        await renderer.soleTraderMode();
+        renderer.soleTraderMode();
+        renderer.adoptSoleTraderBuyer({
+            organization_number: 'ST-SYNTH-004',
+            company_name: 'Sole Trader Example'
+        });
         approveIntent(renderer);
 
         expect(renderedValue('company_name', renderer)).toBe('Sole Trader Example');
@@ -632,15 +625,11 @@ describe('what each capture mode puts in front of the buyer', () => {
     test('leaving sole-trader mode clears the sole-trader identity (the control was never hidden)', () => {
         const { renderer } = loadRendererOnly();
 
-        renderer.soleTrader().soleTraderLookup = {
-            ready: true,
-            matches: true,
-            buyer: {
-                organization_number: 'ST-SYNTH-004',
-                company_name: 'Sole Trader Example'
-            }
-        };
         renderer.soleTraderMode();
+        renderer.adoptSoleTraderBuyer({
+            organization_number: 'ST-SYNTH-004',
+            company_name: 'Sole Trader Example'
+        });
         approveIntent(renderer);
         expect(approvedNoticeVisible(renderer)).toBe(true);
         expect(nameFieldVisible(renderer)).toBe(true);
@@ -1228,25 +1217,17 @@ describe('an accepted organisation number still reaches the order', () => {
         expect(renderer.getData().additional_data.companyName).toBe('First Example Ltd');
     });
 
-    test('the sole-trader synthetic number reaches getData() via the chip click', async () => {
+    test('the sole-trader synthetic number reaches getData() via the signup handshake', () => {
         // The autofill endpoint MINTS this number; it is never picked from a
-        // registry and never typed. The chip click is the only path that
-        // lands it.
+        // registry and never typed. A completed hosted signup is the only path
+        // that lands it.
         const { renderer } = loadRendererOnly();
 
-        // No email in the form, so lookupSoleTrader() short-circuits and the
-        // preset result below is what the chip click acts on.
-        renderer.getEmail = function () { return ''; };
-        renderer.soleTrader().soleTraderLookup = {
-            ready: true,
-            matches: true,
-            buyer: {
-                organization_number: 'ST-SYNTH-003',
-                company_name: 'Chip Click Example'
-            }
-        };
-
-        await renderer.soleTraderMode();
+        renderer.soleTraderMode();
+        renderer.adoptSoleTraderBuyer({
+            organization_number: 'ST-SYNTH-003',
+            company_name: 'Chip Click Example'
+        });
 
         expect(renderer.companyId()).toBe('ST-SYNTH-003');
         expect(renderer.getData().additional_data.companyId).toBe('ST-SYNTH-003');

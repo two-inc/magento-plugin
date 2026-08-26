@@ -557,6 +557,10 @@ function loadAmdModule(relPath, extraMocks, extraGlobals, siblingCache) {
         console: { log: function () {}, debug: function () {}, warn: function () {}, error: function () {} },
         setTimeout: setTimeout,
         clearTimeout: clearTimeout,
+        // Resolved at sandbox-build time, so a test that installs jest fake
+        // timers before loading a module gets the fake ones inside it.
+        setInterval: setInterval,
+        clearInterval: clearInterval,
         // Browser globals the module sources use directly.
         URLSearchParams: URLSearchParams,
         unescape: global.unescape,

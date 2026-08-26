@@ -2,20 +2,13 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25461. Two buyer-identity lookups share one helper and must NOT share
- * one rule.
- *
- * `lookupSoleTrader()` is pre-auth: it reads whatever buyer the Two cookie
- * happens to identify before the buyer has proved anything, so a
- * buyer only counts when its email equals the one entered on the checkout
- * form. That check is correct there and is pinned below as a regression guard.
- *
- * `popupMessageListener()`'s `ACCEPTED` branch is POST-AUTHENTICATION: the
- * buyer has just completed verification server-side, and the email that
- * authenticated is the identity. It used to re-run the same email-match
- * comparison and, on a mismatch, take no branch at all — the buyer finished
- * signup and got a permanently blank readonly/required company field with no
- * route forward. `resolveBuyer(authenticated)` is what separates the two.
+ * TWO-25461/TWO-25503. `/autofill/v1/buyer/current` is read from exactly one
+ * place: `popupMessageListener()`'s `ACCEPTED` branch, after the buyer has
+ * completed verification server-side. The email that authenticated IS the
+ * identity, so the checkout's own contact field has no say in it — re-running
+ * an email-match comparison there took no branch at all on a mismatch, and the
+ * buyer finished signup to a permanently blank readonly/required company field
+ * with no route forward.
  *
  * `fetchBuyer()` is stubbed per test rather than driven through `fetch`: the
  * behaviour under test is which buyer the two call sites ACCEPT, not how the
@@ -63,6 +56,9 @@ function loadRenderer(buyer) {
 
     renderer._brandConfig = { checkoutPageUrl: CHECKOUT_PAGE_URL };
     renderer.getEmail = () => ENTERED_EMAIL;
+    // The real one needs Magento's message container, which the harness has no
+    // stand-in for; tests that assert on it replace this with a recorder.
+    renderer.showErrorMessage = () => {};
 
     const soleTrader = renderer.soleTrader();
     soleTrader.getTokens = () =>
@@ -89,33 +85,20 @@ function messageHandler(renderer, listeners) {
 
 const SOLE_TRADER = { organization_number: '999888777', company_name: 'Example Trader' };
 
-describe('resolveBuyer applies the email-match rule only pre-authentication', () => {
+describe('resolveBuyer trusts the identity the popup authenticated', () => {
     test.each([
-        [false, { email: ENTERED_EMAIL }, true, 'passive: the entered email matches'],
-        [false, { email: 'ENTERED@Example.COM' }, true, 'passive: match is case-insensitive'],
-        [false, { email: '  entered@example.com  ' }, false, 'passive: the buyer email is not trimmed'],
-        [false, { email: 'someone.else@example.com' }, false, 'passive: a mismatch is refused'],
-        [false, { email: null }, false, 'passive: a buyer with no email cannot match'],
-        [false, null, false, 'passive: no buyer at all'],
-        [true, { email: 'someone.else@example.com' }, true, 'post-auth: a mismatch is accepted'],
-        [true, { email: null }, true, 'post-auth: no email is required to match anything'],
-        [true, { email: ENTERED_EMAIL }, true, 'post-auth: a matching email is accepted too'],
-        [true, null, false, 'post-auth: no buyer is still no buyer']
-    ])(
-        'authenticated=%p buyer=%p -> matches=%p (%s)',
-        (authenticated, buyer, expected) => {
-            const { renderer } = loadRenderer(buyer);
+        [{ email: 'someone.else@example.com' }, true, 'an email unlike the checkout contact is still the identity'],
+        [{ email: null }, true, 'no email is required to match anything'],
+        [{ email: ENTERED_EMAIL }, true, 'a matching email is accepted too'],
+        [null, false, 'no buyer is still no buyer']
+    ])('buyer=%p -> matches=%p (%s)', (buyer, expected) => {
+        const { renderer } = loadRenderer(buyer);
 
-            return renderer.resolveBuyer(authenticated).then((pf) => {
-                expect(pf.matches).toBe(expected);
-                expect(pf.ready).toBe(true);
-                expect(pf.buyer).toBe(buyer);
-                // Recorded on the component, not just returned: soleTraderMode()
-                // reads `this.soleTraderLookup` on a later click.
-                expect(renderer.soleTrader().soleTraderLookup).toBe(pf);
-            });
-        }
-    );
+        return renderer.resolveBuyer().then((resolved) => {
+            expect(resolved.matches).toBe(expected);
+            expect(resolved.buyer).toBe(buyer);
+        });
+    });
 });
 
 describe('a completed signup autofills whatever identity it authenticated', () => {
@@ -174,55 +157,50 @@ describe('a completed signup autofills whatever identity it authenticated', () =
             expect(renderer.companyName()).toBe(SOLE_TRADER.company_name);
         }));
     });
+
+    test('a non-ACCEPTED message from the tracked popup surfaces an error', () => {
+        // WooCommerce and PrestaShop both surface here too; a silent failure
+        // leaves the buyer with an open flow and no explanation.
+        const { renderer, listeners } = loadRenderer(null);
+        const errors = [];
+        renderer.showErrorMessage = (message) => errors.push(message);
+        const handler = messageHandler(renderer, listeners);
+
+        renderer.showSoleTrader(true);
+
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'REJECTED', source: POPUP });
+
+        expect(errors).toHaveLength(1);
+    });
 });
 
-describe('email entry alone never triggers the lookup (TWO-25503)', () => {
+describe('the buyer record is read only after authentication (TWO-25503)', () => {
     /**
-     * The removed email-driven prefetch is invisible to every behavioural
-     * fixture here: reinstating it would auto-adopt a sole trader with no chip
-     * click and still leave the chip-click tests green. Pinning the call sites
-     * in the source is what catches that.
+     * The passive probe is invisible to every behavioural fixture here:
+     * reinstating it would auto-adopt a sole trader off a session cookie the
+     * person checking out never authenticated against, and still leave the
+     * chip-click tests green. Pinning the call sites in the source is what
+     * catches that.
      */
-    test('lookupSoleTrader is called from soleTraderMode and nowhere else', () => {
+    test('resolveBuyer is reached from the ACCEPTED branch and nowhere else', () => {
         const src = fs.readFileSync(
             path.resolve(__dirname, '..', '..', SOLE_TRADER_MODEL),
             'utf8'
         );
         // Guard against a rename silently emptying this check.
-        expect(src).toContain('SoleTrader.prototype.lookupSoleTrader = function ()');
+        expect(src).toContain('SoleTrader.prototype.resolveBuyer = function ()');
 
-        const callSites = src.split('\n').filter((line) => /lookupSoleTrader\(\)[.;]/.test(line));
+        const callSites = src.split('\n').filter((line) => /this\.resolveBuyer\(\)/.test(line));
         expect(callSites).toHaveLength(1);
-        expect(callSites[0]).toContain('return this.lookupSoleTrader().then(');
-    });
-});
-
-describe('the chip lookup still refuses a buyer it cannot tie to the form', () => {
-    test('a mismatched cookie buyer does not prefill the company', () => {
-        const { renderer } = loadRenderer({
-            email: 'someone.else@example.com',
-            organization_number: SOLE_TRADER.organization_number,
-            company_name: SOLE_TRADER.company_name
-        });
-        renderer.showModeTab(true);
-
-        return renderer.lookupSoleTrader().then(() => {
-            expect(renderer.soleTrader().soleTraderLookup.matches).toBe(false);
-            expect(renderer.companyId()).toBe('');
-            expect(renderer.companyName()).toBe('');
-            expect(renderer.showSoleTrader()).toBe(false);
-        });
+        expect(src).not.toContain('lookupSoleTrader');
     });
 
-    test('a matching cookie buyer prefills and selects sole trader', () => {
-        const { renderer } = loadRenderer(Object.assign({ email: ENTERED_EMAIL }, SOLE_TRADER));
-        renderer.showModeTab(true);
-
-        return renderer.soleTraderMode().then(() => {
-            expect(renderer.soleTrader().soleTraderLookup.matches).toBe(true);
-            expect(renderer.companyId()).toBe(SOLE_TRADER.organization_number);
-            expect(renderer.companyName()).toBe(SOLE_TRADER.company_name);
-            expect(renderer.showSoleTrader()).toBe(true);
-        });
+    test('fetchBuyer has exactly one caller, and it is resolveBuyer', () => {
+        const src = fs.readFileSync(
+            path.resolve(__dirname, '..', '..', SOLE_TRADER_MODEL),
+            'utf8'
+        );
+        const callSites = src.split('\n').filter((line) => /this\.fetchBuyer\(\)/.test(line));
+        expect(callSites).toHaveLength(1);
     });
 });

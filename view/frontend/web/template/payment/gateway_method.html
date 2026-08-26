@@ -252,7 +252,7 @@
                 />
             </svg>
             <div class="popup_message" data-element="popup-message">
-                <span data-element="click-element" data-bind="event: { click: () => openIframe() }">
+                <span data-element="click-element" data-bind="event: { click: () => launchSignup() }">
                     <!-- ko i18n: 'Click here to log in or sign up as a Sole Trader.' --><!-- /ko -->
                 </span>
             </div>
@@ -386,20 +386,20 @@
                             class="input-text"
                         />
                         <!--
-                            In-flight spinner for lookupSoleTrader()'s token-mint
-                            + buyer-lookup round trip (TWO-25461 §7). Lives inside
-                            this field's own `.control` (see
+                            Busy spinner for an outstanding sole-trader round trip —
+                            the signup popup being open, and the ACCEPTED handshake's
+                            own buyer lookup (TWO-25461 §7). Lives inside this
+                            field's own `.control` (see
                             `.two-sole-trader-field-control` in style.css for the
                             `position: relative` that anchors it), not a separate
                             overlay — same shape as the address step's
                             `.two-company-search__spinner`. `visible:`, not `ko if:`,
-                            because this toggles rapidly on every email edit and the
-                            field is not a `role="status"` region.
+                            because the field is not a `role="status"` region.
                         -->
                         <span
                             class="two-sole-trader-prefetch-spinner"
                             aria-hidden="true"
-                            data-bind="visible: soleTraderLookupInFlight"
+                            data-bind="visible: soleTraderBusy"
                         ></span>
                         <!--
                             The captured organisation number, as plain text

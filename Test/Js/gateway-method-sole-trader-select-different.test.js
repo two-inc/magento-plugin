@@ -4,7 +4,7 @@
  *
  * TWO-25461 §7 — the two UX gaps left after the popup-launch bugfixes
  * (PR #343): the "select a different sole trader" link/autoselect param,
- * and the in-flight spinner for the chip lookup's round trip.
+ * and the busy spinner for an outstanding sole-trader round trip.
  */
 
 'use strict';
@@ -54,7 +54,12 @@ function makeContext(component, hostOverrides, soleTraderOverrides) {
         getEmail: function () { return 'ola@example.com'; },
         getTelephone: function () { return '+4712345678'; },
         showModeTab: function () { return true; },
-        showSoleTrader: function () { return true; }
+        showSoleTrader: function () { return true; },
+        companyId: function () { return ''; },
+        showPopupMessage: function () {},
+        soleTraderBusy: function () {},
+        registeredOrganisationMode: function () {},
+        showErrorMessage: function () {}
     });
     Object.assign(ctx, hostOverrides || {});
     Object.assign(ctx.soleTrader(), {
@@ -228,115 +233,95 @@ describe('at most one sole-trader popup is ever live (TWO-25461 review finding)'
     });
 });
 
-describe('sole-trader lookup in-flight spinner (TWO-25461 §7)', () => {
-    test('the spinner flag is true while the round trip is outstanding, false once it settles (success)', async () => {
-        const { component } = loadRenderer();
-        let resolveTokens;
+
+describe('sole-trader busy flag (TWO-25461 §7)', () => {
+    beforeEach(() => { jest.useFakeTimers(); });
+    afterEach(() => { jest.useRealTimers(); });
+
+    /**
+     * @returns {object} `{ ctx, states, popup, handler }` — `states` records
+     *          every write to the busy observable, in order.
+     */
+    function loadBusyContext() {
+        const listeners = [];
+        const popup = { closed: false, close: function () {} };
+        const component = loadAmdModule(
+            RENDERER,
+            {},
+            {
+                window: {
+                    checkoutConfig: { payment: {} },
+                    open: function () { return popup; },
+                    addEventListener: function (name, fn) { listeners.push({ name: name, fn: fn }); },
+                    removeEventListener: function () {}
+                },
+                btoa: global.btoa
+            }
+        );
         const states = [];
         const ctx = makeContext(
             component,
             {
                 fillCompanyData: function () {},
-                soleTraderLookupInFlight: function (next) {
+                soleTraderBusy: function (next) {
                     if (!arguments.length) return states.length ? states[states.length - 1] : false;
                     states.push(next);
                     return next;
                 }
             },
-            {
-                enterSoleTraderUi: function () {},
-                fetchBuyer: function () { return Promise.resolve(null); },
-                getTokens: function () {
-                    return new Promise((resolve) => { resolveTokens = resolve; });
-                }
-            }
+            { delegationToken: 'dt-1', autofillToken: 'at-1' }
         );
+        ctx.popupMessageListener.call(ctx);
+        return {
+            ctx: ctx,
+            states: states,
+            popup: popup,
+            handler: listeners.find((l) => l.name === 'message').fn
+        };
+    }
 
-        const flight = ctx.lookupSoleTrader.call(ctx);
+    test('the flag is raised while the popup is open and dropped when it closes', () => {
+        const { ctx, states, popup } = loadBusyContext();
+
+        ctx.soleTraderMode.call(ctx);
         expect(states).toEqual([true]);
 
-        resolveTokens({ delegation_token: 'dt-1', autofill_token: 'at-1' });
-        await flight;
-
-        expect(states[states.length - 1]).toBe(false);
-    });
-
-    test('the spinner flag is cleared even when the round trip fails', async () => {
-        const { component } = loadRenderer();
-        const states = [];
-        const ctx = makeContext(
-            component,
-            {
-                soleTraderLookupInFlight: function (next) {
-                    if (!arguments.length) return states.length ? states[states.length - 1] : false;
-                    states.push(next);
-                    return next;
-                }
-            },
-            { getTokens: function () { return Promise.reject(new Error('mint failed')); } }
-        );
-
-        await ctx.lookupSoleTrader.call(ctx);
+        popup.closed = true;
+        jest.advanceTimersByTime(300);
 
         expect(states).toEqual([true, false]);
     });
 
-    test('the template renders the spinner inside the company-name field control, bound to the flag', () => {
-        const template = fs.readFileSync(path.resolve(__dirname, '..', '..', TEMPLATE), 'utf8');
-        expect(template).toContain('soleTraderLookupInFlight');
-        expect(template).toContain('two-sole-trader-prefetch-spinner');
+    test('an ACCEPTED lookup outstanding when the popup closes holds the flag until it lands', async () => {
+        // Both round trips can be live at once, which is why the flag is
+        // driven by a count rather than a boolean.
+        const { ctx, states, popup, handler } = loadBusyContext();
+        let resolveBuyerFetch;
+        Object.assign(ctx.soleTrader(), {
+            fetchBuyer: function () {
+                return new Promise((resolve) => { resolveBuyerFetch = resolve; });
+            }
+        });
+
+        ctx.soleTraderMode.call(ctx);
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: popup });
+
+        popup.closed = true;
+        jest.advanceTimersByTime(300);
+        // The popup's own flight has settled; the ACCEPTED lookup has not.
+        expect(states.filter((state) => state === false)).toEqual([]);
+
+        resolveBuyerFetch({ organization_number: '1', company_name: 'X' });
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(states[states.length - 1]).toBe(false);
     });
 
-    test('an earlier call settling after a newer one started does not clear the flag out from under it (review finding)', async () => {
-        // Buyer edits the email again before the FIRST lookup resolves: a
-        // second lookupSoleTrader() call fires for the new email. If the
-        // first call's chain happens to settle after the second one starts,
-        // its own .finally() must not flip the shared flag to false while
-        // the second request is still genuinely outstanding.
-        const { component } = loadRenderer();
-        const states = [];
-        let resolveFirst;
-        let resolveSecond;
-        const emails = ['first@example.com', 'second@example.com'];
-        let callIndex = 0;
-        const ctx = makeContext(
-            component,
-            {
-                fillCompanyData: function () {},
-                getEmail: function () { return emails[callIndex]; },
-                soleTraderLookupInFlight: function (next) {
-                    if (!arguments.length) return states.length ? states[states.length - 1] : false;
-                    states.push(next);
-                    return next;
-                }
-            },
-            {
-                enterSoleTraderUi: function () {},
-                fetchBuyer: function () { return Promise.resolve(null); },
-                getTokens: function () {
-                    if (callIndex === 0) {
-                        return new Promise((resolve) => { resolveFirst = resolve; });
-                    }
-                    return new Promise((resolve) => { resolveSecond = resolve; });
-                }
-            }
-        );
-
-        const firstFlight = ctx.lookupSoleTrader.call(ctx);
-        callIndex = 1;
-        const secondFlight = ctx.lookupSoleTrader.call(ctx);
-
-        // Resolve the FIRST (older) call while the second is still pending.
-        resolveFirst({ delegation_token: 'dt-1', autofill_token: 'at-1' });
-        await firstFlight;
-
-        // The second request is still genuinely in flight — the spinner
-        // must still read true, not have been cleared by the stale first call.
-        expect(ctx.soleTraderLookupInFlight()).toBe(true);
-
-        resolveSecond({ delegation_token: 'dt-2', autofill_token: 'at-2' });
-        await secondFlight;
-
-        expect(ctx.soleTraderLookupInFlight()).toBe(false);
+    test('the template renders the spinner inside the company-name field control, bound to the flag', () => {
+        const template = fs.readFileSync(path.resolve(__dirname, '..', '..', TEMPLATE), 'utf8');
+        expect(template).toContain('soleTraderBusy');
+        expect(template).toContain('two-sole-trader-prefetch-spinner');
     });
 });

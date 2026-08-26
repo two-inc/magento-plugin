@@ -149,11 +149,10 @@ define([
         // docblock for why it is not per-instance.
         orderIntentInProgress: orderIntentInProgress,
         showPopupMessage: ko.observable(false),
-        // True for the duration of lookupSoleTrader()'s token-mint +
-        // buyer-lookup round trip (TWO-25461 §7). Drives the in-field
-        // spinner; not the popup-open state, which showPopupMessage/
-        // showSoleTrader already cover.
-        soleTraderLookupInFlight: ko.observable(false),
+        // True while a sole-trader round trip is outstanding — the signup
+        // popup being open, and the ACCEPTED handshake's own buyer lookup
+        // (TWO-25461 §7). Drives the in-field spinner.
+        soleTraderBusy: ko.observable(false),
         showSoleTrader: ko.observable(false),
         showWhatIsTwo: ko.observable(false),
         showModeTab: ko.observable(false),
@@ -903,6 +902,9 @@ define([
                 if (self.countryCode() !== countryCode) return;
                 if (types.includes('SOLE_TRADER')) {
                     self.showModeTab(true);
+                    // Minted as soon as the option exists, never at click
+                    // time: `window.open()` behind an await is blocker bait.
+                    self.ensureSoleTraderTokens();
                 } else {
                     if (self.showSoleTrader()) {
                         self.registeredOrganisationMode();
@@ -1663,14 +1665,17 @@ define([
         soleTraderMode() {
             return this.soleTrader().soleTraderMode();
         },
-        lookupSoleTrader() {
-            return this.soleTrader().lookupSoleTrader();
+        launchSignup(options) {
+            return this.soleTrader().launchSignup(options);
         },
-        fetchBuyer(autofillToken) {
-            return this.soleTrader().fetchBuyer(autofillToken);
+        ensureSoleTraderTokens() {
+            return this.soleTrader().ensureTokens();
         },
-        resolveBuyer(authenticated, autofillToken, isCurrent) {
-            return this.soleTrader().resolveBuyer(authenticated, autofillToken, isCurrent);
+        fetchBuyer() {
+            return this.soleTrader().fetchBuyer();
+        },
+        resolveBuyer() {
+            return this.soleTrader().resolveBuyer();
         },
         adoptSoleTraderBuyer(buyer) {
             return this.soleTrader().adoptSoleTraderBuyer(buyer);

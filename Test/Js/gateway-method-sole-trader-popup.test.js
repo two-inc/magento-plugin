@@ -85,6 +85,9 @@ function makeContext(component, hostOverrides, soleTraderOverrides) {
             return next;
         },
         popupMessageStates: shown,
+        companyId: function () { return ''; },
+        soleTraderBusy: function () {},
+        registeredOrganisationMode: function () {},
         fillCompanyData: function () {}
     });
     Object.assign(ctx, hostOverrides || {});
@@ -145,7 +148,7 @@ describe('sole-trader signup popup (TWO-25461)', () => {
         const { component } = loadRenderer();
         // A guard on the scan itself: a regex that silently matched nothing
         // would make the loop below vacuous.
-        expect(bound.has('openIframe')).toBe(true);
+        expect(bound.has('launchSignup')).toBe(true);
         expect(bound.has('soleTraderMode')).toBe(true);
 
         const missing = [...bound].filter((name) => typeof component[name] !== 'function');
@@ -293,44 +296,74 @@ describe('sole-trader signup popup (TWO-25461)', () => {
         expect(opened).toEqual([]);
     });
 
-    test('the chip click opens signup only once the tokens have landed', async () => {
+    test('the chip click opens signup synchronously, with no await before window.open', () => {
+        // The popup-blocker contract (TWO-25503): tokens are minted up front,
+        // so the click handler reaches `window.open()` inside the gesture that
+        // triggered it. A single synchronous call, not a promise, is the
+        // observable form of that.
+        const { component, opened } = loadRenderer();
+        const ctx = makeContext(component, {}, {
+            delegationToken: 'dt-1',
+            autofillToken: 'at-1',
+            getTokens: function () { throw new Error('no mint may happen on the click path'); }
+        });
+
+        const handle = ctx.soleTraderMode.call(ctx);
+
+        expect(opened).toHaveLength(1);
+        expect(handle).toBeTruthy();
+        expect(ctx.popupMessageStates).toEqual([false]);
+    });
+
+    test('a chip click before the up-front mint has landed opens nothing and offers the link', async () => {
         const { component, opened } = loadRenderer();
         let resolveTokens;
         const ctx = makeContext(component, {}, {
             getTokens: function () {
-                return new Promise((resolve) => {
-                    resolveTokens = resolve;
-                });
+                return new Promise((resolve) => { resolveTokens = resolve; });
             }
         });
 
         ctx.soleTraderMode.call(ctx);
-        // Still minting: nothing may open yet, because openIframe() could
-        // only build an empty-token URL from here.
+
         expect(opened).toEqual([]);
-        expect(ctx.hasSignupTokens.call(ctx)).toBe(false);
+        // The link is the only route back, so it is offered whether or not
+        // tokens exist yet — its own click retries once they land.
+        expect(ctx.popupMessageStates).toEqual([true]);
 
         resolveTokens({ delegation_token: 'dt-1', autofill_token: 'at-1' });
-        // Yield to the macrotask queue rather than awaiting the returned
-        // promise: the chain also settles fetchBuyer(), whose own microtasks
-        // run after soleTraderMode()'s.
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(ctx.hasSignupTokens.call(ctx)).toBe(true);
+        // Retrying through the link now succeeds, still synchronously.
+        ctx.launchSignup.call(ctx);
         expect(opened).toHaveLength(1);
-        // The popup was NOT blocked, so the fallback link stays withdrawn.
-        expect(ctx.popupMessageStates).toEqual([false]);
+        expect(ctx.popupMessageStates).toEqual([true, false]);
+    });
+
+    test('re-clicking the chip once an identity is adopted re-signs up with autoselect=false', () => {
+        const { component, opened } = loadRenderer();
+        const ctx = makeContext(
+            component,
+            { companyId: function () { return '1234567'; } },
+            { delegationToken: 'dt-1', autofillToken: 'at-1' }
+        );
+
+        ctx.soleTraderMode.call(ctx);
+
+        expect(opened).toHaveLength(1);
+        expect(new URL(opened[0].url).searchParams.get('autoselect')).toBe('false');
     });
 
     test.each([
-        { delegationToken: 'dt-1', autofillToken: 'at-1', expected: true,
+        { delegationToken: 'dt-1', autofillToken: 'at-1',
             description: 'a blocked popup with tokens minted offers the link' },
-        { delegationToken: '', autofillToken: '', expected: false,
-            description: 'a failed token mint offers no link at all' }
-    ])('blocked-popup branch: $description', async ({ delegationToken, autofillToken, expected }) => {
-        // The resolved-but-no-match branch. `window.open` returning null is a
-        // browser-blocked popup; tokens absent means the lookup resolved
-        // through its catch, which leaves `ready` true and nothing minted.
+        { delegationToken: '', autofillToken: '',
+            description: 'a click before the mint has landed offers the link too' }
+    ])('blocked-popup branch: $description', ({ delegationToken, autofillToken }) => {
+        // `window.open` returning null is a browser-blocked popup. Either way
+        // the on-page link is the only remaining route to signup, and its own
+        // click re-mints if that is what was missing.
         const opened = [];
         const component = loadAmdModule(
             RENDERER,
@@ -349,63 +382,193 @@ describe('sole-trader signup popup (TWO-25461)', () => {
         const ctx = makeContext(component, {}, {
             delegationToken: delegationToken,
             autofillToken: autofillToken,
-            soleTraderLookup: { ready: true, buyer: null, matches: false }
+            getTokens: function () { return Promise.resolve({ delegation_token: 'dt-2', autofill_token: 'at-2' }); }
         });
 
-        await ctx.soleTraderMode.call(ctx);
+        ctx.soleTraderMode.call(ctx);
 
-        expect(ctx.popupMessageStates).toEqual([expected]);
+        expect(ctx.popupMessageStates).toEqual([true]);
     });
 
-    test('lookupSoleTrader resolves a promise on its skip paths', async () => {
+    test('no buyer lookup happens before the buyer has authenticated in the popup', () => {
+        // The passive `/autofill/v1/buyer/current` probe is gone (TWO-25503):
+        // the record it returns is whatever Two session cookie the browser
+        // carries, which the person checking out may never have authenticated
+        // against. Only the ACCEPTED handshake may read it.
         const { component } = loadRenderer();
-        // The not-ready branch sequences on this promise, so a skip path
-        // returning undefined would throw on `.then`.
-        const noTab = makeContext(component, { showModeTab: function () { return false; } });
-        const noEmail = makeContext(component, { getEmail: function () { return '   '; } });
-        const deduped = makeContext(component, {}, { soleTraderLookupEmail: 'ola@example.com' });
+        const ctx = makeContext(component, {}, {
+            delegationToken: 'dt-1',
+            autofillToken: 'at-1',
+            fetchBuyer: function () { throw new Error('no passive buyer probe may run'); }
+        });
 
-        await expect(noTab.lookupSoleTrader.call(noTab)).resolves.toBeUndefined();
-        await expect(noEmail.lookupSoleTrader.call(noEmail)).resolves.toBeUndefined();
-        await expect(deduped.lookupSoleTrader.call(deduped)).resolves.toBeUndefined();
+        expect(() => ctx.soleTraderMode.call(ctx)).not.toThrow();
     });
 
-    test('a second chip click while the first lookup is still in flight opens signup once', async () => {
-        // The dedupe key is written synchronously, so the second click used to
-        // resume immediately on a lookup that had recorded nothing and minted
-        // nothing: no adoption, no popup, and no fallback link either, since
-        // that needs the tokens too. It must wait on the outstanding chain.
-        const { component, opened } = loadRenderer();
+    test('concurrent ensureTokens() calls mint once and share the outstanding chain', async () => {
+        const { component } = loadRenderer();
+        let mints = 0;
         let resolveTokens;
+        const ctx = makeContext(component, {}, {
+            getTokens: function () {
+                mints += 1;
+                return new Promise((resolve) => { resolveTokens = resolve; });
+            }
+        });
+
+        const first = ctx.ensureSoleTraderTokens.call(ctx);
+        const second = ctx.ensureSoleTraderTokens.call(ctx);
+        resolveTokens({ delegation_token: 'dt-1', autofill_token: 'at-1' });
+
+        await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+        expect(mints).toBe(1);
+        // Already held: a later call is a no-op rather than a re-mint.
+        await ctx.ensureSoleTraderTokens.call(ctx);
+        expect(mints).toBe(1);
+    });
+
+    test('a failed mint leaves no tokens and does not arm the refresh timer', async () => {
+        const { component } = loadRenderer();
+        const ctx = makeContext(component, {}, {
+            getTokens: function () { return Promise.reject(new Error('boom')); }
+        });
+
+        await expect(ctx.ensureSoleTraderTokens.call(ctx)).resolves.toBe(false);
+        expect(ctx.hasSignupTokens.call(ctx)).toBe(false);
+        expect(ctx.soleTrader()._tokenRefreshId).toBeNull();
+    });
+});
+
+describe('sole-trader token refresh (TWO-25503, WooCommerce/PrestaShop parity)', () => {
+    beforeEach(() => { jest.useFakeTimers(); });
+    afterEach(() => { jest.useRealTimers(); });
+
+    test('a successful mint arms a 30-minute re-mint that keeps the tokens usable', async () => {
+        const { component } = loadRenderer();
         let mints = 0;
         const ctx = makeContext(component, {}, {
             getTokens: function () {
                 mints += 1;
-                return new Promise((resolve) => {
-                    resolveTokens = resolve;
+                return Promise.resolve({
+                    delegation_token: `dt-${mints}`,
+                    autofill_token: `at-${mints}`
                 });
             }
         });
 
-        const first = ctx.soleTraderMode.call(ctx);
-        const second = ctx.soleTraderMode.call(ctx);
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await ctx.ensureSoleTraderTokens.call(ctx);
+        expect(mints).toBe(1);
 
-        // Still minting. Neither click may have reached a decision yet — a
-        // recorded showPopupMessage() here is the dead end: the second click
-        // resumed on an empty lookup, so it neither opened a popup nor offered
-        // the link.
-        expect(ctx.popupMessageStates).toEqual([]);
-        expect(opened).toEqual([]);
+        jest.advanceTimersByTime(30 * 60 * 1000);
+        await Promise.resolve();
+        expect(mints).toBe(2);
+        expect(ctx.soleTrader().delegationToken).toBe('dt-2');
+    });
 
-        resolveTokens({ delegation_token: 'dt-1', autofill_token: 'at-1' });
-        await Promise.all([first, second]);
-        await new Promise((resolve) => setTimeout(resolve, 0));
+    test('the refresh tick is skipped while the signup popup is open', async () => {
+        const { component } = loadRenderer();
+        let mints = 0;
+        const ctx = makeContext(component, {}, {
+            getTokens: function () {
+                mints += 1;
+                return Promise.resolve({ delegation_token: 'dt-1', autofill_token: 'at-1' });
+            }
+        });
+
+        await ctx.ensureSoleTraderTokens.call(ctx);
+        ctx.soleTrader()._soleTraderPopupWindow = { closed: false, close: function () {} };
+
+        jest.advanceTimersByTime(30 * 60 * 1000);
+        await Promise.resolve();
 
         expect(mints).toBe(1);
-        expect(opened.length).toBeGreaterThan(0);
-        opened.forEach(({ url }) => {
-            expect(new URL(url).searchParams.get('businessToken')).toBe('dt-1');
+    });
+
+    test('dispose() clears the refresh timer', async () => {
+        const { component } = loadRenderer();
+        let mints = 0;
+        const ctx = makeContext(component, {}, {
+            getTokens: function () {
+                mints += 1;
+                return Promise.resolve({ delegation_token: 'dt-1', autofill_token: 'at-1' });
+            }
         });
+
+        await ctx.ensureSoleTraderTokens.call(ctx);
+        ctx.soleTrader().dispose();
+
+        jest.advanceTimersByTime(60 * 60 * 1000);
+        await Promise.resolve();
+
+        expect(mints).toBe(1);
+    });
+});
+
+describe('abandoned signup popup (WooCommerce watchPopupClose parity)', () => {
+    beforeEach(() => { jest.useFakeTimers(); });
+    afterEach(() => { jest.useRealTimers(); });
+
+    /**
+     * @param {object} popup the handle `window.open` should hand back
+     * @param {object} [hostOverrides] members to replace on the renderer
+     * @returns {object} `{ ctx, reverted, busyStates }`
+     */
+    function launchWatched(popup, hostOverrides) {
+        const component = loadAmdModule(
+            RENDERER,
+            {},
+            {
+                window: {
+                    checkoutConfig: { payment: {} },
+                    open: function () { return popup; }
+                },
+                btoa: global.btoa
+            }
+        );
+        const reverted = [];
+        const busyStates = [];
+        const ctx = makeContext(
+            component,
+            Object.assign({
+                registeredOrganisationMode: function () { reverted.push(true); },
+                soleTraderBusy: function (next) { busyStates.push(next); }
+            }, hostOverrides || {}),
+            { delegationToken: 'dt-1', autofillToken: 'at-1' }
+        );
+        ctx.soleTraderMode.call(ctx);
+        return { ctx: ctx, reverted: reverted, busyStates: busyStates };
+    }
+
+    test('closing the popup with nothing captured hands the checkout back to company search', () => {
+        const popup = { closed: false, close: function () {} };
+        const { reverted, busyStates } = launchWatched(popup);
+
+        expect(busyStates).toEqual([true]);
+        popup.closed = true;
+        jest.advanceTimersByTime(300);
+
+        expect(reverted).toEqual([true]);
+        expect(busyStates).toEqual([true, false]);
+    });
+
+    test('closing the popup after an identity was captured leaves sole-trader mode alone', () => {
+        const popup = { closed: false, close: function () {} };
+        const { reverted } = launchWatched(popup, { companyId: function () { return '1234567'; } });
+
+        popup.closed = true;
+        jest.advanceTimersByTime(300);
+
+        expect(reverted).toEqual([]);
+    });
+
+    test('closing the popup while the ACCEPTED lookup is still out leaves it to that handler', () => {
+        const popup = { closed: false, close: function () {} };
+        const { ctx, reverted } = launchWatched(popup);
+        ctx.soleTrader()._signupConfirming = true;
+
+        popup.closed = true;
+        jest.advanceTimersByTime(300);
+
+        expect(reverted).toEqual([]);
     });
 });

@@ -152,27 +152,22 @@ function settle() {
 }
 
 describe('every path that adopts a sole trader writes their address', () => {
-    test('the chip click resolves the buyer and writes it', () => {
+    test('the chip click alone writes nothing — only the popup handshake adopts', () => {
+        // TWO-25503: the chip click opens the hosted signup and stops. The
+        // record `/autofill/v1/buyer/current` answers with is whatever Two
+        // session cookie the browser carries, and it may not be the person
+        // checking out, so nothing is read from it before they authenticate.
         const { renderer, applied } = loadRenderer(BUYER);
         renderer.showModeTab(true);
+        renderer.soleTrader().fetchBuyer = () => {
+            throw new Error('no passive buyer probe may run');
+        };
 
-        return renderer.soleTraderMode().then(() => {
-            expect(applied).toEqual([BILLING]);
-            expect(renderer.companyId()).toBe(BUYER.organization_number);
-            expect(renderer.showSoleTrader()).toBe(true);
-        });
-    });
+        renderer.soleTraderMode();
 
-    test('a repeated chip click against the already-resolved buyer writes it', () => {
-        const { renderer, applied } = loadRenderer(BUYER);
-        renderer.soleTrader().soleTraderLookup = { ready: true, buyer: BUYER, matches: true };
-        renderer.soleTrader().soleTraderLookupEmail = renderer.getEmail();
-
-        return renderer.soleTraderMode().then(() => {
-            expect(applied).toEqual([BILLING]);
-            expect(renderer.companyName()).toBe(BUYER.company_name);
-            expect(renderer.showPopupMessage()).toBe(false);
-        });
+        expect(applied).toEqual([]);
+        expect(renderer.companyId()).toBe('');
+        expect(renderer.showSoleTrader()).toBe(true);
     });
 
     test('a completed signup writes it', () => {
@@ -188,17 +183,18 @@ describe('every path that adopts a sole trader writes their address', () => {
         });
     });
 
-    test('a lookup that resolves NO matching buyer writes nothing', () => {
-        const { renderer, applied } = loadRenderer({
-            email: 'someone.else@example.com',
-            organization_number: BUYER.organization_number,
-            company_name: BUYER.company_name,
-            billing_address: BILLING
-        });
-        renderer.showModeTab(true);
+    test('a signup that resolves no buyer at all writes nothing and surfaces an error', () => {
+        const { renderer, applied, listeners } = loadRenderer(null);
+        const errors = [];
+        renderer.showErrorMessage = (message) => errors.push(message);
+        const handler = messageHandler(renderer, listeners);
+        renderer.showSoleTrader(true);
 
-        return renderer.lookupSoleTrader().then(() => {
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+
+        return settle().then(() => {
             expect(applied).toEqual([]);
+            expect(errors).toHaveLength(1);
         });
     });
 });
@@ -373,70 +369,10 @@ describe('the state the write-back has to survive', () => {
         expect(applied).toEqual([BILLING, BILLING]);
     });
 
-    test.each([
-        [false, 'the buyer is not in sole-trader mode'],
-        [true, 'the buyer IS in sole-trader mode and must stay there']
-    ])('a superseded lookup records nothing and adopts nothing (%p: %s)', (soleTrader) => {
-        // The buyer corrects their email mid-flight. The first chain resolves
-        // LAST, against an email that is no longer in the form. Superseded after
-        // its tokens are minted, so every guard downstream is genuinely
-        // exercised — bumping the generation before the first await would
-        // short-circuit the chain at its first check and prove only that one.
-        const first = Object.assign({}, BUYER, { email: 'first@example.com' });
-        const { renderer, applied } = loadRenderer(first);
-        renderer.showModeTab(true);
-        renderer.showSoleTrader(soleTrader);
-        renderer.enableCompanySearch = function () {};
-        renderer.fillCustomerData = function () {};
-        renderer.clearCompany = function () {};
-        let releaseTokens;
-        renderer.soleTrader().getTokens = () =>
-            new Promise((resolve) => {
-                releaseTokens = () => resolve({ delegation_token: 'dt', autofill_token: 'at' });
-            });
-
-        const chain = renderer.lookupSoleTrader();
-        renderer.soleTrader()._soleTraderLookupGeneration += 1;
-        releaseTokens();
-
-        return chain.then(() => {
-            // Not recorded: a chip click reads `soleTraderLookup` and would
-            // otherwise adopt the buyer belonging to the replaced email.
-            expect(renderer.soleTrader().soleTraderLookup).toEqual({ ready: false, buyer: null, matches: false });
-            expect(applied).toEqual([]);
-            // The mode is left exactly as it was: a superseded chain never
-            // moves the buyer between modes.
-            expect(renderer.showSoleTrader()).toBe(soleTrader);
-            // And a chip click still finds nothing to adopt.
-            renderer.soleTraderMode();
-            expect(applied).toEqual([]);
-        });
-    });
-
-    test('a superseded chain that FAILS does not clobber the live result', () => {
-        const { renderer } = loadRenderer(BUYER);
-        renderer.showModeTab(true);
-        let failTokens;
-        renderer.soleTrader().getTokens = () =>
-            new Promise((resolve, reject) => {
-                failTokens = () => reject(new Error('token mint failed'));
-            });
-
-        const chain = renderer.lookupSoleTrader();
-        renderer.soleTrader()._soleTraderLookupGeneration += 1;
-        renderer.soleTrader().soleTraderLookup = { ready: true, buyer: BUYER, matches: true };
-        failTokens();
-
-        return chain.then(() => {
-            expect(renderer.soleTrader().soleTraderLookup.buyer).toBe(BUYER);
-        });
-    });
-
-    test('the buyer lookup goes out under the token its own chain minted', () => {
-        // The real fetchBuyer(), not the stub every other case here uses: the
-        // token parameter exists precisely so a superseded chain cannot read the
-        // cookie under a newer chain's token, and a stubbed fetchBuyer never
-        // executes the header expression that carries it.
+    test('the buyer lookup goes out under the tokens currently held', () => {
+        // The real fetchBuyer(), not the stub every other case here uses: a
+        // stubbed one never executes the header expression that carries the
+        // token, which is the whole point of the request.
         const requests = [];
         const renderer = loadAmdModule(
             RENDERER,
@@ -450,30 +386,11 @@ describe('the state the write-back has to survive', () => {
             }
         );
         renderer._brandConfig = { checkoutApiUrl: 'https://api.example' };
-        renderer.soleTrader().autofillToken = 'newer-chain-token';
+        renderer.soleTrader().autofillToken = 'at-current';
 
-        return renderer.fetchBuyer('own-chain-token').then(() => {
-            expect(requests).toEqual(['own-chain-token']);
-            // No token passed → the instance's current one, which is what the
-            // post-signup lookup relies on.
-            return renderer.fetchBuyer().then(() => {
-                expect(requests).toEqual(['own-chain-token', 'newer-chain-token']);
-            });
+        return renderer.fetchBuyer().then(() => {
+            expect(requests).toEqual(['at-current']);
         });
-    });
-
-    test('a completed signup supersedes a lookup still in flight', () => {
-        // Otherwise the pre-auth chain lands after the adoption, disagrees with
-        // the authenticated identity, and reverts both the mode and the address
-        // that adoption just wrote.
-        const { renderer, listeners } = loadRenderer(BUYER);
-        const handler = messageHandler(renderer, listeners);
-        renderer.showSoleTrader(true);
-        renderer.soleTrader()._soleTraderLookupGeneration = 7;
-
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
-
-        expect(renderer.soleTrader()._soleTraderLookupGeneration).toBe(8);
     });
 
     test('a throw in the address write leaves the identity filled and the write retryable', () => {
