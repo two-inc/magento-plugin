@@ -163,7 +163,8 @@ define([
                 country_code: billingAddress.countryId
             }
         };
-        return btoa(JSON.stringify(data));
+        // Bare btoa() only accepts Latin1; this is UTF-8 data (e.g. names with diacritics).
+        return btoa(unescape(encodeURIComponent(JSON.stringify(data))));
     };
 
     // True once the signup URL can be built. Both tokens are minted
