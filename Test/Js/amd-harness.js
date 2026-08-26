@@ -120,6 +120,10 @@ function defaultMocks() {
         },
         'Magento_Checkout/js/action/set-shipping-information': function () { return {}; },
         'Magento_Ui/js/lib/view/utils/async': {},
+        'Magento_Ui/js/model/messageList': {
+            addErrorMessage: function () {},
+            addSuccessMessage: function () {}
+        },
         'Magento_Ui/js/form/form': Component,
         'Magento_Ui/js/modal/modal': function () {},
         'uiComponent': Component,
@@ -141,6 +145,7 @@ function defaultMocks() {
             buildSearchAjaxOptions: function () { return {}; },
             lookupCompanyAddress: function () { return null; },
             applyAddress: function () {},
+            applyTelephone: function () { return false; },
             // Address write-back surface (TWO-25461). Inert, like applyAddress()
             // above: a spec that cares about what the write or the revert
             // actually does loads the real module.
@@ -386,10 +391,72 @@ function makeJQueryMock() {
     // company-search widget itself. Specs that DO care about the widget's
     // real async/MutationObserver behaviour already supply their own richer
     // jquery double (see makeRecordingDom() in tile-company-readonly-fields.test.js).
+    installAsyncSimulation($);
+    return $;
+}
+
+/**
+ * Magento_Ui/js/lib/view/utils/async's `$.async` decorator, simulated.
+ *
+ * The real one is a MutationObserver that is never disconnected, so it keeps
+ * firing for the life of the page and every registration is permanent. A stub
+ * that only ran the callback once made observer STACKING invisible — which is
+ * how a re-bind loop that freezes checkout survived three review rounds and a
+ * green suite.
+ *
+ * `$.async.registrations` counts live observers so a test can assert a control
+ * registers one per selector, and `$.async.fireAll()` replays them the way a
+ * DOM mutation would.
+ *
+ * @param {object} $ the jQuery (or double) to install onto
+ * @returns {object} the same $
+ */
+function installAsyncSimulation($) {
+    const registry = [];
     $.async = function (selector, cb) {
-        cb($(selector));
+        const entry = { selector: selector, cb: cb, delivered: $(selector)[0] || null };
+        registry.push(entry);
+        cb(entry.delivered || $(selector));
+    };
+    $.async.registrations = function (selector) {
+        return selector
+            ? registry.filter(function (r) { return r.selector === selector; }).length
+            : registry.length;
+    };
+    /**
+     * Deliver every observer whose selector now matches a node it has not seen.
+     *
+     * A real observer answers a node APPEARING, so replaying a registration
+     * whose node has not changed lets one watcher stand in for another and hides
+     * a missing one.
+     */
+    $.async.fireAll = function () {
+        registry.slice().forEach(function (r) {
+            const node = $(r.selector)[0];
+            if (!node || node === r.delivered) return;
+            r.delivered = node;
+            cbSafe(r.cb, node);
+        });
+    };
+    $.async.reset = function () {
+        registry.length = 0;
     };
     return $;
+}
+
+/**
+ * A replayed observer whose callback throws must not stop the rest, the same
+ * way one observer's exception does not disconnect its siblings.
+ *
+ * @param {Function} cb
+ * @param {*} node
+ */
+function cbSafe(cb, node) {
+    try {
+        cb(node);
+    } catch (error) {
+        // Surfaced by whatever the test asserts on, not by aborting the replay.
+    }
 }
 
 function makeUnderscoreMock() {
@@ -476,6 +543,12 @@ function loadAmdModule(relPath, extraMocks, extraGlobals, siblingCache) {
     const absPath = path.resolve(__dirname, '..', '..', relPath);
     const src = fs.readFileSync(absPath, 'utf8');
     const mocks = Object.assign({}, defaultMocks(), extraMocks || {});
+    // A test passing REAL jQuery gets the observer simulation too: real jQuery
+    // has no `$.async`, and modules that wait for a node to appear call it. A
+    // suite that only meant to use real DOM should not have to know that.
+    if (mocks.jquery && typeof mocks.jquery.async !== 'function') {
+        installAsyncSimulation(mocks.jquery);
+    }
 
     let captured;
     const define = function (deps, factory) {
@@ -629,5 +702,6 @@ function loadCompanySearchControl($, companySearchMock, extraGlobals) {
 module.exports = {
     loadAmdModule: loadAmdModule,
     defaultMocks: defaultMocks,
-    loadCompanySearchControl: loadCompanySearchControl
+    loadCompanySearchControl: loadCompanySearchControl,
+    installAsyncSimulation: installAsyncSimulation
 };

@@ -11,29 +11,12 @@
  * `company-search.js` (the search request, result mapping, address
  * write-back, and the in-field chrome helpers).
  *
- * Mirrors PrestaShop's `TwoCompanySearch` class: ONE implementation of the
- * select2 wiring, configured entirely through the constructor options
- * below, never duplicated per mount. `address-autocomplete.js` (shipping
- * step) and `company-capture.js` (payment tile) each construct exactly one
- * instance of this class rather than each rolling their own `.select2({…})`
- * call — see those two files' `enableCompanySearch()` for the call sites.
- *
- * Magento's checkout is more dynamic than PrestaShop's: a payment renderer
- * is pushed once PER Two-family brand (so a checkout offering two brands has
- * two independent tile widgets alive at once), and which mount — address
- * area or tile — is the buyer's active route to search can flip at runtime
- * (virtual cart, saved address) without a page reload. Those two facts are
- * why this stays two call sites rather than PrestaShop's one
- * `TwoCheckoutManager`-owned singleton: each call site is a different
- * Knockout component with its own dispose() lifecycle already scoped to
- * "the widget THIS component bound", and forcing a page-wide singleton would
- * fight that existing multi-brand safety model rather than simplify it. The
- * mutual-exclusion invariant PrestaShop gets from a single decision point,
- * Magento gets from the existing `isCompanySearchEnabled` /
- * `isTileCompanySearchActive()` guards each call site already checks before
- * constructing or (re)binding its instance — at most one of the two mounts
- * is ever actively bound to a live select2 widget for a given brand at a
- * time.
+ * The select2 wiring, configured entirely through the constructor options
+ * below. One instance exists per checkout page, built and owned by
+ * `company-capture-component.js`, which decides where it is mounted and
+ * re-points it with `bind()` as the checkout changes shape — the address
+ * step and the payment tile are two candidate hosts for one widget, never
+ * two widgets.
  */
 define(['jquery', 'Two_Gateway/js/model/company-search'], function ($, companySearch) {
     'use strict';
@@ -102,6 +85,10 @@ define(['jquery', 'Two_Gateway/js/model/company-search'], function ($, companySe
         this._$field = null;
         this._bindToken = null;
         this._$searchForCompanyLink = null;
+        /** Selector this control already has a `$.async` observer watching. */
+        this._asyncSelector = null;
+        this._fieldNode = null;
+        this._pendingOpen = false;
     }
 
     /**
@@ -121,121 +108,148 @@ define(['jquery', 'Two_Gateway/js/model/company-search'], function ($, companySe
      */
     CompanySearchControl.prototype.bind = function (bindOptions) {
         const self = this;
-        // One-shot, and deliberately a local rather than an instance field:
-        // `$.async` is a MutationObserver that can fire again on every
-        // re-render (Fire Checkout re-renders a lot), so a flag that
-        // survived past the first fire would pop the dropdown open under a
-        // buyer who has moved on to another field.
-        let pendingOpen = !!(bindOptions && bindOptions.openDropdown);
+        // Consumed once by whichever initialisation runs next, so a re-bind
+        // that did not ask for the dropdown cannot inherit an earlier one's
+        // request and pop it open under a buyer who has moved on.
+        this._pendingOpen = !!(bindOptions && bindOptions.openDropdown);
 
         require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
+            // ONE observer per selector, for the life of the control.
+            // `$.async` is a MutationObserver that is never disconnected, and
+            // the initialisation below mutates the DOM heavily — so a second
+            // registration makes the first one's own mutations re-trigger
+            // this callback, and every later render re-fires every observer
+            // ever registered. Re-binding is what a re-render needs, and the
+            // one live observer already delivers it.
+            if (self._asyncSelector === self.fieldSelector) {
+                // The live node where the DOM can answer, otherwise the last
+                // one the observer delivered — a caller asking to re-bind
+                // wants the widget rebuilt now, not whenever the next
+                // mutation happens to arrive.
+                const current = $(self.fieldSelector)[0] || self._fieldNode;
+                if (current) self.initialise(current);
+                return;
+            }
+            self._asyncSelector = self.fieldSelector;
             $.async(self.fieldSelector, function (fieldNode) {
-                const $field = $(fieldNode);
-                self._$field = $field;
-
-                // Identity for this bind, so a previous widget's still-in-flight
-                // response cannot paint chrome onto the widget that replaced it.
-                const bindToken = {};
-                self._bindToken = bindToken;
-
-                // select2's destroy() only does `$element.off('.select2')` —
-                // our own handlers are not in that namespace and would
-                // otherwise survive every re-init, stacking one more copy per
-                // re-render.
-                $field.off(companySearch.EVENT_NS);
-                // select2's destroy() doesn't disconnect this either, and a
-                // re-render while the picker is open can replace the select2
-                // instance without emitting `select2:close` first — leaving a
-                // manual-entry button from the PREVIOUS bind wired to the
-                // widget this call is about to replace.
-                companySearch.detachManualEntryButton($field);
-
-                $field
-                    .select2({
-                        minimumInputLength: companySearch.MIN_INPUT_LENGTH,
-                        // Shared with the sibling mount so the two surfaces
-                        // cannot show different wording for the same state.
-                        language: companySearch.buildLanguageOptions(),
-                        // Shared stable hook for style.css's dropdown-row
-                        // fixes — drawn from the one constant so this and the
-                        // sibling mount's dropdown CSS can't drift apart on a
-                        // rename.
-                        dropdownCssClass: companySearch.DROPDOWN_CSS_CLASS,
-                        width: '100%',
-                        escapeMarkup: function (markup) {
-                            return markup;
-                        },
-                        templateResult: function (data) {
-                            return data.html;
-                        },
-                        templateSelection: function (data) {
-                            return data.text || self.templateSelectionFallback();
-                        },
-                        ajax: companySearch.buildSearchAjaxOptions({
-                            config: self.config,
-                            token: bindToken,
-                            getCountryCode: self.getCountryCode,
-                            // Bound to THIS node, not to the selector: a
-                            // search issued by a widget since destroyed finds
-                            // no instance on its own element and no-ops,
-                            // rather than painting a stale failure onto
-                            // whichever picker is live now.
-                            onSearching: function (isSearching) {
-                                companySearch.setSearching($field, isSearching, bindToken);
-                            },
-                            onUnavailable: function (isUnavailable) {
-                                companySearch.setUnavailable($field, isUnavailable, bindToken);
-                            }
-                        })
-                    })
-                    .on('select2:open' + companySearch.EVENT_NS, function () {
-                        // select2 only detaches the dropdown on close and only
-                        // clears the search input's value, so anything
-                        // appended into the search box survives a reopen —
-                        // clear it here or a reopened picker shows the
-                        // previous search's "unavailable" notice.
-                        companySearch.clearSearchChrome($field, bindToken);
-                        // A SIBLING of the results list (#30.x.15), not a row
-                        // inside it, so it stays visible outside select2's
-                        // own scroll/clip and needs no selection-cancelling
-                        // dance — its own click handler is the only thing
-                        // that activates it.
-                        if (self.manualEntryEnabled) {
-                            companySearch.attachManualEntryButton($field, bindToken, function () {
-                                self.onManualEntryActivated($field, bindToken);
-                            });
-                        }
-                        document.querySelector('.select2-search__field').focus();
-                    })
-                    .on('select2:close' + companySearch.EVENT_NS, function () {
-                        // Every open re-attaches, so nothing is lost by
-                        // dropping the button here — and a checkout that
-                        // re-renders the form while the picker is closed
-                        // would otherwise leave a button from this bind wired
-                        // to a disposed renderer for the life of the page.
-                        companySearch.detachManualEntryButton($field);
-                    })
-                    .on('select2:select' + companySearch.EVENT_NS, function (e) {
-                        self.onSelect(e.params.data, $field);
-                    });
-
-                companySearch.markSearchBinding($field, bindToken);
-                // TWO-25326 §1: any character opens the dropdown, not just
-                // the Space/Enter select2 4.1 handles on its own.
-                companySearch.attachOpenOnType($field, bindToken);
-
-                self._bindSearchForCompanyLink($field);
-                self.onBound($field);
-
-                // Last, so every handler above — including `select2:open`,
-                // which is what puts the caret in the search box — is
-                // already bound when the dropdown opens.
-                if (pendingOpen) {
-                    pendingOpen = false;
-                    $field.select2('open');
-                }
+                self.initialise(fieldNode);
             });
         });
+    };
+
+    /**
+     * Build the picker on `fieldNode`. Reached from the selector's one
+     * observer, and directly when that observer is already watching.
+     *
+     * @param {Element} fieldNode the company-name input to bind
+     */
+    CompanySearchControl.prototype.initialise = function (fieldNode) {
+        const self = this;
+        self._fieldNode = fieldNode;
+        const $field = $(fieldNode);
+        self._$field = $field;
+
+        // Identity for this bind, so a previous widget's still-in-flight
+        // response cannot paint chrome onto the widget that replaced it.
+        const bindToken = {};
+        self._bindToken = bindToken;
+
+        // select2's destroy() only does `$element.off('.select2')` —
+        // our own handlers are not in that namespace and would
+        // otherwise survive every re-init, stacking one more copy per
+        // re-render.
+        $field.off(companySearch.EVENT_NS);
+        // select2's destroy() doesn't disconnect this either, and a
+        // re-render while the picker is open can replace the select2
+        // instance without emitting `select2:close` first — leaving a
+        // manual-entry button from the PREVIOUS bind wired to the
+        // widget this call is about to replace.
+        companySearch.detachManualEntryButton($field);
+
+        $field
+            .select2({
+                minimumInputLength: companySearch.MIN_INPUT_LENGTH,
+                // Shared with the sibling mount so the two surfaces
+                // cannot show different wording for the same state.
+                language: companySearch.buildLanguageOptions(),
+                // Shared stable hook for style.css's dropdown-row
+                // fixes — drawn from the one constant so this and the
+                // sibling mount's dropdown CSS can't drift apart on a
+                // rename.
+                dropdownCssClass: companySearch.DROPDOWN_CSS_CLASS,
+                width: '100%',
+                escapeMarkup: function (markup) {
+                    return markup;
+                },
+                templateResult: function (data) {
+                    return data.html;
+                },
+                templateSelection: function (data) {
+                    return data.text || self.templateSelectionFallback();
+                },
+                ajax: companySearch.buildSearchAjaxOptions({
+                    config: self.config,
+                    token: bindToken,
+                    getCountryCode: self.getCountryCode,
+                    // Bound to THIS node, not to the selector: a
+                    // search issued by a widget since destroyed finds
+                    // no instance on its own element and no-ops,
+                    // rather than painting a stale failure onto
+                    // whichever picker is live now.
+                    onSearching: function (isSearching) {
+                        companySearch.setSearching($field, isSearching, bindToken);
+                    },
+                    onUnavailable: function (isUnavailable) {
+                        companySearch.setUnavailable($field, isUnavailable, bindToken);
+                    }
+                })
+            })
+            .on('select2:open' + companySearch.EVENT_NS, function () {
+                // select2 only detaches the dropdown on close and only
+                // clears the search input's value, so anything
+                // appended into the search box survives a reopen —
+                // clear it here or a reopened picker shows the
+                // previous search's "unavailable" notice.
+                companySearch.clearSearchChrome($field, bindToken);
+                // A SIBLING of the results list (#30.x.15), not a row
+                // inside it, so it stays visible outside select2's
+                // own scroll/clip and needs no selection-cancelling
+                // dance — its own click handler is the only thing
+                // that activates it.
+                if (self.manualEntryEnabled) {
+                    companySearch.attachManualEntryButton($field, bindToken, function () {
+                        self.onManualEntryActivated($field, bindToken);
+                    });
+                }
+                document.querySelector('.select2-search__field').focus();
+            })
+            .on('select2:close' + companySearch.EVENT_NS, function () {
+                // Every open re-attaches, so nothing is lost by
+                // dropping the button here — and a checkout that
+                // re-renders the form while the picker is closed
+                // would otherwise leave a button from this bind wired
+                // to a disposed renderer for the life of the page.
+                companySearch.detachManualEntryButton($field);
+            })
+            .on('select2:select' + companySearch.EVENT_NS, function (e) {
+                self.onSelect(e.params.data, $field);
+            });
+
+        companySearch.markSearchBinding($field, bindToken);
+        // TWO-25326 §1: any character opens the dropdown, not just
+        // the Space/Enter select2 4.1 handles on its own.
+        companySearch.attachOpenOnType($field, bindToken);
+
+        self._bindSearchForCompanyLink($field);
+        self.onBound($field);
+
+        // Last, so every handler above — including `select2:open`,
+        // which is what puts the caret in the search box — is
+        // already bound when the dropdown opens.
+        if (self._pendingOpen) {
+            self._pendingOpen = false;
+            $field.select2('open');
+        }
     };
 
     /**

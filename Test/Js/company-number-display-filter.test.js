@@ -234,7 +234,10 @@ describe('(a) the tile label goes through the same filter', () => {
     function ctxWith(id) {
         return Object.assign({}, component, {
             companyName: plainObservable('Acme Widgets Ltd'),
-            companyId: plainObservable(id)
+            companyId: plainObservable(id),
+            // The label rides the tile's own field, so it is only ever shown
+            // where that field is.
+            isTileCompanyFieldVisible: function () { return true; }
         });
     }
 
