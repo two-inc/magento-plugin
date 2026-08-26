@@ -558,6 +558,26 @@
     position: relative;
 }
 
+.two-company-dropdown__search.two-hidden {
+    display: none;
+}
+
+/*
+ * The way out of manual entry, below the company field and aligned to its
+ * right-hand edge. In normal block flow, never overlapping the field.
+ */
+.two-company-search-back {
+    display: block;
+    margin-left: auto;
+    padding: 5px 2px 0;
+    border: none;
+    background: none;
+    color: var(--color-blue2);
+    font: inherit;
+    cursor: pointer;
+    text-transform: none !important;
+}
+
 .two-company-dropdown__query {
     box-sizing: border-box;
     width: 100%;

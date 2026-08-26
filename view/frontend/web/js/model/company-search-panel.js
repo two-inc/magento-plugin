@@ -45,6 +45,7 @@ define([
     const MESSAGE_CLASS = 'two-company-dropdown__message';
     const ROW_CLASS = 'two-company-dropdown__row';
     const ROW_ACTIVE_CLASS = 'two-company-dropdown__row--active';
+    const BACK_CLASS = 'two-company-search-back';
     const CHIPS_CLASS = 'two-company-mode-chips';
     const CHIP_CLASS = 'two-company-mode-chip';
     const CHIP_SELECTED_CLASS = 'two-company-mode-chip--selected';
@@ -81,6 +82,8 @@ define([
      *        called with the result row.
      * @param {function(): string} [options.getDisplayText] what the field shows
      *        when the panel is closed — the captured company, or ''.
+     * @param {function()} [options.onExitManualEntry] the buyer used the return
+     *        link to come back out of manual entry.
      */
     function CompanySearchPanel(options) {
         options = options || {};
@@ -92,6 +95,7 @@ define([
         this.getSelectedMode = options.getSelectedMode || function () { return ''; };
         this.onSelect = options.onSelect || function () {};
         this.getDisplayText = options.getDisplayText || function () { return ''; };
+        this.onExitManualEntry = options.onExitManualEntry || function () {};
 
         this._id = ++instanceSeq;
         this._$field = null;
@@ -343,8 +347,14 @@ define([
         const self = this;
         $field
             .off(EVENT_NS)
-            .on('mousedown' + EVENT_NS, function () {
+            .on('mousedown' + EVENT_NS, function (event) {
                 if (self._closing) return;
+                // The default action of this mousedown is to focus the field
+                // itself, which lands AFTER open() has put the caret in the
+                // query field and takes it straight back out again — leaving
+                // the buyer looking at an open panel they have to click a
+                // second time to type into.
+                event.preventDefault();
                 self.open();
             })
             .on('focus' + EVENT_NS, function () {
@@ -616,6 +626,7 @@ define([
         const self = this;
         if (!this._$chips) return;
         const selected = this.getSelectedMode();
+        this._syncQueryVisibility(selected);
         this._$chips.empty();
         this.getChips().forEach(function (chip) {
             $('<button type="button"></button>')
@@ -643,6 +654,27 @@ define([
         });
     };
 
+    /**
+     * The search row belongs to registered-company mode alone. A sole trader is
+     * enrolled through the hosted signup and a manual entry is typed into the
+     * company field, so a query box in either mode offers a search that answers
+     * for neither.
+     *
+     * @param {string} mode the selected capture mode
+     */
+    CompanySearchPanel.prototype._syncQueryVisibility = function (mode) {
+        if (!this._$query) return;
+        const searching = mode === 'registered';
+        const $row = this._$query.closest('.two-company-dropdown__search');
+        $row.toggleClass(HIDDEN_CLASS, !searching);
+        if (searching) return;
+        // Blanking with `.val()` fires no event, so the rows the dropped term
+        // produced would stay painted and clickable under a search row that is
+        // no longer rendered.
+        this._$query.val('');
+        this._renderMessage('');
+    };
+
     // ------------------------------------------------------------------ field
 
     /**
@@ -661,17 +693,70 @@ define([
     /**
      * Hand the field back as a plain typeable input — manual entry, where the
      * buyer supplies a name the registry does not have.
+     *
+     * The popover goes with it, so the chips go too: the return link this
+     * renders is then the buyer's only route back to the search, and without it
+     * manual entry is a dead end.
      */
     CompanySearchPanel.prototype.releaseField = function () {
         this._cancelPendingSearch();
         companySearch.abortActiveRequest(this._token);
         this.close();
-        if (this._$field) this._$field.off(EVENT_NS);
+        if (this._$field) {
+            this._$field.off(EVENT_NS).removeAttr('role aria-haspopup aria-controls aria-expanded');
+        }
+        this.renderBackToSearchLink();
     };
 
     /** Re-take a field released for manual entry. */
     CompanySearchPanel.prototype.reclaimField = function () {
-        if (this._$field && this._$field.length) this._bindFieldOpeners(this._$field);
+        this.removeBackToSearchLink();
+        if (this._$field && this._$field.length) this._attach(this._$field);
+    };
+
+    /**
+     * The way out of manual entry: a link below the company field, aligned to
+     * its right-hand edge.
+     *
+     * A real `<button type="button">` — focusable, Enter/Space-activated and
+     * announced as a button with nothing added by hand, which a styled `<div>`
+     * is not. `type="button"` because this sits inside the checkout's own form
+     * and a default-type button would submit it.
+     */
+    CompanySearchPanel.prototype.renderBackToSearchLink = function () {
+        const self = this;
+        if (!this._$field || !this._$field.length) return;
+        this.removeBackToSearchLink();
+        const $link = $('<button type="button"></button>')
+            .addClass(BACK_CLASS)
+            .text($t('Search for company'))
+            .on('click' + EVENT_NS, function (event) {
+                event.preventDefault();
+                // One-page checkouts bind accordion handlers above this node,
+                // which read a bubbled click as "collapse this step".
+                event.stopPropagation();
+                self.onExitManualEntry();
+            });
+        // Appended to the wrapper rather than after the input, so it lands
+        // below the panel that shares that wrapper rather than between the
+        // field and its own popover.
+        this._$field.parent().append($link);
+        this._$back = $link;
+    };
+
+    /**
+     * Remove the return link and unbind it.
+     *
+     * The class-wide sweep is deliberate: this panel's own reference does not
+     * cover a link left on a host it has since moved off, and two of these on
+     * one form is worse than none.
+     */
+    CompanySearchPanel.prototype.removeBackToSearchLink = function () {
+        if (this._$back) {
+            this._$back.off(EVENT_NS).remove();
+            this._$back = null;
+        }
+        $('.' + BACK_CLASS).off(EVENT_NS).remove();
     };
 
     /**

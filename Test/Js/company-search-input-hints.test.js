@@ -118,7 +118,7 @@ beforeEach(() => {
 describe('below-threshold hint (element 4)', () => {
     test('the panel quotes the shared threshold, not a remaining count', async () => {
         openPanel(loadCompanySearchWithWrongThreshold());
-        const expected = 'Please enter ' + WRONG_THRESHOLD + ' or more characters';
+        const expected = 'Enter ' + WRONG_THRESHOLD + ' or more characters';
 
         expect($('.two-company-dropdown__query').attr('placeholder')).toBe(expected);
         // Only once the buyer is short of the threshold rather than simply not
@@ -157,7 +157,7 @@ describe('below-threshold hint (element 4)', () => {
         await typeQuery('a');
 
         expect($('.two-company-dropdown__message').text()).toBe(
-            'Please enter ' + WRONG_THRESHOLD + ' or more characters'
+            'Enter ' + WRONG_THRESHOLD + ' or more characters'
         );
         expect(searched.length).toBe(1);
     });
@@ -189,17 +189,17 @@ describe('the company field carries its own closed-state watermark', () => {
 
 describe('the hint is one translatable string', () => {
     test('the msgid is placeholder-form and translated in every catalogue', () => {
-        const msgid = 'Please enter %1 or more characters';
+        const msgid = 'Enter %1 or more characters';
         const model = readSource(MODEL_PATH);
         expect(model).toContain("$t('" + msgid + "')");
         // The literal-number form must be gone, or translators keep a row
         // that no longer matches any msgid the code emits.
-        expect(model).not.toContain("$t('Please enter 3 or more characters')");
+        expect(model).not.toContain("$t('Enter 3 or more characters')");
 
         ['nb_NO', 'nl_NL', 'sv_SE'].forEach((locale) => {
             const csv = readSource('i18n/' + locale + '.csv');
             expect(csv).toContain('"' + msgid + '","');
-            expect(csv).not.toContain('"Please enter 3 or more characters"');
+            expect(csv).not.toContain('"Enter 3 or more characters"');
             // Magento drops rows whose translation equals the msgid.
             expect(csv).not.toContain('"' + msgid + '","' + msgid + '"');
         });

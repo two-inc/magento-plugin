@@ -35,7 +35,7 @@ function searchModelStub() {
     return {
         MIN_INPUT_LENGTH: 3,
         SEARCH_DEBOUNCE_MS: 300,
-        minInputLengthMessage: function () { return 'Please enter 3 or more characters'; },
+        minInputLengthMessage: function () { return 'Enter 3 or more characters'; },
         noResultsMessage: function () { return 'No matches found'; },
         abortActiveRequest: function () { return false; },
         searchCompanies: function () {

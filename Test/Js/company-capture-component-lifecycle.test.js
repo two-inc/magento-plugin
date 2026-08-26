@@ -108,6 +108,7 @@ function load(options) {
         soleTrader.instances += 1;
         this.listenForSignupResult = function () { soleTrader.listeners += 1; };
         this.ensureTokens = function () { soleTrader.ensured += 1; return Promise.resolve(true); };
+        this.focusSignupPopup = function () { return false; };
         this.launchSignup = function () { return {}; };
         this.forgetAdoptions = function () {};
     };

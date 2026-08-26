@@ -161,7 +161,7 @@ function defaultMocks() {
             // Both production call sites invoke this as
             // `companySearch.minInputLengthMessage()`, so `this` is the mock.
             minInputLengthMessage: function () {
-                return 'Please enter ' + this.MIN_INPUT_LENGTH + ' or more characters';
+                return 'Enter ' + this.MIN_INPUT_LENGTH + ' or more characters';
             },
             // TWO-25326 §1 wording, mirrored here so a call site that reads it
             // through the mock gets the same string the real module returns.

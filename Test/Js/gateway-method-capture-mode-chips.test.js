@@ -89,6 +89,7 @@ function load(options) {
     const SoleTraderStub = function () {
         this.listenForSignupResult = function () {};
         this.ensureTokens = function () { soleTrader.ensured += 1; return Promise.resolve(true); };
+        this.focusSignupPopup = function () { return false; };
         this.launchSignup = function (o) { soleTrader.launches.push(o || null); return {}; };
         this.forgetAdoptions = function () {};
     };

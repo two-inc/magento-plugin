@@ -120,7 +120,7 @@
 "Zip/Postal Code","Postnummer"
 "Invoice email address","E-postadress för faktura"
 "Please ensure that your invoice email address list only contains valid email addresses separated by commas.","Se till att din e-postadresslista för faktura endast innehåller giltiga e-postadresser separerade med kommatecken."
-"Please enter %1 or more characters","Ange %1 eller fler tecken"
+"Enter %1 or more characters","Ange %1 eller fler tecken"
 "Show invoice email field","Visa fältet för fakturamejl"
 "Payment terms type","Betalningsvillkorstyp"
 "Payment Terms Duration","Betalningsvillkors varaktighet"

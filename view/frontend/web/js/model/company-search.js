@@ -73,7 +73,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * @returns {string} translated hint naming MIN_INPUT_LENGTH
      */
     function minInputLengthMessage() {
-        return $t('Please enter %1 or more characters').replace('%1', MIN_INPUT_LENGTH);
+        return $t('Enter %1 or more characters').replace('%1', MIN_INPUT_LENGTH);
     }
 
     /**

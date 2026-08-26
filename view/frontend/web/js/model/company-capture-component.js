@@ -360,6 +360,9 @@ define([
                 getDisplayText: function () {
                     return identity.companyName();
                 },
+                onExitManualEntry: function () {
+                    self.registeredMode({ openDropdown: true });
+                },
                 onSelect: function (selectedItem) {
                     // Authoritative: a pick must overwrite the previous
                     // company's number even when the new one has none.
@@ -483,6 +486,10 @@ define([
      * click so a popup blocker allows it.
      */
     CompanyCaptureComponent.prototype.soleTraderMode = function () {
+        // The one gesture that means "the popup is what I want": clicking this
+        // chip returns focus to the page, which otherwise takes the popup down.
+        // Raise it rather than replacing it with a second signup.
+        if (this._soleTrader.focusSignupPopup()) return null;
         const wasAdopted = identity.isSoleTrader() && identity.soleTraderAdopted();
         if (!wasAdopted) {
             identity.captureMode('soletrader');

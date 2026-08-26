@@ -121,7 +121,7 @@
 "Zip/Postal Code","Postnummer"
 "Invoice email address","E-postadresse for faktura"
 "Please ensure that your invoice email address list only contains valid email addresses separated by commas.","Sørg for at listen over e-postadresser for faktura bare inneholder gyldige e-postadresser atskilt med komma."
-"Please enter %1 or more characters","Vennligst skriv inn %1 eller flere tegn"
+"Enter %1 or more characters","Vennligst skriv inn %1 eller flere tegn"
 "Show invoice email field","Vis feltet for faktura-e-post"
 "Payment terms type","Betalingsvilkårstype"
 "Payment Terms Duration","Betalingsvilkårs varighet"
