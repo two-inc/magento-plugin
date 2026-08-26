@@ -2,326 +2,227 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25503 — the `postMessage` handshake the hosted signup finishes on, and
- * the one buyer lookup it is allowed to make.
+ * TWO-25461. Two buyer-identity lookups share one helper and must NOT share
+ * one rule.
  *
- * `/autofill/v1/buyer/current` answers with whatever buyer the Two cookie
- * identifies. Reading it BEFORE the buyer has authenticated is a cookie probe:
- * it would let a checkout adopt an identity nobody on this page proved they
- * hold. So the flow has exactly one caller — the ACCEPTED branch of the
- * handshake, after the hosted flow has verified the buyer server-side — and
- * that is pinned both behaviourally and in the source, because reinstating a
- * passive probe is invisible to every fixture that drives the handshake.
+ * `lookupSoleTrader()` is pre-auth: it reads whatever buyer the Two cookie
+ * happens to identify before the buyer has proved anything, so a
+ * buyer only counts when its email equals the one entered on the checkout
+ * form. That check is correct there and is pinned below as a regression guard.
  *
- * Post-authentication the email that authenticated IS the identity: the
- * checkout's own contact field has no say in it. Re-gating on a match there
- * discarded an authenticated buyer and left the company field permanently
- * blank with no route forward (TWO-25461).
+ * `popupMessageListener()`'s `ACCEPTED` branch is POST-AUTHENTICATION: the
+ * buyer has just completed verification server-side, and the email that
+ * authenticated is the identity. It used to re-run the same email-match
+ * comparison and, on a mismatch, take no branch at all — the buyer finished
+ * signup and got a permanently blank readonly/required company field with no
+ * route forward. `resolveBuyer(authenticated)` is what separates the two.
+ *
+ * `fetchBuyer()` is stubbed per test rather than driven through `fetch`: the
+ * behaviour under test is which buyer the two call sites ACCEPT, not how the
+ * buyer is transported. `getTokens()` is stubbed for the same reason.
  */
 
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
-const $ = require('jquery');
-const { loadAmdModule, defaultMocks } = require('./amd-harness');
+const { loadAmdModule } = require('./amd-harness');
 
-const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
-const SOLE_TRADER = 'view/frontend/web/js/model/sole-trader.js';
-
-const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
-const CHECKOUT_API_URL = 'https://api.example';
-const BUYER_ENDPOINT = '/autofill/v1/buyer/current';
-
-/** Stand-in for the signup popup's own window, the only source that counts. */
-const POPUP = { popup: 'the tracked signup window', closed: false, close: function () {} };
-
-const BUYER = {
-    email: 'trader@example.com',
-    organization_number: '999888777',
-    company_name: 'Example Trader'
-};
+const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
+const SOLE_TRADER_MODEL = 'view/frontend/web/js/model/sole-trader.js';
+const CHECKOUT_PAGE_URL = 'https://checkout.example';
+const ENTERED_EMAIL = 'entered@example.com';
 
 /**
- * The real flow against a stub host, with `fetch` recorded.
- *
- * @param {object} [options] `{ buyer, mode }` — what the buyer endpoint
- *        answers with (null for a 404), and the capture mode to start in
- * @returns {object} `{ flow, rec, identity, handler }`
+ * Stand-in for the signup popup's own window. `popupMessageListener()` ignores
+ * a message from anything other than the popup it is currently tracking, so
+ * every fixture message below has to claim to come from this one.
  */
-function loadFlow(options) {
-    const opts = options || {};
-    const rec = {
-        requests: [],
-        errors: [],
-        adopted: [],
-        abandons: [],
-        listeners: [],
-        /** Whether `identity.isBusy()` was still true as the write landed. */
-        busyDuringWrite: null
-    };
+const POPUP = { popup: 'the tracked signup window' };
 
-    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
-    identity.captureMode('mode' in opts ? opts.mode : 'soletrader');
-
-    const fakeWindow = {
-        open: function () { return null; },
-        addEventListener: function (name, fn) { rec.listeners.push({ name: name, fn: fn }); },
-        removeEventListener: function () {}
-    };
-
-    const SoleTraderCtor = loadAmdModule(
-        SOLE_TRADER,
-        {
-            jquery: $,
-            'Two_Gateway/js/model/company-identity': identity,
-            'Two_Gateway/js/model/company-search': Object.assign(
-                {},
-                defaultMocks()['Two_Gateway/js/model/company-search'],
-                { apiClientParams: function () { return { client: 'magento' }; } }
-            ),
-            'Magento_Ui/js/model/messageList': {
-                addErrorMessage: function (message) { rec.errors.push(message); },
-                addSuccessMessage: function () {}
-            }
-        },
-        {
-            document: document,
-            window: fakeWindow,
-            btoa: global.btoa,
-            setInterval: function () { return 1; },
-            clearInterval: function () {},
-            fetch: function (requestUrl, requestOptions) {
-                rec.requests.push({ url: String(requestUrl), options: requestOptions });
-                if (String(requestUrl).indexOf('get-tokens') !== -1) {
-                    return Promise.resolve({
-                        ok: true,
-                        json: function () {
-                            return Promise.resolve([{ delegation_token: 'dt', autofill_token: 'at' }]);
-                        }
-                    });
-                }
-                if (!opts.buyer) return Promise.resolve({ ok: false, status: 404 });
-                return Promise.resolve({
-                    ok: true,
-                    json: function () { return Promise.resolve(opts.buyer); }
-                });
+/**
+ * Load the renderer and give it the state `initialize()` would have set up.
+ * The harness returns the spec object itself, so it doubles as the `this` the
+ * methods run against, complete with its own observables — but `initialize()`
+ * never runs, so `_brandConfig` has to be supplied here. The transport stubs
+ * go on the SoleTrader collaborator, which is what owns them.
+ *
+ * @param {object|null} buyer what the stubbed `fetchBuyer()` resolves to
+ * @returns {object} { renderer, listeners }
+ */
+function loadRenderer(buyer) {
+    const listeners = [];
+    const renderer = loadAmdModule(RENDERER, {}, {
+        window: {
+            checkoutConfig: { payment: {} },
+            addEventListener: function (name, fn) {
+                listeners.push({ name: name, fn: fn });
             }
         }
-    );
+    });
 
-    const host = {
-        config: function () {
-            return { checkoutPageUrl: CHECKOUT_PAGE_URL, checkoutApiUrl: CHECKOUT_API_URL };
-        },
-        countryCode: function () { return 'gb'; },
-        adoptSoleTrader: function (buyer) {
-            rec.busyDuringWrite = identity.isBusy();
-            rec.adopted.push(buyer);
-            identity.write({ companyId: buyer.organization_number, companyName: buyer.company_name });
-            identity.soleTraderAdopted(true);
-        },
-        abandonSoleTrader: function () { rec.abandons.push(true); }
-    };
+    renderer._brandConfig = { checkoutPageUrl: CHECKOUT_PAGE_URL };
+    renderer.getEmail = () => ENTERED_EMAIL;
 
-    const flow = new SoleTraderCtor(host);
-    flow.autofillToken = 'at';
-    // The tracked popup, set directly: opening one would also arm the close
-    // watcher, whose own flight would mask the handshake's.
-    flow._popupWindow = POPUP;
-    flow.listenForSignupResult();
-    const bound = rec.listeners.filter((entry) => entry.name === 'message');
+    const soleTrader = renderer.soleTrader();
+    soleTrader.getTokens = () =>
+        Promise.resolve({ delegation_token: 'dt', autofill_token: 'at' });
+    soleTrader.fetchBuyer = () => Promise.resolve(buyer);
+    soleTrader._soleTraderPopupWindow = POPUP;
+
+    return { renderer: renderer, listeners: listeners };
+}
+
+/**
+ * The `message` handler `popupMessageListener()` binds on window.
+ *
+ * @param {object} renderer loaded renderer
+ * @param {Array} listeners captured window listeners
+ * @returns {Function} the handler
+ */
+function messageHandler(renderer, listeners) {
+    renderer.popupMessageListener();
+    const bound = listeners.filter((l) => l.name === 'message');
     expect(bound).toHaveLength(1);
-
-    return { flow: flow, rec: rec, identity: identity, handler: bound[0].fn };
+    return bound[0].fn;
 }
 
-/** Two macrotask turns, which is what the ACCEPTED branch needs to settle. */
-function settle() {
-    return new Promise((resolve) => setTimeout(resolve, 0));
-}
+const SOLE_TRADER = { organization_number: '999888777', company_name: 'Example Trader' };
 
-function buyerRequests(rec) {
-    return rec.requests.filter((entry) => entry.url.indexOf(BUYER_ENDPOINT) !== -1);
-}
+describe('resolveBuyer applies the email-match rule only pre-authentication', () => {
+    test.each([
+        [false, { email: ENTERED_EMAIL }, true, 'passive: the entered email matches'],
+        [false, { email: 'ENTERED@Example.COM' }, true, 'passive: match is case-insensitive'],
+        [false, { email: '  entered@example.com  ' }, false, 'passive: the buyer email is not trimmed'],
+        [false, { email: 'someone.else@example.com' }, false, 'passive: a mismatch is refused'],
+        [false, { email: null }, false, 'passive: a buyer with no email cannot match'],
+        [false, null, false, 'passive: no buyer at all'],
+        [true, { email: 'someone.else@example.com' }, true, 'post-auth: a mismatch is accepted'],
+        [true, { email: null }, true, 'post-auth: no email is required to match anything'],
+        [true, { email: ENTERED_EMAIL }, true, 'post-auth: a matching email is accepted too'],
+        [true, null, false, 'post-auth: no buyer is still no buyer']
+    ])(
+        'authenticated=%p buyer=%p -> matches=%p (%s)',
+        (authenticated, buyer, expected) => {
+            const { renderer } = loadRenderer(buyer);
 
-beforeEach(() => {
-    document.body.innerHTML = '';
+            return renderer.resolveBuyer(authenticated).then((pf) => {
+                expect(pf.matches).toBe(expected);
+                expect(pf.ready).toBe(true);
+                expect(pf.buyer).toBe(buyer);
+                // Recorded on the component, not just returned: soleTraderMode()
+                // reads `this.soleTraderLookup` on a later click.
+                expect(renderer.soleTrader().soleTraderLookup).toBe(pf);
+            });
+        }
+    );
 });
 
-describe('the buyer lookup happens only after authentication', () => {
-    test('the flow has exactly one fetchBuyer call site, in the ACCEPTED branch', () => {
-        // A reinstated passive probe is invisible to every behavioural fixture
-        // here: it would auto-adopt a cookie identity with no handshake at all
-        // and leave the handshake cases green. Pinning the call sites is what
-        // catches that.
-        const src = fs.readFileSync(path.resolve(__dirname, '..', '..', SOLE_TRADER), 'utf8');
-        // Guard against a rename silently emptying the check below.
-        expect(src).toContain('SoleTrader.prototype.fetchBuyer = function ()');
+describe('a completed signup autofills whatever identity it authenticated', () => {
+    test.each([
+        ['a MISMATCHED buyer email', 'someone.else@example.com'],
+        ['a matching buyer email', ENTERED_EMAIL]
+    ])('%s fills the company from the authenticated buyer', (_description, buyerEmail) => {
+        const buyer = Object.assign({ email: buyerEmail }, SOLE_TRADER);
+        const { renderer, listeners } = loadRenderer(buyer);
+        const handler = messageHandler(renderer, listeners);
 
-        const callSites = src.split('\n').filter((line) => /this\.fetchBuyer\(/.test(line));
+        renderer.showSoleTrader(true);
+        renderer.showPopupMessage(true);
+
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+
+        // The handler is async inside; let the resolveBuyer promise settle.
+        return Promise.resolve().then(() => Promise.resolve().then(() => {
+            expect(renderer.companyId()).toBe(SOLE_TRADER.organization_number);
+            expect(renderer.companyName()).toBe(SOLE_TRADER.company_name);
+            expect(renderer.showPopupMessage()).toBe(false);
+            // Still sole trader — the fill must not bounce the buyer back to
+            // the registered-organisation mode.
+            expect(renderer.showSoleTrader()).toBe(true);
+        }));
+    });
+
+    test('an ACCEPTED message that yields no buyer fills nothing', () => {
+        const { renderer, listeners } = loadRenderer(null);
+        const handler = messageHandler(renderer, listeners);
+
+        renderer.showSoleTrader(true);
+
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+
+        return Promise.resolve().then(() => Promise.resolve().then(() => {
+            expect(renderer.companyId()).toBe('');
+            expect(renderer.companyName()).toBe('');
+        }));
+    });
+
+    test('a second ACCEPTED message is idempotent, not a clobber', () => {
+        // The popup can post more than once (double submit, a re-opened
+        // window). Replaying the fill has to land on the same identity.
+        const buyer = Object.assign({ email: 'someone.else@example.com' }, SOLE_TRADER);
+        const { renderer, listeners } = loadRenderer(buyer);
+        const handler = messageHandler(renderer, listeners);
+
+        renderer.showSoleTrader(true);
+
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+
+        return Promise.resolve().then(() => Promise.resolve().then(() => {
+            expect(renderer.companyId()).toBe(SOLE_TRADER.organization_number);
+            expect(renderer.companyName()).toBe(SOLE_TRADER.company_name);
+        }));
+    });
+});
+
+describe('email entry alone never triggers the lookup (TWO-25503)', () => {
+    /**
+     * The removed email-driven prefetch is invisible to every behavioural
+     * fixture here: reinstating it would auto-adopt a sole trader with no chip
+     * click and still leave the chip-click tests green. Pinning the call sites
+     * in the source is what catches that.
+     */
+    test('lookupSoleTrader is called from soleTraderMode and nowhere else', () => {
+        const src = fs.readFileSync(
+            path.resolve(__dirname, '..', '..', SOLE_TRADER_MODEL),
+            'utf8'
+        );
+        // Guard against a rename silently emptying this check.
+        expect(src).toContain('SoleTrader.prototype.lookupSoleTrader = function ()');
+
+        const callSites = src.split('\n').filter((line) => /lookupSoleTrader\(\)[.;]/.test(line));
         expect(callSites).toHaveLength(1);
-        expect(src).toContain("if (event.data !== 'ACCEPTED')");
-    });
-
-    test('booting the flow and launching signup probes no buyer', async () => {
-        const { flow, rec } = loadFlow({ buyer: BUYER });
-
-        await flow.ensureTokens();
-        flow.launchSignup();
-        await settle();
-
-        expect(buyerRequests(rec)).toEqual([]);
-    });
-
-    test('the lookup goes out under the autofill token, with cookies', async () => {
-        const { rec, handler } = loadFlow({ buyer: BUYER });
-
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
-        await settle();
-
-        const request = buyerRequests(rec)[0];
-        expect(request.options.headers['two-delegated-authority-token']).toBe('at');
-        expect(request.options.credentials).toBe('include');
+        expect(callSites[0]).toContain('return this.lookupSoleTrader().then(');
     });
 });
 
-describe('which messages the handshake acts on', () => {
-    test.each([
-        [
-            { origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP },
-            { adoptions: 1, errors: 0, lookups: 1 },
-            'the tracked popup reports success'
-        ],
-        [
-            { origin: CHECKOUT_PAGE_URL, data: 'REJECTED', source: POPUP },
-            { adoptions: 0, errors: 1, lookups: 0 },
-            'the tracked popup reports something other than ACCEPTED'
-        ],
-        [
-            { origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: { other: 'window' } },
-            { adoptions: 0, errors: 0, lookups: 0 },
-            'an untracked window is ignored entirely, not surfaced as an error'
-        ],
-        [
-            { origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: null },
-            { adoptions: 0, errors: 0, lookups: 0 },
-            'a non-window sender has a null source'
-        ],
-        [
-            { origin: 'https://evil.example', data: 'ACCEPTED', source: POPUP },
-            { adoptions: 0, errors: 0, lookups: 0 },
-            'a foreign origin is ignored'
-        ]
-    ])('%p -> %p (%s)', async (event, expected) => {
-        const { rec, handler } = loadFlow({ buyer: BUYER });
+describe('the chip lookup still refuses a buyer it cannot tie to the form', () => {
+    test('a mismatched cookie buyer does not prefill the company', () => {
+        const { renderer } = loadRenderer({
+            email: 'someone.else@example.com',
+            organization_number: SOLE_TRADER.organization_number,
+            company_name: SOLE_TRADER.company_name
+        });
+        renderer.showModeTab(true);
 
-        handler(event);
-        await settle();
-
-        expect({
-            adoptions: rec.adopted.length,
-            errors: rec.errors.length,
-            lookups: buyerRequests(rec).length
-        }).toEqual(expected);
+        return renderer.lookupSoleTrader().then(() => {
+            expect(renderer.soleTrader().soleTraderLookup.matches).toBe(false);
+            expect(renderer.companyId()).toBe('');
+            expect(renderer.companyName()).toBe('');
+            expect(renderer.showSoleTrader()).toBe(false);
+        });
     });
 
-    test('an ACCEPTED message outside sole-trader mode adopts nothing', async () => {
-        const { rec, handler } = loadFlow({ buyer: BUYER, mode: 'registered' });
+    test('a matching cookie buyer prefills and selects sole trader', () => {
+        const { renderer } = loadRenderer(Object.assign({ email: ENTERED_EMAIL }, SOLE_TRADER));
+        renderer.showModeTab(true);
 
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
-        await settle();
-
-        expect(rec.adopted).toEqual([]);
-        expect(buyerRequests(rec)).toEqual([]);
-    });
-
-    test('the listener is bound once however often it is armed', () => {
-        const { flow, rec } = loadFlow({ buyer: BUYER });
-
-        flow.listenForSignupResult();
-        flow.listenForSignupResult();
-
-        expect(rec.listeners.filter((entry) => entry.name === 'message')).toHaveLength(1);
-    });
-});
-
-describe('what an authenticated buyer produces', () => {
-    test.each([
-        [BUYER, 'a buyer whose email matches nothing on the checkout is still adopted'],
-        [
-            Object.assign({}, BUYER, { email: null }),
-            'a buyer with no email at all is adopted — the handshake is the proof'
-        ]
-    ])('%p (%s)', async (buyer) => {
-        const { rec, identity, handler } = loadFlow({ buyer: buyer });
-
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
-        await settle();
-
-        expect(rec.adopted).toEqual([buyer]);
-        expect(identity.companyId()).toBe(BUYER.organization_number);
-        expect(identity.companyName()).toBe(BUYER.company_name);
-        expect(identity.isSoleTrader()).toBe(true);
-    });
-
-    test('an ACCEPTED message the lookup cannot answer surfaces an error and fills nothing', async () => {
-        const { rec, identity, handler } = loadFlow({ buyer: null });
-
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
-        await settle();
-
-        expect(rec.adopted).toEqual([]);
-        expect(rec.errors).toHaveLength(1);
-        expect(identity.companyId()).toBe('');
-    });
-
-    test('a replayed ACCEPTED lands on the same identity rather than clobbering it', async () => {
-        const { rec, identity, handler } = loadFlow({ buyer: BUYER });
-
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
-        await settle();
-
-        expect(identity.companyId()).toBe(BUYER.organization_number);
-        expect(identity.companyName()).toBe(BUYER.company_name);
-    });
-});
-
-describe('the flight the handshake holds', () => {
-    test('is still held as the identity write lands, and settled only after', async () => {
-        // The popup can close the instant it posts, well before the identity is
-        // in the form; settling on the response would let the close watcher
-        // read a completed signup as an abandoned one.
-        const { rec, identity, handler } = loadFlow({ buyer: BUYER });
-
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
-        expect(identity.isBusy()).toBe(true);
-
-        await settle();
-
-        expect(rec.busyDuringWrite).toBe(true);
-        expect(identity.isBusy()).toBe(false);
-    });
-
-    test('is settled even when the lookup answers with no buyer', async () => {
-        const { identity, handler } = loadFlow({ buyer: null });
-
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
-        await settle();
-
-        expect(identity.isBusy()).toBe(false);
-    });
-
-    test('a closing popup does not abandon the signup while the lookup is confirming', async () => {
-        const { flow, rec, handler } = loadFlow({ buyer: BUYER });
-
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
-        expect(flow._signupConfirming).toBe(true);
-
-        await settle();
-
-        expect(flow._signupConfirming).toBe(false);
-        expect(rec.abandons).toEqual([]);
+        return renderer.soleTraderMode().then(() => {
+            expect(renderer.soleTrader().soleTraderLookup.matches).toBe(true);
+            expect(renderer.companyId()).toBe(SOLE_TRADER.organization_number);
+            expect(renderer.companyName()).toBe(SOLE_TRADER.company_name);
+            expect(renderer.showSoleTrader()).toBe(true);
+        });
     });
 });

@@ -2,457 +2,410 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25503 — the hosted sole-trader signup popup: how it is launched, what it
- * is launched with, and what happens to the checkout while it is open.
+ * TWO-25461 — the three defects in the sole-trader signup popup launch path.
  *
- * The flow is PAGE-LEVEL (`model/sole-trader.js`), constructed by the
- * company-capture component with that component as its host, so everything
- * below drives either the real flow against a stub host or the real component
- * with the real flow underneath it. Nothing here reaches through a payment
- * renderer, which no longer participates.
- *
- * Mutation-resistance notes:
- *
- *  - the mint is asserted to have happened with the popup count still zero and
- *    no chip clicked, so moving it into the click handler fails rather than
- *    reading as green;
- *  - the click assertion runs in the SAME TICK as the click, with no await
- *    between: an `await` introduced anywhere on the launch path leaves the
- *    popup unopened at the assertion, which is exactly what a popup blocker
- *    would do;
- *  - the country param is read back off the URL under a host whose own
- *    `countryCode()` throws, so sourcing it from the DOM-fed value fails;
- *  - the busy flag and the abandon callback are read after driving the real
- *    watcher tick, never by asserting a method exists.
+ * 1. The popup opened 610px wide, narrower than the hosted signup flow's own
+ *    minimum layout width (700), which clipped it.
+ * 2. The note's overlay element bound a click to `hideIframe()`, a method that
+ *    exists on nothing. It was the last remnant of a removed in-page iframe
+ *    modal (no `.iframe-parent` markup survives, and nothing adds the `.show`
+ *    class its stylesheet needs), so the element was permanently invisible and
+ *    the broken binding only latent — an overlay stylesheet making it visible
+ *    was all it took to turn a click into a TypeError. The element is gone.
+ * 3. The "popup not ready" branch offered the fallback link before the signup
+ *    tokens were minted, so clicking it built
+ *    `…?businessToken=&autofillToken=…` — a URL the hosted flow rejects.
  */
 
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
-const $ = require('jquery');
 const { loadAmdModule, defaultMocks } = require('./amd-harness');
 
-const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
-const SOLE_TRADER = 'view/frontend/web/js/model/sole-trader.js';
-const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
-
+const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
+const SOLE_TRADER_MODEL = 'view/frontend/web/js/model/sole-trader.js';
+const TEMPLATE = 'view/frontend/web/template/payment/gateway_method.html';
 const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
-const CHECKOUT_API_URL = 'https://api.example';
-const TOKEN_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
-const POPUP_CLOSE_POLL_MS = 300;
 
 /**
- * The mocks and sandbox globals both loaders share, plus the recorders they
- * write into.
+ * Load the renderer with `window.open` recorded rather than performed.
  *
- * `setInterval` is recorded rather than run: the production intervals are a
- * 30-minute token refresh and a 300ms popup-close poll, and driving their
- * callbacks by hand is what lets a test assert which one it ticked.
- *
- * @param {object} [options] `{ billingAddress, companyTypes }`
- * @returns {object} `{ rec, identity, mocks, globals }`
+ * @returns {object} `{ component, opened }` — `opened` collects one
+ *          `{ url, target, features }` entry per `window.open()` call.
  */
-function makeEnv(options) {
-    const opts = options || {};
-    const rec = {
-        opened: [],
-        handles: [],
-        intervals: [],
-        cleared: [],
-        errors: [],
-        messageListeners: [],
-        adopted: [],
-        abandons: [],
-        tokenMints: 0,
-        /** Flipped mid-test to model a browser blocking the popup. */
-        blocked: false
-    };
-    let intervalSeq = 0;
-
-    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
-
-    const fakeWindow = {
-        open: function (url, target, features) {
-            rec.opened.push({ url: url, target: target, features: features });
-            if (rec.blocked) return null;
-            const handle = { closed: false, close: function () { this.closed = true; } };
-            rec.handles.push(handle);
-            return handle;
-        },
-        addEventListener: function (name, fn) { rec.messageListeners.push({ name: name, fn: fn }); },
-        removeEventListener: function () {}
-    };
-
-    const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
-        billingAddress: function () {
-            return 'billingAddress' in opts ? opts.billingAddress : { countryId: 'GB' };
-        },
-        getQuoteId: function () { return 'cart-1'; },
-        isVirtual: function () { return false; }
-    });
-
-    const companySearch = Object.assign({}, defaultMocks()['Two_Gateway/js/model/company-search'], {
-        apiClientParams: function () { return { client: 'magento' }; },
-        currentAddressFormCountry: function () { return ''; }
-    });
-
-    const mocks = {
-        jquery: $,
-        'Magento_Checkout/js/model/quote': quote,
-        'Two_Gateway/js/model/company-identity': identity,
-        'Two_Gateway/js/model/company-search': companySearch,
-        'Two_Gateway/js/model/brand-config': {
-            getActiveTwoBrandConfig: function () {
-                return {
-                    checkoutPageUrl: CHECKOUT_PAGE_URL,
-                    checkoutApiUrl: CHECKOUT_API_URL,
-                    isCompanySearchEnabled: true,
-                    supportedCompanyTypes: opts.companyTypes || { gb: ['SOLE_TRADER'] }
-                };
-            }
-        },
-        'Magento_Ui/js/model/messageList': {
-            addErrorMessage: function (message) { rec.errors.push(message); },
-            addSuccessMessage: function () {}
+function loadRenderer() {
+    const opened = [];
+    const component = loadAmdModule(
+        RENDERER,
+        {},
+        {
+            window: {
+                checkoutConfig: { payment: {} },
+                open: function (url, target, features) {
+                    opened.push({ url: url, target: target, features: features });
+                    // A truthy handle, as a browser that did NOT block the
+                    // popup returns — the caller reads it to decide whether to
+                    // fall back to the link. `close()` because a re-launch
+                    // closes the handle it is replacing.
+                    return { closed: false, close: function () {} };
+                }
+            },
+            // getAutofillData() base64-encodes the buyer payload. The vm
+            // sandbox inherits no browser globals, so without this the popup
+            // path dies in the harness instead of being exercised.
+            btoa: global.btoa
         }
-    };
+    );
+    return { component: component, opened: opened };
+}
 
-    const globals = {
-        document: document,
-        window: fakeWindow,
-        btoa: global.btoa,
-        setInterval: function (fn, ms) {
-            intervalSeq += 1;
-            rec.intervals.push({ id: intervalSeq, fn: fn, ms: ms });
-            return intervalSeq;
+/**
+ * A `this` context standing in for a live renderer — the HOST — plus the
+ * SoleTrader collaborator it lazily mounts, between them carrying just the
+ * members the popup-launch path reads.
+ *
+ * @param {object} component the loaded renderer
+ * @param {object} [hostOverrides] members to replace on the renderer
+ * @param {object} [soleTraderOverrides] members to replace on the collaborator
+ * @returns {object} the context
+ */
+function makeContext(component, hostOverrides, soleTraderOverrides) {
+    const shown = [];
+    const ctx = Object.assign({}, component, {
+        _brandConfig: { checkoutPageUrl: CHECKOUT_PAGE_URL },
+        companyName: function () { return 'Ola Nordmann'; },
+        getEmail: function () { return 'ola@example.com'; },
+        getTelephone: function () { return '+4712345678'; },
+        showModeTab: function () { return true; },
+        showSoleTrader: function () { return true; },
+        showPopupMessage: function (next) {
+            if (!arguments.length) return shown.length ? shown[shown.length - 1] : false;
+            shown.push(next);
+            return next;
         },
-        clearInterval: function (id) { rec.cleared.push(id); },
-        fetch: function (requestUrl) {
-            if (String(requestUrl).indexOf('get-tokens') !== -1) {
-                rec.tokenMints += 1;
-                return Promise.resolve({
-                    ok: true,
-                    json: function () {
-                        return Promise.resolve([
-                            { delegation_token: `dt-${rec.tokenMints}`, autofill_token: `at-${rec.tokenMints}` }
-                        ]);
-                    }
-                });
-            }
-            return Promise.resolve({ ok: false, status: 404 });
+        popupMessageStates: shown,
+        fillCompanyData: function () {}
+    });
+    Object.assign(ctx, hostOverrides || {});
+    Object.assign(ctx.soleTrader(), {
+        delegationToken: '',
+        autofillToken: '',
+        getAutofillData: function () { return 'AUTOFILL'; },
+        enterSoleTraderUi: function () {},
+        fetchBuyer: function () { return Promise.resolve(null); }
+    }, soleTraderOverrides || {});
+    return ctx;
+}
+
+describe('sole-trader signup popup (TWO-25461)', () => {
+    test('the popup is opened at the 700x805 the hosted flow needs', () => {
+        const { component, opened } = loadRenderer();
+        const ctx = makeContext(component, {}, {
+            delegationToken: 'dt-1',
+            autofillToken: 'at-1'
+        });
+
+        const handle = ctx.openIframe.call(ctx);
+
+        expect(handle).toBeTruthy();
+        expect(opened).toHaveLength(1);
+        expect(opened[0].features).toContain('width=700');
+        expect(opened[0].features).toContain('height=805');
+        // The defect value specifically — a partial revert would otherwise
+        // satisfy a "contains width=700" check if both were somehow present.
+        expect(opened[0].features).not.toContain('610');
+    });
+
+    test('the popup-launch source carries no 610-wide window feature anywhere', () => {
+        // The behavioural assertion above only sees the one call site the
+        // fixture reaches. This covers the value being reintroduced on a path
+        // no fixture takes (a second launch helper, a brand branch).
+        const src = fs.readFileSync(path.resolve(__dirname, '..', '..', SOLE_TRADER_MODEL), 'utf8');
+        expect(src).not.toContain('width=610');
+    });
+
+    test('every method the template arrow-binds to a click exists on the renderer', () => {
+        // This is the `hideIframe()` class of defect: a template calling a
+        // method the view model never had, which throws only when the element
+        // is actually clicked and so survives every non-clicking test.
+        //
+        // Scope: arrow-bound calls (`click: () => foo()`), which are the
+        // renderer's OWN methods. Bare-reference bindings (`click: placeOrder`)
+        // resolve against the Magento base component, which the harness
+        // replaces with a stub, so they cannot be checked here.
+        const template = fs.readFileSync(path.resolve(__dirname, '..', '..', TEMPLATE), 'utf8');
+        const bound = new Set();
+        const pattern = /=>\s*\{?\s*([A-Za-z_$][\w$]*)\s*\(/g;
+        let match;
+        while ((match = pattern.exec(template)) !== null) {
+            bound.add(match[1]);
         }
-    };
 
-    return { rec: rec, identity: identity, mocks: mocks, globals: globals };
-}
+        const { component } = loadRenderer();
+        // A guard on the scan itself: a regex that silently matched nothing
+        // would make the loop below vacuous.
+        expect(bound.has('openIframe')).toBe(true);
+        expect(bound.has('soleTraderMode')).toBe(true);
 
-/**
- * The real flow against a stub host, for everything that does not need the
- * component's chips.
- *
- * @param {object} [options] forwarded to makeEnv()
- * @returns {object} `{ flow, rec, identity, host }`
- */
-function loadFlow(options) {
-    const env = makeEnv(options);
-    const SoleTraderCtor = loadAmdModule(SOLE_TRADER, env.mocks, env.globals);
-    const host = {
-        config: function () {
-            return { checkoutPageUrl: CHECKOUT_PAGE_URL, checkoutApiUrl: CHECKOUT_API_URL };
-        },
-        countryCode: function () { return 'gb'; },
-        adoptSoleTrader: function (buyer) { env.rec.adopted.push(buyer); },
-        abandonSoleTrader: function () { env.rec.abandons.push(true); }
-    };
-    const flow = new SoleTraderCtor(host);
-    return { flow: flow, rec: env.rec, identity: env.identity, host: host };
-}
-
-/**
- * The real component with the real flow underneath it, booted against a
- * payment-tile company field so the chips exist to be clicked.
- *
- * @param {object} [options] forwarded to makeEnv()
- * @returns {Promise<object>} `{ component, flow, rec, identity }`
- */
-async function startStack(options) {
-    document.body.innerHTML =
-        '<form id="two_gateway_form">' +
-        '<div class="field"><div class="control">' +
-        '<input id="company_name" name="company_name" />' +
-        '</div></div></form>';
-    const env = makeEnv(options);
-    const component = loadAmdModule(COMPONENT, env.mocks, env.globals);
-    component.start();
-    // The availability answer is seeded, so one macrotask turn is enough for it
-    // and the mint it triggers to settle.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    return { component: component, flow: component.soleTrader(), rec: env.rec, identity: env.identity };
-}
-
-function chip(mode) {
-    return document.querySelector(`.two-company-mode-chip[data-two-chip="${mode}"]`);
-}
-
-function readSource() {
-    return fs.readFileSync(path.resolve(__dirname, '..', '..', SOLE_TRADER), 'utf8');
-}
-
-beforeEach(() => {
-    document.body.innerHTML = '';
-});
-
-describe('the tokens are minted on availability, never on the click', () => {
-    test('booting a sole-trader country mints without a chip being clicked', async () => {
-        const { flow, rec } = await startStack();
-
-        expect(rec.tokenMints).toBe(1);
-        expect(flow.hasSignupTokens()).toBe(true);
-        expect(rec.opened).toEqual([]);
+        const missing = [...bound].filter((name) => typeof component[name] !== 'function');
+        expect(missing).toEqual([]);
     });
 
-    test('a country whose registry offers no sole trader mints nothing', async () => {
-        const { flow, rec } = await startStack({ companyTypes: { gb: ['LIMITED_COMPANY'] } });
-
-        expect(rec.tokenMints).toBe(0);
-        expect(flow.hasSignupTokens()).toBe(false);
+    test('the removed overlay leaves no hideIframe reference behind', () => {
+        const template = fs.readFileSync(path.resolve(__dirname, '..', '..', TEMPLATE), 'utf8');
+        const src = fs.readFileSync(path.resolve(__dirname, '..', '..', SOLE_TRADER_MODEL), 'utf8');
+        expect(template).not.toContain('hideIframe');
+        expect(src).not.toContain('hideIframe');
     });
 
-    test('the chip click opens the popup in its own tick, with no round trip first', async () => {
-        const { rec } = await startStack();
-        const mintsBeforeClick = rec.tokenMints;
+    test('the signup URL carries both tokens once they are minted', () => {
+        const { component, opened } = loadRenderer();
+        const ctx = makeContext(component, {}, {
+            delegationToken: 'dt-1',
+            autofillToken: 'at-1'
+        });
 
-        chip('soletrader').click();
+        ctx.openIframe.call(ctx);
 
-        // Read in the same tick as the click: an await anywhere on the launch
-        // path leaves this empty, which is what a popup blocker sees too.
-        expect(rec.opened).toHaveLength(1);
-        expect(rec.tokenMints).toBe(mintsBeforeClick);
-    });
-});
-
-describe('what the signup URL carries', () => {
-    /**
-     * @param {object} [options] forwarded to loadFlow()
-     * @returns {object} `{ flow, rec, identity, host }` with tokens already held
-     */
-    function mintedFlow(options) {
-        const loaded = loadFlow(options);
-        loaded.flow.delegationToken = 'dt-1';
-        loaded.flow.autofillToken = 'at-1';
-        return loaded;
-    }
-
-    test('both tokens, on the hosted signup path', () => {
-        const { flow, rec } = mintedFlow();
-
-        flow.openPopup();
-
-        const url = new URL(rec.opened[0].url);
-        expect(url.origin + url.pathname).toBe(`${CHECKOUT_PAGE_URL}/soletrader/signup`);
+        expect(opened).toHaveLength(1);
+        const url = new URL(opened[0].url);
+        expect(url.origin + url.pathname).toBe(CHECKOUT_PAGE_URL + '/soletrader/signup');
         expect(url.searchParams.get('businessToken')).toBe('dt-1');
         expect(url.searchParams.get('autofillToken')).toBe('at-1');
-        expect(url.searchParams.get('autofillData')).toBeTruthy();
     });
 
-    test('the 700x805 the hosted flow needs, and not the 610 that clipped it', () => {
-        const { flow, rec } = mintedFlow();
+    test('getAutofillData() round-trips a non-ASCII name without throwing', () => {
+        const soleTraderModule = loadAmdModule(
+            SOLE_TRADER_MODEL,
+            {
+                'Magento_Checkout/js/model/quote': Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
+                    billingAddress: function () {
+                        return {
+                            firstname: 'Håkon',
+                            lastname: 'Sørensen',
+                            street: ['Storgata 1'],
+                            postcode: '0155',
+                            city: 'Oslo',
+                            region: 'Oslo',
+                            countryId: 'NO'
+                        };
+                    }
+                })
+            },
+            { btoa: global.btoa }
+        );
+        const soleTrader = new soleTraderModule({
+            getEmail: function () { return 'hakon@example.com'; },
+            companyName: function () { return 'Sørensen Consulting'; },
+            getTelephone: function () { return '+4712345678'; }
+        });
 
-        flow.openPopup();
-
-        expect(rec.opened[0].features).toContain('width=700');
-        expect(rec.opened[0].features).toContain('height=805');
-        expect(rec.opened[0].features).not.toContain('610');
-    });
-
-    test('the launch source carries no 610-wide window feature on any path', () => {
-        // The behavioural case above only sees the one call site the fixture
-        // reaches; this covers the value returning on a path no fixture takes.
-        expect(readSource()).not.toContain('width=610');
+        let encoded;
+        expect(() => { encoded = soleTrader.getAutofillData(); }).not.toThrow();
+        const decoded = JSON.parse(decodeURIComponent(escape(atob(encoded))));
+        expect(decoded.first_name).toBe('Håkon');
+        expect(decoded.last_name).toBe('Sørensen');
+        expect(decoded.company_name).toBe('Sørensen Consulting');
     });
 
     test.each([
-        ['US', { countryId: 'US' }, 'US'],
-        ['a lower-cased quote value is upper-cased', { countryId: 'gb' }, 'GB'],
-        ['no billing country resolved', {}, null],
-        ['no billing address at all', null, null]
-    ])('the country param (%s)', (_description, billingAddress, expected) => {
-        const { flow, rec } = mintedFlow({ billingAddress: billingAddress });
+        ['US', 'US', 'US'],
+        ['GB', 'gb', 'GB'],
+        ['no billing country resolved', '', null]
+    ])('the signup URL country param (%s)', (_label, billingCountryId, expectedParam) => {
+        const opened = [];
+        const component = loadAmdModule(
+            RENDERER,
+            {
+                'Magento_Checkout/js/model/quote': Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
+                    billingAddress: function () { return { countryId: billingCountryId }; }
+                })
+            },
+            {
+                window: {
+                    checkoutConfig: { payment: {} },
+                    open: function (url, target, features) {
+                        opened.push({ url: url, target: target, features: features });
+                        return { closed: false };
+                    }
+                },
+                btoa: global.btoa
+            }
+        );
+        const ctx = makeContext(component, {}, { delegationToken: 'dt-1', autofillToken: 'at-1' });
 
-        flow.openPopup();
+        ctx.openIframe.call(ctx);
 
-        expect(new URL(rec.opened[0].url).searchParams.get('country')).toBe(expected);
+        const url = new URL(opened[0].url);
+        expect(url.searchParams.get('country')).toBe(expectedParam);
     });
 
-    test('the country comes from the quote, never from the host the DOM feeds', () => {
-        // PDEV-4669: the popup only renders its country-specific identity step
-        // when the URL says so, and a buyer must not be able to pick their own
-        // verification flow by editing the address form.
-        const { flow, rec, host } = mintedFlow({ billingAddress: { countryId: 'US' } });
-        host.countryCode = function () {
-            throw new Error('the DOM-fed country must not reach the signup URL');
-        };
+    test('the country param is sourced from the quote billing address, not the DOM-fed countryCode observable', () => {
+        // PDEV-4669: a self-selected DOM value must not be able to dodge the
+        // country-specific identity step. countryCode() is fed in part by a
+        // live DOM watcher (watchAddressFormCountry()) and must be ignored
+        // here even when it disagrees with the quote's own billing address.
+        const opened = [];
+        const component = loadAmdModule(
+            RENDERER,
+            {
+                'Magento_Checkout/js/model/quote': Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
+                    billingAddress: function () { return { countryId: 'US' }; }
+                })
+            },
+            {
+                window: {
+                    checkoutConfig: { payment: {} },
+                    open: function (url, target, features) {
+                        opened.push({ url: url, target: target, features: features });
+                        return { closed: false };
+                    }
+                },
+                btoa: global.btoa
+            }
+        );
+        const ctx = makeContext(
+            component,
+            { countryCode: function () { return 'gb'; } },
+            { delegationToken: 'dt-1', autofillToken: 'at-1' }
+        );
 
-        flow.openPopup();
+        ctx.openIframe.call(ctx);
 
-        expect(new URL(rec.opened[0].url).searchParams.get('country')).toBe('US');
+        expect(new URL(opened[0].url).searchParams.get('country')).toBe('US');
     });
 
     test.each([
         ['both tokens missing', '', ''],
         ['business token missing', '', 'at-1'],
-        ['autofill token missing', 'dt-1', '']
-    ])('no popup opens while %s', (_description, delegationToken, autofillToken) => {
-        const { flow, rec } = loadFlow();
-        flow.delegationToken = delegationToken;
-        flow.autofillToken = autofillToken;
-
-        expect(flow.openPopup()).toBeNull();
-        expect(rec.opened).toEqual([]);
-    });
-
-    test('a superseded popup is closed rather than left able to post a stale result', () => {
-        const { flow, rec } = mintedFlow();
-
-        flow.openPopup();
-        flow.openPopup();
-
-        expect(rec.handles).toHaveLength(2);
-        expect(rec.handles[0].closed).toBe(true);
-        expect(rec.handles[1].closed).toBe(false);
-    });
-});
-
-describe('a blocked popup falls back to the on-page link', () => {
-    test.each([
-        [{ autoselect: false }, 'false', 'a blocked replacement retries with autoselect still off'],
-        [undefined, null, 'a blocked first signup retries with no autoselect param']
-    ])('%p -> autoselect=%p (%s)', async (launchOptions, expectedAutoselect) => {
-        const { flow, rec } = await startStack();
-        rec.blocked = true;
-
-        flow.launchSignup(launchOptions);
-
-        const note = document.querySelector('.two-sole-trader-note');
-        expect(note).not.toBeNull();
-        expect(note.classList.contains('two-hidden')).toBe(false);
-        expect(rec.opened).toHaveLength(1);
-
-        rec.blocked = false;
-        note.querySelector('.two-sole-trader-note__link').click();
-
-        expect(rec.opened).toHaveLength(2);
-        expect(new URL(rec.opened[1].url).searchParams.get('autoselect')).toBe(expectedAutoselect);
-    });
-
-    test('a popup that opened leaves the fallback link withdrawn', async () => {
-        const { flow } = await startStack();
-
-        flow.launchSignup();
-
-        const note = document.querySelector('.two-sole-trader-note');
-        expect(note === null || note.classList.contains('two-hidden')).toBe(true);
-    });
-});
-
-describe('the token refresh', () => {
-    test('runs on a 30-minute interval once tokens are held', async () => {
-        const { rec } = await startStack();
-
-        const refresh = rec.intervals.filter((entry) => entry.ms === TOKEN_REFRESH_INTERVAL_MS);
-        expect(refresh).toHaveLength(1);
-    });
-
-    test('a tick re-mints, but is skipped while a round trip is outstanding', async () => {
-        const { rec, identity } = await startStack();
-        const refresh = rec.intervals.find((entry) => entry.ms === TOKEN_REFRESH_INTERVAL_MS);
-        const mintsBefore = rec.tokenMints;
-
-        identity.beginFlight();
-        refresh.fn();
-        expect(rec.tokenMints).toBe(mintsBefore);
-
-        identity.settleFlight();
-        refresh.fn();
-        expect(rec.tokenMints).toBe(mintsBefore + 1);
-    });
-});
-
-describe('the popup-close watcher', () => {
-    /**
-     * @returns {object} `{ flow, rec, identity, poll, handle }` with a popup open
-     */
-    function openedFlow() {
-        const loaded = loadFlow();
-        loaded.flow.delegationToken = 'dt-1';
-        loaded.flow.autofillToken = 'at-1';
-        loaded.flow.openPopup();
-        return Object.assign({}, loaded, {
-            poll: loaded.rec.intervals.find((entry) => entry.ms === POPUP_CLOSE_POLL_MS),
-            handle: loaded.rec.handles[0]
+        ['autofill token missing', 'dt-1', '', ]
+    ])('no popup is opened while %s', (_label, delegationToken, autofillToken) => {
+        const { component, opened } = loadRenderer();
+        const ctx = makeContext(component, {}, {
+            delegationToken: delegationToken,
+            autofillToken: autofillToken
         });
-    }
 
-    test('an open popup holds the checkout busy', () => {
-        const { identity, poll } = openedFlow();
+        const handle = ctx.openIframe.call(ctx);
 
-        expect(poll).toBeDefined();
-        expect(identity.isBusy()).toBe(true);
+        expect(handle).toBeNull();
+        expect(opened).toEqual([]);
+    });
+
+    test('the chip click opens signup only once the tokens have landed', async () => {
+        const { component, opened } = loadRenderer();
+        let resolveTokens;
+        const ctx = makeContext(component, {}, {
+            getTokens: function () {
+                return new Promise((resolve) => {
+                    resolveTokens = resolve;
+                });
+            }
+        });
+
+        ctx.soleTraderMode.call(ctx);
+        // Still minting: nothing may open yet, because openIframe() could
+        // only build an empty-token URL from here.
+        expect(opened).toEqual([]);
+        expect(ctx.hasSignupTokens.call(ctx)).toBe(false);
+
+        resolveTokens({ delegation_token: 'dt-1', autofill_token: 'at-1' });
+        // Yield to the macrotask queue rather than awaiting the returned
+        // promise: the chain also settles fetchBuyer(), whose own microtasks
+        // run after soleTraderMode()'s.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(ctx.hasSignupTokens.call(ctx)).toBe(true);
+        expect(opened).toHaveLength(1);
+        // The popup was NOT blocked, so the fallback link stays withdrawn.
+        expect(ctx.popupMessageStates).toEqual([false]);
     });
 
     test.each([
-        [false, 1, 'the buyer closed it having captured nothing'],
-        [true, 0, 'the handshake lookup is still out and owns the outcome']
-    ])('confirming=%p -> %p abandon calls (%s)', (confirming, expectedAbandons) => {
-        const { flow, rec, poll, handle } = openedFlow();
-        flow._signupConfirming = confirming;
+        { delegationToken: 'dt-1', autofillToken: 'at-1', expected: true,
+            description: 'a blocked popup with tokens minted offers the link' },
+        { delegationToken: '', autofillToken: '', expected: false,
+            description: 'a failed token mint offers no link at all' }
+    ])('blocked-popup branch: $description', async ({ delegationToken, autofillToken, expected }) => {
+        // The resolved-but-no-match branch. `window.open` returning null is a
+        // browser-blocked popup; tokens absent means the lookup resolved
+        // through its catch, which leaves `ready` true and nothing minted.
+        const opened = [];
+        const component = loadAmdModule(
+            RENDERER,
+            {},
+            {
+                window: {
+                    checkoutConfig: { payment: {} },
+                    open: function (url, target, features) {
+                        opened.push({ url: url, target: target, features: features });
+                        return null;
+                    }
+                },
+                btoa: global.btoa
+            }
+        );
+        const ctx = makeContext(component, {}, {
+            delegationToken: delegationToken,
+            autofillToken: autofillToken,
+            soleTraderLookup: { ready: true, buyer: null, matches: false }
+        });
 
-        handle.closed = true;
-        poll.fn();
+        await ctx.soleTraderMode.call(ctx);
 
-        expect(rec.abandons).toHaveLength(expectedAbandons);
+        expect(ctx.popupMessageStates).toEqual([expected]);
     });
 
-    test('a poll while the popup is still open decides nothing', () => {
-        const { rec, poll, identity } = openedFlow();
+    test('lookupSoleTrader resolves a promise on its skip paths', async () => {
+        const { component } = loadRenderer();
+        // The not-ready branch sequences on this promise, so a skip path
+        // returning undefined would throw on `.then`.
+        const noTab = makeContext(component, { showModeTab: function () { return false; } });
+        const noEmail = makeContext(component, { getEmail: function () { return '   '; } });
+        const deduped = makeContext(component, {}, { soleTraderLookupEmail: 'ola@example.com' });
 
-        poll.fn();
-
-        expect(rec.abandons).toEqual([]);
-        expect(identity.isBusy()).toBe(true);
+        await expect(noTab.lookupSoleTrader.call(noTab)).resolves.toBeUndefined();
+        await expect(noEmail.lookupSoleTrader.call(noEmail)).resolves.toBeUndefined();
+        await expect(deduped.lookupSoleTrader.call(deduped)).resolves.toBeUndefined();
     });
 
-    test('stopping the watcher settles the flight it was holding', () => {
-        const { flow, identity } = openedFlow();
+    test('a second chip click while the first lookup is still in flight opens signup once', async () => {
+        // The dedupe key is written synchronously, so the second click used to
+        // resume immediately on a lookup that had recorded nothing and minted
+        // nothing: no adoption, no popup, and no fallback link either, since
+        // that needs the tokens too. It must wait on the outstanding chain.
+        const { component, opened } = loadRenderer();
+        let resolveTokens;
+        let mints = 0;
+        const ctx = makeContext(component, {}, {
+            getTokens: function () {
+                mints += 1;
+                return new Promise((resolve) => {
+                    resolveTokens = resolve;
+                });
+            }
+        });
 
-        flow.stopPopupCloseWatcher();
+        const first = ctx.soleTraderMode.call(ctx);
+        const second = ctx.soleTraderMode.call(ctx);
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(identity.isBusy()).toBe(false);
-    });
+        // Still minting. Neither click may have reached a decision yet — a
+        // recorded showPopupMessage() here is the dead end: the second click
+        // resumed on an empty lookup, so it neither opened a popup nor offered
+        // the link.
+        expect(ctx.popupMessageStates).toEqual([]);
+        expect(opened).toEqual([]);
 
-    test('a superseding launch settles the watcher it replaced, so busy cannot stack', () => {
-        const { flow, identity } = openedFlow();
+        resolveTokens({ delegation_token: 'dt-1', autofill_token: 'at-1' });
+        await Promise.all([first, second]);
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
-        flow.openPopup();
-        flow.stopPopupCloseWatcher();
-
-        expect(identity.isBusy()).toBe(false);
-    });
-
-    test('dispose releases the watcher and the refresh', () => {
-        const { flow, rec, identity } = openedFlow();
-        flow.startTokenRefresh();
-
-        flow.dispose();
-
-        expect(identity.isBusy()).toBe(false);
-        expect(rec.cleared).toHaveLength(2);
-    });
-});
-
-describe('the removed in-page iframe modal leaves nothing behind', () => {
-    test('no hideIframe reference survives in the flow', () => {
-        expect(readSource()).not.toContain('hideIframe');
+        expect(mints).toBe(1);
+        expect(opened.length).toBeGreaterThan(0);
+        opened.forEach(({ url }) => {
+            expect(new URL(url).searchParams.get('businessToken')).toBe('dt-1');
+        });
     });
 });

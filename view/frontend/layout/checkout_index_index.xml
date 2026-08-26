@@ -74,19 +74,6 @@
                                         <item name="two-payment-availability" xsi:type="array">
                                             <item name="component" xsi:type="string">Two_Gateway/js/view/payment-availability</item>
                                         </item>
-                                        <!--
-                                            TWO-25503: boots the one company-capture
-                                            component. Declared HERE, and nowhere else,
-                                            for the same reason as the node above: a
-                                            payment renderer is created per Two-family
-                                            brand and destroyed on every totals change,
-                                            so a component booted from one is neither
-                                            single nor durable. Two declarations would
-                                            mean two mounts writing one identity.
-                                        -->
-                                        <item name="two-company-search-boot" xsi:type="array">
-                                            <item name="component" xsi:type="string">Two_Gateway/js/view/company-search-boot</item>
-                                        </item>
                                         <item name="summary" xsi:type="array">
                                             <item name="children" xsi:type="array">
                                                 <item name="totals" xsi:type="array">

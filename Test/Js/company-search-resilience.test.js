@@ -1116,275 +1116,169 @@ describe('in-field chrome', () => {
     });
 });
 
-/* ------------------------------------------------------------------ *
- * Re-render safety, driven through the page-level mount.
- *
- * These cases need real jsdom nodes rather than the recording double above:
- * the mount builds its chips and resolves its host by walking the document,
- * and "the live widget painted, the stale one did not" is only meaningful
- * when both widgets are real, separate DOM subtrees.
- * ------------------------------------------------------------------ */
-
-const $real = require('jquery');
-
-const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
-const IDENTITY_PATH = 'view/frontend/web/js/model/company-identity.js';
-const GLOBALS = { document: document, window: window };
-const MOUNT_SELECTOR = '#two_gateway_form input#company_name';
-
-/**
- * A select2 stand-in on the real jQuery. Faithful on the points these cases
- * turn on: each construction is recorded with its options block, the instance
- * is discoverable via `.data('select2')`, and re-init destroys the previous
- * instance the way select2 4.1's constructor does.
- *
- * @returns {Array} the options blocks handed to select2, newest last
- */
-function installSelect2Double() {
-    const constructions = [];
-    $real.fn.select2 = function (arg) {
-        return this.each(function () {
-            const $node = $real(this);
-            const instance = $node.data('select2');
-
-            if (typeof arg === 'object' && arg !== null) {
-                if (instance) $node.select2('destroy');
-                const $container = $real(
-                    '<span class="select2 select2-container">' +
-                    '<span class="select2-selection" role="combobox" tabindex="0"></span>' +
-                    '</span>'
-                );
-                const $dropdown = $real(
-                    '<span class="select2-dropdown">' +
-                    '<span class="select2-search select2-search--dropdown">' +
-                    '<input class="select2-search__field" type="search">' +
-                    '</span></span>'
-                );
-                $node.after($container);
-                $node.data('select2', {
-                    options: arg,
-                    $container: $container,
-                    $dropdown: $dropdown,
-                    $selection: $container.find('.select2-selection'),
-                    dataAdapter: { _queryTimeout: null }
-                });
-                constructions.push(arg);
-                return;
-            }
-            if (arg === 'destroy') {
-                if (!instance) return;
-                instance.$dropdown.remove();
-                instance.$container.remove();
-                $node.removeData('select2');
-                $node.off('.select2');
-                return;
-            }
-            if (arg === 'open') {
-                if (!instance) throw new Error('select2: no instance bound to this element');
-                $real('body').append(instance.$dropdown);
-                instance.$container.addClass('select2-container--open');
-                $node.trigger('select2:open');
-                return;
-            }
-            throw new Error('select2 double: unsupported command ' + arg);
-        });
-    };
-    return constructions;
-}
-
-/** Magento's `$.async` decorator, recording every registration. */
-function installAsync() {
-    $real.asyncCalls = [];
-    $real.async = function (selector, fn) {
-        $real.asyncCalls.push({ selector: selector, fn: fn });
-        const node = document.querySelector(selector);
-        if (node) fn(node);
-    };
-}
-
-/** `$.ajax` replaced with jqXHRs the test settles by hand. */
-function installAjaxDouble() {
-    const requests = [];
-    $real.ajax = function (options) {
-        const bound = { done: [], fail: [], always: [] };
-        const jqxhr = {
-            options: options,
-            done: function (fn) { bound.done.push(fn); return jqxhr; },
-            fail: function (fn) { bound.fail.push(fn); return jqxhr; },
-            always: function (fn) { bound.always.push(fn); return jqxhr; },
-            abort: function () { jqxhr.settleFail('abort'); },
-            settleFail: function (textStatus) {
-                bound.fail.forEach(function (fn) {
-                    fn({ status: textStatus === 'timeout' ? 0 : 500 }, textStatus);
-                });
-                bound.always.forEach(function (fn) { fn(); });
-            }
-        };
-        requests.push(jqxhr);
-        return jqxhr;
-    };
-    return requests;
-}
-
-/**
- * Boot the page-level component over the fixture with the real control and the
- * real model.
- *
- * Loaded fresh per test: the component and the identity are page-level
- * singletons, so a shared load would carry one case's bind into the next.
- *
- * @returns {object} `{ component, control, companySearch }`
- */
-function mount() {
-    const identity = loadAmdModule(IDENTITY_PATH, {}, GLOBALS);
-    const companySearch = loadAmdModule(
-        'view/frontend/web/js/model/company-search.js',
-        { jquery: $real },
-        GLOBALS
-    );
-    const SoleTraderStub = function () {
-        this.listenForSignupResult = function () {};
-        this.ensureTokens = function () { return Promise.resolve(true); };
-        this.launchSignup = function () { return {}; };
-        this.forgetAdoptions = function () {};
-    };
-
-    const component = loadAmdModule(
-        COMPONENT_PATH,
-        {
-            jquery: $real,
-            'Two_Gateway/js/model/company-identity': identity,
-            'Two_Gateway/js/model/company-search': companySearch,
-            'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(
-                $real,
-                companySearch,
-                GLOBALS
-            ),
-            'Two_Gateway/js/model/sole-trader': SoleTraderStub,
-            'Two_Gateway/js/model/brand-config': {
-                getActiveTwoBrandConfig: function () { return BASE_CONFIG; }
-            }
-        },
-        GLOBALS
-    );
-    component.start();
-    return { component: component, control: component._control, companySearch: companySearch };
-}
-
-/** Re-run the latest `$.async` registration for the mount, as a re-render does. */
-function reRender() {
-    const fires = $real.asyncCalls.filter(function (call) {
-        return call.selector === MOUNT_SELECTOR;
-    });
-    expect(fires.length).toBeGreaterThan(0);
-    fires[fires.length - 1].fn(document.querySelector(MOUNT_SELECTOR));
-}
-
-/** Drive one search through a given ajax options block and time it out. */
-function timeOutSearch(ajaxOptions, requests) {
-    ajaxOptions.transport(
-        { url: 'https://api.example.test/companies/v2/company?q=exa' },
-        function () {},
-        function () {}
-    );
-    requests[requests.length - 1].settleFail('timeout');
-}
-
-/** Everything the in-field chrome can paint, inside one widget's dropdown. */
-function chromeIn(instance) {
-    return instance.$dropdown.find(
-        '.two-company-search__spinner, .two-company-search__unavailable'
-    );
-}
-
 describe('re-render safety of the select2 binding', () => {
-    let constructions;
-    let requests;
-    let mounted;
-
-    beforeEach(() => {
-        document.body.innerHTML =
-            '<form id="two_gateway_form"><div class="field"><div class="control">' +
-            '<input id="company_name" name="company_name" />' +
-            '</div></div></form>';
-        $real(document).off('.twoCompanyCapture');
-        constructions = installSelect2Double();
-        installAsync();
-        requests = installAjaxDouble();
-        mounted = mount();
-        mounted.companySearch.clearResultCache();
-    });
+    function loadRenderer($) {
+        const companySearch = loadCompanySearch($);
+        const component = loadAmdModule(
+            'view/frontend/web/js/view/payment/method-renderer/gateway_method.js',
+            {
+                jquery: $,
+                'Two_Gateway/js/model/company-search': companySearch,
+                'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(
+                    $,
+                    companySearch
+                )
+            }
+        );
+        return Object.assign(Object.create(component.prototype || {}), {
+            companyNameSelector: SEARCH_FIELD,
+            enterDetailsManuallyButton: '#billing_enter_details_manually',
+            enterDetailsManuallyText: 'Enter details manually',
+            searchForCompanyButton: '#billing_search_for_company',
+            searchForCompanyText: 'Search for company',
+            _brandConfig: BASE_CONFIG,
+            countryCode: function () {
+                return 'gb';
+            },
+            // Defensive `subscribe` stub. Nothing on this path subscribes to
+            // the observable any more — the company-number editable-state
+            // derivation that used to (TWO-25288) is gone — but the stub is
+            // cheap and keeps the fixture usable if a subscriber returns.
+            companyName: Object.assign(
+                function () {
+                    return '';
+                },
+                {
+                    subscribe: function () {
+                        return { dispose: function () {} };
+                    }
+                }
+            ),
+            fillCompanyData: function () {},
+            addressLookup: component.addressLookup,
+            enableCompanySearch: component.enableCompanySearch,
+            disableCompanySearch: component.disableCompanySearch,
+            destroyCompanySearchWidget: component.destroyCompanySearchWidget,
+            dispose: component.dispose,
+            _super: function () {}
+        });
+    }
 
     /**
-     * The inverse of the guard this originally shipped. select2 4.1's
-     * constructor opens with `GetData(el, 'select2').destroy()`, so re-init is
-     * how the widget — and its handlers' closures — get re-pointed at the
-     * current bind. Early-returning would keep a widget alive whose closures
-     * reference a superseded bind token, so its chrome would paint over the
-     * live picker.
+     * The inverse of the guard this PR originally shipped. select2 4.1's
+     * constructor opens with `GetData(el, 'select2').destroy()`, so re-init
+     * is how the widget — and its handlers' `self` closure — get re-pointed
+     * at the current component. Early-returning would keep a widget alive
+     * whose closures reference a DISPOSED renderer, so picking a company
+     * would write to dead observables and the order would ship with no
+     * company on it.
      */
-    test('a re-render re-initialises select2 rather than skipping it', () => {
-        expect(constructions).toHaveLength(1);
+    test('re-render re-initialises select2 rather than skipping it', () => {
+        const { $, recorder } = makeQueryDouble();
+        const ctx = loadRenderer($);
 
-        reRender();
+        ctx.enableCompanySearch();
+        expect(recorder.select2Calls).toHaveLength(1);
 
-        expect(constructions).toHaveLength(2);
+        ctx.enableCompanySearch();
+        expect(recorder.select2Calls).toHaveLength(2);
+    });
+
+    test('dispose destroys the company-search widget', () => {
+        const { $, recorder } = makeQueryDouble();
+        const ctx = loadRenderer($);
+
+        ctx.enableCompanySearch();
+        expect($.asyncNode(SEARCH_FIELD).data('select2')).toBeDefined();
+
+        ctx.dispose();
+
+        // Without this, a re-render that REUSES the input node leaves the old
+        // widget bound with handlers closed over the disposed renderer.
+        expect(recorder.destroyCalls).toBe(1);
+        expect($.asyncNode(SEARCH_FIELD).data('select2')).toBeUndefined();
     });
 
     /**
-     * The counterpart: re-pointing is called on every event that can change the
-     * checkout's shape, so it has to be free when nothing moved. Rebuilding
-     * there would drop the buyer's open dropdown on every totals change.
+     * The renderer is pushed once per Two-family brand, so a checkout offering
+     * two of them has two `#company_name` inputs. dispose() must tear down the
+     * node THIS component bound, not everything a document-wide selector
+     * matches — otherwise disposing one renderer silently turns the other
+     * brand's picker into a plain text input.
      */
-    test('re-pointing the mount when nothing moved does not rebuild the widget', () => {
-        mounted.component.refreshMount();
-        mounted.component.refreshMount();
+    test('dispose only destroys the node this component bound', () => {
+        const { $, recorder } = makeQueryDouble();
+        const ctx = loadRenderer($);
 
-        expect(constructions).toHaveLength(1);
+        ctx.enableCompanySearch();
+        // Another node that the component's own selector ALSO matches — the
+        // duplicate `#company_name` a second Two-family brand renders. A
+        // document-wide destroy would take this one out.
+        const $sibling = $(SEARCH_FIELD);
+        $sibling.select2({});
+
+        ctx.dispose();
+
+        expect(recorder.destroyCalls).toBe(1);
+        expect($sibling.data('select2')).toBeDefined();
+        expect($.asyncNode(SEARCH_FIELD).data('select2')).toBeUndefined();
     });
 
     /**
-     * select2's destroy() only does `$element.off('.select2')`, so handlers
-     * bound outside that namespace survive every re-init. Left unchecked they
+     * The re-enable link is only visible on paths that have already destroyed
+     * the widget (manual entry → clearCompany → destroy), so resolving it
+     * from the select2 field itself found nothing and left the link up in
+     * sole-trader mode. It must resolve through the shared control's own
+     * reference instead — the control does not clear that reference on
+     * destroy() (see its own doc comment), for exactly this reason.
+     */
+    test('the re-enable link stays resolvable after the widget is destroyed', () => {
+        const { $ } = makeQueryDouble();
+        const ctx = loadRenderer($);
+
+        ctx.enableCompanySearch();
+        expect(ctx.searchForCompanyLink().length).toBe(1);
+        expect(ctx.companyCapture()._companySearchControl.isBound()).toBe(true);
+
+        ctx.destroyCompanySearchWidget();
+
+        expect(ctx.companyCapture()._companySearchControl.isBound()).toBe(false);
+        expect(ctx.searchForCompanyLink().length).toBe(1);
+    });
+
+    test('dispose is safe when no widget was ever bound', () => {
+        const { $ } = makeQueryDouble();
+        const ctx = loadRenderer($);
+
+        expect(function () {
+            ctx.dispose();
+        }).not.toThrow();
+    });
+
+    /**
+     * select2's destroy() only does `$element.off('.select2')`, so handlers we
+     * bind outside that namespace survive every re-init. Left unchecked they
      * stack one copy per re-render, and a single company pick then fires N
      * `select2:select` handlers — N address lookups, N-1 of them closed over
-     * superseded binds.
+     * disposed renderers, which is the dead-observable bug all over again.
      */
-    test('a re-render does not stack duplicate select2 handlers', () => {
-        mounted.companySearch.lookupCompanyAddress = jest.fn();
-        reRender();
-        reRender();
+    test('re-render does not stack duplicate select2 handlers', () => {
+        const { $ } = makeQueryDouble();
+        const ctx = loadRenderer($);
+        const $field = $.asyncNode(SEARCH_FIELD);
 
-        const event = $real.Event('select2:select');
-        event.params = { data: { text: 'Example Trading Ltd', companyId: '12345678' } };
-        $real(MOUNT_SELECTOR).trigger(event);
+        ctx.enableCompanySearch();
+        expect($field.handlersFor('select2:select')).toHaveLength(1);
 
-        expect(mounted.companySearch.lookupCompanyAddress).toHaveBeenCalledTimes(1);
+        ctx.enableCompanySearch();
+        ctx.enableCompanySearch();
+
+        expect($field.handlersFor('select2:select')).toHaveLength(1);
+        expect($field.handlersFor('select2:open')).toHaveLength(1);
     });
 
     /**
-     * The return link is only ever shown on paths that have already destroyed
-     * the widget, so resolving it from the select2 field itself finds nothing.
-     * It resolves through the control's own reference instead, which destroy()
-     * deliberately does not clear.
-     */
-    test('the return link stays resolvable after the widget is destroyed', () => {
-        expect(mounted.control.getSearchForCompanyLink()).toHaveLength(1);
-        expect(mounted.control.isBound()).toBe(true);
-
-        mounted.control.destroy();
-
-        expect(mounted.control.isBound()).toBe(false);
-        expect(mounted.control.getSearchForCompanyLink()).toHaveLength(1);
-    });
-
-    test('a repeated teardown reports that there was nothing left to tear down', () => {
-        expect(mounted.control.destroy()).toBe(true);
-        expect(mounted.control.destroy()).toBe(false);
-    });
-
-    /**
-     * Covers the CALL SITE, not the model. An earlier revision threaded the
+     * Covers the CALL SITES, not the model. An earlier revision threaded the
      * bind token only into `clearSearchChrome` — which runs on `select2:open`
      * and is by definition the live widget — while the two hooks that can
      * actually paint from a stale widget passed none. Because the guard then
@@ -1392,23 +1286,88 @@ describe('re-render safety of the select2 binding', () => {
      * passed and the bug shipped. This drives the real hooks.
      */
     test("a stale widget's hooks cannot paint after a re-render", () => {
-        const staleAjax = constructions[0].ajax;
+        const { $, recorder } = makeQueryDouble();
+        const ctx = loadRenderer($);
 
-        reRender();
-        const live = $real(MOUNT_SELECTOR).data('select2');
+        ctx.enableCompanySearch();
+        const staleOptions = recorder.select2Calls[0].ajax;
 
-        timeOutSearch(staleAjax, requests);
+        // Re-render: same node, fresh widget, fresh box.
+        ctx.enableCompanySearch();
+        const liveBox = recorder.searchBoxes[recorder.searchBoxes.length - 1];
 
-        expect(chromeIn(live)).toHaveLength(0);
+        // The stale widget's request finally times out.
+        staleOptions.transport({ url: 'https://api.example.test/x?q=exa' }, jest.fn(), jest.fn());
+        recorder.requests[recorder.requests.length - 1].settleFail('timeout');
+
+        expect(liveBox.children).toHaveLength(0);
     });
 
     test("the live widget's hooks DO paint", () => {
-        const live = $real(MOUNT_SELECTOR).data('select2');
+        const { $, recorder } = makeQueryDouble();
+        const ctx = loadRenderer($);
 
-        timeOutSearch(constructions[0].ajax, requests);
+        ctx.enableCompanySearch();
+        const liveOptions = recorder.select2Calls[0].ajax;
+        const liveBox = recorder.searchBoxes[recorder.searchBoxes.length - 1];
+
+        liveOptions.transport({ url: 'https://api.example.test/x?q=exa' }, jest.fn(), jest.fn());
+        recorder.requests[recorder.requests.length - 1].settleFail('timeout');
 
         // Guards against "fails closed" degenerating into "never works".
-        expect(chromeIn(live)).toHaveLength(1);
-        expect(live.$dropdown.find('.two-company-search__unavailable')).toHaveLength(1);
+        expect(liveBox.children).toHaveLength(1);
+        expect(liveBox.children[0]).toContain('two-company-search__unavailable');
+    });
+
+    test('shipping-step picker does not stack handlers either', () => {
+        const { $ } = makeQueryDouble();
+        const ctx = loadShippingComponent($);
+        const $field = $.asyncNode(SEARCH_FIELD);
+
+        ctx.enableCompanySearch();
+        ctx.enableCompanySearch();
+
+        expect($field.handlersFor('select2:select')).toHaveLength(1);
+        expect($field.handlersFor('select2:open')).toHaveLength(1);
+    });
+
+    function loadShippingComponent($) {
+        const companySearch = loadCompanySearch($);
+        const brandConfig = function () {
+            return BASE_CONFIG;
+        };
+        brandConfig.getActiveTwoBrandCode = function () {
+            return 'two_payment';
+        };
+        brandConfig.getActiveTwoBrandConfig = function () {
+            return BASE_CONFIG;
+        };
+
+        const component = loadAmdModule('view/frontend/web/js/view/address-autocomplete.js', {
+            jquery: $,
+            'Two_Gateway/js/model/brand-config': brandConfig,
+            'Two_Gateway/js/model/company-search': companySearch,
+            'Two_Gateway/js/model/company-search-control': loadCompanySearchControl($, companySearch)
+        });
+        return Object.assign(Object.create(component.prototype || {}), {
+            countrySelector: '#shipping-new-address-form select[name="country_id"]',
+            companyNameSelector: SEARCH_FIELD,
+            searchForCompanyButton: '#shipping_search_for_company',
+            searchForCompanyText: 'Search for company',
+            companyNamePlaceholder: 'Enter company name to search',
+            setCompanyData: function () {},
+            addressLookup: component.addressLookup,
+            enableCompanySearch: component.enableCompanySearch
+        });
+    }
+
+    test('shipping-step picker also re-initialises on re-render', () => {
+        const { $, recorder } = makeQueryDouble();
+        const ctx = loadShippingComponent($);
+
+        ctx.enableCompanySearch();
+        ctx.enableCompanySearch();
+
+        expect(recorder.select2Calls).toHaveLength(2);
     });
 });

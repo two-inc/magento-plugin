@@ -2,22 +2,20 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25347: fillCustomerData() subscribes to shared quote/customerData
- * singletons and, before this fix, never disposed the previous set on a
- * re-render — dispose() tore down only `_twoVisibilitySub`. fillCustomerData()
- * is re-callable and Fire Checkout re-renders this payment renderer on every
- * totals/shipping change, so stacked subscriptions accumulated fast enough to
- * be visible there: a single company pick fired one order_intent POST per
- * SURVIVING subscription, not one.
- *
- * The `countryCode` customer-data subscription this file used to count is gone
- * (TWO-25503) — the capture component's delegated country watcher replaced it —
- * so the counts below are over the three singletons that remain.
+ * TWO-25347: fillCustomerData() subscribes to four shared quote/
+ * customerData singletons and, before this fix, never disposed the
+ * previous set on a re-render — dispose() tore down only
+ * `_twoVisibilitySub`. fillCustomerData() is re-callable
+ * (registeredOrganisationMode(), reached whenever initObservable() runs
+ * again), and Fire Checkout re-renders this payment renderer on every
+ * totals/shipping change, so stacked subscriptions accumulated fast enough
+ * to be visible there: a single company pick fired one order_intent POST
+ * per SURVIVING subscription, not one.
  *
  * These specs use a real-dispose observable double (the shared harness's
  * makeObservable() stubs dispose() as a no-op, which would make this fix
- * untestable against it) to prove the actual subscriber count, not just that
- * dispose() was called.
+ * untestable against it) to prove the actual subscriber count, not just
+ * that dispose() was called.
  */
 
 'use strict';
@@ -56,43 +54,20 @@ function realDisposeObservable(initial) {
     return obs;
 }
 
-/**
- * A capture-component double that records what the renderer asks of it.
- *
- * `config()` answering non-null is what "the component has booted" means to the
- * renderer, so a test can put it either side of that line.
- *
- * @param {?object} config
- */
-function makeCaptureComponent(config) {
-    const calls = { refreshMount: 0 };
-    return {
-        calls: calls,
-        module: {
-            config: function () { return config; },
-            countryCode: function () { return 'gb'; },
-            mountSelector: function () { return ''; },
-            soleTrader: function () { return null; },
-            refreshMount: function () { calls.refreshMount += 1; }
-        }
-    };
-}
-
-function loadRenderer(options) {
-    const opts = options || {};
+function loadRenderer() {
     const address = { getCacheKey: () => 'k', countryId: 'GB' };
     const shippingAddress = realDisposeObservable(address);
     const billingAddress = realDisposeObservable(address);
     const companyDataSection = realDisposeObservable('');
     const shippingTelephoneSection = realDisposeObservable('');
-    const capture = makeCaptureComponent('booted' in opts ? opts.booted : {});
+    const countryCodeSection = realDisposeObservable('');
 
     const renderer = loadAmdModule(RENDERER, {
-        'Two_Gateway/js/model/company-capture-component': capture.module,
         'Magento_Customer/js/customer-data': {
             get: function (key) {
                 if (key === 'companyData') return companyDataSection;
                 if (key === 'shippingTelephone') return shippingTelephoneSection;
+                if (key === 'countryCode') return countryCodeSection;
                 return realDisposeObservable('');
             },
             set: function () {},
@@ -109,46 +84,30 @@ function loadRenderer(options) {
         }
     });
 
-    return {
-        renderer,
-        shippingAddress,
-        billingAddress,
-        companyDataSection,
-        shippingTelephoneSection,
-        capture
-    };
+    // Normally seeded by initialize(), which this harness deliberately
+    // bypasses to keep fillCustomerData() the only thing under test.
+    renderer.supportedCompanyTypes = { gb: [] };
+
+    return { renderer, shippingAddress, billingAddress, companyDataSection };
 }
 
 describe('fillCustomerData() subscription lifecycle (TWO-25347)', () => {
-    test('three re-calls with no dispose() between them still leave one live subscriber per singleton', () => {
-        const {
-            renderer,
-            shippingAddress,
-            billingAddress,
-            companyDataSection,
-            shippingTelephoneSection
-        } = loadRenderer();
+    test('a re-call without an intervening dispose() still leaves exactly one live subscriber per singleton', () => {
+        const { renderer, shippingAddress, billingAddress, companyDataSection } = loadRenderer();
 
-        // Exactly Fire Checkout's re-render pattern. Before the fix these
-        // would be 3, not 1.
         renderer.fillCustomerData();
         renderer.fillCustomerData();
         renderer.fillCustomerData();
 
+        // Three calls, no dispose() between them — this is exactly Fire
+        // Checkout's re-render pattern. Before the fix these would be 3, not 1.
         expect(shippingAddress.subscriberCount()).toBe(1);
         expect(billingAddress.subscriberCount()).toBe(1);
         expect(companyDataSection.subscriberCount()).toBe(1);
-        expect(shippingTelephoneSection.subscriberCount()).toBe(1);
     });
 
     test('dispose() removes fillCustomerData()\'s subscriptions', () => {
-        const {
-            renderer,
-            shippingAddress,
-            billingAddress,
-            companyDataSection,
-            shippingTelephoneSection
-        } = loadRenderer();
+        const { renderer, shippingAddress, billingAddress, companyDataSection } = loadRenderer();
         renderer._super = function () {};
 
         renderer.fillCustomerData();
@@ -159,7 +118,6 @@ describe('fillCustomerData() subscription lifecycle (TWO-25347)', () => {
         expect(shippingAddress.subscriberCount()).toBe(0);
         expect(billingAddress.subscriberCount()).toBe(0);
         expect(companyDataSection.subscriberCount()).toBe(0);
-        expect(shippingTelephoneSection.subscriberCount()).toBe(0);
     });
 
     test('a single company-data change fires applyCompanyData exactly once after three stacked calls', () => {
@@ -182,20 +140,26 @@ describe('fillCustomerData() subscription lifecycle (TWO-25347)', () => {
         expect(applyCalls).toBe(1);
     });
 
-    test('a synchronous throw during the one-shot company read does not abort the rest of fillCustomerData()', () => {
-        // fillCustomerData() does the one-shot `companyData` read BEFORE wiring
-        // the remaining subscriptions. If that read reaches fillCompanyData() →
-        // placeOrderIntent() and THAT throws synchronously, an unswallowed throw
-        // would abort fillCustomerData() mid-function and permanently skip every
-        // subscription after the throw point — for the rest of the page session,
-        // not just this one company pick.
+    test('a synchronous throw during the one-shot company read does not abort the rest of fillCustomerData() (found in round-2 adversarial review, 2026-08-04)', () => {
+        // Han's round-2 finding: fillCustomerData() calls applyCompanyData()
+        // (the one-shot companyData read) BEFORE wiring the shippingTelephone/
+        // countryCode/shippingAddress/billingAddress subscriptions. If that
+        // one-shot call reaches fillCompanyData() → placeOrderIntent() and
+        // THAT throws synchronously, an unswallowed throw would abort
+        // fillCustomerData() mid-function and permanently skip every
+        // subscription after the throw point — for the rest of the page
+        // session, not just this one company pick. This is why the round-1
+        // fix (swallow-and-message, not rethrow) matters beyond the guard
+        // itself: fillCompanyData() must never let an internal throw escape
+        // into a caller with mandatory follow-up work.
         const { renderer, shippingAddress, billingAddress, companyDataSection } = loadRenderer();
         renderer.isOrderIntentEnabled = true;
         renderer.showErrorMessage = function () {};
         renderer.placeOrderIntent = function () {
             throw new Error('billingAddress was transiently null');
         };
-        // Seeded so the one-shot read has both name and id — otherwise
+        // Seeded so the one-shot `customerData.get('companyData')()` read
+        // inside fillCustomerData() has both name and id — otherwise
         // fillCompanyData() early-returns before ever reaching
         // placeOrderIntent(), and the throw path is never exercised.
         companyDataSection({ companyName: 'Acme Widgets AS', companyId: '123' });
@@ -209,17 +173,29 @@ describe('fillCustomerData() subscription lifecycle (TWO-25347)', () => {
 });
 
 describe('fillCompanyData() in-flight guard (TWO-25347 belt-and-braces)', () => {
-    /**
-     * The renderer's own company observables are deliberately NOT stubbed here:
-     * they are aliases of the page-level identity singleton, which is what
-     * fillCompanyData() writes and what the settle-time guards read back — a
-     * stub would leave both reading '' and make the cross-company case vacuous.
-     */
     test('a second call for the SAME company while a request is in flight does not re-fire placeOrderIntent', () => {
-        const { renderer } = loadRenderer();
+        const component = loadAmdModule(RENDERER);
         let placeOrderIntentCalls = 0;
         let resolveDeferred;
-        const ctx = Object.assign({}, renderer, {
+        const ctx = Object.assign({}, component, {
+            companyName: (function () {
+                let v = '';
+                const fn = function (next) {
+                    if (!arguments.length) return v;
+                    v = next;
+                    return fn;
+                };
+                return fn;
+            })(),
+            companyId: (function () {
+                let v = '';
+                const fn = function (next) {
+                    if (!arguments.length) return v;
+                    v = next;
+                    return fn;
+                };
+                return fn;
+            })(),
             isOrderIntentEnabled: true,
             placeOrderIntent: function () {
                 placeOrderIntentCalls += 1;
@@ -251,20 +227,41 @@ describe('fillCompanyData() in-flight guard (TWO-25347 belt-and-braces)', () => 
         expect(placeOrderIntentCalls).toBe(2);
     });
 
-    test('a synchronous throw from placeOrderIntent() clears the guard, shows a message, and does NOT propagate', () => {
-        // placeOrderIntent() can throw synchronously — quote.billingAddress()
-        // is legitimately null for a transient window and it reads
-        // `billingAddress.countryId` unguarded. An unhandled throw skips
-        // `.always()`, and `_orderIntentInFlightFor` would stay set to that
-        // companyId FOREVER, so every later pick of the SAME company would
-        // silently no-op with no recovery short of a page reload.
+    /** Plain (non-ko) observable factory, matching the pattern above. */
+    function plainObservable(initial) {
+        let v = initial;
+        const fn = function (next) {
+            if (!arguments.length) return v;
+            v = next;
+            return fn;
+        };
+        return fn;
+    }
+
+    test('a synchronous throw from placeOrderIntent() clears the guard, shows a message, and does NOT propagate (found in adversarial review, 2026-08-04; refined in round 2)', () => {
+        // BLOCKER found in round 1: placeOrderIntent() can throw
+        // synchronously (quote.billingAddress() can legitimately be null for
+        // a transient window; placeOrderIntent() reads
+        // `billingAddress.countryId` unguarded). Before the fix, an
+        // unhandled throw here skipped `.always()` entirely, and
+        // `_orderIntentInFlightFor` stayed set to that companyId FOREVER —
+        // every later pick of the SAME company would silently no-op against
+        // the in-flight guard, with no recovery short of a page reload.
         //
-        // It must not RETHROW either: every caller is an unguarded synchronous
-        // context with its own statements after the call.
-        const { renderer } = loadRenderer();
+        // Round 2 found the FIRST fix (try/catch + rethrow, mirroring
+        // placeOrderBackend()) was still wrong: every caller of
+        // fillCompanyData() is an unguarded synchronous context with its own
+        // statements AFTER the call (updateAddress()'s project/department
+        // writes, the select2:select handler's addressLookup() call,
+        // refreshTileCompanySearchBinding()) — rethrowing aborted all of
+        // those too, and gave the buyer no visible sign anything went wrong.
+        // The catch now shows a message and does NOT rethrow.
+        const component = loadAmdModule(RENDERER);
         let placeOrderIntentCalls = 0;
         const errors = [];
-        const ctx = Object.assign({}, renderer, {
+        const ctx = Object.assign({}, component, {
+            companyName: plainObservable(''),
+            companyId: plainObservable(''),
             isOrderIntentEnabled: true,
             generalErrorMessage: 'Something went wrong.',
             showErrorMessage: function (message) {
@@ -273,43 +270,55 @@ describe('fillCompanyData() in-flight guard (TWO-25347 belt-and-braces)', () => 
             placeOrderIntent: function () {
                 placeOrderIntentCalls += 1;
                 if (placeOrderIntentCalls === 1) {
-                    // The transient-null-billingAddress window — only the FIRST
-                    // attempt hits it.
+                    // Simulates the transient-null-billingAddress window —
+                    // only the FIRST attempt hits it.
                     throw new Error('billingAddress was transiently null');
                 }
                 return {
-                    always: function () { return this; },
-                    done: function () { return this; },
-                    fail: function () { return this; }
+                    always: function () {
+                        return this;
+                    },
+                    done: function () {
+                        return this;
+                    },
+                    fail: function () {
+                        return this;
+                    }
                 };
             }
         });
 
+        // No longer throws out of fillCompanyData() — a caller's own
+        // statements after this call must still run.
         let statementAfterRan = false;
         ctx.fillCompanyData({ companyName: 'Acme Widgets AS', companyId: '123' });
         statementAfterRan = true;
-
         expect(statementAfterRan).toBe(true);
+
         expect(errors).toEqual(['Something went wrong.']);
         expect(ctx._orderIntentInFlightFor).toBeNull();
 
-        // The buyer picks the SAME company again, once the transient window has
-        // passed — must not be swallowed by a stuck guard.
+        // The buyer picks the SAME company again (e.g. re-selecting after
+        // the transient null window has passed) — must not be swallowed by
+        // a stuck guard.
         ctx.fillCompanyData({ companyName: 'Acme Widgets AS', companyId: '123' });
 
         expect(placeOrderIntentCalls).toBe(2);
     });
 
-    test('a stale response for a PREVIOUS company does not overwrite the notice for the CURRENT one', () => {
-        // The in-flight guard only dedupes a repeat request for the SAME
-        // company. It does nothing to stop a stale response for company A
-        // landing AFTER the buyer has moved on to company B —
-        // resolveCompanyNotice() reads the observables LIVE at settle time, so
-        // A's verdict would render with B's name and number substituted in.
-        const { renderer } = loadRenderer();
+    test('a stale response for a PREVIOUS company does not overwrite the notice for the CURRENT one (cross-company race, found in adversarial review, 2026-08-04)', () => {
+        // BLOCKER found reviewing this PR: the in-flight guard only dedupes
+        // a repeat request for the SAME company. It does nothing to stop a
+        // stale response for company A landing AFTER the buyer has already
+        // moved on to company B — resolveCompanyNotice() reads
+        // companyName()/companyId() LIVE at settle time, so A's verdict
+        // would render with B's name/number substituted in.
+        const component = loadAmdModule(RENDERER);
         const deferreds = {};
         const processed = [];
-        const ctx = Object.assign({}, renderer, {
+        const ctx = Object.assign({}, component, {
+            companyName: plainObservable(''),
+            companyId: plainObservable(''),
             isOrderIntentEnabled: true,
             placeOrderIntent: function () {
                 const companyId = ctx.companyId();
@@ -334,60 +343,159 @@ describe('fillCompanyData() in-flight guard (TWO-25347 belt-and-braces)', () => 
             }
         });
 
-        // Company A selected — request A fires and is left hanging. The buyer
-        // changes their mind before it settles; the guard is keyed per-company,
-        // so B is not deduped against A's still-open request.
+        // Company A selected — request A fires and is left hanging.
         ctx.fillCompanyData({ companyName: 'Company A', companyId: 'aaa' });
+        // Buyer changes their mind before A settles — company B selected.
+        // The in-flight guard is keyed per-company, so this does not get
+        // deduped against A's still-open request.
         ctx.fillCompanyData({ companyName: 'Company B', companyId: 'bbb' });
 
+        // A's stale response finally lands, AFTER the buyer moved to B.
         deferreds['aaa']._always();
         deferreds['aaa']._done({ approved: true });
 
+        // A's verdict must be dropped, not rendered against the now-current
+        // companyName/companyId (which are B's).
         expect(processed).toEqual([]);
 
         // B's own response landing normally still works.
         deferreds['bbb']._always();
         deferreds['bbb']._done({ approved: true });
-
         expect(processed).toEqual([{ company: 'Company B', response: { approved: true } }]);
     });
 });
 
-describe('an address change re-points the capture component\'s mount', () => {
+describe('tile company-search re-binds on an address-type switch (found in adversarial review, 2026-08-04)', () => {
     /**
-     * A NEW address and a SAVED one differ in whether the address step renders
-     * a company field at all, which is what the component picks its mount by —
-     * and nothing else fires on that switch. Before this the tile's picker
-     * simply never appeared for a buyer who switched to a saved address.
+     * BLOCKER found reviewing this PR: enableCompanySearch() only runs from
+     * three call sites (initObservable()'s registeredOrganisationMode(), the
+     * "Search for company" link, and the supported-company-types callback)
+     * — NONE of which fire when a buyer switches between a NEW and a SAVED
+     * shipping/billing address. `#shipping-new-address-form` appears and
+     * disappears exactly on that switch, which is the live DOM signal
+     * isTileCompanySearchActive() reads. Fixed by having
+     * updateShippingAddress()/updateBillingAddress() call
+     * refreshTileCompanySearchBinding() unconditionally.
+     *
+     * `formHasCompanyField` is mutable so a single jquery mock can simulate
+     * the address-area form appearing/disappearing across two calls in one
+     * test — the real module closes over this `$` at require time, so the
+     * double has to be able to change its answer without a new require.
      */
-    test.each([
-        ['updateShippingAddress', 'a shipping address change'],
-        ['updateBillingAddress', 'a billing address change']
-    ])('%s asks for a re-point (%s)', (method) => {
-        const { renderer, capture } = loadRenderer();
+    function loadRendererWithToggleableAddressForm() {
+        let formHasCompanyField = true; // address-area form present (NEW address)
 
-        renderer[method]({ getCacheKey: () => 'other', countryId: 'GB' });
+        function makeNode() {
+            const node = {
+                length: 0,
+                on: () => node,
+                off: () => node,
+                val: () => node,
+                text: () => node,
+                attr: () => node,
+                data: () => null,
+                find: () => node,
+                closest: () => node,
+                each: () => node,
+                hide: () => node,
+                show: () => node,
+                select2: () => node
+            };
+            return node;
+        }
+        function $(selector) {
+            if (selector === '#shipping-new-address-form input[name="company"]') {
+                const node = makeNode();
+                node.length = formHasCompanyField ? 1 : 0;
+                return node;
+            }
+            return makeNode();
+        }
+        $.fn = {};
+        $.extend = Object.assign;
+        $.async = function (sel, cb) {
+            cb($(sel));
+        };
+        $.Deferred = function () {
+            const d = {
+                resolve: () => d,
+                reject: () => d,
+                promise: () => d,
+                done: () => d,
+                fail: () => d,
+                always: () => d
+            };
+            return d;
+        };
+        $.mage = { cookies: { get: () => null, set: () => {} }, redirect: () => {} };
+        $.validator = { methods: {}, addMethod: function () {} };
 
-        expect(capture.calls.refreshMount).toBe(1);
-    });
+        const address = { getCacheKey: () => 'k', countryId: 'GB' };
+        const renderer = loadAmdModule(RENDERER, {
+            jquery: $,
+            'Magento_Checkout/js/model/quote': {
+                shippingAddress: { subscribe: () => ({ dispose: () => {} }), peek: () => address },
+                billingAddress: (function () {
+                    const fn = function () {
+                        return address;
+                    };
+                    return fn;
+                })(),
+                getTotals: () => ({}),
+                getQuoteId: () => null,
+                paymentMethod: { subscribe: () => ({ dispose: () => {} }) },
+                shippingMethod: { subscribe: () => ({ dispose: () => {} }) },
+                isVirtual: () => false
+            }
+        });
+        renderer.supportedCompanyTypes = { gb: [] };
+        renderer.isAddressAreaCompanySearchEnabled = true;
 
-    test('a shipping address that is NOT the billing address still re-points', () => {
-        // updateAddress() is gated on the cache keys matching; the re-point is
-        // deliberately not, because the form's presence changes either way.
-        const { renderer, capture } = loadRenderer();
+        const enableCalls = [];
+        const destroyCalls = [];
+        // Installed on the CompanyCapture rather than the renderer:
+        // refreshTileCompanySearchBinding() is its method and calls its own
+        // enable/destroy, so a stub on the renderer's delegate never runs.
+        const capture = renderer.companyCapture();
+        capture.enableCompanySearch = function () {
+            enableCalls.push(1);
+        };
+        capture.destroyCompanySearchWidget = function () {
+            destroyCalls.push(1);
+        };
 
-        renderer.updateShippingAddress({ getCacheKey: () => 'different', countryId: 'GB' });
+        return {
+            renderer,
+            enableCalls,
+            destroyCalls,
+            setFormPresent: (present) => {
+                formHasCompanyField = present;
+            }
+        };
+    }
 
-        expect(capture.calls.refreshMount).toBe(1);
-    });
+    test('switching from a NEW address (form present) to a SAVED one (form gone) re-binds the tile widget', () => {
+        const { renderer, enableCalls, destroyCalls, setFormPresent } =
+            loadRendererWithToggleableAddressForm();
 
-    test('nothing is asked of a component that has not booted yet', () => {
-        // The sidebar hook that starts the component and this renderer have no
-        // ordering guarantee, and the component re-points itself on start().
-        const { renderer, capture } = loadRenderer({ booted: null });
-
+        // Address-area form present → tile is NOT the active location.
+        setFormPresent(true);
         renderer.updateBillingAddress({ getCacheKey: () => 'k', countryId: 'GB' });
+        expect(enableCalls.length).toBe(0);
+        expect(destroyCalls.length).toBe(1);
 
-        expect(capture.calls.refreshMount).toBe(0);
+        // Buyer switches to a saved address → the address-area form is gone.
+        setFormPresent(false);
+        renderer.updateBillingAddress({ getCacheKey: () => 'k', countryId: 'GB' });
+        expect(enableCalls.length).toBe(1);
+    });
+
+    test('shipping-address changes also trigger the refresh (not only billing)', () => {
+        const { renderer, enableCalls, setFormPresent } = loadRendererWithToggleableAddressForm();
+
+        setFormPresent(false);
+        renderer.updateShippingAddress({ getCacheKey: () => 'k', countryId: 'GB' });
+
+        expect(enableCalls.length).toBe(1);
     });
 });

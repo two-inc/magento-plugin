@@ -306,8 +306,6 @@ function makeCompanyIdComponent(provider, mirrorToDom) {
  *        component, as a real form re-render does.
  * @param {boolean} [options.searchMode] false leaves select2 off the name
  *        input, i.e. manual-entry mode.
- * @param {string} [options.captureMode] the page-level capture mode the label
- *        decides on, default `registered`.
  * @param {string} [options.country] the country the form is showing, default
  *        `GB`.
  */
@@ -392,11 +390,6 @@ function pageLoad(storage, options) {
                 getActiveTwoBrandConfig: function () {
                     return { isCompanySearchEnabled: false };
                 }
-            },
-            'Two_Gateway/js/model/company-identity': {
-                captureMode: makeObservable(opts.captureMode || 'registered'),
-                companyId: makeObservable(''),
-                companyName: makeObservable('')
             }
         },
         { document: document, window: window }
@@ -656,14 +649,14 @@ describe('TWO-25326 §5: the captured company number survives a page reload', ()
 
     test('a restored number paints nothing in manual-entry mode', () => {
         // Manual entry is name-only capture. This is the branch the sibling
-        // cases cannot reach, because they all capture as a registered company:
-        // a number is sitting in the restored field while the page-level
-        // capture mode says the buyer typed the name themselves.
+        // cases cannot reach, because they all assert search mode: select2 is
+        // absent from the name input and a number is nonetheless sitting in the
+        // restored field.
         const storage = {};
         storage[ID_PATH] = '919300894';
         storage.companyName = 'Hand Typed Ltd';
 
-        pageLoad(storage, { searchMode: false, captureMode: 'manual' });
+        pageLoad(storage, { searchMode: false });
 
         expect(document.querySelector(ID_SELECTOR).value).toBe('919300894');
         expect(labels()).toHaveLength(0);
