@@ -17,13 +17,12 @@
  * popup finishes on.
  *
  * The buyer's company is only ever filled in by their own trip through the
- * hosted signup flow. There is no passive, email-driven probe of
- * `/autofill/v1/buyer/current` before that: the record it returns is whatever
- * Two session cookie the browser happens to carry, which the person checking
- * out may never have authenticated against. Dropping it is also what keeps
- * `window.open()` inside the click's own gesture, where popup blockers allow
- * it — a returning sole trader is still recognised, by the hosted flow's own
- * autoselect.
+ * hosted signup flow. `/autofill/v1/buyer/current` is read from one place, the
+ * popup's `ACCEPTED` handshake, and never before it: the record it returns is
+ * whatever Two session cookie the browser happens to carry, which the person
+ * checking out may never have authenticated against. That is also what leaves
+ * the click-to-`window.open()` path synchronous, where popup blockers allow it
+ * — a returning sole trader is recognised by the hosted flow's own autoselect.
  *
  * The HOST is whatever mounts this — today the payment tile's Knockout
  * renderer. Everything shared with the rest of the checkout is reached
@@ -110,10 +109,16 @@ define([
         // the outcome once it has.
         this._signupConfirming = false;
         this._flightDepth = 0;
+        // An identity has been adopted in this sole-trader session. Not
+        // `companyId()`: fillCompanyData() writes nothing for a sole trader
+        // with no trading name of their own, whose address is still filled.
+        this._soleTraderAdopted = false;
+        this._destroyed = false;
     }
 
     /** Detach everything this instance armed on the page. Safe to call twice. */
     SoleTrader.prototype.dispose = function () {
+        this._destroyed = true;
         // The popup's `message` listener — see popupMessageListener().
         if (this._popupMessageHandler) {
             window.removeEventListener('message', this._popupMessageHandler);
@@ -204,7 +209,10 @@ define([
         if (this._mintChain) return this._mintChain;
         this._mintChain = this.mintTokens()
             .then((minted) => {
-                if (minted) this.startTokenRefresh();
+                // A mint outstanding when the checkout re-renders resolves
+                // against a disposed instance, whose timer nothing would ever
+                // clear again.
+                if (minted && !this._destroyed) this.startTokenRefresh();
                 return minted;
             })
             .finally(() => {
@@ -213,9 +221,8 @@ define([
         return this._mintChain;
     };
 
-    /** Idempotent. Started from the first successful mint, never eagerly. */
     SoleTrader.prototype.startTokenRefresh = function () {
-        if (this._tokenRefreshId) return;
+        if (this._tokenRefreshId || this._destroyed) return;
         this._tokenRefreshId = setInterval(() => this.refreshTokens(), TOKEN_REFRESH_INTERVAL_MS);
     };
 
@@ -226,13 +233,13 @@ define([
     };
 
     /**
-     * One refresh tick. Skipped while the popup is open — the tokens it was
-     * launched with must stay valid for the flow it is running, and that
-     * flight's own completion leaves them fresh anyway. A failed re-mint is
-     * left for the next tick.
+     * One refresh tick. Skipped while any round trip is outstanding — the
+     * tokens it was launched with must stay valid for the flow it is running,
+     * and that flight's own completion leaves them fresh anyway. A failed
+     * re-mint is left for the next tick.
      */
     SoleTrader.prototype.refreshTokens = function () {
-        if (this.isPopupOpen()) return;
+        if (this._flightDepth > 0) return;
         return this.mintTokens();
     };
 
@@ -338,20 +345,25 @@ define([
         this._popupCloseWatcherId = setInterval(() => {
             if (!win.closed) return;
             this.stopPopupCloseWatcher();
-            this.settleFlight();
             // The ACCEPTED handshake's buyer lookup can still be out; it owns
             // the outcome from here and will write the identity it resolves.
             if (this._signupConfirming) return;
-            if (this._host.showSoleTrader() && !this._host.companyId()) {
+            if (this._host.showSoleTrader() && !this._soleTraderAdopted) {
                 this._host.registeredOrganisationMode();
             }
         }, POPUP_CLOSE_POLL_MS);
     };
 
+    /**
+     * Settles the flight the watcher was holding, so the busy state cannot
+     * outlive it — a superseding launch and dispose() both stop a watcher
+     * whose popup will never be polled closed.
+     */
     SoleTrader.prototype.stopPopupCloseWatcher = function () {
         if (!this._popupCloseWatcherId) return;
         clearInterval(this._popupCloseWatcherId);
         this._popupCloseWatcherId = null;
+        this.settleFlight();
     };
 
     /**
@@ -377,7 +389,7 @@ define([
     // synchronously with the click, with autoselect=false so the hosted
     // flow doesn't silently re-pick the same registration.
     SoleTrader.prototype.selectDifferentSoleTrader = function () {
-        return this.openIframe({ autoselect: false });
+        return this.launchSignup({ autoselect: false });
     };
 
     /**
@@ -420,6 +432,7 @@ define([
             // Re-arm the once-per-identity guard: re-entering sole-trader
             // mode has an address to write again.
             adoptedSoleTraderIds.clear();
+            this._soleTraderAdopted = false;
         }
         return wasSoleTrader;
     };
@@ -428,6 +441,7 @@ define([
     // were minted when the option became available.
     SoleTrader.prototype.enterSoleTraderUi = function () {
         const host = this._host;
+        this._soleTraderAdopted = false;
         host.showSoleTrader(true);
         host.captureMode('soletrader');
         // Resolve the link BEFORE clearCompany(), which tears the widget
@@ -441,18 +455,15 @@ define([
      * Sole-trader chip click — always the hosted signup, no conditional fast
      * path, and no await between the click and `window.open()`.
      *
-     * Re-clicking once an identity is already adopted is the same re-signup
-     * the "select a different sole trader" link launches, not a no-op: the
-     * chip is a second, equally deliberate way to ask for it, and the hosted
-     * flow is told to offer a choice rather than hand back what is already
-     * on screen.
+     * Re-clicking once an identity is adopted is the same re-signup the
+     * "select a different sole trader" link launches, so the hosted flow is
+     * told to offer a choice rather than hand back what is already on screen.
      *
      * @returns {Window|null} the popup, or null if it was blocked or tokens
      *          were not ready
      */
     SoleTrader.prototype.soleTraderMode = function () {
-        const host = this._host;
-        if (host.showSoleTrader() && host.companyId()) {
+        if (this._host.showSoleTrader() && this._soleTraderAdopted) {
             return this.launchSignup({ autoselect: false });
         }
         this.enterSoleTraderUi();
@@ -565,6 +576,7 @@ define([
                 console.error({ logger: 'twoPayment.adoptSoleTraderBuyer', error });
             }
         }
+        this._soleTraderAdopted = true;
         host.showPopupMessage(false);
     };
 

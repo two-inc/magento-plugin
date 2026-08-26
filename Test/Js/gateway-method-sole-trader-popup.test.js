@@ -343,11 +343,11 @@ describe('sole-trader signup popup (TWO-25461)', () => {
 
     test('re-clicking the chip once an identity is adopted re-signs up with autoselect=false', () => {
         const { component, opened } = loadRenderer();
-        const ctx = makeContext(
-            component,
-            { companyId: function () { return '1234567'; } },
-            { delegationToken: 'dt-1', autofillToken: 'at-1' }
-        );
+        const ctx = makeContext(component, {}, {
+            delegationToken: 'dt-1',
+            autofillToken: 'at-1'
+        });
+        ctx.adoptSoleTraderBuyer.call(ctx, { organization_number: '1', company_name: 'X' });
 
         ctx.soleTraderMode.call(ctx);
 
@@ -465,7 +465,7 @@ describe('sole-trader token refresh (TWO-25503, WooCommerce/PrestaShop parity)',
         expect(ctx.soleTrader().delegationToken).toBe('dt-2');
     });
 
-    test('the refresh tick is skipped while the signup popup is open', async () => {
+    test('the refresh tick is skipped while a round trip is outstanding', async () => {
         const { component } = loadRenderer();
         let mints = 0;
         const ctx = makeContext(component, {}, {
@@ -476,11 +476,35 @@ describe('sole-trader token refresh (TWO-25503, WooCommerce/PrestaShop parity)',
         });
 
         await ctx.ensureSoleTraderTokens.call(ctx);
-        ctx.soleTrader()._soleTraderPopupWindow = { closed: false, close: function () {} };
+        ctx.soleTraderMode.call(ctx);
 
         jest.advanceTimersByTime(30 * 60 * 1000);
         await Promise.resolve();
 
+        expect(mints).toBe(1);
+    });
+
+    test('a mint that resolves after dispose() arms no timer', async () => {
+        // The checkout re-renders while the up-front mint is out; nothing
+        // would ever clear a timer armed on the instance it left behind.
+        const { component } = loadRenderer();
+        let resolveTokens;
+        let mints = 0;
+        const ctx = makeContext(component, {}, {
+            getTokens: function () {
+                mints += 1;
+                return new Promise((resolve) => { resolveTokens = resolve; });
+            }
+        });
+
+        const chain = ctx.ensureSoleTraderTokens.call(ctx);
+        ctx.soleTrader().dispose();
+        resolveTokens({ delegation_token: 'dt-1', autofill_token: 'at-1' });
+        await chain;
+
+        expect(ctx.soleTrader()._tokenRefreshId).toBeNull();
+        jest.advanceTimersByTime(60 * 60 * 1000);
+        await Promise.resolve();
         expect(mints).toBe(1);
     });
 
@@ -551,14 +575,77 @@ describe('abandoned signup popup (WooCommerce watchPopupClose parity)', () => {
         expect(busyStates).toEqual([true, false]);
     });
 
-    test('closing the popup after an identity was captured leaves sole-trader mode alone', () => {
+    test('closing the popup after an identity was adopted leaves sole-trader mode alone', () => {
         const popup = { closed: false, close: function () {} };
-        const { reverted } = launchWatched(popup, { companyId: function () { return '1234567'; } });
+        const { ctx, reverted } = launchWatched(popup);
+        ctx.adoptSoleTraderBuyer.call(ctx, { organization_number: '1', company_name: 'X' });
 
         popup.closed = true;
         jest.advanceTimersByTime(300);
 
         expect(reverted).toEqual([]);
+    });
+
+    test('a sole trader with no trading name is still adopted, and the close does not revert them', () => {
+        // fillCompanyData() writes no identity without BOTH a name and a
+        // number, so `companyId()` stays empty for this buyer while their
+        // address has been written — reading the field would revert a
+        // completed signup.
+        const popup = { closed: false, close: function () {} };
+        const { ctx, reverted } = launchWatched(popup, {
+            companyId: function () { return ''; },
+            fillCompanyData: function () {}
+        });
+        ctx.adoptSoleTraderBuyer.call(ctx, { organization_number: '999', company_name: '' });
+
+        popup.closed = true;
+        jest.advanceTimersByTime(300);
+
+        expect(reverted).toEqual([]);
+    });
+
+    test('a superseding launch settles the flight it replaces, so the busy flag comes back down', () => {
+        // The replaced popup is closed and its watcher cleared, so nothing
+        // will ever poll it closed — the flight it was holding has to settle
+        // with it or the spinner never comes down again.
+        const first = { closed: false, close: function () { first.closed = true; } };
+        const second = { closed: false, close: function () {} };
+        const handles = [first, second];
+        const busyStates = [];
+        const component = loadAmdModule(
+            RENDERER,
+            {},
+            {
+                window: {
+                    checkoutConfig: { payment: {} },
+                    open: function () { return handles.shift(); }
+                },
+                btoa: global.btoa
+            }
+        );
+        const ctx = makeContext(
+            component,
+            { soleTraderBusy: function (next) { busyStates.push(next); } },
+            { delegationToken: 'dt-1', autofillToken: 'at-1' }
+        );
+
+        ctx.soleTraderMode.call(ctx);
+        ctx.selectDifferentSoleTrader.call(ctx);
+        second.closed = true;
+        jest.advanceTimersByTime(300);
+
+        expect(ctx.soleTrader()._flightDepth).toBe(0);
+        expect(busyStates[busyStates.length - 1]).toBe(false);
+    });
+
+    test('dispose() with a popup still open settles its flight', () => {
+        const popup = { closed: false, close: function () {} };
+        const { ctx, busyStates } = launchWatched(popup);
+
+        ctx.soleTrader().dispose();
+
+        expect(ctx.soleTrader()._flightDepth).toBe(0);
+        expect(busyStates).toEqual([true, false]);
     });
 
     test('closing the popup while the ACCEPTED lookup is still out leaves it to that handler', () => {
