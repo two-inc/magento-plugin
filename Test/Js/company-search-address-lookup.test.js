@@ -6,9 +6,9 @@
  * never fired the company-detail request, so picking a company filled nothing.
  *
  * There is ONE mount now (TWO-25503) — the page-level capture component owns
- * the single `CompanySearchControl` and re-points it between the address step
- * and the payment tile — so the shared model's behaviour and the one call site
- * that drives it are what these tests pin.
+ * the single `CompanySearchPanel` and re-points it between the address step and
+ * the payment tile — so the shared model's behaviour and the one call site that
+ * drives it are what these tests pin.
  */
 
 'use strict';
@@ -18,14 +18,13 @@ const { loadAmdModule, defaultMocks } = require('./amd-harness');
 const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
-const CONTROL = 'view/frontend/web/js/model/company-search-control.js';
 
-/** The node the component mounts its one control at in these fixtures. */
+/** The node the component mounts its one panel at in these fixtures. */
 const TILE_FIELD_SELECTOR = '#two_gateway_form input#company_name';
 
 /**
  * jQuery test double that records $.ajax calls and the values written to
- * address inputs, and lets a test drive select2 option/handler capture.
+ * address inputs.
  *
  * `TILE_FIELD_SELECTOR` is the one selector reported as PRESENT, which is what
  * makes the component resolve its mount there — every other lookup answers an
@@ -93,29 +92,20 @@ function makeSpyJQuery(recorder) {
             hide: function () { return obj; },
             show: function () { return obj; },
             get: function () { return { style: {} }; },
-            select2: function (opts) {
-                if (typeof opts === 'object') {
-                    recorder.select2Options = opts;
-                }
-                return obj;
-            },
-            on: function (evt, handler) {
-                // The module namespaces its bindings ('select2:select.twoCompanySearch')
-                // so it can clear only its own handlers on re-init; key on the
-                // bare event name.
-                recorder.handlers[evt.split('.')[0]] = handler;
-                return obj;
-            }
+            on: function () { return obj; }
         };
         return obj;
     }
     $.async = function (selector, fn) { fn(selector); };
     $.ajax = function (opts) {
         recorder.ajax.push(opts);
+        const settlers = [];
+        recorder.doneByCall.push(settlers);
         const jqxhr = {
-            done: function (cb) { recorder.doneCallbacks.push(cb); return jqxhr; },
+            done: function (cb) { settlers.push(cb); return jqxhr; },
             fail: function () { return jqxhr; },
-            always: function () { return jqxhr; }
+            always: function () { return jqxhr; },
+            abort: function () {}
         };
         return jqxhr;
     };
@@ -138,15 +128,34 @@ function makeSpyJQuery(recorder) {
 function makeRecorder() {
     return {
         ajax: [],
-        doneCallbacks: [],
+        doneByCall: [],
         written: [],
         triggered: [],
         values: {},
         attrs: {},
-        data: {},
-        handlers: {},
-        select2Options: null
+        data: {}
     };
+}
+
+/**
+ * Settle the request the spy recorded most recently.
+ *
+ * Per-request rather than a flat list of every callback: a pick fires a search
+ * AND a company-detail lookup, and answering one with the other's payload would
+ * make either assertion meaningless.
+ *
+ * @param {object} recorder
+ * @param {object} payload
+ */
+function settleLatest(recorder, payload) {
+    recorder.doneByCall[recorder.doneByCall.length - 1].forEach(function (cb) { cb(payload); });
+}
+
+/** Only the company-detail requests: the search hits `/company?`, not `/company/`. */
+function lookupUrls(recorder) {
+    return recorder.ajax
+        .map(function (call) { return call.url; })
+        .filter(function (url) { return url.indexOf('/companies/v2/company/') !== -1; });
 }
 
 function loadCompanySearch($) {
@@ -193,35 +202,40 @@ const SECOND_LOOKUP_URL =
     'https://api.example.test/companies/v2/company/lookup-def-456?client=magento2&client_v=1.0.0';
 
 describe('company-search shared module', () => {
-    test('processResults carries lookup_id through as lookupId', () => {
+    test('searchCompanies carries lookup_id through as lookupId', async () => {
         const recorder = makeRecorder();
         const companySearch = loadCompanySearch(makeSpyJQuery(recorder));
 
-        const ajaxOptions = companySearch.buildSearchAjaxOptions({
+        const search = companySearch.searchCompanies({
             config: BASE_CONFIG,
+            token: {},
+            term: 'example',
             getCountryCode: function () { return 'gb'; }
         });
-        const results = ajaxOptions.processResults(SEARCH_RESPONSE).results;
+        settleLatest(recorder, SEARCH_RESPONSE);
+        const result = await search;
 
-        expect(results).toHaveLength(1);
-        expect(results[0].lookupId).toBe('lookup-abc-123');
-        expect(results[0].companyId).toBe('12345678');
+        expect(result.items).toHaveLength(1);
+        expect(result.items[0].lookupId).toBe('lookup-abc-123');
+        expect(result.items[0].companyId).toBe('12345678');
     });
 
-    test('search url carries the uppercased country and paging window', () => {
+    test('the search url carries the uppercased country and the configured window', () => {
         const recorder = makeRecorder();
         const companySearch = loadCompanySearch(makeSpyJQuery(recorder));
 
-        const ajaxOptions = companySearch.buildSearchAjaxOptions({
+        companySearch.searchCompanies({
             config: BASE_CONFIG,
+            token: {},
+            term: 'example',
             getCountryCode: function () { return 'gb'; }
         });
-        const url = ajaxOptions.url({ page: 2, term: 'example' });
 
+        const url = recorder.ajax[0].url;
         expect(url).toContain('https://api.example.test/companies/v2/company?');
         expect(url).toContain('country=GB');
         expect(url).toContain('limit=50');
-        expect(url).toContain('offset=50');
+        expect(url).toContain('offset=0');
     });
 
     test('lookupCompanyAddress fetches the company and fills the address form', () => {
@@ -233,12 +247,10 @@ describe('company-search shared module', () => {
         expect(recorder.ajax).toHaveLength(1);
         expect(recorder.ajax[0].url).toBe(LOOKUP_URL);
 
-        recorder.doneCallbacks.forEach(function (cb) {
-            cb({
-                addresses: [
-                    { city: 'London', postal_code: 'EC1A 1BB', street_address: '1 Example Street' }
-                ]
-            });
+        settleLatest(recorder, {
+            addresses: [
+                { city: 'London', postal_code: 'EC1A 1BB', street_address: '1 Example Street' }
+            ]
         });
 
         expect(recorder.written).toEqual(
@@ -279,11 +291,15 @@ describe('company-search shared module', () => {
 });
 
 /**
- * Load the capture component with the REAL search model and the REAL control,
- * so the select2 wiring under test is production's own rather than a double's.
+ * Load the capture component with the REAL search model, capturing the
+ * `onSelect` it hands its panel.
+ *
+ * The panel itself is stubbed here — this fixture has no real DOM for it to
+ * build in — but the row that reaches `onSelect` is mapped by production's own
+ * `searchCompanies`, so nothing about the pick is hand-rolled.
  *
  * @param {object} [configOverride] merged over BASE_CONFIG
- * @returns {object} `{ component, identity, recorder, pick }`
+ * @returns {object} `{ component, identity, recorder, pick, settle }`
  */
 function loadMountedComponent(configOverride) {
     const recorder = makeRecorder();
@@ -291,10 +307,24 @@ function loadMountedComponent(configOverride) {
     const companySearch = loadCompanySearch($);
     const identity = loadAmdModule(IDENTITY, {});
     const config = Object.assign({}, BASE_CONFIG, configOverride || {});
+    const panel = { options: null };
 
+    function PanelStub(panelOptions) {
+        panel.options = panelOptions;
+        this.bind = function () {};
+        this.isBound = function () { return true; };
+        this.getField = function () { return $(); };
+        this.close = function () {};
+        this.syncChips = function () {};
+        this.setDisplayText = function () {};
+        this.releaseField = function () {};
+        this.reclaimField = function () {};
+        this.abortActiveRequest = function () {};
+    }
     function SoleTraderStub() {
         this.listenForSignupResult = function () {};
         this.ensureTokens = function () { return Promise.resolve(true); };
+        this.focusSignupPopup = function () { return false; };
         this.launchSignup = function () { return null; };
         this.forgetAdoptions = function () {};
     }
@@ -303,10 +333,7 @@ function loadMountedComponent(configOverride) {
         jquery: $,
         'Two_Gateway/js/model/company-identity': identity,
         'Two_Gateway/js/model/company-search': companySearch,
-        'Two_Gateway/js/model/company-search-control': loadAmdModule(CONTROL, {
-            jquery: $,
-            'Two_Gateway/js/model/company-search': companySearch
-        }),
+        'Two_Gateway/js/model/company-search-panel': PanelStub,
         'Two_Gateway/js/model/sole-trader': SoleTraderStub,
         'Two_Gateway/js/model/brand-config': {
             getActiveTwoBrandConfig: function () { return config; }
@@ -319,17 +346,30 @@ function loadMountedComponent(configOverride) {
     });
     component.start();
 
-    /** Map a search response the way select2 would, then pick its first hit. */
-    function pick(response) {
-        const mapped = recorder.select2Options.ajax.processResults(response).results[0];
-        recorder.handlers['select2:select']({ params: { data: mapped } });
-        return mapped;
+    /**
+     * Search for `term`, answer it with `response`, and hand the first row to
+     * the component's own selection handler.
+     *
+     * @param {string} term distinct per call — the module caches by request url
+     * @param {object} response
+     * @returns {Promise<object>} the row that was picked
+     */
+    async function pick(term, response) {
+        const search = companySearch.searchCompanies({
+            config: config,
+            token: {},
+            term: term,
+            getCountryCode: function () { return 'gb'; }
+        });
+        settleLatest(recorder, response);
+        const item = (await search).items[0];
+        panel.options.onSelect(item);
+        return item;
     }
 
-    /** Settle the outstanding company-detail request with an address. */
+    /** Settle the company-detail request the pick fired. */
     function settle(address) {
-        recorder.doneCallbacks.forEach(function (cb) { cb({ addresses: [address] }); });
-        recorder.doneCallbacks.length = 0;
+        settleLatest(recorder, { addresses: [address] });
     }
 
     return {
@@ -341,25 +381,16 @@ function loadMountedComponent(configOverride) {
     };
 }
 
-describe('the one control the capture component mounts', () => {
-    test('the ajax block it hands select2 keeps lookup_id', () => {
-        const { recorder } = loadMountedComponent();
-
-        expect(recorder.select2Options).not.toBeNull();
-        const mapped = recorder.select2Options.ajax.processResults(SEARCH_RESPONSE).results[0];
-
-        expect(mapped.lookupId).toBe('lookup-abc-123');
-    });
-
-    test('picking a company captures it and fills the address from the registry', () => {
+describe('the one panel the capture component mounts', () => {
+    test('picking a company captures it and fills the address from the registry', async () => {
         const { identity, recorder, pick, settle } = loadMountedComponent();
 
-        pick(SEARCH_RESPONSE);
+        const picked = await pick('example', SEARCH_RESPONSE);
 
+        expect(picked.lookupId).toBe('lookup-abc-123');
         expect(identity.companyName()).toBe('Example Trading Ltd');
         expect(identity.companyId()).toBe('12345678');
-        expect(recorder.ajax).toHaveLength(1);
-        expect(recorder.ajax[0].url).toBe(LOOKUP_URL);
+        expect(lookupUrls(recorder)).toEqual([LOOKUP_URL]);
 
         settle({ city: 'London', postal_code: 'EC1A 1BB', street_address: '1 Example Street' });
 
@@ -368,7 +399,7 @@ describe('the one control the capture component mounts', () => {
         );
     });
 
-    test('the dedicated address-search setting is the only gate — the company is still captured', () => {
+    test('the dedicated address-search setting is the only gate — the company is still captured', async () => {
         // The JS layer adds no gate of its own beyond
         // `config.isAddressSearchEnabled`: its coupling with "Enable company
         // search in address entry" is resolved server-side
@@ -376,27 +407,24 @@ describe('the one control the capture component mounts', () => {
         // flag ConfigProvider hands down is already the answer.
         const { identity, recorder, pick } = loadMountedComponent({ isAddressSearchEnabled: false });
 
-        pick(SEARCH_RESPONSE);
+        await pick('example', SEARCH_RESPONSE);
 
         expect(identity.companyId()).toBe('12345678');
-        expect(recorder.ajax).toHaveLength(0);
+        expect(lookupUrls(recorder)).toEqual([]);
         expect(recorder.written).toHaveLength(0);
     });
 
-    test('re-searching overwrites the previous company and its address', () => {
+    test('re-searching overwrites the previous company and its address', async () => {
         // TWO-25202 regression pin, matching the PrestaShop reference: a second
         // pick replaces the first outright, never merges with it.
         const { identity, recorder, pick, settle } = loadMountedComponent();
 
-        pick(SEARCH_RESPONSE);
+        await pick('example', SEARCH_RESPONSE);
         settle({ city: 'London', postal_code: 'EC1A 1BB', street_address: '1 Example Street' });
-        pick(SECOND_SEARCH_RESPONSE);
+        await pick('second', SECOND_SEARCH_RESPONSE);
         settle({ city: 'Stockholm', postal_code: '111 22', street_address: '2 Second Street' });
 
-        expect(recorder.ajax.map(function (call) { return call.url; })).toEqual([
-            LOOKUP_URL,
-            SECOND_LOOKUP_URL
-        ]);
+        expect(lookupUrls(recorder)).toEqual([LOOKUP_URL, SECOND_LOOKUP_URL]);
         expect(identity.companyName()).toBe('Second Company AB');
         expect(identity.companyId()).toBe('87654321');
 

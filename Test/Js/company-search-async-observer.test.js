@@ -21,64 +21,59 @@
 'use strict';
 
 const $ = require('jquery');
-const { loadCompanySearchControl, installAsyncSimulation } = require('./amd-harness');
+const { loadCompanySearchPanel, installAsyncSimulation } = require('./amd-harness');
 
 const FIELD_SELECTOR = '#company_name';
 const OTHER_SELECTOR = '#shipping-new-address-form input[name="company"]';
 
 /**
- * The company-search model, stubbed down to what `initialise()` touches.
+ * The company-search model, stubbed down to what building a panel touches.
  *
  * @returns {object}
  */
 function searchModelStub() {
     return {
-        EVENT_NS: '.twoCompanySearch',
         MIN_INPUT_LENGTH: 3,
-        DROPDOWN_CSS_CLASS: 'two-company-search-dropdown',
-        buildLanguageOptions: function () { return {}; },
-        buildSearchAjaxOptions: function () { return {}; },
-        setSearching: function () {},
-        setUnavailable: function () {},
-        clearSearchChrome: function () {},
-        attachManualEntryButton: function () {},
-        detachManualEntryButton: function () {},
-        markSearchBinding: function () {},
-        attachOpenOnType: function () {}
+        SEARCH_DEBOUNCE_MS: 300,
+        minInputLengthMessage: function () { return 'Enter 3 or more characters'; },
+        noResultsMessage: function () { return 'No matches found'; },
+        abortActiveRequest: function () { return false; },
+        searchCompanies: function () {
+            return Promise.resolve({ items: [], unavailable: false, aborted: false });
+        }
     };
 }
 
 /**
- * A control bound against real jsdom nodes, with select2 replaced by a
- * recorder — the widget itself is not what these cases are about.
+ * A panel over real jsdom nodes, with every re-point recorded.
  *
- * @returns {object} `{ control, inits }` where `inits` counts select2 builds
+ * `_attach` is the panel's own re-initialisation entry point — the thing an
+ * observer firing a second time would run twice.
+ *
+ * @returns {object} `{ panel, attaches }` where `attaches` holds the field node
+ *          each attach re-pointed at
  */
-function loadControl() {
+function loadPanel() {
     installAsyncSimulation($);
     $.async.reset();
 
-    const inits = [];
-    // select2 is a jQuery plugin here, so the control's chained calls have to
-    // keep working against the real jQuery object.
-    $.fn.select2 = function (arg) {
-        if (typeof arg === 'string') return this;
-        inits.push(this[0]);
-        return this;
+    const CompanySearchPanel = loadCompanySearchPanel($, searchModelStub(), {
+        document: document,
+        window: window
+    });
+
+    const attaches = [];
+    const attach = CompanySearchPanel.prototype._attach;
+    CompanySearchPanel.prototype._attach = function ($field) {
+        if ($field.length) attaches.push($field[0]);
+        return attach.apply(this, arguments);
     };
 
-    const CompanySearchControl = loadCompanySearchControl(
-        $,
-        searchModelStub(),
-        { document: document, window: window, require: function (deps, cb) { cb(); } }
-    );
-
-    const control = new CompanySearchControl({
+    const panel = new CompanySearchPanel({
         fieldSelector: FIELD_SELECTOR,
-        config: {},
-        manualEntryEnabled: false
+        config: {}
     });
-    return { control: control, inits: inits };
+    return { panel: panel, attaches: attaches };
 }
 
 beforeEach(() => {
@@ -87,42 +82,43 @@ beforeEach(() => {
 
 describe('one $.async observer per selector', () => {
     test('the first bind registers exactly one', () => {
-        const { control } = loadControl();
+        const { panel } = loadPanel();
 
-        control.bind();
+        panel.bind();
 
         expect($.async.registrations(FIELD_SELECTOR)).toBe(1);
     });
 
     test.each([2, 5, 20])('%i binds still register exactly one', (times) => {
-        const { control } = loadControl();
+        const { panel } = loadPanel();
 
-        for (let i = 0; i < times; i++) control.bind();
+        for (let i = 0; i < times; i++) panel.bind();
 
         expect($.async.registrations(FIELD_SELECTOR)).toBe(1);
     });
 
-    test('re-binding still re-initialises the widget', () => {
+    test('re-binding still re-attaches the panel', () => {
         // The point of a re-bind is that it re-points at the current node, so
         // registering once must not turn later binds into no-ops.
-        const { control, inits } = loadControl();
+        const { panel, attaches } = loadPanel();
 
-        control.bind();
-        const afterFirst = inits.length;
-        control.bind();
+        panel.bind();
+        const afterFirst = attaches.length;
+        panel.bind();
 
-        expect(inits.length).toBeGreaterThan(afterFirst);
+        expect(attaches.length).toBeGreaterThan(afterFirst);
     });
 
     test('re-binding picks up a node the checkout replaced', () => {
-        const { control, inits } = loadControl();
-        control.bind();
+        const { panel, attaches } = loadPanel();
+        panel.bind();
 
         document.body.innerHTML = '<form><input id="company_name" /></form>';
         const replacement = document.querySelector(FIELD_SELECTOR);
-        control.bind();
+        panel.bind();
 
-        expect(inits[inits.length - 1]).toBe(replacement);
+        expect(attaches[attaches.length - 1]).toBe(replacement);
+        expect(panel.getField()[0]).toBe(replacement);
         expect($.async.registrations(FIELD_SELECTOR)).toBe(1);
     });
 
@@ -130,11 +126,11 @@ describe('one $.async observer per selector', () => {
         document.body.innerHTML =
             '<form id="shipping-new-address-form"><input name="company" /></form>' +
             '<form><input id="company_name" /></form>';
-        const { control } = loadControl();
+        const { panel } = loadPanel();
 
-        control.bind();
-        control.fieldSelector = OTHER_SELECTOR;
-        control.bind();
+        panel.bind();
+        panel.fieldSelector = OTHER_SELECTOR;
+        panel.bind();
 
         expect($.async.registrations(FIELD_SELECTOR)).toBe(1);
         expect($.async.registrations(OTHER_SELECTOR)).toBe(1);
@@ -142,10 +138,10 @@ describe('one $.async observer per selector', () => {
 
     test('a DOM mutation re-fires the one observer once, not once per bind', () => {
         // The compounding case: with N observers a single mutation causes N
-        // re-initialisations, each of which mutates again.
-        const { control, inits } = loadControl();
-        for (let i = 0; i < 10; i++) control.bind();
-        const beforeMutation = inits.length;
+        // re-attaches, each of which mutates again.
+        const { panel, attaches } = loadPanel();
+        for (let i = 0; i < 10; i++) panel.bind();
+        const beforeMutation = attaches.length;
 
         // A re-render replaces the field, which is the mutation the observers
         // answer — the same node still sitting there is no event at all.
@@ -153,6 +149,16 @@ describe('one $.async observer per selector', () => {
         document.querySelector('form').innerHTML = '<input id="company_name" />';
         $.async.fireAll();
 
-        expect(inits.length - beforeMutation).toBe(1);
+        expect(attaches.length - beforeMutation).toBe(1);
+    });
+
+    test('repeated binds leave exactly one panel in the wrapper', () => {
+        // Two query fields in one wrapper would both write to one identity.
+        const { panel } = loadPanel();
+
+        for (let i = 0; i < 5; i++) panel.bind();
+
+        expect(document.querySelectorAll('.two-company-dropdown').length).toBe(1);
+        expect(document.querySelectorAll('.two-company-field-wrap').length).toBe(1);
     });
 });

@@ -13,8 +13,8 @@
  * The invariants:
  *  - the component is constructed once per page, by the boot component alone;
  *  - a payment-tile re-render takes nothing with it;
- *  - exactly one search control exists, re-pointed rather than duplicated;
- *  - the merchant setting decides WHERE the control mounts, never whether the
+ *  - exactly one search panel exists, re-pointed rather than duplicated;
+ *  - the merchant setting decides WHERE the panel mounts, never whether the
  *    buyer can capture a company at all.
  */
 
@@ -23,7 +23,12 @@
 const fs = require('fs');
 const path = require('path');
 const $ = require('jquery');
-const { loadAmdModule, defaultMocks, installAsyncSimulation } = require('./amd-harness');
+const {
+    loadAmdModule,
+    loadCompanySearchPanel,
+    defaultMocks,
+    installAsyncSimulation
+} = require('./amd-harness');
 
 const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
@@ -39,13 +44,17 @@ function readSource(relPath) {
 
 /**
  * Load the component against the real jsdom document, recording how many
- * search controls it ever constructs.
+ * search panels it ever constructs.
+ *
+ * The panel is the REAL one, instrumented rather than stubbed: half of what
+ * this suite asserts — the chips coming back after a re-render, an observer not
+ * stacking — is the panel's own DOM and bookkeeping, which a stub cannot show.
  *
  * Loaded fresh per test: the component and the identity are page-level
  * singletons, so a shared load would carry one case's state into the next.
  *
  * @param {object} [options] `{ isCompanySearchEnabled, isVirtual }`
- * @returns {object} `{ component, identity, controls, soleTrader }`
+ * @returns {object} `{ component, identity, panels, soleTrader }`
  */
 function load(options) {
     const opts = options || {};
@@ -54,34 +63,52 @@ function load(options) {
     installAsyncSimulation($);
     $.async.reset();
     const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
-    const controls = [];
+    const panels = [];
     const soleTrader = { instances: 0, listeners: 0, ensured: 0 };
 
-    const ControlStub = function (config) {
-        const record = { fieldSelector: config.fieldSelector, binds: [], destroys: 0, boundNode: null };
-        controls.push(record);
+    const companySearchMock = Object.assign(
+        {},
+        defaultMocks()['Two_Gateway/js/model/company-search'],
+        {
+            currentAddressFormCountry: function () {
+                if (!opts.deferCountry) return 'gb';
+                // Read the live DOM, so this answers '' until the form
+                // carrying the select actually renders.
+                const select = document.querySelector('select[name="country_id"]');
+                return select ? String(select.value || '').toLowerCase() : '';
+            },
+            revertAutofilledAddress: function () {},
+            billingRoleFormRoot: function () { return null; },
+            applyAddress: function () {},
+            lookupCompanyAddress: function () {}
+        }
+    );
+
+    const RealPanel = loadCompanySearchPanel($, companySearchMock, {
+        document: document,
+        window: window
+    });
+    const RecordingPanel = function (panelOptions) {
+        RealPanel.call(this, panelOptions);
         const self = this;
+        const record = {
+            binds: [],
+            get fieldSelector() { return self.fieldSelector; },
+            get boundNode() { return self.getField()[0] || null; }
+        };
+        panels.push(record);
         this.bind = function (bindOptions) {
             record.binds.push(bindOptions || {});
-            record.boundNode = $(self.fieldSelector)[0] || null;
+            return RealPanel.prototype.bind.call(self, bindOptions);
         };
-        this.destroy = function () { record.destroys += 1; return true; };
-        this.abortActiveRequest = function () {};
-        this.showSearchForCompanyLink = function () {};
-        this.hideSearchForCompanyLink = function () {};
-        // Mirrors the real control: it reports itself bound off the node it
-        // captured, which survives that node being detached.
-        this.isBound = function () { return !!record.boundNode; };
-        this.getField = function () { return record.boundNode ? $(record.boundNode) : $(); };
-        Object.defineProperty(this, 'fieldSelector', {
-            get: function () { return record.fieldSelector; },
-            set: function (next) { record.fieldSelector = next; }
-        });
     };
+    RecordingPanel.prototype = Object.create(RealPanel.prototype);
+
     const SoleTraderStub = function () {
         soleTrader.instances += 1;
         this.listenForSignupResult = function () { soleTrader.listeners += 1; };
         this.ensureTokens = function () { soleTrader.ensured += 1; return Promise.resolve(true); };
+        this.focusSignupPopup = function () { return false; };
         this.launchSignup = function () { return {}; };
         this.forgetAdoptions = function () {};
     };
@@ -91,7 +118,7 @@ function load(options) {
         {
             jquery: $,
             'Two_Gateway/js/model/company-identity': identity,
-            'Two_Gateway/js/model/company-search-control': ControlStub,
+            'Two_Gateway/js/model/company-search-panel': RecordingPanel,
             'Two_Gateway/js/model/sole-trader': SoleTraderStub,
             'Two_Gateway/js/model/brand-config': {
                 getActiveTwoBrandConfig: function () {
@@ -116,30 +143,14 @@ function load(options) {
                     }
                 }
             ),
-            'Two_Gateway/js/model/company-search': Object.assign(
-                {},
-                defaultMocks()['Two_Gateway/js/model/company-search'],
-                {
-                    currentAddressFormCountry: function () {
-                        if (!opts.deferCountry) return 'gb';
-                        // Read the live DOM, so this answers '' until the form
-                        // carrying the select actually renders.
-                        const select = document.querySelector('select[name="country_id"]');
-                        return select ? String(select.value || '').toLowerCase() : '';
-                    },
-                    revertAutofilledAddress: function () {},
-                    billingRoleFormRoot: function () { return null; },
-                    applyAddress: function () {},
-                    lookupCompanyAddress: function () {}
-                }
-            )
+            'Two_Gateway/js/model/company-search': companySearchMock
         },
         { document: document, window: window }
     );
     return {
         component: component,
         identity: identity,
-        controls: controls,
+        panels: panels,
         soleTrader: soleTrader
     };
 }
@@ -189,15 +200,15 @@ describe('the component is constructed once per page', () => {
         expect(typeof component.start).toBe('function');
     });
 
-    test('a second start() builds no second control and binds no second listener', () => {
+    test('a second start() builds no second panel and binds no second listener', () => {
         mountTile();
-        const { component, controls, soleTrader } = load();
+        const { component, panels, soleTrader } = load();
 
         component.start();
         component.start();
         component.start();
 
-        expect(controls).toHaveLength(1);
+        expect(panels).toHaveLength(1);
         expect(soleTrader.instances).toBe(1);
         expect(soleTrader.listeners).toBe(1);
     });
@@ -262,53 +273,54 @@ describe('a payment-tile re-render takes nothing with it', () => {
     });
 });
 
-describe('exactly one search control exists', () => {
-    test('moving between mounts re-points the same control rather than building a second', () => {
+describe('exactly one search panel exists', () => {
+    test('moving between mounts re-points the same panel rather than building a second', () => {
         mountAddressForm();
         mountTile();
-        const { component, controls } = load();
+        const { component, panels } = load();
         component.start();
-        expect(controls).toHaveLength(1);
-        expect(controls[0].fieldSelector).toBe(ADDRESS_FIELD);
+        expect(panels).toHaveLength(1);
+        expect(panels[0].fieldSelector).toBe(ADDRESS_FIELD);
 
         // The address form goes away — a buyer picking a saved address.
         $('#shipping-new-address-form').remove();
         component.refreshMount();
 
-        expect(controls).toHaveLength(1);
-        expect(controls[0].fieldSelector).toBe(TILE_FIELD);
-        expect(controls[0].binds.length).toBeGreaterThan(1);
+        expect(panels).toHaveLength(1);
+        expect(panels[0].fieldSelector).toBe(TILE_FIELD);
+        expect(panels[0].binds.length).toBeGreaterThan(1);
+        expect(document.querySelectorAll('.two-company-dropdown')).toHaveLength(1);
     });
 
     test('re-pointing at the same live node does not re-bind', () => {
         mountTile();
-        const { component, controls } = load();
+        const { component, panels } = load();
         component.start();
-        const bindsAfterStart = controls[0].binds.length;
+        const bindsAfterStart = panels[0].binds.length;
 
         component.refreshMount();
         component.refreshMount();
 
-        expect(controls[0].binds).toHaveLength(bindsAfterStart);
+        expect(panels[0].binds).toHaveLength(bindsAfterStart);
     });
 
-    test('a tile replaced under the same selector is left to the control', () => {
-        // Amasty and Fire Checkout replace the tile subtree outright, but the
-        // control keeps one `$.async` observer per selector for the page's
-        // life and that observer re-initialises on the replacement. Re-binding
-        // from here as well is what stacked observers until the renderer
-        // stopped responding — see company-search-async-observer.test.js for
-        // the guarantee this defers to.
+    test('a tile replaced under the same selector stacks no second observer', () => {
+        // Amasty and Fire Checkout replace the tile subtree outright. The panel
+        // keeps ONE `$.async` observer per selector for the page's life, and
+        // stacking them is what froze the renderer — see
+        // company-search-async-observer.test.js for the guarantee this leans on.
         mountTile();
-        const { component, controls } = load();
+        const { component, panels } = load();
         component.start();
-        const bindsAfterStart = controls[0].binds.length;
+        const observersAfterStart = $.async.registrations(TILE_FIELD);
 
         document.body.innerHTML = '';
         mountTile();
         component.refreshMount();
 
-        expect(controls[0].binds).toHaveLength(bindsAfterStart);
+        expect($.async.registrations(TILE_FIELD)).toBe(observersAfterStart);
+        expect(panels).toHaveLength(1);
+        expect(panels[0].boundNode).toBe(document.querySelector('#company_name'));
     });
 });
 
@@ -325,7 +337,6 @@ describe('a checkout with no Two-family method is left alone', () => {
             {
                 jquery: $,
                 'Two_Gateway/js/model/company-identity': identity,
-                'Two_Gateway/js/model/company-search-control': function () {},
                 'Two_Gateway/js/model/sole-trader': function () {},
                 // No Two-family method on this checkout.
                 'Two_Gateway/js/model/brand-config': {
@@ -459,15 +470,15 @@ describe('the host arriving after boot still gets a mount', () => {
         // finds no host and nothing else re-drives it. Reproduced live on
         // staging as a checkout with no company search and no chips at all.
         document.body.innerHTML = '';
-        const { component, controls } = load();
+        const { component, panels } = load();
 
         component.start();
-        expect(controls).toHaveLength(0);
+        expect(panels).toHaveLength(0);
 
         mountAddressForm();
         $.async.fireAll();
 
-        expect(controls).toHaveLength(1);
+        expect(panels).toHaveLength(1);
         expect(document.querySelectorAll('.two-company-mode-chip')).toHaveLength(3);
     });
 

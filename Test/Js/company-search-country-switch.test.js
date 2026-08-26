@@ -346,16 +346,22 @@ function loadCaptureComponent(options) {
     const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
     const calls = { reverts: 0, aborts: 0, binds: [], forgotten: 0, destroys: 0 };
 
-    function ControlStub() {
+    function PanelStub() {
         this.bind = function (bindOptions) { calls.binds.push(bindOptions || {}); };
         this.destroy = function () { calls.destroys += 1; return true; };
         this.abortActiveRequest = function () { calls.aborts += 1; };
         this.isBound = function () { return calls.binds.length > 0; };
         this.getField = function () { return jq(); };
+        this.close = function () {};
+        this.syncChips = function () {};
+        this.setDisplayText = function () {};
+        this.releaseField = function () {};
+        this.reclaimField = function () {};
     }
     function SoleTraderStub() {
         this.listenForSignupResult = function () {};
         this.ensureTokens = function () { return Promise.resolve(true); };
+        this.focusSignupPopup = function () { return false; };
         this.launchSignup = function () { return null; };
         this.forgetAdoptions = function () { calls.forgotten += 1; };
     }
@@ -387,7 +393,7 @@ function loadCaptureComponent(options) {
             'Magento_Checkout/js/model/quote': quote,
             'Two_Gateway/js/model/company-identity': identity,
             'Two_Gateway/js/model/company-search': companySearch,
-            'Two_Gateway/js/model/company-search-control': ControlStub,
+            'Two_Gateway/js/model/company-search-panel': PanelStub,
             'Two_Gateway/js/model/sole-trader': SoleTraderStub,
             'Two_Gateway/js/model/brand-config': {
                 getActiveTwoBrandConfig: function () {
@@ -531,7 +537,7 @@ describe('the capture component on a country change', () => {
      * A checkout with a live mount, a captured GB company and a resolved
      * country — the state a switch has something to retract from.
      *
-     * The mount matters: the abort below is the control's, so a fixture with no
+     * The mount matters: the abort below is the panel's, so a fixture with no
      * host node would have nothing to cancel and would pass for the wrong reason.
      */
     function inPlay(ctx) {

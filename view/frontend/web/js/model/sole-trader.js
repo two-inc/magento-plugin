@@ -44,6 +44,13 @@ define([
     const POPUP_CLOSE_POLL_MS = 300;
 
     /**
+     * How long the page keeps focus before the popup is taken down — long
+     * enough for the mousedown of a Sole trader chip click to cancel it, short
+     * enough that a buyer who has genuinely come back does not watch it linger.
+     */
+    const RETURN_TO_CHECKOUT_GRACE_MS = 200;
+
+    /**
      * Sole-trader identities whose registered address has already been written
      * into this page's checkout, so a replay does not overwrite a correction
      * the buyer made afterwards (TWO-25461 §5).
@@ -250,7 +257,10 @@ define([
             '_blank',
             'location=yes,resizable=yes,scrollbars=yes,status=yes,height=805,width=700'
         );
-        if (this._popupWindow) this.watchPopupClose(this._popupWindow);
+        if (this._popupWindow) {
+            this.watchPopupClose(this._popupWindow);
+            this.watchForReturnToCheckout();
+        }
         return this._popupWindow;
     };
 
@@ -316,6 +326,70 @@ define([
         clearInterval(this._popupCloseWatcherId);
         this._popupCloseWatcherId = null;
         identity.settleFlight();
+    };
+
+    /**
+     * Take the popup down when the buyer comes back to the checkout page.
+     *
+     * The rule: focus returning to CHECKOUT means the buyer is looking at
+     * checkout rather than at the signup, so the popup goes. Focus leaving for
+     * anywhere else — their mail client, to fetch the OTP the signup just sent
+     * them — must leave it alone, which is why this is gated on the page
+     * actually having focus rather than on a blur.
+     *
+     * Deferred, and gated on where focus SETTLES, because of the one exception:
+     * the capture popover stays open behind the signup, so a click landing
+     * inside it — the Sole trader chip above all — is the buyer reaching for
+     * the signup, not away from it.
+     */
+    SoleTrader.prototype.watchForReturnToCheckout = function () {
+        if (this._returnHandler) return;
+        this._returnHandler = () => {
+            if (!this.isPopupOpen()) return;
+            clearTimeout(this._returnCloseTimerId);
+            this._returnCloseTimerId = setTimeout(() => {
+                this._returnCloseTimerId = null;
+                if (typeof document.hasFocus === 'function' && !document.hasFocus()) return;
+                const panel = document.querySelector('.two-company-dropdown');
+                if (panel && panel.contains(document.activeElement)) return;
+                // The CLOSE half only: looking away from the signup is not a
+                // decision about the enrolment, which stays live and resumable
+                // with its tokens unspent.
+                this.closeSignupPopup();
+            }, RETURN_TO_CHECKOUT_GRACE_MS);
+        };
+        window.addEventListener('focus', this._returnHandler);
+    };
+
+    /** The Sole trader chip's route: keep the popup, raise it instead. */
+    SoleTrader.prototype.cancelPendingReturnClose = function () {
+        clearTimeout(this._returnCloseTimerId);
+        this._returnCloseTimerId = null;
+    };
+
+    /** Close the popup this flow opened, if it is still up. */
+    SoleTrader.prototype.closeSignupPopup = function () {
+        if (!this.isPopupOpen()) return false;
+        this._popupWindow.close();
+        return true;
+    };
+
+    /**
+     * Raise an already-open popup back to the front.
+     *
+     * @returns {boolean} false means there is nothing on screen to go back to,
+     *          so the caller should start a signup instead
+     */
+    SoleTrader.prototype.focusSignupPopup = function () {
+        if (!this.isPopupOpen()) return false;
+        this.cancelPendingReturnClose();
+        try {
+            this._popupWindow.focus();
+        } catch (error) {
+            // `closed` can flip between the check and the call.
+            return false;
+        }
+        return true;
     };
 
     /** Re-arm the once-per-identity address guard. */
@@ -394,8 +468,12 @@ define([
 
     /**
      * Show or withdraw the on-page signup prompt — the fallback route when the
-     * popup was blocked. Rendered beside the chips, which is the only surface
-     * guaranteed to be on screen whichever mount is live.
+     * popup was blocked.
+     *
+     * Anchored OUTSIDE the search popover, after the field's wrapper. The chips
+     * it used to sit beside now live inside that popover, and entering
+     * sole-trader mode closes it — so anchoring to them rendered the buyer's
+     * only route forward inside something they cannot see.
      *
      * @param {boolean} show
      */
@@ -416,9 +494,9 @@ define([
                     this.retrySignup();
                 })
                 .appendTo($prompt);
-            const $chips = $('.two-company-mode-chips');
-            if (!$chips.length) return;
-            $prompt.insertAfter($chips);
+            const $anchor = $('.two-company-field-wrap');
+            if (!$anchor.length) return;
+            $prompt.insertAfter($anchor);
         }
         $prompt.removeClass('two-hidden');
     };
@@ -482,6 +560,11 @@ define([
             window.removeEventListener('message', this._messageHandler);
             this._messageHandler = null;
         }
+        if (this._returnHandler) {
+            window.removeEventListener('focus', this._returnHandler);
+            this._returnHandler = null;
+        }
+        this.cancelPendingReturnClose();
         this.stopTokenRefresh();
         this.stopPopupCloseWatcher();
     };

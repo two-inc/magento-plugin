@@ -32,10 +32,9 @@ define([
 ) {
     'use strict';
 
-    // Our own event namespace, separate from company-search's. The picker
-    // teardown paths clear `companySearch.EVENT_NS` off the company-name input
-    // and select2's own destroy() clears `.select2`; the company-number
-    // handlers below have to survive both.
+    // Our own event namespace, separate from the panel's: its teardown paths
+    // clear their own namespace off the company-name input, and the
+    // company-number handlers below have to survive that.
     const EVENT_NS = '.twoAddressCompanyId';
 
     return Component.extend({
@@ -193,7 +192,6 @@ define([
             this._appliedCompanyId = companyId;
             this._appliedCompanyName = companyName;
             this.publishCompanyData(companyId, companyName);
-            $('.select2-selection__rendered').text(companyName);
             $(this.companyNameSelector).val(companyName);
             this.setCompanyIdValue(companyId);
             this.syncCompanyIdEditable();
@@ -226,8 +224,8 @@ define([
          * the fields render. So the provider is the persistence boundary, and
          * only a value the provider has SEEN is restored.
          *
-         * The company NAME crosses that boundary for free: select2 fires a
-         * native `change` on the input when a result is picked, `ui/form/
+         * The company NAME crosses that boundary for free: the panel fires a
+         * `change` on the input when a result is picked, `ui/form/
          * element/input`'s `value:` binding reads the DOM on `change`, and the
          * element's `value` observable is two-way linked to its provider path.
          * The company NUMBER had no such route — it is written by us, not by a
@@ -413,7 +411,7 @@ define([
          *    three-mode model, so a number rendered here would be claiming a
          *    registry identity the buyer never picked.
          *
-         * Keyed on the capture mode rather than on select2 being present: the
+         * Keyed on the capture mode rather than on the panel being present: the
          * page-level component owns the mount and can bind it after a restored
          * number has already been rendered, with nothing to trigger a repaint.
          *
@@ -476,13 +474,18 @@ define([
             return '';
         },
         /**
-         * True while select2 owns the company-name input, i.e. while the buyer
-         * cannot type into it and every company that comes into play arrives
-         * through setCompanyData().
+         * True while the popover owns the company-name input, i.e. while every
+         * company that comes into play arrives through setCompanyData() rather
+         * than the buyer's own typing.
+         *
+         * Read from the capture mode, not from the field: manual entry leaves
+         * the panel in place and only stops it opening, so its presence alone
+         * no longer answers this.
          */
         isCompanySearchActive: function () {
             const $field = $(this.companyNameSelector);
-            return !!($field.length && $field.data('select2'));
+            if (!$field.length) return false;
+            return identity.captureMode() !== 'manual';
         },
         /**
          * The company name currently in play. While the picker owns the input,

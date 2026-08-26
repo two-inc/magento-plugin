@@ -430,6 +430,7 @@ function loadTile() {
     function SoleTraderStub() {
         this.listenForSignupResult = function () {};
         this.ensureTokens = function () { return Promise.resolve(true); };
+        this.focusSignupPopup = function () { return false; };
         this.launchSignup = function (options) {
             soleTrader.launches.push(options || null);
             return null;
@@ -808,34 +809,6 @@ describe('what each capture mode puts in front of the buyer', () => {
         expect(renderer.displayCompanyId()).toBe('');
         expect(companyIdLabel(renderer).visible).toBe(false);
         expect(renderer.getData().additional_data.companyId).toBe('TWO:ST:0199');
-    });
-
-    /**
-     * `visible:` rather than `if:` means select2 can be initialised against a
-     * node that is already `display: none`. select2 measures a width at init,
-     * and `_resolveWidth` returns anything that is not
-     * `resolve`/`element`/`style`/`computedstyle` VERBATIM — so the literal
-     * `'100%'` this picker passes is a CSS percentage that resolves whenever the
-     * node is shown, not a pixel count frozen at zero.
-     *
-     * Switching that option to `'resolve'` or `'element'` would measure
-     * `outerWidth()` at init instead, which is 0 on a hidden node, and the buyer
-     * who ends up on the tile after a hidden init would get a zero-width search
-     * box. Pinned as an option value because there is no way to observe the
-     * consequence in jsdom (no layout), and the failure is invisible until a
-     * real browser renders it.
-     */
-    test('the picker takes a percentage width, so a hidden init cannot freeze it at zero', () => {
-        const source = fs.readFileSync(
-            path.join(__dirname, '..', '..', 'view/frontend/web/js/model/company-search-control.js'),
-            'utf8'
-        );
-        const widths = source.match(/width:\s*'([^']*)'/g) || [];
-
-        expect(widths.length).toBeGreaterThan(0);
-        widths.forEach(function (width) {
-            expect(width).toMatch(/width:\s*'\d+%'/);
-        });
     });
 
     test('an identifier-less pick keeps the control up, with no notice', () => {

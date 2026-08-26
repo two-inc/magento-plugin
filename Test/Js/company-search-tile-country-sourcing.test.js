@@ -57,21 +57,27 @@ function load(options) {
     const opts = options || {};
     const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
     const companySearch = opts.companySearch || loadCompanySearch();
-    const control = { constructed: [], binds: 0, aborts: 0 };
+    const panel = { constructed: [], binds: 0, aborts: 0 };
 
-    function ControlStub(controlOptions) {
-        control.constructed.push(controlOptions);
-        this.bind = function () { control.binds += 1; };
+    function PanelStub(panelOptions) {
+        panel.constructed.push(panelOptions);
+        this.bind = function () { panel.binds += 1; };
         this.destroy = function () { return true; };
-        this.abortActiveRequest = function () { control.aborts += 1; };
-        this.isBound = function () { return control.binds > 0; };
+        this.abortActiveRequest = function () { panel.aborts += 1; };
+        this.isBound = function () { return panel.binds > 0; };
         this.getField = function () { return $(); };
+        this.close = function () {};
+        this.syncChips = function () {};
+        this.setDisplayText = function () {};
+        this.releaseField = function () {};
+        this.reclaimField = function () {};
     }
     function SoleTraderStub() {
         this.listenForSignupResult = function () {};
         this.ensureTokens = function () { return Promise.resolve(true); };
+        this.focusSignupPopup = function () { return false; };
         this.launchSignup = function () { return null; };
-        this.forgetAdoptions = function () { control.adoptionsForgotten = true; };
+        this.forgetAdoptions = function () { panel.adoptionsForgotten = true; };
     }
 
     const billing = 'billingCountry' in opts ? opts.billingCountry : null;
@@ -89,7 +95,7 @@ function load(options) {
             'Magento_Checkout/js/model/quote': quote,
             'Two_Gateway/js/model/company-identity': identity,
             'Two_Gateway/js/model/company-search': companySearch,
-            'Two_Gateway/js/model/company-search-control': ControlStub,
+            'Two_Gateway/js/model/company-search-panel': PanelStub,
             'Two_Gateway/js/model/sole-trader': SoleTraderStub,
             'Two_Gateway/js/model/brand-config': {
                 getActiveTwoBrandConfig: function () {
@@ -110,8 +116,37 @@ function load(options) {
         component: component,
         identity: identity,
         companySearch: companySearch,
-        control: control
+        panel: panel
     };
+}
+
+/**
+ * Run `body` with `$.ajax` swapped for a recorder, and hand back what it asked
+ * for. Real jQuery is what the module under test closes over, so the request
+ * has to be intercepted at the jQuery it actually calls.
+ *
+ * @param {Function} body
+ * @returns {Array<object>} the `$.ajax` option objects, in order
+ */
+function captureAjax(body) {
+    const requested = [];
+    const original = $.ajax;
+    $.ajax = function (options) {
+        requested.push(options);
+        const handle = {
+            done: function () { return handle; },
+            fail: function () { return handle; },
+            always: function () { return handle; },
+            abort: function () {}
+        };
+        return handle;
+    };
+    try {
+        body();
+    } finally {
+        $.ajax = original;
+    }
+    return requested;
 }
 
 /** An address form whose country select is the only country source on the page. */
@@ -171,8 +206,8 @@ describe('the DOM fallback reads the country the buyer actually selected', () =>
     });
 
     test('the resolved country is what reaches the search URL', () => {
-        // Through buildSearchAjaxOptions, so the assertion covers the whole path
-        // from the component's getter to the wire rather than the getter alone.
+        // Through a real searchCompanies() call, so the assertion covers the
+        // whole path from the component's getter to the wire, not the getter.
         mountAddressForm(
             '<div id="firecheckout-address">' +
             '<select name="country_id"><option value="GB" selected>GB</option></select></div>'
@@ -180,15 +215,17 @@ describe('the DOM fallback reads the country the buyer actually selected', () =>
         const companySearch = loadCompanySearch();
         const { component } = load({ billingCountry: null, companySearch: companySearch });
 
-        const ajax = companySearch.buildSearchAjaxOptions({
-            config: { checkoutApiUrl: 'https://api.example.test', companySearchLimit: 10 },
-            token: {},
-            getCountryCode: function () { return component.countryCode(); }
+        const requested = captureAjax(function () {
+            companySearch.searchCompanies({
+                config: { checkoutApiUrl: 'https://api.example.test', companySearchLimit: 10 },
+                token: {},
+                term: 'acme',
+                getCountryCode: function () { return component.countryCode(); }
+            });
         });
-        const url = ajax.url({ term: 'acme', page: 1 });
 
-        expect(url).toContain('country=GB');
-        expect(url).not.toContain('country=&');
+        expect(requested[0].url).toContain('country=GB');
+        expect(requested[0].url).not.toContain('country=&');
     });
 });
 
@@ -285,22 +322,22 @@ describe('the country watcher is delegated, and reads the buyer\'s own selection
     });
 });
 
-describe('the control the component constructs resolves the country per request', () => {
+describe('the panel the component constructs resolves the country per request', () => {
     test('getCountryCode answers the buyer\'s selection, not a value frozen at bind time', () => {
         // End to end through the mount, not a direct call to the getter: the
         // wiring is the part that regressed, and a spec calling countryCode()
-        // itself would pass against a control constructed with a stale value.
+        // itself would pass against a panel constructed with a stale value.
         mountAddressForm(
             '<div id="firecheckout-address"><select name="country_id">' +
             '<option value="NO" selected>NO</option><option value="SE">SE</option>' +
             '</select></div>' +
             '<form id="two_gateway_form"><input id="company_name" name="company_name" /></form>'
         );
-        const { component, control } = load({ billingCountry: null });
+        const { component, panel } = load({ billingCountry: null });
         component.start();
 
-        expect(control.constructed).toHaveLength(1);
-        const getCountryCode = control.constructed[0].getCountryCode;
+        expect(panel.constructed).toHaveLength(1);
+        const getCountryCode = panel.constructed[0].getCountryCode;
         expect(getCountryCode()).toBe('no');
 
         $('#firecheckout-address select[name="country_id"]').val('SE');

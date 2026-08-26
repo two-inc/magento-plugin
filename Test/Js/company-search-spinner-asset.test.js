@@ -23,7 +23,8 @@ const path = require('path');
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const STYLESHEET = path.join(REPO_ROOT, 'view/frontend/web/css/style.css');
-const SPINNER_CLASS = 'two-company-search__spinner';
+const SPINNER_CLASS = 'two-company-dropdown__spinner';
+const SPINNER_ACTIVE_CLASS = SPINNER_CLASS + '--active';
 
 /**
  * Resolve whatever URL the stylesheet actually declares, relative to the
@@ -44,15 +45,16 @@ function resolveDeclaredAsset(backgroundImage) {
  * Inject the real stylesheet and return the computed style of a node carrying
  * the spinner class, exactly as the browser would resolve it.
  *
+ * @param {string} [extraClass] modifier to carry alongside the base class
  * @returns {CSSStyleDeclaration}
  */
-function computedSpinnerStyle() {
+function computedSpinnerStyle(extraClass) {
     const style = document.createElement('style');
     style.textContent = fs.readFileSync(STYLESHEET, 'utf8');
     document.head.appendChild(style);
 
     const el = document.createElement('span');
-    el.className = SPINNER_CLASS;
+    el.className = extraClass ? `${SPINNER_CLASS} ${extraClass}` : SPINNER_CLASS;
     document.body.appendChild(el);
 
     return window.getComputedStyle(el);
@@ -83,6 +85,15 @@ test('the loader asset the stylesheet points at exists on disk', () => {
 
     expect(asset).not.toBe('');
     expect(fs.existsSync(asset)).toBe(true);
+});
+
+// The DOM-level suites can only assert the modifier class toggles; whether that
+// class actually paints or hides the figure lives here.
+test.each([
+    [undefined, 'none', 'idle'],
+    [SPINNER_ACTIVE_CLASS, 'inline-block', 'searching']
+])('the spinner is %s -> display %s (%s)', (modifier, expected) => {
+    expect(computedSpinnerStyle(modifier).display).toBe(expected);
 });
 
 test('the spinner is sized to the asset rather than to inherited text', () => {

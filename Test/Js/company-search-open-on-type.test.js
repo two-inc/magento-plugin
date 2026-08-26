@@ -6,34 +6,35 @@
  * Magento checkout surfaces (Luma, Amasty OneStepCheckout, Fire Checkout —
  * one code path, three renderings):
  *
- *  - the dropdown opened on click, Enter and Space but on NO other key, so a
- *    buyer who focused the company field and simply started typing their
- *    company name saw nothing happen;
- *  - a zero-result search said "No results found", select2's vendored English
- *    literal, where the cross-platform wording is "No matches found".
+ *  - the dropdown opened on click and Enter but on NO other key, so a buyer
+ *    who focused the company field and simply started typing their company
+ *    name saw nothing happen;
+ *  - a zero-result search said "No results found", where the cross-platform
+ *    wording is "No matches found".
  *
- * Both are properties of the shared model, so both are pinned here rather
- * than at the mount.
- *
- * What this file does NOT pin: that the mount actually invokes these. That is
- * a separate failure mode — the fix existing but never being wired up — and it
- * gets its own assertions at the bottom, read off the real sources, because a
- * mocked call site would prove nothing about the real one.
+ * Both live in the panel now, so both are driven through the real class over
+ * real jsdom nodes — the seeded character is read back off the query field the
+ * open actually built, so a fix that seeds before opening fails here rather
+ * than passing.
  */
 
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
-const { loadAmdModule } = require('./amd-harness');
+const $ = require('jquery');
+const { loadAmdModule, loadCompanySearchPanel } = require('./amd-harness');
 
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
-// The select2 wiring (language block, open-on-type) lives in ONE class, which
-// the page-level component constructs. The wiring is pinned on the class; the
-// component is pinned below only to have constructed it and to hold no
-// parallel implementation of its own.
-const CONTROL_PATH = 'view/frontend/web/js/model/company-search-control.js';
 const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
+
+const GLOBALS = { document: document, window: window };
+const FIELD_SELECTOR = '#company_name';
+
+const BASE_CONFIG = {
+    checkoutApiUrl: 'https://api.example.test',
+    companySearchLimit: 50
+};
 
 function readRepoFile(relPath) {
     const contents = fs.readFileSync(path.join(__dirname, '..', '..', relPath), 'utf8');
@@ -43,134 +44,9 @@ function readRepoFile(relPath) {
     return contents;
 }
 
-/**
- * jQuery-lite over real jsdom nodes — only the calls attachOpenOnType()
- * makes. Backed by the real document so `document.activeElement`, the seeded
- * value and the dispatched `input` event are the DOM's own answers rather
- * than a recording of our intentions.
- */
-function makeMiniQuery() {
-    const dataStore = new WeakMap();
-
-    const api = {
-        get: function (i) {
-            return this.nodes[i];
-        },
-        find: function (sel) {
-            const out = [];
-            this.nodes.forEach(function (node) {
-                Array.prototype.push.apply(out, node.querySelectorAll(sel));
-            });
-            return wrap(out);
-        },
-        val: function (next) {
-            if (!arguments.length) return this.nodes.length ? this.nodes[0].value : undefined;
-            this.nodes.forEach(function (node) {
-                node.value = next;
-            });
-            return this;
-        },
-        data: function (key, next) {
-            const node = this.nodes[0];
-            if (!node) return undefined;
-            if (!dataStore.has(node)) dataStore.set(node, {});
-            const bag = dataStore.get(node);
-            if (arguments.length < 2) return bag[key];
-            bag[key] = next;
-            return this;
-        },
-        on: function (spec, fn) {
-            const type = String(spec).split('.')[0];
-            this.nodes.forEach(function (node) {
-                node.addEventListener(type, fn);
-            });
-            return this;
-        },
-        off: function () {
-            return this;
-        }
-    };
-
-    function wrap(nodes) {
-        const set = Object.create(api);
-        set.nodes = nodes;
-        set.length = nodes.length;
-        return set;
-    }
-
-    function $(arg) {
-        if (arg === undefined || arg === null) return wrap([]);
-        if (typeof arg === 'string') {
-            return wrap(Array.prototype.slice.call(document.querySelectorAll(arg)));
-        }
-        if (arg.nodes) return arg;
-        if (arg.nodeType) return wrap([arg]);
-        return wrap([]);
-    }
-    $.fn = {};
-    $.extend = Object.assign;
-    return $;
-}
-
-/**
- * The picker as select2 renders it, plus the `select2('open')` behaviour the
- * model depends on: opening is what CREATES the search field select2 focuses
- * and our handler then seeds. Modelled as an actual state change (the
- * dropdown moves from absent to present) rather than a bare spy, so a fix
- * that seeds before opening — and would therefore find nothing to seed —
- * fails here instead of passing.
- */
-function makePickerDom($) {
-    document.body.innerHTML =
-        '<div class="control">' +
-        '<input id="company_name" type="text" tabindex="-1">' +
-        '<span class="select2 select2-container">' +
-        '<span class="selection">' +
-        '<span class="select2-selection" role="combobox" tabindex="0"></span>' +
-        '</span>' +
-        '</span>' +
-        '</div>';
-
-    const $field = $('#company_name');
-    const token = {};
-    const state = { openCalls: 0 };
-
-    function openDropdown() {
-        state.openCalls++;
-        if (document.querySelector('.select2-dropdown')) return;
-        const dropdown = document.createElement('span');
-        dropdown.className = 'select2-dropdown';
-        dropdown.innerHTML =
-            '<span class="select2-search select2-search--dropdown">' +
-            '<input class="select2-search__field" type="text">' +
-            '</span>' +
-            '<span class="select2-results">' +
-            '<ul class="select2-results__options" role="listbox"></ul>' +
-            '</span>';
-        document.body.appendChild(dropdown);
-        state.instance.$dropdown = $('.select2-dropdown');
-    }
-
-    state.instance = {
-        $dropdown: $('.select2-dropdown'),
-        $selection: $('.select2-selection')
-    };
-    $field.data('twoSearchBind', token);
-    $field.data('select2', state.instance);
-    $field.select2 = function (verb) {
-        if (verb === 'open') openDropdown();
-        return $field;
-    };
-
-    return {
-        $field: $field,
-        token: token,
-        state: state,
-        combobox: document.querySelector('.select2-selection'),
-        searchField: function () {
-            return document.querySelector('.select2-search__field');
-        }
-    };
+/** Let the debounce fire and the search promise settle. */
+function tick() {
+    return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function pressKey(target, key, extra) {
@@ -182,160 +58,185 @@ function pressKey(target, key, extra) {
     return event;
 }
 
-describe('TWO-25326 §1: any character opens the dropdown', () => {
-    let $;
-    let model;
-    let dom;
+/**
+ * What a browser actually does for a printable key: keydown, then the
+ * character lands in the field, then `input`. The panel seeds off `input`
+ * rather than keydown so that a paste and an IME composition — neither of
+ * which reports a printable `key` — take the same route.
+ */
+function typeInto(target, text, extra) {
+    const event = pressKey(target, text, extra);
+    if (event.defaultPrevented) return event;
+    target.value += text;
+    target.dispatchEvent(new window.Event('input', { bubbles: true }));
+    return event;
+}
+
+function field() {
+    return document.querySelector(FIELD_SELECTOR);
+}
+
+function queryField() {
+    return document.querySelector('.two-company-dropdown__query');
+}
+
+function messageText() {
+    const node = document.querySelector('.two-company-dropdown__message');
+    return node ? node.textContent : null;
+}
+
+describe('TWO-25326 §1: any character opens the panel', () => {
+    let panel;
+    let searched;
 
     beforeEach(() => {
-        $ = makeMiniQuery();
-        model = loadAmdModule(
-            MODEL_PATH,
-            { jquery: $ },
-            { document: document, window: window }
-        );
-        dom = makePickerDom($);
-        model.attachOpenOnType(dom.$field, dom.token);
+        document.body.innerHTML = '<div class="control"><input id="company_name" type="text"></div>';
+
+        // Own array per test, not a reassigned outer one: a previous case's
+        // panel keeps its debounce timer and would push into whatever the
+        // shared binding then pointed at.
+        const terms = [];
+        searched = terms;
+        const companySearch = loadAmdModule(MODEL_PATH, { jquery: $ }, GLOBALS);
+        companySearch.SEARCH_DEBOUNCE_MS = 0;
+        // So one seeded keystroke is enough to reach the wire — the seeding is
+        // what these cases are about, not the threshold.
+        companySearch.MIN_INPUT_LENGTH = 1;
+        companySearch.searchCompanies = function (options) {
+            terms.push(options.term);
+            return Promise.resolve({ items: [], unavailable: false, aborted: false });
+        };
+
+        const CompanySearchPanel = loadCompanySearchPanel($, companySearch, GLOBALS);
+        panel = new CompanySearchPanel({ fieldSelector: FIELD_SELECTOR, config: BASE_CONFIG });
+        panel.bind();
     });
 
-    test('a printable character opens the picker and is seeded into the query field', () => {
-        const inputEvents = [];
-        const event = pressKey(dom.combobox, 'a');
+    afterEach(() => {
+        panel.destroy();
+    });
 
-        expect(event.defaultPrevented).toBe(true);
-        expect(dom.state.openCalls).toBe(1);
-        expect(dom.searchField()).toBeTruthy();
+    test.each([
+        ['a', 'a letter'],
+        ['9', 'a digit — an org number is a valid query'],
+        ['&', 'punctuation']
+    ])('%p opens the panel and is seeded into the query field (%s)', (key) => {
+        typeInto(field(), key);
+
+        expect(panel.isOpen()).toBe(true);
         // Seeded, not swallowed. Without this the buyer's first keystroke is
         // consumed by the open and they have to type the letter twice.
-        expect(dom.searchField().value).toBe('a');
-        expect(inputEvents).toEqual([]);
+        expect(queryField().value).toBe(key);
+        // And not left behind in the company field, which shows the captured
+        // company rather than a half-typed query.
+        expect(field().value).toBe('');
     });
 
-    test('the seeded character is announced with a NATIVE input event, which is what select2 listens for', () => {
-        // select2's own search handler is a native listener inside the
-        // vendored bundle. A jQuery-synthesised trigger would not reach it,
-        // so the search would never fire for the first character and the
-        // dropdown would sit on the too-short hint until the buyer typed
-        // again. Asserted via a native listener for exactly that reason.
-        pressKey(dom.combobox, 'a');
-        const search = dom.searchField();
+    test.each([
+        ['株式会社', 'an IME composition, which reports no printable key'],
+        ['Acme Trading', 'a paste, which reports no key at all']
+    ])('%p reaches the query field (%s)', async (text) => {
+        field().value = text;
+        field().dispatchEvent(new window.Event('input', { bubbles: true }));
+        await tick();
 
-        const seen = [];
-        search.addEventListener('input', function (e) {
-            seen.push(e.bubbles);
-        });
-        // Re-seeding through the same path must fire it again.
-        pressKey(dom.combobox, 'b');
-        expect(seen).toEqual([true]);
+        expect(queryField().value).toBe(text);
+        expect(searched).toEqual([text]);
     });
 
-    test('digits and punctuation count as characters too — an org number is a valid query', () => {
-        pressKey(dom.combobox, '9');
-        expect(dom.searchField().value).toBe('9');
-    });
+    test('the seeded character starts a search without a second keystroke', async () => {
+        typeInto(field(), 'e');
+        await tick();
 
-    test('Space and Enter are left to select2, which already opens on both', () => {
-        const space = pressKey(dom.combobox, ' ');
-        const enter = pressKey(dom.combobox, 'Enter');
-
-        expect(space.defaultPrevented).toBe(false);
-        expect(enter.defaultPrevented).toBe(false);
-        expect(dom.state.openCalls).toBe(0);
+        expect(searched).toEqual(['e']);
     });
 
     test('Tab is never intercepted — §1 excludes it explicitly, and §4 needs it to navigate', () => {
-        const tab = pressKey(dom.combobox, 'Tab');
+        const tab = pressKey(field(), 'Tab');
 
         expect(tab.defaultPrevented).toBe(false);
-        expect(dom.state.openCalls).toBe(0);
+        expect(panel.isOpen()).toBe(false);
     });
 
-    test('navigation and editing keys do not open the picker', () => {
-        ['Escape', 'ArrowDown', 'ArrowUp', 'Backspace', 'Shift', 'F5', 'Home'].forEach(function (
-            key
-        ) {
-            const event = pressKey(dom.combobox, key);
-            expect(event.defaultPrevented).toBe(false);
-        });
-        expect(dom.state.openCalls).toBe(0);
-    });
-
-    test('Ctrl/Cmd/Alt combinations are browser shortcuts, not text entry', () => {
-        expect(pressKey(dom.combobox, 'v', { ctrlKey: true }).defaultPrevented).toBe(false);
-        expect(pressKey(dom.combobox, 'v', { metaKey: true }).defaultPrevented).toBe(false);
-        expect(pressKey(dom.combobox, 'v', { altKey: true }).defaultPrevented).toBe(false);
-        expect(dom.state.openCalls).toBe(0);
-    });
-
-    test('a superseded bind no longer opens anything — same fail-closed rule as the rest of the module', () => {
-        dom.$field.data('twoSearchBind', {});
-
-        const event = pressKey(dom.combobox, 'a');
+    test.each([
+        ['Escape', 'closing'],
+        ['ArrowDown', 'walking the list'],
+        ['Backspace', 'editing'],
+        ['Shift', 'a modifier alone'],
+        ['F5', 'a browser key'],
+        ['Home', 'caret movement'],
+        ['Enter', 'submitting']
+    ])('%p is not text entry, so nothing is seeded (%s)', (key) => {
+        const event = pressKey(field(), key);
 
         expect(event.defaultPrevented).toBe(false);
-        expect(dom.state.openCalls).toBe(0);
+        expect(queryField().value).toBe('');
     });
 
-    test('a torn-down widget does not open anything either', () => {
-        dom.$field.data('select2', undefined);
-
-        const event = pressKey(dom.combobox, 'a');
+    test.each([
+        [{ ctrlKey: true }, 'Ctrl'],
+        [{ metaKey: true }, 'Cmd'],
+        [{ altKey: true }, 'Alt']
+    ])('%p+v is a browser shortcut, not text entry (%s)', (modifiers) => {
+        const event = pressKey(field(), 'v', modifiers);
 
         expect(event.defaultPrevented).toBe(false);
-        expect(dom.state.openCalls).toBe(0);
+        expect(panel.isOpen()).toBe(false);
+    });
+
+    test('a released field is a plain input again — manual entry types into it directly', () => {
+        panel.releaseField();
+
+        const event = pressKey(field(), 'a');
+
+        expect(event.defaultPrevented).toBe(false);
+        expect(panel.isOpen()).toBe(false);
+    });
+
+    test('a destroyed panel opens nothing', () => {
+        panel.destroy();
+
+        const event = pressKey(field(), 'a');
+
+        expect(event.defaultPrevented).toBe(false);
+        expect(document.querySelector('.two-company-dropdown')).toBeNull();
     });
 });
 
 describe('TWO-25326 §1: zero-result wording', () => {
-    let model;
-
-    beforeEach(() => {
-        model = loadAmdModule(MODEL_PATH, { jquery: makeMiniQuery() });
-    });
-
     test('the message is "No matches found", not select2\'s "No results found"', () => {
+        const model = loadAmdModule(MODEL_PATH, { jquery: $ }, GLOBALS);
+
         expect(model.noResultsMessage()).toBe('No matches found');
     });
 
-    test('the language block both pickers share carries it, and the threshold hint', () => {
-        const language = model.buildLanguageOptions();
+    test('a zero-result search renders that wording into the panel', async () => {
+        document.body.innerHTML = '<div class="control"><input id="company_name" type="text"></div>';
+        const companySearch = loadAmdModule(MODEL_PATH, { jquery: $ }, GLOBALS);
+        companySearch.SEARCH_DEBOUNCE_MS = 0;
+        companySearch.searchCompanies = function () {
+            return Promise.resolve({ items: [], unavailable: false, aborted: false });
+        };
+        const CompanySearchPanel = loadCompanySearchPanel($, companySearch, GLOBALS);
+        const panel = new CompanySearchPanel({ fieldSelector: FIELD_SELECTOR, config: BASE_CONFIG });
+        panel.bind();
+        panel.open();
 
-        expect(typeof language.noResults).toBe('function');
-        expect(language.noResults()).toBe('No matches found');
-        expect(language.inputTooShort()).toContain(String(model.MIN_INPUT_LENGTH));
-    });
+        $('.two-company-dropdown__query').val('exa').trigger('input');
+        await tick();
 
-    /**
-     * The bundled default is what the fix displaces, so pin that it is still
-     * the thing being displaced. If a future select2 upgrade changes the
-     * vendored literal, this test says so rather than letting the override
-     * quietly become a no-op equivalent.
-     */
-    test('the vendored select2 default really is the wording being overridden', () => {
-        const bundle = readRepoFile('view/frontend/web/select2-4.1.0/js/select2.min.js');
-        expect(bundle).toContain('No results found');
+        expect(messageText()).toBe('No matches found');
     });
 });
 
-describe('the shared control is actually wired to the shared fixes', () => {
-    test('company-search-control.js passes the shared language block and opens on type', () => {
-        const src = readRepoFile(CONTROL_PATH);
-
-        expect(src).toContain('language: companySearch.buildLanguageOptions()');
-        expect(src).toContain('companySearch.attachOpenOnType(');
-        // The inline override this replaced would silently win over the
-        // shared block if it were left behind.
-        expect(src).not.toContain('inputTooShort: function');
-    });
-
-    test('the page-level component constructs the shared control rather than rolling its own select2 wiring', () => {
+describe('the page-level component holds no parallel search wiring', () => {
+    test('it constructs the shared panel rather than rendering results itself', () => {
         const src = readRepoFile(COMPONENT_PATH);
 
-        expect(src).toContain('new CompanySearchControl(');
-        // A second, parallel select2 wiring would be exactly the defect
-        // TWO-25326 asked to close — one implementation, not two.
-        expect(src).not.toContain('.select2({');
-        expect(src).not.toContain('companySearch.buildLanguageOptions()');
-        expect(src).not.toContain('companySearch.attachOpenOnType(');
+        expect(src).toContain('new CompanySearchPanel(');
+        // A second, parallel implementation would be exactly the defect
+        // TWO-25326 asked to close — one control, not two.
+        expect(src).not.toContain('searchCompanies(');
+        expect(src).not.toContain('two-company-dropdown');
     });
 });
