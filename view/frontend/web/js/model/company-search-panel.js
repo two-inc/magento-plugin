@@ -107,10 +107,12 @@ define([
         this._token = null;
         /** Ordinal of the latest search, so an out-of-order response is dropped. */
         this._searchSeq = 0;
-        /** Selector this panel already has a `$.async` observer watching. */
-        this._asyncSelector = null;
+        /** Every selector this panel has a `$.async` observer watching, ever. */
+        this._observedSelectors = {};
         /** Suppresses the field's own open-on-focus while the panel closes itself. */
         this._closing = false;
+        /** `$.async` cannot be disconnected, so its callbacks read this instead. */
+        this._destroyed = false;
     }
 
     // ------------------------------------------------------------------ build
@@ -128,20 +130,31 @@ define([
     CompanySearchPanel.prototype.bind = function (bindOptions) {
         const self = this;
         const wantsOpen = !!(bindOptions && bindOptions.open);
+        const selector = this.fieldSelector;
 
-        // ONE observer per selector, for the life of the panel. `$.async` is a
-        // MutationObserver that is never disconnected, and building the panel
-        // mutates the DOM — so a second registration makes the first one's own
-        // mutations re-trigger this callback, and every later render re-fires
-        // every observer ever registered (TWO-25503, the checkout freeze).
-        if (this._asyncSelector !== this.fieldSelector) {
-            this._asyncSelector = this.fieldSelector;
-            $.async(this.fieldSelector, function (fieldNode) {
+        // ONE observer per selector, EVER — `$.async` is a MutationObserver
+        // that cannot be disconnected, and building the panel mutates the DOM,
+        // so a second registration makes the first one's own mutations
+        // re-trigger this callback and every later render re-fires every
+        // observer ever registered (TWO-25503, the checkout freeze). Tracked as
+        // a set, not a single "current" selector: the component re-points this
+        // panel between the address step and the payment tile, and a
+        // last-selector-wins check re-registers on every switch.
+        if (!this._observedSelectors[selector]) {
+            this._observedSelectors[selector] = true;
+            $.async(selector, function (fieldNode) {
+                // The observer for an abandoned mount stays live forever. Left
+                // unguarded it drags the panel back to the host the buyer moved
+                // off — a payment tile re-rendering on a totals change would
+                // re-anchor a control the buyer is typing into on the address
+                // step, and mint a new token the in-flight search can no longer
+                // be aborted against.
+                if (self._destroyed || selector !== self.fieldSelector) return;
                 self._attach($(fieldNode));
             });
         }
 
-        const $field = $(this.fieldSelector).first();
+        const $field = $(selector).first();
         if ($field.length) this._attach($field);
         if (wantsOpen) this.open();
     };
@@ -152,29 +165,62 @@ define([
      * @param {object} $field jQuery-wrapped company-name input
      */
     CompanySearchPanel.prototype._attach = function ($field) {
-        if (!$field.length) return;
-        const rebinding = this._$field && this._$field[0] === $field[0];
+        if (!$field.length || this._destroyed) return;
+        const previous = this._$field;
+        const rebinding = previous && previous[0] === $field[0];
+        if (!rebinding) {
+            // The abandoned host keeps its wrapper otherwise, and a second
+            // wrapper is a second anchor: jQuery `insertAfter` on a two-element
+            // target CLONES what it inserts, so the sole-trader fallback note
+            // renders twice.
+            this._releaseWrap(previous);
+            // Fresh identity, so a search issued by the node this call replaces
+            // resolves into a token nothing is listening for.
+            this._token = {};
+        }
         this._$field = $field;
-        // Fresh identity per attach, so a search issued by the node this call
-        // replaces resolves into a token nothing is listening for.
-        if (!rebinding) this._token = {};
 
         const $wrap = this._ensureWrap($field);
         this._buildPanel($wrap);
+        this.syncChips();
+
+        // Manual entry owns the field: it is a plain text input holding what
+        // the buyer typed. Re-arming the openers would pop the popover over
+        // them on focus, and painting `getDisplayText()` would blank the name,
+        // which nothing else records.
+        if (this.getSelectedMode() === 'manual') return;
+
         this._bindFieldOpeners($field);
         // The closed-state watermark. Set here rather than left to the host
         // form: on the address step core renders this field with no
         // placeholder at all, so nothing would say what clicking it does.
         $field.attr('placeholder', $t('Enter company name to search'));
-        this.syncChips();
+        // The field is what a keyboard buyer actually reaches, so it — not the
+        // query input inside the panel — is what has to announce that this is a
+        // combobox and whether its list is showing.
+        $field
+            .attr('role', 'combobox')
+            .attr('aria-haspopup', 'listbox')
+            .attr('aria-controls', `two-company-results-${this._id}`)
+            .attr('aria-expanded', this._open ? 'true' : 'false');
         this.setDisplayText(this.getDisplayText());
     };
 
     /**
-     * The inline positioning context the panel is absolutely positioned
-     * against. A `<span>`, not a `<div>`: the company field sits inside markup
-     * that themes style as inline content, and a block wrapper reflows the
-     * field's own row.
+     * Retire the wrapper and panel around a host this panel has left.
+     *
+     * @param {object} $field the previous field, or null on first attach
+     */
+    CompanySearchPanel.prototype._releaseWrap = function ($field) {
+        if (!$field || !$field.length) return;
+        const $wrap = $field.parent();
+        if (!$wrap.length || !$wrap.hasClass(WRAP_CLASS)) return;
+        $wrap.children('.' + PANEL_CLASS).off(EVENT_NS).remove();
+        $field.off(EVENT_NS).unwrap();
+    };
+
+    /**
+     * The positioning context the panel is absolutely positioned against.
      *
      * @param {object} $field
      * @returns {object} jQuery-wrapped wrapper
@@ -203,9 +249,6 @@ define([
             this._$query = existing.find('.' + QUERY_CLASS).first();
             this._$results = existing.find('.' + RESULTS_CLASS).first();
             this._$chips = existing.find('.' + CHIPS_CLASS).first();
-            // RE-BIND rather than merely adopt: every handler on an existing
-            // panel closes over the attach that built it.
-            this._bindPanelHandlers();
             return;
         }
 
@@ -284,8 +327,15 @@ define([
 
     /**
      * The field is the control's trigger: clicking it, or typing into it, opens
-     * the panel. A character typed there is seeded into the query field, so the
-     * buyer never has to type their first letter twice.
+     * the panel and moves what was typed into the query field, so the buyer
+     * never has to type their first characters twice.
+     *
+     * `keydown` cannot be the only route in. It never fires a printable `key`
+     * for an IME composition (`key` is `'Process'`, and the buyer's actual
+     * characters arrive later) or for a paste, so a CJK buyer typing their
+     * company name would watch the popover sit on the too-short hint forever.
+     * `input` is what catches both: whatever reached the field, however it got
+     * there, is moved across and the field is left as the panel found it.
      *
      * @param {object} $field
      */
@@ -303,12 +353,21 @@ define([
             })
             .on('keydown' + EVENT_NS, function (event) {
                 if (event.ctrlKey || event.metaKey || event.altKey) return;
-                if (event.key === 'Tab') return;
+                // The buyer is leaving, not searching.
+                if (event.key === 'Tab' || event.key === 'Escape') return;
                 self.open();
-                if (typeof event.key !== 'string' || event.key.length !== 1) return;
-                event.preventDefault();
-                self._$query.val(event.key);
-                self._queueSearch(event.key);
+            })
+            .on('input' + EVENT_NS, function () {
+                const typed = $(this).val();
+                if (!typed) return;
+                self.open();
+                // The captured company's name is what this field shows; leaving
+                // the buyer's keystrokes in it would overwrite that with a
+                // half-typed query before they have picked anything.
+                $(this).val(self.getDisplayText() || '');
+                self._$query.val(typed);
+                self._$query.trigger('focus');
+                self._queueSearch(typed);
             });
     };
 
@@ -353,6 +412,7 @@ define([
         // buyer sees for a query they have not typed yet.
         this._$query.val('');
         this._renderMessage(companySearch.minInputLengthMessage());
+        if (this._$field) this._$field.attr('aria-expanded', 'true');
         this._$query.trigger('focus');
     };
 
@@ -368,9 +428,14 @@ define([
         if (!this._$panel || !this._open) return;
         this._open = false;
         this._cancelPendingSearch();
+        // A response still on the wire would paint rows into a panel the buyer
+        // has closed, and _searchSeq alone would let the next open inherit them.
+        companySearch.abortActiveRequest(this._token);
+        this._setSearching(false);
         this._$panel.attr('hidden', 'hidden');
         this._items = [];
         this._activeIndex = -1;
+        if (this._$field) this._$field.attr('aria-expanded', 'false');
         if (options && options.returnFocus && this._$field) {
             // Guards the field's own focus opener against reopening the panel
             // this call is closing.
@@ -440,8 +505,12 @@ define([
                 if (result.aborted) return;
                 self._setSearching(false);
                 if (result.unavailable) {
+                    // Styled apart from the other two messages on purpose
+                    // (TWO-25326): "the search is down" and "your company is
+                    // not here" are different answers and must not read alike.
                     self._renderMessage(
-                        $t('Company search is unavailable right now. Please try again shortly.')
+                        $t('Company search is unavailable right now. Please try again shortly.'),
+                        MESSAGE_CLASS + '--unavailable'
                     );
                     return;
                 }
@@ -465,6 +534,7 @@ define([
      * @param {Array} items rows from companySearch.searchCompanies()
      */
     CompanySearchPanel.prototype._renderResults = function (items) {
+        const self = this;
         this._items = items || [];
         this._activeIndex = -1;
         if (!this._items.length) {
@@ -476,7 +546,7 @@ define([
                 .addClass(ROW_CLASS)
                 .attr('role', 'option')
                 .attr('aria-selected', 'false')
-                .attr('id', `two-company-row-${index}`)
+                .attr('id', `two-company-row-${self._id}-${index}`)
                 // `html`, not `text`: the API marks the matched substring, and
                 // it is built from the buyer's own query server-side.
                 .html(item.html);
@@ -490,12 +560,16 @@ define([
      * than above it so the chips stay the last thing in the panel.
      *
      * @param {string} text
+     * @param {string} [modifier] extra class, where the state needs its own
+     *        treatment rather than the neutral one
      */
-    CompanySearchPanel.prototype._renderMessage = function (text) {
+    CompanySearchPanel.prototype._renderMessage = function (text, modifier) {
         if (!this._$results) return;
         this._items = [];
         this._activeIndex = -1;
-        this._$results.empty().append($('<div></div>').addClass(MESSAGE_CLASS).text(text));
+        const $message = $('<div></div>').addClass(MESSAGE_CLASS).text(text);
+        if (modifier) $message.addClass(modifier);
+        this._$results.empty().append($message);
     };
 
     /**
@@ -621,8 +695,16 @@ define([
         return this._token;
     };
 
-    /** Tear the panel down entirely, leaving the field as core rendered it. */
+    /**
+     * Tear the panel down entirely, leaving the field as core rendered it.
+     *
+     * Final: the `$.async` observers outlive this and cannot be disconnected,
+     * so `_destroyed` is what stops the next re-render rebuilding a panel
+     * nobody owns — along with a fresh document listener the teardown that
+     * already ran would never remove.
+     */
     CompanySearchPanel.prototype.destroy = function () {
+        this._destroyed = true;
         this._cancelPendingSearch();
         companySearch.abortActiveRequest(this._token);
         $(document).off('mousedown' + EVENT_NS + this._id);

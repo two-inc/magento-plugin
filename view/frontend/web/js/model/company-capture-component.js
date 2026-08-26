@@ -471,7 +471,10 @@ define([
             this._panel.releaseField();
         }
         identity.clearNumber();
-        $(this._boundSelector).val('').trigger('focus');
+        // `change`, not just `val('')`: Knockout's `value:` binding reads the
+        // DOM on change only, so without it the buyer sees an empty box while
+        // the quote still carries the company they searched for.
+        $(this._boundSelector).val('').trigger('change').trigger('focus');
         this.syncChips();
     };
 
