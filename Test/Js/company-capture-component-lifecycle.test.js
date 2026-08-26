@@ -326,3 +326,40 @@ describe('the merchant setting decides WHERE, never WHETHER', () => {
         expect(component.mountSelector()).toBe(TILE_FIELD);
     });
 });
+
+describe('an adopted sole trader never inherits half of the previous company', () => {
+    /**
+     * @param {object} buyer the record the hosted signup authenticated
+     * @returns {object} `{ companyName, companyId }` after adoption
+     */
+    function adoptOver(buyer) {
+        mountTile();
+        const { component, identity } = load();
+        component.start();
+        identity.write({ companyName: 'Previous Ltd', companyId: '99999999' });
+
+        component.adoptSoleTrader(buyer);
+
+        return { companyName: identity.companyName(), companyId: identity.companyId() };
+    }
+
+    test.each([
+        [
+            { organization_number: '', company_name: 'Ola Nordmann' },
+            { companyName: 'Ola Nordmann', companyId: '' },
+            'no registry number of their own'
+        ],
+        [
+            { organization_number: 'ST-1', company_name: '' },
+            { companyName: '', companyId: 'ST-1' },
+            'no trading name of their own'
+        ],
+        [
+            { organization_number: 'ST-2', company_name: 'Kari Nordmann' },
+            { companyName: 'Kari Nordmann', companyId: 'ST-2' },
+            'both halves of their own'
+        ]
+    ])('a sole trader with %p adopts as %p (%s)', (buyer, expected) => {
+        expect(adoptOver(buyer)).toEqual(expected);
+    });
+});

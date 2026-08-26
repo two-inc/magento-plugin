@@ -82,7 +82,10 @@ define(['ko'], function (ko) {
          */
         write: function (identity, options) {
             const authoritative = !!(options && options.authoritative);
-            if (identity.companyName) companyName(identity.companyName);
+            // An authoritative write replaces BOTH halves, empty ones included:
+            // a company that supplies only one of them must not keep the other
+            // from whoever was captured before it.
+            if (identity.companyName || authoritative) companyName(identity.companyName || '');
             if (identity.companyId || authoritative) companyId(identity.companyId || '');
         },
 
