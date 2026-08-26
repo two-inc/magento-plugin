@@ -224,6 +224,27 @@ describe('the route back to search is a chip inside the panel', () => {
         expect(document.activeElement).toBe(document.querySelector(QUERY));
     });
 
+    test('the registered chip focuses the query field from sole-trader mode too', () => {
+        // The popover stays OPEN behind the signup popup, and sole-trader mode
+        // hides the query row — so this arrives with the panel already up and
+        // nothing focusable in it, the state an early-returning open() left
+        // with the caret nowhere.
+        $('#company_name').trigger('mousedown');
+        mounted.component.soleTraderMode();
+        // A browser blurs an input the moment the row holding it is hidden;
+        // jsdom applies no stylesheet, so the blur is staged by hand here.
+        document.querySelector(QUERY).blur();
+        expect(panelIsOpen()).toBe(true);
+        expect(document.querySelector(`${PANEL} .two-company-dropdown__search`)
+            .classList.contains('two-hidden')).toBe(true);
+        expect(focusedQueryField()).toBeNull();
+
+        $(`${CHIP}[data-two-chip="registered"]`).trigger('click');
+
+        expect(mounted.identity.captureMode()).toBe('registered');
+        expect(document.activeElement).toBe(document.querySelector(QUERY));
+    });
+
     test('the chip for the mode in play reads as selected', () => {
         mounted.component.manualEntryMode();
 

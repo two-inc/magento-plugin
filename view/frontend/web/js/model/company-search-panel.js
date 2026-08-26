@@ -412,18 +412,31 @@ define([
 
     // ----------------------------------------------------------- open / close
 
-    /** Open the panel and put the caret in the query field. */
+    /**
+     * Open the panel and put the caret in the query field.
+     *
+     * An ALREADY-open panel still re-syncs and re-focuses rather than
+     * returning early: the popover stays up behind the signup popup, so
+     * "return to registered-company mode" arrives here with the panel open and
+     * the query row hidden, and an early return would leave the buyer looking
+     * at a search box nothing put the caret in.
+     */
     CompanySearchPanel.prototype.open = function () {
-        if (!this._$panel || this._open) return;
+        if (!this._$panel) return;
+        const wasOpen = this._open;
         this._open = true;
         this._$panel.removeAttr('hidden');
+        // Before the focus below: the query row is hidden outside
+        // registered-company mode, and a hidden input cannot take the caret.
         this.syncChips();
-        // The previous session's rows would otherwise be the first thing the
-        // buyer sees for a query they have not typed yet.
-        this._$query.val('');
-        // Empty, not the too-short hint: the query field's own placeholder
-        // already carries it, and rendering both says the same thing twice.
-        this._renderMessage('');
+        if (!wasOpen) {
+            // The previous session's rows would otherwise be the first thing
+            // the buyer sees for a query they have not typed yet.
+            this._$query.val('');
+            // Empty, not the too-short hint: the query field's own placeholder
+            // already carries it, and both says the same thing twice.
+            this._renderMessage('');
+        }
         if (this._$field) this._$field.attr('aria-expanded', 'true');
         this._$query.trigger('focus');
     };
