@@ -996,6 +996,27 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      *
      * @returns {string}
      */
+    /**
+     * Who is calling, for Two's unauthenticated browser-facing endpoints. One
+     * builder so the call sites cannot drift apart.
+     *
+     * `merchant` is the short name off the memoised verify_api_key record the
+     * server already ships in checkoutConfig, never a second live call from the
+     * browser. Absent keys are omitted rather than sent as "undefined".
+     *
+     * @param {object} config the brand's checkout config subtree
+     * @returns {object}
+     */
+    function apiClientParams(config) {
+        const intent = (config && config.orderIntentConfig) || {};
+        const params = {};
+        if (intent.extensionPlatformName) params.client = intent.extensionPlatformName;
+        if (intent.extensionDBVersion) params.client_v = intent.extensionDBVersion;
+        const shortName = intent.merchant && intent.merchant.short_name;
+        if (shortName) params.merchant = shortName;
+        return params;
+    }
+
     function currentAddressFormCountry() {
         for (let i = 0; i < COUNTRY_SELECT_SELECTORS.length; i++) {
             const $select = $(COUNTRY_SELECT_SELECTORS[i]).first();
@@ -1555,6 +1576,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         stripBracketedToken: stripBracketedToken,
         COUNTRY_SELECT_SELECTORS: COUNTRY_SELECT_SELECTORS,
         currentAddressFormCountry: currentAddressFormCountry,
+        apiClientParams: apiClientParams,
 
         /**
          * Build the select2 `ajax` option block for the company search.
@@ -1585,18 +1607,18 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                 delay: SEARCH_DEBOUNCE_MS,
                 timeout: REQUEST_TIMEOUT_MS,
                 url: function (params) {
-                    const queryParams = new URLSearchParams({
-                        country: getCountryCode()?.toUpperCase(),
-                        limit: config.companySearchLimit,
-                        offset: ((params.page || 1) - 1) * config.companySearchLimit,
-                        q: unescape(params.term),
-                        // Identifies the calling plugin to this unauthenticated
-                        // browser-facing endpoint, avoiding a CORS preflight per
-                        // keystroke — same params/source as gateway_method.js's
-                        // order_intent call.
-                        client: config.orderIntentConfig?.extensionPlatformName,
-                        client_v: config.orderIntentConfig?.extensionDBVersion
-                    });
+                    const queryParams = new URLSearchParams(Object.assign(
+                        {
+                            country: getCountryCode()?.toUpperCase(),
+                            limit: config.companySearchLimit,
+                            offset: ((params.page || 1) - 1) * config.companySearchLimit,
+                            q: unescape(params.term)
+                        },
+                        // Kept flat in the same URLSearchParams rather than
+                        // appended after, so a missing one is absent instead of
+                        // sent as the string "undefined".
+                        apiClientParams(config)
+                    ));
                     return `${config.checkoutApiUrl}/companies/v2/company?${queryParams.toString()}`;
                 },
                 /**
@@ -1819,10 +1841,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             if (!selectedCompany || !selectedCompany.lookupId) return null;
 
             const self = this;
-            const queryParams = new URLSearchParams({
-                client: config.orderIntentConfig?.extensionPlatformName,
-                client_v: config.orderIntentConfig?.extensionDBVersion
-            });
+            const queryParams = new URLSearchParams(apiClientParams(config));
             const addressResponse = $.ajax({
                 dataType: 'json',
                 timeout: REQUEST_TIMEOUT_MS,

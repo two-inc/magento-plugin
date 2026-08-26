@@ -336,12 +336,7 @@ define([
      */
     SoleTrader.prototype.fetchBuyer = function () {
         const config = this._component.config();
-        // Identifies the calling plugin to this unauthenticated browser-facing
-        // endpoint, the same params the company-search calls already carry.
-        const params = new URLSearchParams({
-            client: config.orderIntentConfig?.extensionPlatformName,
-            client_v: config.orderIntentConfig?.extensionDBVersion
-        });
+        const params = new URLSearchParams(companySearch.apiClientParams(config));
         const URL = `${config.checkoutApiUrl}/autofill/v1/buyer/current?${params.toString()}`;
         return fetch(URL, {
             credentials: 'include',
