@@ -175,6 +175,40 @@ describe('sole-trader signup popup (TWO-25461)', () => {
         expect(url.searchParams.get('autofillToken')).toBe('at-1');
     });
 
+    test('getAutofillData() round-trips a non-ASCII name without throwing', () => {
+        const soleTraderModule = loadAmdModule(
+            SOLE_TRADER_MODEL,
+            {
+                'Magento_Checkout/js/model/quote': Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
+                    billingAddress: function () {
+                        return {
+                            firstname: 'Håkon',
+                            lastname: 'Sørensen',
+                            street: ['Storgata 1'],
+                            postcode: '0155',
+                            city: 'Oslo',
+                            region: 'Oslo',
+                            countryId: 'NO'
+                        };
+                    }
+                })
+            },
+            { btoa: global.btoa }
+        );
+        const soleTrader = new soleTraderModule({
+            getEmail: function () { return 'hakon@example.com'; },
+            companyName: function () { return 'Sørensen Consulting'; },
+            getTelephone: function () { return '+4712345678'; }
+        });
+
+        let encoded;
+        expect(() => { encoded = soleTrader.getAutofillData(); }).not.toThrow();
+        const decoded = JSON.parse(decodeURIComponent(escape(atob(encoded))));
+        expect(decoded.first_name).toBe('Håkon');
+        expect(decoded.last_name).toBe('Sørensen');
+        expect(decoded.company_name).toBe('Sørensen Consulting');
+    });
+
     test.each([
         ['US', 'US', 'US'],
         ['GB', 'gb', 'GB'],
