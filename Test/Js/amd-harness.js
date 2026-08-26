@@ -463,7 +463,16 @@ function resolveTwoGatewayModule(name) {
     return fs.existsSync(path.resolve(__dirname, '..', '..', relPath)) ? relPath : null;
 }
 
-function loadAmdModule(relPath, extraMocks, extraGlobals) {
+function loadAmdModule(relPath, extraMocks, extraGlobals, siblingCache) {
+    // One instance of a given sibling per top-level load, the way RequireJS
+    // gives one per page. Without it two siblings requiring the same third
+    // module would each get their own copy, splitting module-scope state that
+    // production shares — `adoptedSoleTraderIds`, `countryWatcherSeq`,
+    // company-search.js's caches — and the tests would stay green while no
+    // longer modelling production. Deliberately per-call and not a process-wide
+    // memo: a fresh `loadAmdModule()` must still yield fresh module state,
+    // which is what the specs that pin module-scope behaviour rely on.
+    const siblings = siblingCache || new Map();
     const absPath = path.resolve(__dirname, '..', '..', relPath);
     const src = fs.readFileSync(absPath, 'utf8');
     const mocks = Object.assign({}, defaultMocks(), extraMocks || {});
@@ -487,7 +496,13 @@ function loadAmdModule(relPath, extraMocks, extraGlobals) {
                     // modules nothing has deliberately stubbed.
                     const sibling = resolveTwoGatewayModule(name);
                     if (sibling) {
-                        return loadAmdModule(sibling, extraMocks, extraGlobals);
+                        if (!siblings.has(sibling)) {
+                            siblings.set(
+                                sibling,
+                                loadAmdModule(sibling, extraMocks, extraGlobals, siblings)
+                            );
+                        }
+                        return siblings.get(sibling);
                     }
                     throw new Error(
                         `AMD harness: unmocked dep "${name}" required by ${relPath}. ` +
