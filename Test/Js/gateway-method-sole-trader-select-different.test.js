@@ -2,341 +2,276 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25461 §7 — the two UX gaps left after the popup-launch bugfixes
- * (PR #343): the "select a different sole trader" link/autoselect param,
- * and the in-flight spinner for the chip lookup's round trip.
+ * TWO-25461 §7 — re-signing up as a different sole trader.
+ *
+ * Two routes reach the same place: the payment tile's "Select a different sole
+ * trader" link, and re-clicking the sole-trader chip once one is already
+ * adopted. Both must carry `autoselect=false`, or the hosted flow silently
+ * re-picks the registration the buyer is trying to replace and hands back the
+ * identity already on screen — a dead end with no visible cause.
+ *
+ * The tile no longer owns the flow. It delegates to the page-level
+ * company-capture component, which is what survives the payment-method list
+ * being rebuilt on every totals change, so the link's own case below is a
+ * delegation check and the behaviour is driven through the real component.
  */
 
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
-const { loadAmdModule } = require('./amd-harness');
+const $ = require('jquery');
+const { loadAmdModule, defaultMocks } = require('./amd-harness');
 
+const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
+const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
+const SOLE_TRADER = 'view/frontend/web/js/model/sole-trader.js';
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
-const SOLE_TRADER_MODEL = 'view/frontend/web/js/model/sole-trader.js';
 const TEMPLATE = 'view/frontend/web/template/payment/gateway_method.html';
+
 const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
 
-function loadRenderer() {
-    const opened = [];
-    const component = loadAmdModule(
-        RENDERER,
-        {},
-        {
-            window: {
-                checkoutConfig: { payment: {} },
-                open: function (url, target, features) {
-                    opened.push({ url: url, target: target, features: features });
-                    return { closed: false };
-                }
-            },
-            btoa: global.btoa
+/**
+ * The mocks and sandbox globals the flow and the component share.
+ *
+ * @returns {object} `{ rec, identity, mocks, globals }`
+ */
+function makeEnv() {
+    const rec = { opened: [], handles: [], tokenMints: 0 };
+
+    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
+
+    const fakeWindow = {
+        open: function (url, target, features) {
+            rec.opened.push({ url: url, target: target, features: features });
+            const handle = { closed: false, close: function () { this.closed = true; } };
+            rec.handles.push(handle);
+            return handle;
+        },
+        addEventListener: function () {},
+        removeEventListener: function () {}
+    };
+
+    const mocks = {
+        jquery: $,
+        'Magento_Checkout/js/model/quote': Object.assign(
+            {},
+            defaultMocks()['Magento_Checkout/js/model/quote'],
+            {
+                billingAddress: function () { return { countryId: 'GB' }; },
+                getQuoteId: function () { return 'cart-1'; },
+                isVirtual: function () { return false; }
+            }
+        ),
+        'Two_Gateway/js/model/company-identity': identity,
+        'Two_Gateway/js/model/company-search': Object.assign(
+            {},
+            defaultMocks()['Two_Gateway/js/model/company-search'],
+            { apiClientParams: function () { return {}; }, currentAddressFormCountry: function () { return ''; } }
+        ),
+        'Two_Gateway/js/model/brand-config': {
+            getActiveTwoBrandConfig: function () {
+                return {
+                    checkoutPageUrl: CHECKOUT_PAGE_URL,
+                    checkoutApiUrl: 'https://api.example',
+                    isCompanySearchEnabled: true,
+                    supportedCompanyTypes: { gb: ['SOLE_TRADER'] }
+                };
+            }
         }
-    );
-    return { component: component, opened: opened };
+    };
+
+    const globals = {
+        document: document,
+        window: fakeWindow,
+        btoa: global.btoa,
+        setInterval: function () { return 1; },
+        clearInterval: function () {},
+        fetch: function (requestUrl) {
+            if (String(requestUrl).indexOf('get-tokens') === -1) {
+                return Promise.resolve({ ok: false, status: 404 });
+            }
+            rec.tokenMints += 1;
+            return Promise.resolve({
+                ok: true,
+                json: function () {
+                    return Promise.resolve([{ delegation_token: 'dt-1', autofill_token: 'at-1' }]);
+                }
+            });
+        }
+    };
+
+    return { rec: rec, identity: identity, mocks: mocks, globals: globals };
 }
 
 /**
- * A `this` context standing in for a live renderer — the HOST — plus the
- * SoleTrader collaborator it lazily mounts, which owns the tokens, the lookup
- * record and the transport.
+ * The real flow against a stub host, with tokens already held.
  *
- * @param {object} component the loaded renderer
- * @param {object} [hostOverrides] members to replace on the renderer
- * @param {object} [soleTraderOverrides] members to replace on the collaborator
- * @returns {object} the context
+ * @returns {object} `{ flow, rec }`
  */
-function makeContext(component, hostOverrides, soleTraderOverrides) {
-    const ctx = Object.assign({}, component, {
-        _brandConfig: { checkoutPageUrl: CHECKOUT_PAGE_URL },
-        companyName: function () { return 'Ola Nordmann'; },
-        getEmail: function () { return 'ola@example.com'; },
-        getTelephone: function () { return '+4712345678'; },
-        showModeTab: function () { return true; },
-        showSoleTrader: function () { return true; }
+function loadFlow() {
+    const env = makeEnv();
+    const SoleTraderCtor = loadAmdModule(SOLE_TRADER, env.mocks, env.globals);
+    const flow = new SoleTraderCtor({
+        config: function () { return { checkoutPageUrl: CHECKOUT_PAGE_URL }; },
+        countryCode: function () { return 'gb'; },
+        adoptSoleTrader: function () {},
+        abandonSoleTrader: function () {}
     });
-    Object.assign(ctx, hostOverrides || {});
-    Object.assign(ctx.soleTrader(), {
-        delegationToken: 'dt-1',
-        autofillToken: 'at-1',
-        getAutofillData: function () { return 'AUTOFILL'; }
-    }, soleTraderOverrides || {});
-    return ctx;
+    flow.delegationToken = 'dt-1';
+    flow.autofillToken = 'at-1';
+    return { flow: flow, rec: env.rec };
 }
 
-describe('select a different sole trader (TWO-25461 §7)', () => {
-    test('window.open is called synchronously in the click handler, with no await/setTimeout before it', () => {
-        const { component, opened } = loadRenderer();
-        const ctx = makeContext(component);
+/**
+ * The real component with the real flow underneath it, booted against a
+ * payment-tile company field so the chips exist to be clicked.
+ *
+ * @returns {Promise<object>} `{ component, flow, rec, identity }`
+ */
+async function startStack() {
+    document.body.innerHTML =
+        '<form id="two_gateway_form">' +
+        '<div class="field"><div class="control">' +
+        '<input id="company_name" name="company_name" />' +
+        '</div></div></form>';
+    const env = makeEnv();
+    const component = loadAmdModule(COMPONENT, env.mocks, env.globals);
+    component.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return { component: component, flow: component.soleTrader(), rec: env.rec, identity: env.identity };
+}
 
-        // No `await`, no `setTimeout` between the call and the assertion:
-        // proves the popup opens in the same tick as the click, so a real
-        // browser's popup blocker sees it as user-gesture-triggered.
-        ctx.selectDifferentSoleTrader.call(ctx);
+function autoselectOf(entry) {
+    return new URL(entry.url).searchParams.get('autoselect');
+}
 
-        expect(opened).toHaveLength(1);
+beforeEach(() => {
+    document.body.innerHTML = '';
+});
+
+describe('a re-signup offers a choice rather than the identity on screen', () => {
+    test.each([
+        ['selectDifferentSoleTrader', 'false', 'the link asks the hosted flow to offer a choice'],
+        ['launchSignup', null, 'an ordinary first signup lets it pick freely']
+    ])('%s() -> autoselect=%p (%s)', (method, expected) => {
+        const { flow, rec } = loadFlow();
+
+        flow[method]();
+
+        expect(rec.opened).toHaveLength(1);
+        expect(autoselectOf(rec.opened[0])).toBe(expected);
     });
 
-    test('the link click builds a URL carrying autoselect=false and non-empty tokens', () => {
-        const { component, opened } = loadRenderer();
-        const ctx = makeContext(component);
+    test('re-clicking the sole-trader chip once adopted re-signs up with autoselect off', async () => {
+        const { rec, identity } = await startStack();
+        identity.captureMode('soletrader');
+        identity.soleTraderAdopted(true);
 
-        ctx.selectDifferentSoleTrader.call(ctx);
+        document.querySelector('.two-company-mode-chip[data-two-chip="soletrader"]').click();
 
-        expect(opened).toHaveLength(1);
-        const url = new URL(opened[0].url);
-        expect(url.searchParams.get('autoselect')).toBe('false');
+        expect(rec.opened).toHaveLength(1);
+        expect(autoselectOf(rec.opened[0])).toBe('false');
+    });
+
+    test('the first sole-trader chip click carries no autoselect param', async () => {
+        const { rec } = await startStack();
+
+        document.querySelector('.two-company-mode-chip[data-two-chip="soletrader"]').click();
+
+        expect(rec.opened).toHaveLength(1);
+        expect(autoselectOf(rec.opened[0])).toBeNull();
+    });
+
+    test('the re-signup still carries the tokens, so the hosted flow accepts the URL', () => {
+        const { flow, rec } = loadFlow();
+
+        flow.selectDifferentSoleTrader();
+
+        const url = new URL(rec.opened[0].url);
         expect(url.searchParams.get('businessToken')).toBe('dt-1');
         expect(url.searchParams.get('autofillToken')).toBe('at-1');
     });
 
-    test('an ordinary openIframe() call (no options) carries no autoselect param', () => {
-        const { component, opened } = loadRenderer();
-        const ctx = makeContext(component);
+    test('no popup opens for a re-signup with no tokens minted', () => {
+        const { flow, rec } = loadFlow();
+        flow.delegationToken = '';
+        flow.autofillToken = '';
 
-        ctx.openIframe.call(ctx);
-
-        const url = new URL(opened[0].url);
-        expect(url.searchParams.has('autoselect')).toBe(false);
+        expect(flow.selectDifferentSoleTrader()).toBeNull();
+        expect(rec.opened).toEqual([]);
     });
 
-    test('no popup opens when tokens are not minted, even for a re-signup', () => {
-        const { component, opened } = loadRenderer();
-        const ctx = makeContext(component, {}, { delegationToken: '', autofillToken: '' });
+    test('a re-signup while the first popup is still open closes it rather than opening a second live tab', () => {
+        const { flow, rec } = loadFlow();
 
-        const handle = ctx.selectDifferentSoleTrader.call(ctx);
+        flow.openPopup();
+        flow.selectDifferentSoleTrader();
 
-        expect(handle).toBeNull();
-        expect(opened).toEqual([]);
-    });
-
-    test('the template binds the link to selectDifferentSoleTrader, gated on adopted sole-trader state', () => {
-        const template = fs.readFileSync(path.resolve(__dirname, '..', '..', TEMPLATE), 'utf8');
-        expect(template).toContain('selectDifferentSoleTrader');
-        // DOM placement rule (porting guide §0/§7): the link markup is a
-        // SIBLING appearing AFTER the company_name field, never nested
-        // inside it — a plain ordering check on the raw markup.
-        const fieldIndex = template.indexOf('id="company_name"');
-        const linkIndex = template.indexOf('two-select-different-sole-trader');
-        expect(fieldIndex).toBeGreaterThan(-1);
-        expect(linkIndex).toBeGreaterThan(fieldIndex);
-    });
-
-    test('the popup-launch source carries no width=610 anywhere (regression guard shared with #343)', () => {
-        const src = fs.readFileSync(path.resolve(__dirname, '..', '..', SOLE_TRADER_MODEL), 'utf8');
-        expect(src).not.toContain('width=610');
+        expect(rec.handles).toHaveLength(2);
+        expect(rec.handles[0].closed).toBe(true);
+        expect(rec.handles[1].closed).toBe(false);
     });
 });
 
-describe('at most one sole-trader popup is ever live (TWO-25461 review finding)', () => {
+describe('the payment tile only delegates', () => {
     /**
-     * A window.open() double that hands back distinct, individually
-     * closable handles, so a test can assert the FIRST one was closed
-     * before/when the second opened.
+     * @param {?object} flowStub what the component hands back, or null before boot
+     * @returns {object} the loaded renderer
      */
-    function loadRendererWithClosableHandles() {
-        const opened = [];
-        const handles = [];
-        const component = loadAmdModule(
+    function loadRenderer(flowStub) {
+        return loadAmdModule(
             RENDERER,
-            {},
             {
-                window: {
-                    checkoutConfig: { payment: {} },
-                    open: function (url, target, features) {
-                        opened.push({ url: url, target: target, features: features });
-                        const handle = { closed: false, close: function () { this.closed = true; } };
-                        handles.push(handle);
-                        return handle;
-                    }
-                },
-                btoa: global.btoa
-            }
+                jquery: $,
+                'Two_Gateway/js/model/company-capture-component': {
+                    config: function () { return {}; },
+                    mountSelector: function () { return ''; },
+                    refreshMount: function () {},
+                    countryCode: function () { return 'gb'; },
+                    soleTrader: function () { return flowStub; }
+                }
+            },
+            { document: document, window: { checkoutConfig: { payment: {} }, addEventListener: function () {} } }
         );
-        return { component: component, opened: opened, handles: handles };
     }
 
-    test('clicking "select a different sole trader" while the first adoption popup is still open closes it, not a second concurrent tab', () => {
-        const { component, opened, handles } = loadRendererWithClosableHandles();
-        const ctx = makeContext(component);
+    test('the tile hands the click to the page-level flow', () => {
+        const calls = [];
+        const renderer = loadRenderer({
+            selectDifferentSoleTrader: function () { calls.push(true); return 'popup'; }
+        });
 
-        ctx.openIframe.call(ctx);
-        ctx.selectDifferentSoleTrader.call(ctx);
-
-        expect(opened).toHaveLength(2);
-        expect(handles[0].closed).toBe(true);
-        expect(handles[1].closed).toBe(false);
+        expect(renderer.selectDifferentSoleTrader()).toBe('popup');
+        expect(calls).toHaveLength(1);
     });
 
-    test('a double-click on "select a different sole trader" closes the first popup rather than leaving two live', () => {
-        const { component, handles } = loadRendererWithClosableHandles();
-        const ctx = makeContext(component);
+    test('a tile rendered before the component booted is silent, not broken', () => {
+        // Amasty and Fire Checkout re-create payment renderers on every totals
+        // change, so a tile can exist before the page-level component has one.
+        const renderer = loadRenderer(null);
 
-        ctx.selectDifferentSoleTrader.call(ctx);
-        ctx.selectDifferentSoleTrader.call(ctx);
-
-        expect(handles).toHaveLength(2);
-        expect(handles[0].closed).toBe(true);
-        expect(handles[1].closed).toBe(false);
-    });
-
-    test('popupMessageListener ignores a message whose source is not the currently tracked popup', async () => {
-        const opened = [];
-        const listeners = [];
-        const component = loadAmdModule(
-            RENDERER,
-            {},
-            {
-                window: {
-                    checkoutConfig: { payment: {} },
-                    open: function (url, target, features) {
-                        opened.push({ url: url, target: target, features: features });
-                        return { closed: false, close: function () { this.closed = true; } };
-                    },
-                    addEventListener: function (name, fn) {
-                        listeners.push({ name: name, fn: fn });
-                    }
-                },
-                btoa: global.btoa
-            }
-        );
-        const resolveBuyer = jest.fn(() =>
-            Promise.resolve({ matches: true, buyer: { organization_number: '1', company_name: 'X' } })
-        );
-        const fillCompanyData = jest.fn();
-        const ctx = makeContext(
-            component,
-            { fillCompanyData: fillCompanyData },
-            { resolveBuyer: resolveBuyer }
-        );
-
-        ctx.openIframe.call(ctx); // opens and tracks handle A as the live popup
-        const staleWindow = { fake: 'a stand-in for handle A' };
-
-        ctx.popupMessageListener.call(ctx);
-        const handler = listeners.find((l) => l.name === 'message').fn;
-
-        // A message claiming to come from something OTHER than the
-        // currently-tracked popup — the exact shape of a stale/superseded
-        // popup posting late — must not apply its result.
-        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: staleWindow });
-        await Promise.resolve();
-
-        expect(resolveBuyer).not.toHaveBeenCalled();
-        expect(fillCompanyData).not.toHaveBeenCalled();
+        expect(renderer.selectDifferentSoleTrader()).toBeNull();
     });
 });
 
-describe('sole-trader lookup in-flight spinner (TWO-25461 §7)', () => {
-    test('the spinner flag is true while the round trip is outstanding, false once it settles (success)', async () => {
-        const { component } = loadRenderer();
-        let resolveTokens;
-        const states = [];
-        const ctx = makeContext(
-            component,
-            {
-                fillCompanyData: function () {},
-                soleTraderLookupInFlight: function (next) {
-                    if (!arguments.length) return states.length ? states[states.length - 1] : false;
-                    states.push(next);
-                    return next;
-                }
-            },
-            {
-                enterSoleTraderUi: function () {},
-                fetchBuyer: function () { return Promise.resolve(null); },
-                getTokens: function () {
-                    return new Promise((resolve) => { resolveTokens = resolve; });
-                }
-            }
-        );
-
-        const flight = ctx.lookupSoleTrader.call(ctx);
-        expect(states).toEqual([true]);
-
-        resolveTokens({ delegation_token: 'dt-1', autofill_token: 'at-1' });
-        await flight;
-
-        expect(states[states.length - 1]).toBe(false);
-    });
-
-    test('the spinner flag is cleared even when the round trip fails', async () => {
-        const { component } = loadRenderer();
-        const states = [];
-        const ctx = makeContext(
-            component,
-            {
-                soleTraderLookupInFlight: function (next) {
-                    if (!arguments.length) return states.length ? states[states.length - 1] : false;
-                    states.push(next);
-                    return next;
-                }
-            },
-            { getTokens: function () { return Promise.reject(new Error('mint failed')); } }
-        );
-
-        await ctx.lookupSoleTrader.call(ctx);
-
-        expect(states).toEqual([true, false]);
-    });
-
-    test('the template renders the spinner inside the company-name field control, bound to the flag', () => {
+describe('the template offers the link where a re-signup makes sense', () => {
+    test('the link is bound to selectDifferentSoleTrader and gated on adoption', () => {
+        // Gated on adoption, not on capture: a sole trader with no trading name
+        // of their own has no company number, and keying on capture left them
+        // no route out.
         const template = fs.readFileSync(path.resolve(__dirname, '..', '..', TEMPLATE), 'utf8');
-        expect(template).toContain('soleTraderLookupInFlight');
-        expect(template).toContain('two-sole-trader-prefetch-spinner');
+        const link = /class="two-select-different-sole-trader"[\s\S]{0,400}?selectDifferentSoleTrader\(\)/.exec(template);
+
+        expect(link).not.toBeNull();
+        expect(link[0]).toContain('visible: soleTraderAdopted');
     });
 
-    test('an earlier call settling after a newer one started does not clear the flag out from under it (review finding)', async () => {
-        // Buyer edits the email again before the FIRST lookup resolves: a
-        // second lookupSoleTrader() call fires for the new email. If the
-        // first call's chain happens to settle after the second one starts,
-        // its own .finally() must not flip the shared flag to false while
-        // the second request is still genuinely outstanding.
-        const { component } = loadRenderer();
-        const states = [];
-        let resolveFirst;
-        let resolveSecond;
-        const emails = ['first@example.com', 'second@example.com'];
-        let callIndex = 0;
-        const ctx = makeContext(
-            component,
-            {
-                fillCompanyData: function () {},
-                getEmail: function () { return emails[callIndex]; },
-                soleTraderLookupInFlight: function (next) {
-                    if (!arguments.length) return states.length ? states[states.length - 1] : false;
-                    states.push(next);
-                    return next;
-                }
-            },
-            {
-                enterSoleTraderUi: function () {},
-                fetchBuyer: function () { return Promise.resolve(null); },
-                getTokens: function () {
-                    if (callIndex === 0) {
-                        return new Promise((resolve) => { resolveFirst = resolve; });
-                    }
-                    return new Promise((resolve) => { resolveSecond = resolve; });
-                }
-            }
-        );
+    test('the link is a sibling after the company field, never nested inside it', () => {
+        const template = fs.readFileSync(path.resolve(__dirname, '..', '..', TEMPLATE), 'utf8');
 
-        const firstFlight = ctx.lookupSoleTrader.call(ctx);
-        callIndex = 1;
-        const secondFlight = ctx.lookupSoleTrader.call(ctx);
-
-        // Resolve the FIRST (older) call while the second is still pending.
-        resolveFirst({ delegation_token: 'dt-1', autofill_token: 'at-1' });
-        await firstFlight;
-
-        // The second request is still genuinely in flight — the spinner
-        // must still read true, not have been cleared by the stale first call.
-        expect(ctx.soleTraderLookupInFlight()).toBe(true);
-
-        resolveSecond({ delegation_token: 'dt-2', autofill_token: 'at-2' });
-        await secondFlight;
-
-        expect(ctx.soleTraderLookupInFlight()).toBe(false);
+        expect(template.indexOf('id="company_name"')).toBeGreaterThan(-1);
+        expect(template.indexOf('two-select-different-sole-trader'))
+            .toBeGreaterThan(template.indexOf('id="company_name"'));
     });
 });

@@ -32,19 +32,21 @@
  *    a surviving literal 3 cannot pass;
  *  - translation is asserted on the msgid, since `$t` resolves to identity
  *    here;
- *  - the surface tests grep the real address-autocomplete.js source, so
- *    reverting to the old `select2:selecting` interception fails them
- *    directly.
+ *  - the mode-transition tests read identity state and real DOM attributes
+ *    after a real transition, never that a method exists.
  */
 
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
-const { loadAmdModule } = require('./amd-harness');
+const $ = require('jquery');
+const { loadAmdModule, defaultMocks } = require('./amd-harness');
 
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
-const SURFACE_PATH = 'view/frontend/web/js/view/address-autocomplete.js';
+const CONTROL_PATH = 'view/frontend/web/js/model/company-search-control.js';
+const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
+const IDENTITY_PATH = 'view/frontend/web/js/model/company-identity.js';
 const MSGID = 'My company is not on the list';
 
 /** Nothing here is 3, so a surviving literal 3 cannot pass. */
@@ -1029,33 +1031,11 @@ describe('dropdown geometry (resize nudge)', () => {
     });
 });
 
-describe('address-autocomplete.js surface (structural fix)', () => {
-    let src;
+describe('the shared wiring behind the button', () => {
     let controlSrc;
 
     beforeAll(() => {
-        src = readSource(SURFACE_PATH);
-        // TWO-25326 rebuild: the select2 wiring — including the manual-entry
-        // button's attach/detach calls — moved out of this surface and into
-        // the one shared class both mounts construct.
-        controlSrc = readSource('view/frontend/web/js/model/company-search-control.js');
-    });
-
-    test('no longer intercepts select2:selecting for a manual-entry sentinel', () => {
-        expect(src).not.toMatch(/select2:selecting/);
-        expect(src).not.toMatch(/isManualEntryOption/);
-    });
-
-    test('does not roll its own select2 wiring — constructs the shared control instead', () => {
-        expect(src).toContain('new CompanySearchControl(');
-        expect(src).not.toContain('.select2({');
-        expect(src).not.toMatch(/companySearch\.attachManualEntryButton\(/);
-        expect(src).not.toMatch(/companySearch\.detachManualEntryButton\(/);
-    });
-
-    test('activates enterDetailsManually via the control\'s onManualEntryActivated hook', () => {
-        expect(src).toMatch(/onManualEntryActivated:\s*function\s*\(\$companyNameField\)/);
-        expect(src).toMatch(/self\.enterDetailsManually\(\s*\$companyNameField\s*\)/);
+        controlSrc = readSource(CONTROL_PATH);
     });
 
     test('the shared control wires the shared model button, and detaches it on close and re-bind', () => {
@@ -1066,6 +1046,13 @@ describe('address-autocomplete.js surface (structural fix)', () => {
         const detachCalls = controlSrc.match(/companySearch\.detachManualEntryButton\(/g) || [];
         // re-bind path (bind()) and select2:close.
         expect(detachCalls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    test('the mount does not intercept select2:selecting for a manual-entry sentinel', () => {
+        const componentSrc = readSource(COMPONENT_PATH);
+        expect(componentSrc).not.toMatch(/select2:selecting/);
+        expect(componentSrc).not.toMatch(/isManualEntryOption/);
+        expect(controlSrc).not.toMatch(/select2:selecting/);
     });
 
     test('the shared model exports the button helpers, not the retired row ones', () => {
@@ -1087,5 +1074,104 @@ describe('address-autocomplete.js surface (structural fix)', () => {
         ].forEach(function (name) {
             expect(modelSrc).not.toMatch(new RegExp(name + ':\\s*function'));
         });
+    });
+});
+
+/**
+ * The live route into manual entry: the page-level component's own mode
+ * transition, driven against real jsdom nodes and the real identity singleton.
+ *
+ * Loaded fresh per test — both modules are page-level singletons, so a shared
+ * load would carry one case's captured company into the next.
+ */
+function loadCapture() {
+    const identity = loadAmdModule(IDENTITY_PATH, {}, { document: document, window: window });
+    /** Ordered record of the teardown calls, so their sequence is assertable. */
+    const controlCalls = [];
+    const ControlStub = function () {
+        this.bind = function () { controlCalls.push('bind'); };
+        this.destroy = function () { controlCalls.push('destroy'); return true; };
+        this.abortActiveRequest = function () { controlCalls.push('abort'); return true; };
+        this.showSearchForCompanyLink = function () { controlCalls.push('showLink'); };
+        this.hideSearchForCompanyLink = function () {};
+        this.isBound = function () { return controlCalls.indexOf('bind') !== -1; };
+        this.getField = function () { return $(); };
+    };
+    const SoleTraderStub = function () {
+        this.listenForSignupResult = function () {};
+        this.ensureTokens = function () { return Promise.resolve(true); };
+        this.launchSignup = function () { return {}; };
+        this.forgetAdoptions = function () {};
+    };
+
+    const component = loadAmdModule(
+        COMPONENT_PATH,
+        {
+            jquery: $,
+            'Two_Gateway/js/model/company-identity': identity,
+            'Two_Gateway/js/model/company-search-control': ControlStub,
+            'Two_Gateway/js/model/sole-trader': SoleTraderStub,
+            'Two_Gateway/js/model/brand-config': {
+                getActiveTwoBrandConfig: function () {
+                    return {
+                        isCompanySearchEnabled: true,
+                        checkoutApiUrl: 'https://api.example.test',
+                        supportedCompanyTypes: {}
+                    };
+                }
+            },
+            'Two_Gateway/js/model/company-search': Object.assign(
+                {},
+                defaultMocks()['Two_Gateway/js/model/company-search'],
+                { currentAddressFormCountry: function () { return 'gb'; } }
+            )
+        },
+        { document: document, window: window }
+    );
+    component.start();
+    return { component: component, identity: identity, controlCalls: controlCalls };
+}
+
+describe('entering manual entry', () => {
+    let capture;
+
+    beforeEach(() => {
+        document.body.innerHTML =
+            '<form id="two_gateway_form"><div class="field"><div class="control">' +
+            '<input id="company_name" name="company_name" />' +
+            '</div></div></form>';
+        $(document).off('.twoCompanyCapture');
+        capture = loadCapture();
+    });
+
+    test('the field becomes a plain, typeable, focused text input', () => {
+        capture.component.manualEntryMode();
+
+        const field = document.querySelector('#company_name');
+        expect(capture.identity.captureMode()).toBe('manual');
+        expect(field.getAttribute('type')).toBe('text');
+        expect(field.value).toBe('');
+        expect(document.activeElement).toBe(field);
+    });
+
+    test('an in-flight search is aborted BEFORE the widget is torn down', () => {
+        capture.component.manualEntryMode();
+
+        // Order is load-bearing: select2 runs its own bookkeeping over the
+        // response, and a reply landing on a destroyed picker throws inside it.
+        expect(capture.controlCalls.filter(function (call) {
+            return call === 'abort' || call === 'destroy';
+        })).toEqual(['abort', 'destroy']);
+    });
+
+    test('the registry number is abandoned but the name survives the transition', () => {
+        capture.identity.write({ companyName: 'Example Trading Ltd', companyId: '12345678' });
+
+        capture.component.manualEntryMode();
+
+        expect(capture.identity.companyId()).toBe('');
+        // The sole-trader signup prefills from it and the intent notice reads it.
+        expect(capture.identity.companyName()).toBe('Example Trading Ltd');
+        expect(capture.identity.isCaptured()).toBe(false);
     });
 });

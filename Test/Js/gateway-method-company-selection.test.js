@@ -4,57 +4,49 @@
  *
  * TWO-25253, second half. Guarding `national_identifier` in
  * `company-search.js` made a new state reachable: a company hit that renders
- * with an EMPTY `companyId`. These tests cover what the payment step does when
- * the buyer actually picks one.
+ * with an EMPTY `companyId`. These tests cover what happens when the buyer
+ * actually picks one.
  *
  * The failure mode being pinned is a mis-submitted order, not a crash.
  * `fillCompanyData()` early-returns unless BOTH name and id are non-empty, so
  * picking an identifier-less company after a valid one used to leave the
- * previous company's organisation number in `companyId()` while select2
+ * previous company's organisation number in `companyId()` while the picker
  * displayed the new company's name — `getData()` / `placeOrderIntent()` then
  * sent company A's number under company B's name. A selection has to be
- * authoritative.
+ * AUTHORITATIVE; a passive read of a stored section must not be.
  *
- * The editability half of that fix is GONE, and so are the tests for it. The
- * tile's company-number input was first removed outright and is now back but
- * `readonly` in every mode (TWO-25288), because a hand-typed organisation
- * number is not an accepted source — showing the captured one is not the same
- * as offering to take a typed one. Either way there is no field to enable or
- * disable on this surface, and an identifier-less selection is refused
- * server-side by Model/Two.php::authorize(). What is pinned below is the
- * observable state a selection leaves behind — see
+ * There is no field to enable or disable on this surface: the tile's
+ * company-number input is gone (TWO-25288) and an identifier-less selection is
+ * refused server-side by Model/Two.php::authorize(). What is pinned below is
+ * the observable state a selection leaves behind — see
  * tile-company-readonly-fields.test.js for the fields themselves.
- *
- * LIMITATION OF THE jQuery DOUBLE BELOW — read before trusting a passing test
- * here. `node.on()` stores ONE handler per event name and `node.off()` is a
- * no-op, so two handlers bound to the same event on the same node are
- * unmodellable and the LAST bind silently wins. Nothing in this file can
- * therefore say anything about handler ORDERING or handler COEXISTENCE.
- *
- * That is not academic: it is exactly how a `change` handler on the tile's
- * company-number input got here looking correct, back when that input was
- * editable. The template binds `value: companyId`, so ko's `value` binding was
- * already listening on that
- * same `change` event and was registered first (at applyBindings, before
- * `$.async` runs) — ko wrote `companyId()` before any later handler saw the
- * event, which made the later handler's "did the value change?" check trivially
- * false. The double could not express the ko handler at all, so the test passed
- * against a no-op. If a question depends on more than one listener for an
- * event, make the double faithful (a real handler list plus a working `off()`)
- * first.
  */
 
 'use strict';
 
-const { loadAmdModule, loadCompanySearchControl } = require('./amd-harness');
+const { loadAmdModule, defaultMocks } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
+const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
+const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
+const CONTROL = 'view/frontend/web/js/model/company-search-control.js';
+const SEARCH = 'view/frontend/web/js/model/company-search.js';
+
+/** The node the capture component mounts its one control at in these fixtures. */
+const TILE_FIELD_SELECTOR = '#two_gateway_form input#company_name';
 
 /**
  * jQuery double that keeps one persistent node per selector, so a write made
  * through `$(sel).val(...)` is visible to a later `$(sel).val()` read. The
  * default harness jQuery is inert (every setter returns the same empty object
  * and records nothing), which would let a broken implementation pass.
+ *
+ * LIMITATION — `node.on()` stores ONE handler per event name and `node.off()`
+ * is a no-op, so two handlers bound to the same event on the same node are
+ * unmodellable and the LAST bind silently wins. Nothing in this file can
+ * therefore say anything about handler ORDERING or handler COEXISTENCE. If a
+ * question depends on more than one listener for an event, make the double
+ * faithful (a real handler list plus a working `off()`) first.
  */
 function makeDom() {
     const nodes = {};
@@ -63,7 +55,9 @@ function makeDom() {
         if (nodes[selector]) return nodes[selector];
         const n = {
             selector: selector,
-            length: 1,
+            // Only the mount host reports as present, which is what makes the
+            // component resolve its mount there.
+            length: selector === TILE_FIELD_SELECTOR ? 1 : 0,
             value: '',
             props: {},
             textValue: '',
@@ -84,53 +78,35 @@ function makeDom() {
                 n.textValue = next;
                 return n;
             },
-            // ONE handler per event name, and `off()` does nothing. See the
-            // "LIMITATION OF THE jQuery DOUBLE" note at the top of this file
-            // before writing anything that depends on handler ordering or on
-            // two handlers sharing an event.
             on: function (event, fn) {
                 // Strip the `.twoCompanySearch` namespace so tests can fire by
                 // plain event name.
                 n.handlers[String(event).split('.')[0]] = fn;
                 return n;
             },
-            off: function () {
-                return n;
-            },
-            closest: function (sel) {
-                return node(selector + ' >closest> ' + sel);
-            },
-            find: function (sel) {
-                return node(selector + ' >find> ' + sel);
-            },
-            append: function (html) {
-                n.appended.push(html);
-                return n;
-            },
-            attr: function () {
-                return n;
-            },
-            // TWO-25326 §5's company-number text label builds and tears
-            // itself down through these; this file only needs them not to
-            // throw while it exercises setCompanyData's id/name write.
-            addClass: function (cls) {
-                n.classes = (n.classes || []).concat(cls);
-                return n;
-            },
-            remove: function () {
-                n.removed = true;
-                return n;
-            },
-            data: function () {
-                return null;
-            },
-            hide: function () {
-                return n;
-            },
-            show: function () {
-                return n;
-            },
-            select2: function () {
+            off: function () { return n; },
+            closest: function (sel) { return node(selector + ' >closest> ' + sel); },
+            find: function (sel) { return node(selector + ' >find> ' + sel); },
+            append: function (html) { n.appended.push(html); return n; },
+            appendTo: function () { return n; },
+            insertAfter: function () { return n; },
+            prev: function () { return n; },
+            attr: function () { return n; },
+            addClass: function (cls) { n.classes = (n.classes || []).concat(cls); return n; },
+            removeClass: function () { return n; },
+            toggleClass: function () { return n; },
+            remove: function () { n.removed = true; return n; },
+            data: function () { return null; },
+            eq: function () { return n; },
+            first: function () { return n; },
+            is: function () { return false; },
+            each: function () { return n; },
+            get: function () { return { style: {} }; },
+            hide: function () { return n; },
+            show: function () { return n; },
+            trigger: function () { return n; },
+            select2: function (opts) {
+                if (typeof opts === 'object') n.select2Options = opts;
                 return n;
             }
         };
@@ -142,18 +118,13 @@ function makeDom() {
         return node(typeof selector === 'string' ? selector : String(selector));
     }
     // `$.async` is a MutationObserver in Magento; the node is already present
-    // here, so resolve immediately with the selector (the renderer re-wraps it
+    // here, so resolve immediately with the selector (the modules re-wrap it
     // with `$(...)`, which lands on the same node).
-    $.async = function (selector, cb) {
-        cb(selector);
-    };
-    $.each = function (xs, fn) {
-        (xs || []).forEach(function (x, i) {
-            fn(i, x);
-        });
-    };
+    $.async = function (selector, cb) { cb(selector); };
+    $.each = function (xs, fn) { (xs || []).forEach(function (x, i) { fn(i, x); }); };
     $.ajax = function () {
-        return { done: () => this, fail: () => this, always: () => this };
+        const r = { done: () => r, fail: () => r, always: () => r };
+        return r;
     };
     $.Deferred = function () {
         const d = {
@@ -173,19 +144,73 @@ function makeDom() {
     return { $: $, node: node };
 }
 
+function SoleTraderStub() {
+    this.listenForSignupResult = function () {};
+    this.ensureTokens = function () { return Promise.resolve(true); };
+    this.launchSignup = function () { return null; };
+    this.forgetAdoptions = function () {};
+}
+
+const BRAND_CONFIG = {
+    isCompanySearchEnabled: true,
+    isAddressSearchEnabled: false,
+    checkoutApiUrl: 'https://api.example.test',
+    checkoutPageUrl: 'https://checkout.example.test',
+    companySearchLimit: 10,
+    supportedCompanyTypes: { gb: [] },
+    orderIntentConfig: { extensionPlatformName: 'magento2', extensionDBVersion: '1.0.0' }
+};
+
 /**
- * Load the renderer against the recording jQuery. `Component.extend(spec)` in
- * the harness returns an object carrying the spec's own properties, so the
- * returned value doubles as the `this` the methods run against — including its
- * own `companyName` / `companyId` observables.
+ * The renderer, the capture component and the identity singleton all three
+ * share — the real production wiring, where the picker writes the identity and
+ * the renderer reads it.
+ *
+ * The REAL control is mounted so `select2:select` is production's own handler:
+ * a spec that called the component's callback directly would pass against a
+ * control that never wired one.
  */
 function loadRenderer() {
     const dom = makeDom();
-    const renderer = loadAmdModule(RENDERER, {
-        jquery: dom.$,
-        'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(dom.$)
+    const identity = loadAmdModule(IDENTITY, {});
+    const companySearch = loadAmdModule(SEARCH, { jquery: dom.$ });
+    const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
+        billingAddress: function () { return { countryId: 'GB' }; }
     });
-    return { renderer: renderer, node: dom.node, $: dom.$ };
+    const shared = {
+        jquery: dom.$,
+        'Magento_Checkout/js/model/quote': quote,
+        'Two_Gateway/js/model/company-identity': identity,
+        'Two_Gateway/js/model/company-search': companySearch
+    };
+    const component = loadAmdModule(
+        COMPONENT,
+        Object.assign({}, shared, {
+            'Two_Gateway/js/model/company-search-control': loadAmdModule(CONTROL, {
+                jquery: dom.$,
+                'Two_Gateway/js/model/company-search': companySearch
+            }),
+            'Two_Gateway/js/model/sole-trader': SoleTraderStub,
+            'Two_Gateway/js/model/brand-config': {
+                getActiveTwoBrandConfig: function () { return BRAND_CONFIG; }
+            }
+        })
+    );
+    component.start();
+
+    const renderer = loadAmdModule(
+        RENDERER,
+        Object.assign({}, shared, {
+            'Two_Gateway/js/model/company-capture-component': component
+        })
+    );
+
+    /** Drive the real select2 selection handler with one picked result. */
+    function pick(selected) {
+        dom.node(TILE_FIELD_SELECTOR).handlers['select2:select']({ params: { data: selected } });
+    }
+
+    return { renderer: renderer, component: component, identity: identity, node: dom.node, pick };
 }
 
 /**
@@ -194,79 +219,50 @@ function loadRenderer() {
  * (see 'a stale name-only section read does not clobber a live pick').
  */
 const AS_SELECTION = { authoritative: true };
-const COMPANY_NAME_FIELD = 'input#company_name';
 
 describe('picking a company with no national identifier', () => {
+    test('the real selection handler writes the pick authoritatively', () => {
+        // Through the actual selection path, not a helper: a regression that
+        // routed the handler through fillCompanyData() has to fail here.
+        const { renderer, pick } = loadRenderer();
+
+        pick({ id: 'First Example Ltd', text: 'First Example Ltd', companyId: '12345678' });
+        expect(renderer.companyId()).toBe('12345678');
+
+        pick({ id: 'Second Example Ltd', text: 'Second Example Ltd', companyId: '' });
+
+        // The name moved, so the id MUST have moved with it.
+        expect(renderer.companyName()).toBe('Second Example Ltd');
+        expect(renderer.companyId()).toBe('');
+    });
+
+    test('a normal pick after an identifier-less one restores the identifier', () => {
+        const { renderer, pick } = loadRenderer();
+
+        pick({ id: 'Second Example Ltd', text: 'Second Example Ltd', companyId: '' });
+        // Asserting the NAME moved, not that the id is '' — the id is the
+        // observable's initial value at this point, so a `toBe('')` here would
+        // restate the default and could not fail.
+        expect(renderer.companyName()).toBe('Second Example Ltd');
+
+        pick({ id: 'First Example Ltd', text: 'First Example Ltd', companyId: '12345678' });
+
+        expect(renderer.companyId()).toBe('12345678');
+    });
+
     test('applyCompanyData overwrites a previously selected company id', () => {
-        const { renderer, node } = loadRenderer();
+        const { renderer } = loadRenderer();
 
         renderer.applyCompanyData(
             { companyName: 'First Example Ltd', companyId: '12345678' },
             AS_SELECTION
         );
-        expect(renderer.companyName()).toBe('First Example Ltd');
         expect(renderer.companyId()).toBe('12345678');
 
         renderer.applyCompanyData(
             { companyName: 'Second Example Ltd', companyId: '' },
             AS_SELECTION
         );
-
-        // The name moved, so the id MUST have moved with it.
-        expect(renderer.companyName()).toBe('Second Example Ltd');
-        expect(renderer.companyId()).toBe('');
-        expect(node(COMPANY_NAME_FIELD).val()).toBe('Second Example Ltd');
-    });
-
-    test('a normal pick after an identifier-less one restores the identifier', () => {
-        // Driven through the real select2:select handler. Editability is no
-        // longer part of this: TWO-25288 removed the tile's company-number
-        // input, so the only thing a pick can get wrong is the observable.
-        const { renderer, node } = loadRenderer();
-
-        renderer.enableCompanySearch();
-        const select = node(COMPANY_NAME_FIELD).handlers['select2:select'];
-
-        select({
-            params: {
-                data: { id: 'Second Example Ltd', text: 'Second Example Ltd', companyId: '' }
-            }
-        });
-        // Asserting the NAME moved, not that the id is '' — the id is the
-        // observable's initial value at this point, so an `toBe('')` here would
-        // restate the default and could not fail.
-        expect(renderer.companyName()).toBe('Second Example Ltd');
-
-        select({
-            params: {
-                data: { id: 'First Example Ltd', text: 'First Example Ltd', companyId: '12345678' }
-            }
-        });
-
-        expect(renderer.companyId()).toBe('12345678');
-    });
-
-    test('the real select2:select handler routes an empty companyId authoritatively', () => {
-        // Through the actual selection path, not the helper: a regression that
-        // reverted the handler to fillCompanyData() has to fail here.
-        const { renderer, node } = loadRenderer();
-
-        renderer.enableCompanySearch();
-        const select = node(COMPANY_NAME_FIELD).handlers['select2:select'];
-        expect(typeof select).toBe('function');
-
-        select({
-            params: {
-                data: { id: 'First Example Ltd', text: 'First Example Ltd', companyId: '12345678' }
-            }
-        });
-        expect(renderer.companyId()).toBe('12345678');
-
-        select({
-            params: {
-                data: { id: 'Second Example Ltd', text: 'Second Example Ltd', companyId: '' }
-            }
-        });
 
         expect(renderer.companyName()).toBe('Second Example Ltd');
         expect(renderer.companyId()).toBe('');
@@ -277,24 +273,26 @@ describe('picking a company with no national identifier', () => {
         // string. A typeof test coerced a numeric one to '' and routed a
         // company that HAS an identifier down the identifier-less branch,
         // actively CLEARING it.
-        const { renderer, node } = loadRenderer();
+        const { renderer } = loadRenderer();
 
         renderer.applyCompanyData({ companyName: 'First Example Ltd', companyId: 12345678 });
 
         expect(renderer.companyId()).toBe('12345678');
     });
 
-    test('an empty customer-data section on init does not blank live state', () => {
+    test.each([
+        [{}, 'an empty section object'],
+        [undefined, 'no section at all'],
+        [{ companyName: '', companyId: '' }, 'a section holding two empty strings']
+    ])('%p does not blank live state (%s)', (section) => {
         // Why applyCompanyData() routes on "name set, id empty" rather than
         // just dropping fillCompanyData()'s guard: the guard is load-bearing
         // for the init call in fillCustomerData(), which passes whatever the
         // `companyData` section happens to hold.
-        const { renderer, node } = loadRenderer();
+        const { renderer } = loadRenderer();
 
         renderer.applyCompanyData({ companyName: 'First Example Ltd', companyId: '12345678' });
-        renderer.applyCompanyData({});
-        renderer.applyCompanyData(undefined);
-        renderer.applyCompanyData({ companyName: '', companyId: '' });
+        renderer.applyCompanyData(section);
 
         expect(renderer.companyName()).toBe('First Example Ltd');
         expect(renderer.companyId()).toBe('12345678');
@@ -304,8 +302,8 @@ describe('picking a company with no national identifier', () => {
 describe('a company picked on the shipping step reaches the payment step', () => {
     /**
      * Minimal observable with real subscribers, so `fillCustomerData()`'s
-     * `companyData` subscription can be driven the way the shipping-step
-     * picker drives it (`customerData.set('companyData', ...)`).
+     * `companyData` subscription can be driven the way the shipping step drives
+     * it (`customerData.set('companyData', ...)`).
      */
     function observable(initial) {
         let value = initial;
@@ -324,17 +322,20 @@ describe('a company picked on the shipping step reaches the payment step', () =>
     }
 
     /**
-     * Load the renderer with a customer-data double whose sections the test
-     * writes, and a quote whose addresses are inert but well-formed enough for
+     * The renderer with a customer-data double whose sections the test writes,
+     * and a quote whose addresses are well-formed enough for
      * fillCustomerData()'s other subscriptions.
      */
     function loadWithSections(initialCompanyData) {
         const dom = makeDom();
+        const identity = loadAmdModule(IDENTITY, {});
         const sections = { companyData: observable(initialCompanyData) };
         const address = { getCacheKey: () => 'k', countryId: 'GB' };
         const billingAddress = observable(address);
+        const intents = [];
         const renderer = loadAmdModule(RENDERER, {
             jquery: dom.$,
+            'Two_Gateway/js/model/company-identity': identity,
             'Magento_Customer/js/customer-data': {
                 get: function (key) {
                     if (!sections[key]) sections[key] = observable('');
@@ -356,25 +357,20 @@ describe('a company picked on the shipping step reaches the payment step', () =>
                 isVirtual: () => false
             }
         });
-        // Normally seeded by initialize(), which the harness's Component
-        // double doesn't run. Pre-seeded for 'gb' so the supported-company-types
-        // lookup resolves from the memo instead of reaching for fetch().
-        renderer.supportedCompanyTypes = { gb: [] };
-        return {
-            renderer: renderer,
-            sections: sections,
-            dom: dom,
-            billingAddress: billingAddress
+        renderer.isOrderIntentEnabled = true;
+        renderer.placeOrderIntent = function () {
+            intents.push(renderer.companyId());
+            return { always: () => ({ done: () => ({ fail: () => {} }) }) };
         };
+        return { renderer, sections, dom, billingAddress, intents };
     }
 
     test('the companyData subscription clears the previous company id', () => {
-        // The shipping-step picker publishes {companyName, companyId: ''} to
-        // the `companyData` customer-data section. Routing that subscription
-        // through fillCompanyData() dropped it on the empty id, leaving the
-        // payment step holding the previously picked company's organisation
-        // number under the newly picked company's name.
-        const { renderer, sections, dom } = loadWithSections({});
+        // The shipping step publishes {companyName, companyId: ''} to the
+        // `companyData` section. Routing that subscription through
+        // fillCompanyData() dropped it on the empty id, leaving the payment step
+        // holding the previous company's number under the new company's name.
+        const { renderer, sections } = loadWithSections({});
 
         renderer.fillCustomerData();
         sections.companyData({ companyName: 'First Example Ltd', companyId: '12345678' });
@@ -383,6 +379,22 @@ describe('a company picked on the shipping step reaches the payment step', () =>
         sections.companyData({ companyName: 'Second Example Ltd', companyId: '' });
 
         expect(renderer.companyName()).toBe('Second Example Ltd');
+        expect(renderer.companyId()).toBe('');
+    });
+
+    test('a company with a number places exactly one order intent; one without places none', () => {
+        // The intent is what makes the routing choice observable: it is fired
+        // only from inside fillCompanyData(), past its both-halves-present
+        // guard, and selectCompanyWithoutIdentifier() has no intent call at all.
+        const { renderer, sections, intents } = loadWithSections({});
+
+        renderer.fillCustomerData();
+        sections.companyData({ companyName: 'First Example Ltd', companyId: '12345678' });
+        expect(intents).toEqual(['12345678']);
+
+        sections.companyData({ companyName: 'Second Example Ltd', companyId: '' });
+
+        expect(intents).toEqual(['12345678']);
         expect(renderer.companyId()).toBe('');
     });
 
@@ -400,21 +412,17 @@ describe('a company picked on the shipping step reaches the payment step', () =>
         renderer.fillCustomerData();
 
         // Only the name assertion can fail here: `companyId` is still at its
-        // declared '' at this point, so asserting that would restate the
-        // default. The `enableCompanySearch()` call that used to precede this
-        // was setup for a disabled-field precondition that no longer exists.
+        // declared '' at this point, so asserting that would restate the default.
         expect(renderer.companyName()).toBe('Second Example Ltd');
     });
 
     test('a stale name-only section read does not clobber a live pick', () => {
-        // `companyData` is a localStorage customer-data section, so a
+        // `companyData` is a localStorage section, so a
         // `{companyName, companyId: ''}` row outlives page loads and previous
-        // orders — and fillCustomerData() is re-callable via
-        // registeredOrganisationMode(). Treating the one-shot READ as a
-        // selection therefore let a stale row overwrite a live payment-step
-        // pick's name and blank its organisation number. Before the routing
-        // existed this shape was a harmless no-op on the read path; it has to
-        // stay one. Only a change NOTIFICATION on the section is a selection.
+        // orders — and fillCustomerData() is re-callable. Treating the one-shot
+        // READ as a selection therefore let a stale row overwrite a live pick's
+        // name and blank its organisation number. Only a change NOTIFICATION on
+        // the section is a selection.
         const { renderer } = loadWithSections({
             companyName: 'Stale Example Ltd',
             companyId: ''
@@ -422,9 +430,8 @@ describe('a company picked on the shipping step reaches the payment step', () =>
 
         renderer.applyCompanyData(
             { companyName: 'Live Example Ltd', companyId: '99999999' },
-            { authoritative: true }
+            AS_SELECTION
         );
-
         renderer.fillCustomerData();
 
         expect(renderer.companyName()).toBe('Live Example Ltd');
@@ -432,18 +439,11 @@ describe('a company picked on the shipping step reaches the payment step', () =>
     });
 
     test('an address notification carrying company_id reaches the observable', () => {
-        // updateAddress()'s custom-attribute parsing is one of the writer paths
-        // enumerated on applyCompanyData() — and the one most easily conflated
-        // with the `companyData` customer-data notification, which is a
-        // different route. This one fires from the quote subscriptions with no
-        // address-step interaction at all.
-        //
-        // Its only coverage used to live in a describe block about the editable
-        // state of the tile's company-number field; that field is gone, but THIS
-        // subject is not, so the assertion is restored here on its own terms.
-        //
-        // Without it, `if (item.attribute_code == 'company_id')` in
-        // updateAddress() had no test anywhere in the repo.
+        // updateAddress()'s custom-attribute parsing is a writer path of its
+        // own, and the one most easily conflated with the `companyData`
+        // notification — this one fires from the quote subscriptions with no
+        // address-step interaction at all. Without it,
+        // `if (item.attribute_code == 'company_id')` has no test anywhere.
         const { renderer, billingAddress } = loadWithSections({});
 
         renderer.fillCustomerData();
@@ -460,100 +460,20 @@ describe('a company picked on the shipping step reaches the payment step', () =>
     });
 });
 
-describe('order intent for a company with no registry identifier', () => {
-    /**
-     * `initialize()` never runs under the harness's Component double, so
-     * `isOrderIntentEnabled` is undefined and the intent branch is dead in
-     * every test that does not set it explicitly. Set it, and count the calls.
-     */
-    function loadWithIntent() {
-        const dom = makeDom();
-        const renderer = loadAmdModule(RENDERER, {
-            jquery: dom.$,
-            'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(dom.$)
-        });
-        renderer.isOrderIntentEnabled = true;
-        const chain = {
-            always: () => chain,
-            done: () => chain,
-            fail: () => chain
-        };
-        renderer.placeOrderIntent = jest.fn(() => chain);
-        return { renderer: renderer, node: dom.node, intent: renderer.placeOrderIntent };
-    }
-
-    test('a normal pick places exactly one intent', () => {
-        const { renderer, node, intent } = loadWithIntent();
-
-        renderer.enableCompanySearch();
-        node(COMPANY_NAME_FIELD).handlers['select2:select']({
-            params: {
-                data: { id: 'First Example Ltd', text: 'First Example Ltd', companyId: '12345678' }
-            }
-        });
-
-        expect(intent).toHaveBeenCalledTimes(1);
-    });
-
-    test('an identifier-less pick places no intent and clears the previous number', () => {
-        // The bare `expect(intent).not.toHaveBeenCalled()` this test used to end
-        // on could not fail for the regression it names. An intent is placed
-        // only inside fillCompanyData(), AFTER its
-        // `if (!companyName || !companyId) return;` guard, and
-        // selectCompanyWithoutIdentifier() has no intent call at all — so with
-        // an empty companyId NEITHER routing choice places one, and reverting
-        // the handler to fillCompanyData() left it green.
-        //
-        // Seed a real company first, so the intent count discriminates between
-        // the two routes, and assert the identifier was actually CLEARED —
-        // which is the property only selectCompanyWithoutIdentifier() has.
-        const { renderer, node, intent } = loadWithIntent();
-
-        renderer.enableCompanySearch();
-        const select = node(COMPANY_NAME_FIELD).handlers['select2:select'];
-
-        select({
-            params: {
-                data: { id: 'First Example Ltd', text: 'First Example Ltd', companyId: '12345678' }
-            }
-        });
-        expect(intent).toHaveBeenCalledTimes(1);
-        expect(renderer.companyId()).toBe('12345678');
-
-        select({
-            params: {
-                data: { id: 'Second Example Ltd', text: 'Second Example Ltd', companyId: '' }
-            }
-        });
-
-        // No SECOND intent, and the previous company's number is gone rather
-        // than left behind under the new company's name.
-        expect(intent).toHaveBeenCalledTimes(1);
-        expect(renderer.companyName()).toBe('Second Example Ltd');
-        expect(renderer.companyId()).toBe('');
-    });
-
-});
-
-describe('the shipping-step picker agrees with the payment step', () => {
+describe('the shipping step agrees with the payment step', () => {
     test('setCompanyData writes the empty company id straight through', () => {
-        // The address-step picker is already authoritative — it writes both the
-        // `companyData` customer-data section and the DOM field unconditionally
-        // — and it never disables its own company_id input. This pins that,
-        // because the payment step now trusts the section it publishes.
+        // The address step is already authoritative — it writes both the
+        // `companyData` section and the DOM field unconditionally. This pins
+        // that, because the payment step trusts the section it publishes.
         const dom = makeDom();
         const sections = {};
         const autocomplete = loadAmdModule('view/frontend/web/js/view/address-autocomplete.js', {
             jquery: dom.$,
             'Magento_Customer/js/customer-data': {
                 get: function () {
-                    return function () {
-                        return {};
-                    };
+                    return function () { return {}; };
                 },
-                set: function (key, value) {
-                    sections[key] = value;
-                },
+                set: function (key, value) { sections[key] = value; },
                 reload: function () {}
             }
         });

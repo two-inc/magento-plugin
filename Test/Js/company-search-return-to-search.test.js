@@ -2,13 +2,12 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25288. Returning from manual company entry to search mode.
+ * TWO-25288. Returning from manual company entry to registered-company search.
  *
- * Both pickers grow a "Search for company" link once the buyer has taken the
- * "Enter details manually" exit. Clicking it used to only re-bind select2 and
- * hide itself, leaving the buyer looking at a CLOSED picker they had to click
- * a second time before they could type. This pins that the link now opens the
- * dropdown and lands the caret in the search box.
+ * Returning used to only re-bind select2, leaving the buyer looking at a
+ * CLOSED picker they had to click a second time before they could type. This
+ * pins that the return opens the dropdown and lands the caret in the search
+ * box.
  *
  * Mutation-resistance notes, because this repo's AMD harness makes vacuous
  * assertions easy to write:
@@ -17,20 +16,16 @@
  *    `document.activeElement` and the presence of an open container /
  *    search input. `toHaveBeenCalledWith` on a select2 spy would pass for an
  *    implementation that opened a dropdown nothing could type into.
- *  - The jQuery and select2 doubles are DOM-backed: `select2('open')` really
- *    attaches a dropdown containing a real `<input class="select2-search__field">`
- *    and really marks the container open, so the production
+ *  - The select2 double is DOM-backed: `select2('open')` really attaches a
+ *    dropdown containing a real `<input class="select2-search__field">` and
+ *    really marks the container open, so the production
  *    `document.querySelector('.select2-search__field').focus()` has to run
  *    against a live node for the focus assertion to pass.
  *  - `select2('open')` on a destroyed/absent widget THROWS in the double, as
  *    it does in select2 4.1. Opening before the re-bind cannot pass.
- *  - Every case first drives the real journey (open picker → manual entry →
- *    click the link) and asserts the pre-click state is closed and unfocused.
- *    A surface that never bound the link would fail there rather than
- *    presenting as green. The two surfaces offer manual entry differently —
- *    a button inside the dropdown on the shipping step, a peer chip in the
- *    mode control on the payment step — so each drives its own production
- *    route.
+ *  - Every case first drives the real journey (mount → manual entry → return)
+ *    and asserts the pre-return state is closed and unfocused. A mount that
+ *    never bound the picker would fail there rather than presenting as green.
  *  - Two negative pins guard the obvious over-reach: the FIRST bind (initial
  *    checkout render) must not open anything, and a later `$.async` re-fire
  *    must not re-open it under a buyer who has moved on.
@@ -38,278 +33,147 @@
 
 'use strict';
 
+const $ = require('jquery');
 const { loadAmdModule, defaultMocks, loadCompanySearchControl } = require('./amd-harness');
 
-/**
- * BOTH surfaces reach manual entry through a row INSIDE the results list, so
- * the model decides how to reach it. `attachManualEntryButton` here captures
- * the surface's own activation callback (the third argument, invoked in
- * production by the shared model's real button once the buyer clicks it —
- * or presses Enter/Space, since it is a native `<button>`) so a test can
- * fire it directly, the same way `getSearchFieldContainer` answers "this
- * bind is still current" (the default mock returns null, and the payment
- * surface's deferred teardown reads `.length` off it), everything else
- * inert.
- */
-function manualEntryAwareCompanySearch() {
-    const mock = Object.assign({}, defaultMocks()['Two_Gateway/js/model/company-search'], {
-        attachManualEntryButton: function ($field, token, onActivate) {
-            mock.__lastOnActivate = onActivate;
-        },
-        getSearchFieldContainer: function () { return { length: 1 }; }
-    });
-    return mock;
-}
+const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
+const IDENTITY_PATH = 'view/frontend/web/js/model/company-identity.js';
+
+const GLOBALS = { document: document, window: window };
+const FIELD_SELECTOR = '#two_gateway_form input#company_name';
+const RETURN_LINK = '.search_for_company';
 
 const BASE_CONFIG = {
     checkoutApiUrl: 'https://api.example.test',
     companySearchLimit: 50,
     isCompanySearchEnabled: true,
-    isAddressSearchEnabled: true
+    isAddressSearchEnabled: true,
+    supportedCompanyTypes: {}
 };
 
-/* ------------------------------------------------------------------ *
- * A DOM-backed jQuery double.
- *
- * Only the subset both pickers use, but every write lands on real jsdom
- * nodes so the tests can assert on the document rather than on a log.
- * ------------------------------------------------------------------ */
+/**
+ * A select2 stand-in on the real jQuery. Faithful on the three points these
+ * cases turn on: a container that carries the open marker class, a dropdown
+ * holding a real search input attached BEFORE `select2:open` fires (which is
+ * why the production focus call can find it), and a method call on an unbound
+ * element that throws rather than no-opping.
+ */
+function installSelect2Double() {
+    $.fn.select2 = function (arg) {
+        return this.each(function () {
+            const $node = $(this);
+            const instance = $node.data('select2');
 
-function makeDomJQuery() {
-    function nodesOf(arg) {
-        if (arg === null || arg === undefined) return [];
-        if (arg.__wrapped) return arg.nodes;
-        if (typeof arg === 'string') {
-            return Array.from(document.querySelectorAll(arg));
-        }
-        if (arg.nodeType) return [arg];
-        if (Array.isArray(arg)) return arg;
-        return [];
-    }
-
-    function parseEventArg(spec) {
-        const dot = spec.indexOf('.');
-        if (dot === -1) return { type: spec, ns: '' };
-        return { type: spec.slice(0, dot), ns: spec.slice(dot) };
-    }
-
-    function handlersOf(node) {
-        if (!node.__twoHandlers) node.__twoHandlers = [];
-        return node.__twoHandlers;
-    }
-
-    function dataOf(node) {
-        if (!node.__twoData) node.__twoData = {};
-        return node.__twoData;
-    }
-
-    function wrap(nodes) {
-        const api = {
-            __wrapped: true,
-            nodes: nodes,
-            length: nodes.length,
-            get: function (i) { return nodes[i]; },
-            first: function () { return wrap(nodes.slice(0, 1)); },
-            each: function (fn) { nodes.forEach(function (n, i) { fn.call(n, i, n); }); return api; },
-            val: function () {
-                if (arguments.length === 0) return nodes.length ? nodes[0].value : undefined;
-                const v = arguments[0];
-                nodes.forEach(function (n) { n.value = v; });
-                return api;
-            },
-            text: function () {
-                if (arguments.length === 0) return nodes.length ? nodes[0].textContent : '';
-                const v = arguments[0];
-                nodes.forEach(function (n) { n.textContent = v; });
-                return api;
-            },
-            attr: function (name, value) {
-                if (arguments.length === 1) {
-                    return nodes.length ? nodes[0].getAttribute(name) : undefined;
-                }
-                nodes.forEach(function (n) { n.setAttribute(name, value); });
-                return api;
-            },
-            data: function (key, value) {
-                if (arguments.length === 1) {
-                    return nodes.length ? dataOf(nodes[0])[key] : undefined;
-                }
-                nodes.forEach(function (n) { dataOf(n)[key] = value; });
-                return api;
-            },
-            addClass: function (c) { nodes.forEach(function (n) { n.classList.add(c); }); return api; },
-            removeClass: function (c) { nodes.forEach(function (n) { n.classList.remove(c); }); return api; },
-            hide: function () { nodes.forEach(function (n) { n.style.display = 'none'; }); return api; },
-            show: function () { nodes.forEach(function (n) { n.style.display = ''; }); return api; },
-            append: function (content) {
-                nodes.forEach(function (n) {
-                    if (typeof content === 'string') {
-                        n.insertAdjacentHTML('beforeend', content);
-                    } else {
-                        nodesOf(content).forEach(function (c) { n.appendChild(c); });
-                    }
+            if (typeof arg === 'object' && arg !== null) {
+                // select2 4.1's constructor destroys any existing instance on
+                // the same node, so re-init is not additive.
+                if (instance) $node.select2('destroy');
+                const $container = $(
+                    '<span class="select2 select2-container">' +
+                    '<span class="select2-selection" role="combobox" tabindex="0"></span>' +
+                    '</span>'
+                );
+                const $dropdown = $(
+                    '<span class="select2-dropdown">' +
+                    '<span class="select2-search select2-search--dropdown">' +
+                    '<input class="select2-search__field" type="search">' +
+                    '</span>' +
+                    '<span class="select2-results"><ul class="select2-results__options"></ul></span>' +
+                    '</span>'
+                );
+                $node.after($container);
+                $node.data('select2', {
+                    options: arg,
+                    $container: $container,
+                    $dropdown: $dropdown,
+                    $selection: $container.find('.select2-selection'),
+                    dataAdapter: { _queryTimeout: null }
                 });
-                return api;
-            },
-            remove: function () {
-                nodes.forEach(function (n) { if (n.parentNode) n.parentNode.removeChild(n); });
-                return api;
-            },
-            find: function (selector) {
-                const found = [];
-                nodes.forEach(function (n) {
-                    Array.from(n.querySelectorAll(selector)).forEach(function (m) {
-                        if (found.indexOf(m) === -1) found.push(m);
-                    });
-                });
-                return wrap(found);
-            },
-            closest: function (selector) {
-                const found = [];
-                nodes.forEach(function (n) {
-                    const m = n.closest(selector);
-                    if (m && found.indexOf(m) === -1) found.push(m);
-                });
-                return wrap(found);
-            },
-            parent: function () {
-                const found = [];
-                nodes.forEach(function (n) {
-                    if (n.parentNode && found.indexOf(n.parentNode) === -1) found.push(n.parentNode);
-                });
-                return wrap(found);
-            },
-            on: function (spec, fn) {
-                const parsed = parseEventArg(spec);
-                nodes.forEach(function (n) {
-                    handlersOf(n).push({ type: parsed.type, ns: parsed.ns, fn: fn });
-                });
-                return api;
-            },
-            off: function (spec) {
-                const parsed = spec ? parseEventArg(spec) : { type: '', ns: '' };
-                nodes.forEach(function (n) {
-                    n.__twoHandlers = handlersOf(n).filter(function (h) {
-                        if (parsed.type && h.type !== parsed.type) return true;
-                        if (parsed.ns && h.ns !== parsed.ns) return true;
-                        return false;
-                    });
-                });
-                return api;
-            },
-            trigger: function (type, payload) {
-                nodes.forEach(function (n) {
-                    handlersOf(n)
-                        .filter(function (h) { return h.type === type; })
-                        .slice()
-                        .forEach(function (h) { h.fn.call(n, payload || { type: type }); });
-                });
-                return api;
-            },
-            select2: function (arg) {
-                if (typeof arg === 'object' && arg !== null) {
-                    nodes.forEach(function (n) { select2Init(n, arg); });
-                    return api;
-                }
-                nodes.forEach(function (n) { select2Command(n, arg); });
-                return api;
+                return;
             }
-        };
-        return api;
-    }
-
-    /* -------------------------------------------------------------- *
-     * select2 double. Faithful on the two points these tests turn on:
-     * a container that carries the open marker class, and a dropdown
-     * holding a real search input, attached BEFORE `select2:open`
-     * fires (which is why the production focus call can find it).
-     * -------------------------------------------------------------- */
-
-    function select2Init(node, options) {
-        // select2 4.1's constructor destroys any existing instance on the
-        // same node, so re-init is not additive.
-        if (dataOf(node).select2) select2Command(node, 'destroy');
-
-        const container = document.createElement('span');
-        container.className = 'select2 select2-container';
-        container.innerHTML = '<span class="select2-selection__rendered"></span>';
-        node.parentNode.insertBefore(container, node.nextSibling);
-
-        dataOf(node).select2 = { options: options, container: container, dropdown: null };
-    }
-
-    function select2Command(node, command) {
-        const instance = dataOf(node).select2;
-        if (command === 'destroy') {
-            if (!instance) return;
-            if (instance.dropdown && instance.dropdown.parentNode) {
-                instance.dropdown.parentNode.removeChild(instance.dropdown);
+            if (arg === 'destroy') {
+                if (!instance) return;
+                instance.$dropdown.remove();
+                instance.$container.remove();
+                $node.removeData('select2');
+                $node.off('.select2');
+                return;
             }
-            if (instance.container.parentNode) {
-                instance.container.parentNode.removeChild(instance.container);
+            if (arg === 'open') {
+                if (!instance) throw new Error('select2: no instance bound to this element');
+                if (instance.open) return;
+                instance.open = true;
+                $('body').append(instance.$dropdown);
+                instance.$container.addClass('select2-container--open');
+                // Only now, with the dropdown live, does select2 relay the event.
+                $node.trigger('select2:open');
+                return;
             }
-            delete dataOf(node).select2;
-            return;
-        }
-        if (command === 'open') {
-            // Matches select2 4.1: calling a method on an unbound element is
-            // an error, not a silent no-op.
-            if (!instance) throw new Error('select2: no instance bound to this element');
-            if (instance.dropdown) return;
-            const dropdown = document.createElement('span');
-            dropdown.className = 'select2-dropdown';
-            dropdown.innerHTML =
-                '<span class="select2-search select2-search--dropdown">' +
-                '<input class="select2-search__field" type="search">' +
-                '</span>' +
-                '<span class="select2-results"><ul></ul></span>';
-            document.body.appendChild(dropdown);
-            instance.dropdown = dropdown;
-            instance.container.classList.add('select2-container--open');
-            // Only now, with the dropdown live, does select2 relay the event.
-            wrap([node]).trigger('select2:open', { type: 'select2:open' });
-            return;
-        }
-        throw new Error('select2 double: unsupported command ' + command);
-    }
+            if (arg === 'close') {
+                if (!instance || !instance.open) return;
+                instance.open = false;
+                instance.$dropdown.detach();
+                instance.$container.removeClass('select2-container--open');
+                $node.trigger('select2:close');
+                return;
+            }
+            throw new Error('select2 double: unsupported command ' + arg);
+        });
+    };
+}
 
-    function $(arg) { return wrap(nodesOf(arg)); }
-
+/** Magento's `$.async` decorator, recording every registration. */
+function installAsync() {
     $.asyncCalls = [];
     $.async = function (selector, fn) {
         $.asyncCalls.push({ selector: selector, fn: fn });
         const node = document.querySelector(selector);
         if (node) fn(node);
     };
-    $.fn = {};
-    $.extend = Object.assign;
-    $.ajax = function () {
-        return {
-            done: function () { return this; },
-            fail: function () { return this; },
-            always: function () { return this; }
-        };
-    };
-    $.Deferred = function () {
-        const d = {
-            resolve: function () { return d; },
-            reject: function () { return d; },
-            promise: function () { return d; },
-            done: function () { return d; },
-            fail: function () { return d; },
-            always: function () { return d; }
-        };
-        return d;
-    };
-    $.mage = { cookies: { get: function () { return null; }, set: function () {} }, redirect: function () {} };
-    return $;
 }
 
-/** Fire the click handlers our double registered on the first match. */
-function click($, selector) {
-    const $el = $(selector);
-    expect($el.length).toBeGreaterThan(0);
-    $el.first().trigger('click');
+/**
+ * Boot the page-level component over the fixture with the real control.
+ *
+ * Loaded fresh per test: the component and the identity are page-level
+ * singletons, so a shared load would carry one case's bind into the next.
+ *
+ * @returns {object} `{ component, identity, control }`
+ */
+function mount() {
+    const identity = loadAmdModule(IDENTITY_PATH, {}, GLOBALS);
+    const SoleTraderStub = function () {
+        this.listenForSignupResult = function () {};
+        this.ensureTokens = function () { return Promise.resolve(true); };
+        this.launchSignup = function () { return {}; };
+        this.forgetAdoptions = function () {};
+    };
+    const companySearch = Object.assign(
+        {},
+        defaultMocks()['Two_Gateway/js/model/company-search'],
+        { currentAddressFormCountry: function () { return 'gb'; } }
+    );
+
+    const component = loadAmdModule(
+        COMPONENT_PATH,
+        {
+            jquery: $,
+            'Two_Gateway/js/model/company-identity': identity,
+            'Two_Gateway/js/model/company-search': companySearch,
+            'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(
+                $,
+                companySearch,
+                GLOBALS
+            ),
+            'Two_Gateway/js/model/sole-trader': SoleTraderStub,
+            'Two_Gateway/js/model/brand-config': {
+                getActiveTwoBrandConfig: function () { return BASE_CONFIG; }
+            }
+        },
+        GLOBALS
+    );
+    component.start();
+    return { component: component, identity: identity, control: component._control };
 }
 
 function openMarkerPresent() {
@@ -322,237 +186,52 @@ function focusedSearchField() {
     return active.classList.contains('select2-search__field') ? active : null;
 }
 
-/* ------------------------------------------------------------------ *
- * Shipping-step surface (address-autocomplete.js)
- * ------------------------------------------------------------------ */
-
-function buildShippingDom() {
-    document.body.innerHTML =
-        '<form id="shipping-new-address-form">' +
-        '<div class="field">' +
-        '<input name="company" type="text" value="">' +
-        '</div>' +
-        '</form>';
-}
-
-function loadShipping($) {
-    const brandConfig = function () { return BASE_CONFIG; };
-    brandConfig.getActiveTwoBrandCode = function () { return 'two_payment'; };
-    brandConfig.getActiveTwoBrandConfig = function () { return BASE_CONFIG; };
-
-    const companySearchMock = manualEntryAwareCompanySearch();
-    const component = loadAmdModule(
-        'view/frontend/web/js/view/address-autocomplete.js',
-        {
-            jquery: $,
-            'Two_Gateway/js/model/brand-config': brandConfig,
-            'Two_Gateway/js/model/company-search': companySearchMock,
-            'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(
-                $,
-                companySearchMock,
-                { document: document, window: window }
-            )
-        },
-        { document: document, window: window }
-    );
-
-    const ctx = Object.assign(Object.create(component.prototype || {}), {
-        countrySelector: '#shipping-new-address-form select[name="country_id"]',
-        companyNameSelector: '#shipping-new-address-form input[name="company"]',
-        enterDetailsManuallyButton: '#shipping_enter_details_manually',
-        searchForCompanyButton: '#shipping_search_for_company',
-        enterDetailsManuallyText: 'Enter details manually',
-        searchForCompanyText: 'Search for company',
-        companyNamePlaceholder: 'Enter company name to search',
-        setCompanyData: function () {},
-        addressLookup: function () { return null; },
-        enterDetailsManually: component.enterDetailsManually,
-        enableCompanySearch: component.enableCompanySearch,
-        __companySearchMock: companySearchMock
-    });
-    return { component: component, ctx: ctx };
-}
-
-/**
- * Shipping surface: manual entry is reached through the shared model's real
- * `<button>` — a native element outside the results list (#30.x.15), not a
- * cancellable select2 row any more. The mocked `attachManualEntryButton`
- * above captures the surface's own activation callback; firing it directly
- * is the mock-level equivalent of the buyer clicking (or Entering/
- * Spacing) that real button.
- */
-function enterManualShipping($, ctx) {
-    expect(typeof ctx.__companySearchMock.__lastOnActivate).toBe('function');
-    ctx.__companySearchMock.__lastOnActivate();
-}
-
-/* ------------------------------------------------------------------ *
- * Payment-step surface (gateway_method.js)
- * ------------------------------------------------------------------ */
-
-function buildPaymentDom() {
-    document.body.innerHTML =
-        '<div class="field">' +
-        '<input id="company_name" name="company_name" type="text" value="">' +
-        '</div>';
-}
-
-function loadPayment($) {
-    // The manual-entry teardown is deliberately deferred out of select2's own
-    // dispatch, so the test has to be able to run that deferral. `jest.useFakeTimers()`
-    // cannot reach it: the AMD harness copies the REAL `setTimeout` into its vm
-    // sandbox when the module loads, so a later timer swap patches a binding the
-    // module never sees. Queue the callbacks and flush them explicitly instead —
-    // which also keeps the defer visible rather than collapsing it to a
-    // synchronous call and quietly changing what is under test.
-    const deferred = [];
-    const companySearchMock = manualEntryAwareCompanySearch();
-    const component = loadAmdModule(
-        'view/frontend/web/js/view/payment/method-renderer/gateway_method.js',
-        {
-            jquery: $,
-            'Two_Gateway/js/model/company-search': companySearchMock,
-            'Two_Gateway/js/model/company-search-control': loadCompanySearchControl(
-                $,
-                companySearchMock,
-                { document: document, window: window }
-            )
-        },
-        {
-            document: document,
-            window: window,
-            setTimeout: function (fn) {
-                deferred.push(fn);
-                return deferred.length;
-            }
-        }
-    );
-
-    const ctx = Object.assign(Object.create(component.prototype || {}), {
-        companyNameSelector: 'input#company_name',
-        enterDetailsManuallyButton: '#billing_enter_details_manually',
-        searchForCompanyButton: '#billing_search_for_company',
-        enterDetailsManuallyText: 'Enter details manually',
-        searchForCompanyText: 'Search for company',
-        _brandConfig: BASE_CONFIG,
-        countryCode: function () { return 'gb'; },
-        companyName: Object.assign(function () { return ''; }, {
-            subscribe: function () { return { dispose: function () {} }; }
-        }),
-        // clearCompany() blanks the abandoned company's number (TWO-25288), so
-        // the fixture has to carry a writable `companyId` — a bare read-only
-        // stub would throw inside the production path this file drives.
-        companyId: (function () {
-            let value = '';
-            const observable = function (next) {
-                if (!arguments.length) return value;
-                value = next;
-                return undefined;
-            };
-            observable.subscribe = function () { return { dispose: function () {} }; };
-            return observable;
-        })(),
-        fillCompanyData: function () {},
-        applyCompanyData: function () {},
-        clearCompany: component.clearCompany,
-        disableCompanySearch: component.disableCompanySearch,
-        destroyCompanySearchWidget: component.destroyCompanySearchWidget,
-        enableCompanySearch: component.enableCompanySearch,
-        // Test-only hook, prefixed so it cannot be mistaken for production
-        // surface. Runs whatever the module deferred, in order, and reports how
-        // many callbacks there were so a caller can refuse to trust a run in
-        // which nothing was deferred at all.
-        __flushDeferred: function () {
-            let ran = 0;
-            while (deferred.length) {
-                deferred.shift()();
-                ran += 1;
-            }
-            return ran;
-        },
-        __companySearchMock: companySearchMock
-    });
-    // On the capture, not the host: the tile's pick handler calls its own
-    // addressLookup(), so an override on the renderer would never run and the
-    // real one would reach the quote's address objects this fixture omits.
-    ctx.companyCapture().addressLookup = function () { return null; };
-    return { component: component, ctx: ctx };
-}
-
-/**
- * Payment surface: manual entry is reached through the shared model's real
- * `<button>` (#30.x.15), the same as the shipping route. The staleness-gated
- * `setTimeout(…, 0)` defer this file used to have to flush lives inside the
- * shared model's own `buildManualEntryButton` now — entirely mocked out here
- * via `attachManualEntryButton` above — so the surface's activation callback
- * itself runs synchronously when fired directly, with nothing left to flush.
- */
-function enterManualPayment($, ctx) {
-    // TWO-25503: this surface reaches manual entry from its mode control's
-    // own chip, not from a button inside the dropdown — the shared button is
-    // opted out here, so `__lastOnActivate` is never handed one.
-    expect(ctx.__companySearchMock.__lastOnActivate).toBeUndefined();
-    ctx.manualEntryMode();
-    expect(ctx.captureMode()).toBe('manual');
-    // Nothing queued means the transition ran synchronously, not that it
-    // never ran — the widget-gone assertions in reachManualMode() are what
-    // actually prove it fired.
-    expect(ctx.__flushDeferred()).toBe(0);
+function boundWidget() {
+    return $(FIELD_SELECTOR).data('select2');
 }
 
 /**
  * Drive the real journey up to the point of returning to search mode, and
  * assert the picker is genuinely closed and unfocused first.
  *
- * @param {object} $ the jQuery double
- * @param {object} ctx the surface's `this`
- * @param {function} enterManual takes the buyer to manual entry, the way the
- *        surface actually offers it
- * @param {string} searchLink selector for "Search for company"
+ * @param {object} mounted the result of `mount()`
  */
-function reachManualMode($, ctx, enterManual, searchLink) {
-    ctx.enableCompanySearch();
-
+function reachManualMode(mounted) {
     // Guard: without a bound widget nothing below could be meaningful.
-    expect($(ctx.companyNameSelector).data('select2')).toBeTruthy();
-    expect($(searchLink).length).toBeGreaterThan(0);
+    expect(boundWidget()).toBeTruthy();
 
-    // Open once, so whatever the surface binds on `select2:open` is live.
-    $(ctx.companyNameSelector).select2('open');
+    // Open once, so whatever the bind wired on `select2:open` is live.
+    $(FIELD_SELECTOR).select2('open');
 
-    enterManual($, ctx);
+    mounted.component.manualEntryMode();
 
     // Manual mode: widget gone, so nothing open and nothing focused.
-    expect($(ctx.companyNameSelector).data('select2')).toBeUndefined();
+    expect(mounted.identity.captureMode()).toBe('manual');
+    expect(boundWidget()).toBeUndefined();
     expect(openMarkerPresent()).toBe(false);
     expect(focusedSearchField()).toBeNull();
 }
 
-// The last entry resolves the surface's shared control: the shipping step
-// holds it on the component itself, the payment tile on the CompanyCapture it
-// delegates the mount to.
-describe.each([
-    ['shipping-step picker (address-autocomplete.js)', buildShippingDom, loadShipping,
-        enterManualShipping, '#shipping_search_for_company',
-        function (ctx) { return ctx._companySearchControl; }],
-    ['payment-step picker (gateway_method.js)', buildPaymentDom, loadPayment,
-        enterManualPayment, '.search_for_company',
-        function (ctx) { return ctx.companyCapture()._companySearchControl; }]
-])('%s — returning to search mode', (_name, buildDom, load, enterManual, searchLink, controlOf) => {
-    let $;
-    let ctx;
+let mounted;
 
-    beforeEach(() => {
-        buildDom();
-        const loaded = load(($ = makeDomJQuery()));
-        ctx = loaded.ctx;
-    });
+beforeEach(() => {
+    document.body.innerHTML =
+        '<form id="two_gateway_form"><div class="field"><div class="control">' +
+        '<input id="company_name" name="company_name" />' +
+        '</div></div></form>';
+    $(document).off('.twoCompanyCapture');
+    installSelect2Double();
+    installAsync();
+    mounted = mount();
+});
 
-    test('clicking "Search for company" opens the dropdown and focuses the search input', () => {
-        reachManualMode($, ctx, enterManual, searchLink);
+describe('returning to registered-company search', () => {
+    test('the picker re-opens with the caret in its search input', () => {
+        reachManualMode(mounted);
 
-        click($, searchLink);
+        mounted.component.registeredMode({ openDropdown: true });
 
+        expect(mounted.identity.captureMode()).toBe('registered');
         // (a) the dropdown is really open …
         expect(openMarkerPresent()).toBe(true);
         expect(document.querySelectorAll('.select2-search__field')).toHaveLength(1);
@@ -562,117 +241,111 @@ describe.each([
     });
 
     test('the widget is re-bound before it is opened', () => {
-        reachManualMode($, ctx, enterManual, searchLink);
+        reachManualMode(mounted);
 
-        // The double throws on `open` without an instance, so reaching an
-        // open dropdown at all proves the re-bind happened first.
-        expect(function () { click($, searchLink); }).not.toThrow();
-        expect($(ctx.companyNameSelector).data('select2')).toBeTruthy();
+        // The double throws on `open` without an instance, so reaching an open
+        // dropdown at all proves the re-bind happened first.
+        expect(function () {
+            mounted.component.registeredMode({ openDropdown: true });
+        }).not.toThrow();
+        expect(boundWidget()).toBeTruthy();
     });
 
-    test('the link hides itself, so search mode cannot be re-entered from it', () => {
-        reachManualMode($, ctx, enterManual, searchLink);
-
-        click($, searchLink);
-
-        expect($(searchLink).first().get(0).style.display).toBe('none');
-    });
-
-    test('the initial bind does not open the picker or steal focus', () => {
-        ctx.enableCompanySearch();
-
-        expect($(ctx.companyNameSelector).data('select2')).toBeTruthy();
+    test('the initial mount does not open the picker or steal focus', () => {
+        expect(boundWidget()).toBeTruthy();
         expect(openMarkerPresent()).toBe(false);
         expect(focusedSearchField()).toBeNull();
     });
 
     test('a later re-render does not re-open the dropdown behind the buyer', () => {
-        reachManualMode($, ctx, enterManual, searchLink);
-        click($, searchLink);
+        reachManualMode(mounted);
+        mounted.component.registeredMode({ openDropdown: true });
         expect(openMarkerPresent()).toBe(true);
 
-        // Close it the way a buyer would, then let `$.async` fire again —
-        // it is a MutationObserver and a one-page checkout re-renders often.
-        $(ctx.companyNameSelector).select2('destroy');
+        // Close it the way a buyer would, then let `$.async` fire again — it is
+        // a MutationObserver and a one-page checkout re-renders often.
+        $(FIELD_SELECTOR).select2('destroy');
         expect(openMarkerPresent()).toBe(false);
 
-        const asyncFires = $.asyncCalls.filter(function (call) {
-            return call.selector === ctx.companyNameSelector;
+        const fires = $.asyncCalls.filter(function (call) {
+            return call.selector === FIELD_SELECTOR;
         });
-        expect(asyncFires.length).toBeGreaterThan(0);
-        asyncFires[asyncFires.length - 1].fn(document.querySelector(ctx.companyNameSelector));
+        expect(fires.length).toBeGreaterThan(0);
+        fires[fires.length - 1].fn(document.querySelector(FIELD_SELECTOR));
 
         // Re-bound, but NOT re-opened: the open request was one-shot.
-        expect($(ctx.companyNameSelector).data('select2')).toBeTruthy();
+        expect(boundWidget()).toBeTruthy();
         expect(openMarkerPresent()).toBe(false);
         expect(focusedSearchField()).toBeNull();
     });
+});
 
-    /*
-     * Keyboard reachability. The "Search for company" control is a bare
-     * `<div>` with a click handler — no native semantics a keyboard user could
-     * exploit. `role="button"` + `tabindex="0"` on the markup make it focus-
-     * reachable; the Enter/Space keydown handler makes it activatable once
-     * focused. Both are load-bearing on their own: a focusable-but-inert div
-     * is as much a trap as a native-looking one a Tab skips entirely.
-     */
-    test('the control carries role="button" and tabindex="0"', () => {
-        reachManualMode($, ctx, enterManual, searchLink);
+/*
+ * The control's own "Search for company" return link. It is built and wired on
+ * every bind but starts hidden, so these cases reveal it through the control's
+ * own API before driving it.
+ *
+ * Keyboard reachability is the subject: the link is a bare `<div>` with a click
+ * handler, no native semantics a keyboard user could exploit. `role="button"` +
+ * `tabindex="0"` make it focus-reachable; the Enter/Space keydown handler makes
+ * it activatable once focused. Both are load-bearing on their own — a
+ * focusable-but-inert div is as much a trap as a native-looking one Tab skips.
+ */
+describe('the return link the control owns', () => {
+    function revealLink() {
+        reachManualMode(mounted);
+        mounted.control.showSearchForCompanyLink();
+        const $link = $(RETURN_LINK);
+        expect($link.length).toBe(1);
+        expect($link.get(0).style.display).not.toBe('none');
+        return $link;
+    }
 
-        const $el = $(searchLink).first();
-        expect($el.attr('role')).toBe('button');
-        expect($el.attr('tabindex')).toBe('0');
+    test('it carries role="button" and tabindex="0"', () => {
+        const $link = revealLink();
+
+        expect($link.attr('role')).toBe('button');
+        expect($link.attr('tabindex')).toBe('0');
     });
 
-    test('pressing Enter activates it exactly like a click', () => {
-        reachManualMode($, ctx, enterManual, searchLink);
+    test('clicking it opens the picker, focuses the search input and retires itself', () => {
+        const $link = revealLink();
 
-        $(searchLink).first().trigger('keydown', { key: 'Enter', which: 13, preventDefault: function () {} });
+        $link.trigger('click');
 
         expect(openMarkerPresent()).toBe(true);
         expect(focusedSearchField()).not.toBeNull();
-        expect($(searchLink).first().get(0).style.display).toBe('none');
+        expect($link.get(0).style.display).toBe('none');
     });
 
-    test('pressing Space activates it exactly like a click', () => {
-        reachManualMode($, ctx, enterManual, searchLink);
+    test.each([
+        ['Enter', 13, true, 'the documented activation key'],
+        [' ', 32, true, 'the other one role="button" implies'],
+        ['a', 65, false, 'plain text entry, which must fall through']
+    ])('key %p (which %p) activates the link: %p — %s', (key, which, activates) => {
+        const $link = revealLink();
 
-        $(searchLink).first().trigger('keydown', { key: ' ', which: 32, preventDefault: function () {} });
+        $link.trigger($.Event('keydown', { key: key, which: which }));
 
-        expect(openMarkerPresent()).toBe(true);
-        expect(focusedSearchField()).not.toBeNull();
-        expect($(searchLink).first().get(0).style.display).toBe('none');
-    });
-
-    test('an unrelated key does nothing', () => {
-        reachManualMode($, ctx, enterManual, searchLink);
-
-        $(searchLink).first().trigger('keydown', { key: 'a', which: 65, preventDefault: function () {} });
-
-        expect(openMarkerPresent()).toBe(false);
-        expect($(searchLink).first().get(0).style.display).not.toBe('none');
+        expect(openMarkerPresent()).toBe(activates);
+        expect($link.get(0).style.display === 'none').toBe(activates);
     });
 
     /*
-     * This is `role="button"` on a plain div, not a native `<button>`, and
-     * some assistive-tech/browser combinations forward a synthetic `click`
-     * in addition to the Enter keydown for exactly that shape of widget.
-     * Without a guard, that would re-open a dropdown the buyer already
-     * opened and re-run whatever `enableCompanySearch()` does a second time.
+     * This is `role="button"` on a plain div, not a native `<button>`, and some
+     * assistive-tech/browser combinations forward a synthetic `click` in
+     * addition to the Enter keydown for exactly that shape of widget. Without a
+     * guard, that would re-open a dropdown the buyer already opened.
      */
     test('a synthetic click right behind the Enter keydown does not re-activate', () => {
-        reachManualMode($, ctx, enterManual, searchLink);
-        // The link's own activation now lives on the shared control
-        // (company-search-control.js), not on the surface's
-        // `enableCompanySearch()` — spy on the control's `bind()` instead;
-        // it is the re-activation entry point the guard has to gate.
-        const control = controlOf(ctx);
+        const $link = revealLink();
+        const control = mounted.control;
         control.bind = jest.fn(control.bind.bind(control));
 
-        $(searchLink).first().trigger('keydown', { key: 'Enter', which: 13, preventDefault: function () {} });
+        $link.trigger($.Event('keydown', { key: 'Enter', which: 13 }));
         expect(control.bind).toHaveBeenCalledTimes(1);
 
-        click($, searchLink);
+        $link.trigger('click');
 
         expect(control.bind).toHaveBeenCalledTimes(1);
     });

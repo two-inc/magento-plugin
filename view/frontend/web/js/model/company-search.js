@@ -268,10 +268,10 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * buyer typing a second address line is stating an independent answer
      * exactly as much as one typing a city.
      *
-     * Fields the plugin NEVER writes (the name fields, the telephone) are
-     * deliberately absent. Every value in one of those is buyer-authored by
-     * definition, so counting them would pin the billing address the moment it
-     * rendered with a name in it — i.e. always.
+     * The name fields and the telephone are deliberately absent: their values
+     * are the buyer's own — applyTelephone() writes the one exception, and
+     * deliberately leaves no record — so counting them would pin the billing
+     * address the moment it rendered with a name in it, i.e. always.
      *
      * `region` resolves through a function rather than a selector because core
      * renders two mutually exclusive controls for it and which one is in play
@@ -565,6 +565,9 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         { name: 'region', selector: 'input[name="region"]' },
         { name: 'region_id', selector: 'select[name="region_id"]' }
     ];
+
+    /** @see applyTelephone — the one field written outside AUTOFILLED_FIELDS. */
+    const TELEPHONE_FIELD_SELECTOR = 'input[name="telephone"]';
 
     /**
      * Address forms an address write can be scoped to, billing/invoice role
@@ -993,6 +996,27 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      *
      * @returns {string}
      */
+    /**
+     * Who is calling, for Two's unauthenticated browser-facing endpoints. One
+     * builder so the call sites cannot drift apart.
+     *
+     * `merchant` is the short name off the memoised verify_api_key record the
+     * server already ships in checkoutConfig, never a second live call from the
+     * browser. Absent keys are omitted rather than sent as "undefined".
+     *
+     * @param {object} config the brand's checkout config subtree
+     * @returns {object}
+     */
+    function apiClientParams(config) {
+        const intent = (config && config.orderIntentConfig) || {};
+        const params = {};
+        if (intent.extensionPlatformName) params.client = intent.extensionPlatformName;
+        if (intent.extensionDBVersion) params.client_v = intent.extensionDBVersion;
+        const shortName = intent.merchant && intent.merchant.short_name;
+        if (shortName) params.merchant = shortName;
+        return params;
+    }
+
     function currentAddressFormCountry() {
         for (let i = 0; i < COUNTRY_SELECT_SELECTORS.length; i++) {
             const $select = $(COUNTRY_SELECT_SELECTORS[i]).first();
@@ -1552,6 +1576,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         stripBracketedToken: stripBracketedToken,
         COUNTRY_SELECT_SELECTORS: COUNTRY_SELECT_SELECTORS,
         currentAddressFormCountry: currentAddressFormCountry,
+        apiClientParams: apiClientParams,
 
         /**
          * Build the select2 `ajax` option block for the company search.
@@ -1582,18 +1607,18 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                 delay: SEARCH_DEBOUNCE_MS,
                 timeout: REQUEST_TIMEOUT_MS,
                 url: function (params) {
-                    const queryParams = new URLSearchParams({
-                        country: getCountryCode()?.toUpperCase(),
-                        limit: config.companySearchLimit,
-                        offset: ((params.page || 1) - 1) * config.companySearchLimit,
-                        q: unescape(params.term),
-                        // Identifies the calling plugin to this unauthenticated
-                        // browser-facing endpoint, avoiding a CORS preflight per
-                        // keystroke — same params/source as gateway_method.js's
-                        // order_intent call.
-                        client: config.orderIntentConfig?.extensionPlatformName,
-                        client_v: config.orderIntentConfig?.extensionDBVersion
-                    });
+                    const queryParams = new URLSearchParams(Object.assign(
+                        {
+                            country: getCountryCode()?.toUpperCase(),
+                            limit: config.companySearchLimit,
+                            offset: ((params.page || 1) - 1) * config.companySearchLimit,
+                            q: unescape(params.term)
+                        },
+                        // Kept flat in the same URLSearchParams rather than
+                        // appended after, so a missing one is absent instead of
+                        // sent as the string "undefined".
+                        apiClientParams(config)
+                    ));
                     return `${config.checkoutApiUrl}/companies/v2/company?${queryParams.toString()}`;
                 },
                 /**
@@ -1816,10 +1841,7 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             if (!selectedCompany || !selectedCompany.lookupId) return null;
 
             const self = this;
-            const queryParams = new URLSearchParams({
-                client: config.orderIntentConfig?.extensionPlatformName,
-                client_v: config.orderIntentConfig?.extensionDBVersion
-            });
+            const queryParams = new URLSearchParams(apiClientParams(config));
             const addressResponse = $.ajax({
                 dataType: 'json',
                 timeout: REQUEST_TIMEOUT_MS,
@@ -1940,6 +1962,26 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                 recordMirrorWrites($root, writeAddressInto(self, address, $root));
             });
             return 0;
+        },
+
+        /**
+         * Write a verified buyer's own phone number into the telephone field.
+         *
+         * The deliberate exception to applyAddress() never touching telephone,
+         * and left unrecorded because the buyer's own number is not something a
+         * country switch invalidates the way a registry address is.
+         *
+         * @param {string} phone
+         * @param {object} [root] jQuery set to scope the write to a single
+         *        form; defaults to billingRoleFormRoot(), as applyAddress()
+         * @returns {boolean} whether a field was written
+         */
+        applyTelephone: function (phone, root) {
+            if (typeof phone !== 'string' || !phone.trim()) return false;
+            const $field = scopedFind(root || this.billingRoleFormRoot(), TELEPHONE_FIELD_SELECTOR);
+            if (!$field.length) return false;
+            $field.val(phone.trim()).trigger('change');
+            return true;
         },
 
         /**

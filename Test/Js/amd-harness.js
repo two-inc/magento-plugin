@@ -120,6 +120,10 @@ function defaultMocks() {
         },
         'Magento_Checkout/js/action/set-shipping-information': function () { return {}; },
         'Magento_Ui/js/lib/view/utils/async': {},
+        'Magento_Ui/js/model/messageList': {
+            addErrorMessage: function () {},
+            addSuccessMessage: function () {}
+        },
         'Magento_Ui/js/form/form': Component,
         'Magento_Ui/js/modal/modal': function () {},
         'uiComponent': Component,
@@ -141,6 +145,7 @@ function defaultMocks() {
             buildSearchAjaxOptions: function () { return {}; },
             lookupCompanyAddress: function () { return null; },
             applyAddress: function () {},
+            applyTelephone: function () { return false; },
             // Address write-back surface (TWO-25461). Inert, like applyAddress()
             // above: a spec that cares about what the write or the revert
             // actually does loads the real module.
