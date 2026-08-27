@@ -20,8 +20,8 @@
  *  - the one `CompanySearchPanel` and WHERE it is mounted, re-pointing it
  *    between the address step and the payment tile as the checkout changes
  *    shape;
- *  - the billing country the search runs against, and the sole-trader
- *    availability answer for it.
+ *  - the country the search runs against, and the sole-trader availability
+ *    answer for it.
  *
  * Does NOT own: the chips' markup or the popover they live in
  * (company-search-panel.js), the identity it captures (company-identity.js),
@@ -42,8 +42,14 @@ define([
 ], function ($, ko, quote, url, $t, brandConfig, identity, companySearch, CompanySearchPanel, SoleTrader) {
     'use strict';
 
-    /** The address step's company field — core's own markup. */
-    const ADDRESS_FIELD_SELECTOR = '#shipping-new-address-form input[name="company"]';
+    /** The address step's form — core's own markup. */
+    const ADDRESS_FORM_ROOT = '#shipping-new-address-form';
+
+    /** The address step's company field. */
+    const ADDRESS_FIELD_SELECTOR = `${ADDRESS_FORM_ROOT} input[name="company"]`;
+
+    /** The country select sitting alongside that company field. */
+    const ADDRESS_COUNTRY_SELECTOR = `${ADDRESS_FORM_ROOT} select[name="country_id"]`;
 
     /** The payment tile's company field. One per Two-family brand tile. */
     const TILE_FIELD_SELECTOR = '#two_gateway_form input#company_name';
@@ -134,19 +140,40 @@ define([
     // ---------------------------------------------------------------- country
 
     /**
-     * The billing country the search and the registry both run against, lower
-     * cased.
+     * The country selected in the country select adjacent to the mounted
+     * control, lower cased.
      *
-     * The quote's BILLING address, not the shipping form: the tile has no
-     * address fields of its own and captures as the invoice role
-     * (TWO-25461 §1(a.3)), so a buyer shipping to one country and invoicing in
-     * another must search the country they invoice in. The live DOM read is a
-     * fallback only for the window before the quote holds an address at all,
-     * which is the state that produced TWO-25326 on one-page checkouts.
+     * Answers for where the control is going as well as where it is: `start()`
+     * resolves a country before the first `refreshMount()`.
+     *
+     * @returns {?string} `null` when there is no adjacent select at all, which
+     *          is a different answer from `''` — a present one with nothing
+     *          chosen
+     */
+    CompanyCaptureComponent.prototype.adjacentCountry = function () {
+        const mount = this._boundSelector || this.mountSelector();
+        if (mount !== ADDRESS_FIELD_SELECTOR) return null;
+        const $select = $(ADDRESS_COUNTRY_SELECTOR);
+        if (!$select.length) return null;
+        const selected = $select.val();
+        return typeof selected === 'string' ? selected.toLowerCase() : '';
+    };
+
+    /**
+     * The country the search and the registry both run against, lower cased.
+     *
+     * Whatever the control is mounted next to decides it (TWO-25461): on the
+     * address step, the buyer's own country selector in that same form. The
+     * payment tile has no address fields of its own and captures as the invoice
+     * role (TWO-25461 §1(a.3)), so there the quote's BILLING address is what
+     * the control sits next to, and the live DOM read behind it covers the
+     * window before the quote holds an address at all (TWO-25326).
      *
      * @returns {string} ISO country code, lower cased, or ''
      */
     CompanyCaptureComponent.prototype.countryCode = function () {
+        const adjacent = this.adjacentCountry();
+        if (adjacent !== null) return adjacent;
         const billing = quote.billingAddress();
         const fromQuote = billing && billing.countryId;
         if (typeof fromQuote === 'string' && fromQuote) return fromQuote.toLowerCase();
@@ -186,7 +213,14 @@ define([
         // there is no flow to tell, no registry to ask and nothing captured to
         // invalidate — and the boot hook calls this on every address change.
         if (!this._config) return;
-        const country = (observedCountry || this.countryCode() || '').toLowerCase();
+        // The observed select is ignored where an adjacent one exists: a second
+        // form firing `change` must not decide the country for a control
+        // mounted beside a different one, or availability and the search answer
+        // for different countries (TWO-25461).
+        const adjacent = this.adjacentCountry();
+        const country = adjacent !== null
+            ? adjacent
+            : (observedCountry || this.countryCode() || '').toLowerCase();
         if (!country || country === this._lastCountry) return;
         const hadCountry = !!this._lastCountry;
         this._lastCountry = country;

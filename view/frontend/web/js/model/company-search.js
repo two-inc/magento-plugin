@@ -821,9 +821,8 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      *
      * The catch-all can still resolve a select the buyer has not touched (core
      * renders the new-address form inside a HIDDEN modal for a customer with
-     * saved addresses). That is why the only consumer, searchCountryCode() in
-     * company-capture.js, reads this AFTER its own observable rather than before
-     * — see that method for the full reasoning.
+     * saved addresses). That is why the only consumer, countryCode() in
+     * company-capture-component.js, reads this last of all.
      *
      * @type {string[]}
      */

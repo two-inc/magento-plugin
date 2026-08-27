@@ -418,13 +418,19 @@ function loadCaptureComponent(options) {
 }
 
 /**
- * The payment renderer, whose country for the TWO-24867 stamp check comes from
- * the capture component — which reads the quote.
+ * The payment renderer on a checkout with no address form — a saved address or
+ * a virtual cart. Its country for the TWO-24867 stamp check comes from the
+ * capture component, mounted on the tile, which has no adjacent country select
+ * and so reads the quote.
  *
  * @param {string} billingCountry `quote.billingAddress().countryId`
  */
 function loadRenderer(billingCountry) {
     const dom = makeDom();
+    // makeDom() answers `length: 1` for every selector; the address company
+    // field has to be absent or the component reads a country select that no
+    // such checkout renders.
+    dom.node('#shipping-new-address-form input[name="company"]').length = 0;
     const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
         billingAddress: function () { return { countryId: billingCountry }; }
     });
@@ -554,11 +560,20 @@ describe('the capture component on a country change', () => {
         ctx.calls.aborts = 0;
     }
 
+    /**
+     * Notify a switch the way the delegated watcher does — off a select that
+     * already carries the new value, which is what the component reads.
+     */
+    function notifyCountry(ctx, iso) {
+        jq('#shipping-new-address-form select[name="country_id"]').val(iso.toUpperCase());
+        ctx.component.onCountryChanged(iso);
+    }
+
     test('the captured company, the autofilled address and the adoption guard all go', () => {
         const ctx = loadCaptureComponent({ billingCountry: 'GB' });
         inPlay(ctx);
 
-        ctx.component.onCountryChanged('es');
+        notifyCountry(ctx, 'es');
 
         // The organisation number is the one that matters: paired with an ES
         // billing country it is refused upstream as a generic failure.
@@ -574,7 +589,7 @@ describe('the capture component on a country change', () => {
         const ctx = loadCaptureComponent({ billingCountry: 'GB' });
         inPlay(ctx);
 
-        ctx.component.onCountryChanged('es');
+        notifyCountry(ctx, 'es');
 
         expect(ctx.calls.aborts).toBe(1);
     });
@@ -587,7 +602,7 @@ describe('the capture component on a country change', () => {
         inPlay(ctx);
         const bindsBefore = ctx.calls.binds.length;
 
-        ctx.component.onCountryChanged('es');
+        notifyCountry(ctx, 'es');
 
         expect(ctx.calls.binds).toHaveLength(bindsBefore);
     });
@@ -598,7 +613,7 @@ describe('the capture component on a country change', () => {
         ctx.identity.captureMode('soletrader');
         ctx.identity.soleTraderAdopted(true);
 
-        ctx.component.onCountryChanged('es');
+        notifyCountry(ctx, 'es');
 
         expect(ctx.identity.captureMode()).toBe('registered');
         expect(ctx.identity.soleTraderAdopted()).toBe(false);
