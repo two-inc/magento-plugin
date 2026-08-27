@@ -467,9 +467,6 @@
         this._bindEvent(this._panel, 'focusout', function () {
             self._scheduleFocusOutClose();
         });
-        this._bindEvent(this._panel, 'focusin', function () {
-            self._cancelFocusOutClose();
-        });
 
         // Dragging the results scrollbar moves focus to `<body>` in Chrome, so
         // the close above would fire mid-scroll. A pointer held down on the
@@ -495,15 +492,10 @@
         });
     };
 
-    /**
-     * @returns {boolean} whether focus is on the control — the panel or the
-     *          field it belongs to, which are one control to the buyer
-     */
+    /** @returns {boolean} whether focus is somewhere inside the panel */
     CompanySearchPanel.prototype._holdsFocus = function () {
         const active = document.activeElement;
-        if (!active) return false;
-        if (this._field === active) return true;
-        return !!this._panel && this._panel.contains(active);
+        return !!active && !!this._panel && this._panel.contains(active);
     };
 
     /**
