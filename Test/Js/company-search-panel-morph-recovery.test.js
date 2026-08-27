@@ -193,6 +193,26 @@ describe('recovering from the morph', () => {
     });
 });
 
+describe('a focus-out close already scheduled when the morph lands', () => {
+    test('does not fire against the control the re-bind has just rebuilt', async () => {
+        const panel = setup();
+        panel.open();
+        // Arms the deferred close: focus leaves the panel, and the morph lands
+        // inside the tick before it resolves.
+        document.querySelector('.two-company-dropdown__query').dispatchEvent(
+            new window.FocusEvent('focusout', { bubbles: true })
+        );
+
+        morphServerMarkupOverControl();
+        panel.bind();
+        panel.open();
+        await new Promise(function (resolve) { setTimeout(resolve, 1); });
+
+        expect(panel.isOpen()).toBe(true);
+        expect(document.querySelectorAll(PANEL)).toHaveLength(1);
+    });
+});
+
 describe('the return link the morph swept away', () => {
     test('re-entering manual entry after a morph renders exactly one link', () => {
         const panel = setup();
