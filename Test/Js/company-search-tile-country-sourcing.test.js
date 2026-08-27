@@ -12,17 +12,17 @@
  * resolves, and a one-page checkout that supplies its own address markup
  * matches no such selector, so the country reaching the search URL was empty.
  *
- * Where the control is mounted decides where the country comes from:
+ * Where the control is mounted decides which address form answers for it:
  *
  *  1. mounted in the address form — the country selector in that same form,
  *     which is the only thing that can answer "what has the buyer chosen";
  *  2. mounted on the payment tile, which has no address fields of its own and
- *     captures as the invoice role — the quote's BILLING address, so a buyer
- *     shipping to one country and invoicing in another searches the one they
- *     invoice in;
- *  3. behind the quote, the buyer's live address-form `<select>` via a priority
- *     list of selectors ending in a catch-all — the window before the quote
- *     holds an address at all, which is the TWO-25326 state.
+ *     captures as the invoice role — the billing form's selector if the buyer
+ *     unchecked "same as shipping" and core rendered one, else the shipping
+ *     form's, which is then the invoice address too;
+ *  3. no address form with a country selector anywhere — the quote's billing
+ *     address, and behind it the live catch-all DOM read that covers the window
+ *     before the quote holds an address at all, the TWO-25326 state.
  */
 
 'use strict';
@@ -357,14 +357,101 @@ describe('the country follows the selector adjacent to the mounted control', () 
         expect(component.countryCode()).toBe('no');
     });
 
-    test('with company search off in address entry the tile is the mount, and the quote decides', () => {
-        // The address form and its country select are both on the page; the
-        // control is not in them, so they answer for nothing.
+    test('with company search off in address entry the tile is the mount, and the shipping form answers', () => {
+        // The buyer's only address form on the page is the shipping one, which
+        // is their invoice address too while "same as shipping" stands.
         mountAddressForm(markupFor('both', 'SE'));
         const { component } = load({ billingCountry: 'NO', isCompanySearchEnabled: false });
         component.start();
 
+        expect(component.countryCode()).toBe('se');
+    });
+});
+
+describe('the tile mount reads the form holding the invoice address (TWO-25461 §1(a.3))', () => {
+    /** Core's billing form: no id, matched on `data-form`, one per payment method. */
+    function billingForm(country) {
+        return (
+            '<div data-form="billing-new-address">' +
+            `<select name="country_id"><option value="${country}" selected>${country}</option>` +
+            '</select></div>'
+        );
+    }
+
+    /** The shipping form, with no company field, so the tile stays the mount. */
+    function shippingForm(country) {
+        return selectMarkup('shipping-new-address-form', country);
+    }
+
+    const TILE = '<form id="two_gateway_form"><input id="company_name" name="company_name" /></form>';
+
+    test.each([
+        [
+            'GB', 'SE', 'US', 'gb',
+            'billing form shown: the invoice country, not the shipping one the buyer typed first'
+        ],
+        [
+            '', 'SE', 'US', 'se',
+            '"same as shipping" checked, so core renders no billing form and shipping IS the invoice address'
+        ],
+        [
+            'GB', '', 'US', 'gb',
+            'a billing form with no shipping form behind it still answers'
+        ],
+        [
+            '', '', 'NO', 'no',
+            'no address form with a country select at all: the quote is the last resort'
+        ]
+    ])(
+        'billing=%p shipping=%p quote=%p -> %p (%s)',
+        (billingFormCountry, shippingFormCountry, quoteCountry, expected) => {
+            mountAddressForm(
+                (billingFormCountry ? billingForm(billingFormCountry) : '') +
+                (shippingFormCountry ? shippingForm(shippingFormCountry) : '') +
+                TILE
+            );
+            const { component } = load({ billingCountry: quoteCountry });
+            component.start();
+
+            expect(component.countryCode()).toBe(expected);
+        }
+    );
+
+    test('unchecking "same as shipping" moves the country to the billing form', async () => {
+        // The switch the buyer makes on the payment step: the shipping form does
+        // not change, a billing form simply appears carrying a different country.
+        mountAddressForm(shippingForm('SE') + TILE);
+        const { component, identity } = load({ billingCountry: 'US' });
+        component.start();
+        expect(component.countryCode()).toBe('se');
+
+        $(document.body).prepend(billingForm('NO'));
+        $('[data-form="billing-new-address"] select[name="country_id"]').trigger('change');
+        await component.refreshSoleTraderAvailability();
+
         expect(component.countryCode()).toBe('no');
+        // Availability follows the same resolver, so the two cannot disagree.
+        expect(identity.soleTraderAvailable()).toBe(true);
+    });
+
+    test('the country reaching the search URL is the billing form\'s', () => {
+        // Through a real searchCompanies() call: the getter is only half the
+        // path, and the wire is what the buyer sees results for.
+        mountAddressForm(billingForm('GB') + shippingForm('SE') + TILE);
+        const companySearch = loadCompanySearch();
+        const { component } = load({ billingCountry: 'US', companySearch: companySearch });
+        component.start();
+
+        const requested = captureAjax(function () {
+            companySearch.searchCompanies({
+                config: { checkoutApiUrl: 'https://api.example.test', companySearchLimit: 10 },
+                token: {},
+                term: 'acme',
+                getCountryCode: function () { return component.countryCode(); }
+            });
+        });
+
+        expect(requested[0].url).toContain('country=GB');
     });
 });
 

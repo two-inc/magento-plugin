@@ -140,21 +140,39 @@ define([
     // ---------------------------------------------------------------- country
 
     /**
-     * The country selected in the country select adjacent to the mounted
-     * control, lower cased.
+     * The country select the mounted control answers to.
+     *
+     * Mounted in the address form, that is the selector beside it. Mounted on
+     * the payment tile, which has no address fields of its own, it is the one in
+     * the form holding the buyer's invoice address — the billing form where the
+     * buyer unchecked "same as shipping", the shipping form where they did not
+     * (TWO-25461 §1(a.3)).
      *
      * Answers for where the control is going as well as where it is: `start()`
      * resolves a country before the first `refreshMount()`.
      *
-     * @returns {?string} `null` when there is no adjacent select at all, which
-     *          is a different answer from `''` — a present one with nothing
-     *          chosen
+     * @returns {?object} jQuery set, or `null` when neither host has rendered
+     *          and there is nothing to answer for yet
+     */
+    CompanyCaptureComponent.prototype.adjacentCountrySelect = function () {
+        const mount = this._boundSelector || this.mountSelector();
+        if (!mount) return null;
+        if (mount === ADDRESS_FIELD_SELECTOR) return $(ADDRESS_COUNTRY_SELECTOR);
+        // The same form the tile's own address write-back targets, so the
+        // country searched and the address written can never disagree.
+        const $root = companySearch.billingRoleFormRoot();
+        return $root ? $root.find(COUNTRY_SELECT_SELECTOR) : null;
+    };
+
+    /**
+     * The country selected in that select, lower cased.
+     *
+     * @returns {?string} `null` when there is no such select at all, which is a
+     *          different answer from `''` — a present one with nothing chosen
      */
     CompanyCaptureComponent.prototype.adjacentCountry = function () {
-        const mount = this._boundSelector || this.mountSelector();
-        if (mount !== ADDRESS_FIELD_SELECTOR) return null;
-        const $select = $(ADDRESS_COUNTRY_SELECTOR);
-        if (!$select.length) return null;
+        const $select = this.adjacentCountrySelect();
+        if (!$select || !$select.length) return null;
         const selected = $select.val();
         return typeof selected === 'string' ? selected.toLowerCase() : '';
     };
@@ -162,12 +180,10 @@ define([
     /**
      * The country the search and the registry both run against, lower cased.
      *
-     * Whatever the control is mounted next to decides it (TWO-25461): on the
-     * address step, the buyer's own country selector in that same form. The
-     * payment tile has no address fields of its own and captures as the invoice
-     * role (TWO-25461 §1(a.3)), so there the quote's BILLING address is what
-     * the control sits next to, and the live DOM read behind it covers the
-     * window before the quote holds an address at all (TWO-25326).
+     * Sourced from the address form the mounted control answers to. The quote's
+     * billing country is the last resort, for a checkout rendering no address
+     * form with a country select at all, and the live DOM read behind that
+     * covers the window before the quote holds an address (TWO-25326).
      *
      * @returns {string} ISO country code, lower cased, or ''
      */
