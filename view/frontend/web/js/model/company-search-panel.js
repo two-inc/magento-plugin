@@ -397,6 +397,12 @@
             return;
         }
 
+        // A host that discarded the wrapper but KEPT the field re-binds through
+        // `_attach`'s rebinding path, which skips `_releaseWrap()` — so nothing
+        // else ever takes back the listeners on the panel that went with it, and
+        // each entry pins the detached subtree it names.
+        if (this._panel) this._unbind(this._panel);
+
         const panel = document.createElement('div');
         panel.className = PANEL_CLASS;
         panel.setAttribute('hidden', 'hidden');

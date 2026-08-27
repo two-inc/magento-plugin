@@ -74,6 +74,37 @@ document.removeEventListener = function (type, handler, options) {
 };
 
 /**
+ * Every listener still bound to an ELEMENT, whoever owns it.
+ *
+ * Counted this way rather than by reading the panel's own record, because what
+ * a leak IS here is a listener the panel can no longer reach to remove — a
+ * bookkeeping array that happens to agree with itself proves nothing.
+ */
+const liveElementListeners = new Set();
+const nativeElementAdd = window.Element.prototype.addEventListener;
+const nativeElementRemove = window.Element.prototype.removeEventListener;
+
+window.Element.prototype.addEventListener = function (type, handler, options) {
+    liveElementListeners.add({ target: this, type: type, handler: handler });
+    return nativeElementAdd.call(this, type, handler, options);
+};
+window.Element.prototype.removeEventListener = function (type, handler, options) {
+    liveElementListeners.forEach(function (entry) {
+        if (entry.target === this && entry.type === type && entry.handler === handler) {
+            liveElementListeners.delete(entry);
+        }
+    }, this);
+    return nativeElementRemove.call(this, type, handler, options);
+};
+
+/** @returns {Array} listeners left on elements the document no longer holds */
+function listenersOnDetachedNodes() {
+    return Array.from(liveElementListeners).filter(function (entry) {
+        return !entry.target.isConnected;
+    });
+}
+
+/**
  * @param {Array<object>} [chips] what `getChips` reports
  * @returns {object} a bound panel over the fixture
  */
@@ -179,6 +210,23 @@ describe('recovering from the morph', () => {
         panel.bind();
 
         expect(liveDocumentMousedown.size).toBe(afterFirstBuild);
+    });
+
+    test('rebuilding leaves no listener behind on the panel the morph detached', () => {
+        const panel = setup([{ mode: 'manual', text: 'Enter manually', onActivate() {} }]);
+        // Only what the CYCLES below leave behind is this case's business; the
+        // fixture reset in setup() orphans the previous test's nodes.
+        liveElementListeners.clear();
+
+        morphServerMarkupOverControl();
+        panel.bind();
+        morphServerMarkupOverControl();
+        panel.bind();
+
+        // Bootstrapped: a rebuild that bound nothing would satisfy the emptiness
+        // below without ever having had anything to release.
+        expect(liveElementListeners.size).toBeGreaterThan(0);
+        expect(listenersOnDetachedNodes()).toHaveLength(0);
     });
 
     test('destroy() still takes the listener back after a rebuild', () => {
