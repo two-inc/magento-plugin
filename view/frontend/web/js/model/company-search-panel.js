@@ -449,6 +449,10 @@
         this._panel = panel;
 
         this._bindPanelHandlers();
+        // A checkout that discards the wrapper brings this method back to build
+        // a second time, and the listener below is on `document`, which no
+        // wrapper-scoped teardown reaches.
+        this._unbind(document);
         // Closing on an outside click is the panel's own business, and one
         // listener serves every open/close cycle for its lifetime.
         this._bindEvent(document, 'mousedown', function (event) {
@@ -1012,9 +1016,19 @@
         return this._field ? [this._field] : [];
     };
 
-    /** @returns {boolean} whether the panel is built and anchored */
+    /**
+     * @returns {boolean} whether the panel is built and anchored
+     *
+     * A host that re-renders by MORPHING its server markup over the live DOM
+     * deletes the wrapper this panel built — the panel and the chips with it —
+     * while KEEPING the field node, so a field-only test answers true for a
+     * control that is no longer on the page. Sharing a parent is what says the
+     * field and the panel are still one control.
+     */
     CompanySearchPanel.prototype.isBound = function () {
-        return !!(this._field && this._field.isConnected && this._panel);
+        return !!(this._field && this._field.isConnected
+            && this._panel && this._panel.isConnected
+            && this._field.parentElement === this._panel.parentElement);
     };
 
     /** @returns {object|null} the current bind identity — for tests that pin it */
