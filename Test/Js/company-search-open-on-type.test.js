@@ -23,7 +23,7 @@
 const fs = require('fs');
 const path = require('path');
 const $ = require('jquery');
-const { loadAmdModule, loadCompanySearchPanel } = require('./amd-harness');
+const { loadAmdModule, loadCompanySearchPanel, dispatchNative } = require('./amd-harness');
 
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
 const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
@@ -222,7 +222,7 @@ describe('TWO-25326 §1: zero-result wording', () => {
         panel.bind();
         panel.open();
 
-        $('.two-company-dropdown__query').val('exa').trigger('input');
+        dispatchNative($('.two-company-dropdown__query')[0], 'input', 'exa');
         await tick();
 
         expect(messageText()).toBe('No matches found');
