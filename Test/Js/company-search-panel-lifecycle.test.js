@@ -274,6 +274,21 @@ describe('teardown leaves nothing bound to the document', () => {
         // teardown leaves behind is one more per render, forever.
         expect(documentPanelListeners()).toBe(before);
     });
+
+    test.each([2, 5, 20])('%i chip syncs leave one listener set, not one per sync', (times) => {
+        // The chips are rebuilt from scratch on every sync, and a checkout that
+        // re-renders on every totals change syncs them constantly.
+        const ctx = setup();
+        ctx.panel.getChips = function () {
+            return [{ mode: 'registered', text: 'Registered company', onActivate: function () {} }];
+        };
+
+        ctx.panel.syncChips();
+        const afterFirst = ctx.panel._listeners.length;
+        for (let i = 1; i < times; i += 1) ctx.panel.syncChips();
+
+        expect(ctx.panel._listeners.length).toBe(afterFirst);
+    });
 });
 
 describe('arrow keys walk the rows and stop at the ends', () => {

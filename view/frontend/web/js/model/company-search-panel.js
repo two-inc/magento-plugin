@@ -185,14 +185,23 @@
     };
 
     /**
-     * Remove every listener this panel bound to `target`, or all of them when
-     * no target is named.
+     * Remove every listener this panel bound to `root` OR ANYTHING INSIDE IT,
+     * or all of them when no root is named.
      *
-     * @param {EventTarget} [target]
+     * The descendant half is what jQuery's `.empty()` used to do for free: the
+     * chips are rebuilt on every sync and the panel is rebuilt on every
+     * re-render, and recording only exact matches would leave an entry per
+     * discarded chip for the page's lifetime.
+     *
+     * @param {EventTarget} [root]
      */
-    CompanySearchPanel.prototype._unbind = function (target) {
+    CompanySearchPanel.prototype._unbind = function (root) {
+        const isElement = !!root && root.nodeType === 1;
         this._listeners = this._listeners.filter(function (entry) {
-            if (target && entry.target !== target) return true;
+            const owned = !root
+                || entry.target === root
+                || (isElement && entry.target.nodeType === 1 && root.contains(entry.target));
+            if (!owned) return true;
             entry.target.removeEventListener(entry.type, entry.handler);
             return false;
         });
