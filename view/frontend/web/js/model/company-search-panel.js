@@ -161,7 +161,7 @@
         this._destroyed = false;
         /** Listeners this panel owns, so teardown removes exactly its own. */
         this._listeners = [];
-        /** Pending focus-out close, cancelled by any focus landing back inside. */
+        /** Pending focus-out close, re-armed by the next focusout, dropped on teardown. */
         this._closeTimerId = null;
     }
 
