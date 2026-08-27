@@ -262,6 +262,109 @@ describe('Escape hands the buyer back to the field', () => {
     });
 });
 
+/**
+ * Open the panel with two real chips in it, so a case about tabbing BETWEEN
+ * its controls has more than one to move across.
+ *
+ * @param {object} ctx
+ * @returns {NodeList} the rendered chips
+ */
+function withChips(ctx) {
+    ctx.panel.getChips = function () {
+        return [
+            { mode: 'registered', text: 'Registered company', onActivate: function () {} },
+            { mode: 'manual', text: 'Enter manually', onActivate: function () {} }
+        ];
+    };
+    ctx.panel.open();
+    return document.querySelectorAll('.two-company-mode-chip');
+}
+
+describe('the panel closes when focus leaves it', () => {
+    test('tabbing off the last chip closes it', async () => {
+        const ctx = setup();
+        const chips = withChips(ctx);
+        // Bootstrapped: with no chip rendered the tab-off below has nothing to
+        // leave FROM, and the case would pass on a panel that never opened.
+        expect(chips.length).toBeGreaterThan(0);
+        chips[chips.length - 1].focus();
+        expect(panelIsOpen()).toBe(true);
+
+        document.querySelector(OUTSIDE).focus();
+        await nextTick();
+
+        expect(panelIsOpen()).toBe(false);
+    });
+
+    test('moving between two controls inside it does not close it', async () => {
+        const ctx = setup();
+        const chips = withChips(ctx);
+        expect(chips.length).toBeGreaterThan(0);
+
+        // A focusout followed by a focusin, which is every Tab within the panel.
+        chips[0].focus();
+        await nextTick();
+
+        expect(panelIsOpen()).toBe(true);
+        expect(document.activeElement).toBe(chips[0]);
+    });
+
+    test('focus returning to the field it is anchored to does not close it', async () => {
+        const ctx = setup();
+        ctx.panel.open();
+
+        document.querySelector(FIELD).focus();
+        await nextTick();
+
+        expect(panelIsOpen()).toBe(true);
+    });
+
+    test('a pointer held on the panel survives focus landing on <body>', async () => {
+        const ctx = setup();
+        ctx.panel.open();
+
+        // What a scrollbar drag does in Chrome: focus goes to <body> while the
+        // button is still down.
+        mousedownOn(PANEL);
+        document.querySelector(QUERY).blur();
+        await nextTick();
+
+        expect(panelIsOpen()).toBe(true);
+        expect(document.activeElement).not.toBe(document.querySelector(QUERY));
+
+        document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }));
+
+        expect(panelIsOpen()).toBe(true);
+        expect(document.activeElement).toBe(document.querySelector(QUERY));
+    });
+
+    test('a drag released outside the window does not suppress the next close', async () => {
+        const ctx = setup();
+        ctx.panel.open();
+
+        // No `mouseup` this document ever sees; only the window blur.
+        mousedownOn(PANEL);
+        window.dispatchEvent(new window.Event('blur'));
+
+        document.querySelector(OUTSIDE).focus();
+        await nextTick();
+
+        expect(panelIsOpen()).toBe(false);
+    });
+
+    test('a close already scheduled is dropped when the panel is destroyed', async () => {
+        const ctx = setup();
+        ctx.panel.open();
+        document.querySelector(OUTSIDE).focus();
+
+        ctx.panel.destroy();
+        await nextTick();
+
+        // `close()` on a destroyed panel would throw on the null `_panel`.
+        expect(document.querySelector(PANEL)).toBeNull();
+    });
+});
+
 describe('teardown leaves nothing bound to the document', () => {
     test('the outside-click listener is removed with the panel', () => {
         const before = documentPanelListeners();

@@ -161,6 +161,10 @@
         this._destroyed = false;
         /** Listeners this panel owns, so teardown removes exactly its own. */
         this._listeners = [];
+        /** Pending focus-out close, cancelled by any focus landing back inside. */
+        this._closeTimerId = null;
+        /** A pointer held down on the panel, which moves focus to `<body>`. */
+        this._pointerInPanel = false;
     }
 
     // ------------------------------------------------------------- DOM helpers
@@ -455,6 +459,75 @@
             if (self._field === event.target) return;
             self.close();
         });
+
+        // A mouse click is not the only way to leave: tabbing off the last chip
+        // walks focus into the form behind a panel that is `position: absolute`
+        // over it, and Escape is bound to nodes that no longer hold focus, so
+        // without this the buyer has no keyboard route out at all.
+        this._bindEvent(this._panel, 'focusout', function () {
+            self._scheduleFocusOutClose();
+        });
+        this._bindEvent(this._panel, 'focusin', function () {
+            self._cancelFocusOutClose();
+        });
+
+        // Dragging the results scrollbar moves focus to `<body>` in Chrome, so
+        // the close above would fire mid-scroll. A pointer held down on the
+        // panel means the buyer is still using it.
+        this._bindEvent(this._panel, 'mousedown', function () {
+            self._pointerInPanel = true;
+        });
+        this._bindEvent(document, 'mouseup', function () {
+            if (!self._pointerInPanel) return;
+            self._pointerInPanel = false;
+            if (!self._open || self._destroyed) return;
+            // Focus is put back rather than the close re-scheduled: after a
+            // scrollbar drag `activeElement` IS `<body>`, so a deferred close's
+            // "focus left the panel" test would pass and shut it anyway.
+            if (self._holdsFocus()) return;
+            self._query.focus();
+        });
+        // A drag released outside the window fires no `mouseup` this document
+        // sees, which would leave the flag stuck true and suppress every later
+        // close for the panel's lifetime.
+        this._bindEvent(window, 'blur', function () {
+            self._pointerInPanel = false;
+        });
+    };
+
+    /**
+     * @returns {boolean} whether focus is on the control — the panel or the
+     *          field it belongs to, which are one control to the buyer
+     */
+    CompanySearchPanel.prototype._holdsFocus = function () {
+        const active = document.activeElement;
+        if (!active) return false;
+        if (this._field === active) return true;
+        return !!this._panel && this._panel.contains(active);
+    };
+
+    /**
+     * Close once focus has actually settled somewhere else.
+     *
+     * Deferred by one tick because moving between two controls INSIDE the panel
+     * is a `focusout` followed by a `focusin`, so closing on the `focusout`
+     * alone would tear the panel down mid-Tab and drop the buyer on `<body>`.
+     */
+    CompanySearchPanel.prototype._scheduleFocusOutClose = function () {
+        const self = this;
+        this._cancelFocusOutClose();
+        this._closeTimerId = setTimeout(function () {
+            self._closeTimerId = null;
+            if (self._destroyed || !self._open) return;
+            if (self._pointerInPanel || self._holdsFocus()) return;
+            self.close();
+        }, 0);
+    };
+
+    CompanySearchPanel.prototype._cancelFocusOutClose = function () {
+        if (this._closeTimerId === null) return;
+        clearTimeout(this._closeTimerId);
+        this._closeTimerId = null;
     };
 
     // --------------------------------------------------------------- handlers
@@ -606,6 +679,7 @@
     CompanySearchPanel.prototype.close = function (options) {
         if (!this._panel || !this._open) return;
         this._open = false;
+        this._cancelFocusOutClose();
         this._cancelPendingSearch();
         // A response still on the wire would paint rows into a panel the buyer
         // has closed, and _searchSeq alone would let the next open inherit them.
@@ -987,6 +1061,7 @@
      */
     CompanySearchPanel.prototype.destroy = function () {
         this._destroyed = true;
+        this._cancelFocusOutClose();
         this._cancelPendingSearch();
         this.search.abortActiveRequest(this._token);
         this._unbind();
