@@ -223,7 +223,7 @@ describe('the route back to search is a chip inside the panel', () => {
         expect(document.activeElement).toBe(document.querySelector(QUERY));
     });
 
-    test('the registered chip focuses the query field from sole-trader mode too', () => {
+    test('the registered chip focuses the query field from sole-trader mode too', async () => {
         // The popover stays OPEN behind the signup popup, and sole-trader mode
         // hides the query row — so this arrives with the panel already up and
         // nothing focusable in it, the state an early-returning open() left
@@ -233,6 +233,10 @@ describe('the route back to search is a chip inside the panel', () => {
         // A browser blurs an input the moment the row holding it is hidden;
         // jsdom applies no stylesheet, so the blur is staged by hand here.
         document.querySelector(QUERY).blur();
+        // Awaited, not asserted straight away: the panel's focus-out close is
+        // deferred a tick, so a synchronous assertion here would hold even for
+        // an implementation that shuts the panel.
+        await new Promise((resolve) => setTimeout(resolve, 1));
         expect(panelIsOpen()).toBe(true);
         expect(document.querySelector(`${PANEL} .two-company-dropdown__search`)
             .classList.contains('two-hidden')).toBe(true);

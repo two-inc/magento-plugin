@@ -262,6 +262,99 @@ describe('Escape hands the buyer back to the field', () => {
     });
 });
 
+/**
+ * Open the panel with two real chips in it, so a case about tabbing BETWEEN
+ * its controls has more than one to move across.
+ *
+ * @param {object} ctx
+ * @returns {NodeList} the rendered chips
+ */
+function withChips(ctx) {
+    ctx.panel.getChips = function () {
+        return [
+            { mode: 'registered', text: 'Registered company', onActivate: function () {} },
+            { mode: 'manual', text: 'Enter manually', onActivate: function () {} }
+        ];
+    };
+    ctx.panel.open();
+    return document.querySelectorAll('.two-company-mode-chip');
+}
+
+describe('the panel closes when focus leaves it', () => {
+    test('tabbing off the last chip closes it', async () => {
+        const ctx = setup();
+        const chips = withChips(ctx);
+        // Bootstrapped: with no chip rendered the tab-off below has nothing to
+        // leave FROM, and the case would pass on a panel that never opened.
+        expect(chips.length).toBeGreaterThan(0);
+        chips[chips.length - 1].focus();
+        expect(panelIsOpen()).toBe(true);
+
+        document.querySelector(OUTSIDE).focus();
+        await nextTick();
+
+        expect(panelIsOpen()).toBe(false);
+    });
+
+    test('moving between two controls inside it does not close it', async () => {
+        const ctx = setup();
+        const chips = withChips(ctx);
+        expect(chips.length).toBeGreaterThan(0);
+
+        // A focusout followed by a focusin, which is every Tab within the panel.
+        chips[0].focus();
+        await nextTick();
+
+        expect(panelIsOpen()).toBe(true);
+        expect(document.activeElement).toBe(chips[0]);
+    });
+
+    test('focus returning to the field it is anchored to does not close it', async () => {
+        const ctx = setup();
+        ctx.panel.open();
+
+        document.querySelector(FIELD).focus();
+        await nextTick();
+
+        expect(panelIsOpen()).toBe(true);
+    });
+
+    test('focus DROPPED to <body> does not close it', async () => {
+        const ctx = setup();
+        ctx.panel.open();
+
+        // Two things do this and neither is the buyer leaving: sole-trader mode
+        // hides the row holding the caret, and a scrollbar drag in Chrome moves
+        // focus off while the button is still down. Asserted AFTER the tick —
+        // the deferred close is exactly what a synchronous assertion misses.
+        document.querySelector(QUERY).blur();
+        await nextTick();
+
+        expect(document.activeElement).toBe(document.body);
+        expect(panelIsOpen()).toBe(true);
+    });
+
+    test('a close already scheduled is dropped when the panel is destroyed', () => {
+        jest.useFakeTimers();
+        try {
+            const ctx = setup();
+            ctx.panel.open();
+            document.querySelector(OUTSIDE).focus();
+            const armed = jest.getTimerCount();
+            expect(armed).toBeGreaterThan(0);
+
+            ctx.panel.destroy();
+
+            // A timer left armed outlives the panel it would have closed.
+            expect(jest.getTimerCount()).toBe(armed - 1);
+            jest.runOnlyPendingTimers();
+            expect(document.querySelector(PANEL)).toBeNull();
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+});
+
 describe('teardown leaves nothing bound to the document', () => {
     test('the outside-click listener is removed with the panel', () => {
         const before = documentPanelListeners();

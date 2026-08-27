@@ -161,6 +161,8 @@
         this._destroyed = false;
         /** Listeners this panel owns, so teardown removes exactly its own. */
         this._listeners = [];
+        /** Pending focus-out close, re-armed by the next focusout, dropped on teardown. */
+        this._closeTimerId = null;
     }
 
     // ------------------------------------------------------------- DOM helpers
@@ -455,6 +457,49 @@
             if (self._field === event.target) return;
             self.close();
         });
+
+        // A mouse click is not the only way to leave: tabbing off the last chip
+        // walks focus into the form behind a panel that is `position: absolute`
+        // over it, and Escape is bound to nodes that no longer hold focus, so
+        // without this the buyer has no keyboard route out at all.
+        this._bindEvent(this._panel, 'focusout', function () {
+            self._scheduleFocusOutClose();
+        });
+    };
+
+    /** @returns {boolean} whether focus is somewhere inside the panel */
+    CompanySearchPanel.prototype._holdsFocus = function () {
+        const active = document.activeElement;
+        return !!active && !!this._panel && this._panel.contains(active);
+    };
+
+    /**
+     * Close once focus has actually settled somewhere else.
+     *
+     * Deferred by one tick because moving between two controls INSIDE the panel
+     * is a `focusout` followed by a `focusin`, so closing on the `focusout`
+     * alone would tear the panel down mid-Tab and drop the buyer on `<body>`.
+     */
+    CompanySearchPanel.prototype._scheduleFocusOutClose = function () {
+        const self = this;
+        this._cancelFocusOutClose();
+        this._closeTimerId = setTimeout(function () {
+            self._closeTimerId = null;
+            if (self._destroyed || !self._open) return;
+            if (self._holdsFocus()) return;
+            // TWO-25503: focus DROPPED, not moved on. Hiding the query row on a
+            // mode change lands it here, and so does a scrollbar drag in Chrome
+            // — in neither case has the buyer left the control.
+            const active = document.activeElement;
+            if (!active || active === document.body || active === document.documentElement) return;
+            self.close();
+        }, 0);
+    };
+
+    CompanySearchPanel.prototype._cancelFocusOutClose = function () {
+        if (this._closeTimerId === null) return;
+        clearTimeout(this._closeTimerId);
+        this._closeTimerId = null;
     };
 
     // --------------------------------------------------------------- handlers
@@ -987,6 +1032,7 @@
      */
     CompanySearchPanel.prototype.destroy = function () {
         this._destroyed = true;
+        this._cancelFocusOutClose();
         this._cancelPendingSearch();
         this.search.abortActiveRequest(this._token);
         this._unbind();
