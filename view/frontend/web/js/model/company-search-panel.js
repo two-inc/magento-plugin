@@ -163,8 +163,6 @@
         this._listeners = [];
         /** Pending focus-out close, cancelled by any focus landing back inside. */
         this._closeTimerId = null;
-        /** A pointer held down on the panel, which moves focus to `<body>`. */
-        this._pointerInPanel = false;
     }
 
     // ------------------------------------------------------------- DOM helpers
@@ -467,29 +465,6 @@
         this._bindEvent(this._panel, 'focusout', function () {
             self._scheduleFocusOutClose();
         });
-
-        // Dragging the results scrollbar moves focus to `<body>` in Chrome, so
-        // the close above would fire mid-scroll. A pointer held down on the
-        // panel means the buyer is still using it.
-        this._bindEvent(this._panel, 'mousedown', function () {
-            self._pointerInPanel = true;
-        });
-        this._bindEvent(document, 'mouseup', function () {
-            if (!self._pointerInPanel) return;
-            self._pointerInPanel = false;
-            if (!self._open || self._destroyed) return;
-            // Focus is put back rather than the close re-scheduled: after a
-            // scrollbar drag `activeElement` IS `<body>`, so a deferred close's
-            // "focus left the panel" test would pass and shut it anyway.
-            if (self._holdsFocus()) return;
-            self._query.focus();
-        });
-        // A drag released outside the window fires no `mouseup` this document
-        // sees, which would leave the flag stuck true and suppress every later
-        // close for the panel's lifetime.
-        this._bindEvent(window, 'blur', function () {
-            self._pointerInPanel = false;
-        });
     };
 
     /** @returns {boolean} whether focus is somewhere inside the panel */
@@ -511,7 +486,12 @@
         this._closeTimerId = setTimeout(function () {
             self._closeTimerId = null;
             if (self._destroyed || !self._open) return;
-            if (self._pointerInPanel || self._holdsFocus()) return;
+            if (self._holdsFocus()) return;
+            // TWO-25503: focus DROPPED, not moved on. Hiding the query row on a
+            // mode change lands it here, and so does a scrollbar drag in Chrome
+            // — in neither case has the buyer left the control.
+            const active = document.activeElement;
+            if (!active || active === document.body || active === document.documentElement) return;
             self.close();
         }, 0);
     };

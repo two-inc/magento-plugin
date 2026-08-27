@@ -319,37 +319,19 @@ describe('the panel closes when focus leaves it', () => {
         expect(panelIsOpen()).toBe(true);
     });
 
-    test('a pointer held on the panel survives focus landing on <body>', async () => {
+    test('focus DROPPED to <body> does not close it', async () => {
         const ctx = setup();
         ctx.panel.open();
 
-        // What a scrollbar drag does in Chrome: focus goes to <body> while the
-        // button is still down.
-        mousedownOn(PANEL);
+        // Two things do this and neither is the buyer leaving: sole-trader mode
+        // hides the row holding the caret, and a scrollbar drag in Chrome moves
+        // focus off while the button is still down. Asserted AFTER the tick —
+        // the deferred close is exactly what a synchronous assertion misses.
         document.querySelector(QUERY).blur();
         await nextTick();
 
+        expect(document.activeElement).toBe(document.body);
         expect(panelIsOpen()).toBe(true);
-        expect(document.activeElement).not.toBe(document.querySelector(QUERY));
-
-        document.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }));
-
-        expect(panelIsOpen()).toBe(true);
-        expect(document.activeElement).toBe(document.querySelector(QUERY));
-    });
-
-    test('a drag released outside the window does not suppress the next close', async () => {
-        const ctx = setup();
-        ctx.panel.open();
-
-        // No `mouseup` this document ever sees; only the window blur.
-        mousedownOn(PANEL);
-        window.dispatchEvent(new window.Event('blur'));
-
-        document.querySelector(OUTSIDE).focus();
-        await nextTick();
-
-        expect(panelIsOpen()).toBe(false);
     });
 
     test('a close already scheduled is dropped when the panel is destroyed', () => {
