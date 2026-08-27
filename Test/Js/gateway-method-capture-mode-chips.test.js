@@ -30,8 +30,7 @@ const {
     loadAmdModule,
     loadCompanySearchPanel,
     defaultMocks,
-    installAsyncSimulation
-} = require('./amd-harness');
+    installAsyncSimulation, dispatchNative } = require('./amd-harness');
 
 // Real jQuery has no `$.async`; installed up front so the per-test reset below
 // can clear observers one test registered before the next one loads anything.
@@ -395,12 +394,12 @@ describe('picking a result row is what captures the company', () => {
         component.start();
         chip('registered').click();
 
-        $('.two-company-dropdown__query').val('acme').trigger('input');
+        dispatchNative($('.two-company-dropdown__query')[0], 'input', 'acme');
         await new Promise((resolve) => { setTimeout(resolve, 0); });
 
         const rows = document.querySelectorAll('.two-company-dropdown__row');
         expect(rows).toHaveLength(1);
-        $(rows[0]).trigger('mousedown');
+        dispatchNative($(rows[0])[0], 'mousedown');
 
         expect(identity.companyName()).toBe('Acme Ltd');
         expect(identity.companyId()).toBe('12345678');
@@ -422,9 +421,9 @@ describe('picking a result row is what captures the company', () => {
         let changes = 0;
         $('#company_name').on('change', () => { changes += 1; });
 
-        $('.two-company-dropdown__query').val('acme').trigger('input');
+        dispatchNative($('.two-company-dropdown__query')[0], 'input', 'acme');
         await new Promise((resolve) => { setTimeout(resolve, 0); });
-        $(document.querySelector('.two-company-dropdown__row')).trigger('mousedown');
+        dispatchNative($(document.querySelector('.two-company-dropdown__row'))[0], 'mousedown');
 
         expect(changes).toBe(1);
         expect(document.querySelector('#company_name').value).toBe('Acme Ltd');

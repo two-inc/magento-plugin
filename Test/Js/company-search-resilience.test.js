@@ -17,7 +17,7 @@
 'use strict';
 
 const $ = require('jquery');
-const { loadAmdModule, loadCompanySearchPanel, installAsyncSimulation } = require('./amd-harness');
+const { loadAmdModule, loadCompanySearchPanel, installAsyncSimulation, dispatchNative } = require('./amd-harness');
 
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
 const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
@@ -520,7 +520,7 @@ describe('what the panel paints for each outcome', () => {
      * @returns {Promise}
      */
     function type(term) {
-        $(QUERY).val(term).trigger('input');
+        dispatchNative($(QUERY)[0], 'input', term);
         return nextTick();
     }
 
@@ -657,11 +657,11 @@ describe('dropping below the minimum input length', () => {
     });
 
     test('it cancels the request already on the wire', async () => {
-        $(QUERY).val('exa').trigger('input');
+        dispatchNative($(QUERY)[0], 'input', 'exa');
         await nextTick();
         expect(requests).toHaveLength(1);
 
-        $(QUERY).val('ex').trigger('input');
+        dispatchNative($(QUERY)[0], 'input', 'ex');
 
         // Left running, the request resolves up to 30s later and repaints
         // results for a term the buyer has backspaced away from.
@@ -670,22 +670,22 @@ describe('dropping below the minimum input length', () => {
 
     test('it drops a debounced search that has not fired yet', async () => {
         companySearch.SEARCH_DEBOUNCE_MS = 50;
-        $(QUERY).val('exa').trigger('input');
+        dispatchNative($(QUERY)[0], 'input', 'exa');
 
-        $(QUERY).val('ex').trigger('input');
+        dispatchNative($(QUERY)[0], 'input', 'ex');
         await new Promise((resolve) => setTimeout(resolve, 80));
 
         expect(requests).toHaveLength(0);
     });
 
     test('it restores the hint rather than leaving the last search on screen', async () => {
-        $(QUERY).val('exa').trigger('input');
+        dispatchNative($(QUERY)[0], 'input', 'exa');
         await nextTick();
         requests[0].settleDone(SEARCH_RESPONSE);
         await nextTick();
         expect(document.querySelectorAll(ROW)).toHaveLength(1);
 
-        $(QUERY).val('ex').trigger('input');
+        dispatchNative($(QUERY)[0], 'input', 'ex');
 
         expect(document.querySelector(MESSAGE).textContent)
             .toBe(companySearch.minInputLengthMessage());
@@ -784,7 +784,7 @@ describe('re-render safety of the panel binding', () => {
         mounted.component._panel._renderResults([
             { text: 'Example Trading Ltd', html: 'Example Trading Ltd', companyId: '12345678' }
         ]);
-        $(ROW).first().trigger('mousedown');
+        dispatchNative($(ROW)[0], 'mousedown');
 
         expect(mounted.companySearch.lookupCompanyAddress).toHaveBeenCalledTimes(1);
     });

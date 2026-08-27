@@ -32,8 +32,7 @@ const {
     loadAmdModule,
     defaultMocks,
     loadCompanySearchPanel,
-    installAsyncSimulation
-} = require('./amd-harness');
+    installAsyncSimulation, dispatchNative } = require('./amd-harness');
 
 const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
 const IDENTITY_PATH = 'view/frontend/web/js/model/company-identity.js';
@@ -155,7 +154,7 @@ describe('returning to registered-company search', () => {
         mounted.component.registeredMode({ openDropdown: true });
         mounted.component._panel.close();
 
-        $(FIELD_SELECTOR).trigger('mousedown');
+        dispatchNative($(FIELD_SELECTOR)[0], 'mousedown');
 
         expect(panelIsOpen()).toBe(true);
     });
@@ -168,7 +167,7 @@ describe('returning to registered-company search', () => {
 
         mounted.component.registeredMode();
 
-        $(FIELD_SELECTOR).trigger('mousedown');
+        dispatchNative($(FIELD_SELECTOR)[0], 'mousedown');
         expect(panelIsOpen()).toBe(true);
     });
 
@@ -229,7 +228,7 @@ describe('the route back to search is a chip inside the panel', () => {
         // hides the query row — so this arrives with the panel already up and
         // nothing focusable in it, the state an early-returning open() left
         // with the caret nowhere.
-        $('#company_name').trigger('mousedown');
+        dispatchNative($('#company_name')[0], 'mousedown');
         mounted.component.soleTraderMode();
         // A browser blurs an input the moment the row holding it is hidden;
         // jsdom applies no stylesheet, so the blur is staged by hand here.

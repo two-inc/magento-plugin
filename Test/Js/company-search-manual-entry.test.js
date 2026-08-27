@@ -32,7 +32,7 @@
 const fs = require('fs');
 const path = require('path');
 const $ = require('jquery');
-const { loadAmdModule, defaultMocks, loadCompanySearchPanel } = require('./amd-harness');
+const { loadAmdModule, defaultMocks, loadCompanySearchPanel, dispatchNative } = require('./amd-harness');
 
 const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
 const IDENTITY_PATH = 'view/frontend/web/js/model/company-identity.js';
@@ -234,7 +234,7 @@ describe('entering manual entry', () => {
         const capture = loadCapture();
 
         capture.component.manualEntryMode();
-        $('#company_name').trigger('mousedown');
+        dispatchNative($('#company_name')[0], 'mousedown');
 
         expect(document.querySelector(PANEL).hasAttribute('hidden')).toBe(true);
     });

@@ -22,7 +22,7 @@
 'use strict';
 
 const $ = require('jquery');
-const { loadAmdModule, loadCompanySearchPanel } = require('./amd-harness');
+const { loadAmdModule, loadCompanySearchPanel, dispatchNative } = require('./amd-harness');
 
 const SEARCH_PATH = 'view/frontend/web/js/model/company-search.js';
 
@@ -117,7 +117,7 @@ describe('the searching state reaches visible spinner markup', () => {
      * @returns {Promise<object>} the request it issued
      */
     async function startSearch(term) {
-        $query.val(term).trigger('input');
+        dispatchNative($query[0], 'input', term);
         await tick();
         expect(requests).toHaveLength(1);
         return requests[0];
@@ -159,7 +159,7 @@ describe('the searching state reaches visible spinner markup', () => {
     test('backspacing below the threshold settles the spinner without a response', async () => {
         await startSearch('exa');
 
-        $query.val('e').trigger('input');
+        dispatchNative($query[0], 'input', 'e');
 
         expect(spinnerIsActive()).toBe(false);
     });

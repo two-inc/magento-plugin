@@ -660,18 +660,64 @@ function loadAmdModule(relPath, extraMocks, extraGlobals, siblingCache) {
  * @returns {Function} the CompanySearchPanel constructor
  */
 function loadCompanySearchPanel($, companySearchMock, extraGlobals) {
-    const extraMocks = { jquery: $ };
-    if (companySearchMock) {
-        extraMocks['Two_Gateway/js/model/company-search'] = companySearchMock;
-    }
-    return loadAmdModule(
+    const CompanySearchPanel = loadAmdModule(
         'view/frontend/web/js/model/company-search-panel.js',
-        extraMocks,
+        {},
         extraGlobals
     );
+    const search = companySearchMock
+        || defaultMocks()['Two_Gateway/js/model/company-search'];
+
+    /**
+     * The panel takes its platform from the host, and Magento's host is
+     * `company-capture-component.js`. Applying the same three here is what
+     * keeps every existing construction site — `new CompanySearchPanel({
+     * fieldSelector, config, ... })` — meaning what it meant when the panel
+     * resolved them through RequireJS itself.
+     *
+     * @param {object} options
+     */
+    function MagentoHostedPanel(options) {
+        CompanySearchPanel.call(this, Object.assign(
+            {
+                search: search,
+                // Resolved per call, not captured: `installAsyncSimulation()`
+                // replaces `$.async` after this loader has already run.
+                observe: function (fieldSelector, onNode) {
+                    if (typeof $.async === 'function') $.async(fieldSelector, onNode);
+                }
+            },
+            options || {}
+        ));
+    }
+    MagentoHostedPanel.prototype = CompanySearchPanel.prototype;
+    Object.assign(MagentoHostedPanel, CompanySearchPanel);
+    return MagentoHostedPanel;
+}
+
+/**
+ * Dispatch a real DOM event at a node, setting an input's value first when one
+ * is given.
+ *
+ * jQuery's `.trigger()` cannot stand in for this. It walks jQuery's own handler
+ * store and then calls `elem[type]()` — which exists for `click` and `focus`,
+ * and does NOT for `input` or `mousedown`. The panel binds with
+ * `addEventListener`, so a jQuery trigger for either of those two reaches
+ * nothing it bound and the test asserts against a control that was never told.
+ *
+ * @param {Element} node
+ * @param {string} type
+ * @param {string} [value] written to `node.value` before the event
+ */
+function dispatchNative(node, type, value) {
+    if (typeof value === 'string') node.value = value;
+    const view = node.ownerDocument.defaultView;
+    const Ctor = type === 'mousedown' ? view.MouseEvent : view.Event;
+    node.dispatchEvent(new Ctor(type, { bubbles: true, cancelable: true }));
 }
 
 module.exports = {
+    dispatchNative: dispatchNative,
     loadAmdModule: loadAmdModule,
     defaultMocks: defaultMocks,
     loadCompanySearchPanel: loadCompanySearchPanel,

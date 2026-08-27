@@ -64,8 +64,8 @@ function loadPanel() {
 
     const attaches = [];
     const attach = CompanySearchPanel.prototype._attach;
-    CompanySearchPanel.prototype._attach = function ($field) {
-        if ($field.length) attaches.push($field[0]);
+    CompanySearchPanel.prototype._attach = function (field) {
+        if (field && field.nodeType === 1) attaches.push(field);
         return attach.apply(this, arguments);
     };
 

@@ -26,7 +26,7 @@
 const fs = require('fs');
 const path = require('path');
 const $ = require('jquery');
-const { loadAmdModule, loadCompanySearchPanel } = require('./amd-harness');
+const { loadAmdModule, loadCompanySearchPanel, dispatchNative } = require('./amd-harness');
 
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
 
@@ -104,7 +104,7 @@ function openPanel(companySearch) {
  * @returns {Promise} resolves once the debounce has elapsed
  */
 function typeQuery(term) {
-    $('.two-company-dropdown__query').val(term).trigger('input');
+    dispatchNative($('.two-company-dropdown__query')[0], 'input', term);
     return new Promise((resolve) => setTimeout(resolve, 0));
 }
 

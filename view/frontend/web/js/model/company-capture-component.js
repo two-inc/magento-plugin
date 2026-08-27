@@ -345,6 +345,14 @@ define([
             this._panel = new CompanySearchPanel({
                 fieldSelector: selector,
                 config: this._config,
+                // The panel carries no framework of its own so the Hyvä
+                // extension can mount the same file; these three are Magento's
+                // half of that bargain.
+                search: companySearch,
+                translate: $t,
+                observe: function (fieldSelector, onNode) {
+                    $.async(fieldSelector, onNode);
+                },
                 getCountryCode: function () {
                     return self.countryCode();
                 },

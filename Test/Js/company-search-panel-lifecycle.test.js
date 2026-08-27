@@ -132,10 +132,26 @@ function pressKey(target, key) {
     );
 }
 
+/**
+ * Type into the panel's query field the way a buyer does.
+ *
+ * A NATIVE `input` event, not jQuery's `.trigger('input')`: the panel binds
+ * with `addEventListener`, and jQuery's trigger walks its own handler store
+ * and then calls `elem[type]()` — there is no `elem.input()`, so a jQuery
+ * trigger reaches nothing the panel bound.
+ *
+ * @param {string} value
+ */
+function typeQuery(value) {
+    const field = document.querySelector(QUERY);
+    field.value = value;
+    field.dispatchEvent(new window.Event('input', { bubbles: true }));
+}
+
 /** Open, search and settle three hits, so the rows the arrows walk are real. */
 async function openWithRows(ctx) {
     ctx.panel.open();
-    $(QUERY).val('alp').trigger('input');
+    typeQuery('alp');
     await nextTick();
     ctx.requests[ctx.requests.length - 1].settleDone(THREE_HITS);
     await nextTick();
@@ -147,12 +163,28 @@ function activeRowIndex() {
         .findIndex(function (row) { return row.classList.contains(ROW_ACTIVE); });
 }
 
-/** Live `mousedown` handlers this class has on the document, whoever owns them. */
+/**
+ * Live `mousedown` handlers on the document, whoever owns them.
+ *
+ * Counted by intercepting `addEventListener`/`removeEventListener` rather than
+ * by reading a framework's handler store: what the teardown has to guarantee is
+ * that the listener is GONE, and the count has to fall when it is removed
+ * however it was bound.
+ */
+const liveDocumentMousedown = new Set();
+const nativeAdd = document.addEventListener.bind(document);
+const nativeRemove = document.removeEventListener.bind(document);
+document.addEventListener = function (type, handler, options) {
+    if (type === 'mousedown') liveDocumentMousedown.add(handler);
+    return nativeAdd(type, handler, options);
+};
+document.removeEventListener = function (type, handler, options) {
+    if (type === 'mousedown') liveDocumentMousedown.delete(handler);
+    return nativeRemove(type, handler, options);
+};
+
 function documentPanelListeners() {
-    const bound = ($._data(document, 'events') || {}).mousedown || [];
-    return bound.filter(function (handler) {
-        return String(handler.namespace || '').indexOf('twoCompanyPanel') === 0;
-    }).length;
+    return liveDocumentMousedown.size;
 }
 
 const realAjax = $.ajax;
@@ -166,7 +198,7 @@ describe('closing drops the search the buyer walked away from', () => {
     test('a debounced search that has not fired yet never goes out', async () => {
         const ctx = setup(30);
         ctx.panel.open();
-        $(QUERY).val('alp').trigger('input');
+        typeQuery('alp');
 
         ctx.panel.close();
         await new Promise((resolve) => setTimeout(resolve, 60));
@@ -177,7 +209,7 @@ describe('closing drops the search the buyer walked away from', () => {
     test('a request already on the wire is aborted', async () => {
         const ctx = setup();
         ctx.panel.open();
-        $(QUERY).val('alp').trigger('input');
+        typeQuery('alp');
         await nextTick();
         expect(ctx.requests).toHaveLength(1);
 
@@ -191,7 +223,7 @@ describe('closing drops the search the buyer walked away from', () => {
     test('re-opening starts on an empty query, not the last session', () => {
         const ctx = setup();
         ctx.panel.open();
-        $(QUERY).val('alpha').trigger('input');
+        typeQuery('alpha');
         ctx.panel.close();
 
         ctx.panel.open();

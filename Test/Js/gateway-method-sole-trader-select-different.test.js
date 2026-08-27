@@ -21,7 +21,7 @@
 const fs = require('fs');
 const path = require('path');
 const $ = require('jquery');
-const { loadAmdModule, defaultMocks, loadCompanySearchPanel } = require('./amd-harness');
+const { loadAmdModule, defaultMocks, loadCompanySearchPanel, dispatchNative } = require('./amd-harness');
 
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
@@ -163,7 +163,7 @@ async function startStack() {
  * @returns {Element}
  */
 function chip(mode) {
-    $('#two_gateway_form input#company_name').trigger('mousedown');
+    dispatchNative($('#two_gateway_form input#company_name')[0], 'mousedown');
     const node = document.querySelector(`.two-company-mode-chip[data-two-chip="${mode}"]`);
     expect(node).not.toBeNull();
     expect(node.closest('.two-company-dropdown').hasAttribute('hidden')).toBe(false);
