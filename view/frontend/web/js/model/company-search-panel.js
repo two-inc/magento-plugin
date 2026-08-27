@@ -671,7 +671,6 @@
     CompanySearchPanel.prototype.close = function (options) {
         if (!this._panel || !this._open) return;
         this._open = false;
-        this._cancelFocusOutClose();
         this._cancelPendingSearch();
         // A response still on the wire would paint rows into a panel the buyer
         // has closed, and _searchSeq alone would let the next open inherit them.

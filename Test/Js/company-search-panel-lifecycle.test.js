@@ -352,16 +352,24 @@ describe('the panel closes when focus leaves it', () => {
         expect(panelIsOpen()).toBe(false);
     });
 
-    test('a close already scheduled is dropped when the panel is destroyed', async () => {
-        const ctx = setup();
-        ctx.panel.open();
-        document.querySelector(OUTSIDE).focus();
+    test('a close already scheduled is dropped when the panel is destroyed', () => {
+        jest.useFakeTimers();
+        try {
+            const ctx = setup();
+            ctx.panel.open();
+            document.querySelector(OUTSIDE).focus();
+            const armed = jest.getTimerCount();
+            expect(armed).toBeGreaterThan(0);
 
-        ctx.panel.destroy();
-        await nextTick();
+            ctx.panel.destroy();
 
-        // `close()` on a destroyed panel would throw on the null `_panel`.
-        expect(document.querySelector(PANEL)).toBeNull();
+            // A timer left armed outlives the panel it would have closed.
+            expect(jest.getTimerCount()).toBe(armed - 1);
+            jest.runOnlyPendingTimers();
+            expect(document.querySelector(PANEL)).toBeNull();
+        } finally {
+            jest.useRealTimers();
+        }
     });
 });
 
