@@ -316,6 +316,7 @@
 
         this._buildPanel(this._ensureWrap(field));
         this.syncChips();
+        this.syncModeChipVisibility();
 
         // Manual entry owns the field: it is a plain text input holding what
         // the buyer typed. Re-arming the openers would pop the popover over
@@ -891,7 +892,12 @@
             });
             self._chips.appendChild(button);
         });
-        this._chips.classList.toggle(HIDDEN_CLASS, offered < 2);
+        this._offered = offered;
+    };
+
+    CompanySearchPanel.prototype.syncModeChipVisibility = function () {
+        if (!this._chips) return;
+        this._chips.classList.toggle(HIDDEN_CLASS, (this._offered || 0) < 2);
     };
 
     /**
