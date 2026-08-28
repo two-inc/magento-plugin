@@ -8,6 +8,8 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
+use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 
@@ -46,6 +48,8 @@ class TwoApiKeyGateTest extends TestCase
             'minimumOrderProvider' => $this->createMock(MinimumOrderProvider::class),
             'minimumOrderGate' => $minimumOrderGate,
             'amastyCheckoutStore' => [],
+            'buyerCountryResolver' => new BuyerCountryResolver(),
+            'supportedCountriesProvider' => $this->createMock(SupportedCountriesProvider::class),
         ];
         foreach ($properties as $name => $value) {
             $reflection->getProperty($name)->setValue($model, $value);
