@@ -14,6 +14,33 @@ setup:di:compile, setup:upgrade, cache:flush. PHPUnit under Test/.
 This is a **public repository**. Do not commit session-specific
 content such as plans, transcripts, or implementation notes.
 
+## Branching & releases
+
+-   **PRs target `main`** (prod). `staging` is the GitHub default and the
+    staging shop's deploy branch; `merge-back.yml` syncs `main → staging`
+    after merges (ff-only, else a sync PR). Branch off `origin/main`.
+    There is no `develop` branch.
+-   **Releases are automated** — `release.yml` runs on CI success on
+    `main`, derives the bump from conventional commits since the last
+    bare-semver tag (`feat!:` → major, `feat:` → minor, else patch), tags,
+    and creates the GitHub Release. Don't hand-run bumpver.
+-   `bumpver.toml` `current_version` MUST equal the version strings in the
+    files it patches (`composer.json` `"version"`, `etc/config.xml`
+    `<version>`) or every release dies at the bump step with "No match for
+    pattern". Both fields are functional (rendered by the adminhtml Version
+    field) — keep them.
+-   **Re-cutting an exact version after deleting its tag:** deleting the
+    tag + Release is not enough — reset `current_version` to the highest
+    surviving semver tag first, or the next release overshoots (prev-tag +
+    accumulated commits can bump past the intended version). Deleting +
+    recreating a tag that has a Release demotes it to a draft — repair with
+    `gh release delete` + `gh release create --verify-tag`.
+-   Packagist syncs off this repo's webhook. If a tag doesn't appear on
+    Packagist, check `gh api repos/two-inc/magento-plugin/hooks`
+    `last_response.code` — 403 means stale Packagist-side authorization for
+    the package (fix on Packagist, not GitHub); redeliver the hook to
+    confirm.
+
 ## Local-dev modules disabled by `make install`
 
 `make install` disables PageBuilder and the Analytics module family
