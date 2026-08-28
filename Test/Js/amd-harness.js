@@ -153,6 +153,7 @@ function defaultMocks() {
             // actually does loads the real module.
             revertAutofilledAddress: function () { return 0; },
             billingRoleFormRoot: function () { return null; },
+            hasPrimaryAddressForm: function () { return true; },
             isDegradedResponse: function () { return false; },
             clearResultCache: function () {},
             MIN_INPUT_LENGTH: 3,

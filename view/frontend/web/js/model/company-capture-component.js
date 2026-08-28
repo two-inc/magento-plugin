@@ -20,8 +20,8 @@
  *  - the one `CompanySearchPanel` and WHERE it is mounted, re-pointing it
  *    between the address step and the payment tile as the checkout changes
  *    shape;
- *  - the billing country the search runs against, and the sole-trader
- *    availability answer for it.
+ *  - the country the search runs against, and the sole-trader availability
+ *    answer for it.
  *
  * Does NOT own: the chips' markup or the popover they live in
  * (company-search-panel.js), the identity it captures (company-identity.js),
@@ -42,8 +42,14 @@ define([
 ], function ($, ko, quote, url, $t, brandConfig, identity, companySearch, CompanySearchPanel, SoleTrader) {
     'use strict';
 
-    /** The address step's company field — core's own markup. */
-    const ADDRESS_FIELD_SELECTOR = '#shipping-new-address-form input[name="company"]';
+    /** The address step's form — core's own markup. */
+    const ADDRESS_FORM_ROOT = '#shipping-new-address-form';
+
+    /** The address step's company field. */
+    const ADDRESS_FIELD_SELECTOR = `${ADDRESS_FORM_ROOT} input[name="company"]`;
+
+    /** The country select sitting alongside that company field. */
+    const ADDRESS_COUNTRY_SELECTOR = `${ADDRESS_FORM_ROOT} select[name="country_id"]`;
 
     /** The payment tile's company field. One per Two-family brand tile. */
     const TILE_FIELD_SELECTOR = '#two_gateway_form input#company_name';
@@ -134,19 +140,64 @@ define([
     // ---------------------------------------------------------------- country
 
     /**
-     * The billing country the search and the registry both run against, lower
-     * cased.
+     * The country select the mounted control answers to.
      *
-     * The quote's BILLING address, not the shipping form: the tile has no
-     * address fields of its own and captures as the invoice role
-     * (TWO-25461 §1(a.3)), so a buyer shipping to one country and invoicing in
-     * another must search the country they invoice in. The live DOM read is a
-     * fallback only for the window before the quote holds an address at all,
-     * which is the state that produced TWO-25326 on one-page checkouts.
+     * Mounted in the address form, that is the selector beside it. Mounted on
+     * the payment tile, which has no address fields of its own, it is the one in
+     * the form holding the buyer's invoice address — the billing form where the
+     * buyer unchecked "same as shipping", the shipping form where they did not
+     * (TWO-25461 §1(a.3)).
+     *
+     * Answers for where the control is going as well as where it is: `start()`
+     * resolves a country before the first `refreshMount()`.
+     *
+     * @returns {?object} jQuery set, or `null` when neither host has rendered
+     *          and there is nothing to answer for yet
+     */
+    CompanyCaptureComponent.prototype.adjacentCountrySelect = function () {
+        const mount = this._boundSelector || this.mountSelector();
+        if (!mount) return null;
+        // For a buyer with saved addresses core renders the shipping form —
+        // company field, country select and all — inside the hidden new-address
+        // modal, holding store defaults nobody chose.
+        const hasShippingForm = companySearch.hasPrimaryAddressForm();
+        if (mount === ADDRESS_FIELD_SELECTOR) {
+            return hasShippingForm ? $(ADDRESS_COUNTRY_SELECTOR) : null;
+        }
+        // The same form the tile's own address write-back targets, so the
+        // country searched and the address written can never disagree.
+        const $root = companySearch.billingRoleFormRoot();
+        if (!$root) return null;
+        if (!hasShippingForm && $root.is && $root.is(ADDRESS_FORM_ROOT)) return null;
+        return $root.find(COUNTRY_SELECT_SELECTOR);
+    };
+
+    /**
+     * The country selected in that select, lower cased.
+     *
+     * @returns {?string} `null` when there is no such select at all, which is a
+     *          different answer from `''` — a present one with nothing chosen
+     */
+    CompanyCaptureComponent.prototype.adjacentCountry = function () {
+        const $select = this.adjacentCountrySelect();
+        if (!$select || !$select.length) return null;
+        const selected = $select.val();
+        return typeof selected === 'string' ? selected.toLowerCase() : '';
+    };
+
+    /**
+     * The country the search and the registry both run against, lower cased.
+     *
+     * Sourced from the address form the mounted control answers to. The quote's
+     * billing country is the last resort, for a checkout rendering no address
+     * form with a country select at all, and the live DOM read behind that
+     * covers the window before the quote holds an address (TWO-25326).
      *
      * @returns {string} ISO country code, lower cased, or ''
      */
     CompanyCaptureComponent.prototype.countryCode = function () {
+        const adjacent = this.adjacentCountry();
+        if (adjacent !== null) return adjacent;
         const billing = quote.billingAddress();
         const fromQuote = billing && billing.countryId;
         if (typeof fromQuote === 'string' && fromQuote) return fromQuote.toLowerCase();
@@ -186,7 +237,14 @@ define([
         // there is no flow to tell, no registry to ask and nothing captured to
         // invalidate — and the boot hook calls this on every address change.
         if (!this._config) return;
-        const country = (observedCountry || this.countryCode() || '').toLowerCase();
+        // The observed select is ignored where an adjacent one exists: a second
+        // form firing `change` must not decide the country for a control
+        // mounted beside a different one, or availability and the search answer
+        // for different countries (TWO-25461).
+        const adjacent = this.adjacentCountry();
+        const country = adjacent !== null
+            ? adjacent
+            : (observedCountry || this.countryCode() || '').toLowerCase();
         if (!country || country === this._lastCountry) return;
         const hadCountry = !!this._lastCountry;
         this._lastCountry = country;
