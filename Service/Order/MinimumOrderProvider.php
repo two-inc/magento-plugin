@@ -15,7 +15,7 @@ use Two\Gateway\Service\Merchant\RecordProvider;
  * GET /v1/merchant/{id} carries the effective minimum (funding-partner
  * default with any merchant override, resolved server-side) as
  * min_order_amount / min_order_currency / min_order_basis. That is the
- * single source of truth: the same value checkout-api enforces at
+ * single source of truth: the same value the API enforces at
  * order create/intent, so the storefront gate and the server can never
  * disagree on the threshold.
  *

@@ -20,7 +20,7 @@ use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
- * Uploads a merchant-generated invoice PDF to Two via checkout-api's
+ * Uploads a merchant-generated invoice PDF to Two via the API's
  * 3-step signed-URL flow:
  *
  *   1. PUT /uploads/v1/invoice/{invoice_id}/external_invoice/{index}
@@ -268,7 +268,7 @@ class UploadService
     }
 
     /**
-     * Step 1: request signed upload URL from checkout-api.
+     * Step 1: request signed upload URL from the API.
      *
      * @return array{success:bool,url?:string,headers?:array,reference?:string,error?:string}
      */
