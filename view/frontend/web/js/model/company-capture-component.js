@@ -415,7 +415,13 @@
      */
     CompanyCaptureComponent.prototype.refreshMount = function () {
         const selector = this.mountSelector();
-        if (!selector) return;
+        if (!selector) {
+            // Neither host is on the page any more. Forgetting where the control
+            // was is what stops `adjacentCountry()` answering for a form that has
+            // gone, and lets the next host that appears mount cleanly.
+            this._boundSelector = null;
+            return;
+        }
         if (selector === this._boundSelector && this._panel && this._panel.isBound()) {
             this.syncChips();
             return;
