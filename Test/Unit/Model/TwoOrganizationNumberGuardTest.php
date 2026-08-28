@@ -147,6 +147,7 @@ class TwoOrganizationNumberGuardTest extends TestCase
             'plain digits' => ['123456789'],
             'formatted with spaces' => ['123 456 789'],
             'country-prefixed' => ['NO123456789MVA'],
+            'internal TWO: identifier' => ['TWO:ST:abc123'],
             'leading and trailing whitespace' => ['  123456789  '],
             'integer rather than string' => [123456789],
         ];
