@@ -851,6 +851,10 @@
      * Rebuilt from `getChips()` rather than mutated in place: the set itself
      * changes with the country and the admin setting, and a rebuild cannot
      * leave a stale chip wired to a mode that is no longer offered.
+     *
+     * The row itself is hidden when it is down to one chip: the survivor is
+     * always the mode the buyer is already in, so it offers no choice. Hidden
+     * rather than removed, so the panel keeps its three children in order.
      */
     CompanySearchPanel.prototype.syncChips = function () {
         const self = this;
@@ -859,12 +863,15 @@
         this._syncQueryVisibility(selected);
         this._unbind(this._chips);
         this._chips.innerHTML = '';
+        let offered = 0;
         this.getChips().forEach(function (chip) {
+            const visible = self.isChipVisible(chip.mode);
+            if (visible) offered++;
             const button = document.createElement('button');
             button.type = 'button';
             button.className = CHIP_CLASS;
             button.classList.toggle(CHIP_SELECTED_CLASS, chip.mode === selected);
-            button.classList.toggle(HIDDEN_CLASS, !self.isChipVisible(chip.mode));
+            button.classList.toggle(HIDDEN_CLASS, !visible);
             button.setAttribute('data-two-chip', chip.mode);
             button.setAttribute('data-element', 'click-element');
             button.setAttribute('aria-pressed', chip.mode === selected ? 'true' : 'false');
@@ -884,6 +891,7 @@
             });
             self._chips.appendChild(button);
         });
+        this._chips.classList.toggle(HIDDEN_CLASS, offered < 2);
     };
 
     /**

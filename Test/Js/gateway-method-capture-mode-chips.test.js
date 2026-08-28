@@ -273,6 +273,48 @@ describe('each chip carries its own gate', () => {
     });
 });
 
+describe('the chip row is only rendered when it offers a choice', () => {
+    test.each([
+        [false, false, 1, true, 'registered alone is the mode the buyer is already in'],
+        [true, false, 2, false, 'registered + sole trader'],
+        [false, true, 2, false, 'registered + enter manually'],
+        [true, true, 3, false, 'all three']
+    ])(
+        'soleTraderAvailable=%p isCompanySearchEnabled=%p -> %i visible chips, row hidden=%p (%s)',
+        (available, searchEnabled, visibleCount, rowHidden) => {
+            mountTileField();
+            const { component, identity } = load({ isCompanySearchEnabled: searchEnabled });
+            component.start();
+            identity.soleTraderAvailable(available);
+            component.syncChips();
+
+            // All three are always built; only the ones without the hidden
+            // class are on screen, and only those count towards the row.
+            expect(chips()).toHaveLength(3);
+            const visible = chips().filter((node) => !node.classList.contains(HIDDEN_CLASS));
+            expect(visible).toHaveLength(visibleCount);
+            expect(
+                document.querySelector('.two-company-mode-chips').classList.contains(HIDDEN_CLASS)
+            ).toBe(rowHidden);
+        }
+    );
+
+    test('the row stays the panel\'s third child while hidden', () => {
+        mountTileField();
+        const { component, identity } = load({ isCompanySearchEnabled: false });
+        component.start();
+        identity.soleTraderAvailable(false);
+        component.syncChips();
+
+        const order = Array.from(dropdown().children).map((node) => node.classList[0]);
+        expect(order).toEqual([
+            'two-company-dropdown__search',
+            'two-company-dropdown__results',
+            'two-company-mode-chips'
+        ]);
+    });
+});
+
 describe('clicking a chip performs the real transition', () => {
     test('the manual chip abandons the number and leaves a typeable field', () => {
         mountTileField();
