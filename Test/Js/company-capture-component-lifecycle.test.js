@@ -596,6 +596,39 @@ describe('the host contract is checked at construction', () => {
     );
 });
 
+describe('a checkout that loses both hosts', () => {
+    test('stops answering for the form the mount has left', () => {
+        // `adjacentCountry()` reads through the bound selector, so a mount left
+        // standing after its host has gone keeps sourcing the country from a
+        // form that is no longer on the page — and every later answer, the
+        // sole-trader registry call included, is for the wrong country.
+        const Controller = loadAmdModule(CONTROLLER);
+        let hostPresent = true;
+        function StubPanel() {}
+        StubPanel.prototype.bind = function () {};
+        StubPanel.prototype.isBound = function () { return hostPresent; };
+        StubPanel.prototype.syncChips = function () {};
+        StubPanel.prototype.releaseField = function () {};
+        const controller = new Controller(Object.assign(completeHost(), {
+            Panel: StubPanel,
+            config: { isCompanySearchEnabled: true },
+            identity: loadAmdModule(IDENTITY),
+            fieldExists: function () { return hostPresent; },
+            isVirtualCart: function () { return false; },
+            getAdjacentCountry: function () { return 'gb'; },
+            getQuoteCountry: function () { return 'no'; }
+        }));
+
+        controller.refreshMount();
+        expect(controller.countryCode()).toBe('gb');
+
+        hostPresent = false;
+        controller.refreshMount();
+
+        expect(controller.countryCode()).toBe('no');
+    });
+});
+
 describe('a typed company name carries no vouched number', () => {
     /**
      * `commitManualCompany()` is the released field's only writer, so a name the
