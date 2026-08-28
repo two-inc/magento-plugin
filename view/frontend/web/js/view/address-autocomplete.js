@@ -651,8 +651,13 @@ define([
                 identity._addressStepWatcher.dispose();
             }
             let scheduled = false;
+            let watcher = null;
             const publish = function () {
                 scheduled = false;
+                // The timer outlives dispose(), and this view may already have
+                // been superseded — writing from here would paint a form the
+                // buyer is no longer looking at.
+                if (identity._addressStepWatcher !== watcher) return;
                 // Manual entry is the buyer's own typing, published by the
                 // company-number field's own change handler, so nothing is
                 // mirrored for it here.
@@ -667,7 +672,7 @@ define([
                 }
                 self.setCompanyData(companyId, companyName);
             };
-            identity._addressStepWatcher = identity.subscribe(function () {
+            watcher = identity.subscribe(function () {
                 // Deferred by one turn so that the name and the number — written
                 // back to back — are published together rather than as a name
                 // under the previous company's number.
@@ -675,6 +680,7 @@ define([
                 scheduled = true;
                 setTimeout(publish, 0);
             });
+            identity._addressStepWatcher = watcher;
         }
     });
 });

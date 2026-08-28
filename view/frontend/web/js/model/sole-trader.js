@@ -523,7 +523,7 @@
     /** A signup that did not complete. Silence would leave an open flow and no explanation. */
     SoleTrader.prototype.showSignupError = function () {
         this.host().showError(
-            this.host().translate('Could not complete sole trader signup. Please try again.')
+            this._component.translate('Could not complete sole trader signup. Please try again.')
         );
     };
 
