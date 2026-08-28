@@ -54,7 +54,8 @@ const HIDDEN_CLASS = 'two-hidden';
  * Loaded fresh per test on purpose: both modules are page-level singletons, so
  * a shared load would carry one case's captured company into the next.
  *
- * @param {object} [options] `{ isCompanySearchEnabled }` on the brand config
+ * @param {object} [options] `{ isCompanySearchEnabled }` on the brand config,
+ *        `{ country }` the ISO code the registry is asked about
  * @returns {object} `{ component, identity, search, soleTrader }`
  */
 function load(options) {
@@ -67,7 +68,7 @@ function load(options) {
         {},
         defaultMocks()['Two_Gateway/js/model/company-search'],
         {
-            currentAddressFormCountry: function () { return 'gb'; },
+            currentAddressFormCountry: function () { return opts.country || 'gb'; },
             revertAutofilledAddress: function () {},
             billingRoleFormRoot: function () { return null; },
             applyAddress: function () {},
@@ -145,6 +146,42 @@ function chip(mode) {
 
 function dropdown() {
     return document.querySelector('.two-company-dropdown');
+}
+
+function visibleChips() {
+    return chips().filter((node) => !node.classList.contains(HIDDEN_CLASS));
+}
+
+function chipRowIsHidden() {
+    return document
+        .querySelector('.two-company-mode-chips')
+        .classList.contains(HIDDEN_CLASS);
+}
+
+/**
+ * `fetch` whose settlement this test drives, so the panel is built and the chip
+ * row sized while the registry answer is still on the wire.
+ *
+ * @returns {object} `{ respond, restore }`
+ */
+function deferRegistryAnswer() {
+    const pending = [];
+    const original = global.fetch;
+    global.fetch = function () {
+        return new Promise((resolve) => pending.push(resolve));
+    };
+    return {
+        respond(types) {
+            pending.splice(0).forEach((resolve) =>
+                resolve({ ok: true, json: () => Promise.resolve(types) }));
+        },
+        restore() { global.fetch = original; }
+    };
+}
+
+/** Let the availability chain and everything it schedules run to completion. */
+function settle() {
+    return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 beforeEach(() => {
@@ -313,6 +350,44 @@ describe('the chip row is only rendered when it offers a choice', () => {
             'two-company-mode-chips'
         ]);
     });
+});
+
+describe('the registry answer re-opens the row it was sized without', () => {
+    let registry;
+
+    beforeEach(() => { registry = deferRegistryAnswer(); });
+    afterEach(() => { registry.restore(); });
+
+    /*
+     * Drives the real `refreshSoleTraderAvailability()` promise rather than
+     * calling `syncChips()` by hand, because the wiring is what breaks: split
+     * the row gate out into a method this path does not call and the row stays
+     * hidden with the sole-trader chip inside it, unreachable.
+     */
+    test.each([
+        ['gb', ['SOLE_TRADER'], 2, false, false, 'sole traders offered: the row returns and the chip is reachable'],
+        ['no', [], 1, true, true, 'none offered: the row and the chip both stay hidden']
+    ])(
+        '%s answers %p -> %i visible chips, row hidden=%p, sole-trader chip hidden=%p (%s)',
+        async (country, types, visibleCount, rowHidden, chipHidden) => {
+            mountTileField();
+            const { component } = load({ country, isCompanySearchEnabled: false });
+
+            // Given: the buyer reaches the field before the answer lands.
+            component.start();
+            expect(visibleChips()).toHaveLength(1);
+            expect(chipRowIsHidden()).toBe(true);
+
+            // When: the registry answers for that country.
+            registry.respond(types);
+            await settle();
+
+            // Then.
+            expect(visibleChips()).toHaveLength(visibleCount);
+            expect(chipRowIsHidden()).toBe(rowHidden);
+            expect(chip('soletrader').classList.contains(HIDDEN_CLASS)).toBe(chipHidden);
+        }
+    );
 });
 
 describe('clicking a chip performs the real transition', () => {
