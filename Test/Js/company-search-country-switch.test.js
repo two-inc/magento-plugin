@@ -32,12 +32,11 @@
 'use strict';
 
 const jq = require('jquery');
-const { loadAmdModule, defaultMocks } = require('./amd-harness');
+const { loadAmdModule, defaultMocks, loadCompanyCapture, brandConfigMock } = require('./amd-harness');
 
 const MODEL = 'view/frontend/web/js/model/company-search.js';
 const ADDRESS_STEP = 'view/frontend/web/js/view/address-autocomplete.js';
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
-const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 
 const NAME_FIELD = '#shipping-new-address-form input[name="company"]';
@@ -386,8 +385,7 @@ function loadCaptureComponent(options) {
         }
     );
 
-    const component = loadAmdModule(
-        COMPONENT,
+    const component = loadCompanyCapture(
         {
             jquery: jq,
             'Magento_Checkout/js/model/quote': quote,
@@ -395,16 +393,12 @@ function loadCaptureComponent(options) {
             'Two_Gateway/js/model/company-search': companySearch,
             'Two_Gateway/js/model/company-search-panel': PanelStub,
             'Two_Gateway/js/model/sole-trader': SoleTraderStub,
-            'Two_Gateway/js/model/brand-config': {
-                getActiveTwoBrandConfig: function () {
-                    return {
-                        isCompanySearchEnabled: true,
-                        checkoutApiUrl: 'https://api.example.test',
-                        checkoutPageUrl: 'https://checkout.example.test',
-                        supportedCompanyTypes: { es: [], gb: ['SOLE_TRADER'], no: [] }
-                    };
-                }
-            }
+            'Two_Gateway/js/model/brand-config': brandConfigMock({
+                isCompanySearchEnabled: true,
+                checkoutApiUrl: 'https://api.example.test',
+                checkoutPageUrl: 'https://checkout.example.test',
+                supportedCompanyTypes: { es: [], gb: ['SOLE_TRADER'], no: [] }
+            })
         },
         { document: document, window: window }
     );

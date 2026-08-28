@@ -10,9 +10,16 @@
  * PAGE-LEVEL, like both of those: one flow per checkout, constructed by the
  * company-capture component and outliving every payment-tile render. The popup
  * it opens is a browser-level object, and a handle to it held inside a
- * component that Amasty and Fire Checkout destroy on every totals change was
- * orphaned mid-signup — the buyer completed enrolment and the `ACCEPTED`
- * handshake landed on a listener that no longer recognised the window.
+ * component that Amasty, Fire Checkout and Magewire all destroy on every totals
+ * change was orphaned mid-signup — the buyer completed enrolment and the
+ * `ACCEPTED` handshake landed on a listener that no longer recognised the
+ * window.
+ *
+ * FRAMEWORK-FREE, with a UMD tail, for the reason `company-search-panel.js` is:
+ * Luma and Hyvä run this one file. Everything platform-shaped — the REST entry
+ * point, the quote, the address write-back, the error surface, the fallback
+ * prompt — arrives through `host`, which the capture component assembles from
+ * its own options.
  *
  * Owns the delegation/autofill token pair and its refresh, the hosted signup
  * popup and the watcher that notices the buyer closing it, and the
@@ -24,15 +31,15 @@
  * (`adoptEnrolledIdentity` → `TwoCompanySearch.adoptSoleTraderBuyer`) both
  * settled on after their sole-trader modules hand-rolled it and drifted.
  */
-define([
-    'jquery',
-    'Magento_Checkout/js/model/quote',
-    'mage/url',
-    'mage/translate',
-    'Magento_Ui/js/model/messageList',
-    'Two_Gateway/js/model/company-identity',
-    'Two_Gateway/js/model/company-search'
-], function ($, quote, url, $t, messageList, identity, companySearch) {
+(function (root, factory) {
+    'use strict';
+
+    if (typeof define === 'function' && define.amd) {
+        define([], factory);
+    } else {
+        root.TwoSoleTrader = factory();
+    }
+}(typeof self !== 'undefined' ? self : this, function () {
     'use strict';
 
     // WooCommerce's `scheduleTokenRefresh` and PrestaShop's
@@ -51,16 +58,9 @@ define([
     const RETURN_TO_CHECKOUT_GRACE_MS = 200;
 
     /**
-     * Sole-trader identities whose registered address has already been written
-     * into this page's checkout, so a replay does not overwrite a correction
-     * the buyer made afterwards (TWO-25461 §5).
-     */
-    const adoptedSoleTraderIds = new Set();
-
-    /**
-     * What "the same sole trader" means for that guard. The organisation number
-     * where there is one; the email otherwise, so two buyers who both arrive
-     * without a number are not treated as one.
+     * What "the same sole trader" means for the once-per-identity address
+     * guard. The organisation number where there is one; the email otherwise,
+     * so two buyers who both arrive without a number are not treated as one.
      *
      * @param {object} buyer `/autofill/v1/buyer/current` record
      * @returns {string}
@@ -78,7 +78,7 @@ define([
 
     /**
      * @param {object} component the company-capture component this flow serves.
-     *        Supplies `config()`, `countryCode()`, `adoptSoleTrader()`,
+     *        Supplies `config()`, `identity()`, `host()`, `adoptSoleTrader()`,
      *        `abandonSoleTrader()`.
      */
     function SoleTrader(component) {
@@ -90,24 +90,43 @@ define([
         this._popupWindow = null;
         this._popupCloseWatcherId = null;
         this._messageHandler = null;
+        this._returnHandler = null;
+        this._returnCloseTimerId = null;
         // The handshake's own buyer lookup is still out. The popup can close
         // the instant it posts, and that lookup is the authority from then on.
         this._signupConfirming = false;
         this._blockedSignupOptions = null;
+        /**
+         * Sole-trader identities whose registered address has already been
+         * written into this page's checkout, so a replay does not overwrite a
+         * correction the buyer made afterwards (TWO-25461 §5).
+         */
+        this._adoptedIds = new Set();
     }
 
+    /** @returns {object} the host adapter the component was built with */
+    SoleTrader.prototype.host = function () {
+        return this._component.host();
+    };
+
+    /** @returns {object} the page-level identity */
+    SoleTrader.prototype.identity = function () {
+        return this._component.identity();
+    };
+
     SoleTrader.prototype.getTokens = function () {
-        const URL = url.build('rest/V1/two/get-tokens');
+        const URL = this.host().tokensUrl();
         return fetch(URL, {
             method: 'POST',
             headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cartId: quote.getQuoteId() })
+            body: JSON.stringify({ cartId: this.host().quoteId() })
         })
             .then((response) => {
                 if (!response.ok) throw new Error(`Error response from ${URL}.`);
                 return response.json();
             })
-            .then((json) => json[0])
+            // The REST controller answers with a single-element list.
+            .then((json) => (Array.isArray(json) ? json[0] : json))
             .catch((error) => {
                 console.error({ logger: 'twoPayment.getTokens', error });
                 throw error;
@@ -128,8 +147,8 @@ define([
     SoleTrader.prototype.mintTokens = function () {
         return this.getTokens()
             .then((json) => {
-                this.delegationToken = json.delegation_token;
-                this.autofillToken = json.autofill_token;
+                this.delegationToken = (json && json.delegation_token) || '';
+                this.autofillToken = (json && json.autofill_token) || '';
                 return this.hasSignupTokens();
             })
             .catch(() => false);
@@ -177,7 +196,7 @@ define([
      * running, and that flight's own completion leaves them fresh anyway.
      */
     SoleTrader.prototype.refreshTokens = function () {
-        if (identity.isBusy()) return;
+        if (this.identity().isBusy()) return;
         return this.mintTokens();
     };
 
@@ -187,31 +206,9 @@ define([
      * @returns {string} base64 of the JSON payload
      */
     SoleTrader.prototype.getAutofillData = function () {
-        const billingAddress = quote.billingAddress() || {};
-        const street = (billingAddress.street || []).filter((s) => s).join(', ').split(' ');
-        const data = {
-            email: this.buyerEmail(),
-            first_name: billingAddress.firstname,
-            last_name: billingAddress.lastname,
-            company_name: identity.companyName(),
-            phone_number: billingAddress.telephone,
-            billing_address: {
-                building: (street[0] || '').replace(',', ''),
-                street: street.slice(1).join(' '),
-                postal_code: billingAddress.postcode,
-                city: billingAddress.city,
-                region: billingAddress.region,
-                country_code: billingAddress.countryId
-            }
-        };
+        const data = this.host().signupPrefill();
         // Bare btoa() only accepts Latin1; this is UTF-8 data (e.g. names with diacritics).
         return btoa(unescape(encodeURIComponent(JSON.stringify(data))));
-    };
-
-    /** @returns {string} the email the order is being placed under */
-    SoleTrader.prototype.buyerEmail = function () {
-        const billingAddress = quote.billingAddress();
-        return (billingAddress && billingAddress.email) || quote.guestEmail || '';
     };
 
     SoleTrader.prototype.isPopupOpen = function () {
@@ -249,7 +246,7 @@ define([
         // (e.g. US biometric consent) when the URL carries `&country=`. Taken
         // from the quote, never a DOM read, so a buyer cannot pick their own
         // verification flow.
-        const country = ((quote.billingAddress() || {}).countryId || '').toUpperCase();
+        const country = this.host().signupCountry();
         if (country) params += `&country=${encodeURIComponent(country)}`;
 
         this._popupWindow = window.open(
@@ -305,7 +302,7 @@ define([
      * @param {Window} win
      */
     SoleTrader.prototype.watchPopupClose = function (win) {
-        identity.beginFlight();
+        this.identity().beginFlight();
         this._popupCloseWatcherId = setInterval(() => {
             if (!win.closed) return;
             this.stopPopupCloseWatcher();
@@ -325,7 +322,7 @@ define([
         if (!this._popupCloseWatcherId) return;
         clearInterval(this._popupCloseWatcherId);
         this._popupCloseWatcherId = null;
-        identity.settleFlight();
+        this.identity().settleFlight();
     };
 
     /**
@@ -394,7 +391,7 @@ define([
 
     /** Re-arm the once-per-identity address guard. */
     SoleTrader.prototype.forgetAdoptions = function () {
-        adoptedSoleTraderIds.clear();
+        this._adoptedIds.clear();
     };
 
     /**
@@ -410,8 +407,8 @@ define([
      */
     SoleTrader.prototype.fetchBuyer = function () {
         const config = this._component.config();
-        const params = new URLSearchParams(companySearch.apiClientParams(config));
-        const URL = `${config.checkoutApiUrl}/autofill/v1/buyer/current?${params.toString()}`;
+        const params = new URLSearchParams(this.host().apiClientParams(config)).toString();
+        const URL = `${config.checkoutApiUrl}/autofill/v1/buyer/current${params ? `?${params}` : ''}`;
         return fetch(URL, {
             credentials: 'include',
             headers: { 'two-delegated-authority-token': this.autofillToken }
@@ -443,7 +440,7 @@ define([
         if (!buyer || typeof buyer !== 'object') return;
         this._component.adoptSoleTrader(buyer);
         const key = soleTraderIdentityKey(buyer);
-        if (key && adoptedSoleTraderIds.has(key)) {
+        if (key && this._adoptedIds.has(key)) {
             this.showSignupPrompt(false);
             return;
         }
@@ -453,13 +450,13 @@ define([
         try {
             const source = buyer.billing_address || buyer.shipping_address || null;
             if (source && typeof source === 'object') {
-                companySearch.applyAddress(source, companySearch.billingRoleFormRoot());
-                if (key) adoptedSoleTraderIds.add(key);
+                this.host().applyBuyerAddress(source);
+                if (key) this._adoptedIds.add(key);
             }
-            // Not routed through applyAddress(), which deliberately never
+            // Routed separately because the address writer deliberately never
             // touches telephone — correct for a registry number that is not the
-            // buyer's own, but this record IS the buyer's own verified data.
-            companySearch.applyTelephone(buyer.phone_number);
+            // buyer's own, where this record IS the buyer's own verified data.
+            this.host().applyTelephone(buyer.phone_number);
         } catch (error) {
             console.error({ logger: 'twoPayment.adoptSoleTraderBuyer', error });
         }
@@ -468,37 +465,13 @@ define([
 
     /**
      * Show or withdraw the on-page signup prompt — the fallback route when the
-     * popup was blocked.
-     *
-     * Anchored OUTSIDE the search popover, after the field's wrapper. The chips
-     * it used to sit beside now live inside that popover, and entering
-     * sole-trader mode closes it — so anchoring to them rendered the buyer's
-     * only route forward inside something they cannot see.
+     * popup was blocked. The host renders it, because the two checkouts anchor
+     * and style it differently.
      *
      * @param {boolean} show
      */
     SoleTrader.prototype.showSignupPrompt = function (show) {
-        let $prompt = $('.two-sole-trader-note');
-        if (!show) {
-            $prompt.addClass('two-hidden');
-            return;
-        }
-        if (!$prompt.length) {
-            $prompt = $('<div></div>').addClass('two-sole-trader-note');
-            $('<a href="#"></a>')
-                .addClass('two-sole-trader-note__link')
-                .text($t('Click here to log in or sign up as a Sole Trader.'))
-                .on('click', (event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    this.retrySignup();
-                })
-                .appendTo($prompt);
-            const $anchor = $('.two-company-field-wrap');
-            if (!$anchor.length) return;
-            $prompt.insertAfter($anchor);
-        }
-        $prompt.removeClass('two-hidden');
+        this.host().renderSignupPrompt(!!show, () => this.retrySignup());
     };
 
     /**
@@ -517,7 +490,7 @@ define([
             // must never overwrite a later adoption. Truthiness first, because
             // `MessageEvent.source` is null for a non-window sender.
             if (!this._popupWindow || event.source !== this._popupWindow) return;
-            if (!identity.isSoleTrader()) return;
+            if (!this.identity().isSoleTrader()) return;
 
             if (event.data !== 'ACCEPTED') {
                 this.showSignupError();
@@ -527,7 +500,7 @@ define([
             // well before the identity has been written, and the close watcher
             // must not read that as an abandoned signup.
             this._signupConfirming = true;
-            identity.beginFlight();
+            this.identity().beginFlight();
             this.fetchBuyer()
                 .then((buyer) => {
                     if (buyer) {
@@ -541,7 +514,7 @@ define([
                     // Settled AFTER the write has landed: the flow is complete
                     // when the identity is in the form, not when the response
                     // arrived. Both sibling platforms order it this way.
-                    identity.settleFlight();
+                    this.identity().settleFlight();
                 });
         };
         window.addEventListener('message', this._messageHandler);
@@ -549,9 +522,9 @@ define([
 
     /** A signup that did not complete. Silence would leave an open flow and no explanation. */
     SoleTrader.prototype.showSignupError = function () {
-        messageList.addErrorMessage({
-            message: $t('Could not complete sole trader signup. Please try again.')
-        });
+        this.host().showError(
+            this.host().translate('Could not complete sole trader signup. Please try again.')
+        );
     };
 
     /** Release everything this flow armed on the page. */
@@ -570,4 +543,4 @@ define([
     };
 
     return SoleTrader;
-});
+}));

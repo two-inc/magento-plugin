@@ -29,6 +29,7 @@ const JS_FILES = [
     'view/frontend/web/js/action/set-shipping-information-mixin.js',
     'view/frontend/web/js/model/brand-config.js',
     'view/frontend/web/js/model/company-capture-component.js',
+    'view/frontend/web/js/model/company-capture.js',
     'view/frontend/web/js/model/company-identity.js',
     'view/frontend/web/js/model/company-search-panel.js',
     'view/frontend/web/js/model/sole-trader.js',

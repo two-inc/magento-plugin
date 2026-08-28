@@ -27,6 +27,7 @@ const { loadAmdModule, loadCompanySearchPanel, dispatchNative } = require('./amd
 
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
 const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
+const ADAPTER_PATH = 'view/frontend/web/js/model/company-capture.js';
 
 const GLOBALS = { document: document, window: window };
 const FIELD_SELECTOR = '#company_name';
@@ -233,7 +234,10 @@ describe('the page-level component holds no parallel search wiring', () => {
     test('it constructs the shared panel rather than rendering results itself', () => {
         const src = readRepoFile(COMPONENT_PATH);
 
-        expect(src).toContain('new CompanySearchPanel(');
+        // The panel class is injected, so the one construction site is the
+        // only place a control can come from.
+        expect(src.match(/new this\._options\.Panel\(/g)).toHaveLength(1);
+        expect(readRepoFile(ADAPTER_PATH)).toContain('Panel: CompanySearchPanel');
         // A second, parallel implementation would be exactly the defect
         // TWO-25326 asked to close — one control, not two.
         expect(src).not.toContain('searchCompanies(');

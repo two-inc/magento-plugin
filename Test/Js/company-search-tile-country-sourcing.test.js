@@ -28,9 +28,8 @@
 'use strict';
 
 const $ = require('jquery');
-const { loadAmdModule, defaultMocks } = require('./amd-harness');
+const { loadAmdModule, defaultMocks, loadCompanyCapture, brandConfigMock } = require('./amd-harness');
 
-const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
 
@@ -91,8 +90,7 @@ function load(options) {
         isVirtual: function () { return !!opts.isVirtual; }
     });
 
-    const component = loadAmdModule(
-        COMPONENT,
+    const component = loadCompanyCapture(
         {
             jquery: $,
             'Magento_Checkout/js/model/quote': quote,
@@ -100,17 +98,13 @@ function load(options) {
             'Two_Gateway/js/model/company-search': companySearch,
             'Two_Gateway/js/model/company-search-panel': PanelStub,
             'Two_Gateway/js/model/sole-trader': SoleTraderStub,
-            'Two_Gateway/js/model/brand-config': {
-                getActiveTwoBrandConfig: function () {
-                    return {
-                        isCompanySearchEnabled: opts.isCompanySearchEnabled !== false,
-                        checkoutApiUrl: 'https://api.example.test',
-                        checkoutPageUrl: 'https://checkout.example.test',
-                        companySearchLimit: 10,
-                        supportedCompanyTypes: SUPPORTED_COMPANY_TYPES
-                    };
-                }
-            }
+            'Two_Gateway/js/model/brand-config': brandConfigMock({
+                isCompanySearchEnabled: opts.isCompanySearchEnabled !== false,
+                checkoutApiUrl: 'https://api.example.test',
+                checkoutPageUrl: 'https://checkout.example.test',
+                companySearchLimit: 10,
+                supportedCompanyTypes: SUPPORTED_COMPANY_TYPES
+            })
         },
         { document: document, window: window }
     );
@@ -121,6 +115,26 @@ function load(options) {
         companySearch: companySearch,
         panel: panel
     };
+}
+
+/**
+ * Record every country the delegation reports, still running the real handler.
+ *
+ * Installed BEFORE `start()`, which binds the handler once and holds that
+ * reference — a later replacement would never be reached. The log is cleared
+ * after boot so only the buyer's own changes are asserted on.
+ *
+ * @param {object} component
+ * @returns {Array<string>} live, in order
+ */
+function recordCountryReports(component) {
+    const reports = [];
+    const real = component.onCountryChanged.bind(component);
+    component.onCountryChanged = function (country) {
+        reports.push(country);
+        return real(country);
+    };
+    return reports;
 }
 
 /**
@@ -484,10 +498,9 @@ describe('the country watcher is delegated, and reads the buyer\'s own selection
     test('one document-level delegation covers a form that re-renders', () => {
         mountAddressForm(selectMarkup('shipping-new-address-form', 'GB'));
         const { component } = load({ billingCountry: 'GB' });
+        const observed = recordCountryReports(component);
         component.start();
-
-        const observed = [];
-        component.onCountryChanged = function (country) { observed.push(country); };
+        observed.length = 0;
 
         // The form is replaced wholesale, as every checkout re-render does, and
         // the delegation still reaches the new node with no re-binding.
@@ -509,10 +522,9 @@ describe('the country watcher is delegated, and reads the buyer\'s own selection
             '</select></form>'
         );
         const { component } = load({ billingCountry: 'GB' });
+        const observed = recordCountryReports(component);
         component.start();
-
-        const observed = [];
-        component.onCountryChanged = function (country) { observed.push(country); };
+        observed.length = 0;
 
         $('select[name="country_id"]').val('ES').trigger('change');
 
@@ -523,14 +535,14 @@ describe('the country watcher is delegated, and reads the buyer\'s own selection
     test('starting twice does not stack a second watcher', () => {
         mountAddressForm(selectMarkup('shipping-new-address-form', 'GB'));
         const { component } = load({ billingCountry: 'GB' });
+        const observed = recordCountryReports(component);
         component.start();
         component.start();
+        observed.length = 0;
 
-        let fired = 0;
-        component.onCountryChanged = function () { fired += 1; };
         $('select[name="country_id"]').trigger('change');
 
-        expect(fired).toBe(1);
+        expect(observed).toHaveLength(1);
     });
 });
 

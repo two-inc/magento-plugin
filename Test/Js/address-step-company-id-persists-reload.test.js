@@ -52,6 +52,7 @@
 const { loadAmdModule } = require('./amd-harness');
 
 const MODULE = 'view/frontend/web/js/view/address-autocomplete.js';
+const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const NAME_SELECTOR = '#shipping-new-address-form input[name="company"]';
 const ID_SELECTOR = '#shipping-new-address-form input[name="custom_attributes[company_id]"]';
 const TEXT_CLASS = 'two-company-id-text';
@@ -359,6 +360,9 @@ function pageLoad(storage, options) {
     }
     if (opts.restoreBeforeInit !== false) restore();
 
+    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
+    identity.captureMode(opts.captureMode || 'registered');
+
     const component = loadAmdModule(
         MODULE,
         {
@@ -393,11 +397,7 @@ function pageLoad(storage, options) {
                     return { isCompanySearchEnabled: false };
                 }
             },
-            'Two_Gateway/js/model/company-identity': {
-                captureMode: makeObservable(opts.captureMode || 'registered'),
-                companyId: makeObservable(''),
-                companyName: makeObservable('')
-            }
+            'Two_Gateway/js/model/company-identity': identity
         },
         { document: document, window: window }
     );

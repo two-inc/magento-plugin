@@ -17,10 +17,16 @@
 'use strict';
 
 const $ = require('jquery');
-const { loadAmdModule, loadCompanySearchPanel, installAsyncSimulation, dispatchNative } = require('./amd-harness');
+const {
+    loadAmdModule,
+    loadCompanyCapture,
+    loadCompanySearchPanel,
+    installAsyncSimulation,
+    dispatchNative,
+    brandConfigMock
+} = require('./amd-harness');
 
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
-const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
 const IDENTITY_PATH = 'view/frontend/web/js/model/company-identity.js';
 
 const GLOBALS = { document: document, window: window };
@@ -709,8 +715,7 @@ function mount() {
         this.forgetAdoptions = function () {};
     };
 
-    const component = loadAmdModule(
-        COMPONENT_PATH,
+    const component = loadCompanyCapture(
         {
             jquery: $,
             'Two_Gateway/js/model/company-identity': identity,
@@ -721,9 +726,7 @@ function mount() {
                 GLOBALS
             ),
             'Two_Gateway/js/model/sole-trader': SoleTraderStub,
-            'Two_Gateway/js/model/brand-config': {
-                getActiveTwoBrandConfig: function () { return BASE_CONFIG; }
-            }
+            'Two_Gateway/js/model/brand-config': brandConfigMock(BASE_CONFIG)
         },
         GLOBALS
     );

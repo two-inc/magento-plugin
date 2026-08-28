@@ -8,11 +8,17 @@
  * WooCommerce's `class TwoCompanySearch` and PrestaShop's `TwoCompanySearch.js`.
  *
  * ONE component per checkout page, owning BOTH the mode chips and the search
- * mount, exactly as those two do. It is constructed once, by the headless
- * `view/company-search-boot.js` uiComponent, and outlives every payment-tile
- * render: Luma, Amasty and Fire Checkout all re-create payment renderers on
- * every totals change, and a component living inside one had its chips, its
- * mount and its popup handle destroyed underneath the buyer mid-flow.
+ * mount, exactly as those two do. It outlives every payment-tile render: Luma,
+ * Amasty and Fire Checkout re-create payment renderers on every totals change
+ * and Hyvä's Magewire rebuilds the subtree, and a component living inside one
+ * had its chips, its mount and its popup handle destroyed underneath the buyer
+ * mid-flow.
+ *
+ * FRAMEWORK-FREE, with a UMD tail, exactly as `company-search-panel.js` is and
+ * for the same reason: BOTH checkouts load this one file — Luma's
+ * RequireJS/Knockout one and Hyvä's Alpine/Magewire one, which ships no jQuery,
+ * no Knockout and no RequireJS. Everything platform-shaped is injected, so
+ * neither side owns a second capture controller to drift from the first.
  *
  * Owns:
  *  - the three modes (Registered company / Sole trader / Enter manually) and
@@ -21,110 +27,146 @@
  *    between the address step and the payment tile as the checkout changes
  *    shape;
  *  - the country the search runs against, and the sole-trader availability
- *    answer for it.
+ *    answer for it;
+ *  - the sole-trader flow, through the injected `SoleTraderFlow`.
  *
  * Does NOT own: the chips' markup or the popover they live in
- * (company-search-panel.js), the identity it captures (company-identity.js),
- * the sole-trader flow (sole-trader.js), or the transport and address
- * write-back (company-search.js).
+ * (company-search-panel.js), the identity it captures (company-identity.js), or
+ * either host's transport, storage and address write-back — which arrive as
+ * options the way the panel's `search` does.
  */
-define([
-    'jquery',
-    'ko',
-    'Magento_Checkout/js/model/quote',
-    'mage/url',
-    'mage/translate',
-    'Two_Gateway/js/model/brand-config',
-    'Two_Gateway/js/model/company-identity',
-    'Two_Gateway/js/model/company-search',
-    'Two_Gateway/js/model/company-search-panel',
-    'Two_Gateway/js/model/sole-trader'
-], function ($, ko, quote, url, $t, brandConfig, identity, companySearch, CompanySearchPanel, SoleTrader) {
+(function (root, factory) {
     'use strict';
 
-    /** The address step's form — core's own markup. */
-    const ADDRESS_FORM_ROOT = '#shipping-new-address-form';
+    if (typeof define === 'function' && define.amd) {
+        define([], factory);
+    } else {
+        root.TwoCompanyCaptureComponent = factory();
+    }
+}(typeof self !== 'undefined' ? self : this, function () {
+    'use strict';
 
-    /** The address step's company field. */
-    const ADDRESS_FIELD_SELECTOR = `${ADDRESS_FORM_ROOT} input[name="company"]`;
+    /**
+     * Every member the host adapter must carry. Checked at construction for the
+     * reason the panel checks its own `search` contract: a host that supplies a
+     * partial one fails silently and deep inside a buyer's flow — a missing
+     * `revertAutofilledAddress` throws on a country change, a missing
+     * `signupPrefill` opens a hosted signup with no buyer in it.
+     */
+    const HOST_CONTRACT = [
+        'fieldExists',
+        'isVirtualCart',
+        'getAdjacentCountry',
+        'getQuoteCountry',
+        'getFallbackCountry',
+        'watchCountryChanges',
+        'supportedCompanyTypesUrl',
+        'applyCompanyAddress',
+        'revertAutofilledAddress',
+        'clearField',
+        'tokensUrl',
+        'quoteId',
+        'apiClientParams',
+        'signupPrefill',
+        'signupCountry',
+        'applyBuyerAddress',
+        'applyTelephone',
+        'showError',
+        'renderSignupPrompt'
+    ];
 
-    /** The country select sitting alongside that company field. */
-    const ADDRESS_COUNTRY_SELECTOR = `${ADDRESS_FORM_ROOT} select[name="country_id"]`;
+    function assertHost(options) {
+        HOST_CONTRACT.forEach(function (member) {
+            if (typeof options[member] !== 'function') {
+                throw new Error(`CompanyCaptureComponent: host option "${member}" is required.`);
+            }
+        });
+    }
 
-    /** The payment tile's company field. One per Two-family brand tile. */
-    const TILE_FIELD_SELECTOR = '#two_gateway_form input#company_name';
+    /**
+     * @param {object} options
+     * @param {object} options.config the active brand's checkout config subtree
+     *        — needs `checkoutApiUrl`, `checkoutPageUrl`,
+     *        `isCompanySearchEnabled`, optionally `supportedCompanyTypes`.
+     * @param {function} options.Panel the `CompanySearchPanel` constructor.
+     * @param {function} options.SoleTraderFlow the `SoleTrader` constructor.
+     * @param {object} options.identity the page-level company identity.
+     * @param {object} options.search the panel's transport, carrying every
+     *        member of its own contract. Luma passes its `company-search`
+     *        module; Hyvä passes an adapter over its own engine.
+     * @param {function(string): string} [options.translate] identity when the
+     *        host has already localised.
+     * @param {function(string, function(Element))} [options.observe] report the
+     *        node matching a selector, now and on every later re-render. Luma
+     *        passes Magento_Ui's `$.async`; Hyvä has no equivalent and drives
+     *        `refreshMount()` off its own re-render hook instead.
+     * @param {string} options.addressFieldSelector the address step's company
+     *        field.
+     * @param {string} options.tileFieldSelector the payment tile's company
+     *        field.
+     * @param {function(string): boolean} options.fieldExists whether a selector
+     *        matches anything right now.
+     * @param {function(): boolean} options.isVirtualCart
+     * @param {function(string): ?string} options.getAdjacentCountry the country
+     *        selected in the form the control at `mountSelector` answers to,
+     *        lower cased. `null` — a different answer from `''` — when there is
+     *        no such select at all.
+     * @param {function(): string} options.getQuoteCountry the quote's billing
+     *        country, lower cased.
+     * @param {function(): string} options.getFallbackCountry a live read for the
+     *        window before the quote holds an address (TWO-25326).
+     * @param {function(function(string))} options.watchCountryChanges report
+     *        every country the buyer selects, lower cased.
+     * @param {function(string): string} options.supportedCompanyTypesUrl the
+     *        plugin's server-side registry relay for a country.
+     * @param {function(object)} options.applyCompanyAddress write the address of
+     *        a picked registry result.
+     * @param {function()} options.revertAutofilledAddress undo what the last
+     *        such write put in, leaving the buyer's own edits.
+     * @param {function(string)} options.clearField blank the field at a
+     *        selector, and tell the host's own state.
+     * @param {function(): string} options.tokensUrl
+     * @param {function(): string} options.quoteId
+     * @param {function(object): object} options.apiClientParams query params
+     *        identifying this client to checkout-api.
+     * @param {function(): object} options.signupPrefill the hosted signup's
+     *        prefill payload.
+     * @param {function(): string} options.signupCountry ISO code, upper cased,
+     *        server-resolved.
+     * @param {function(object)} options.applyBuyerAddress
+     * @param {function(string)} options.applyTelephone
+     * @param {function(string)} options.showError
+     * @param {function(boolean, function())} options.renderSignupPrompt show or
+     *        withdraw the blocked-popup fallback link.
+     */
+    function CompanyCaptureComponent(options) {
+        options = options || {};
+        assertHost(options);
 
-    /** Any address form's country select, shipping or billing. */
-    const COUNTRY_SELECT_SELECTOR = 'select[name="country_id"]';
-
-    function CompanyCaptureComponent() {
-        this._config = null;
+        this._options = options;
+        this._config = options.config || null;
+        this._identity = options.identity;
         this._panel = null;
         this._soleTrader = null;
         /** Selector the panel is currently bound at, so a re-point is a no-op when nothing moved. */
         this._boundSelector = null;
-        this._countryWatcherBound = false;
         /** Availability answers per lower-cased ISO country, for the page's lifetime. */
         this._supportedCompanyTypes = {};
+        this._lastCountry = '';
         this._started = false;
+
+        this.translate = options.translate || function (text) { return text; };
+        this.observe = options.observe || null;
     }
 
-    /**
-     * Boot. Idempotent — the boot component calls this on every checkout
-     * render, and only the first does anything.
-     */
-    CompanyCaptureComponent.prototype.start = function () {
-        if (this._started) return;
-        this._started = true;
-        this._config = brandConfig.getActiveTwoBrandConfig();
-        if (!this._config) {
-            // No Two-family method on this checkout: nothing to mount, and no
-            // config to mount it with.
-            this._started = false;
-            return;
-        }
-        this._soleTrader = new SoleTrader(this);
-        this._soleTrader.listenForSignupResult();
-        this.watchAddressFormCountry();
-        this.watchForCountrySource();
-        // The baseline a later change is measured against. Without it the first
-        // switch reads as the first resolution and keeps a company whose
-        // registry no longer applies (TWO-24867). Empty when the quote has no
-        // address yet, which is what still lets that genuine first resolution
-        // through.
-        this._lastCountry = this.countryCode();
-        this.watchForMountHost();
-        this.refreshMount();
-        this.refreshSoleTraderAvailability();
+    /** @returns {object} the host adapter, as `sole-trader.js` reaches it */
+    CompanyCaptureComponent.prototype.host = function () {
+        return this._options;
     };
 
-    /**
-     * Mount when a host field appears: this boots from the sidebar, before any
-     * address form exists, and no quote event re-drives it for a guest.
-     */
-    CompanyCaptureComponent.prototype.watchForMountHost = function () {
-        const self = this;
-        [ADDRESS_FIELD_SELECTOR, TILE_FIELD_SELECTOR].forEach(function (selector) {
-            $.async(selector, function () {
-                self.refreshMount();
-                if (!identity.soleTraderAvailable()) self.refreshSoleTraderAvailability();
-            });
-        });
-    };
-
-    /**
-     * Resolve the country once a form can answer for it.
-     *
-     * `watchAddressFormCountry()` only hears `change`, so a buyer who accepts
-     * the default country never fires one and sole-trader availability stays
-     * unresolved. Reads through `countryCode()`, so an appearing billing form
-     * cannot impose its own default over the quote.
-     */
-    CompanyCaptureComponent.prototype.watchForCountrySource = function () {
-        const self = this;
-        $.async(COUNTRY_SELECT_SELECTOR, function () {
-            self.onCountryChanged();
-        });
+    /** @returns {object} the page-level identity this component writes */
+    CompanyCaptureComponent.prototype.identity = function () {
+        return this._identity;
     };
 
     /** @returns {object} the active brand's checkout config subtree */
@@ -137,91 +179,85 @@ define([
         return this._soleTrader;
     };
 
+    /** @returns {?object} the popover, for tests and for hosts that drive it */
+    CompanyCaptureComponent.prototype.panel = function () {
+        return this._panel;
+    };
+
+    /**
+     * Boot. Idempotent — a host may call this on every checkout render, and only
+     * the first does anything.
+     */
+    CompanyCaptureComponent.prototype.start = function () {
+        if (this._started) return;
+        // No Two-family method on this checkout: nothing to mount, and no config
+        // to mount it with.
+        if (!this._config) return;
+        this._started = true;
+
+        this._soleTrader = new this._options.SoleTraderFlow(this);
+        this._soleTrader.listenForSignupResult();
+        this._options.watchCountryChanges(this.onCountryChanged.bind(this));
+        // The baseline a later change is measured against. Without it the first
+        // switch reads as the first resolution and keeps a company whose
+        // registry no longer applies (TWO-24867). Empty when the quote has no
+        // address yet, which is what still lets that genuine first resolution
+        // through.
+        this._lastCountry = this.countryCode();
+        this.watchForMountHost();
+        this.refreshMount();
+        this.refreshSoleTraderAvailability();
+    };
+
+    /**
+     * Mount when a host field appears: Luma boots this from the sidebar, before
+     * any address form exists, and no quote event re-drives it for a guest. A
+     * host with no observer of its own re-drives `refreshMount()` from its own
+     * render hook instead.
+     */
+    CompanyCaptureComponent.prototype.watchForMountHost = function () {
+        if (!this.observe) return;
+        const self = this;
+        [this._options.addressFieldSelector, this._options.tileFieldSelector].forEach(function (selector) {
+            self.observe(selector, function () {
+                self.refreshMount();
+                if (!self._identity.soleTraderAvailable()) self.refreshSoleTraderAvailability();
+            });
+        });
+    };
+
     // ---------------------------------------------------------------- country
-
-    /**
-     * The country select the mounted control answers to.
-     *
-     * Mounted in the address form, that is the selector beside it. Mounted on
-     * the payment tile, which has no address fields of its own, it is the one in
-     * the form holding the buyer's invoice address — the billing form where the
-     * buyer unchecked "same as shipping", the shipping form where they did not
-     * (TWO-25461 §1(a.3)).
-     *
-     * Answers for where the control is going as well as where it is: `start()`
-     * resolves a country before the first `refreshMount()`.
-     *
-     * @returns {?object} jQuery set, or `null` when neither host has rendered
-     *          and there is nothing to answer for yet
-     */
-    CompanyCaptureComponent.prototype.adjacentCountrySelect = function () {
-        const mount = this._boundSelector || this.mountSelector();
-        if (!mount) return null;
-        // For a buyer with saved addresses core renders the shipping form —
-        // company field, country select and all — inside the hidden new-address
-        // modal, holding store defaults nobody chose.
-        const hasShippingForm = companySearch.hasPrimaryAddressForm();
-        if (mount === ADDRESS_FIELD_SELECTOR) {
-            return hasShippingForm ? $(ADDRESS_COUNTRY_SELECTOR) : null;
-        }
-        // The same form the tile's own address write-back targets, so the
-        // country searched and the address written can never disagree.
-        const $root = companySearch.billingRoleFormRoot();
-        if (!$root) return null;
-        if (!hasShippingForm && $root.is && $root.is(ADDRESS_FORM_ROOT)) return null;
-        return $root.find(COUNTRY_SELECT_SELECTOR);
-    };
-
-    /**
-     * The country selected in that select, lower cased.
-     *
-     * @returns {?string} `null` when there is no such select at all, which is a
-     *          different answer from `''` — a present one with nothing chosen
-     */
-    CompanyCaptureComponent.prototype.adjacentCountry = function () {
-        const $select = this.adjacentCountrySelect();
-        if (!$select || !$select.length) return null;
-        const selected = $select.val();
-        return typeof selected === 'string' ? selected.toLowerCase() : '';
-    };
 
     /**
      * The country the search and the registry both run against, lower cased.
      *
      * Sourced from the address form the mounted control answers to. The quote's
      * billing country is the last resort, for a checkout rendering no address
-     * form with a country select at all, and the live DOM read behind that
+     * form with a country select at all, and the live host read behind that
      * covers the window before the quote holds an address (TWO-25326).
+     *
+     * Answers for where the control is going as well as where it is: `start()`
+     * resolves a country before the first `refreshMount()`.
      *
      * @returns {string} ISO country code, lower cased, or ''
      */
     CompanyCaptureComponent.prototype.countryCode = function () {
         const adjacent = this.adjacentCountry();
         if (adjacent !== null) return adjacent;
-        const billing = quote.billingAddress();
-        const fromQuote = billing && billing.countryId;
-        if (typeof fromQuote === 'string' && fromQuote) return fromQuote.toLowerCase();
-        return companySearch.currentAddressFormCountry() || '';
+        return this._options.getQuoteCountry() || this._options.getFallbackCountry() || '';
     };
 
     /**
-     * Keep the country current from the buyer's own address-form `<select>`.
+     * The country in the form the mounted control answers to.
      *
-     * Delegated off the document rather than bound to the node: every checkout
-     * re-renders its address form freely, and delegation survives that with no
-     * re-resolution. Bound once — this component outlives the forms.
+     * @returns {?string} `null` when there is no such select at all, which is a
+     *          different answer from `''` — a present one with nothing chosen
      */
-    CompanyCaptureComponent.prototype.watchAddressFormCountry = function () {
-        if (this._countryWatcherBound) return;
-        this._countryWatcherBound = true;
-        const self = this;
-        $(document).on('change.twoCompanyCapture', 'select[name="country_id"]', function (event) {
-            // The select the buyer actually touched, not a document scan: core
-            // saves asynchronously so the quote still holds the country they
-            // just left, and a shipping-first scan answers for the wrong form
-            // when it is the billing country that changed.
-            self.onCountryChanged(String($(event.target).val() || '').toLowerCase());
-        });
+    CompanyCaptureComponent.prototype.adjacentCountry = function () {
+        const mount = this._boundSelector || this.mountSelector();
+        if (!mount) return null;
+        const answer = this._options.getAdjacentCountry(mount);
+        return typeof answer === 'string' ? answer.toLowerCase() : null;
     };
 
     /**
@@ -235,16 +271,16 @@ define([
     CompanyCaptureComponent.prototype.onCountryChanged = function (observedCountry) {
         // A checkout with no Two-family method never started this component, so
         // there is no flow to tell, no registry to ask and nothing captured to
-        // invalidate — and the boot hook calls this on every address change.
-        if (!this._config) return;
+        // invalidate — and a host hook calls this on every address change.
+        if (!this._config || !this._started) return;
         // The observed select is ignored where an adjacent one exists: a second
-        // form firing `change` must not decide the country for a control
-        // mounted beside a different one, or availability and the search answer
-        // for different countries (TWO-25461).
+        // form firing `change` must not decide the country for a control mounted
+        // beside a different one, or availability and the search answer for
+        // different countries (TWO-25461).
         const adjacent = this.adjacentCountry();
         const country = adjacent !== null
             ? adjacent
-            : (observedCountry || this.countryCode() || '').toLowerCase();
+            : String(observedCountry || this.countryCode() || '').toLowerCase();
         if (!country || country === this._lastCountry) return;
         const hadCountry = !!this._lastCountry;
         this._lastCountry = country;
@@ -254,10 +290,10 @@ define([
             // A search still on the wire would answer for the country the buyer
             // just left and repopulate what this call is clearing.
             if (this._panel) this._panel.abortActiveRequest();
-            identity.clear();
-            companySearch.revertAutofilledAddress();
+            this._identity.clear();
+            this._options.revertAutofilledAddress();
             this._soleTrader.forgetAdoptions();
-            if (identity.isSoleTrader()) this.registeredMode();
+            if (this._identity.isSoleTrader()) this.registeredMode();
         }
         this.refreshSoleTraderAvailability(country);
     };
@@ -272,26 +308,26 @@ define([
      * business-only — are memoised per country. Errors resolve to no
      * sole-trader option and are NOT memoised, so the next country change
      * retries.
-     */
-    /**
+     *
      * @param {string} [observedCountry] see onCountryChanged()
+     * @returns {Promise<boolean>}
      */
     CompanyCaptureComponent.prototype.refreshSoleTraderAvailability = function (observedCountry) {
         const self = this;
-        const country = (observedCountry || this.countryCode() || '').toLowerCase();
+        const country = String(observedCountry || this.countryCode() || '').toLowerCase();
         if (!country) {
-            identity.soleTraderAvailable(false);
+            this._identity.soleTraderAvailable(false);
             return Promise.resolve(false);
         }
         return this.getSupportedCompanyTypes(country).then(function (types) {
             // The buyer may have changed country while this was in flight;
             // `_lastCountry` is the freshest answer, ahead of the quote.
             if ((self._lastCountry || self.countryCode()) !== country) {
-                return identity.soleTraderAvailable();
+                return self._identity.soleTraderAvailable();
             }
             const available = types.indexOf('SOLE_TRADER') !== -1;
-            identity.soleTraderAvailable(available);
-            if (!available && identity.isSoleTrader()) {
+            self._identity.soleTraderAvailable(available);
+            if (!available && self._identity.isSoleTrader()) {
                 self.registeredMode();
             }
             if (available) {
@@ -323,7 +359,7 @@ define([
             this._supportedCompanyTypes[key] = seeded[key];
             return Promise.resolve(seeded[key]);
         }
-        const URL = url.build(`rest/V1/two/supported-company-types/${encodeURIComponent(key)}`);
+        const URL = this._options.supportedCompanyTypesUrl(key);
         return fetch(URL, { headers: { Accept: 'application/json' } })
             .then(function (response) {
                 if (!response.ok) throw new Error(`Error response from ${URL}.`);
@@ -347,22 +383,26 @@ define([
      *
      * The admin setting decides WHERE the control lives, never whether it
      * exists: with company search in address entry ON the address step is its
-     * home, EXCEPT on a checkout that renders no such form — a saved address
-     * and a virtual cart both do that — where the tile is the buyer's only
-     * route to supply a company, without which authorize() refuses the order.
+     * home, EXCEPT on a checkout that renders no such form — a saved address and
+     * a virtual cart both do that — where the tile is the buyer's only route to
+     * supply a company, without which authorize() refuses the order.
      *
      * @returns {string} the field selector to bind at, or '' when neither host
      *          is present yet
      */
     CompanyCaptureComponent.prototype.mountSelector = function () {
         // No brand config means no Two method on this checkout and nothing to
-        // mount. The boot component still re-points on every totals change, so
-        // this has to answer rather than throw.
+        // mount. A host re-points on every totals change, so this has to answer
+        // rather than throw.
         if (!this._config) return '';
-        if (this._config.isCompanySearchEnabled && !quote.isVirtual()) {
-            if ($(ADDRESS_FIELD_SELECTOR).length) return ADDRESS_FIELD_SELECTOR;
+        if (this._config.isCompanySearchEnabled && !this._options.isVirtualCart()) {
+            if (this._options.fieldExists(this._options.addressFieldSelector)) {
+                return this._options.addressFieldSelector;
+            }
         }
-        if ($(TILE_FIELD_SELECTOR).length) return TILE_FIELD_SELECTOR;
+        if (this._options.fieldExists(this._options.tileFieldSelector)) {
+            return this._options.tileFieldSelector;
+        }
         return '';
     };
 
@@ -376,9 +416,6 @@ define([
     CompanyCaptureComponent.prototype.refreshMount = function () {
         const selector = this.mountSelector();
         if (!selector) return;
-        // A tile replaced under this same selector needs no re-point from here:
-        // the panel keeps one `$.async` observer per selector for the page's
-        // life, and that observer rebuilds on the replacement itself.
         if (selector === this._boundSelector && this._panel && this._panel.isBound()) {
             this.syncChips();
             return;
@@ -400,17 +437,14 @@ define([
     CompanyCaptureComponent.prototype.mountPanel = function (selector) {
         const self = this;
         if (!this._panel) {
-            this._panel = new CompanySearchPanel({
+            this._panel = new this._options.Panel({
                 fieldSelector: selector,
                 config: this._config,
-                // The panel carries no framework of its own so the Hyvä
-                // extension can mount the same file; these three are Magento's
-                // half of that bargain.
-                search: companySearch,
-                translate: $t,
-                observe: function (fieldSelector, onNode) {
-                    $.async(fieldSelector, onNode);
-                },
+                search: this._options.search,
+                translate: function (text) { return self.translate(text); },
+                observe: this.observe ? function (fieldSelector, onNode) {
+                    self.observe(fieldSelector, onNode);
+                } : null,
                 getCountryCode: function () {
                     return self.countryCode();
                 },
@@ -421,33 +455,25 @@ define([
                     return self.isModeOffered(mode);
                 },
                 getSelectedMode: function () {
-                    return identity.captureMode();
+                    return self._identity.captureMode();
                 },
                 getDisplayText: function () {
-                    return identity.companyName();
+                    return self._identity.companyName();
                 },
                 onExitManualEntry: function () {
                     self.registeredMode({ openDropdown: true });
                 },
                 onSelect: function (selectedItem) {
-                    // Authoritative: a pick must overwrite the previous
-                    // company's number even when the new one has none.
-                    identity.write(
-                        { companyId: selectedItem.companyId, companyName: selectedItem.text },
-                        { authoritative: true }
-                    );
-                    companySearch.lookupCompanyAddress(
-                        self._config,
-                        selectedItem,
-                        companySearch.billingRoleFormRoot()
-                    );
-                    self.syncChips();
+                    self.selectCompany(selectedItem);
                 }
             });
         } else {
             this._panel.fieldSelector = selector;
         }
         this._panel.bind();
+        // A re-render takes the return link with the wrapper, and without it
+        // manual entry is a dead end.
+        if (this._identity.captureMode() === 'manual') this._panel.releaseField();
     };
 
     // ----------------------------------------------------------------- chips
@@ -462,17 +488,17 @@ define([
         return [
             {
                 mode: 'registered',
-                text: $t('Registered company'),
+                text: this.translate('Registered company'),
                 onActivate: function () { self.registeredMode({ openDropdown: true }); }
             },
             {
                 mode: 'soletrader',
-                text: $t('Sole trader'),
-                onActivate: function () { self.soleTraderMode(); }
+                text: this.translate('Sole trader'),
+                onActivate: function () { return self.soleTraderMode(); }
             },
             {
                 mode: 'manual',
-                text: $t('Enter manually'),
+                text: this.translate('Enter manually'),
                 onActivate: function () { self.manualEntryMode(); }
             }
         ];
@@ -490,7 +516,7 @@ define([
      * @returns {boolean}
      */
     CompanyCaptureComponent.prototype.isModeOffered = function (mode) {
-        if (mode === 'soletrader') return !!identity.soleTraderAvailable();
+        if (mode === 'soletrader') return !!this._identity.soleTraderAvailable();
         if (mode === 'manual') return !!this._config.isCompanySearchEnabled;
         return true;
     };
@@ -504,15 +530,14 @@ define([
     // ----------------------------------------------------------------- modes
 
     /**
-     * Registered-company search — the default, and the way out of the other
-     * two.
+     * Registered-company search — the default, and the way out of the other two.
      *
      * @param {object} [options] `{ openDropdown: true }` to land the buyer in
      *        the search box, which is what a deliberate click means
      */
     CompanyCaptureComponent.prototype.registeredMode = function (options) {
         this.leaveSoleTraderMode();
-        identity.captureMode('registered');
+        this._identity.captureMode('registered');
         this.refreshMount();
         if (this._panel) {
             // Manual entry leaves the field typeable and the panel shut; coming
@@ -532,18 +557,49 @@ define([
      */
     CompanyCaptureComponent.prototype.manualEntryMode = function () {
         this.leaveSoleTraderMode();
-        identity.captureMode('manual');
+        this._identity.captureMode('manual');
         if (this._panel) {
             // Before the release: a search still on the wire would otherwise
             // paint results into a panel the buyer has closed.
             this._panel.abortActiveRequest();
             this._panel.releaseField();
         }
-        identity.clearNumber();
-        // `change`, not just `val('')`: Knockout's `value:` binding reads the
-        // DOM on change only, so without it the buyer sees an empty box while
-        // the quote still carries the company they searched for.
-        $(this._boundSelector).val('').trigger('change').trigger('focus');
+        this._identity.clearNumber();
+        if (this._boundSelector) this._options.clearField(this._boundSelector);
+        this.syncChips();
+    };
+
+    /**
+     * Record a name the buyer typed into the released field. No number is
+     * vouched for it, and a name that has diverged from the one a registry
+     * number was written for drops that number with it.
+     *
+     * @param {string} name
+     */
+    CompanyCaptureComponent.prototype.commitManualCompany = function (name) {
+        const typed = String(name || '');
+        if (this._identity.hasVouchedNumber() && typed !== this._identity.companyName()) {
+            this._identity.clearNumber();
+        }
+        this._identity.write({ companyName: typed, companyIdSource: '' }, { authoritative: false });
+    };
+
+    /**
+     * A registry pick. Authoritative: it must overwrite the previous company's
+     * number even when the new one has none.
+     *
+     * @param {{text: string, companyId: string, lookupId: string}} selectedItem
+     */
+    CompanyCaptureComponent.prototype.selectCompany = function (selectedItem) {
+        this._identity.write(
+            {
+                companyName: selectedItem.text,
+                companyId: selectedItem.companyId,
+                companyIdSource: selectedItem.companyId ? 'registry' : ''
+            },
+            { authoritative: true }
+        );
+        this._options.applyCompanyAddress(selectedItem);
         this.syncChips();
     };
 
@@ -556,10 +612,10 @@ define([
         // chip returns focus to the page, which otherwise takes the popup down.
         // Raise it rather than replacing it with a second signup.
         if (this._soleTrader.focusSignupPopup()) return null;
-        const wasAdopted = identity.isSoleTrader() && identity.soleTraderAdopted();
+        const wasAdopted = this._identity.isSoleTrader() && this._identity.soleTraderAdopted();
         if (!wasAdopted) {
-            identity.captureMode('soletrader');
-            identity.clearNumber();
+            this._identity.captureMode('soletrader');
+            this._identity.clearNumber();
             // The popover stays OPEN behind the signup popup, so the chips stay
             // on screen and the buyer can click Sole trader again to raise the
             // popup rather than having to reach it through the company field —
@@ -568,9 +624,9 @@ define([
             // somewhere other than this control.
             this.syncChips();
         }
-        // Re-clicking once adopted is the same re-signup the "select a
-        // different sole trader" link launches: offer a choice rather than
-        // hand back what is already on screen.
+        // Re-clicking once adopted is the same re-signup the "select a different
+        // sole trader" link launches: offer a choice rather than hand back what
+        // is already on screen.
         return this._soleTrader.launchSignup(wasAdopted ? { autoselect: false } : undefined);
     };
 
@@ -581,17 +637,17 @@ define([
      * @returns {boolean} whether sole-trader mode was actually left
      */
     CompanyCaptureComponent.prototype.leaveSoleTraderMode = function () {
-        if (!identity.isSoleTrader()) return false;
-        identity.soleTraderAdopted(false);
+        if (!this._identity.isSoleTrader()) return false;
+        this._identity.soleTraderAdopted(false);
         // A sole trader's minted name and synthetic number are not a registered
         // organisation, so carrying them across would submit one identity under
         // the other's mode.
-        identity.clear();
+        this._identity.clear();
         // Without this the sole trader's registered address stays in the form
         // and goes out under whatever company the buyer searches for next. Only
         // fields still holding what the write put there are cleared, so the
         // buyer's own edits survive.
-        companySearch.revertAutofilledAddress();
+        this._options.revertAutofilledAddress();
         this._soleTrader.forgetAdoptions();
         return true;
     };
@@ -608,13 +664,17 @@ define([
         // Authoritative: a sole trader with no registry number of their own must
         // not inherit the number of whatever company was captured before them,
         // which a non-authoritative write leaves standing.
-        identity.write(
-            { companyId: buyer.organization_number, companyName: buyer.company_name },
+        this._identity.write(
+            {
+                companyName: buyer.company_name,
+                companyId: buyer.organization_number,
+                companyIdSource: buyer.organization_number ? 'registry' : ''
+            },
             { authoritative: true }
         );
-        identity.soleTraderAdopted(true);
+        this._identity.soleTraderAdopted(true);
         if (this._panel) {
-            this._panel.setDisplayText(identity.companyName());
+            this._panel.setDisplayText(this._identity.companyName());
             // The popover was only held open so the chip stayed reachable while
             // the signup was up. The signup has answered, the company is in the
             // field, and there is nothing left in the popover to act on.
@@ -625,9 +685,11 @@ define([
 
     /** The buyer abandoned signup with nothing captured. */
     CompanyCaptureComponent.prototype.abandonSoleTrader = function () {
-        if (identity.soleTraderAdopted()) return;
+        if (this._identity.soleTraderAdopted()) return;
         this.registeredMode();
     };
 
-    return new CompanyCaptureComponent();
-});
+    CompanyCaptureComponent.HOST_CONTRACT = HOST_CONTRACT;
+
+    return CompanyCaptureComponent;
+}));

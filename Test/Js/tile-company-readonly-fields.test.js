@@ -53,10 +53,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const { loadAmdModule, defaultMocks } = require('./amd-harness');
+const { loadAmdModule, defaultMocks, loadCompanyCapture, brandConfigMock } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
-const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const TEMPLATE = 'view/frontend/web/template/payment/gateway_method.html';
 
@@ -443,20 +442,15 @@ function loadTile() {
         jquery: dom.$,
         'Two_Gateway/js/model/company-identity': identity
     };
-    const component = loadAmdModule(
-        COMPONENT,
+    const component = loadCompanyCapture(
         Object.assign({}, shared, {
             'Two_Gateway/js/model/sole-trader': SoleTraderStub,
-            'Two_Gateway/js/model/brand-config': {
-                getActiveTwoBrandConfig: function () {
-                    return {
-                        isCompanySearchEnabled: true,
-                        checkoutApiUrl: 'https://api.example.test',
-                        checkoutPageUrl: 'https://checkout.example.test',
-                        supportedCompanyTypes: { gb: ['SOLE_TRADER'] }
-                    };
-                }
-            },
+            'Two_Gateway/js/model/brand-config': brandConfigMock({
+                isCompanySearchEnabled: true,
+                checkoutApiUrl: 'https://api.example.test',
+                checkoutPageUrl: 'https://checkout.example.test',
+                supportedCompanyTypes: { gb: ['SOLE_TRADER'] }
+            }),
             'Magento_Checkout/js/model/quote': Object.assign(
                 {},
                 defaultMocks()['Magento_Checkout/js/model/quote'],
@@ -469,7 +463,7 @@ function loadTile() {
     const renderer = loadAmdModule(
         RENDERER,
         Object.assign({}, shared, {
-            'Two_Gateway/js/model/company-capture-component': component
+            'Two_Gateway/js/model/company-capture': component
         })
     );
     // `getCode()` comes from the Magento Component base class, which the

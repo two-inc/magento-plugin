@@ -25,12 +25,15 @@ const path = require('path');
 const $ = require('jquery');
 const {
     loadAmdModule,
+    loadCompanyCapture,
     loadCompanySearchPanel,
+    brandConfigMock,
     defaultMocks,
     installAsyncSimulation
 } = require('./amd-harness');
 
-const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
+const CONTROLLER = 'view/frontend/web/js/model/company-capture-component.js';
+const ADAPTER = 'view/frontend/web/js/model/company-capture.js';
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const BOOT = 'view/frontend/web/js/view/company-search-boot.js';
 const LAYOUT = 'view/frontend/layout/checkout_index_index.xml';
@@ -113,23 +116,18 @@ function load(options) {
         this.forgetAdoptions = function () {};
     };
 
-    const component = loadAmdModule(
-        COMPONENT,
+    const component = loadCompanyCapture(
         {
             jquery: $,
             'Two_Gateway/js/model/company-identity': identity,
             'Two_Gateway/js/model/company-search-panel': RecordingPanel,
             'Two_Gateway/js/model/sole-trader': SoleTraderStub,
-            'Two_Gateway/js/model/brand-config': {
-                getActiveTwoBrandConfig: function () {
-                    return {
-                        isCompanySearchEnabled: opts.isCompanySearchEnabled !== false,
-                        checkoutApiUrl: 'https://api.example',
-                        checkoutPageUrl: 'https://checkout.example',
-                        supportedCompanyTypes: { gb: ['SOLE_TRADER'] }
-                    };
-                }
-            },
+            'Two_Gateway/js/model/brand-config': brandConfigMock({
+                isCompanySearchEnabled: opts.isCompanySearchEnabled !== false,
+                checkoutApiUrl: 'https://api.example',
+                checkoutPageUrl: 'https://checkout.example',
+                supportedCompanyTypes: { gb: ['SOLE_TRADER'] }
+            }),
             'Magento_Checkout/js/model/quote': Object.assign(
                 {},
                 defaultMocks()['Magento_Checkout/js/model/quote'],
@@ -191,13 +189,26 @@ describe('the component is constructed once per page', () => {
         });
     });
 
-    test('the module exports one shared instance, not a constructor', () => {
+    test('Luma resolves one shared instance, built at the single construction site', () => {
         mountTile();
         const { component } = load();
-        // A constructor would hand every caller its own component, which is
-        // the architecture this replaced.
+        // The controller is a constructor so Hyvä can build its own with its
+        // own host. Luma's half is what must never hand a caller a second one.
         expect(typeof component).toBe('object');
         expect(typeof component.start).toBe('function');
+        const sites = readSource(ADAPTER).match(/new CompanyCaptureComponent\(/g) || [];
+        expect(sites).toHaveLength(1);
+    });
+
+    test('the controller carries no capture surface of its own', () => {
+        // Everything platform-shaped arrives as a host option; a direct
+        // RequireJS dep or a search call of its own would be a second
+        // implementation drifting from the panel's.
+        const controller = readSource(CONTROLLER);
+
+        expect(controller).toContain('define([], factory)');
+        expect(controller).not.toContain('searchCompanies(');
+        expect(controller).not.toContain('Magento_Checkout/');
     });
 
     test('a second start() builds no second panel and binds no second listener', () => {
@@ -332,16 +343,13 @@ describe('a checkout with no Two-family method is left alone', () => {
     function loadWithoutBrand() {
         const requests = [];
         const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
-        const component = loadAmdModule(
-            COMPONENT,
+        const component = loadCompanyCapture(
             {
                 jquery: $,
                 'Two_Gateway/js/model/company-identity': identity,
                 'Two_Gateway/js/model/sole-trader': function () {},
                 // No Two-family method on this checkout.
-                'Two_Gateway/js/model/brand-config': {
-                    getActiveTwoBrandConfig: function () { return null; }
-                },
+                'Two_Gateway/js/model/brand-config': brandConfigMock(null),
                 'Two_Gateway/js/model/company-search': Object.assign(
                     {},
                     defaultMocks()['Two_Gateway/js/model/company-search'],

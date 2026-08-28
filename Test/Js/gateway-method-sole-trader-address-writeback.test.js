@@ -29,10 +29,9 @@
 'use strict';
 
 const $ = require('jquery');
-const { loadAmdModule, defaultMocks } = require('./amd-harness');
+const { loadAmdModule, loadCompanyCapture, brandConfigMock, defaultMocks } = require('./amd-harness');
 
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
-const SOLE_TRADER = 'view/frontend/web/js/model/sole-trader.js';
 
 const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
 
@@ -58,19 +57,19 @@ const BUYER = {
 };
 
 /**
- * The real flow against a stub host and a recording company-search double.
+ * The real flow, reached through Luma's wired capture component, over a
+ * recording company-search double.
  *
- * Loaded fresh per test on purpose: the once-per-identity guard is module-scope
- * state, so a shared load would carry one case's adoptions into the next.
+ * Loaded fresh per test: the once-per-identity guard lives on the flow
+ * instance, and the identity is a page-level singleton.
  *
- * @returns {object} `{ flow, rec, identity, host }`
+ * @returns {object} `{ flow, rec, identity, component }`
  */
 function loadFlow() {
     /** `failAddressWrite` is flipped mid-test to model a DOM failure. */
     const rec = { applied: [], roots: [], phones: [], adopted: [], failAddressWrite: false };
 
     const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
-    identity.captureMode('soletrader');
 
     const companySearch = Object.assign(
         {},
@@ -87,12 +86,16 @@ function loadFlow() {
         }
     );
 
-    const SoleTraderCtor = loadAmdModule(
-        SOLE_TRADER,
+    const component = loadCompanyCapture(
         {
             jquery: $,
             'Two_Gateway/js/model/company-identity': identity,
-            'Two_Gateway/js/model/company-search': companySearch
+            'Two_Gateway/js/model/company-search': companySearch,
+            'Two_Gateway/js/model/brand-config': brandConfigMock({
+                checkoutPageUrl: CHECKOUT_PAGE_URL,
+                checkoutApiUrl: 'https://api.example',
+                isCompanySearchEnabled: true
+            })
         },
         {
             document: document,
@@ -103,18 +106,16 @@ function loadFlow() {
             fetch: function () { return Promise.resolve({ ok: false, status: 404 }); }
         }
     );
+    component.start();
+    identity.captureMode('soletrader');
 
-    const host = {
-        config: function () { return { checkoutPageUrl: CHECKOUT_PAGE_URL }; },
-        countryCode: function () { return 'gb'; },
-        adoptSoleTrader: function (buyer) {
-            rec.adopted.push(buyer);
-            identity.write({ companyId: buyer.organization_number, companyName: buyer.company_name });
-        },
-        abandonSoleTrader: function () {}
+    const adopt = component.adoptSoleTrader.bind(component);
+    component.adoptSoleTrader = function (buyer) {
+        rec.adopted.push(buyer);
+        return adopt(buyer);
     };
 
-    return { flow: new SoleTraderCtor(host), rec: rec, identity: identity, host: host };
+    return { flow: component.soleTrader(), rec: rec, identity: identity, component: component };
 }
 
 beforeEach(() => {
@@ -171,8 +172,8 @@ describe('the write ignores the address-lookup switches (§5)', () => {
         // added in a helper, or read through the brand config, throws here. A
         // case that only checked the outcome would keep passing if the flag it
         // consulted happened to be on.
-        const { flow, rec, host } = loadFlow();
-        host.config = function () {
+        const { flow, rec, component } = loadFlow();
+        component.config = function () {
             throw new Error('the address-lookup switch must not be read here');
         };
 

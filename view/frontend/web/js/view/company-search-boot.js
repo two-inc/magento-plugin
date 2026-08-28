@@ -20,7 +20,7 @@
 define([
     'uiComponent',
     'Magento_Checkout/js/model/quote',
-    'Two_Gateway/js/model/company-capture-component'
+    'Two_Gateway/js/model/company-capture'
 ], function (Component, quote, companyCapture) {
     'use strict';
 
