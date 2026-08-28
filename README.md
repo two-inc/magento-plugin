@@ -240,11 +240,9 @@ The push goes out under the App token rather than `GITHUB_TOKEN` for two reasons
 
 `.github/workflows/release.yml` is triggered by the `CI` workflow completing on `main`. When CI's conclusion is `success`, it:
 
-1. Skips itself if the branch tip drifted from the SHA CI signed off on, or if the SHA already carries a numeric tag. (That last check is what makes the merge-back a no-op: after a `main` release fast-forwards into `staging`, staging's tip already carries the tag.)
+1. Skips itself if the branch tip drifted from the SHA CI signed off on, or if the SHA already carries a numeric tag.
 2. Reads the version out of `bumpver.toml` — it does not compute or bump one.
 3. Tags `X.Y.Z` (bare numeric, matching the established tag convention), pushes the tag, and creates a GitHub Release with a bucketed changelog (Breaking / Features / Fixes / Internals / Other).
-
-`.github/workflows/merge-back.yml` keeps `staging` fast-forwarded to match `main` after each release (falling back to a sync PR if the two have diverged).
 
 `.github/workflows/auto-pr.yml` runs on every push to `staging` (a merge is a push) and keeps a single rolling `staging → main` promotion PR open, no-opping when one already exists or when `staging` is not ahead of `main`.
 

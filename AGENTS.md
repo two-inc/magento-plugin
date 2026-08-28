@@ -20,8 +20,7 @@ content such as plans, transcripts, or implementation notes.
     staging shop's deploy branch); branch off `origin/staging` —
     `version-bump.yml` decides the release version on PRs landing there.
     `auto-pr.yml` opens the staging → main promotion PR on every push to
-    `staging`; `main` is prod. `merge-back.yml` syncs `main → staging`
-    after merges (ff-only, else a sync PR). There is no `develop` branch.
+    `staging`; `main` is prod. There is no `develop` branch.
 -   **Releases are automated** — `release.yml` runs on CI success on
     `main` and does not compute a version: it reads the version committed
     by `version-bump.yml` on the PR that landed on `staging` (bump level

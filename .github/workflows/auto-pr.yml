@@ -46,11 +46,9 @@ jobs:
             echo "PR #$existing already open — nothing to do."
             exit 0
           fi
-          # No-op when staging has nothing ahead of main. Happens
-          # right after a merge-back fast-forwards staging to match
-          # main — there's no diff for `gh pr create`, which would
-          # otherwise fail with "No commits between main and staging"
-          # and leave a red check on the auto-PR workflow.
+          # No-op when staging has nothing ahead of main — with no
+          # diff, `gh pr create` fails with "No commits between main
+          # and staging" and leaves a red check on this workflow.
           ahead=$(gh api "repos/${REPO}/compare/main...staging" --jq '.ahead_by')
           if [ "$ahead" = "0" ]; then
             echo "staging has no commits ahead of main — nothing to sync."

@@ -79,10 +79,7 @@ jobs:
         # 2. Already tagged — re-runs on the same commit (or on the
         #    bumpver commit itself) shouldn't produce a duplicate
         #    release. Match bare numeric tags (1.14.1 etc.) — the
-        #    repo's established convention. This is also what makes
-        #    the merge-back safe: when a `main` release fast-forwards
-        #    into `staging`, staging's new tip already carries that
-        #    release's tag, so this correctly bumps nothing.
+        #    repo's established convention.
         id: gate
         env:
           PASSED_SHA: ${{ github.event.workflow_run.head_sha }}
