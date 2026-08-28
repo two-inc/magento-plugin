@@ -155,13 +155,6 @@ class Loader
             }
         }
 
-        $allowedCountries = [];
-        if (isset($brand->allowed_countries->country)) {
-            foreach ($brand->allowed_countries->country as $country) {
-                $allowedCountries[] = (string)$country;
-            }
-        }
-
         $extraHttpHeaders = [];
         if (isset($brand->extra_http_headers->header)) {
             foreach ($brand->extra_http_headers->header as $header) {
@@ -252,7 +245,6 @@ class Loader
             (string)$brand->admin_resource,
             $moduleLabelChain,
             $allowedCurrencies,
-            $allowedCountries,
             $extraHttpHeaders,
             $suppressedFields,
             $inlineTermFees,
