@@ -16,14 +16,18 @@ content such as plans, transcripts, or implementation notes.
 
 ## Branching & releases
 
--   **PRs target `main`** (prod). `staging` is the GitHub default and the
-    staging shop's deploy branch; `merge-back.yml` syncs `main → staging`
-    after merges (ff-only, else a sync PR). Branch off `origin/main`.
-    There is no `develop` branch.
+-   **Day-to-day PRs target `staging`** (the GitHub default and the
+    staging shop's deploy branch); branch off `origin/staging` —
+    `version-bump.yml` decides the release version on PRs landing there.
+    `auto-pr.yml` opens the staging → main promotion PR on every push to
+    `staging`; `main` is prod. `merge-back.yml` syncs `main → staging`
+    after merges (ff-only, else a sync PR). There is no `develop` branch.
 -   **Releases are automated** — `release.yml` runs on CI success on
-    `main`, derives the bump from conventional commits since the last
-    bare-semver tag (`feat!:` → major, `feat:` → minor, else patch), tags,
-    and creates the GitHub Release. Don't hand-run bumpver.
+    `main` and does not compute a version: it reads the version committed
+    by `version-bump.yml` on the PR that landed on `staging` (bump level
+    from that PR's own conventional-commit types: `feat!:` → major,
+    `feat:` → minor, else patch), tags it, and creates the GitHub Release.
+    Don't hand-run bumpver.
 -   `bumpver.toml` `current_version` MUST equal the version strings in the
     files it patches (`composer.json` `"version"`, `etc/config.xml`
     `<version>`) or every release dies at the bump step with "No match for
@@ -65,7 +69,7 @@ Two rules that look contradictory and are not. Keep both.
 somehow exists must be relayed to the pricing API as `cap => 0.0`.
 Do not throw, do not omit the key, do not turn it into "no cap".
 A zero cap bounds the buyer fee at zero — no surcharge is applied —
-and only an *absent* (null) limit means "no cap", which omits the
+and only an _absent_ (null) limit means "no cap", which omits the
 `cap` key and applies the percentage uncapped. Absent and zero are
 different values and both pass through faithfully.
 
@@ -79,7 +83,7 @@ percentage part.
 `Test/Unit/Service/Order/SurchargeCalculatorTest.php` pins this.
 
 **Admin — refuse zero.** Separately, TWO-25289 stopped a zero limit
-being *configurable*: `Model\Config\Backend\SurchargeGrid` rejects
+being _configurable_: `Model\Config\Backend\SurchargeGrid` rejects
 `limit === 0` on save, and the grid refuses it in the browser too.
 An EMPTY limit stays valid and still means "no limit".
 
@@ -87,7 +91,7 @@ This is not the reverted guard under another name. It is an
 admin-boundary decision rather than a runtime one, and the reason is
 different: a merchant who wants no fee on a term says so directly
 with 0% and 0 fixed, so a zero limit has no legitimate use — while on
-the sibling plugins a zero cap was being normalised to *absent* and
+the sibling plugins a zero cap was being normalised to _absent_ and
 relayed genuinely uncapped, overcharging the buyer. Refusing it at
 entry closes that consistently across all three plugins.
 
