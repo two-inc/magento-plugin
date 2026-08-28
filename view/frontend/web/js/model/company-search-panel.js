@@ -60,6 +60,7 @@
     const ROW_CLASS = 'two-company-dropdown__row';
     const ROW_ACTIVE_CLASS = 'two-company-dropdown__row--active';
     const BACK_CLASS = 'two-company-search-back';
+    const BACK_OWNER_ATTR = 'data-two-panel';
     const CHIPS_CLASS = 'two-company-mode-chips';
     const CHIP_CLASS = 'two-company-mode-chip';
     const CHIP_SELECTED_CLASS = 'two-company-mode-chip--selected';
@@ -976,6 +977,7 @@
         const link = document.createElement('button');
         link.type = 'button';
         link.className = BACK_CLASS;
+        link.setAttribute(BACK_OWNER_ATTR, String(this._id));
         link.textContent = this.translate('Search for company');
         this._bindEvent(link, 'click', function (event) {
             event.preventDefault();
@@ -994,9 +996,9 @@
     /**
      * Remove the return link and unbind it.
      *
-     * The class-wide sweep is deliberate: this panel's own reference does not
-     * cover a link left on a host it has since moved off, and two of these on
-     * one form is worse than none.
+     * The sweep stays document-wide because this panel's own reference does not
+     * cover a link left on a host it has since moved off, but it is keyed to
+     * this instance so a second panel on the same page keeps its own.
      */
     CompanySearchPanel.prototype.removeBackToSearchLink = function () {
         const self = this;
@@ -1006,7 +1008,9 @@
             this._back = null;
         }
         Array.prototype.forEach.call(
-            document.querySelectorAll('.' + BACK_CLASS),
+            document.querySelectorAll(
+                `.${BACK_CLASS}[${BACK_OWNER_ATTR}="${this._id}"]`
+            ),
             function (node) {
                 self._unbind(node);
                 node.remove();

@@ -50,8 +50,7 @@ const PANEL_FIELD_ATTRIBUTES = [
     'role',
     'aria-haspopup',
     'aria-controls',
-    'aria-expanded',
-    'placeholder'
+    'aria-expanded'
 ];
 
 /**
