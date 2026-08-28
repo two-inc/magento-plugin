@@ -148,13 +148,6 @@ class Loader
             }
         }
 
-        $allowedCurrencies = [];
-        if (isset($brand->allowed_currencies->currency)) {
-            foreach ($brand->allowed_currencies->currency as $currency) {
-                $allowedCurrencies[] = (string)$currency;
-            }
-        }
-
         $extraHttpHeaders = [];
         if (isset($brand->extra_http_headers->header)) {
             foreach ($brand->extra_http_headers->header as $header) {
@@ -244,7 +237,6 @@ class Loader
             $cspOrigins,
             (string)$brand->admin_resource,
             $moduleLabelChain,
-            $allowedCurrencies,
             $extraHttpHeaders,
             $suppressedFields,
             $inlineTermFees,
