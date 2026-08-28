@@ -68,6 +68,9 @@ define([
         mirroring = false;
     });
 
+    // Only `companyName` mirrors back, because it is the only two-way binding.
+    // A write to any of the other three would be reverted by the identity's next
+    // notification rather than reaching it.
     capturedName.subscribe(function (value) {
         if (mirroring) return;
         identity.companyName(value);
