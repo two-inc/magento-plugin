@@ -6,12 +6,10 @@
 /**
  * TWO-25503: LUMA'S HALF of the shared company-capture controller.
  *
- * The controller itself is `company-capture-component.js` — framework-free, UMD,
- * and loaded unchanged by Hyvä. This module is the Magento-shaped adapter it is
- * constructed with: RequireJS, Knockout's quote model, jQuery's `$.async`,
- * `mage/url` and `Magento_Ui`'s message list, each reduced to the one function
- * the controller asks for. Hyvä supplies the same set over Alpine and its own
- * checkout engine.
+ * The controller is `company-capture-component.js` — framework-free, UMD, and
+ * loaded unchanged by Hyvä. This module is the Magento-shaped adapter it is
+ * constructed with: RequireJS, the quote model, `$.async`, `mage/url` and the
+ * message list, each reduced to the one function the controller asks for.
  *
  * Nothing here decides anything about capture. Every branch that does lives in
  * the shared file.
@@ -202,10 +200,9 @@ define([
         },
 
         /**
-         * Anchored OUTSIDE the search popover, after the field's wrapper. The
-         * chips it used to sit beside now live inside that popover, and entering
-         * sole-trader mode closes it — so anchoring to them rendered the buyer's
-         * only route forward inside something they cannot see.
+         * Anchored OUTSIDE the search popover, after the field's wrapper:
+         * entering sole-trader mode closes the popover, so a prompt inside it is
+         * a route forward the buyer cannot see.
          */
         renderSignupPrompt: function (show, onRetry) {
             let $prompt = $('.two-sole-trader-note');
