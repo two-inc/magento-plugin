@@ -586,6 +586,15 @@
     /* Luma themes routinely uppercase form text broadly enough to catch this,
        and their own rule is as routinely `!important`. */
     text-transform: none !important;
+    text-overflow: ellipsis;
+}
+
+/* Firefox clips the placeholder from the input's own `text-overflow`; Chrome and
+   Safari only honour it on the pseudo-element, so both are declared. */
+.two-company-dropdown__query::placeholder {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /*
