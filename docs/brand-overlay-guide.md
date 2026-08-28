@@ -345,7 +345,7 @@ deploy.
 intrinsically brand-static: URLs, labels, CSP origins, admin-form shape.
 
 Anything the platform owns and may change per merchant comes from
-`GET /v1/merchant`, never brand.xml, so the storefront and checkout-api
+`GET /v1/merchant`, never brand.xml, so the storefront and the API
 can never disagree:
 
 -   minimum order value — `min_order_amount/currency/basis`, read via

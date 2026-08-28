@@ -195,7 +195,7 @@ class NegativeDiscountGuardTest extends TestCase
     public function testHalfCentNegativeDiscountThrows(): void
     {
         // -0.005 rounds to -0.01 at the payload boundary — a payload the
-        // checkout-api would reject, so the guard must fire.
+        // API would reject, so the guard must fire.
         $item = $this->makeItem(0.000, 0.005);
 
         $this->expectException(LocalizedException::class);

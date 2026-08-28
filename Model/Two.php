@@ -806,7 +806,7 @@ class Two extends AbstractMethod
             return false;
         }
         // Platform minimum-order constraint (the API-resolved tuple from
-        // GET /v1/merchant - the same value checkout-api enforces at order
+        // GET /v1/merchant - the same value the API enforces at order
         // create/intent) plus the merchant's own optional minimum (admin
         // setting in the STORE BASE currency; validated on save to meet or
         // exceed the platform floor converted to that currency).
@@ -874,7 +874,7 @@ class Two extends AbstractMethod
         // against the live total (see Model\Ui\ConfigProvider + the renderer).
         // Enforcement is not waived, only deferred: authorize() re-checks the
         // finalised order total (shipping now known) against BOTH the platform
-        // and merchant minimums fail-closed at placement, and checkout-api
+        // and merchant minimums fail-closed at placement, and the API
         // independently enforces the platform floor. isAmastyCheckoutStore()
         // requires an explicit admin override, not Amasty's inherited config.xml
         // default, so the bypass cannot leak onto other checkouts.
@@ -986,7 +986,7 @@ class Two extends AbstractMethod
      * total that dropped after the method was selected. It is also the SOLE
      * server enforcer of the MERCHANT minimum on Amasty, where isAvailable() is
      * bypassed and the order total (with shipping) is only complete here at
-     * placement; checkout-api independently enforces the platform floor but
+     * placement; the API independently enforces the platform floor but
      * never receives the merchant's own admin minimum.
      *
      * Split fail policy on an unprojectable minimum (missing FX rate), the
