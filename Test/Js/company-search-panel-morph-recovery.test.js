@@ -274,3 +274,57 @@ describe('the return link the morph swept away', () => {
         expect(document.querySelectorAll(BACK)).toHaveLength(1);
     });
 });
+
+/**
+ * TWO-25503 — what makes the rebuild UNBOUNDED rather than a one-off.
+ *
+ * A host that posts on this field's `change` morphs the wrapper away in the
+ * response, which drives the rebuild that repaints the field. A rebuild
+ * announcing a value it did not actually change is then a cycle with no exit —
+ * observed re-entering every ~5s indefinitely after a country switch, tearing
+ * the popover down under the buyer mid-keystroke.
+ *
+ * Counted on the field rather than through the panel's own state, because the
+ * EVENT is what the host hears.
+ */
+describe('a rebuild announces the field only when it changed it', () => {
+    /**
+     * @param {function} act
+     * @returns {number} `change` events the field emitted while `act` ran
+     */
+    function countFieldChanges(act) {
+        let changes = 0;
+        const field = document.querySelector(FIELD);
+        const count = function () { changes++; };
+        field.addEventListener('change', count);
+        act();
+        field.removeEventListener('change', count);
+        return changes;
+    }
+
+    test.each([
+        ['', '', 0, 'a rebuild over an empty field'],
+        ['Acme Ltd', 'Acme Ltd', 0, 'a rebuild repainting the captured name'],
+        ['', 'Acme Ltd', 1, 'a rebuild over a field the morph reset']
+    ])('field=%p captured=%p -> %i change events (%s)', (fieldValue, captured, expected) => {
+        const panel = setup();
+        panel.getDisplayText = function () { return captured; };
+        morphServerMarkupOverControl();
+        document.querySelector(FIELD).value = fieldValue;
+
+        const changes = countFieldChanges(function () { panel.bind(); });
+
+        expect(changes).toBe(expected);
+        expect(document.querySelector(FIELD).value).toBe(captured);
+    });
+
+    test('picking a company still announces it', () => {
+        const panel = setup();
+
+        const changes = countFieldChanges(function () {
+            panel.setDisplayText('Acme Ltd');
+        });
+
+        expect(changes).toBe(1);
+    });
+});
