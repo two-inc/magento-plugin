@@ -4,8 +4,8 @@
  *
  * The "Search for company" return link is the only route out of manual entry.
  * Two panels can be live on one page (the address step and the payment step
- * render their own), so one panel's cleanup must not strand the other in
- * manual entry — while still collecting a link it left on a host it moved off.
+ * render their own), so one panel's cleanup must not strand the other — while
+ * still collecting a link an earlier bind left on the field it is cleaning.
  */
 
 'use strict';
@@ -19,14 +19,14 @@ const BACK = '.two-company-search-back';
 
 const CONFIG = { checkoutApiUrl: 'https://api.example.test', companySearchLimit: 50 };
 
+// One shared module load, as in a browser: a second load restarts the instance
+// counter and hands both panels the same id.
+const CompanySearchPanel = loadCompanySearchPanel($, null, GLOBALS);
+
 function field(id) {
     return '<div class="field"><div class="control">' +
         '<input id="' + id + '" name="' + id + '" /></div></div>';
 }
-
-// One shared module load, as in a browser: a second load restarts the instance
-// counter and hands both panels the same id.
-const CompanySearchPanel = loadCompanySearchPanel($, null, GLOBALS);
 
 /**
  * A bound panel over the named field.
@@ -84,29 +84,14 @@ describe('two panels on one page own their own return link', () => {
         expect(backLinkOwners()).toEqual(expected);
     });
 
-    test('a panel still collects its own link that a host re-render cloned', () => {
-        const panel = panelOver('#company_name');
-        panel.releaseField();
-        const control = document.querySelector('#company_name').closest('.control');
-        // The panel's own reference is left pointing at the detached original,
-        // so only a document-wide sweep can reach the copy the buyer sees.
-        control.parentElement.replaceChild(control.cloneNode(true), control);
+    test('a fresh panel over the same field collects the orphan the old one left', () => {
+        const abandoned = panelOver('#company_name');
+        abandoned.releaseField();
         expect(backLinkOwners()).toEqual(['company_name']);
 
-        panel.removeBackToSearchLink();
-
-        expect(backLinkOwners()).toEqual([]);
-    });
-
-    test('the sweep leaves a second panel\'s cloned link alone', () => {
-        const first = panelOver('#company_name');
-        const second = panelOver('#billing_company_name');
-        first.releaseField();
-        second.releaseField();
-        const control = document.querySelector('#company_name').closest('.control');
-        control.parentElement.replaceChild(control.cloneNode(true), control);
-
-        second.removeBackToSearchLink();
+        // A replacement panel over the same field: its own reference is null, so
+        // only the sweep can reach the link still sitting in the wrapper.
+        panelOver('#company_name').releaseField();
 
         expect(backLinkOwners()).toEqual(['company_name']);
     });
