@@ -1411,6 +1411,14 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         },
 
         /**
+         * @see primaryAddressRoot
+         * @returns {boolean} whether the buyer's own shipping form is in play
+         */
+        hasPrimaryAddressForm: function () {
+            return !!primaryAddressRoot().length;
+        },
+
+        /**
          * Write a company or buyer address into a checkout address form.
          *
          * Scoped to `root` when given — the payment-step picker's

@@ -157,11 +157,19 @@ define([
     CompanyCaptureComponent.prototype.adjacentCountrySelect = function () {
         const mount = this._boundSelector || this.mountSelector();
         if (!mount) return null;
-        if (mount === ADDRESS_FIELD_SELECTOR) return $(ADDRESS_COUNTRY_SELECTOR);
+        // For a buyer with saved addresses core renders the shipping form —
+        // company field, country select and all — inside the hidden new-address
+        // modal, holding store defaults nobody chose.
+        const hasShippingForm = companySearch.hasPrimaryAddressForm();
+        if (mount === ADDRESS_FIELD_SELECTOR) {
+            return hasShippingForm ? $(ADDRESS_COUNTRY_SELECTOR) : null;
+        }
         // The same form the tile's own address write-back targets, so the
         // country searched and the address written can never disagree.
         const $root = companySearch.billingRoleFormRoot();
-        return $root ? $root.find(COUNTRY_SELECT_SELECTOR) : null;
+        if (!$root) return null;
+        if (!hasShippingForm && $root.is && $root.is(ADDRESS_FORM_ROOT)) return null;
+        return $root.find(COUNTRY_SELECT_SELECTOR);
     };
 
     /**

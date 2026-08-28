@@ -248,18 +248,25 @@ describe('with no control mounted, the quote\'s BILLING address decides (TWO-254
         expect(load({ billingCountry: billingCountry }).component.countryCode()).toBe(expected);
     });
 
-    test('an UNTOUCHED hidden select the control is not mounted in never beats the quote', () => {
+    test.each([
+        ['', 'no company field, so the control is not mounted there'],
+        ['<input name="company" />', 'the company field core really renders inside that modal']
+    ])('an UNTOUCHED hidden select never beats the quote â€” %s (%s)', (companyField) => {
         // Core renders `#shipping-new-address-form` inside the hidden
         // new-address modal for a customer with saved addresses: the select
         // exists, holds the store default, and the buyer has never seen it.
         mountAddressForm(
             '<div id="opc-new-shipping-address" style="display:none">' +
-            selectMarkup('shipping-new-address-form', 'US') +
-            '</div>'
+            '<form id="shipping-new-address-form">' + companyField +
+            '<select name="country_id"><option value="US" selected>US</option></select>' +
+            '</form></div>'
         );
 
         expect(loadCompanySearch().currentAddressFormCountry()).toBe('us');
-        expect(load({ billingCountry: 'NO' }).component.countryCode()).toBe('no');
+        const { component } = load({ billingCountry: 'NO' });
+        component.start();
+
+        expect(component.countryCode()).toBe('no');
     });
 
     test('a null billing address does not take the search down with it', () => {
@@ -416,6 +423,24 @@ describe('the tile mount reads the form holding the invoice address (TWO-25461 Â
             expect(component.countryCode()).toBe(expected);
         }
     );
+
+    test.each([
+        ['', 'no billing form: the shipping fallback is the hidden one'],
+        [billingForm('GB'), 'a billing form the buyer did open still answers']
+    ])('a shipping form inside the hidden new-address modal is not the invoice address (%s)', (billing, _because) => {
+        // Core renders it there, holding store defaults, for the whole of a
+        // checkout completed against a saved address.
+        mountAddressForm(
+            billing +
+            '<div id="opc-new-shipping-address" style="display:none">' +
+            shippingForm('US') +
+            '</div>' + TILE
+        );
+        const { component } = load({ billingCountry: 'NO' });
+        component.start();
+
+        expect(component.countryCode()).toBe(billing ? 'gb' : 'no');
+    });
 
     test('unchecking "same as shipping" moves the country to the billing form', async () => {
         // The switch the buyer makes on the payment step: the shipping form does
