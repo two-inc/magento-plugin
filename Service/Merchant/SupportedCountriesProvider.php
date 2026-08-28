@@ -8,13 +8,9 @@ declare(strict_types=1);
 namespace Two\Gateway\Service\Merchant;
 
 /**
- * The merchant's buyer-country allowlist (`supported_buyer_countries`,
- * ISO-3166-1 alpha-2), projected out of the merchant record.
+ * The merchant's buyer-country allowlist, projected out of the merchant record.
  *
- * TWO-40: absent, null or empty means EVERY country is allowed, never none —
- * that is the state of every merchant with no restriction configured. An
- * unresolvable record reads the same way; the server enforces independently,
- * and withdrawing the method on an API blip is the worse failure.
+ * TWO-40: an absent, null or empty allowlist means EVERY country is allowed, never none.
  */
 class SupportedCountriesProvider
 {

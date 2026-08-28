@@ -11,11 +11,9 @@ use Magento\Quote\Api\Data\CartInterface;
 use Magento\Quote\Model\Quote;
 
 /**
- * Buyer country for a quote in precedence order: billing, shipping, store
- * default (`general/country/default`).
+ * Buyer country for a quote: billing, then shipping, then the store default.
  *
- * Empty string when none resolves — "cannot judge", never a country, so a
- * gate keyed on this cannot withdraw a method for want of an address.
+ * Empty string when none resolves — "cannot judge", never a country.
  */
 class BuyerCountryResolver
 {

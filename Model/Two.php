@@ -882,10 +882,7 @@ class Two extends AbstractMethod
             );
             return false;
         }
-        // Core's own gate keys on the shipping address for a physical quote,
-        // but the country submitted as the buyer's registration country is the
-        // billing one where there is one — so judge on that. Placed BEFORE the
-        // Amasty bypass because there is no client-side equivalent.
+        // Judged on the billing-first country, not core's shipping-for-physical-quote choice.
         $buyerCountry = $this->buyerCountryResolver->resolve($quote);
         if ($buyerCountry !== '' && !$this->canUseForCountry($buyerCountry)) {
             $this->logRepository->addDebugLog(
@@ -920,9 +917,7 @@ class Two extends AbstractMethod
     /**
      * @inheritDoc
      *
-     * TWO-40: the merchant's server-supplied allowlist is a second gate ANDed
-     * with core's admin-configured one, which still runs first — either alone
-     * can withdraw the method.
+     * TWO-40: the merchant's server-supplied allowlist is ANDed with core's admin-configured one.
      */
     public function canUseForCountry($country)
     {
