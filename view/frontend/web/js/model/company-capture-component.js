@@ -152,6 +152,8 @@
         this._boundSelector = null;
         /** Availability answers per lower-cased ISO country, for the page's lifetime. */
         this._supportedCompanyTypes = {};
+        /** Country -> the request currently on the wire for it. */
+        this._typesInFlight = {};
         this._lastCountry = '';
         this._started = false;
 
@@ -359,8 +361,12 @@
             this._supportedCompanyTypes[key] = seeded[key];
             return Promise.resolve(seeded[key]);
         }
+        // One request per country in flight. A re-render sweep re-asks on every
+        // morph, and an error is deliberately not memoised — so without this a
+        // failing relay gets one request per morph.
+        if (this._typesInFlight[key]) return this._typesInFlight[key];
         const URL = this._options.supportedCompanyTypesUrl(key);
-        return fetch(URL, { headers: { Accept: 'application/json' } })
+        this._typesInFlight[key] = fetch(URL, { headers: { Accept: 'application/json' } })
             .then(function (response) {
                 if (!response.ok) throw new Error(`Error response from ${URL}.`);
                 return response.json();
@@ -373,7 +379,11 @@
             .catch(function (error) {
                 console.error({ logger: 'twoPayment.getSupportedCompanyTypes', error });
                 return [];
+            })
+            .finally(function () {
+                delete self._typesInFlight[key];
             });
+        return this._typesInFlight[key];
     };
 
     // ------------------------------------------------------------- the mount
