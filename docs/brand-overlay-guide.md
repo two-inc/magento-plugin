@@ -352,7 +352,12 @@ can never disagree:
     `Service/Order/MinimumOrderGate`;
 -   offerable payment terms — `available_terms`, read via
     `Service/Merchant/SettingsProvider`;
--   buyer-surcharge cap — `surcharge_limit`, same provider.
+-   buyer-surcharge cap — `surcharge_limit`, same provider;
+-   buyer-country allowlist — `supported_buyer_countries`, read via
+    `Service/Merchant/SupportedCountriesProvider` and applied by
+    `Model\Two::canUseForCountry()` alongside core's own
+    `sallowspecific`/`specificcountry` restriction. Both gates must
+    concede; an absent or empty allowlist restricts nothing.
 
 ## Local development
 

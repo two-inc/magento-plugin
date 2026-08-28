@@ -33,6 +33,8 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
+use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
@@ -157,6 +159,14 @@ class Two extends AbstractMethod
      */
     private $lifecycleEvents;
     /**
+     * @var BuyerCountryResolver
+     */
+    private $buyerCountryResolver;
+    /**
+     * @var SupportedCountriesProvider
+     */
+    private $supportedCountriesProvider;
+    /**
      * Per-store memo for isAmastyCheckoutStore(); isAvailable() fires many
      * times per page and the detection reads config + core_config_data.
      *
@@ -191,6 +201,8 @@ class Two extends AbstractMethod
      * @param ApiKeyStatus $apiKeyStatus
      * @param SurchargeCalculator $surchargeCalculator
      * @param LifecycleEventDispatcher $lifecycleEvents
+     * @param BuyerCountryResolver $buyerCountryResolver
+     * @param SupportedCountriesProvider $supportedCountriesProvider
      * @param AbstractResource|null $resource
      * @param AbstractDb|null $resourceCollection
      * @param array $data
@@ -222,6 +234,8 @@ class Two extends AbstractMethod
         ApiKeyStatus $apiKeyStatus,
         SurchargeCalculator $surchargeCalculator,
         LifecycleEventDispatcher $lifecycleEvents,
+        BuyerCountryResolver $buyerCountryResolver,
+        SupportedCountriesProvider $supportedCountriesProvider,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -257,6 +271,8 @@ class Two extends AbstractMethod
         $this->apiKeyStatus = $apiKeyStatus;
         $this->surchargeCalculator = $surchargeCalculator;
         $this->lifecycleEvents = $lifecycleEvents;
+        $this->buyerCountryResolver = $buyerCountryResolver;
+        $this->supportedCountriesProvider = $supportedCountriesProvider;
     }
 
     /**
@@ -866,6 +882,15 @@ class Two extends AbstractMethod
             );
             return false;
         }
+        // Judged on the billing-first country, not core's shipping-for-physical-quote choice.
+        $buyerCountry = $this->buyerCountryResolver->resolve($quote);
+        if ($buyerCountry !== '' && !$this->canUseForCountry($buyerCountry)) {
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: buyer country not supported', $this->_code),
+                ['country' => $buyerCountry]
+            );
+            return false;
+        }
         // Amasty OneStepCheckout persists the buyer's shipping method to the
         // server quote only at order placement, so at checkout-render time the
         // server quote is blind to the live shipping choice and this gate would
@@ -887,6 +912,23 @@ class Two extends AbstractMethod
             ? $this->buildMerchantMinimum((string)$store->getBaseCurrencyCode(), $platformMinimum, $storeId)
             : null;
         return $this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum);
+    }
+
+    /**
+     * @inheritDoc
+     *
+     * TWO-40: the merchant's server-supplied allowlist is ANDed with core's admin-configured one.
+     */
+    public function canUseForCountry($country)
+    {
+        if (!parent::canUseForCountry($country)) {
+            return false;
+        }
+        $storeId = $this->getStore();
+        return $this->supportedCountriesProvider->isAllowed(
+            (string)$country,
+            is_numeric($storeId) ? (int)$storeId : null
+        );
     }
 
     /**

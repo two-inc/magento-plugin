@@ -26,6 +26,8 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
+use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
@@ -95,6 +97,8 @@ class GenericPaymentMethod extends Two
         ApiKeyStatus $apiKeyStatus,
         SurchargeCalculator $surchargeCalculator,
         LifecycleEventDispatcher $lifecycleEvents,
+        BuyerCountryResolver $buyerCountryResolver,
+        SupportedCountriesProvider $supportedCountriesProvider,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -126,6 +130,8 @@ class GenericPaymentMethod extends Two
             $apiKeyStatus,
             $surchargeCalculator,
             $lifecycleEvents,
+            $buyerCountryResolver,
+            $supportedCountriesProvider,
             $resource,
             $resourceCollection,
             $data

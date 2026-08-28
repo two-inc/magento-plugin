@@ -72,6 +72,13 @@ if (!class_exists(\Magento\Catalog\Model\Product\Type::class)) {
 if (!class_exists(\Magento\Sales\Model\Order\Invoice::class, false)) {
     require_once __DIR__ . '/Stubs/SalesModels.php';
 }
+// Admin scope-resolution collaborators for config source models
+// (request params, store manager, Product Tax Class option source).
+// Loads BEFORE QuoteModels, whose Store stub implements the StoreInterface
+// declared here — a later declaration would lose the collision and strip
+// the interface's methods. Per-symbol guards live inside the stub file.
+require_once __DIR__ . '/Stubs/AdminScope.php';
+
 // Quote model with the CartInterface relationship intact - required so
 // type hints against CartInterface accept Quote mocks.
 if (!class_exists(\Magento\Quote\Model\Quote::class, false)) {
@@ -112,10 +119,6 @@ if (!class_exists(\Magento\Framework\App\Config\Value::class, false)) {
 // the encrypted config backend base class, which extends the Value stub
 // above; per-symbol guards live inside the stub file.
 require_once __DIR__ . '/Stubs/AdminAjaxController.php';
-// Admin scope-resolution collaborators for config source models
-// (request params, store manager, Product Tax Class option source);
-// per-symbol guards live inside the stub file.
-require_once __DIR__ . '/Stubs/AdminScope.php';
 
 // Admin system-config field renderer surface, so Block/Adminhtml/System/
 // Config/Field/* can be constructed and their real _getElementHtml() bodies
