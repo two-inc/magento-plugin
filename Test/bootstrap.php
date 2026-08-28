@@ -37,6 +37,13 @@ if (!interface_exists(\Magento\Framework\App\Config\ScopeConfigInterface::class)
 if (!class_exists(\Magento\Framework\DataObject::class)) {
     require_once __DIR__ . '/Stubs/DataObject.php';
 }
+// Payment Information block surface (Area constants + a faithful
+// Payment\Block\Info) — needed so Block/Payment/Info's admin-only row
+// injection runs against real getSpecificInformation() accumulation
+// rather than an empty catch-all class.
+if (!class_exists(\Magento\Payment\Block\Info::class, false)) {
+    require_once __DIR__ . '/Stubs/PaymentInfo.php';
+}
 if (!class_exists(\Magento\Tax\Model\Calculation::class)) {
     require_once __DIR__ . '/Stubs/TaxCalculationInterface.php';
 }

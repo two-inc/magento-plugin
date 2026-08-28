@@ -59,6 +59,7 @@ class Two extends AbstractMethod
      */
     public $request;
     protected $_code = self::CODE;
+    protected $_infoBlockType = \Two\Gateway\Block\Payment\Info::class;
     /**
      * @var bool
      */
