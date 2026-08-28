@@ -581,7 +581,10 @@
         if (this._identity.hasVouchedNumber() && typed !== this._identity.companyName()) {
             this._identity.clearNumber();
         }
-        this._identity.write({ companyName: typed, companyIdSource: '' }, { authoritative: false });
+        // The accessor, not `write()`: this path owns the NAME alone, and an
+        // emptied field must land as an empty name rather than be read as
+        // "nothing to write" and leave the previous company's on screen.
+        this._identity.companyName(typed);
     };
 
     /**

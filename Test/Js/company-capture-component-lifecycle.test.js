@@ -41,6 +41,45 @@ const LAYOUT = 'view/frontend/layout/checkout_index_index.xml';
 const ADDRESS_FIELD = '#shipping-new-address-form input[name="company"]';
 const TILE_FIELD = '#two_gateway_form input#company_name';
 
+const HOST_MEMBERS = [
+    ['fieldExists', 'a mount host is never found, so nothing ever mounts'],
+    ['isVirtualCart', 'a virtual cart still claims the address step'],
+    ['getAdjacentCountry', 'the country beside the mount cannot be read'],
+    ['getQuoteCountry', 'the quote can never answer for the country'],
+    ['getFallbackCountry', 'the pre-quote window has no country at all'],
+    ['watchCountryChanges', 'a country change is never noticed'],
+    ['supportedCompanyTypesUrl', 'sole-trader availability cannot be asked'],
+    ['applyCompanyAddress', 'a registry pick writes no address'],
+    ['revertAutofilledAddress', 'a country change throws mid-invalidation'],
+    ['clearField', 'manual entry leaves the previous company in the field'],
+    ['tokensUrl', 'no signup token can be minted'],
+    ['quoteId', 'the token mint is scoped to nothing'],
+    ['apiClientParams', 'the buyer read identifies no client'],
+    ['signupPrefill', 'the hosted signup opens with no buyer in it'],
+    ['signupCountry', 'the signup runs the wrong country identity checks'],
+    ['applyBuyerAddress', 'an adopted sole trader writes no address'],
+    ['applyTelephone', 'an adopted sole trader writes no phone'],
+    ['showError', 'a failed signup reports nothing'],
+    ['renderSignupPrompt', 'a blocked popup leaves no way through']
+];
+
+/** @returns {object} a host satisfying every member of the contract */
+function completeHost() {
+    const host = {
+        config: {},
+        Panel: function () {},
+        SoleTraderFlow: function () {},
+        identity: {},
+        search: {},
+        addressFieldSelector: ADDRESS_FIELD,
+        tileFieldSelector: TILE_FIELD
+    };
+    HOST_MEMBERS.forEach(function (member) {
+        host[member[0]] = function () {};
+    });
+    return host;
+}
+
 function readSource(relPath) {
     return fs.readFileSync(path.resolve(__dirname, '..', '..', relPath), 'utf8');
 }
@@ -537,5 +576,64 @@ describe('the host arriving after boot still gets a mount', () => {
         await Promise.resolve();
 
         expect(identity.soleTraderAvailable()).toBe(true);
+    });
+});
+
+describe('the host contract is checked at construction', () => {
+    test('a complete host constructs', () => {
+        const Controller = loadAmdModule(CONTROLLER);
+        expect(() => new Controller(completeHost())).not.toThrow();
+    });
+
+    test.each(HOST_MEMBERS)(
+        'a host missing %s is refused, because %s',
+        (member) => {
+            const Controller = loadAmdModule(CONTROLLER);
+            const host = completeHost();
+            delete host[member];
+            expect(() => new Controller(host)).toThrow(member);
+        }
+    );
+});
+
+describe('a typed company name carries no vouched number', () => {
+    /**
+     * `commitManualCompany()` is the released field's only writer, so a name the
+     * buyer has edited away from the one a registry number was written for must
+     * take that number with it — a hand-typed name under a registry number is
+     * one company's identifier submitted under another's name.
+     */
+    const CASES = [
+        ['Acme Ltd', 'Acme Ltd', '123', 'a name still matching its registry pick keeps the number'],
+        ['Acme Ltd', 'Acme Limited', '', 'an edited name drops the number it no longer describes'],
+        ['Acme Ltd', '', '', 'a cleared name drops it too']
+    ];
+
+    test.each(CASES)('picked %s, typed %s -> %s: %s', (picked, typed, expectedId) => {
+        const { component, identity } = load();
+        mountTile();
+        component.start();
+        component.selectCompany({ text: picked, companyId: '123', lookupId: 'l1' });
+
+        component.commitManualCompany(typed);
+
+        expect(identity.companyId()).toBe(expectedId);
+        expect(identity.companyName()).toBe(typed);
+    });
+
+    test('manual entry before anything has mounted asks the host to clear nothing', () => {
+        // Nothing bound means there is no selector, and a host handed one
+        // resolves it against the whole document — Hyva's `querySelector(null)`
+        // would answer for a field this control does not own.
+        const Controller = loadAmdModule(CONTROLLER);
+        const cleared = [];
+        const controller = new Controller(Object.assign(completeHost(), {
+            identity: loadAmdModule(IDENTITY),
+            clearField: function (selector) { cleared.push(selector); }
+        }));
+
+        controller.manualEntryMode();
+
+        expect(cleared).toEqual([]);
     });
 });
