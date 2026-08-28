@@ -38,7 +38,6 @@ final class Descriptor
      * @param string[] $cspOrigins Additional CSP fetch-policy origins.
      * @param string $adminResource ACL resource for the brand's admin form.
      * @param array<array{label:string,module:string}> $moduleLabelChain Version-panel rows.
-     * @param string[] $allowedCurrencies ISO codes; empty = unrestricted.
      * @param array<string,string> $extraHttpHeaders name=>value, decoration on outbound requests.
      * @param string[] $suppressedFields `section_suffix/group/field` paths to hide in the synthesised admin form.
      * @param bool $inlineTermFees Whether to render the per-term merchant fee beside each Payment Terms checkbox in admin.
@@ -63,7 +62,6 @@ final class Descriptor
         private readonly array $cspOrigins,
         private readonly string $adminResource,
         private readonly array $moduleLabelChain,
-        private readonly array $allowedCurrencies,
         private readonly array $extraHttpHeaders,
         private readonly array $suppressedFields = [],
         private readonly bool $inlineTermFees = true,
@@ -262,12 +260,6 @@ final class Descriptor
     public function getModuleLabelChain(): array
     {
         return $this->moduleLabelChain;
-    }
-
-    /** @return string[] */
-    public function getAllowedCurrencies(): array
-    {
-        return $this->allowedCurrencies;
     }
 
     /** @return array<string,string> */
