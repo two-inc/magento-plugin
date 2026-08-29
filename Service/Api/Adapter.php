@@ -89,15 +89,17 @@ class Adapter
             $body = ($method == "POST" || $method == "PUT")
                 ? (empty($payload) ? '' : (string)json_encode($payload))
                 : '';
-            $call = new ApiCall(
-                $method,
-                $url,
-                [
-                    'Content-Type' => 'application/json',
-                    'X-API-Key' => $apiKeyOverride ?? $this->configRepository->getApiKey($storeId),
-                ],
-                $body
-            );
+            $headers = [
+                'Content-Type' => 'application/json',
+                'X-API-Key' => $apiKeyOverride ?? $this->configRepository->getApiKey($storeId),
+            ];
+            // Server-side calls always carry the token when one is configured —
+            // the browser toggle governs only the browser's own direct call.
+            $firewallToken = $this->configRepository->getFirewallToken($storeId);
+            if ($firewallToken !== '') {
+                $headers['X-WAF-TOKEN'] = $firewallToken;
+            }
+            $call = new ApiCall($method, $url, $headers, $body);
 
             try {
                 $call = $this->apiTranslator->translateRequest($call);

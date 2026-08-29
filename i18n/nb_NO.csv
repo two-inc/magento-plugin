@@ -300,3 +300,7 @@
 "Platform minimum %1, %2 tax. A value here is interpreted in %3 on the tax basis selected below, and no exchange rate for %4 to %3 is currently available, so the two cannot be compared. Configure the rate under Stores > Currency Rates.","Plattformminimum %1, %2 MVA. En verdi her tolkes i %3 på MVA-grunnlaget som er valgt nedenfor, og det finnes ingen tilgjengelig valutakurs fra %4 til %3, så de to kan ikke sammenlignes. Konfigurer kursen under Butikker > Valutakurser."
 "Checking API key…","Sjekker API-nøkkel…"
 "Please select your company before paying with %1.","Velg selskapet ditt før du betaler med %1."
+"Firewall Token","Brannmurtoken"
+"If your IT administrator asks you to add a firewall token, place it in this field. It will then be transmitted as header X-WAF-TOKEN on all calls to the %1 API. This is a coarse network gate, not a secret credential.","Hvis IT-administratoren din ber deg legge til et brannmurtoken, skriver du det inn i dette feltet. Det sendes da som headeren X-WAF-TOKEN på alle kall til %1-API-et. Dette er en grov nettverkssperre, ikke en hemmelig legitimasjon."
+"Add firewall token to browser-originated traffic","Legg brannmurtoken til trafikk som kommer fra nettleseren"
+"Switch this on if your IT administrator requires the firewall token for calls from the user's browser as well as those from your server.","Slå på dette hvis IT-administratoren din krever brannmurtokenet for kall fra brukerens nettleser i tillegg til dem fra serveren din."

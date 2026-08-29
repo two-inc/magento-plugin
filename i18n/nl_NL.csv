@@ -296,3 +296,7 @@
 "Platform minimum %1, %2 tax. A value here is interpreted in %3 on the tax basis selected below, and no exchange rate for %4 to %3 is currently available, so the two cannot be compared. Configure the rate under Stores > Currency Rates.","Platformminimum %1, %2 btw. Een waarde hier wordt geïnterpreteerd in %3 op de hieronder gekozen belastinggrondslag, en er is momenteel geen wisselkoers van %4 naar %3 beschikbaar, waardoor de twee niet vergeleken kunnen worden. Stel de koers in via Winkels > Valutakoersen."
 "Checking API key…","API-sleutel controleren…"
 "Please select your company before paying with %1.","Selecteer uw bedrijf voordat u betaalt met %1."
+"Firewall Token","Firewalltoken"
+"If your IT administrator asks you to add a firewall token, place it in this field. It will then be transmitted as header X-WAF-TOKEN on all calls to the %1 API. This is a coarse network gate, not a secret credential.","Als uw IT-beheerder u vraagt een firewalltoken toe te voegen, plaatst u dit in dit veld. Het wordt dan als header X-WAF-TOKEN meegestuurd bij alle aanroepen naar de %1-API. Dit is een grove netwerkbeveiliging, geen geheime inloggegevens."
+"Add firewall token to browser-originated traffic","Firewalltoken toevoegen aan verkeer vanuit de browser"
+"Switch this on if your IT administrator requires the firewall token for calls from the user's browser as well as those from your server.","Schakel dit in als uw IT-beheerder het firewalltoken vereist voor aanroepen vanuit de browser van de gebruiker naast die vanaf uw server."

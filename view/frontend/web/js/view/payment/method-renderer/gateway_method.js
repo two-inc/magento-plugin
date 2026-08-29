@@ -21,6 +21,7 @@ define([
     'Two_Gateway/js/model/company-identity',
     'Two_Gateway/js/model/company-capture-component',
     'Two_Gateway/js/model/minimum-order-visibility',
+    'mage/url',
     'Magento_Ui/js/lib/view/utils/async',
     'mage/validation',
     'jquery/jquery-storageapi'
@@ -41,7 +42,8 @@ define([
     companySearch,
     identity,
     companyCapture,
-    isAboveMinimums
+    isAboveMinimums,
+    url
 ) {
     'use strict';
 
@@ -1305,15 +1307,12 @@ define([
 
             console.debug({ logger: 'twoPayment.placeOrderIntent', orderIntentRequestBody });
 
-            const queryParams = new URLSearchParams({
-                client: this._brandConfig.orderIntentConfig.extensionPlatformName,
-                client_v: this._brandConfig.orderIntentConfig.extensionDBVersion
-            });
-
-            return $.ajax({
-                url: `${
-                    this._brandConfig.checkoutApiUrl
-                }/v1/order_intent?${queryParams.toString()}`,
+            // Proxied through the plugin's own backend so the merchant API
+            // key and any configured firewall token stay server-side; the
+            // merchant identity in the body is replaced there too.
+            const deferred = $.Deferred();
+            $.ajax({
+                url: url.build('rest/V1/two/order-intent'),
                 type: 'POST',
                 // `global: false`, and this is load-bearing for the tile-local
                 // spinner rather than a micro-optimisation. Magento's
@@ -1329,9 +1328,22 @@ define([
                 // through the tile's messageContainer.
                 global: false,
                 contentType: 'application/json',
-                headers: {},
-                data: JSON.stringify(orderIntentRequestBody)
-            });
+                data: JSON.stringify({ payload: JSON.stringify(orderIntentRequestBody) })
+            })
+                .done(function (raw) {
+                    const envelope = companySearch.unwrapProxyResponse(raw);
+                    if (envelope.ok) {
+                        deferred.resolve(envelope.body);
+                    } else {
+                        // `responseJSON` because processOrderIntentErrorResponse
+                        // reads the upstream error body off that jqXHR field.
+                        deferred.reject({ responseJSON: envelope.body });
+                    }
+                })
+                .fail(function (jqXHR) {
+                    deferred.reject(jqXHR);
+                });
+            return deferred.promise();
         },
         validate: function () {
             return $(this.formSelector).valid();

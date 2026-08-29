@@ -844,4 +844,20 @@ class Repository implements RepositoryInterface
     {
         return $this->isSetFlag($this->path('disable_ssl_verify'), $storeId);
     }
+
+    /**
+     * @inheritDoc
+     */
+    public function getFirewallToken(?int $storeId = null): string
+    {
+        return trim((string)$this->getConfig($this->path('firewall_token'), $storeId));
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isFirewallTokenSentFromBrowser(?int $storeId = null): bool
+    {
+        return $this->isSetFlag($this->path('firewall_token_browser'), $storeId);
+    }
 }

@@ -25,6 +25,8 @@ interface RepositoryInterface
     public const XML_PATH_TITLE = 'payment/two_payment/title';
     public const XML_PATH_MODE = 'payment/two_payment/mode';
     public const XML_PATH_API_KEY = 'payment/two_payment/api_key';
+    public const XML_PATH_FIREWALL_TOKEN = 'payment/two_payment/firewall_token';
+    public const XML_PATH_FIREWALL_TOKEN_BROWSER = 'payment/two_payment/firewall_token_browser';
     public const XML_PATH_FULFILL_TRIGGER = 'payment/two_payment/fulfill_trigger';
     public const XML_PATH_FULFILL_ORDER_STATUS = 'payment/two_payment/fulfill_order_status';
     public const XML_PATH_ENABLE_COMPANY_SEARCH = 'payment/two_payment/enable_company_search';
@@ -538,4 +540,26 @@ interface RepositoryInterface
      * @return bool
      */
     public function isSslVerificationDisabled(?int $storeId = null): bool;
+
+    /**
+     * Token some merchants' firewall appliances require on traffic to the
+     * API, relayed as the X-WAF-TOKEN header. A coarse network-egress gate,
+     * not a merchant credential — stored and rendered in plain text.
+     *
+     * @param int|null $storeId
+     *
+     * @return string empty when the merchant's network needs no such gate
+     */
+    public function getFirewallToken(?int $storeId = null): string;
+
+    /**
+     * Whether the firewall token is also sent on the one call the buyer's
+     * browser still makes directly to the API. Default false, which keeps
+     * the token off the wire to the browser entirely.
+     *
+     * @param int|null $storeId
+     *
+     * @return bool
+     */
+    public function isFirewallTokenSentFromBrowser(?int $storeId = null): bool;
 }

@@ -10,7 +10,7 @@
  * rather than a hardcoded country â€” the only feed was a customer-data section
  * written by `address-autocomplete.js` once `#shipping-new-address-form`
  * resolves, and a one-page checkout that supplies its own address markup
- * matches no such selector, so the country reaching the search URL was empty.
+ * matches no such selector, so the country reaching the search request was empty.
  *
  * Where the control is mounted decides which address form answers for it:
  *
@@ -208,7 +208,7 @@ describe('the DOM fallback reads the country the buyer actually selected', () =>
         expect(load({ billingCountry: null }).component.countryCode()).toBe('');
     });
 
-    test('the resolved country is what reaches the search URL', () => {
+    test('the resolved country is what reaches the search request', () => {
         // Through a real searchCompanies() call, so the assertion covers the
         // whole path from the component's getter to the wire, not the getter.
         mountAddressForm(
@@ -227,8 +227,7 @@ describe('the DOM fallback reads the country the buyer actually selected', () =>
             });
         });
 
-        expect(requested[0].url).toContain('country=GB');
-        expect(requested[0].url).not.toContain('country=&');
+        expect(JSON.parse(requested[0].data).country).toBe('GB');
     });
 });
 
@@ -459,7 +458,7 @@ describe('the tile mount reads the form holding the invoice address (TWO-25461 Â
         expect(identity.soleTraderAvailable()).toBe(true);
     });
 
-    test('the country reaching the search URL is the billing form\'s', () => {
+    test('the country reaching the search request is the billing form\'s', () => {
         // Through a real searchCompanies() call: the getter is only half the
         // path, and the wire is what the buyer sees results for.
         mountAddressForm(billingForm('GB') + shippingForm('SE') + TILE);
@@ -476,7 +475,7 @@ describe('the tile mount reads the form holding the invoice address (TWO-25461 Â
             });
         });
 
-        expect(requested[0].url).toContain('country=GB');
+        expect(JSON.parse(requested[0].data).country).toBe('GB');
     });
 });
 

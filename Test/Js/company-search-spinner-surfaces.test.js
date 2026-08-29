@@ -22,7 +22,7 @@
 'use strict';
 
 const $ = require('jquery');
-const { loadAmdModule, loadCompanySearchPanel, dispatchNative } = require('./amd-harness');
+const { loadAmdModule, loadCompanySearchPanel, dispatchNative, isProxyRoute, proxyEnvelope } = require('./amd-harness');
 
 const SEARCH_PATH = 'view/frontend/web/js/model/company-search.js';
 
@@ -57,7 +57,10 @@ function installAjaxDouble() {
                 jqxhr.settleFail('abort');
             },
             settleDone: function (data) {
-                bound.done.forEach(function (fn) { fn(data); });
+                // A proxy route answers with the envelope, not the upstream
+                // body the test states.
+                const payload = isProxyRoute(options && options.url) ? proxyEnvelope(data) : data;
+                bound.done.forEach(function (fn) { fn(payload); });
                 bound.always.forEach(function (fn) { fn(); });
             },
             settleFail: function (textStatus) {

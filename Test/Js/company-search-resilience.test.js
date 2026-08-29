@@ -17,7 +17,7 @@
 'use strict';
 
 const $ = require('jquery');
-const { loadAmdModule, loadCompanySearchPanel, installAsyncSimulation, dispatchNative } = require('./amd-harness');
+const { loadAmdModule, loadCompanySearchPanel, installAsyncSimulation, dispatchNative, isProxyRoute, proxyEnvelope } = require('./amd-harness');
 
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
 const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
@@ -79,7 +79,10 @@ function installAjaxDouble() {
                 jqxhr.settleFail('abort');
             },
             settleDone: function (data) {
-                bound.done.forEach(function (fn) { fn(data); });
+                // A proxy route answers with the envelope, not the upstream
+                // body the test states.
+                const payload = isProxyRoute(options && options.url) ? proxyEnvelope(data) : data;
+                bound.done.forEach(function (fn) { fn(payload); });
                 bound.always.forEach(function (fn) { fn(); });
             },
             settleFail: function (textStatus) {
@@ -154,37 +157,31 @@ describe('request envelope', () => {
         expect(requests[0].options.timeout).toBe(30000);
     });
 
-    // Both unauthenticated-from-browser endpoints must identify the calling
-    // plugin the same way gateway_method.js's order_intent call does, so the
-    // API can skip a CORS preflight per keystroke.
+    // Neither registry call leaves the browser any more: both go to the
+    // plugin's own route, which authenticates them as the merchant and
+    // decides the result window itself.
     test.each([
         [
             'company search',
-            'search url',
-            (companySearch) => { search(companySearch, 'exa'); }
+            (companySearch) => { search(companySearch, 'exa'); },
+            'rest/V1/two/company-search',
+            { country: 'GB', query: 'exa' }
         ],
         [
             'address lookup by id',
-            'lookup url',
             (companySearch) => {
                 companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
-            }
+            },
+            'rest/V1/two/company',
+            { lookupId: 'lookup-abc-123' }
         ]
-    ])('%s carries client/client_v (%s)', (_label, _desc, issue) => {
+    ])('%s posts to the plugin\'s own route, carrying nothing that identifies the merchant', (_label, issue, route, body) => {
         issue(loadCompanySearch());
-        const params = new URLSearchParams(requests[0].options.url.split('?')[1]);
 
-        expect(params.get('client')).toBe('magento2');
-        expect(params.get('client_v')).toBe('1.0.0');
-    });
-
-    test('the search url carries the country, limit and term', () => {
-        search(loadCompanySearch(), 'exa');
-        const params = new URLSearchParams(requests[0].options.url.split('?')[1]);
-
-        expect(params.get('country')).toBe('GB');
-        expect(params.get('limit')).toBe('50');
-        expect(params.get('q')).toBe('exa');
+        expect(requests[0].options.url).toBe(route);
+        expect(requests[0].options.type).toBe('POST');
+        expect(JSON.parse(requests[0].options.data)).toEqual(body);
+        expect(requests[0].options.url).not.toContain('api.example.test');
     });
 });
 

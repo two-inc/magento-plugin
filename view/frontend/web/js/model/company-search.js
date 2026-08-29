@@ -12,7 +12,7 @@
  * these results is `company-search-panel.js`; where it is mounted and what its
  * chips mean is `company-capture-component.js`.
  */
-define(['jquery', 'mage/translate'], function ($, $t) {
+define(['jquery', 'mage/url', 'mage/translate'], function ($, url, $t) {
     'use strict';
 
     /**
@@ -865,6 +865,52 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         return params;
     }
 
+    /**
+     * POST to one of the plugin's own registry-proxy routes.
+     *
+     * Registry calls run server-side so the merchant API key authenticates
+     * them and a configured firewall token can be attached — neither ever
+     * reaches the browser.
+     *
+     * @param {string} path storefront-relative REST path
+     * @param {object} data request body
+     * @returns {object} jqXHR
+     */
+    function proxyPost(path, data) {
+        return $.ajax({
+            url: url.build(path),
+            type: 'POST',
+            contentType: 'application/json',
+            dataType: 'json',
+            timeout: REQUEST_TIMEOUT_MS,
+            data: JSON.stringify(data)
+        });
+    }
+
+    /**
+     * Unwrap `{ok, status, body}` from a proxy route.
+     *
+     * Magento's webapi layer hands a `: string` return back as a one-element
+     * array of JSON in some serialisation paths and as the bare string in
+     * others; both shapes reach here.
+     *
+     * @param {*} raw
+     * @returns {{ok: boolean, status: number, body: *}}
+     */
+    function unwrapProxyResponse(raw) {
+        const first = Array.isArray(raw) ? raw[0] : raw;
+        let parsed = first;
+        if (typeof first === 'string') {
+            try {
+                parsed = JSON.parse(first);
+            } catch (e) {
+                return { ok: false, status: 0, body: null };
+            }
+        }
+        if (!parsed || typeof parsed !== 'object') return { ok: false, status: 0, body: null };
+        return { ok: !!parsed.ok, status: parsed.status || 0, body: parsed.body };
+    }
+
     function currentAddressFormCountry() {
         for (let i = 0; i < COUNTRY_SELECT_SELECTORS.length; i++) {
             const $select = $(COUNTRY_SELECT_SELECTORS[i]).first();
@@ -1240,11 +1286,13 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         currentAddressFormCountry: currentAddressFormCountry,
         apiClientParams: apiClientParams,
 
+        unwrapProxyResponse: unwrapProxyResponse,
+
         /**
          * Run one company search and hand back rows the panel can render.
          *
-         * Answers from cache where the same request URL has already been made,
-         * is bounded by REQUEST_TIMEOUT_MS, and is abortable through
+         * Answers from cache where the same country and term have already been
+         * searched, is bounded by REQUEST_TIMEOUT_MS, and is abortable through
          * `abortActiveRequest(token)`. Debouncing belongs to the caller: the
          * panel owns the query field, so it is what knows when a keystroke has
          * superseded the previous one.
@@ -1254,9 +1302,6 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * company is not here" — the distinction TWO-25326 exists for.
          *
          * @param {object} options
-         * @param {object} options.config brand config subtree; needs
-         *        `checkoutApiUrl`, `companySearchLimit` and `orderIntentConfig`
-         *        (for `extensionPlatformName`/`extensionDBVersion`)
          * @param {string} options.term the buyer's query
          * @param {function(): (string|undefined)} options.getCountryCode
          *        returns the current ISO country code (any case)
@@ -1265,23 +1310,11 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * @returns {Promise<{items: Array, unavailable: boolean, aborted: boolean}>}
          */
         searchCompanies: function (options) {
-            const config = options.config;
             const token = options.token;
-            const queryParams = new URLSearchParams(Object.assign(
-                {
-                    country: options.getCountryCode()?.toUpperCase(),
-                    limit: config.companySearchLimit,
-                    offset: 0,
-                    q: options.term
-                },
-                // Kept flat in the same URLSearchParams rather than appended
-                // after, so a missing one is absent instead of sent as the
-                // string "undefined".
-                apiClientParams(config)
-            ));
-            const requestUrl = `${config.checkoutApiUrl}/companies/v2/company?${queryParams.toString()}`;
+            const country = options.getCountryCode()?.toUpperCase();
+            const cacheKey = `search|${country}|${options.term}`;
 
-            const cached = cacheGet(requestUrl);
+            const cached = cacheGet(cacheKey);
             if (cached) {
                 return Promise.resolve({
                     items: mapSearchResults(cached),
@@ -1291,10 +1324,9 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             }
 
             return new Promise(function (resolve) {
-                const request = $.ajax({
-                    url: requestUrl,
-                    dataType: 'json',
-                    timeout: REQUEST_TIMEOUT_MS
+                const request = proxyPost('rest/V1/two/company-search', {
+                    country: country,
+                    query: options.term
                 });
                 const handle = {
                     abort: function () {
@@ -1310,13 +1342,18 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                     console.error('companySearch: searchCompanies called without a bind token');
                 }
 
-                request.done(function (response) {
-                    cacheSet(requestUrl, response);
+                request.done(function (raw) {
+                    const envelope = unwrapProxyResponse(raw);
+                    if (!envelope.ok) {
+                        resolve({ items: [], unavailable: true, aborted: false });
+                        return;
+                    }
+                    cacheSet(cacheKey, envelope.body);
                     // A degraded 200 is a failure dressed as a success:
                     // near-empty results because the provider timed out.
                     resolve({
-                        items: mapSearchResults(response),
-                        unavailable: isDegradedResponse(response),
+                        items: mapSearchResults(envelope.body),
+                        unavailable: isDegradedResponse(envelope.body),
                         aborted: false
                     });
                 });
@@ -1358,13 +1395,12 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             if (!selectedCompany || !selectedCompany.lookupId) return null;
 
             const self = this;
-            const queryParams = new URLSearchParams(apiClientParams(config));
-            const addressResponse = $.ajax({
-                dataType: 'json',
-                timeout: REQUEST_TIMEOUT_MS,
-                url: `${config.checkoutApiUrl}/companies/v2/company/${selectedCompany.lookupId}?${queryParams.toString()}`
+            const addressResponse = proxyPost('rest/V1/two/company', {
+                lookupId: selectedCompany.lookupId
             });
-            addressResponse.done(function (response) {
+            addressResponse.done(function (raw) {
+                const envelope = unwrapProxyResponse(raw);
+                const response = envelope.ok ? envelope.body : null;
                 if (response && response.addresses && response.addresses.length) {
                     self.applyAddress(response.addresses[0], root);
                 }

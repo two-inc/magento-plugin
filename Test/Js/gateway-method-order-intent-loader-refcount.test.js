@@ -301,7 +301,7 @@ describe('order-intent spinner is tile-local and refcounted (TWO-25326)', () => 
         const path = require('path');
         const src = fs.readFileSync(path.resolve(__dirname, '..', '..', RENDERER), 'utf8');
 
-        const call = src.match(/\/v1\/order_intent[\s\S]{0,1200}?\}\);/);
+        const call = src.match(/rest\/V1\/two\/order-intent[\s\S]{0,1200}?\}\)/);
         expect(call).not.toBeNull();
         const options = call[0].replace(/\/\/[^\n]*/g, '');
         expect(options).toMatch(/global:\s*false/);
