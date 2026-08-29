@@ -5,7 +5,7 @@ namespace Two\Gateway\Test\Unit\Model\Webapi;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\App\CacheInterface;
-use Magento\Framework\HTTP\PhpEnvironment\RemoteAddress;
+use Magento\Framework\App\Request\Http as HttpRequest;
 use Magento\Framework\Webapi\Exception as WebapiException;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\CartTotalRepositoryInterface;
@@ -103,10 +103,10 @@ class AnonymousRouteRateLimitsTest extends TestCase
                 $this->termSelection($limiter)->selectTerm('cart-1', 30);
                 return;
             case 'company-search':
-                (new CompanyLookup($this->createMock(Adapter::class), $limiter))->search('no', 'acme');
+                $this->companyLookup($limiter)->search('no', 'acme');
                 return;
             case 'company':
-                (new CompanyLookup($this->createMock(Adapter::class), $limiter))->get('lookup-1');
+                $this->companyLookup($limiter)->get('lookup-1');
                 return;
             case 'order-intent':
                 (new OrderIntent(
@@ -121,6 +121,15 @@ class AnonymousRouteRateLimitsTest extends TestCase
         }
 
         $this->fail(sprintf('no invocation wired for %s (%s)', $route, $description));
+    }
+
+    private function companyLookup(RateLimiter $limiter): CompanyLookup
+    {
+        return new CompanyLookup(
+            $this->createMock(Adapter::class),
+            $this->createMock(ApiKeyStatus::class),
+            $limiter
+        );
     }
 
     private function soleTrader(RateLimiter $limiter): SoleTrader
@@ -160,9 +169,9 @@ class AnonymousRouteRateLimitsTest extends TestCase
     {
         $cache = $this->createMock(CacheInterface::class);
         $cache->method('load')->willReturn('100000');
-        $remoteAddress = $this->createMock(RemoteAddress::class);
-        $remoteAddress->method('getRemoteAddress')->willReturn('198.51.100.7');
+        $request = new HttpRequest();
+        $request->setTestEnvironment(['REMOTE_ADDR' => '198.51.100.7']);
 
-        return new RateLimiter($cache, $remoteAddress);
+        return new RateLimiter($cache, $request);
     }
 }

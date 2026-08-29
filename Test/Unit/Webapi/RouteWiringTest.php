@@ -37,9 +37,9 @@ class RouteWiringTest extends TestCase
     }
 
     /**
-     * Anonymous is deliberate on all of these — a guest checkout has no token
-     * to present — so the thing worth pinning is that a route never silently
-     * loses its `<resources>` declaration and becomes unroutable.
+     * The thing worth pinning is that a route never silently loses its
+     * `<resources>` declaration and becomes unroutable — not which resource
+     * it names, since tightening one to a real ACL is the safe direction.
      *
      * @dataProvider registeredRoutes
      */
@@ -49,7 +49,7 @@ class RouteWiringTest extends TestCase
         string $description,
         string $resource
     ): void {
-        $this->assertSame('anonymous', $resource, $description);
+        $this->assertNotSame('', $resource, $description);
     }
 
     /**

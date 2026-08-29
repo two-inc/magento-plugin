@@ -79,7 +79,7 @@
                 <field id="firewall_token_browser" translate="label comment" type="select" sortOrder="52"
                        showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Add firewall token to browser-originated traffic</label>
-                    <comment>Switch this on if your IT administrator requires the firewall token for calls from the user's browser as well as those from your server.</comment>
+                    <comment>Switch this on if your IT administrator requires the firewall token for calls from the user's browser as well as those from your server. The token is then published in the source of your checkout page, where every visitor can read it. Only switch this on if your IT administrator has confirmed that is acceptable.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/firewall_token_browser</config_path>
                 </field>

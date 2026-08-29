@@ -31,12 +31,21 @@ define(['jquery', 'mage/url', 'mage/translate'], function ($, url, $t) {
     const SEARCH_DEBOUNCE_MS = 300;
 
     /**
+     * How long searching stays parked after the proxy answers 429. Matches
+     * the server's window, so the buyer's next keystroke does not walk
+     * straight back into the ceiling it just hit.
+     */
+    const RATE_LIMIT_BACKOFF_MS = 60000;
+
+    /** Epoch ms before which no search is issued. @see RATE_LIMIT_BACKOFF_MS */
+    let searchSuspendedUntil = 0;
+
+    /**
      * Search-result cache. MODULE-scoped on purpose: one-page checkouts
      * (Fire Checkout) re-render the payment renderer on every totals or
      * shipping change, which rebuilds the panel. A cache owned by the panel
      * would be thrown away each time and every search the buyer already waited
-     * for would be re-issued. Keyed by the fully-qualified request URL, so
-     * country and limit are both part of the key.
+     * for would be re-issued. Keyed by country and search term.
      *
      * Entries never expire within the page's lifetime, so a company
      * registered mid-session stays absent from an already-searched term
@@ -1273,9 +1282,10 @@ define(['jquery', 'mage/url', 'mage/translate'], function ($, url, $t) {
             return true;
         },
 
-        /** Drop every cached search result. Exists for tests. */
+        /** Drop every cached search result and any rate-limit backoff. Exists for tests. */
         clearResultCache: function () {
             resultCache.clear();
+            searchSuspendedUntil = 0;
         },
 
         /** @see formatCompanyNumber */
@@ -1313,6 +1323,10 @@ define(['jquery', 'mage/url', 'mage/translate'], function ($, url, $t) {
             const token = options.token;
             const country = options.getCountryCode()?.toUpperCase();
             const cacheKey = `search|${country}|${options.term}`;
+
+            if (Date.now() < searchSuspendedUntil) {
+                return Promise.resolve({ items: [], unavailable: true, aborted: false });
+            }
 
             const cached = cacheGet(cacheKey);
             if (cached) {
@@ -1358,6 +1372,13 @@ define(['jquery', 'mage/url', 'mage/translate'], function ($, url, $t) {
                     });
                 });
                 request.fail(function (jqXHR, textStatus) {
+                    // 429 arrives as a raw Magento webapi fault, not an
+                    // envelope — the ceiling is enforced before the route
+                    // runs. Park searching rather than let each keystroke
+                    // re-hit it.
+                    if (jqXHR && jqXHR.status === 429) {
+                        searchSuspendedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
+                    }
                     // A genuine abort is the buyer typing on, or the panel
                     // being torn down — expected, and silent by design. A
                     // timeout is NOT an abort and must be visible, or the

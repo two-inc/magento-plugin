@@ -1156,6 +1156,17 @@ define([
             // buyer saw no message at all before the §6a client-side gate
             // was added: this path was the one meant to show it, and it was
             // broken.
+            // A 429 is a raw Magento webapi fault, not an envelope: the
+            // ceiling is enforced before the route runs. It is transient, so
+            // the buyer is told to wait rather than shown a decline.
+            if (response && response.status === 429) {
+                this.showOrderIntentErrorNotice(
+                    (response.responseJSON && response.responseJSON.message) ||
+                    $t('Too many requests. Please wait a moment and try again.')
+                );
+                return;
+            }
+
             let message = this.generalErrorMessage,
                 self = this;
             if (response && response.responseJSON) {
@@ -1177,6 +1188,9 @@ define([
                         if (errorDetails) {
                             message = errorDetails;
                         }
+                        break;
+                    case 'PROXY_REFUSED':
+                        message = errorMessage;
                         break;
                     case 'MERCHANT_NOT_FOUND_ERROR':
                     case 'ORDER_INVALID':

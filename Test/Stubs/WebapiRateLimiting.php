@@ -1,22 +1,50 @@
 <?php
 /**
- * Collaborators of Service\RateLimiter: the remote-address reader it buckets
- * callers by, and the webapi exception whose HTTP code the refusal carries.
+ * Collaborators of Service\RateLimiter: the request whose connection-level
+ * peer address it buckets callers by, and the webapi exception whose HTTP
+ * code the refusal carries.
  */
 declare(strict_types=1);
 
-namespace Magento\Framework\HTTP\PhpEnvironment {
+namespace Magento\Framework\App\Request {
 
-    if (!class_exists(RemoteAddress::class, false)) {
-        class RemoteAddress
+    if (!class_exists(Http::class, false)) {
+        class Http
         {
+            /** @var array<string,mixed> */
+            private $server = [];
+
+            /** @var array<string,mixed> */
+            private $headers = [];
+
             /**
-             * @param bool $ipToLong
-             * @return string|int|false
+             * @param string|null $name
+             * @param mixed $default
+             * @return mixed
              */
-            public function getRemoteAddress($ipToLong = false)
+            public function getServer($name = null, $default = null)
             {
-                return false;
+                if ($name === null) {
+                    return $this->server;
+                }
+
+                return $this->server[$name] ?? $default;
+            }
+
+            /**
+             * @param string $name
+             * @return mixed
+             */
+            public function getHeader($name, $default = false)
+            {
+                return $this->headers[$name] ?? $default;
+            }
+
+            /** Test seam: stand up the environment a real request would carry. */
+            public function setTestEnvironment(array $server, array $headers = []): void
+            {
+                $this->server = $server;
+                $this->headers = $headers;
             }
         }
     }

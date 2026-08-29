@@ -21,11 +21,39 @@ trait UpstreamEnvelopeTrait
     private function envelope(array $result): string
     {
         $status = (int)($result['status'] ?? 0);
+        $body = $result['body'] ?? [];
+
+        if ($status === 0) {
+            // Status 0 is the Adapter's transport-failure branch, whose body
+            // carries the raw exception text — cURL/DNS/TLS messages naming
+            // internal hosts. These routes are anonymous; the detail stays in
+            // the log the Adapter already wrote.
+            $body = [
+                'error_code' => 'PROXY_REFUSED',
+                'error_message' => (string)__('The service is temporarily unavailable. Please try again.'),
+            ];
+        }
 
         return (string)json_encode([
             'ok' => $status >= 200 && $status < 300,
             'status' => $status,
-            'body' => $result['body'] ?? [],
+            'body' => $body,
+        ]);
+    }
+
+    /**
+     * A refusal this module made before calling upstream, in the same shape
+     * as an upstream failure so the browser reads both through one path.
+     */
+    private function refusal(int $status, string $message): string
+    {
+        return (string)json_encode([
+            'ok' => false,
+            'status' => $status,
+            'body' => [
+                'error_code' => 'PROXY_REFUSED',
+                'error_message' => $message,
+            ],
         ]);
     }
 }

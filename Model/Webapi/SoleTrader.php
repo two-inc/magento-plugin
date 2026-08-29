@@ -17,8 +17,11 @@ class SoleTrader implements SoleTraderInterface
     /** One lookup per billing-country edit; answered from a server-side cache. */
     private const COMPANY_TYPES_LIMIT_PER_MINUTE = 60;
 
-    /** Two upstream token mints per call, one popup flow per buyer. */
-    private const TOKENS_LIMIT_PER_MINUTE = 10;
+    /**
+     * Two upstream token mints per call, one popup flow per buyer — with
+     * headroom for a whole office sharing one NAT address.
+     */
+    private const TOKENS_LIMIT_PER_MINUTE = 60;
 
     private const WINDOW_SECONDS = 60;
 

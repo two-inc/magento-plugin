@@ -226,6 +226,13 @@ class Adapter
                 }
             }
         } catch (Throwable $exception) {
+            // Logged here because the anonymous proxy routes replace this
+            // body with a generic message: the transport detail (cURL, DNS,
+            // TLS, host names) is for the merchant's log, not the caller.
+            $this->logRepository->addErrorLog(
+                sprintf('[api-transport-failure] endpoint=%s method=%s', $endpoint, $method),
+                $exception->getMessage()
+            );
             return [
                 'status' => 0,
                 'body' => [

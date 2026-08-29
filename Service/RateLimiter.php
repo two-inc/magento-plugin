@@ -8,7 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Service;
 
 use Magento\Framework\App\CacheInterface;
-use Magento\Framework\HTTP\PhpEnvironment\RemoteAddress;
+use Magento\Framework\App\Request\Http as HttpRequest;
 use Magento\Framework\Webapi\Exception as WebapiException;
 
 /**
@@ -22,8 +22,12 @@ use Magento\Framework\Webapi\Exception as WebapiException;
  *
  * Fixed window rather than a rolling log: the window index is part of the
  * cache key, so an expired window is never read and needs no eviction pass.
- * Worst case a caller gets 2x the ceiling across a window boundary, which
- * is the accepted cost of not keeping per-request timestamps in cache.
+ *
+ * What the ceiling does and does not guarantee: load→compare→save over
+ * CacheInterface is not atomic and the interface offers no atomic
+ * increment, so concurrent requests can read the same count and all pass.
+ * It bounds SUSTAINED cost from one caller, not the exact number of
+ * requests admitted in any instant.
  *
  * Backed by CacheInterface, the same store ApiKeyStatus memoises through —
  * so a multi-node store shares counters exactly as far as it shares that
@@ -38,7 +42,7 @@ class RateLimiter
 
     public function __construct(
         private readonly CacheInterface $cache,
-        private readonly RemoteAddress $remoteAddress
+        private readonly HttpRequest $request
     ) {
     }
 
@@ -68,12 +72,18 @@ class RateLimiter
     }
 
     /**
-     * An unresolvable remote address buckets every such caller together
-     * rather than exempting them.
+     * The connecting peer, NOT RemoteAddress::getRemoteAddress(): stock
+     * Magento trusts X-Forwarded-For with no proxy allow-list, so that
+     * reader hands back a client-supplied value. Keying on it would let a
+     * caller mint a fresh bucket per request by rotating the header, and
+     * every rotation would also add a never-colliding cache entry.
+     *
+     * An unresolvable peer buckets every such caller together rather than
+     * exempting them.
      */
     private function caller(): string
     {
-        $ip = $this->remoteAddress->getRemoteAddress();
+        $ip = $this->request->getServer('REMOTE_ADDR');
 
         return is_string($ip) && $ip !== '' ? $ip : 'unknown';
     }

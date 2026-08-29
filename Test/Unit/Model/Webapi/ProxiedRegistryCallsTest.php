@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Model\Webapi;
 
-use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use PHPUnit\Framework\TestCase;
@@ -91,6 +90,16 @@ class ProxiedRegistryCallsTest extends TestCase
 
     private function orderIntent(string $status = ApiKeyStatus::OK): OrderIntent
     {
+        return new OrderIntent($this->adapter(), $this->apiKeyStatus($status), $this->rateLimiter());
+    }
+
+    private function companyLookup(string $status = ApiKeyStatus::OK): CompanyLookup
+    {
+        return new CompanyLookup($this->adapter(), $this->apiKeyStatus($status), $this->rateLimiter());
+    }
+
+    private function apiKeyStatus(string $status): ApiKeyStatus
+    {
         $apiKeyStatus = $this->createMock(ApiKeyStatus::class);
         $apiKeyStatus->method('getStatus')->willReturn([
             'status' => $status,
@@ -100,12 +109,7 @@ class ProxiedRegistryCallsTest extends TestCase
                 : null,
         ]);
 
-        return new OrderIntent($this->adapter(), $apiKeyStatus, $this->rateLimiter());
-    }
-
-    private function companyLookup(): CompanyLookup
-    {
-        return new CompanyLookup($this->adapter(), $this->rateLimiter());
+        return $apiKeyStatus;
     }
 
     private function rateLimiter(): RateLimiter
@@ -214,16 +218,16 @@ class ProxiedRegistryCallsTest extends TestCase
         ];
     }
 
-    private function invoke(string $endpoint): string
+    private function invoke(string $endpoint, string $keyStatus = ApiKeyStatus::OK): string
     {
         if ($endpoint === 'search') {
-            return $this->companyLookup()->search('no', 'acme');
+            return $this->companyLookup($keyStatus)->search('no', 'acme');
         }
         if ($endpoint === 'get') {
-            return $this->companyLookup()->get('lookup-1');
+            return $this->companyLookup($keyStatus)->get('lookup-1');
         }
 
-        return $this->orderIntent()->place('{"gross_amount":"10.00"}');
+        return $this->orderIntent($keyStatus)->place('{"gross_amount":"10.00"}');
     }
 
     public function testSearchAsksTheRegistryForTheServerSideLimitNotACallerSuppliedOne(): void
@@ -242,7 +246,7 @@ class ProxiedRegistryCallsTest extends TestCase
         $this->companyLookup()->get('NO/123 456');
 
         $this->assertSame(
-            'https://api.two.inc/companies/v2/company/NO%2F123%20456',
+            'https://api.two.inc/companies/v2/company/NO%2F123%20456?merchant=acme',
             $this->requestedUrl
         );
     }
@@ -270,14 +274,11 @@ class ProxiedRegistryCallsTest extends TestCase
         string $status,
         string $description
     ): void {
-        $intent = $this->orderIntent($status);
+        $decoded = json_decode($this->orderIntent($status)->place('{"gross_amount":"10.00"}'), true);
 
-        try {
-            $intent->place('{"gross_amount":"10.00"}');
-            $this->fail('an intent with no verified merchant should not have been sent');
-        } catch (LocalizedException $e) {
-            $this->assertSame('', $this->requestedBody, $description);
-        }
+        $this->assertSame('', $this->requestedBody, $description);
+        $this->assertFalse($decoded['ok'], $description);
+        $this->assertSame(503, $decoded['status'], $description);
     }
 
     /**
@@ -293,11 +294,113 @@ class ProxiedRegistryCallsTest extends TestCase
         ];
     }
 
-    public function testOrderIntentRefusesAPayloadThatIsNotAnObject(): void
-    {
-        $this->expectException(\Magento\Framework\Exception\InputException::class);
+    /**
+     * Given a payload the route will not process; When it is posted; Then the
+     * refusal comes back in the SAME envelope every other answer uses — the
+     * browser reads pass/fail off one shape, and a raw webapi fault would
+     * reach it as an unrendered generic error.
+     *
+     * @dataProvider unprocessablePayloads
+     */
+    public function testOrderIntentRefusesThroughTheEnvelopeContract(
+        string $payload,
+        int $status,
+        string $description
+    ): void {
+        $decoded = json_decode($this->orderIntent()->place($payload), true);
 
-        $this->orderIntent()->place('not json');
+        $this->assertSame('', $this->requestedBody, $description);
+        $this->assertFalse($decoded['ok'], $description);
+        $this->assertSame($status, $decoded['status'], $description);
+        $this->assertSame('PROXY_REFUSED', $decoded['body']['error_code'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: int, 2: string}>
+     */
+    public static function unprocessablePayloads(): array
+    {
+        return [
+            'not json' => ['not json', 400, 'an unparseable body is refused in-envelope'],
+            'oversized' => [
+                '{"pad":"' . str_repeat('x', 262144) . '"}',
+                413,
+                'an unbounded body from an anonymous caller is capped',
+            ],
+        ];
+    }
+
+    /**
+     * Given a search term past any real company name; When it is searched;
+     * Then nothing is relayed upstream under the merchant's key.
+     */
+    public function testCompanySearchCapsWhatAnAnonymousCallerCanRelayUpstream(): void
+    {
+        $decoded = json_decode($this->companyLookup()->search('no', str_repeat('x', 121)), true);
+
+        $this->assertSame('', $this->requestedUrl);
+        $this->assertFalse($decoded['ok']);
+        $this->assertSame(400, $decoded['status']);
+    }
+
+    /**
+     * Given a transport failure naming internal infrastructure; When it
+     * reaches an anonymous caller; Then only a generic message does.
+     */
+    public function testATransportFailureIsNotRelayedVerbatimToAnAnonymousCaller(): void
+    {
+        $this->curl = $this->createMock(Curl::class);
+        $this->curl->method('get')->willThrowException(
+            new \RuntimeException('cURL error 6: Could not resolve host: api.internal.example')
+        );
+
+        $decoded = json_decode($this->companyLookup()->search('no', 'acme'), true);
+
+        $this->assertSame(0, $decoded['status']);
+        $this->assertStringNotContainsString('api.internal.example', (string)json_encode($decoded));
+        $this->assertStringNotContainsString('cURL', (string)json_encode($decoded));
+    }
+
+    /**
+     * Given each registry call; When it is proxied; Then the merchant it is
+     * attributed to is the one the verified key resolves to, not one the
+     * browser supplied — the browser no longer sends it at all.
+     *
+     * @dataProvider registryCalls
+     */
+    public function testRegistryCallsAreAttributedToTheServerResolvedMerchant(
+        string $endpoint,
+        string $description
+    ): void {
+        $this->invoke($endpoint);
+
+        parse_str((string)parse_url($this->requestedUrl, PHP_URL_QUERY), $query);
+        $this->assertSame('acme', $query['merchant'] ?? null, $description);
+    }
+
+    /**
+     * @dataProvider registryCalls
+     */
+    public function testARegistryCallIsStillMadeWhenTheKeyDoesNotVerify(
+        string $endpoint,
+        string $description
+    ): void {
+        $this->invoke($endpoint, ApiKeyStatus::SERVICE_ERROR);
+
+        parse_str((string)parse_url($this->requestedUrl, PHP_URL_QUERY), $query);
+        $this->assertArrayNotHasKey('merchant', $query, $description);
+        $this->assertNotSame('', $this->requestedUrl, $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function registryCalls(): array
+    {
+        return [
+            'company search' => ['search', 'search is attributed server-side'],
+            'company by id' => ['get', 'detail is attributed server-side'],
+        ];
     }
 
     public function testAnUpstreamFailureIsRelayedAsANotOkEnvelopeRatherThanASuccess(): void
