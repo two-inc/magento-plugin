@@ -720,26 +720,12 @@ function dispatchNative(node, type, value) {
     node.dispatchEvent(new Ctor(type, { bubbles: true, cancelable: true }));
 }
 
-/**
- * True for the plugin's own server-side proxy routes, whose responses the
- * browser reads through an `{ok, status, body}` envelope rather than as the
- * upstream body directly.
- *
- * @param {string} url
- * @returns {boolean}
- */
+/** Proxy-route responses arrive as an `{ok, status, body}` envelope. */
 function isProxyRoute(url) {
     return typeof url === 'string' && url.indexOf('rest/V1/two/') !== -1;
 }
 
-/**
- * What a proxy route actually hands back: the envelope, JSON-encoded, inside
- * the one-element array Magento's webapi layer wraps a `: string` return in.
- *
- * @param {*} body upstream response body
- * @param {object} [options] `{ok: false, status: 422}` for an upstream failure
- * @returns {Array<string>}
- */
+/** The envelope JSON-encoded inside the array Magento wraps a `: string` return in. */
 function proxyEnvelope(body, options) {
     const opts = options || {};
     return [JSON.stringify({

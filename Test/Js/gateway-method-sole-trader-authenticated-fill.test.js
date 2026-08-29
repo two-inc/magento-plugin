@@ -332,12 +332,8 @@ describe('the flight the handshake holds', () => {
 });
 
 
-/**
- * The one call that stays browser-direct — it is authenticated by the buyer's
- * own session cookie on the API's domain, which no server-side call can
- * present. Its firewall header is therefore the only one the browser sends,
- * and only while the merchant has switched browser-originated traffic on.
- */
+// The one call that stays browser-direct: it is authenticated by the buyer's
+// own session cookie on the API's domain, which no server-side call can present.
 describe('the browser-direct buyer lookup and the firewall header', () => {
     test.each([
         ['waf-token', 'waf-token', 'a token exposed to the browser is sent on the one direct call'],

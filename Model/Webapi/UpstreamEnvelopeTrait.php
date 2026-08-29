@@ -16,13 +16,16 @@ namespace Two\Gateway\Model\Webapi;
 trait UpstreamEnvelopeTrait
 {
     /**
-     * @param array<string,mixed> $result
+     * @param array{status: int, body: array<string,mixed>} $result from Adapter::executeWithStatus()
      */
     private function envelope(array $result): string
     {
-        $status = isset($result['http_status']) ? (int)$result['http_status'] : 200;
-        $ok = !isset($result['http_status']) && !isset($result['error_code']);
+        $status = (int)($result['status'] ?? 0);
 
-        return (string)json_encode(['ok' => $ok, 'status' => $status, 'body' => $result]);
+        return (string)json_encode([
+            'ok' => $status >= 200 && $status < 300,
+            'status' => $status,
+            'body' => $result['body'] ?? [],
+        ]);
     }
 }

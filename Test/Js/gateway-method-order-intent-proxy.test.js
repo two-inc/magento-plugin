@@ -2,11 +2,8 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * The order-intent check runs server-side now, so the merchant API key and any
- * configured firewall token never reach the buyer's browser. The proxy answers
- * 200 whatever the upstream said, which would turn every upstream rejection
- * into a silent approval unless the renderer reads the envelope — these pin
- * that both outcomes still reach the handlers they always did.
+ * The proxy answers 200 whatever the upstream said, so an upstream rejection
+ * reaches the tile only if the renderer reads the envelope.
  */
 
 'use strict';
@@ -86,6 +83,19 @@ describe('the order-intent check goes through the plugin, not straight to the AP
         expect(requests[0].options.url).toBe('rest/V1/two/order-intent');
         expect(requests[0].options.url).not.toContain('order_intent');
         expect(JSON.parse(JSON.parse(requests[0].options.data).payload).gross_amount).toBe('124.00');
+    });
+
+    // The merchant is resolved server-side and whatever the browser sent would be
+    // overwritten there; sending it anyway would be a second, staler source of
+    // the same fact.
+    test('no merchant identity is sent', () => {
+        const { ctx, requests } = loadRenderer();
+
+        ctx.placeOrderIntent.call(ctx);
+
+        const payload = JSON.parse(JSON.parse(requests[0].options.data).payload);
+        expect(payload.merchant_id).toBeUndefined();
+        expect(payload.merchant_short_name).toBeUndefined();
     });
 
     test.each([

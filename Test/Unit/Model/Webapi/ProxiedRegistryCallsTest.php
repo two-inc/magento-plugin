@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Model\Webapi;
 
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use PHPUnit\Framework\TestCase;
@@ -14,14 +15,12 @@ use Two\Gateway\Model\Webapi\CompanyLookup;
 use Two\Gateway\Model\Webapi\OrderIntent;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\RateLimiter;
 
 /**
- * The registry and order-intent calls the checkout used to make straight from
- * the buyer's browser, now served by the plugin's own routes.
- *
- * Built on a REAL Adapter with only the HTTP client faked, because the point
- * of the move is that these calls pick up the credentials the Adapter
- * attaches — a mocked Adapter would assert nothing about that.
+ * Built on a REAL Adapter with only the HTTP client faked: the point of
+ * proxying is the credentials the Adapter attaches, which a mocked Adapter
+ * would assert nothing about.
  */
 class ProxiedRegistryCallsTest extends TestCase
 {
@@ -42,9 +41,20 @@ class ProxiedRegistryCallsTest extends TestCase
 
     protected function setUp(): void
     {
+        $this->stageUpstream(200, '{"items":[]}');
+
+        $this->configRepository = $this->createMock(ConfigRepository::class);
+        $this->configRepository->method('getCheckoutApiUrl')->willReturn('https://api.two.inc');
+        $this->configRepository->method('addVersionDataInURL')->willReturnArgument(0);
+        $this->configRepository->method('getApiKey')->willReturn('merchant-key');
+        $this->configRepository->method('getFirewallToken')->willReturn('waf-token');
+    }
+
+    private function stageUpstream(int $status, string $body): void
+    {
         $this->curl = $this->createMock(Curl::class);
-        $this->curl->method('getStatus')->willReturn(200);
-        $this->curl->method('getBody')->willReturn('{"items":[]}');
+        $this->curl->method('getStatus')->willReturn($status);
+        $this->curl->method('getBody')->willReturn($body);
         $this->curl->method('addHeader')->willReturnCallback(
             function ($name, $value) {
                 $this->headers[$name] = $value;
@@ -61,12 +71,6 @@ class ProxiedRegistryCallsTest extends TestCase
                 $this->requestedBody = $body;
             }
         );
-
-        $this->configRepository = $this->createMock(ConfigRepository::class);
-        $this->configRepository->method('getCheckoutApiUrl')->willReturn('https://api.two.inc');
-        $this->configRepository->method('addVersionDataInURL')->willReturnArgument(0);
-        $this->configRepository->method('getApiKey')->willReturn('merchant-key');
-        $this->configRepository->method('getFirewallToken')->willReturn('waf-token');
     }
 
     private function adapter(): Adapter
@@ -96,7 +100,17 @@ class ProxiedRegistryCallsTest extends TestCase
                 : null,
         ]);
 
-        return new OrderIntent($this->adapter(), $apiKeyStatus);
+        return new OrderIntent($this->adapter(), $apiKeyStatus, $this->rateLimiter());
+    }
+
+    private function companyLookup(): CompanyLookup
+    {
+        return new CompanyLookup($this->adapter(), $this->rateLimiter());
+    }
+
+    private function rateLimiter(): RateLimiter
+    {
+        return $this->createMock(RateLimiter::class);
     }
 
     /**
@@ -125,8 +139,67 @@ class ProxiedRegistryCallsTest extends TestCase
         $decoded = json_decode($this->invoke($endpoint), true);
 
         $this->assertTrue($decoded['ok'], $description);
-        $this->assertSame(200, $decoded['status'], $description);
         $this->assertSame(['items' => []], $decoded['body'], $description);
+    }
+
+    /**
+     * Given an upstream status; When the envelope is built; Then it carries
+     * that status and the pass/fail verdict that follows from it.
+     *
+     * @dataProvider upstreamStatuses
+     */
+    public function testTheEnvelopeCarriesTheStatusTheUpstreamActuallyAnswered(
+        int $upstream,
+        bool $ok,
+        string $description
+    ): void {
+        $this->stageUpstream($upstream, '{"items":[]}');
+
+        $decoded = json_decode($this->companyLookup()->search('no', 'x'), true);
+
+        $this->assertSame($upstream, $decoded['status'], $description);
+        $this->assertSame($ok, $decoded['ok'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: int, 1: bool, 2: string}>
+     */
+    public static function upstreamStatuses(): array
+    {
+        return [
+            'created' => [201, true, 'a 201 is not flattened to 200'],
+            'accepted' => [202, true, 'a 202 is not flattened to 200'],
+            'unprocessable' => [422, false, 'the real rejection status reaches the browser'],
+            'server error' => [500, false, 'an upstream outage is a failure, not an empty success'],
+        ];
+    }
+
+    /**
+     * A body key named like one of the Adapter's failure markers is payload,
+     * not a verdict.
+     *
+     * @dataProvider bodiesShapedLikeFailures
+     */
+    public function testASuccessCarryingAFailureShapedKeyIsStillASuccess(
+        string $body,
+        string $description
+    ): void {
+        $this->stageUpstream(200, $body);
+
+        $decoded = json_decode($this->companyLookup()->search('no', 'x'), true);
+
+        $this->assertTrue($decoded['ok'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function bodiesShapedLikeFailures(): array
+    {
+        return [
+            'http_status in payload' => ['{"http_status":200}', 'a payload field is not a verdict'],
+            'error_code in payload' => ['{"error_code":"NONE"}', 'a payload field is not a verdict'],
+        ];
     }
 
     /**
@@ -144,10 +217,10 @@ class ProxiedRegistryCallsTest extends TestCase
     private function invoke(string $endpoint): string
     {
         if ($endpoint === 'search') {
-            return (new CompanyLookup($this->adapter()))->search('no', 'acme');
+            return $this->companyLookup()->search('no', 'acme');
         }
         if ($endpoint === 'get') {
-            return (new CompanyLookup($this->adapter()))->get('lookup-1');
+            return $this->companyLookup()->get('lookup-1');
         }
 
         return $this->orderIntent()->place('{"gross_amount":"10.00"}');
@@ -155,7 +228,7 @@ class ProxiedRegistryCallsTest extends TestCase
 
     public function testSearchAsksTheRegistryForTheServerSideLimitNotACallerSuppliedOne(): void
     {
-        (new CompanyLookup($this->adapter()))->search('no', 'acme ltd');
+        $this->companyLookup()->search('no', 'acme ltd');
 
         parse_str((string)parse_url($this->requestedUrl, PHP_URL_QUERY), $query);
         $this->assertSame('NO', $query['country']);
@@ -166,7 +239,7 @@ class ProxiedRegistryCallsTest extends TestCase
 
     public function testCompanyDetailEncodesTheLookupIdIntoThePath(): void
     {
-        (new CompanyLookup($this->adapter()))->get('NO/123 456');
+        $this->companyLookup()->get('NO/123 456');
 
         $this->assertSame(
             'https://api.two.inc/companies/v2/company/NO%2F123%20456',
@@ -187,13 +260,37 @@ class ProxiedRegistryCallsTest extends TestCase
         $this->assertSame('acme', $sent['merchant_short_name']);
     }
 
-    public function testOrderIntentSendsNoMerchantIdentityWhenTheStoredKeyDoesNotVerify(): void
-    {
-        $this->orderIntent(ApiKeyStatus::INVALID_KEY)->place('{"gross_amount":"10.00"}');
+    /**
+     * Given a key that does not currently verify; When an intent is placed;
+     * Then nothing is sent upstream at all.
+     *
+     * @dataProvider unverifiedKeyCategories
+     */
+    public function testOrderIntentIsRefusedRatherThanSentWithoutAMerchant(
+        string $status,
+        string $description
+    ): void {
+        $intent = $this->orderIntent($status);
 
-        $sent = json_decode($this->requestedBody, true);
-        $this->assertNull($sent['merchant_id']);
-        $this->assertNull($sent['merchant_short_name']);
+        try {
+            $intent->place('{"gross_amount":"10.00"}');
+            $this->fail('an intent with no verified merchant should not have been sent');
+        } catch (LocalizedException $e) {
+            $this->assertSame('', $this->requestedBody, $description);
+        }
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function unverifiedKeyCategories(): array
+    {
+        return [
+            'rejected key' => [ApiKeyStatus::INVALID_KEY, 'a wrong key never reaches the upstream call'],
+            'service error' => [ApiKeyStatus::SERVICE_ERROR, 'a transient blip does not degrade the request'],
+            'unreachable' => [ApiKeyStatus::UNREACHABLE, 'an outage does not degrade the request'],
+            'not configured' => [ApiKeyStatus::NOT_CONFIGURED, 'an unconfigured store sends nothing'],
+        ];
     }
 
     public function testOrderIntentRefusesAPayloadThatIsNotAnObject(): void
@@ -205,12 +302,9 @@ class ProxiedRegistryCallsTest extends TestCase
 
     public function testAnUpstreamFailureIsRelayedAsANotOkEnvelopeRatherThanASuccess(): void
     {
-        $curl = $this->createMock(Curl::class);
-        $curl->method('getStatus')->willReturn(422);
-        $curl->method('getBody')->willReturn('{"error_code":"SCHEMA_ERROR"}');
-        $this->curl = $curl;
+        $this->stageUpstream(422, '{"error_code":"SCHEMA_ERROR"}');
 
-        $decoded = json_decode((new CompanyLookup($this->adapter()))->search('no', 'x'), true);
+        $decoded = json_decode($this->companyLookup()->search('no', 'x'), true);
 
         $this->assertFalse($decoded['ok']);
         $this->assertSame(422, $decoded['status']);

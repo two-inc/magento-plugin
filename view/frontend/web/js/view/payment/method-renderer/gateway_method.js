@@ -1300,9 +1300,7 @@ define([
                         last_name: billingAddress.lastname,
                         phone_number: this.getTelephone()
                     }
-                },
-                merchant_id: this._brandConfig.orderIntentConfig.merchant?.id,
-                merchant_short_name: this._brandConfig.orderIntentConfig.merchant?.short_name
+                }
             };
 
             console.debug({ logger: 'twoPayment.placeOrderIntent', orderIntentRequestBody });

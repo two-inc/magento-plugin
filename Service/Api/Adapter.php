@@ -79,6 +79,28 @@ class Adapter
         ?string $apiKeyOverride = null,
         ?string $modeOverride = null
     ): array {
+        return $this->executeWithStatus($endpoint, $payload, $method, $storeId, $apiKeyOverride, $modeOverride)['body'];
+    }
+
+    /**
+     * Same call as execute(), keeping the upstream HTTP status alongside the
+     * decoded body. execute() discards it, which leaves a caller unable to
+     * tell a 2xx apart from a 200-shaped body — the proxy routes relay the
+     * pass/fail distinction the browser used to read off its own request.
+     *
+     * A status of 0 means no HTTP exchange completed at all.
+     *
+     * @see self::execute() for the parameters
+     * @return array{status: int, body: array}
+     */
+    public function executeWithStatus(
+        string $endpoint,
+        array $payload = [],
+        string $method = 'POST',
+        ?int $storeId = null,
+        ?string $apiKeyOverride = null,
+        ?string $modeOverride = null
+    ): array {
         try {
             $this->logRepository->addDebugLog(sprintf('API call: %s %s', $method, $endpoint), $payload);
             $mode = $modeOverride
@@ -164,7 +186,7 @@ class Adapter
                     sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
                     $decoded
                 );
-                return $decoded;
+                return ['status' => $result->status, 'body' => $decoded];
             } else {
                 if ($body) {
                     $decoded = json_decode($body, true) ?: [];
@@ -173,7 +195,7 @@ class Adapter
                         sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
                         $decoded
                     );
-                    return $decoded;
+                    return ['status' => $result->status, 'body' => $decoded];
                 } else {
                     $this->logRepository->addDebugLog(
                         sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
@@ -191,19 +213,25 @@ class Adapter
                     // service outage would be reported to the merchant as
                     // "unreachable" instead of "the service errored".
                     return [
-                        'error_code' => 400,
-                        'http_status' => $result->status,
-                        'error_message' => (string)__(
-                            'Invalid API response from %1.',
-                            $this->brandRegistry->getProductName()
-                        ),
+                        'status' => $result->status,
+                        'body' => [
+                            'error_code' => 400,
+                            'http_status' => $result->status,
+                            'error_message' => (string)__(
+                                'Invalid API response from %1.',
+                                $this->brandRegistry->getProductName()
+                            ),
+                        ],
                     ];
                 }
             }
         } catch (Throwable $exception) {
             return [
-                'error_code' => 400,
-                'error_message' => $exception->getMessage(),
+                'status' => 0,
+                'body' => [
+                    'error_code' => 400,
+                    'error_message' => $exception->getMessage(),
+                ],
             ];
         }
     }
@@ -222,10 +250,13 @@ class Adapter
             null
         );
         return [
-            'error_code' => 502,
-            'http_status' => 502,
-            'error_source' => 'api_translator',
-            'error_message' => 'Translator failure',
+            'status' => 502,
+            'body' => [
+                'error_code' => 502,
+                'http_status' => 502,
+                'error_source' => 'api_translator',
+                'error_message' => 'Translator failure',
+            ],
         ];
     }
 }
