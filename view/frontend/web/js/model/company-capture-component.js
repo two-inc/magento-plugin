@@ -591,9 +591,15 @@
      * nothing else reads what the buyer types into it. One listener per node —
      * `observe()` re-fires on every re-render, and a second one would double
      * `commitManualCompany()` on every keystroke.
+     *
+     * One `observe()` registration per component lifetime, not per call: a
+     * buyer cycling search→manual repeatedly must not stack a new
+     * MutationObserver on the field each time.
      */
     CompanyCaptureComponent.prototype._watchManualEdits = function () {
+        if (this._manualWatchBound) return;
         if (!this.observe || !this._boundSelector) return;
+        this._manualWatchBound = true;
         const self = this;
         this.observe(this._boundSelector, function (node) {
             if (!node || typeof node.addEventListener !== 'function') return;

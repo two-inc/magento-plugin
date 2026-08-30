@@ -155,6 +155,20 @@ describe('returning to registered-company search', () => {
         expect(panelIsOpen()).toBe(true);
     });
 
+    test('cycling search -> manual repeatedly registers the manual-edit watcher once, not once per cycle', () => {
+        reachManualMode(mounted);
+        mounted.component.registeredMode({ openDropdown: true });
+        mounted.component.manualEntryMode();
+        mounted.component.registeredMode({ openDropdown: true });
+        mounted.component.manualEntryMode();
+
+        // FIELD_SELECTOR carries two other permanent, already-guarded
+        // observers (the panel's own bind-time watcher, and the mount-host
+        // watcher from `start()`) — this asserts the manual-edit watcher adds
+        // exactly one more, not one per `manualEntryMode()` call.
+        expect($.async.registrations(FIELD_SELECTOR)).toBe(3);
+    });
+
     test('a return with no open request still hands the field back as a trigger', () => {
         // Without `openDropdown` nothing re-binds the mount — the panel is
         // already anchored where it belongs — so the reclaim is the only route
