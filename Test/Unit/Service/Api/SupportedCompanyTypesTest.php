@@ -64,7 +64,7 @@ class SupportedCompanyTypesTest extends TestCase
         // answer and must be cached like any other.
         $this->cache->expects($this->once())->method('save')->with(
             json_encode(['types' => []]),
-            'two_gateway_supported_company_types_NO',
+            'two_gateway_supported_company_types_NO_default',
             [],
             3600
         );
@@ -81,6 +81,26 @@ class SupportedCompanyTypesTest extends TestCase
         $this->assertSame(['SOLE_TRADER'], $this->service->getForCountry('GB'));
     }
 
+    /**
+     * Given a buyer shopping in a non-default store; When the registry is
+     * asked; Then the call runs under that store's key and caches separately
+     * from another store's answer.
+     */
+    public function testTheRegistryCallCarriesTheStoreAndCachesPerStore(): void
+    {
+        $this->apiAdapter->expects($this->once())->method('execute')
+            ->with('/registry/v1/supported-company-types/GB', [], 'GET', 7)
+            ->willReturn(['supported_company_types' => ['SOLE_TRADER']]);
+        $this->cache->expects($this->once())->method('save')->with(
+            json_encode(['types' => ['SOLE_TRADER']]),
+            'two_gateway_supported_company_types_GB_7',
+            [],
+            3600
+        );
+
+        $this->assertSame(['SOLE_TRADER'], $this->service->getForCountry('GB', 7));
+    }
+
     // ── caching ─────────────────────────────────────────────────────────
 
     public function testSuccessfulAnswerIsCachedWithTtl(): void
@@ -89,7 +109,7 @@ class SupportedCompanyTypesTest extends TestCase
             ->willReturn(['supported_company_types' => ['SOLE_TRADER']]);
         $this->cache->expects($this->once())->method('save')->with(
             json_encode(['types' => ['SOLE_TRADER']]),
-            'two_gateway_supported_company_types_GB',
+            'two_gateway_supported_company_types_GB_default',
             [],
             3600
         );
@@ -101,7 +121,7 @@ class SupportedCompanyTypesTest extends TestCase
     {
         $cache = $this->createMock(CacheInterface::class);
         $cache->method('load')
-            ->with('two_gateway_supported_company_types_GB')
+            ->with('two_gateway_supported_company_types_GB_default')
             ->willReturn(json_encode(['types' => ['SOLE_TRADER']]));
         $this->apiAdapter->expects($this->never())->method('execute');
 

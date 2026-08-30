@@ -27,6 +27,7 @@ class RepositoryAdminControlsTest extends TestCase
     private const SKIP_NONCE_PATH = 'payment/two_payment/skip_confirm_nonce_check';
     private const CLEAR_ON_UNINSTALL_PATH = 'payment/two_payment/clear_settings_on_uninstall';
     private const DISABLE_SSL_VERIFY_PATH = 'payment/two_payment/disable_ssl_verify';
+    private const TRUSTED_PROXIES_PATH = 'payment/two_payment/trusted_proxies';
 
     /** @var ScopeConfigInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $scopeConfig;
@@ -122,5 +123,57 @@ class RepositoryAdminControlsTest extends TestCase
         $this->scopeConfig->method('isSetFlag')->willReturn(false);
 
         $this->assertFalse($this->repository->{$method}());
+    }
+
+    /**
+     * Given a merchant's proxy list as typed into the textarea; When it is
+     * read; Then it is the set of entries, however the merchant separated them.
+     *
+     * @dataProvider trustedProxyInput
+     */
+    public function testTrustedProxiesAreReadAsASetOfEntries(
+        $stored,
+        array $expected,
+        string $description
+    ): void {
+        $this->scopeConfig->expects($this->once())
+            ->method('getValue')
+            ->with(self::TRUSTED_PROXIES_PATH, ScopeInterface::SCOPE_STORE, null)
+            ->willReturn($stored);
+
+        $this->assertSame($expected, $this->repository->getTrustedProxies(), $description);
+    }
+
+    /**
+     * @return array<string, array{0: mixed, 1: string[], 2: string}>
+     */
+    public static function trustedProxyInput(): array
+    {
+        return [
+            'unset' => [null, [], 'no list configured is no trusted proxy'],
+            'blank' => ['   ', [], 'whitespace alone names nothing'],
+            'one address' => ['10.0.0.1', ['10.0.0.1'], 'a single entry needs no separator'],
+            'commas' => ['10.0.0.1, 10.0.0.2', ['10.0.0.1', '10.0.0.2'], 'comma-separated'],
+            'new lines' => ["10.0.0.1\n10.0.0.2", ['10.0.0.1', '10.0.0.2'], 'one per line'],
+            'cidr kept whole' => ['10.0.0.0/8', ['10.0.0.0/8'], 'the mask is part of the entry'],
+            'repeats' => ['10.0.0.1, 10.0.0.1', ['10.0.0.1'], 'a repeat is one proxy'],
+        ];
+    }
+
+    public function testRateLimitingIsOnUnlessTheDiagnosticsToggleSaysOtherwise(): void
+    {
+        $this->scopeConfig->method('isSetFlag')->willReturn(false);
+
+        $this->assertFalse($this->repository->isRateLimitDisabled());
+    }
+
+    public function testTheDiagnosticsToggleReadsItsOwnPath(): void
+    {
+        $this->scopeConfig->expects($this->once())
+            ->method('isSetFlag')
+            ->with('payment/two_payment/disable_rate_limit', ScopeInterface::SCOPE_STORE, null)
+            ->willReturn(true);
+
+        $this->assertTrue($this->repository->isRateLimitDisabled());
     }
 }

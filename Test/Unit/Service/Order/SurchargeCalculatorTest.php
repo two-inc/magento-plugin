@@ -172,6 +172,23 @@ class SurchargeCalculatorTest extends TestCase
         $this->assertEquals(0.0, $result['amount']);
     }
 
+    /**
+     * Given a quote in a non-default store; When the fee is priced; Then the
+     * pricing call is made under that store's key, not the default scope's.
+     */
+    public function testThePricingCallCarriesTheStoreTheFeeWasResolvedFor(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+
+        $this->adapter->expects($this->once())
+            ->method('execute')
+            ->with('/v1/pricing/order/fee', $this->anything(), 'POST', 7)
+            ->willReturn(['buyer_fee_share' => 17.50]);
+
+        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK', 7);
+    }
+
     // ── API response is authoritative ────────────────────────────────
 
     public function testReturnsAuthoritativeFeeFromApi(): void

@@ -93,7 +93,7 @@
      *        this panel anchors to. Re-read on every `bind()`, so a node
      *        replaced by a checkout re-render is picked up.
      * @param {object} options.config brand config subtree — needs
-     *        `checkoutApiUrl`, `companySearchLimit`.
+     *        `checkoutApiUrl`.
      * @param {object} options.search the transport, carrying every member of
      *        SEARCH_API_CONTRACT. Luma passes its `company-search` module
      *        verbatim; Hyvä passes an adapter over its own engine.

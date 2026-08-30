@@ -66,6 +66,10 @@
                 type="Two\Gateway\Model\Webapi\TermSelection"/>
     <preference for="Two\Gateway\Api\Webapi\SurchargesInterface"
                 type="Two\Gateway\Model\Webapi\Surcharges"/>
+    <preference for="Two\Gateway\Api\Webapi\CompanyLookupInterface"
+                type="Two\Gateway\Model\Webapi\CompanyLookup"/>
+    <preference for="Two\Gateway\Api\Webapi\OrderIntentInterface"
+                type="Two\Gateway\Model\Webapi\OrderIntent"/>
     <preference for="Two\Gateway\Api\CurrencyRatesProviderInterface"
                 type="Two\Gateway\Model\CurrencyRatesProvider"/>
     <!--

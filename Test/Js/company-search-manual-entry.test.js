@@ -97,7 +97,6 @@ function loadCapture(options) {
                     return {
                         isCompanySearchEnabled: settings.companySearchEnabled !== false,
                         checkoutApiUrl: 'https://api.example.test',
-                        companySearchLimit: 50,
                         supportedCompanyTypes: {}
                     };
                 }

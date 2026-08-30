@@ -41,7 +41,9 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
     /** @var array captured $additionalData handed to the composer */
     private $capturedAdditionalData;
 
-    /** @var array captured [endpoint, payload, method] of the API call */
+    private const ORDER_STORE_ID = 7;
+
+    /** @var array captured [endpoint, payload, method, storeId] of the API call */
     private $capturedApiCall;
 
     /** @var Adapter|\PHPUnit\Framework\MockObject\MockObject */
@@ -92,7 +94,7 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
                 string $method = 'POST',
                 ?int $storeId = null
             ): array {
-                $this->capturedApiCall = [$endpoint, $payload, $method];
+                $this->capturedApiCall = [$endpoint, $payload, $method, $storeId];
                 return ['id' => 'remote-order-id'];
             });
 
@@ -121,6 +123,7 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
     private function makeOrder(array $additionalInformation): AddressUpdateOrderStub
     {
         $order = new AddressUpdateOrderStub();
+        $order->setData('store_id', self::ORDER_STORE_ID);
         $order->setData('two_order_id', 'remote-order-id');
         $order->setData('two_order_reference', 'order-reference');
         $order->setData('payment', new AddressUpdatePaymentStub($additionalInformation));
@@ -161,6 +164,13 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
         );
         $this->assertSame('/v1/order/remote-order-id', $this->capturedApiCall[0]);
         $this->assertSame('PUT', $this->capturedApiCall[2]);
+        // Admin/cron-initiated, so the request carries no scope — a null store
+        // would resolve the default scope's API key and firewall token.
+        $this->assertSame(
+            self::ORDER_STORE_ID,
+            $this->capturedApiCall[3],
+            'the API call is scoped to the order\'s store'
+        );
         $this->assertSame(
             1,
             $this->order->saveCount,

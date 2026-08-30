@@ -45,7 +45,6 @@ const CHIP = '.two-company-mode-chip';
 
 const BASE_CONFIG = {
     checkoutApiUrl: 'https://api.example.test',
-    companySearchLimit: 50,
     isCompanySearchEnabled: true,
     isAddressSearchEnabled: true,
     supportedCompanyTypes: {}

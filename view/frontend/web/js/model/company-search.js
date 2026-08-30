@@ -12,7 +12,12 @@
  * these results is `company-search-panel.js`; where it is mounted and what its
  * chips mean is `company-capture-component.js`.
  */
-define(['jquery', 'mage/translate'], function ($, $t) {
+define([
+    'jquery',
+    'mage/url',
+    'Two_Gateway/js/model/company-identity',
+    'mage/translate'
+], function ($, url, identity, $t) {
     'use strict';
 
     /**
@@ -31,12 +36,26 @@ define(['jquery', 'mage/translate'], function ($, $t) {
     const SEARCH_DEBOUNCE_MS = 300;
 
     /**
+     * How long searching stays parked after the proxy answers 429. Matches
+     * the server's window, so the buyer's next keystroke does not walk
+     * straight back into the ceiling it just hit.
+     */
+    const RATE_LIMIT_BACKOFF_MS = 60000;
+
+    /**
+     * Epoch ms before which no registry call is issued. Shared by both routes —
+     * the ceiling is per-merchant, not per-route.
+     *
+     * @see RATE_LIMIT_BACKOFF_MS
+     */
+    let registrySuspendedUntil = 0;
+
+    /**
      * Search-result cache. MODULE-scoped on purpose: one-page checkouts
      * (Fire Checkout) re-render the payment renderer on every totals or
      * shipping change, which rebuilds the panel. A cache owned by the panel
      * would be thrown away each time and every search the buyer already waited
-     * for would be re-issued. Keyed by the fully-qualified request URL, so
-     * country and limit are both part of the key.
+     * for would be re-issued. Keyed by country and search term.
      *
      * Entries never expire within the page's lifetime, so a company
      * registered mid-session stays absent from an already-searched term
@@ -55,6 +74,16 @@ define(['jquery', 'mage/translate'], function ($, $t) {
      * token takes its entry with it.
      */
     const activeRequests = new WeakMap();
+
+    /**
+     * Last-REQUEST-wins guard for the address lookup: picking company B while
+     * A is in flight must not write A's address under B. Bumped per pick; a
+     * response carrying a stale generation is dropped.
+     */
+    let addressLookupGeneration = 0;
+
+    /** The in-flight address lookup, aborted when a newer pick supersedes it. */
+    let pendingAddressRequest = null;
 
     /**
      * Shortest term the search will act on. The ONE place this number is
@@ -865,6 +894,67 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         return params;
     }
 
+    /**
+     * POST to one of the plugin's own registry-proxy routes.
+     *
+     * Registry calls run server-side so the merchant API key authenticates
+     * them and a configured firewall token can be attached — neither ever
+     * reaches the browser.
+     *
+     * @param {string} path storefront-relative REST path
+     * @param {object} data request body
+     * @returns {object} jqXHR
+     */
+    function proxyPost(path, data) {
+        return $.ajax({
+            url: url.build(path),
+            type: 'POST',
+            contentType: 'application/json',
+            dataType: 'json',
+            timeout: REQUEST_TIMEOUT_MS,
+            data: JSON.stringify(data)
+        });
+    }
+
+    /**
+     * Unwrap `{ok, status, body}` from a proxy route.
+     *
+     * Magento's webapi layer hands a `: string` return back as a one-element
+     * array of JSON in some serialisation paths and as the bare string in
+     * others; both shapes reach here.
+     *
+     * @param {*} raw
+     * @returns {{ok: boolean, status: number, body: *}}
+     */
+    function unwrapProxyResponse(raw) {
+        const first = Array.isArray(raw) ? raw[0] : raw;
+        let parsed = first;
+        if (typeof first === 'string') {
+            try {
+                parsed = JSON.parse(first);
+            } catch (e) {
+                return { ok: false, status: 0, body: null };
+            }
+        }
+        if (!parsed || typeof parsed !== 'object') return { ok: false, status: 0, body: null };
+        return { ok: !!parsed.ok, status: parsed.status || 0, body: parsed.body };
+    }
+
+    /**
+     * Tell the buyer the address did not arrive. Without this the fields stay
+     * blank with nothing said, which reads as the picker having done nothing.
+     */
+    function announceAddressUnavailable() {
+        identity.addressNotice(
+            $t('We could not fetch this company\'s address. Please enter it below.')
+        );
+    }
+
+    /** The clear half of announceAddressUnavailable(). */
+    function withdrawAddressUnavailable() {
+        identity.addressNotice('');
+    }
+
     function currentAddressFormCountry() {
         for (let i = 0; i < COUNTRY_SELECT_SELECTORS.length; i++) {
             const $select = $(COUNTRY_SELECT_SELECTORS[i]).first();
@@ -1227,9 +1317,11 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             return true;
         },
 
-        /** Drop every cached search result. Exists for tests. */
+        /** Drop every cached search result and any rate-limit backoff. Exists for tests. */
         clearResultCache: function () {
             resultCache.clear();
+            registrySuspendedUntil = 0;
+            pendingAddressRequest = null;
         },
 
         /** @see formatCompanyNumber */
@@ -1240,11 +1332,13 @@ define(['jquery', 'mage/translate'], function ($, $t) {
         currentAddressFormCountry: currentAddressFormCountry,
         apiClientParams: apiClientParams,
 
+        unwrapProxyResponse: unwrapProxyResponse,
+
         /**
          * Run one company search and hand back rows the panel can render.
          *
-         * Answers from cache where the same request URL has already been made,
-         * is bounded by REQUEST_TIMEOUT_MS, and is abortable through
+         * Answers from cache where the same country and term have already been
+         * searched, is bounded by REQUEST_TIMEOUT_MS, and is abortable through
          * `abortActiveRequest(token)`. Debouncing belongs to the caller: the
          * panel owns the query field, so it is what knows when a keystroke has
          * superseded the previous one.
@@ -1254,9 +1348,6 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * company is not here" — the distinction TWO-25326 exists for.
          *
          * @param {object} options
-         * @param {object} options.config brand config subtree; needs
-         *        `checkoutApiUrl`, `companySearchLimit` and `orderIntentConfig`
-         *        (for `extensionPlatformName`/`extensionDBVersion`)
          * @param {string} options.term the buyer's query
          * @param {function(): (string|undefined)} options.getCountryCode
          *        returns the current ISO country code (any case)
@@ -1265,23 +1356,13 @@ define(['jquery', 'mage/translate'], function ($, $t) {
          * @returns {Promise<{items: Array, unavailable: boolean, aborted: boolean}>}
          */
         searchCompanies: function (options) {
-            const config = options.config;
             const token = options.token;
-            const queryParams = new URLSearchParams(Object.assign(
-                {
-                    country: options.getCountryCode()?.toUpperCase(),
-                    limit: config.companySearchLimit,
-                    offset: 0,
-                    q: options.term
-                },
-                // Kept flat in the same URLSearchParams rather than appended
-                // after, so a missing one is absent instead of sent as the
-                // string "undefined".
-                apiClientParams(config)
-            ));
-            const requestUrl = `${config.checkoutApiUrl}/companies/v2/company?${queryParams.toString()}`;
+            const country = options.getCountryCode()?.toUpperCase();
+            const cacheKey = `search|${country}|${options.term}`;
 
-            const cached = cacheGet(requestUrl);
+            // Before the park below: a cached answer costs no request, so
+            // parking it would degrade the panel for nothing.
+            const cached = cacheGet(cacheKey);
             if (cached) {
                 return Promise.resolve({
                     items: mapSearchResults(cached),
@@ -1290,11 +1371,14 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                 });
             }
 
+            if (Date.now() < registrySuspendedUntil) {
+                return Promise.resolve({ items: [], unavailable: true, aborted: false });
+            }
+
             return new Promise(function (resolve) {
-                const request = $.ajax({
-                    url: requestUrl,
-                    dataType: 'json',
-                    timeout: REQUEST_TIMEOUT_MS
+                const request = proxyPost('rest/V1/two/company-search', {
+                    country: country,
+                    query: options.term
                 });
                 const handle = {
                     abort: function () {
@@ -1310,17 +1394,29 @@ define(['jquery', 'mage/translate'], function ($, $t) {
                     console.error('companySearch: searchCompanies called without a bind token');
                 }
 
-                request.done(function (response) {
-                    cacheSet(requestUrl, response);
+                request.done(function (raw) {
+                    const envelope = unwrapProxyResponse(raw);
+                    if (!envelope.ok) {
+                        resolve({ items: [], unavailable: true, aborted: false });
+                        return;
+                    }
+                    cacheSet(cacheKey, envelope.body);
                     // A degraded 200 is a failure dressed as a success:
                     // near-empty results because the provider timed out.
                     resolve({
-                        items: mapSearchResults(response),
-                        unavailable: isDegradedResponse(response),
+                        items: mapSearchResults(envelope.body),
+                        unavailable: isDegradedResponse(envelope.body),
                         aborted: false
                     });
                 });
                 request.fail(function (jqXHR, textStatus) {
+                    // 429 arrives as a raw Magento webapi fault, not an
+                    // envelope — the ceiling is enforced before the route
+                    // runs. Park searching rather than let each keystroke
+                    // re-hit it.
+                    if (jqXHR && jqXHR.status === 429) {
+                        registrySuspendedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
+                    }
                     // A genuine abort is the buyer typing on, or the panel
                     // being torn down — expected, and silent by design. A
                     // timeout is NOT an abort and must be visible, or the
@@ -1357,17 +1453,50 @@ define(['jquery', 'mage/translate'], function ($, $t) {
             if (!config.isAddressSearchEnabled) return null;
             if (!selectedCompany || !selectedCompany.lookupId) return null;
 
+            const generation = ++addressLookupGeneration;
+            if (pendingAddressRequest) {
+                pendingAddressRequest.abort();
+                pendingAddressRequest = null;
+            }
+
+            // Withdrawn as this pick STARTS, so no notice outlives the
+            // company it was about.
+            withdrawAddressUnavailable();
+
+            if (Date.now() < registrySuspendedUntil) {
+                announceAddressUnavailable();
+                return null;
+            }
+
             const self = this;
-            const queryParams = new URLSearchParams(apiClientParams(config));
-            const addressResponse = $.ajax({
-                dataType: 'json',
-                timeout: REQUEST_TIMEOUT_MS,
-                url: `${config.checkoutApiUrl}/companies/v2/company/${selectedCompany.lookupId}?${queryParams.toString()}`
+            const addressResponse = proxyPost('rest/V1/two/company', {
+                lookupId: selectedCompany.lookupId
             });
-            addressResponse.done(function (response) {
+            pendingAddressRequest = addressResponse;
+            const isCurrent = function () {
+                return generation === addressLookupGeneration;
+            };
+            addressResponse.done(function (raw) {
+                if (!isCurrent()) return;
+                const envelope = unwrapProxyResponse(raw);
+                const response = envelope.ok ? envelope.body : null;
                 if (response && response.addresses && response.addresses.length) {
                     self.applyAddress(response.addresses[0], root);
+                    return;
                 }
+                announceAddressUnavailable();
+            });
+            addressResponse.fail(function (jqXHR, textStatus) {
+                // Recorded even for a superseded pick: the ceiling is
+                // per-merchant, so a newer lookup would hit the same wall.
+                if (jqXHR && jqXHR.status === 429) {
+                    registrySuspendedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
+                }
+                if (!isCurrent()) return;
+                if (textStatus !== 'abort') announceAddressUnavailable();
+            });
+            addressResponse.always(function () {
+                if (pendingAddressRequest === addressResponse) pendingAddressRequest = null;
             });
             return addressResponse;
         },

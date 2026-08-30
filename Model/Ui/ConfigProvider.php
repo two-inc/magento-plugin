@@ -148,11 +148,17 @@ class ConfigProvider implements ConfigProviderInterface
      */
     private function getSupportedCompanyTypesSeed(): array
     {
-        $country = (string)$this->checkoutSession->getQuote()->getBillingAddress()->getCountryId();
+        $quote = $this->checkoutSession->getQuote();
+        $country = (string)$quote->getBillingAddress()->getCountryId();
         if ($country === '') {
             return [];
         }
-        return [strtolower($country) => $this->supportedCompanyTypes->getForCountry($country)];
+        return [
+            strtolower($country) => $this->supportedCompanyTypes->getForCountry(
+                $country,
+                (int)$quote->getStoreId() ?: null
+            ),
+        ];
     }
 
     /**
@@ -219,7 +225,12 @@ class ConfigProvider implements ConfigProviderInterface
                     'orderIntentConfig' => $orderIntentConfig,
                     'isCompanySearchEnabled' => $this->configRepository->isCompanySearchEnabled(),
                     'isAddressSearchEnabled' => $this->configRepository->isAddressSearchEnabled(),
-                    'companySearchLimit' => 50,
+                    // Only reaches the browser when the merchant's firewall
+                    // demands it there too; otherwise the token never leaves
+                    // the server.
+                    'firewallToken' => $this->configRepository->isFirewallTokenSentFromBrowser()
+                        ? $this->configRepository->getFirewallToken()
+                        : '',
                     // Warm-start seed for the renderer's per-country
                     // supported-company-types memo: the quote's current
                     // billing country resolved server-side (the merchant

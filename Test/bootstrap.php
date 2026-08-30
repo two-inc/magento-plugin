@@ -149,6 +149,15 @@ require_once __DIR__ . '/Stubs/OrderTax.php';
 // merchant_urls construction is exercisable; per-symbol guard lives inside.
 require_once __DIR__ . '/Stubs/FrameworkUrl.php';
 
+// Remote-address reader and webapi exception behind Service\RateLimiter;
+// per-symbol guards live inside the stub file. Loads after the Phrase stub,
+// which the exception's constructor is typed against.
+require_once __DIR__ . '/Stubs/WebapiRateLimiting.php';
+
+// System-message interface (needs its SEVERITY_* constants) and the backend
+// URL builder the message links with; per-symbol guards live inside.
+require_once __DIR__ . '/Stubs/AdminNotification.php';
+
 // Payment-method base class with a real isAvailable() and a declared
 // $_scopeConfig, so Model\Two's availability gates are testable.
 require_once __DIR__ . '/Stubs/PaymentMethod.php';

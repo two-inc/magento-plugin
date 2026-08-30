@@ -213,7 +213,12 @@ class OrderService
      */
     public function getTwoOrderFromApi(Order $order): array
     {
-        $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId(), [], 'GET');
+        $response = $this->apiAdapter->execute(
+            '/v1/order/' . $order->getTwoOrderId(),
+            [],
+            'GET',
+            (int)$order->getStoreId()
+        );
         $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
         if ($error) {
             throw new LocalizedException($error);
@@ -231,7 +236,12 @@ class OrderService
      */
     public function confirmOrder(Order $order)
     {
-        $response = $this->apiAdapter->execute("/v1/order/" . $order->getTwoOrderId() . "/confirm");
+        $response = $this->apiAdapter->execute(
+            "/v1/order/" . $order->getTwoOrderId() . "/confirm",
+            [],
+            'POST',
+            (int)$order->getStoreId()
+        );
         $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
         if ($error) {
             throw new LocalizedException($error);
@@ -249,7 +259,12 @@ class OrderService
      */
     public function cancelTwoOrder(Order $order): bool
     {
-        $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId() . '/cancel');
+        $response = $this->apiAdapter->execute(
+            '/v1/order/' . $order->getTwoOrderId() . '/cancel',
+            [],
+            'POST',
+            (int)$order->getStoreId()
+        );
         if ($response) {
             $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
             if ($error) {

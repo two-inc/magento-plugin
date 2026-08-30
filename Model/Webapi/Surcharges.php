@@ -12,6 +12,7 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\SurchargesInterface;
 use Two\Gateway\Service\Order\SurchargeCalculator;
+use Two\Gateway\Service\RateLimiter;
 
 /**
  * Read-only endpoint that returns per-term surcharges for the current quote.
@@ -24,6 +25,15 @@ use Two\Gateway\Service\Order\SurchargeCalculator;
  */
 class Surcharges implements SurchargesInterface
 {
+    /**
+     * The chip loader refetches on every totals settle, so several per address edit.
+     * The calculator's cache is request-scoped, so each call still spends one
+     * upstream pricing call per configured term on the merchant's key.
+     */
+    private const LIMIT_PER_MINUTE = 60;
+
+    private const WINDOW_SECONDS = 60;
+
     /**
      * @var CheckoutSession
      */
@@ -44,16 +54,23 @@ class Surcharges implements SurchargesInterface
      */
     private $logRepository;
 
+    /**
+     * @var RateLimiter
+     */
+    private $rateLimiter;
+
     public function __construct(
         CheckoutSession $checkoutSession,
         ConfigRepository $configRepository,
         SurchargeCalculator $surchargeCalculator,
-        LogRepository $logRepository
+        LogRepository $logRepository,
+        RateLimiter $rateLimiter
     ) {
         $this->checkoutSession = $checkoutSession;
         $this->configRepository = $configRepository;
         $this->surchargeCalculator = $surchargeCalculator;
         $this->logRepository = $logRepository;
+        $this->rateLimiter = $rateLimiter;
     }
 
     /**
@@ -61,6 +78,10 @@ class Surcharges implements SurchargesInterface
      */
     public function get(string $cartId): string
     {
+        // Outside the try: the catch below turns a failure into an empty
+        // success body, which would swallow the refusal.
+        $this->rateLimiter->assertWithinLimit('two_surcharges', self::LIMIT_PER_MINUTE, self::WINDOW_SECONDS);
+
         try {
             // Session is the auth boundary — $cartId from the URL is
             // unverifiable on an anonymous route (UserContextInterface

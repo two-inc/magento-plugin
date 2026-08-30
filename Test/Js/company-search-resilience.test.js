@@ -17,7 +17,7 @@
 'use strict';
 
 const $ = require('jquery');
-const { loadAmdModule, loadCompanySearchPanel, installAsyncSimulation, dispatchNative } = require('./amd-harness');
+const { loadAmdModule, loadCompanySearchPanel, installAsyncSimulation, dispatchNative, isProxyRoute, proxyEnvelope, HARNESS_BASE_URL } = require('./amd-harness');
 
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
 const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
@@ -38,7 +38,6 @@ const UNAVAILABLE_MODIFIER = 'two-company-dropdown__message--unavailable';
 
 const BASE_CONFIG = {
     checkoutApiUrl: 'https://api.example.test',
-    companySearchLimit: 50,
     isCompanySearchEnabled: true,
     isAddressSearchEnabled: true,
     orderIntentConfig: {
@@ -78,8 +77,13 @@ function installAjaxDouble() {
                 jqxhr.aborted = true;
                 jqxhr.settleFail('abort');
             },
-            settleDone: function (data) {
-                bound.done.forEach(function (fn) { fn(data); });
+            settleDone: function (data, envelopeOptions) {
+                // A proxy route answers with the envelope, not the upstream
+                // body the test states.
+                const payload = isProxyRoute(options && options.url)
+                    ? proxyEnvelope(data, envelopeOptions)
+                    : data;
+                bound.done.forEach(function (fn) { fn(payload); });
                 bound.always.forEach(function (fn) { fn(); });
             },
             settleFail: function (textStatus) {
@@ -154,37 +158,30 @@ describe('request envelope', () => {
         expect(requests[0].options.timeout).toBe(30000);
     });
 
-    // Both unauthenticated-from-browser endpoints must identify the calling
-    // plugin the same way gateway_method.js's order_intent call does, so the
-    // API can skip a CORS preflight per keystroke.
+    // Neither registry call leaves the browser any more: both go to the
+    // plugin's own route, which authenticates them as the merchant and
+    // decides the result window itself.
     test.each([
         [
             'company search',
-            'search url',
-            (companySearch) => { search(companySearch, 'exa'); }
+            (companySearch) => { search(companySearch, 'exa'); },
+            'rest/V1/two/company-search',
+            { country: 'GB', query: 'exa' }
         ],
         [
             'address lookup by id',
-            'lookup url',
             (companySearch) => {
                 companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
-            }
+            },
+            'rest/V1/two/company',
+            { lookupId: 'lookup-abc-123' }
         ]
-    ])('%s carries client/client_v (%s)', (_label, _desc, issue) => {
+    ])('%s posts to the plugin\'s own route, carrying nothing that identifies the merchant', (_label, issue, route, body) => {
         issue(loadCompanySearch());
-        const params = new URLSearchParams(requests[0].options.url.split('?')[1]);
 
-        expect(params.get('client')).toBe('magento2');
-        expect(params.get('client_v')).toBe('1.0.0');
-    });
-
-    test('the search url carries the country, limit and term', () => {
-        search(loadCompanySearch(), 'exa');
-        const params = new URLSearchParams(requests[0].options.url.split('?')[1]);
-
-        expect(params.get('country')).toBe('GB');
-        expect(params.get('limit')).toBe('50');
-        expect(params.get('q')).toBe('exa');
+        expect(requests[0].options.url).toBe(HARNESS_BASE_URL + route);
+        expect(requests[0].options.type).toBe('POST');
+        expect(JSON.parse(requests[0].options.data)).toEqual(body);
     });
 });
 
@@ -819,5 +816,130 @@ describe('re-render safety of the panel binding', () => {
         panel._renderResults([{ text: 'Example Trading Ltd', html: 'Example Trading Ltd' }]);
 
         expect(document.querySelectorAll(ROW)).toHaveLength(1);
+    });
+});
+
+describe('a company-detail lookup that brings back no address says so', () => {
+    let requests;
+    let identity;
+
+    /**
+     * The notice rides the identity bus the tile already renders from, so it
+     * is retired by the same pick that supersedes it — the checkout-wide
+     * message region it used to go to cleared on nobody's schedule.
+     */
+    function loadWithIdentity() {
+        identity = loadAmdModule(IDENTITY_PATH, {}, GLOBALS);
+        const companySearch = loadAmdModule(
+            MODEL_PATH,
+            { jquery: $, 'Two_Gateway/js/model/company-identity': identity },
+            GLOBALS
+        );
+        companySearch.clearResultCache();
+        return companySearch;
+    }
+
+    beforeEach(() => {
+        requests = installAjaxDouble();
+    });
+
+    /**
+     * Silence here reads as the picker having done nothing: the buyer picked a
+     * company and the address fields stayed blank with no explanation.
+     */
+    test.each([
+        ['a refused envelope', (req) => { req.settleDone({ error_code: 'PROXY_REFUSED' }, { ok: false, status: 503 }); }],
+        ['a 500', (req) => { req.settleFail('error'); }],
+        ['a timeout', (req) => { req.settleFail('timeout'); }],
+        ['an empty address list', (req) => { req.settleDone({ addresses: [] }); }]
+    ])('%s tells the buyer to enter the address themselves', (_label, settle) => {
+        const companySearch = loadWithIdentity();
+
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
+        settle(requests[0]);
+
+        expect(identity.addressNotice()).toContain('enter it below');
+    });
+
+    /** The buyer typing on, or the panel torn down — expected, and silent. */
+    test('an abort says nothing', () => {
+        const companySearch = loadWithIdentity();
+
+        const request = companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
+        request.abort();
+
+        expect(identity.addressNotice()).toBe('');
+    });
+
+    test('an address that arrives is applied without a notice', () => {
+        const companySearch = loadWithIdentity();
+
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
+        requests[0].settleDone({ addresses: [{ streetAddress: 'Somewhere 1' }] });
+
+        expect(identity.addressNotice()).toBe('');
+    });
+
+    /**
+     * Last-REQUEST-wins, not last-response-wins: without a generation token a
+     * slow lookup for company A landed its address under company B.
+     */
+    test.each([
+        [
+            'a superseded address is never applied',
+            (companySearch, reqs) => {
+                reqs[1].settleDone({ addresses: [{ streetAddress: 'B Street 2' }] });
+                reqs[0].settleDone({ addresses: [{ streetAddress: 'A Street 1' }] });
+            },
+            ['B Street 2'],
+            'the stale write is discarded, not applied last'
+        ],
+        [
+            'a superseded failure never announces',
+            (companySearch, reqs) => {
+                reqs[1].settleDone({ addresses: [{ streetAddress: 'B Street 2' }] });
+                reqs[0].settleDone({ addresses: [] });
+            },
+            ['B Street 2'],
+            'a stale empty-address answer raises no notice'
+        ]
+    ])('%s', (_label, settle, expectedApplied, description) => {
+        const companySearch = loadWithIdentity();
+        const applied = [];
+        companySearch.applyAddress = function (address) { applied.push(address.streetAddress); };
+
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'company-a' });
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'company-b' });
+        settle(companySearch, requests);
+
+        expect(applied).toEqual(expectedApplied, description);
+        expect(identity.addressNotice()).toBe('');
+    });
+
+    /**
+     * The defect this pins: the notice used to go to the checkout-wide message
+     * list and was never withdrawn, so it sat there contradicting an address
+     * the NEXT pick had filled in perfectly well.
+     */
+    test.each([
+        [
+            'a later pick whose address arrives',
+            (req) => { req.settleDone({ addresses: [{ streetAddress: 'Somewhere 1' }] }); }
+        ],
+        [
+            'a later pick still in flight',
+            () => {}
+        ]
+    ])('%s retires the previous failure', (_label, settleSecond) => {
+        const companySearch = loadWithIdentity();
+
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
+        requests[0].settleFail('error');
+        expect(identity.addressNotice()).toContain('enter it below');
+
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-def-456' });
+        settleSecond(requests[1]);
+
+        expect(identity.addressNotice()).toBe('');
     });
 });

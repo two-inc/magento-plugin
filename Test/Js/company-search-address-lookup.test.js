@@ -13,7 +13,7 @@
 
 'use strict';
 
-const { loadAmdModule, defaultMocks } = require('./amd-harness');
+const { loadAmdModule, defaultMocks, isProxyRoute, proxyEnvelope, HARNESS_BASE_URL } = require('./amd-harness');
 
 const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
@@ -148,14 +148,17 @@ function makeRecorder() {
  * @param {object} payload
  */
 function settleLatest(recorder, payload) {
-    recorder.doneByCall[recorder.doneByCall.length - 1].forEach(function (cb) { cb(payload); });
+    const call = recorder.ajax[recorder.ajax.length - 1];
+    // A proxy route answers with the envelope, not the upstream body.
+    const wrapped = isProxyRoute(call && call.url) ? proxyEnvelope(payload) : payload;
+    recorder.doneByCall[recorder.doneByCall.length - 1].forEach(function (cb) { cb(wrapped); });
 }
 
-/** Only the company-detail requests: the search hits `/company?`, not `/company/`. */
-function lookupUrls(recorder) {
+/** Only the company-detail requests; the search goes to its own route. */
+function lookupIds(recorder) {
     return recorder.ajax
-        .map(function (call) { return call.url; })
-        .filter(function (url) { return url.indexOf('/companies/v2/company/') !== -1; });
+        .filter(function (call) { return call.url === LOOKUP_ROUTE; })
+        .map(function (call) { return JSON.parse(call.data).lookupId; });
 }
 
 function loadCompanySearch($) {
@@ -186,7 +189,6 @@ const SECOND_SEARCH_RESPONSE = {
 
 const BASE_CONFIG = {
     checkoutApiUrl: 'https://api.example.test',
-    companySearchLimit: 50,
     isCompanySearchEnabled: true,
     isAddressSearchEnabled: true,
     supportedCompanyTypes: { gb: [] },
@@ -196,10 +198,7 @@ const BASE_CONFIG = {
     }
 };
 
-const LOOKUP_URL =
-    'https://api.example.test/companies/v2/company/lookup-abc-123?client=magento2&client_v=1.0.0';
-const SECOND_LOOKUP_URL =
-    'https://api.example.test/companies/v2/company/lookup-def-456?client=magento2&client_v=1.0.0';
+const LOOKUP_ROUTE = HARNESS_BASE_URL + 'rest/V1/two/company';
 
 describe('company-search shared module', () => {
     test('searchCompanies carries lookup_id through as lookupId', async () => {
@@ -231,11 +230,8 @@ describe('company-search shared module', () => {
             getCountryCode: function () { return 'gb'; }
         });
 
-        const url = recorder.ajax[0].url;
-        expect(url).toContain('https://api.example.test/companies/v2/company?');
-        expect(url).toContain('country=GB');
-        expect(url).toContain('limit=50');
-        expect(url).toContain('offset=0');
+        expect(recorder.ajax[0].url).toBe(HARNESS_BASE_URL + 'rest/V1/two/company-search');
+        expect(JSON.parse(recorder.ajax[0].data)).toEqual({ country: 'GB', query: 'example' });
     });
 
     test('lookupCompanyAddress fetches the company and fills the address form', () => {
@@ -245,7 +241,8 @@ describe('company-search shared module', () => {
         companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
 
         expect(recorder.ajax).toHaveLength(1);
-        expect(recorder.ajax[0].url).toBe(LOOKUP_URL);
+        expect(recorder.ajax[0].url).toBe(LOOKUP_ROUTE);
+        expect(JSON.parse(recorder.ajax[0].data)).toEqual({ lookupId: 'lookup-abc-123' });
 
         settleLatest(recorder, {
             addresses: [
@@ -390,7 +387,7 @@ describe('the one panel the capture component mounts', () => {
         expect(picked.lookupId).toBe('lookup-abc-123');
         expect(identity.companyName()).toBe('Example Trading Ltd');
         expect(identity.companyId()).toBe('12345678');
-        expect(lookupUrls(recorder)).toEqual([LOOKUP_URL]);
+        expect(lookupIds(recorder)).toEqual(['lookup-abc-123']);
 
         settle({ city: 'London', postal_code: 'EC1A 1BB', street_address: '1 Example Street' });
 
@@ -410,7 +407,7 @@ describe('the one panel the capture component mounts', () => {
         await pick('example', SEARCH_RESPONSE);
 
         expect(identity.companyId()).toBe('12345678');
-        expect(lookupUrls(recorder)).toEqual([]);
+        expect(lookupIds(recorder)).toEqual([]);
         expect(recorder.written).toHaveLength(0);
     });
 
@@ -424,7 +421,7 @@ describe('the one panel the capture component mounts', () => {
         await pick('second', SECOND_SEARCH_RESPONSE);
         settle({ city: 'Stockholm', postal_code: '111 22', street_address: '2 Second Street' });
 
-        expect(lookupUrls(recorder)).toEqual([LOOKUP_URL, SECOND_LOOKUP_URL]);
+        expect(lookupIds(recorder)).toEqual(['lookup-abc-123', 'lookup-def-456']);
         expect(identity.companyName()).toBe('Second Company AB');
         expect(identity.companyId()).toBe('87654321');
 
