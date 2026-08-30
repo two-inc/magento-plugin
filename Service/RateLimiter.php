@@ -224,6 +224,9 @@ class RateLimiter
         return false;
     }
 
+    /** Bucket callers by their /64: the smallest allocation routed to a single real-world holder. */
+    private const IPV6_BUCKET_MASK_BYTES = 8;
+
     /**
      * The connecting peer, unless it is one of the merchant's own proxies —
      * then the buyer's address from the forwarding chain that proxy set.
@@ -236,7 +239,7 @@ class RateLimiter
 
         $rules = $this->configRepository->getTrustedProxies();
         if ($rules === [] || $peer === '' || !self::matchesAny($peer, $rules)) {
-            return $peer !== '' ? $peer : 'unknown';
+            return $peer !== '' ? self::bucketIdentity($peer) : 'unknown';
         }
 
         $forwarded = $this->request->getServer('HTTP_X_FORWARDED_FOR');
@@ -250,7 +253,26 @@ class RateLimiter
         // and the generated factory exists only after setup:di:compile.
         $client = (new RemoteAddress($this->request, ['HTTP_X_FORWARDED_FOR'], $trusted))->getRemoteAddress();
 
-        return is_string($client) && trim($client) !== '' ? trim($client) : $peer;
+        return self::bucketIdentity(is_string($client) && trim($client) !== '' ? trim($client) : $peer);
+    }
+
+    /**
+     * The one chokepoint where a resolved address becomes a bucket-cache key:
+     * an IPv6 address is masked to its /64 so a routed allocation (the
+     * smallest real-world one) can't spin up one bucket per address. IPv4 is
+     * used verbatim.
+     */
+    private static function bucketIdentity(string $address): string
+    {
+        $packed = @inet_pton($address);
+        if ($packed === false || strlen($packed) !== 16) {
+            return $address;
+        }
+
+        $masked = substr($packed, 0, self::IPV6_BUCKET_MASK_BYTES)
+            . str_repeat("\0", 16 - self::IPV6_BUCKET_MASK_BYTES);
+
+        return inet_ntop($masked) . '/64';
     }
 
     /**

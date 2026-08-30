@@ -16,8 +16,18 @@ namespace Two\Gateway\Model\Webapi;
  */
 trait UpstreamEnvelopeTrait
 {
-    /** The only upstream 4xx keys a buyer can act on; the rest of the body is internal. */
-    private const RELAYED_4XX_FIELDS = ['error_code', 'error_message', 'error_details', 'error_json'];
+    /**
+     * The only upstream 4xx keys a buyer can act on; the rest of the body is internal.
+     *
+     * A trait method, not a const: trait constants require PHP 8.2 and composer.json
+     * still supports >=8.1.
+     *
+     * @return string[]
+     */
+    private function relayed4xxFields(): array
+    {
+        return ['error_code', 'error_message', 'error_details', 'error_json'];
+    }
 
     /**
      * @param array{status: int, body: array<string,mixed>} $result from Adapter::executeWithStatus()
@@ -36,7 +46,7 @@ trait UpstreamEnvelopeTrait
                 $body
             );
             $relayed = $status >= 400 && $status < 500 && is_array($body)
-                ? array_intersect_key($body, array_flip(self::RELAYED_4XX_FIELDS))
+                ? array_intersect_key($body, array_flip($this->relayed4xxFields()))
                 : [];
             $body = $relayed !== [] ? $relayed : [
                 'error_code' => 'PROXY_REFUSED',

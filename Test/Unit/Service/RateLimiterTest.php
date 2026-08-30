@@ -261,6 +261,35 @@ class RateLimiterTest extends TestCase
     }
 
     /**
+     * Given three IPv6 addresses inside one /64; When each calls at a
+     * ceiling of one; Then they share a single bucket, because a routed /64
+     * is the smallest real-world allocation and must not buy per-address budgets.
+     */
+    public function testCallersInTheSameIpv6SlashSixtyFourShareOneBucket(): void
+    {
+        $ceiling = 2;
+        $this->limiter('2001:db8:1234:5678::1')->assertWithinLimit('route', $ceiling, 60);
+        $this->limiter('2001:db8:1234:5678::2')->assertWithinLimit('route', $ceiling, 60);
+
+        $this->assertCount(1, $this->entries, 'same /64, one bucket');
+
+        $this->expectException(WebapiException::class);
+        $this->limiter('2001:db8:1234:5678:ffff:ffff:ffff:ffff')->assertWithinLimit('route', $ceiling, 60);
+    }
+
+    /**
+     * Given two IPv6 addresses in different /64s; When each calls at a
+     * ceiling of one; Then each keeps its own bucket.
+     */
+    public function testCallersInDifferentIpv6SlashSixtyFoursGetSeparateBuckets(): void
+    {
+        $this->limiter('2001:db8:1234:5678::1')->assertWithinLimit('route', 1, 60);
+        $this->limiter('2001:db8:1234:9999::1')->assertWithinLimit('route', 1, 60);
+
+        $this->assertCount(2, $this->entries, 'different /64s, separate buckets');
+    }
+
+    /**
      * The counter's lifetime is what retires a window — nothing sweeps it.
      */
     public function testTheCounterExpiresWithItsWindow(): void
