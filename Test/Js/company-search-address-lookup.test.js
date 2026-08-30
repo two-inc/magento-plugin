@@ -13,7 +13,7 @@
 
 'use strict';
 
-const { loadAmdModule, defaultMocks, isProxyRoute, proxyEnvelope } = require('./amd-harness');
+const { loadAmdModule, defaultMocks, isProxyRoute, proxyEnvelope, HARNESS_BASE_URL } = require('./amd-harness');
 
 const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
@@ -199,7 +199,7 @@ const BASE_CONFIG = {
     }
 };
 
-const LOOKUP_ROUTE = 'rest/V1/two/company';
+const LOOKUP_ROUTE = HARNESS_BASE_URL + 'rest/V1/two/company';
 
 describe('company-search shared module', () => {
     test('searchCompanies carries lookup_id through as lookupId', async () => {
@@ -231,7 +231,7 @@ describe('company-search shared module', () => {
             getCountryCode: function () { return 'gb'; }
         });
 
-        expect(recorder.ajax[0].url).toBe('rest/V1/two/company-search');
+        expect(recorder.ajax[0].url).toBe(HARNESS_BASE_URL + 'rest/V1/two/company-search');
         expect(JSON.parse(recorder.ajax[0].data)).toEqual({ country: 'GB', query: 'example' });
     });
 

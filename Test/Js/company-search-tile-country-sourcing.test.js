@@ -424,22 +424,27 @@ describe('the tile mount reads the form holding the invoice address (TWO-25461 Â
     );
 
     test.each([
-        ['', 'no billing form: the shipping fallback is the hidden one'],
-        [billingForm('GB'), 'a billing form the buyer did open still answers']
-    ])('a shipping form inside the hidden new-address modal is not the invoice address (%s)', (billing, _because) => {
-        // Core renders it there, holding store defaults, for the whole of a
-        // checkout completed against a saved address.
-        mountAddressForm(
-            billing +
-            '<div id="opc-new-shipping-address" style="display:none">' +
-            shippingForm('US') +
-            '</div>' + TILE
-        );
-        const { component } = load({ billingCountry: 'NO' });
-        component.start();
+        [false, 'no billing form: the shipping fallback is the hidden one'],
+        [true, 'a billing form the buyer did open still answers']
+    ])(
+        'a shipping form inside the hidden new-address modal is not the invoice address '
+        + '(billing form: %p â€” %s)',
+        (hasBilling) => {
+            const billing = hasBilling ? billingForm('GB') : '';
+            // Core renders it there, holding store defaults, for the whole of a
+            // checkout completed against a saved address.
+            mountAddressForm(
+                billing +
+                '<div id="opc-new-shipping-address" style="display:none">' +
+                shippingForm('US') +
+                '</div>' + TILE
+            );
+            const { component } = load({ billingCountry: 'NO' });
+            component.start();
 
-        expect(component.countryCode()).toBe(billing ? 'gb' : 'no');
-    });
+            expect(component.countryCode()).toBe(hasBilling ? 'gb' : 'no');
+        }
+    );
 
     test('unchecking "same as shipping" moves the country to the billing form', async () => {
         // The switch the buyer makes on the payment step: the shipping form does

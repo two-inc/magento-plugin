@@ -1145,6 +1145,16 @@ define([
             // text or leave the first error's wording under a newer one.
             this.clearOrderIntentNotices();
 
+            // A 429 is transient — a wait, not a decline. It arrives either as
+            // a raw Magento webapi fault or inside a proxy envelope.
+            if (response && response.status === 429) {
+                this.showOrderIntentErrorNotice(
+                    (response.responseJSON && response.responseJSON.message) ||
+                    $t('Too many requests. Please wait a moment and try again.')
+                );
+                return;
+            }
+
             // `let`, not `const`: the SCHEMA_ERROR branch below reassigns
             // this to '' once it has pushed the field-level errors into
             // messageContainer itself. A `const` here made every
@@ -1156,17 +1166,6 @@ define([
             // buyer saw no message at all before the §6a client-side gate
             // was added: this path was the one meant to show it, and it was
             // broken.
-            // A 429 is a raw Magento webapi fault, not an envelope: the
-            // ceiling is enforced before the route runs. It is transient, so
-            // the buyer is told to wait rather than shown a decline.
-            if (response && response.status === 429) {
-                this.showOrderIntentErrorNotice(
-                    (response.responseJSON && response.responseJSON.message) ||
-                    $t('Too many requests. Please wait a moment and try again.')
-                );
-                return;
-            }
-
             let message = this.generalErrorMessage,
                 self = this;
             if (response && response.responseJSON) {
@@ -1347,9 +1346,10 @@ define([
                     if (envelope.ok) {
                         deferred.resolve(envelope.body);
                     } else {
-                        // `responseJSON` because processOrderIntentErrorResponse
-                        // reads the upstream error body off that jqXHR field.
-                        deferred.reject({ responseJSON: envelope.body });
+                        // Shaped like a jqXHR: processOrderIntentErrorResponse
+                        // reads both fields off one, and drops to a generic
+                        // decline without the status.
+                        deferred.reject({ status: envelope.status, responseJSON: envelope.body });
                     }
                 })
                 .fail(function (jqXHR) {

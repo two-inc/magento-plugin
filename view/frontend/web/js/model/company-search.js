@@ -1339,10 +1339,8 @@ define([
             const country = options.getCountryCode()?.toUpperCase();
             const cacheKey = `search|${country}|${options.term}`;
 
-            if (Date.now() < searchSuspendedUntil) {
-                return Promise.resolve({ items: [], unavailable: true, aborted: false });
-            }
-
+            // Before the park below: a cached answer costs no request, so
+            // parking it would degrade the panel for nothing.
             const cached = cacheGet(cacheKey);
             if (cached) {
                 return Promise.resolve({
@@ -1350,6 +1348,10 @@ define([
                     unavailable: false,
                     aborted: false
                 });
+            }
+
+            if (Date.now() < searchSuspendedUntil) {
+                return Promise.resolve({ items: [], unavailable: true, aborted: false });
             }
 
             return new Promise(function (resolve) {

@@ -9,9 +9,10 @@
 'use strict';
 
 const jq = require('jquery');
-const { loadAmdModule, defaultMocks, proxyEnvelope } = require('./amd-harness');
+const { loadAmdModule, defaultMocks, proxyEnvelope, HARNESS_BASE_URL } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
+const RATE_LIMIT_COPY = 'Too many requests. Please wait a moment and try again.';
 
 function loadRenderer() {
     const requests = [];
@@ -80,8 +81,7 @@ describe('the order-intent check goes through the plugin, not straight to the AP
         ctx.placeOrderIntent.call(ctx);
 
         expect(requests).toHaveLength(1);
-        expect(requests[0].options.url).toBe('rest/V1/two/order-intent');
-        expect(requests[0].options.url).not.toContain('order_intent');
+        expect(requests[0].options.url).toBe(HARNESS_BASE_URL + 'rest/V1/two/order-intent');
         expect(JSON.parse(JSON.parse(requests[0].options.data).payload).gross_amount).toBe('124.00');
     });
 
@@ -99,18 +99,8 @@ describe('the order-intent check goes through the plugin, not straight to the AP
     });
 
     test.each([
-        [
-            { approved: true },
-            { ok: true },
-            'resolved',
-            'an approval settles the promise the tile reads its verdict from'
-        ],
-        [
-            { error_code: 'SCHEMA_ERROR' },
-            { ok: false, status: 422 },
-            'rejected',
-            'an upstream rejection must not arrive as a 200-shaped success'
-        ]
+        [{ approved: true }, { ok: true }, 'resolved'],
+        [{ error_code: 'SCHEMA_ERROR' }, { ok: false, status: 422 }, 'rejected']
     ])('an upstream %p settles %s', (body, envelope, expectedOutcome) => {
         const { ctx, requests } = loadRenderer();
         const outcomes = [];
@@ -125,6 +115,23 @@ describe('the order-intent check goes through the plugin, not straight to the AP
         expect(
             expectedOutcome === 'rejected' ? outcomes[0][1].responseJSON : outcomes[0][1]
         ).toEqual(body);
+    });
+
+    test('an in-envelope 429 reaches the wait-message branch, not a decline', () => {
+        const { ctx, requests } = loadRenderer();
+        const notices = [];
+        const tile = Object.assign({}, ctx, {
+            generalErrorMessage: 'Something went wrong with your order.',
+            clearOrderIntentNotices: function () {},
+            showOrderIntentErrorNotice: function (message) { notices.push(message); }
+        });
+
+        tile.placeOrderIntent.call(tile).fail(function (response) {
+            tile.processOrderIntentErrorResponse.call(tile, response);
+        });
+        requests[0].settleDone(proxyEnvelope({ message: RATE_LIMIT_COPY }, { ok: false, status: 429 }));
+
+        expect(notices).toEqual([RATE_LIMIT_COPY]);
     });
 
     test('a transport failure still reaches the failure handler as a jqXHR', () => {

@@ -17,7 +17,7 @@
 'use strict';
 
 const $ = require('jquery');
-const { loadAmdModule, loadCompanySearchPanel, installAsyncSimulation, dispatchNative, isProxyRoute, proxyEnvelope } = require('./amd-harness');
+const { loadAmdModule, loadCompanySearchPanel, installAsyncSimulation, dispatchNative, isProxyRoute, proxyEnvelope, HARNESS_BASE_URL } = require('./amd-harness');
 
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
 const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
@@ -180,10 +180,9 @@ describe('request envelope', () => {
     ])('%s posts to the plugin\'s own route, carrying nothing that identifies the merchant', (_label, issue, route, body) => {
         issue(loadCompanySearch());
 
-        expect(requests[0].options.url).toBe(route);
+        expect(requests[0].options.url).toBe(HARNESS_BASE_URL + route);
         expect(requests[0].options.type).toBe('POST');
         expect(JSON.parse(requests[0].options.data)).toEqual(body);
-        expect(requests[0].options.url).not.toContain('api.example.test');
     });
 });
 

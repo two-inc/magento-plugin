@@ -75,7 +75,6 @@ class SoleTrader implements SoleTraderInterface
             self::WINDOW_SECONDS
         );
 
-
         $delegationToken = $this->getDelegationToken();
         $autofillToken = $this->getAutofillToken();
 

@@ -34,6 +34,13 @@ class RateLimiter
     /** Caller identities the refusal roster keeps before it stops growing. */
     private const REFUSAL_ROSTER_LIMIT = 50;
 
+    /**
+     * Refusals a route's window needs before the log commits to reading the
+     * concentration behind them. Below it, one caller is indistinguishable
+     * from the first buyer of a busy minute.
+     */
+    private const HINT_MIN_REFUSALS = 5;
+
     public function __construct(
         private readonly CacheInterface $cache,
         private readonly HttpRequest $request,
@@ -75,6 +82,11 @@ class RateLimiter
      * Records the refusal against the route's window and logs it with the
      * caller concentration behind it, so an admin can tell one abusive
      * caller from every buyer arriving as one address.
+     *
+     * A refused flood must not become its own load: the roster stops being
+     * written and nothing further is logged once the window has reported,
+     * bounding a window of any size to two log lines and a handful of cache
+     * writes per route.
      */
     private function reportRefusal(
         string $route,
@@ -84,36 +96,77 @@ class RateLimiter
         string $caller
     ): void {
         $rosterKey = self::CACHE_KEY_PREFIX . 'refusals_' . hash('sha256', $route . "\0" . $window);
-        $roster = json_decode((string)$this->cache->load($rosterKey), true);
-        $roster = is_array($roster) ? $roster : [];
+        $stored = json_decode((string)$this->cache->load($rosterKey), true);
+        $stored = is_array($stored) ? $stored : [];
+        if (!empty($stored['reported'])) {
+            return;
+        }
+
+        $roster = is_array($stored['callers'] ?? null) ? $stored['callers'] : [];
+        $total = (int)($stored['total'] ?? 0) + 1;
 
         $identity = substr(hash('sha256', $caller), 0, 16);
         if (isset($roster[$identity]) || count($roster) < self::REFUSAL_ROSTER_LIMIT) {
             $roster[$identity] = (int)($roster[$identity] ?? 0) + 1;
-            $this->cache->save((string)json_encode($roster), $rosterKey, [], $windowSeconds);
+        }
+
+        $reported = $total >= self::HINT_MIN_REFUSALS;
+        $this->cache->save(
+            (string)json_encode(['callers' => $roster, 'total' => $total, 'reported' => $reported]),
+            $rosterKey,
+            [],
+            $windowSeconds
+        );
+
+        if ($total !== 1 && !$reported) {
+            return;
         }
 
         $trustedProxies = $this->configRepository->getTrustedProxies();
+        $distinct = count($roster);
         $this->logRepository->addErrorLog(
             sprintf(
                 '[rate-limit-exceeded] route=%s ceiling=%d/%ds caller=%s caller_source=%s '
-                . 'distinct_callers_refused=%d refusals_in_window=%d this_caller_refusals=%d trusted_proxies=%d',
+                . 'distinct_callers_refused=%s refusals_in_window=%d this_caller_refusals=%d trusted_proxies=%d',
                 $route,
                 $maxRequests,
                 $windowSeconds,
                 $caller,
                 $trustedProxies === [] ? 'remote_addr' : 'forwarded_for',
-                count($roster),
-                array_sum($roster),
+                $distinct >= self::REFUSAL_ROSTER_LIMIT ? $distinct . '+' : (string)$distinct,
+                $total,
                 $roster[$identity] ?? 0,
                 count($trustedProxies)
             ),
-            count($roster) === 1 && $trustedProxies === []
-                ? 'All refusals in this window come from one address and no trusted proxies are configured. '
-                    . 'If this store sits behind a reverse proxy, load balancer or CDN, every buyer reaches it as '
-                    . 'that one address and the ceiling is store-wide: set Trusted proxies under General, or switch '
-                    . 'Disable checkout rate limiting on under Diagnostics while you do.'
-                : null
+            $reported ? $this->concentrationHint($distinct, $trustedProxies === []) : null
+        );
+    }
+
+    /**
+     * Reading of what the window's refusals look like, once there are enough
+     * of them to have a shape.
+     *
+     * Turning the ceiling off is only ever suggested for the shape that reads
+     * as the merchant's own buyers — advising it against what looks like an
+     * attack would hand the attacker the store.
+     */
+    private function concentrationHint(int $distinct, bool $noTrustedProxies): ?string
+    {
+        if ($distinct === 1) {
+            return $noTrustedProxies
+                ? 'Every refusal in this window comes from one address. If this store sits behind a reverse '
+                    . 'proxy, load balancer or CDN, that is every buyer counted as a single caller and the '
+                    . 'ceiling is store-wide: set Trusted proxies under General. If it does not, one caller is '
+                    . 'sending sustained traffic and the ceiling is holding it.'
+                : 'Every refusal in this window comes from one resolved buyer address, which is one caller '
+                    . 'sending sustained traffic rather than ordinary checkout load.';
+        }
+
+        return sprintf(
+            'Refusals in this window are spread across %d addresses, which is the shape of ordinary '
+                . 'checkout load rather than one caller. If this is genuine traffic, raise the ceiling or '
+                . 'switch Disable checkout rate limiting on under Diagnostics while you investigate.',
+            $distinct
         );
     }
 
@@ -167,10 +220,23 @@ class RateLimiter
     private static function matches(string $address, string $rule): bool
     {
         if (strpos($rule, '/') === false) {
-            return strcasecmp($address, $rule) === 0;
+            // Packed, not textual: 2001:0db8::1 and 2001:db8::1 are the same
+            // address, and a stored rule can reach here unnormalised via
+            // config:set or an import.
+            $packedRule = @inet_pton($rule);
+
+            return $packedRule !== false && @inet_pton($address) === $packedRule;
         }
 
         [$subnet, $bits] = explode('/', $rule, 2);
+
+        // Before the cast: `(int)` turns an empty or non-numeric suffix into 0,
+        // which passes the range guard and then matches every address of that
+        // family — one typo in the trusted list would trust the whole internet.
+        if (preg_match('/^\d+$/', $bits) !== 1) {
+            return false;
+        }
+
         $packedAddress = @inet_pton($address);
         $packedSubnet = @inet_pton($subnet);
         if ($packedAddress === false || $packedSubnet === false
@@ -181,7 +247,7 @@ class RateLimiter
 
         $bits = (int)$bits;
         $maxBits = strlen($packedSubnet) * 8;
-        if ($bits < 0 || $bits > $maxBits) {
+        if ($bits > $maxBits) {
             return false;
         }
 

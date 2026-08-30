@@ -325,52 +325,202 @@ class RateLimiterTest extends TestCase
     }
 
     /**
-     * Given every refusal in the window comes from one address and no trusted
-     * proxies are set; When a call is refused; Then the log says so and names
-     * the two settings that resolve it.
+     * Refuses `$count` calls on a ceiling of 1, from `$peers` in rotation.
+     *
+     * @param string[] $peers
      */
-    public function testOneAddressBehindEveryRefusalIsCalledOutInTheLog(): void
+    private function refuse(int $count, array $peers = ['198.51.100.7']): void
     {
-        $limiter = $this->limiterFor(['REMOTE_ADDR' => '198.51.100.7']);
-        $limiter->assertWithinLimit('route', 1, 60);
-
-        try {
-            $limiter->assertWithinLimit('route', 1, 60);
-        } catch (WebapiException $e) {
-            // The log is what this test is about.
+        foreach ($peers as $peer) {
+            $this->limiterFor(['REMOTE_ADDR' => $peer])->assertWithinLimit('route', 1, 60);
         }
+
+        for ($i = 0; $i < $count; $i++) {
+            try {
+                $this->limiterFor(['REMOTE_ADDR' => $peers[$i % count($peers)]])
+                    ->assertWithinLimit('route', 1, 60);
+                $this->fail('the call past the ceiling should have been refused');
+            } catch (WebapiException $e) {
+                // The log is what these tests are about.
+            }
+        }
+    }
+
+    /**
+     * Given a refused call; When it is the window's first for that route;
+     * Then it is logged, without yet committing to a reading of the traffic.
+     */
+    public function testTheFirstRefusalInAWindowIsLoggedWithoutADiagnosis(): void
+    {
+        $this->refuse(1);
 
         $this->assertCount(1, $this->errorLog);
         [$line, $hint] = $this->errorLog[0];
         $this->assertStringContainsString('[rate-limit-exceeded] route=route', $line);
         $this->assertStringContainsString('caller=198.51.100.7', $line);
-        $this->assertStringContainsString('distinct_callers_refused=1', $line);
+        $this->assertStringContainsString('refusals_in_window=1', $line);
         $this->assertStringContainsString('trusted_proxies=0', $line);
-        $this->assertStringContainsString('Trusted proxies', (string)$hint);
-        $this->assertStringContainsString('Disable checkout rate limiting', (string)$hint);
+        $this->assertNull($hint, 'one refusal has no shape to report');
     }
 
     /**
-     * Given refusals spread across several addresses; When they are logged;
-     * Then the count says so and the single-address hint is withheld — that
-     * is an abusive-caller picture, not a collapsed-bucket one.
+     * Given a flood of refused calls; When they are all in one window; Then
+     * the log is written a bounded number of times — a correctly refused
+     * flood must not turn into a self-inflicted write storm.
      */
-    public function testRefusalsFromSeveralAddressesAreCountedApart(): void
+    public function testARefusedFloodIsNotAmplifiedIntoALogStorm(): void
     {
-        foreach (['198.51.100.7', '203.0.113.9', '192.0.2.44'] as $peer) {
-            $limiter = $this->limiterFor(['REMOTE_ADDR' => $peer]);
-            $limiter->assertWithinLimit('route', 1, 60);
-            try {
-                $limiter->assertWithinLimit('route', 1, 60);
-            } catch (WebapiException $e) {
-                // The log is what this test is about.
-            }
+        $this->refuse(500);
+
+        $this->assertLessThanOrEqual(2, count($this->errorLog), 'refusals are reported per window');
+    }
+
+    /**
+     * Given enough refusals to have a shape, all from one address with no
+     * trusted proxies set; When the window is reported; Then the log names
+     * the setting that resolves a collapsed bucket, and never suggests
+     * turning the ceiling off — this is also what an attack looks like.
+     */
+    public function testTheSingleCallerReadingNeverSuggestsDisablingTheCeiling(): void
+    {
+        $this->refuse(5);
+
+        [$line, $hint] = $this->errorLog[count($this->errorLog) - 1];
+        $this->assertStringContainsString('distinct_callers_refused=1', $line);
+        $this->assertStringContainsString('refusals_in_window=5', $line);
+        $this->assertStringContainsString('Trusted proxies', (string)$hint);
+        $this->assertStringNotContainsString(
+            'Disable checkout rate limiting',
+            (string)$hint,
+            'never advise disabling protection against what may be an attack'
+        );
+    }
+
+    /**
+     * Given refusals spread across several addresses; When the window is
+     * reported; Then that reads as ordinary load rather than one caller.
+     */
+    public function testRefusalsSpreadAcrossAddressesReadAsOrdinaryLoad(): void
+    {
+        $this->refuse(5, ['198.51.100.7', '203.0.113.9', '192.0.2.44']);
+
+        [$line, $hint] = $this->errorLog[count($this->errorLog) - 1];
+        $this->assertStringContainsString('distinct_callers_refused=3', $line);
+        $this->assertStringContainsString('spread across 3 addresses', (string)$hint);
+    }
+
+    /**
+     * Given a trusted-proxy entry whose bit suffix is not a plain number;
+     * When a caller rotates a forwarding header; Then the entry matches
+     * nothing and the caller is still keyed on its own address.
+     *
+     * A `(int)` cast turns any such suffix into /0, which matches every
+     * address of that family: one typo beside a valid entry would trust the
+     * whole internet and retire the ceiling entirely.
+     *
+     * @dataProvider malformedCidrSuffixes
+     */
+    public function testAMalformedCidrSuffixTrustsNothing(string $rule, string $description): void
+    {
+        $rules = [$rule, '192.168.0.0/16'];
+        $ceiling = 3;
+
+        for ($i = 0; $i < $ceiling; $i++) {
+            $this->limiterFor(
+                ['REMOTE_ADDR' => '198.51.100.7', 'HTTP_X_FORWARDED_FOR' => '2001:db8::' . $i],
+                $rules
+            )->assertWithinLimit('route', $ceiling, 60);
         }
 
-        $this->assertCount(3, $this->errorLog);
-        [$line, $hint] = $this->errorLog[2];
-        $this->assertStringContainsString('distinct_callers_refused=3', $line);
-        $this->assertStringContainsString('refusals_in_window=3', $line);
-        $this->assertNull($hint, 'several callers is not the collapsed-bucket picture');
+        $this->assertCount(1, $this->entries, $description);
+
+        $this->expectException(WebapiException::class);
+        $this->limiterFor(
+            ['REMOTE_ADDR' => '198.51.100.7', 'HTTP_X_FORWARDED_FOR' => '2001:db8::99'],
+            $rules
+        )->assertWithinLimit('route', $ceiling, 60);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function malformedCidrSuffixes(): array
+    {
+        return [
+            'empty suffix' => ['10.0.0.0/', 'a bare slash is not a range'],
+            'non-numeric suffix' => ['10.0.0.0/abc', 'a non-numeric suffix is not a range'],
+            'leading whitespace' => ['10.0.0.0/ 8', 'a suffix is not trimmed into a range'],
+            'trailing junk' => ['10.0.0.0/8x', 'a suffix is not truncated into a range'],
+            'negative suffix' => ['10.0.0.0/-1', 'a negative suffix is not a range'],
+            'fractional suffix' => ['10.0.0.0/8.5', 'a fractional suffix is not a range'],
+            'over-wide suffix' => ['10.0.0.0/33', 'a suffix past the address width is not a range'],
+        ];
+    }
+
+    /**
+     * A malformed entry retires only itself: the valid entries beside it
+     * still resolve buyers through the proxies they name.
+     */
+    public function testAValidEntryBesideAMalformedOneStillTrustsItsProxy(): void
+    {
+        $rules = ['10.0.0.0/', '198.51.100.0/24'];
+
+        $this->limiterFor(
+            ['REMOTE_ADDR' => '198.51.100.7', 'HTTP_X_FORWARDED_FOR' => '203.0.113.5'],
+            $rules
+        )->assertWithinLimit('route', 1, 60);
+        $this->limiterFor(
+            ['REMOTE_ADDR' => '198.51.100.7', 'HTTP_X_FORWARDED_FOR' => '203.0.113.6'],
+            $rules
+        )->assertWithinLimit('route', 1, 60);
+
+        $this->assertCount(2, $this->entries, 'each forwarded buyer keeps its own budget');
+    }
+
+    /**
+     * An exact-match entry is compared as an address, not as text, so the
+     * same address written two ways names the same proxy.
+     *
+     * @dataProvider equivalentAddressForms
+     */
+    public function testAnExactEntryMatchesTheAddressNotItsSpelling(
+        string $rule,
+        string $peer,
+        string $description
+    ): void {
+        $this->limiterFor(
+            ['REMOTE_ADDR' => $peer, 'HTTP_X_FORWARDED_FOR' => '203.0.113.5'],
+            [$rule]
+        )->assertWithinLimit('route', 1, 60);
+        $this->limiterFor(
+            ['REMOTE_ADDR' => $peer, 'HTTP_X_FORWARDED_FOR' => '203.0.113.6'],
+            [$rule]
+        )->assertWithinLimit('route', 1, 60);
+
+        $this->assertCount(2, $this->entries, $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: string}>
+     */
+    public static function equivalentAddressForms(): array
+    {
+        return [
+            'leading zeroes' => [
+                '2001:0db8::1',
+                '2001:db8::1',
+                'a zero-padded IPv6 group names the same proxy',
+            ],
+            'compressed run' => [
+                '2001:db8:0:0:0:0:0:1',
+                '2001:db8::1',
+                'an expanded IPv6 run names the same proxy',
+            ],
+            'upper case' => [
+                '2001:DB8::1',
+                '2001:db8::1',
+                'IPv6 case does not name a different proxy',
+            ],
+        ];
     }
 }

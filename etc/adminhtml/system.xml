@@ -87,6 +87,7 @@
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Trusted proxies</label>
                     <comment><![CDATA[Addresses of your own reverse proxies, load balancers or CDN egress, as IPs or CIDR ranges, separated by commas or new lines. Leave empty unless your IT administrator gives you the list. When a request arrives from one of these, the buyer's own address is read from the forwarding header it sets; otherwise the connecting address is used. This is what keeps every buyer behind a shared proxy from being counted as one caller by the checkout rate limit.]]></comment>
+                    <backend_model>Two\Gateway\Model\Config\Backend\TrustedProxies</backend_model>
                     <config_path>payment/two_payment/trusted_proxies</config_path>
                 </field>
                 <field id="api_key_check" translate="label comment" type="button" sortOrder="55" showInDefault="1"
