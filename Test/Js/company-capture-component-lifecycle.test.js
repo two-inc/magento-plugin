@@ -654,6 +654,24 @@ describe('a typed company name carries no vouched number', () => {
         expect(identity.companyName()).toBe(typed);
     });
 
+    test('the released field is what carries a typed edit, not just a direct call', () => {
+        // `manualEntryMode()` releases the field as a plain input — this
+        // proves typing into THAT NODE reaches `commitManualCompany()`, not
+        // just that the method works when called directly.
+        const { component, identity } = load();
+        mountTile();
+        component.start();
+        component.selectCompany({ text: 'Acme Ltd', companyId: '123', lookupId: 'l1' });
+
+        component.manualEntryMode();
+        const field = document.querySelector(TILE_FIELD);
+        field.value = 'Acme Limited';
+        field.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+        expect(identity.companyId()).toBe('');
+        expect(identity.companyName()).toBe('Acme Limited');
+    });
+
     test('manual entry before anything has mounted asks the host to clear nothing', () => {
         // Nothing bound means there is no selector, and a host handed one
         // resolves it against the whole document — Hyva's `querySelector(null)`

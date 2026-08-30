@@ -582,7 +582,27 @@
         }
         this._identity.clearNumber();
         if (this._boundSelector) this._options.clearField(this._boundSelector);
+        this._watchManualEdits();
         this.syncChips();
+    };
+
+    /**
+     * The field `releaseField()` just handed back is a plain input now, so
+     * nothing else reads what the buyer types into it. One listener per node —
+     * `observe()` re-fires on every re-render, and a second one would double
+     * `commitManualCompany()` on every keystroke.
+     */
+    CompanyCaptureComponent.prototype._watchManualEdits = function () {
+        if (!this.observe || !this._boundSelector) return;
+        const self = this;
+        this.observe(this._boundSelector, function (node) {
+            if (!node || typeof node.addEventListener !== 'function') return;
+            if (node === self._manualNode) return;
+            self._manualNode = node;
+            node.addEventListener('input', function () {
+                self.commitManualCompany(node.value);
+            });
+        });
     };
 
     /**
