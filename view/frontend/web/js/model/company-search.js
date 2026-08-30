@@ -76,6 +76,16 @@ define([
     const activeRequests = new WeakMap();
 
     /**
+     * Last-REQUEST-wins guard for the address lookup: picking company B while
+     * A is in flight must not write A's address under B. Bumped per pick; a
+     * response carrying a stale generation is dropped.
+     */
+    let addressLookupGeneration = 0;
+
+    /** The in-flight address lookup, aborted when a newer pick supersedes it. */
+    let pendingAddressRequest = null;
+
+    /**
      * Shortest term the search will act on. The ONE place this number is
      * written: it gates the request AND is interpolated into the hint the
      * buyer reads, so the two cannot drift apart.
@@ -1311,6 +1321,7 @@ define([
         clearResultCache: function () {
             resultCache.clear();
             registrySuspendedUntil = 0;
+            pendingAddressRequest = null;
         },
 
         /** @see formatCompanyNumber */
@@ -1442,6 +1453,12 @@ define([
             if (!config.isAddressSearchEnabled) return null;
             if (!selectedCompany || !selectedCompany.lookupId) return null;
 
+            const generation = ++addressLookupGeneration;
+            if (pendingAddressRequest) {
+                pendingAddressRequest.abort();
+                pendingAddressRequest = null;
+            }
+
             // Withdrawn as this pick STARTS, so no notice outlives the
             // company it was about.
             withdrawAddressUnavailable();
@@ -1455,7 +1472,12 @@ define([
             const addressResponse = proxyPost('rest/V1/two/company', {
                 lookupId: selectedCompany.lookupId
             });
+            pendingAddressRequest = addressResponse;
+            const isCurrent = function () {
+                return generation === addressLookupGeneration;
+            };
             addressResponse.done(function (raw) {
+                if (!isCurrent()) return;
                 const envelope = unwrapProxyResponse(raw);
                 const response = envelope.ok ? envelope.body : null;
                 if (response && response.addresses && response.addresses.length) {
@@ -1465,12 +1487,16 @@ define([
                 announceAddressUnavailable();
             });
             addressResponse.fail(function (jqXHR, textStatus) {
-                // Same ceiling as the search route, so a picked company cannot
-                // keep re-hitting it — see searchCompanies()'s 429 handling.
+                // Recorded even for a superseded pick: the ceiling is
+                // per-merchant, so a newer lookup would hit the same wall.
                 if (jqXHR && jqXHR.status === 429) {
                     registrySuspendedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
                 }
+                if (!isCurrent()) return;
                 if (textStatus !== 'abort') announceAddressUnavailable();
+            });
+            addressResponse.always(function () {
+                if (pendingAddressRequest === addressResponse) pendingAddressRequest = null;
             });
             return addressResponse;
         },

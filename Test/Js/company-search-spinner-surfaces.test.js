@@ -32,8 +32,7 @@ const SPINNER_SELECTOR = '.two-company-dropdown__spinner';
 const SPINNER_ACTIVE_CLASS = 'two-company-dropdown__spinner--active';
 
 const BASE_CONFIG = {
-    checkoutApiUrl: 'https://api.example.test',
-    companySearchLimit: 50
+    checkoutApiUrl: 'https://api.example.test'
 };
 
 /**

@@ -17,7 +17,7 @@ const GLOBALS = { document: document, window: window };
 
 const BACK = '.two-company-search-back';
 
-const CONFIG = { checkoutApiUrl: 'https://api.example.test', companySearchLimit: 50 };
+const CONFIG = { checkoutApiUrl: 'https://api.example.test' };
 
 // One shared module load, as in a browser: a second load restarts the instance
 // counter and hands both panels the same id.

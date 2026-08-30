@@ -12,7 +12,10 @@ const jq = require('jquery');
 const { loadAmdModule, defaultMocks, proxyEnvelope, HARNESS_BASE_URL } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
-const RATE_LIMIT_COPY = 'Too many requests. Please wait a moment and try again.';
+// The module's own last-resort copy, and a server message deliberately UNLIKE
+// it so a test cannot pass by falling back instead of reading the response.
+const RATE_LIMIT_FALLBACK_COPY = 'Too many requests. Please wait a moment and try again.';
+const RATE_LIMIT_SERVER_COPY = 'Slow down: retry in 42 seconds.';
 
 function loadRenderer() {
     const requests = [];
@@ -130,7 +133,18 @@ describe('the order-intent check goes through the plugin, not straight to the AP
     // Magento webapi fault before the route body runs — so a 429 never reaches
     // the browser as an envelope at all, and arrives on `fail` as a raw jqXHR
     // whose body carries Magento's own `message`, not the module's `error_message`.
-    test('a 429 webapi fault reaches the wait-message branch, not a decline', () => {
+    test.each([
+        [
+            { status: 429, responseJSON: { message: RATE_LIMIT_SERVER_COPY } },
+            RATE_LIMIT_SERVER_COPY,
+            'the server\'s own wait message is displayed verbatim'
+        ],
+        [
+            { status: 429 },
+            RATE_LIMIT_FALLBACK_COPY,
+            'a bodyless 429 falls back to the module\'s copy'
+        ]
+    ])('%#: %s', (jqXHR, expected, description) => {
         const { ctx, requests } = loadRenderer();
         const notices = [];
         const tile = Object.assign({}, ctx, {
@@ -142,9 +156,9 @@ describe('the order-intent check goes through the plugin, not straight to the AP
         tile.placeOrderIntent.call(tile).fail(function (response) {
             tile.processOrderIntentErrorResponse.call(tile, response);
         });
-        requests[0].settleFail({ status: 429, responseJSON: { message: RATE_LIMIT_COPY } });
+        requests[0].settleFail(jqXHR);
 
-        expect(notices).toEqual([RATE_LIMIT_COPY]);
+        expect(notices).toEqual([expected], description);
     });
 
     test('a transport failure still reaches the failure handler as a jqXHR', () => {

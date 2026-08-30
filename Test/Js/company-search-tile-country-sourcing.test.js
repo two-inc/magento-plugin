@@ -106,7 +106,6 @@ function load(options) {
                         isCompanySearchEnabled: opts.isCompanySearchEnabled !== false,
                         checkoutApiUrl: 'https://api.example.test',
                         checkoutPageUrl: 'https://checkout.example.test',
-                        companySearchLimit: 10,
                         supportedCompanyTypes: SUPPORTED_COMPANY_TYPES
                     };
                 }
@@ -220,7 +219,7 @@ describe('the DOM fallback reads the country the buyer actually selected', () =>
 
         const requested = captureAjax(function () {
             companySearch.searchCompanies({
-                config: { checkoutApiUrl: 'https://api.example.test', companySearchLimit: 10 },
+                config: { checkoutApiUrl: 'https://api.example.test' },
                 token: {},
                 term: 'acme',
                 getCountryCode: function () { return component.countryCode(); }
@@ -473,7 +472,7 @@ describe('the tile mount reads the form holding the invoice address (TWO-25461 Â
 
         const requested = captureAjax(function () {
             companySearch.searchCompanies({
-                config: { checkoutApiUrl: 'https://api.example.test', companySearchLimit: 10 },
+                config: { checkoutApiUrl: 'https://api.example.test' },
                 token: {},
                 term: 'acme',
                 getCountryCode: function () { return component.countryCode(); }

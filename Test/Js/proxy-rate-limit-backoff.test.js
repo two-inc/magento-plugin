@@ -17,7 +17,12 @@ const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
 const GLOBALS = { document: document, window: window };
 
-const RATE_LIMIT_COPY = 'Too many requests. Please wait a moment and try again.';
+// The module's own last-resort copy, and a server message deliberately UNLIKE
+// it so a test cannot pass by falling back instead of reading the response.
+const RATE_LIMIT_FALLBACK_COPY = 'Too many requests. Please wait a moment and try again.';
+const RATE_LIMIT_SERVER_COPY = 'Slow down: retry in 42 seconds.';
+
+const IDENTITY_PATH = 'view/frontend/web/js/model/company-identity.js';
 
 /** Mirrors RATE_LIMIT_BACKOFF_MS in company-search.js, which is module-private. */
 const BACKOFF_MS = 60000;
@@ -184,6 +189,62 @@ describe('company search backs off rather than retrying into the ceiling', () =>
     });
 });
 
+/**
+ * The parked-lookup notice fires synchronously on the pick, and the slower
+ * credit check answers after it. Both used to write the same observable, so
+ * the verdict blanked the notice in exactly the case it exists for.
+ */
+describe('a parked address lookup keeps its notice through the intent verdict', () => {
+    function wire() {
+        const identity = loadAmdModule(IDENTITY_PATH, {}, GLOBALS);
+        const companySearch = loadAmdModule(
+            MODEL_PATH,
+            { jquery: $, 'Two_Gateway/js/model/company-identity': identity },
+            GLOBALS
+        );
+        companySearch.clearResultCache();
+
+        const component = loadAmdModule(
+            RENDERER,
+            Object.assign(defaultMocks(), {
+                'Two_Gateway/js/model/company-identity': identity
+            })
+        );
+        const ko = defaultMocks().ko;
+        const tile = Object.assign({}, component, {
+            companyName: ko.observable(''),
+            companyId: ko.observable(''),
+            generalErrorMessage: 'Something went wrong with your order.'
+        });
+        tile.showErrorMessage = function () {};
+        component.initOrderIntentApprovedNotice.call(tile, {});
+
+        return { identity, companySearch, tile };
+    }
+
+    test.each([
+        [function (tile) { tile.processOrderIntentSuccessResponse.call(tile, { approved: true }); }, 'approved'],
+        [function (tile) { tile.processOrderIntentSuccessResponse.call(tile, { approved: false }); }, 'declined'],
+        [function (tile) { tile.processOrderIntentErrorResponse.call(tile, { status: 500 }); }, 'errored']
+    ])('an intent verdict leaves it standing', (settleVerdict, description) => {
+        const requests = installAjaxDouble();
+        const { identity, companySearch, tile } = wire();
+
+        companySearch.lookupCompanyAddress({ isAddressSearchEnabled: true }, { lookupId: 'lookup-1' });
+        requests[0].settleFail(429);
+
+        // The park is now up, so this second pick never issues a request and
+        // announces immediately.
+        companySearch.lookupCompanyAddress({ isAddressSearchEnabled: true }, { lookupId: 'lookup-2' });
+        expect(identity.addressNotice()).toContain('enter it below');
+
+        settleVerdict(tile);
+
+        expect(identity.addressNotice()).toContain('enter it below');
+        expect(tile.isAddressNoticeVisible()).toBe(true, description);
+    });
+});
+
 describe('the order-intent tile tells a rate-limited buyer to wait', () => {
     function renderer() {
         const notices = [];
@@ -202,10 +263,10 @@ describe('the order-intent tile tells a rate-limited buyer to wait', () => {
 
         ctx.processOrderIntentErrorResponse.call(ctx, {
             status: 429,
-            responseJSON: { message: RATE_LIMIT_COPY }
+            responseJSON: { message: RATE_LIMIT_SERVER_COPY }
         });
 
-        expect(ctx.notices).toEqual([RATE_LIMIT_COPY]);
+        expect(ctx.notices).toEqual([RATE_LIMIT_SERVER_COPY]);
     });
 
     // A webapi fault carries no `error_code`, so without the status branch this
@@ -215,7 +276,7 @@ describe('the order-intent tile tells a rate-limited buyer to wait', () => {
 
         ctx.processOrderIntentErrorResponse.call(ctx, { status: 429 });
 
-        expect(ctx.notices).toEqual([RATE_LIMIT_COPY]);
+        expect(ctx.notices).toEqual([RATE_LIMIT_FALLBACK_COPY]);
     });
 
     test('the plugin\'s own in-envelope refusal renders its message', () => {

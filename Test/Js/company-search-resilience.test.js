@@ -38,7 +38,6 @@ const UNAVAILABLE_MODIFIER = 'two-company-dropdown__message--unavailable';
 
 const BASE_CONFIG = {
     checkoutApiUrl: 'https://api.example.test',
-    companySearchLimit: 50,
     isCompanySearchEnabled: true,
     isAddressSearchEnabled: true,
     orderIntentConfig: {
@@ -878,6 +877,42 @@ describe('a company-detail lookup that brings back no address says so', () => {
         companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
         requests[0].settleDone({ addresses: [{ streetAddress: 'Somewhere 1' }] });
 
+        expect(identity.addressNotice()).toBe('');
+    });
+
+    /**
+     * Last-REQUEST-wins, not last-response-wins: without a generation token a
+     * slow lookup for company A landed its address under company B.
+     */
+    test.each([
+        [
+            'a superseded address is never applied',
+            (companySearch, reqs) => {
+                reqs[1].settleDone({ addresses: [{ streetAddress: 'B Street 2' }] });
+                reqs[0].settleDone({ addresses: [{ streetAddress: 'A Street 1' }] });
+            },
+            ['B Street 2'],
+            'the stale write is discarded, not applied last'
+        ],
+        [
+            'a superseded failure never announces',
+            (companySearch, reqs) => {
+                reqs[1].settleDone({ addresses: [{ streetAddress: 'B Street 2' }] });
+                reqs[0].settleDone({ addresses: [] });
+            },
+            ['B Street 2'],
+            'a stale empty-address answer raises no notice'
+        ]
+    ])('%s', (_label, settle, expectedApplied, description) => {
+        const companySearch = loadWithIdentity();
+        const applied = [];
+        companySearch.applyAddress = function (address) { applied.push(address.streetAddress); };
+
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'company-a' });
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'company-b' });
+        settle(companySearch, requests);
+
+        expect(applied).toEqual(expectedApplied, description);
         expect(identity.addressNotice()).toBe('');
     });
 

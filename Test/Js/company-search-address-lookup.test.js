@@ -189,7 +189,6 @@ const SECOND_SEARCH_RESPONSE = {
 
 const BASE_CONFIG = {
     checkoutApiUrl: 'https://api.example.test',
-    companySearchLimit: 50,
     isCompanySearchEnabled: true,
     isAddressSearchEnabled: true,
     supportedCompanyTypes: { gb: [] },

@@ -37,8 +37,7 @@ const ROW = '.two-company-dropdown__row';
 const ROW_ACTIVE = 'two-company-dropdown__row--active';
 
 const BASE_CONFIG = {
-    checkoutApiUrl: 'https://api.example.test',
-    companySearchLimit: 50
+    checkoutApiUrl: 'https://api.example.test'
 };
 
 const THREE_HITS = {

@@ -41,8 +41,7 @@ const GLOBALS = { document: document, window: window };
 const FIELD_SELECTOR = '#company_name';
 
 const BASE_CONFIG = {
-    checkoutApiUrl: 'https://api.example.test',
-    companySearchLimit: 50
+    checkoutApiUrl: 'https://api.example.test'
 };
 
 /** Nothing here is 3, so a surviving literal 3 cannot pass. */

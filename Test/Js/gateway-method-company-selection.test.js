@@ -156,7 +156,6 @@ const BRAND_CONFIG = {
     isAddressSearchEnabled: false,
     checkoutApiUrl: 'https://api.example.test',
     checkoutPageUrl: 'https://checkout.example.test',
-    companySearchLimit: 10,
     supportedCompanyTypes: { gb: [] },
     orderIntentConfig: { extensionPlatformName: 'magento2', extensionDBVersion: '1.0.0' }
 };
