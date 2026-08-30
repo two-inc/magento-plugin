@@ -672,6 +672,38 @@ describe('a typed company name carries no vouched number', () => {
         expect(identity.companyName()).toBe('Acme Limited');
     });
 
+    test('a cart flipping virtual mid-manual-entry moves the watcher with the mount', () => {
+        // TWO-25503 round 5: the mount re-points from the address field to the
+        // tile field when the cart goes virtual, and a single per-lifetime
+        // flag left the tile field's manual edits never observed — a typed
+        // company name silently lost. `opts` is read live by the quote mock
+        // below, so flipping it after `start()` simulates the cart changing
+        // shape under an already-mounted component.
+        mountAddressForm();
+        mountTile();
+        const opts = { isVirtual: false };
+        const { component, identity } = load(opts);
+        component.start();
+        expect(component._boundSelector).toBe(ADDRESS_FIELD);
+
+        component.manualEntryMode();
+
+        opts.isVirtual = true;
+        component.refreshMount();
+        expect(component._boundSelector).toBe(TILE_FIELD);
+
+        const registrationsBeforeReentry = $.async.registrations(TILE_FIELD);
+        component.manualEntryMode();
+
+        expect($.async.registrations(TILE_FIELD)).toBe(registrationsBeforeReentry + 1);
+
+        const field = document.querySelector(TILE_FIELD);
+        field.value = 'Acme Limited';
+        field.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+        expect(identity.companyName()).toBe('Acme Limited');
+    });
+
     test('manual entry before anything has mounted asks the host to clear nothing', () => {
         // Nothing bound means there is no selector, and a host handed one
         // resolves it against the whole document — Hyva's `querySelector(null)`

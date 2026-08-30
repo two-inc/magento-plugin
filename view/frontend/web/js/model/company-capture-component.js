@@ -156,6 +156,8 @@
         this._typesInFlight = {};
         this._lastCountry = '';
         this._started = false;
+        /** Selectors with a manual-edit MutationObserver already registered. */
+        this._manualWatchedSelectors = {};
 
         this.translate = options.translate || function (text) { return text; };
         this.observe = options.observe || null;
@@ -592,14 +594,15 @@
      * `observe()` re-fires on every re-render, and a second one would double
      * `commitManualCompany()` on every keystroke.
      *
-     * One `observe()` registration per component lifetime, not per call: a
-     * buyer cycling search→manual repeatedly must not stack a new
-     * MutationObserver on the field each time.
+     * ONE `observe()` registration per selector, EVER, not one per component
+     * lifetime: `_boundSelector` re-points between the address field and the
+     * tile field as the cart flips virtual, and a single lifetime flag would
+     * leave the new selector's manual edits never observed (TWO-25503 round 5).
      */
     CompanyCaptureComponent.prototype._watchManualEdits = function () {
-        if (this._manualWatchBound) return;
         if (!this.observe || !this._boundSelector) return;
-        this._manualWatchBound = true;
+        if (this._manualWatchedSelectors[this._boundSelector]) return;
+        this._manualWatchedSelectors[this._boundSelector] = true;
         const self = this;
         this.observe(this._boundSelector, function (node) {
             if (!node || typeof node.addEventListener !== 'function') return;
