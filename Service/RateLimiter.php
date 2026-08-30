@@ -11,18 +11,16 @@ use Magento\Framework\App\CacheInterface;
 use Magento\Framework\App\Request\Http as HttpRequest;
 use Magento\Framework\HTTP\PhpEnvironment\RemoteAddress;
 use Magento\Framework\Webapi\Exception as WebapiException;
+use Throwable;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 
 /**
  * Per-caller request ceiling for the plugin's anonymous webapi routes.
  *
- * Fixed window rather than a rolling log: the window index is part of the
- * cache key, so an expired window is never read and needs no eviction pass.
- *
- * Bounds SUSTAINED cost from one caller, not the exact number of requests
- * admitted in any instant — load→compare→save over CacheInterface is not
- * atomic and the interface offers no atomic increment.
+ * Fixed window: the window index is part of the cache key, so an expired
+ * window needs no eviction pass. Bounds SUSTAINED cost rather than the exact
+ * count admitted in any instant — CacheInterface has no atomic increment.
  */
 class RateLimiter
 {
@@ -34,11 +32,7 @@ class RateLimiter
     /** Caller identities the refusal roster keeps before it stops growing. */
     private const REFUSAL_ROSTER_LIMIT = 50;
 
-    /**
-     * Refusals a route's window needs before the log commits to reading the
-     * concentration behind them. Below it, one caller is indistinguishable
-     * from the first buyer of a busy minute.
-     */
+    /** Below this, one caller is indistinguishable from a busy minute's first buyer. */
     private const HINT_MIN_REFUSALS = 5;
 
     /** Share of a window's refusals one caller must hold to read as one caller. */
@@ -46,6 +40,8 @@ class RateLimiter
 
     /** Each report costs this many times the refusals the one before it did. */
     private const HINT_ESCALATION_FACTOR = 5;
+
+    private bool $cacheFailureReported = false;
 
     public function __construct(
         private readonly CacheInterface $cache,
@@ -71,7 +67,15 @@ class RateLimiter
         $caller = $this->caller();
         $key = self::CACHE_KEY_PREFIX . hash('sha256', $route . "\0" . $window . "\0" . $caller);
 
-        $used = (int)$this->cache->load($key);
+        try {
+            $used = (int)$this->cache->load($key);
+        } catch (Throwable $e) {
+            // Availability beats denial mid-checkout, so an unreadable counter
+            // admits the request.
+            $this->reportCacheUnavailable('load', $e->getMessage());
+            return;
+        }
+
         if ($used >= $maxRequests) {
             $this->reportRefusal($route, $window, $windowSeconds, $maxRequests, $caller);
             throw new WebapiException(
@@ -81,19 +85,34 @@ class RateLimiter
             );
         }
 
-        $this->cache->save((string)($used + 1), $key, [], $windowSeconds);
+        try {
+            if ($this->cache->save((string)($used + 1), $key, [], $windowSeconds) === false) {
+                $this->reportCacheUnavailable('save', 'the cache backend refused the write');
+            }
+        } catch (Throwable $e) {
+            $this->reportCacheUnavailable('save', $e->getMessage());
+        }
+    }
+
+    /** Once per request — a dead backend fails on every call. */
+    private function reportCacheUnavailable(string $operation, string $reason): void
+    {
+        if ($this->cacheFailureReported) {
+            return;
+        }
+        $this->cacheFailureReported = true;
+
+        $this->logRepository->addErrorLog(
+            sprintf('[rate-limit-cache-unavailable] operation=%s', $operation),
+            'The checkout rate limit is not being enforced while this persists. ' . $reason
+        );
     }
 
     /**
-     * Records the refusal against the route's window and logs it with the
-     * caller concentration behind it, so an admin can tell one abusive
-     * caller from every buyer arriving as one address.
-     *
-     * A refused flood must not become its own load, and a window's reading
-     * must not be decided by its opening moments: the roster keeps counting
-     * for the whole window, and reports land on a geometric ladder, so a
-     * window of any size costs a handful of log lines and the verdict on the
-     * last one describes the traffic as it finally stood.
+     * Logs the refusal with the caller concentration behind it, so an admin can
+     * tell one abusive caller from every buyer arriving as one address. The
+     * roster counts all window long but reports land on a geometric ladder, so
+     * a refused flood cannot become its own load.
      */
     private function reportRefusal(
         string $route,
@@ -103,7 +122,12 @@ class RateLimiter
         string $caller
     ): void {
         $rosterKey = self::CACHE_KEY_PREFIX . 'refusals_' . hash('sha256', $route . "\0" . $window);
-        $stored = json_decode((string)$this->cache->load($rosterKey), true);
+        try {
+            $stored = json_decode((string)$this->cache->load($rosterKey), true);
+        } catch (Throwable $e) {
+            $this->reportCacheUnavailable('load', $e->getMessage());
+            $stored = [];
+        }
         $stored = is_array($stored) ? $stored : [];
 
         $roster = is_array($stored['callers'] ?? null) ? $stored['callers'] : [];
@@ -114,12 +138,16 @@ class RateLimiter
             $roster[$identity] = (int)($roster[$identity] ?? 0) + 1;
         }
 
-        $this->cache->save(
-            (string)json_encode(['callers' => $roster, 'total' => $total]),
-            $rosterKey,
-            [],
-            $windowSeconds
-        );
+        try {
+            $this->cache->save(
+                (string)json_encode(['callers' => $roster, 'total' => $total]),
+                $rosterKey,
+                [],
+                $windowSeconds
+            );
+        } catch (Throwable $e) {
+            $this->reportCacheUnavailable('save', $e->getMessage());
+        }
 
         if (!self::isReportingMilestone($total)) {
             return;
@@ -155,19 +183,11 @@ class RateLimiter
         );
     }
 
-    /**
-     * Reading of what the window's refusals look like, once there are enough
-     * of them to have a shape.
-     *
-     * Turning the ceiling off is only ever suggested for the shape that reads
-     * as the merchant's own buyers — advising it against what looks like an
-     * attack would hand the attacker the store.
-     */
+    /** Turning the ceiling off is suggested only for traffic that reads as the merchant's own buyers. */
     private function concentrationHint(int $share, int $distinct, bool $noTrustedProxies): ?string
     {
-        // Gated on the share one address holds, not on it being the only one:
-        // a single incidental buyer refused alongside a caller at 97% would
-        // otherwise flip the reading to ordinary load mid-attack.
+        // Share, not sole occupancy: one incidental buyer refused alongside a
+        // caller at 97% would otherwise read as ordinary load mid-attack.
         if ($share >= self::HINT_DOMINANT_SHARE) {
             $scope = $distinct === 1 ? 'Every refusal' : 'Nearly every refusal';
 
@@ -207,11 +227,7 @@ class RateLimiter
     /**
      * The connecting peer, unless it is one of the merchant's own proxies —
      * then the buyer's address from the forwarding chain that proxy set.
-     *
-     * Resolution is Magento's own RemoteAddress, handed the trusted set so
-     * its filter can drop the proxy hops; with none configured the peer is
-     * the only value not supplied by the caller, and every unresolvable
-     * peer shares one bucket rather than escaping the ceiling.
+     * Every unresolvable peer shares one bucket rather than escaping the ceiling.
      */
     private function caller(): string
     {
@@ -264,9 +280,8 @@ class RateLimiter
 
         [$subnet, $bits] = explode('/', $rule, 2);
 
-        // Before the cast: `(int)` turns an empty or non-numeric suffix into 0,
-        // which passes the range guard and then matches every address of that
-        // family — one typo in the trusted list would trust the whole internet.
+        // Before the cast: `(int)` turns a non-numeric suffix into 0, which
+        // passes the range guard and matches every address of that family.
         if (preg_match('/^\d+$/', $bits) !== 1) {
             return false;
         }
@@ -279,9 +294,8 @@ class RateLimiter
             return false;
         }
 
-        // A width of 0 matches every address of its family, so it can only be a
-        // typo or an attempt to switch the ceiling off, which the Diagnostics
-        // toggle already does. Leading zeros read as decimal, so /008 is /8.
+        // A width of 0 matches its whole address family, so it can only be a
+        // typo. Leading zeros read as decimal, so /008 is /8.
         $bits = (int)$bits;
         $maxBits = strlen($packedSubnet) * 8;
         if ($bits < 1 || $bits > $maxBits) {

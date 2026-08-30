@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Webapi;
 
+use Magento\Checkout\Model\Session as CheckoutSession;
 use Two\Gateway\Api\Webapi\SoleTraderInterface;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Api\SupportedCompanyTypes;
@@ -40,14 +41,21 @@ class SoleTrader implements SoleTraderInterface
      */
     private $rateLimiter;
 
+    /**
+     * @var CheckoutSession
+     */
+    private $checkoutSession;
+
     public function __construct(
         Adapter $adapter,
         SupportedCompanyTypes $supportedCompanyTypes,
-        RateLimiter $rateLimiter
+        RateLimiter $rateLimiter,
+        CheckoutSession $checkoutSession
     ) {
         $this->adapter = $adapter;
         $this->supportedCompanyTypes = $supportedCompanyTypes;
         $this->rateLimiter = $rateLimiter;
+        $this->checkoutSession = $checkoutSession;
     }
 
     /**
@@ -61,7 +69,7 @@ class SoleTrader implements SoleTraderInterface
             self::WINDOW_SECONDS
         );
 
-        return $this->supportedCompanyTypes->getForCountry($countryCode);
+        return $this->supportedCompanyTypes->getForCountry($countryCode, $this->quoteStoreId());
     }
 
     /**
@@ -75,17 +83,20 @@ class SoleTrader implements SoleTraderInterface
             self::WINDOW_SECONDS
         );
 
-        $delegationToken = $this->getDelegationToken();
-        $autofillToken = $this->getAutofillToken();
+        $storeId = $this->quoteStoreId();
+        $delegationToken = $this->getDelegationToken($storeId);
+        $autofillToken = $this->getAutofillToken($storeId);
 
         return [['delegation_token' => $delegationToken, 'autofill_token' => $autofillToken]];
     }
 
-    private function getDelegationToken(): string
+    private function getDelegationToken(?int $storeId): string
     {
         $delegateResponse = $this->adapter->execute(
             self::DELEGATION_TOKEN_ENDPOINT,
-            ['create_proposal' => true, 'read_current_business' => true]
+            ['create_proposal' => true, 'read_current_business' => true],
+            'POST',
+            $storeId
         );
         if (isset($delegateResponse['two-delegated-authority-token'])) {
             return $delegateResponse['two-delegated-authority-token'];
@@ -94,16 +105,34 @@ class SoleTrader implements SoleTraderInterface
         }
     }
 
-    private function getAutofillToken()
+    private function getAutofillToken(?int $storeId)
     {
         $autofillResponse = $this->adapter->execute(
             self::AUTOFILL_TOKEN_ENDPOINT,
-            ['read_current_buyer' => true, 'write_current_buyer' => true]
+            ['read_current_buyer' => true, 'write_current_buyer' => true],
+            'POST',
+            $storeId
         );
         if (isset($autofillResponse['two-delegated-authority-token'])) {
             return $autofillResponse['two-delegated-authority-token'];
         } else {
             return '';
         }
+    }
+
+    /**
+     * Read off the quote, not the request: this route is reached at
+     * /rest/V1/... with no store code, so the request resolves to the default
+     * store. Null falls the call back to the default scope.
+     */
+    private function quoteStoreId(): ?int
+    {
+        try {
+            $storeId = (int)$this->checkoutSession->getQuote()->getStoreId();
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        return $storeId > 0 ? $storeId : null;
     }
 }

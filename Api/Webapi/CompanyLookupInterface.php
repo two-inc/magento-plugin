@@ -8,12 +8,8 @@ declare(strict_types=1);
 namespace Two\Gateway\Api\Webapi;
 
 /**
- * Server-side proxy for the company registry lookups the checkout used to
- * call straight from the buyer's browser.
- *
- * Proxying them puts every registry call behind Service\Api\Adapter, so the
- * merchant API key authenticates them and a configured firewall token
- * reaches them without the browser ever holding either.
+ * Server-side proxy for the company registry lookups, so the merchant API key
+ * and firewall token never reach the browser.
  */
 interface CompanyLookupInterface
 {
@@ -25,8 +21,7 @@ interface CompanyLookupInterface
     /**
      * Search the registry for companies matching a buyer's query.
      *
-     * Anonymous route — guest checkout requires it. Nothing here identifies
-     * the merchant: the key is resolved server-side from store config.
+     * Anonymous route — guest checkout requires it.
      *
      * @api
      *

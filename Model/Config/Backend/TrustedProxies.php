@@ -12,15 +12,10 @@ use Magento\Framework\Exception\LocalizedException;
 
 /**
  * Entry gate for the trusted-proxy list the checkout rate limit resolves
- * callers through.
- *
- * A malformed entry is refused rather than stored: `Service\RateLimiter`
- * treats anything it cannot parse as "does not match", so a typo silently
- * retires the proxy it was meant to name and every buyer behind that proxy
- * is counted as one caller again.
- *
- * Addresses are stored packed-canonical, so an entry written as
- * 2001:0db8::1 still matches the 2001:db8::1 the server reports.
+ * callers through. A malformed entry is refused rather than stored, because
+ * RateLimiter reads anything unparseable as "does not match" and a typo would
+ * silently retire the proxy it was meant to name. Stored packed-canonical, so
+ * 2001:0db8::1 matches the 2001:db8::1 the server reports.
  */
 class TrustedProxies extends Value
 {
@@ -70,9 +65,8 @@ class TrustedProxies extends Value
             return null;
         }
 
-        // A width of 0 names every address of its family rather than a proxy,
-        // so it is refused here too — stored, it would retire the ceiling
-        // silently. Leading zeros read as decimal, so /008 is the genuine /8.
+        // A width of 0 names a whole address family rather than a proxy.
+        // Leading zeros read as decimal, so /008 is the genuine /8.
         $bits = (int)$bits;
         if ($bits < 1 || $bits > strlen($packed) * 8) {
             return null;

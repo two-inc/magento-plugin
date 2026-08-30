@@ -8,9 +8,8 @@ declare(strict_types=1);
 namespace Two\Gateway\Api\Webapi;
 
 /**
- * Server-side proxy for the order-intent check the payment tile used to call
- * straight from the buyer's browser, so the merchant API key and any
- * configured firewall token stay server-side.
+ * Server-side proxy for the order-intent check, so the merchant API key and
+ * firewall token never reach the browser.
  */
 interface OrderIntentInterface
 {
@@ -19,9 +18,9 @@ interface OrderIntentInterface
     /**
      * Ask whether an order for the given buyer and basket would be approved.
      *
-     * Anonymous route — guest checkout requires it. The merchant identity in
-     * $payload is replaced with the one this store's API key resolves to; a
-     * browser-supplied merchant id is never relayed.
+     * Anonymous route — guest checkout requires it. A browser-supplied
+     * merchant id in $payload is replaced with the one this store's key
+     * resolves to.
      *
      * @api
      *

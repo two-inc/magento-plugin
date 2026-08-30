@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Webapi;
 
+use Magento\Checkout\Model\Session as CheckoutSession;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\CompanyLookupInterface;
 use Two\Gateway\Service\Api\Adapter;
@@ -38,7 +39,8 @@ class CompanyLookup implements CompanyLookupInterface
         private readonly Adapter $adapter,
         private readonly ApiKeyStatus $apiKeyStatus,
         private readonly RateLimiter $rateLimiter,
-        private readonly LogRepository $logRepository
+        private readonly LogRepository $logRepository,
+        private readonly CheckoutSession $checkoutSession
     ) {
     }
 
@@ -72,7 +74,7 @@ class CompanyLookup implements CompanyLookupInterface
             $this->merchantParams()
         ));
 
-        return $this->envelope($this->adapter->executeWithStatus($endpoint, [], 'GET'));
+        return $this->envelope($this->adapter->executeWithStatus($endpoint, [], 'GET', $this->quoteStoreId()));
     }
 
     /**
@@ -96,15 +98,13 @@ class CompanyLookup implements CompanyLookupInterface
             $endpoint .= '?' . http_build_query($merchant);
         }
 
-        return $this->envelope($this->adapter->executeWithStatus($endpoint, [], 'GET'));
+        return $this->envelope($this->adapter->executeWithStatus($endpoint, [], 'GET', $this->quoteStoreId()));
     }
 
     /**
-     * The `merchant` short name these registry endpoints attribute the call
-     * to. Resolved from the verified key, never from the browser — sending it
-     * from there is what this proxy exists to stop. Omitted while the key does
-     * not verify: attribution is not worth failing a lookup the buyer is
-     * mid-typing over.
+     * Server-resolved only — a browser-supplied merchant is what this proxy
+     * exists to stop. Omitted while the key does not verify, rather than
+     * failing a lookup the buyer is mid-typing.
      *
      * @return array<string,string>
      */

@@ -8,15 +8,17 @@ declare(strict_types=1);
 namespace Two\Gateway\Model\Webapi;
 
 /**
- * Wraps a Service\Api\Adapter result so a proxied call keeps the pass/fail
- * distinction the browser used to read off the HTTP status of its own direct
- * request. The proxy itself answers 200 either way; a Magento webapi fault
- * would discard the upstream error body these callers render from.
+ * Wraps an Adapter result so a proxied call keeps the pass/fail distinction the
+ * browser used to read off its own request's HTTP status — the proxy answers
+ * 200 either way, and a webapi fault would discard the upstream error body.
  *
- * Requires the using class to hold a `$logRepository`.
+ * Requires the using class to hold a `$logRepository` and a `$checkoutSession`.
  */
 trait UpstreamEnvelopeTrait
 {
+    /** The only upstream 4xx keys a buyer can act on; the rest of the body is internal. */
+    private const RELAYED_4XX_FIELDS = ['error_code', 'error_message', 'error_details', 'error_json'];
+
     /**
      * @param array{status: int, body: array<string,mixed>} $result from Adapter::executeWithStatus()
      */
@@ -33,7 +35,10 @@ trait UpstreamEnvelopeTrait
                 sprintf('[upstream-failure] status=%d', $status),
                 $body
             );
-            $body = [
+            $relayed = $status >= 400 && $status < 500 && is_array($body)
+                ? array_intersect_key($body, array_flip(self::RELAYED_4XX_FIELDS))
+                : [];
+            $body = $relayed !== [] ? $relayed : [
                 'error_code' => 'PROXY_REFUSED',
                 'error_message' => (string)__('The service is temporarily unavailable. Please try again.'),
             ];
@@ -44,6 +49,22 @@ trait UpstreamEnvelopeTrait
             'status' => $status,
             'body' => $body,
         ]);
+    }
+
+    /**
+     * Read off the quote, not the request: these routes are reached at
+     * /rest/V1/... with no store code, so the request resolves to the default
+     * store. Null falls the call back to the default scope.
+     */
+    private function quoteStoreId(): ?int
+    {
+        try {
+            $storeId = (int)$this->checkoutSession->getQuote()->getStoreId();
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        return $storeId > 0 ? $storeId : null;
     }
 
     /**

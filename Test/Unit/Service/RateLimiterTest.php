@@ -75,6 +75,91 @@ class RateLimiterTest extends TestCase
     }
 
     /**
+     * @param CacheInterface $cache stands in for a backend that is not working
+     */
+    private function limiterOn(CacheInterface $cache): RateLimiter
+    {
+        $request = new HttpRequest();
+        $request->setTestEnvironment(['REMOTE_ADDR' => '198.51.100.7']);
+
+        $config = $this->createMock(ConfigRepository::class);
+        $config->method('getTrustedProxies')->willReturn([]);
+        $config->method('isRateLimitDisabled')->willReturn(false);
+
+        $log = $this->createMock(LogRepository::class);
+        $log->method('addErrorLog')->willReturnCallback(
+            function ($type, $data) {
+                $this->errorLog[] = [$type, $data];
+                return null;
+            }
+        );
+
+        return new RateLimiter($cache, $request, $config, $log);
+    }
+
+    /**
+     * Given a cache backend that is not working; When the ceiling is checked;
+     * Then the request is admitted and the merchant is told the ceiling is not
+     * being enforced.
+     *
+     * @dataProvider brokenCacheBackends
+     */
+    public function testADeadCacheBackendAdmitsTheRequestAndSaysSo(
+        string $failing,
+        string $description
+    ): void {
+        $dead = new \RuntimeException('redis gone away');
+        $cache = $this->createMock(CacheInterface::class);
+        if ($failing === 'load') {
+            $cache->method('load')->willThrowException($dead);
+        } elseif ($failing === 'save-throws') {
+            $cache->method('load')->willReturn(false);
+            $cache->method('save')->willThrowException($dead);
+        } else {
+            $cache->method('load')->willReturn(false);
+            $cache->method('save')->willReturn(false);
+        }
+
+        $this->limiterOn($cache)->assertWithinLimit('route', 3, 60);
+
+        $this->assertCount(1, $this->errorLog, $description);
+        $this->assertStringContainsString(
+            '[rate-limit-cache-unavailable]',
+            $this->errorLog[0][0],
+            $description
+        );
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function brokenCacheBackends(): array
+    {
+        return [
+            'read throws' => ['load', 'an unreadable counter admits the request rather than 500ing'],
+            'write throws' => ['save-throws', 'an unwritable counter admits the request rather than 500ing'],
+            'write refused' => ['save-refuses', 'a silently refused write is still an unenforced ceiling'],
+        ];
+    }
+
+    /**
+     * Given a backend down for the whole request; When many calls are checked;
+     * Then the merchant gets the fact once, not one line per call.
+     */
+    public function testADeadCacheBackendIsReportedOncePerRequestNotPerCall(): void
+    {
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->method('load')->willThrowException(new \RuntimeException('redis gone away'));
+
+        $limiter = $this->limiterOn($cache);
+        for ($i = 0; $i < 20; $i++) {
+            $limiter->assertWithinLimit('route', 3, 60);
+        }
+
+        $this->assertCount(1, $this->errorLog);
+    }
+
+    /**
      * Given a ceiling of N; When N calls are made; Then the N+1th is refused
      * with the status a client can back off on.
      */
@@ -131,9 +216,8 @@ class RateLimiterTest extends TestCase
      * ceiling is reached; Then the next call is still refused, and no
      * extra cache entry was minted along the way.
      *
-     * Stock Magento trusts X-Forwarded-For with no proxy allow-list, so a
-     * limiter keyed on the framework's resolved remote address would hand
-     * this caller a fresh bucket — and a fresh cache key — every request.
+     * Stock Magento trusts X-Forwarded-For with no allow-list, so a limiter
+     * keyed on the framework's resolved address would mint a bucket per request.
      *
      * @dataProvider spoofableHeaders
      */
@@ -204,9 +288,7 @@ class RateLimiterTest extends TestCase
      * proxy; When two buyers behind it are forwarded; Then each gets its own
      * budget instead of sharing the proxy's.
      *
-     * This is the whole point of the setting: without it a store behind a
-     * reverse proxy, CDN or ALB counts every buyer as one caller and the
-     * per-caller ceiling becomes a store-wide one.
+     * Without it a store behind a proxy counts every buyer as one caller.
      *
      * @dataProvider trustedProxyForms
      */
@@ -486,9 +568,8 @@ class RateLimiterTest extends TestCase
      * When a caller rotates a forwarding header; Then the entry matches
      * nothing and the caller is still keyed on its own address.
      *
-     * A `(int)` cast turns any such suffix into /0, which matches every
-     * address of that family: one typo beside a valid entry would trust the
-     * whole internet and retire the ceiling entirely.
+     * A `(int)` cast turns any such suffix into /0, which matches that whole
+     * address family — one typo would retire the ceiling.
      *
      * @dataProvider malformedCidrSuffixes
      */
@@ -533,12 +614,6 @@ class RateLimiterTest extends TestCase
      * Given a trusted-proxy entry whose bit width is zero; When a caller of
      * that entry's own family rotates a forwarding header; Then the entry
      * matches nothing and the caller is still keyed on its own address.
-     *
-     * A zero width passes a plain numeric guard and then matches before any
-     * address byte is compared, so every caller of that family becomes a
-     * trusted proxy free to name its own identity — and a cross-family
-     * forwarded value is not matched by the rule either, so it is taken as
-     * the caller verbatim: a fresh bucket per request.
      *
      * @dataProvider zeroWidthCidrRules
      */
@@ -605,10 +680,8 @@ class RateLimiterTest extends TestCase
      * ceiling of 5, naming a fresh cross-family address each time; Then the
      * ceiling still refuses it.
      *
-     * The end-to-end shape of the bypass: a match-everything rule makes the
-     * attacker its own trusted proxy, and the IPv6 identity it supplies is
-     * outside the IPv4 rule so it survives the trust filter and becomes the
-     * caller — every request a new bucket, the ceiling retired entirely.
+     * The bypass shape: a match-everything rule makes the attacker its own
+     * trusted proxy, and its cross-family identity survives the trust filter.
      */
     public function testAMatchEverythingProxyRuleCannotRetireTheCeiling(): void
     {

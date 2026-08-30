@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Webapi;
 
+use Magento\Checkout\Model\Session as CheckoutSession;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\OrderIntentInterface;
 use Two\Gateway\Service\Api\Adapter;
@@ -29,7 +30,8 @@ class OrderIntent implements OrderIntentInterface
         private readonly Adapter $adapter,
         private readonly ApiKeyStatus $apiKeyStatus,
         private readonly RateLimiter $rateLimiter,
-        private readonly LogRepository $logRepository
+        private readonly LogRepository $logRepository,
+        private readonly CheckoutSession $checkoutSession
     ) {
     }
 
@@ -63,21 +65,22 @@ class OrderIntent implements OrderIntentInterface
         $status = $this->apiKeyStatus->getStatus();
         $merchantId = $status['merchant']['id'] ?? null;
         if ($status['status'] !== ApiKeyStatus::OK || !is_string($merchantId) || $merchantId === '') {
-            // A failed verification is cached for a minute, so sending the
-            // merchant identity on regardless would turn one blip into a
-            // window of upstream rejections the buyer reads as a decline.
+            // A failed verification is cached for a minute, so sending it on
+            // regardless would turn one blip into a window of declines.
             return $this->refusal(503, (string)__('The payment integration is not available right now.'));
         }
 
         $body['merchant_id'] = $merchantId;
-        // Absent means absent: the browser's optional chaining dropped the key
-        // rather than sending an explicit null, and upstream reads the two apart.
+        // Absent means absent — upstream reads an absent key and an explicit
+        // null apart.
         unset($body['merchant_short_name']);
         $shortName = $status['merchant']['short_name'] ?? null;
         if (is_string($shortName) && $shortName !== '') {
             $body['merchant_short_name'] = $shortName;
         }
 
-        return $this->envelope($this->adapter->executeWithStatus(self::ENDPOINT, $body));
+        return $this->envelope(
+            $this->adapter->executeWithStatus(self::ENDPOINT, $body, 'POST', $this->quoteStoreId())
+        );
     }
 }

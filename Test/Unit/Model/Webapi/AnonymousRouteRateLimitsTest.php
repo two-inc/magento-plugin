@@ -113,7 +113,8 @@ class AnonymousRouteRateLimitsTest extends TestCase
                     $this->createMock(Adapter::class),
                     $this->createMock(ApiKeyStatus::class),
                     $limiter,
-                    $this->createMock(LogRepository::class)
+                    $this->createMock(LogRepository::class),
+                    $this->createMock(CheckoutSession::class)
                 ))->place('{}');
                 return;
             case 'surcharges':
@@ -130,7 +131,8 @@ class AnonymousRouteRateLimitsTest extends TestCase
             $this->createMock(Adapter::class),
             $this->createMock(ApiKeyStatus::class),
             $limiter,
-            $this->createMock(LogRepository::class)
+            $this->createMock(LogRepository::class),
+            $this->createMock(CheckoutSession::class)
         );
     }
 
@@ -139,7 +141,8 @@ class AnonymousRouteRateLimitsTest extends TestCase
         return new SoleTrader(
             $this->createMock(Adapter::class),
             $this->createMock(SupportedCompanyTypes::class),
-            $limiter
+            $limiter,
+            $this->createMock(CheckoutSession::class)
         );
     }
 

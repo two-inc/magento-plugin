@@ -148,11 +148,17 @@ class ConfigProvider implements ConfigProviderInterface
      */
     private function getSupportedCompanyTypesSeed(): array
     {
-        $country = (string)$this->checkoutSession->getQuote()->getBillingAddress()->getCountryId();
+        $quote = $this->checkoutSession->getQuote();
+        $country = (string)$quote->getBillingAddress()->getCountryId();
         if ($country === '') {
             return [];
         }
-        return [strtolower($country) => $this->supportedCompanyTypes->getForCountry($country)];
+        return [
+            strtolower($country) => $this->supportedCompanyTypes->getForCountry(
+                $country,
+                (int)$quote->getStoreId() ?: null
+            ),
+        ];
     }
 
     /**

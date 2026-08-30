@@ -544,46 +544,38 @@ interface RepositoryInterface
     public function isSslVerificationDisabled(?int $storeId = null): bool;
 
     /**
-     * Token some merchants' firewall appliances require on traffic to the
-     * API, relayed as the X-WAF-TOKEN header. A coarse network-egress gate,
-     * not a merchant credential — stored and rendered in plain text.
+     * Relayed as the X-WAF-TOKEN header. A coarse network-egress gate, not a
+     * credential — stored and rendered in plain text.
      *
      * @param int|null $storeId
-     *
      * @return string empty when the merchant's network needs no such gate
      */
     public function getFirewallToken(?int $storeId = null): string;
 
     /**
-     * Whether the firewall token is also sent on the one call the buyer's
-     * browser still makes directly to the API. Default false, which keeps
-     * the token off the wire to the browser entirely.
+     * Whether the firewall token is also sent on the one call the browser
+     * still makes directly to the API. Default false.
      *
      * @param int|null $storeId
-     *
      * @return bool
      */
     public function isFirewallTokenSentFromBrowser(?int $storeId = null): bool;
 
     /**
-     * Addresses of the store's own reverse proxies, load balancers or CDN
-     * egress, as IPs or CIDR ranges. Empty by default: until a merchant
-     * names them, a forwarding header is a client-supplied value and the
-     * connecting peer is the only trustworthy caller identity.
+     * The store's own reverse proxies, load balancers or CDN egress, as IPs or
+     * CIDR ranges. Empty until named, because a forwarding header from anything
+     * else is a client-supplied value.
      *
      * @param int|null $storeId
-     *
      * @return string[]
      */
     public function getTrustedProxies(?int $storeId = null): array;
 
     /**
-     * Whether the per-caller ceiling on the anonymous checkout routes is
-     * switched off. The escape hatch for a store whose callers all resolve
-     * to one address, where the ceiling would apply store-wide.
+     * Whether the per-caller ceiling on the anonymous checkout routes is off —
+     * the escape hatch for a store whose callers all resolve to one address.
      *
      * @param int|null $storeId
-     *
      * @return bool
      */
     public function isRateLimitDisabled(?int $storeId = null): bool;

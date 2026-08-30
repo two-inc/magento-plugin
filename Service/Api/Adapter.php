@@ -83,12 +83,9 @@ class Adapter
     }
 
     /**
-     * Same call as execute(), keeping the upstream HTTP status alongside the
-     * decoded body. execute() discards it, which leaves a caller unable to
-     * tell a 2xx apart from a 200-shaped body — the proxy routes relay the
-     * pass/fail distinction the browser used to read off its own request.
-     *
-     * A status of 0 means no HTTP exchange completed at all.
+     * Same call as execute(), keeping the upstream HTTP status, which the
+     * proxy routes relay as their pass/fail verdict. Status 0 means no HTTP
+     * exchange completed at all.
      *
      * @see self::execute() for the parameters
      * @return array{status: int, body: array}
@@ -226,9 +223,8 @@ class Adapter
                 }
             }
         } catch (Throwable $exception) {
-            // Logged here because the anonymous proxy routes replace this
-            // body with a generic message: the transport detail (cURL, DNS,
-            // TLS, host names) is for the merchant's log, not the caller.
+            // Logged here because the anonymous proxy routes replace this body:
+            // the transport detail is for the merchant's log, not the caller.
             $this->logRepository->addErrorLog(
                 sprintf('[api-transport-failure] endpoint=%s method=%s', $endpoint, $method),
                 $exception->getMessage()

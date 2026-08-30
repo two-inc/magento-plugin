@@ -3,8 +3,10 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Model\Webapi;
 
+use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Framework\HTTP\Client\CurlFactory;
+use Magento\Quote\Model\Quote;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
@@ -52,7 +54,11 @@ class ProxiedRegistryCallsTest extends TestCase
                 . (strpos($url, '?') === false ? '?' : '&')
                 . http_build_query(['client' => 'Magento', 'client_v' => '2.3.0+abc1234'])
         );
-        $this->configRepository->method('getApiKey')->willReturn('merchant-key');
+        // Keyed by store so a proxied call proves WHICH store's key it
+        // authenticated with, not merely that it sent one.
+        $this->configRepository->method('getApiKey')->willReturnCallback(
+            static fn(?int $storeId = null) => $storeId === null ? 'merchant-key' : 'store-' . $storeId . '-key'
+        );
         $this->configRepository->method('getFirewallToken')->willReturn('waf-token');
     }
 
@@ -95,23 +101,25 @@ class ProxiedRegistryCallsTest extends TestCase
         );
     }
 
-    private function orderIntent(string $status = ApiKeyStatus::OK): OrderIntent
+    private function orderIntent(string $status = ApiKeyStatus::OK, ?int $storeId = null): OrderIntent
     {
         return new OrderIntent(
             $this->adapter(),
             $this->apiKeyStatus($status),
             $this->rateLimiter(),
-            $this->logRepository()
+            $this->logRepository(),
+            $this->checkoutSession($storeId)
         );
     }
 
-    private function companyLookup(string $status = ApiKeyStatus::OK): CompanyLookup
+    private function companyLookup(string $status = ApiKeyStatus::OK, ?int $storeId = null): CompanyLookup
     {
         return new CompanyLookup(
             $this->adapter(),
             $this->apiKeyStatus($status),
             $this->rateLimiter(),
-            $this->logRepository()
+            $this->logRepository(),
+            $this->checkoutSession($storeId)
         );
     }
 
@@ -132,6 +140,18 @@ class ProxiedRegistryCallsTest extends TestCase
     private function rateLimiter(): RateLimiter
     {
         return $this->createMock(RateLimiter::class);
+    }
+
+    private function checkoutSession(?int $storeId = null): CheckoutSession
+    {
+        $session = new CheckoutSession();
+        if ($storeId !== null) {
+            $quote = $this->createMock(Quote::class);
+            $quote->method('getStoreId')->willReturn($storeId);
+            $session->setData('quote', $quote);
+        }
+
+        return $session;
     }
 
     /** @var array<int,array{0: string, 1: mixed}> */
@@ -509,25 +529,107 @@ class ProxiedRegistryCallsTest extends TestCase
     public static function upstreamFailures(): array
     {
         return [
-            'unprocessable' => [
-                422,
-                '{"error_code":"SCHEMA_ERROR","error_details":"merchant acme-internal-7f3a rejected"}',
-                'acme-internal-7f3a',
-                'a validation body naming merchant internals is not relayed',
-            ],
-            'not found' => [
-                404,
-                '{"error_message":"no route for pg.internal.example"}',
-                'pg.internal.example',
-                'an upstream 404 body is not relayed',
-            ],
             'server error' => [
                 500,
                 '{"error_message":"stack trace in two-internal-app.py"}',
                 'two-internal-app.py',
                 'an upstream outage body is not relayed',
             ],
+            'bad gateway' => [
+                502,
+                '{"error_code":"SCHEMA_ERROR","error_message":"upstream pg.internal.example down"}',
+                'pg.internal.example',
+                'a 5xx is generic even when its body is shaped like a buyer-actionable one',
+            ],
+            'no allowlisted field' => [
+                400,
+                '{"detail":"merchant acme-internal-7f3a rejected"}',
+                'acme-internal-7f3a',
+                'a 4xx carrying nothing a buyer can act on falls back to the generic refusal',
+            ],
         ];
+    }
+
+    /**
+     * Given a 4xx the buyer can act on; When it is proxied; Then the fields the
+     * tile renders reach it and every other key of the body is dropped.
+     *
+     * @dataProvider buyerActionable4xx
+     *
+     * @param array<string,mixed> $expected
+     */
+    public function testABuyerActionable4xxRelaysOnlyTheAllowlistedFields(
+        int $status,
+        string $body,
+        array $expected,
+        string $description
+    ): void {
+        $this->stageUpstream($status, $body);
+
+        $answer = $this->orderIntent()->place('{"gross_amount":"10.00"}');
+        $decoded = json_decode($answer, true);
+
+        $this->assertFalse($decoded['ok'], $description);
+        $this->assertSame($status, $decoded['status'], $description);
+        $this->assertSame($expected, $decoded['body'], $description);
+        $this->assertCount(1, $this->errorLog, $description);
+        $this->assertStringContainsString('[upstream-failure]', $this->errorLog[0][0], $description);
+    }
+
+    /**
+     * @return array<string, array{0: int, 1: string, 2: array<string,mixed>, 3: string}>
+     */
+    public static function buyerActionable4xx(): array
+    {
+        return [
+            'schema error' => [
+                422,
+                '{"error_code":"SCHEMA_ERROR","error_json":[{"msg":"org number is invalid"}]}',
+                ['error_code' => 'SCHEMA_ERROR', 'error_json' => [['msg' => 'org number is invalid']]],
+                'the per-field errors the tile renders survive the proxy',
+            ],
+            'missing field' => [
+                400,
+                '{"error_code":"JSON_MISSING_FIELD","error_details":"buyer.company.organization_number"}',
+                ['error_code' => 'JSON_MISSING_FIELD', 'error_details' => 'buyer.company.organization_number'],
+                'the field name the buyer must fill survives the proxy',
+            ],
+            'order invalid' => [
+                400,
+                '{"error_code":"ORDER_INVALID","error_message":"Order rejected","error_details":"amount too low"}',
+                [
+                    'error_code' => 'ORDER_INVALID',
+                    'error_message' => 'Order rejected',
+                    'error_details' => 'amount too low',
+                ],
+                'both halves of the composed message survive the proxy',
+            ],
+            'extra keys scrubbed' => [
+                404,
+                '{"error_code":"MERCHANT_NOT_FOUND_ERROR","error_message":"Unknown merchant",'
+                    . '"http_status":404,"trace_id":"two-internal-app-7f3a","upstream_host":"pg.internal.example"}',
+                ['error_code' => 'MERCHANT_NOT_FOUND_ERROR', 'error_message' => 'Unknown merchant'],
+                'internal detail alongside an actionable code is dropped',
+            ],
+        ];
+    }
+
+    /**
+     * Given no HTTP exchange completed at all; When the envelope is built; Then
+     * the caller gets the generic refusal, not the transport detail.
+     */
+    public function testATransportFailureIsGenericRatherThanTreatedAsA4xx(): void
+    {
+        $this->curl = $this->createMock(Curl::class);
+        $this->curl->method('post')->willThrowException(
+            new \RuntimeException('cURL error 6: Could not resolve host: api.internal.example')
+        );
+
+        $decoded = json_decode($this->orderIntent()->place('{"gross_amount":"10.00"}'), true);
+
+        $this->assertSame(0, $decoded['status']);
+        $this->assertSame('PROXY_REFUSED', $decoded['body']['error_code']);
+        $this->assertArrayNotHasKey('error_details', $decoded['body']);
     }
 
     /**
@@ -566,7 +668,8 @@ class ProxiedRegistryCallsTest extends TestCase
             $this->adapter(),
             $apiKeyStatus,
             $this->rateLimiter(),
-            $this->logRepository()
+            $this->logRepository(),
+            $this->checkoutSession()
         ))->place('{"gross_amount":"10.00"}');
 
         $sent = json_decode($this->requestedBody, true);
@@ -602,5 +705,47 @@ class ProxiedRegistryCallsTest extends TestCase
 
         $overLong = json_decode($this->companyLookup()->search('no', str_repeat('æ', 121)), true);
         $this->assertSame(400, $overLong['status']);
+    }
+
+    /**
+     * Given a buyer shopping in a non-default store; When a call is proxied;
+     * Then it authenticates with that store's key, not the default scope's.
+     *
+     * @dataProvider proxiedEndpoints
+     */
+    public function testAProxiedCallAuthenticatesWithTheStoreTheBuyerIsShoppingIn(
+        string $endpoint,
+        string $description
+    ): void {
+        $this->invokeInStore($endpoint, 7);
+
+        $this->assertSame('store-7-key', $this->headers['X-API-Key'] ?? null, $description);
+    }
+
+    /**
+     * Given a call with no loadable quote; When it is proxied; Then it falls
+     * back to the default scope rather than failing.
+     *
+     * @dataProvider proxiedEndpoints
+     */
+    public function testAStorelessCallFallsBackToTheDefaultScope(
+        string $endpoint,
+        string $description
+    ): void {
+        $this->invoke($endpoint);
+
+        $this->assertSame('merchant-key', $this->headers['X-API-Key'] ?? null, $description);
+    }
+
+    private function invokeInStore(string $endpoint, int $storeId): string
+    {
+        if ($endpoint === 'search') {
+            return $this->companyLookup(ApiKeyStatus::OK, $storeId)->search('no', 'acme');
+        }
+        if ($endpoint === 'get') {
+            return $this->companyLookup(ApiKeyStatus::OK, $storeId)->get('lookup-1');
+        }
+
+        return $this->orderIntent(ApiKeyStatus::OK, $storeId)->place('{"gross_amount":"10.00"}');
     }
 }

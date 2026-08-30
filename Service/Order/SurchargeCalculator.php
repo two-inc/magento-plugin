@@ -120,14 +120,19 @@ class SurchargeCalculator
 
         $buyerFeeShare = $this->buildBuyerFeeShare($surchargeType, $selectedTermDays, $orderCurrency, $storeId);
 
-        $response = $this->apiAdapter->execute('/v1/pricing/order/fee', [
-            'buyer_country_code' => $buyerCountry,
-            'approved_on_recourse' => false,
-            'currency' => $orderCurrency,
-            'gross_amount' => $grossAmount,
-            'order_terms' => $this->buildOrderTerms($selectedTermDays, $storeId),
-            'buyer_fee_share' => $buyerFeeShare,
-        ]);
+        $response = $this->apiAdapter->execute(
+            '/v1/pricing/order/fee',
+            [
+                'buyer_country_code' => $buyerCountry,
+                'approved_on_recourse' => false,
+                'currency' => $orderCurrency,
+                'gross_amount' => $grossAmount,
+                'order_terms' => $this->buildOrderTerms($selectedTermDays, $storeId),
+                'buyer_fee_share' => $buyerFeeShare,
+            ],
+            'POST',
+            $storeId
+        );
 
         // `http_status` may be set on success too (observability convenience);
         // gate on the actual 4xx/5xx range plus presence of `error_code`.
