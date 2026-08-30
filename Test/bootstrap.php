@@ -37,6 +37,13 @@ if (!interface_exists(\Magento\Framework\App\Config\ScopeConfigInterface::class)
 if (!class_exists(\Magento\Framework\DataObject::class)) {
     require_once __DIR__ . '/Stubs/DataObject.php';
 }
+// Payment Information block surface (Area constants + a faithful
+// Payment\Block\Info) — needed so Block/Payment/Info's admin-only row
+// injection runs against real getSpecificInformation() accumulation
+// rather than an empty catch-all class.
+if (!class_exists(\Magento\Payment\Block\Info::class, false)) {
+    require_once __DIR__ . '/Stubs/PaymentInfo.php';
+}
 if (!class_exists(\Magento\Tax\Model\Calculation::class)) {
     require_once __DIR__ . '/Stubs/TaxCalculationInterface.php';
 }
@@ -65,6 +72,13 @@ if (!class_exists(\Magento\Catalog\Model\Product\Type::class)) {
 if (!class_exists(\Magento\Sales\Model\Order\Invoice::class, false)) {
     require_once __DIR__ . '/Stubs/SalesModels.php';
 }
+// Admin scope-resolution collaborators for config source models
+// (request params, store manager, Product Tax Class option source).
+// Loads BEFORE QuoteModels, whose Store stub implements the StoreInterface
+// declared here — a later declaration would lose the collision and strip
+// the interface's methods. Per-symbol guards live inside the stub file.
+require_once __DIR__ . '/Stubs/AdminScope.php';
+
 // Quote model with the CartInterface relationship intact - required so
 // type hints against CartInterface accept Quote mocks.
 if (!class_exists(\Magento\Quote\Model\Quote::class, false)) {
@@ -105,10 +119,6 @@ if (!class_exists(\Magento\Framework\App\Config\Value::class, false)) {
 // the encrypted config backend base class, which extends the Value stub
 // above; per-symbol guards live inside the stub file.
 require_once __DIR__ . '/Stubs/AdminAjaxController.php';
-// Admin scope-resolution collaborators for config source models
-// (request params, store manager, Product Tax Class option source);
-// per-symbol guards live inside the stub file.
-require_once __DIR__ . '/Stubs/AdminScope.php';
 
 // Admin system-config field renderer surface, so Block/Adminhtml/System/
 // Config/Field/* can be constructed and their real _getElementHtml() bodies
@@ -138,6 +148,15 @@ require_once __DIR__ . '/Stubs/OrderTax.php';
 // URL builder with a real getUrl() (mock target) so ComposeOrder's
 // merchant_urls construction is exercisable; per-symbol guard lives inside.
 require_once __DIR__ . '/Stubs/FrameworkUrl.php';
+
+// Remote-address reader and webapi exception behind Service\RateLimiter;
+// per-symbol guards live inside the stub file. Loads after the Phrase stub,
+// which the exception's constructor is typed against.
+require_once __DIR__ . '/Stubs/WebapiRateLimiting.php';
+
+// System-message interface (needs its SEVERITY_* constants) and the backend
+// URL builder the message links with; per-symbol guards live inside.
+require_once __DIR__ . '/Stubs/AdminNotification.php';
 
 // Payment-method base class with a real isAvailable() and a declared
 // $_scopeConfig, so Model\Two's availability gates are testable.

@@ -333,6 +333,61 @@ class AdapterTest extends TestCase
     }
 
     /**
+     * Given a configured (or blank) firewall token; When any server-side call
+     * runs; Then the header is present only when a token is configured.
+     *
+     * @dataProvider firewallTokens
+     */
+    public function testTheFirewallHeaderIsSentOnServerSideCallsWheneverATokenIsConfigured(
+        string $configured,
+        ?string $expectedHeader,
+        string $description
+    ): void {
+        $configRepository = $this->createMock(ConfigRepository::class);
+        $configRepository->method('getCheckoutApiUrl')->willReturn('https://api.two.inc');
+        $configRepository->method('addVersionDataInURL')->willReturnArgument(0);
+        $configRepository->method('getApiKey')->willReturn('test-key');
+        $configRepository->method('getFirewallToken')->willReturn($configured);
+        // Never consulted here: the browser toggle governs the browser's own
+        // direct call, not this one.
+        $configRepository->expects($this->never())->method('isFirewallTokenSentFromBrowser');
+
+        $this->curl->method('getStatus')->willReturn(200);
+        $this->curl->method('getBody')->willReturn('{"id":"abc"}');
+        $headers = [];
+        $this->curl->method('addHeader')->willReturnCallback(
+            function ($name, $value) use (&$headers) {
+                $headers[$name] = $value;
+            }
+        );
+
+        $curlFactory = $this->createMock(CurlFactory::class);
+        $curlFactory->method('create')->willReturn($this->curl);
+        $adapter = new Adapter(
+            $configRepository,
+            $this->brandRegistry,
+            $curlFactory,
+            $this->logRepository,
+            new NullApiTranslator()
+        );
+        $adapter->execute('/v1/order', ['amount' => 100]);
+
+        $this->assertSame($expectedHeader, $headers['X-WAF-TOKEN'] ?? null, $description);
+        $this->assertSame('test-key', $headers['X-API-Key'], 'the API key is unaffected');
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string|null, 2: string}>
+     */
+    public static function firewallTokens(): array
+    {
+        return [
+            'configured' => ['waf-token', 'waf-token', 'a configured token is relayed'],
+            'blank' => ['', null, 'no token configured sends no header at all'],
+        ];
+    }
+
+    /**
      * @dataProvider apiKeySources
      */
     public function testTheAuthenticationHeaderComesFromTheOverrideWhenOneIsGiven(

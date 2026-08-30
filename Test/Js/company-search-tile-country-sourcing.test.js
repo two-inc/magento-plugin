@@ -10,7 +10,7 @@
  * rather than a hardcoded country â€” the only feed was a customer-data section
  * written by `address-autocomplete.js` once `#shipping-new-address-form`
  * resolves, and a one-page checkout that supplies its own address markup
- * matches no such selector, so the country reaching the search URL was empty.
+ * matches no such selector, so the country reaching the search request was empty.
  *
  * Where the control is mounted decides which address form answers for it:
  *
@@ -222,7 +222,7 @@ describe('the DOM fallback reads the country the buyer actually selected', () =>
         expect(load({ billingCountry: null }).component.countryCode()).toBe('');
     });
 
-    test('the resolved country is what reaches the search URL', () => {
+    test('the resolved country is what reaches the search request', () => {
         // Through a real searchCompanies() call, so the assertion covers the
         // whole path from the component's getter to the wire, not the getter.
         mountAddressForm(
@@ -234,15 +234,14 @@ describe('the DOM fallback reads the country the buyer actually selected', () =>
 
         const requested = captureAjax(function () {
             companySearch.searchCompanies({
-                config: { checkoutApiUrl: 'https://api.example.test', companySearchLimit: 10 },
+                config: { checkoutApiUrl: 'https://api.example.test' },
                 token: {},
                 term: 'acme',
                 getCountryCode: function () { return component.countryCode(); }
             });
         });
 
-        expect(requested[0].url).toContain('country=GB');
-        expect(requested[0].url).not.toContain('country=&');
+        expect(JSON.parse(requested[0].data).country).toBe('GB');
     });
 });
 
@@ -439,22 +438,27 @@ describe('the tile mount reads the form holding the invoice address (TWO-25461 Â
     );
 
     test.each([
-        ['', 'no billing form: the shipping fallback is the hidden one'],
-        [billingForm('GB'), 'a billing form the buyer did open still answers']
-    ])('a shipping form inside the hidden new-address modal is not the invoice address (%s)', (billing, _because) => {
-        // Core renders it there, holding store defaults, for the whole of a
-        // checkout completed against a saved address.
-        mountAddressForm(
-            billing +
-            '<div id="opc-new-shipping-address" style="display:none">' +
-            shippingForm('US') +
-            '</div>' + TILE
-        );
-        const { component } = load({ billingCountry: 'NO' });
-        component.start();
+        [false, 'no billing form: the shipping fallback is the hidden one'],
+        [true, 'a billing form the buyer did open still answers']
+    ])(
+        'a shipping form inside the hidden new-address modal is not the invoice address '
+        + '(billing form: %p â€” %s)',
+        (hasBilling) => {
+            const billing = hasBilling ? billingForm('GB') : '';
+            // Core renders it there, holding store defaults, for the whole of a
+            // checkout completed against a saved address.
+            mountAddressForm(
+                billing +
+                '<div id="opc-new-shipping-address" style="display:none">' +
+                shippingForm('US') +
+                '</div>' + TILE
+            );
+            const { component } = load({ billingCountry: 'NO' });
+            component.start();
 
-        expect(component.countryCode()).toBe(billing ? 'gb' : 'no');
-    });
+            expect(component.countryCode()).toBe(hasBilling ? 'gb' : 'no');
+        }
+    );
 
     test('unchecking "same as shipping" moves the country to the billing form', async () => {
         // The switch the buyer makes on the payment step: the shipping form does
@@ -473,7 +477,7 @@ describe('the tile mount reads the form holding the invoice address (TWO-25461 Â
         expect(identity.soleTraderAvailable()).toBe(true);
     });
 
-    test('the country reaching the search URL is the billing form\'s', () => {
+    test('the country reaching the search request is the billing form\'s', () => {
         // Through a real searchCompanies() call: the getter is only half the
         // path, and the wire is what the buyer sees results for.
         mountAddressForm(billingForm('GB') + shippingForm('SE') + TILE);
@@ -483,14 +487,14 @@ describe('the tile mount reads the form holding the invoice address (TWO-25461 Â
 
         const requested = captureAjax(function () {
             companySearch.searchCompanies({
-                config: { checkoutApiUrl: 'https://api.example.test', companySearchLimit: 10 },
+                config: { checkoutApiUrl: 'https://api.example.test' },
                 token: {},
                 term: 'acme',
                 getCountryCode: function () { return component.countryCode(); }
             });
         });
 
-        expect(requested[0].url).toContain('country=GB');
+        expect(JSON.parse(requested[0].data).country).toBe('GB');
     });
 });
 

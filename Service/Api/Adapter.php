@@ -79,6 +79,25 @@ class Adapter
         ?string $apiKeyOverride = null,
         ?string $modeOverride = null
     ): array {
+        return $this->executeWithStatus($endpoint, $payload, $method, $storeId, $apiKeyOverride, $modeOverride)['body'];
+    }
+
+    /**
+     * Same call as execute(), keeping the upstream HTTP status, which the
+     * proxy routes relay as their pass/fail verdict. Status 0 means no HTTP
+     * exchange completed at all.
+     *
+     * @see self::execute() for the parameters
+     * @return array{status: int, body: array}
+     */
+    public function executeWithStatus(
+        string $endpoint,
+        array $payload = [],
+        string $method = 'POST',
+        ?int $storeId = null,
+        ?string $apiKeyOverride = null,
+        ?string $modeOverride = null
+    ): array {
         try {
             $this->logRepository->addDebugLog(sprintf('API call: %s %s', $method, $endpoint), $payload);
             $mode = $modeOverride
@@ -89,15 +108,17 @@ class Adapter
             $body = ($method == "POST" || $method == "PUT")
                 ? (empty($payload) ? '' : (string)json_encode($payload))
                 : '';
-            $call = new ApiCall(
-                $method,
-                $url,
-                [
-                    'Content-Type' => 'application/json',
-                    'X-API-Key' => $apiKeyOverride ?? $this->configRepository->getApiKey($storeId),
-                ],
-                $body
-            );
+            $headers = [
+                'Content-Type' => 'application/json',
+                'X-API-Key' => $apiKeyOverride ?? $this->configRepository->getApiKey($storeId),
+            ];
+            // Server-side calls always carry the token when one is configured —
+            // the browser toggle governs only the browser's own direct call.
+            $firewallToken = $this->configRepository->getFirewallToken($storeId);
+            if ($firewallToken !== '') {
+                $headers['X-WAF-TOKEN'] = $firewallToken;
+            }
+            $call = new ApiCall($method, $url, $headers, $body);
 
             try {
                 $call = $this->apiTranslator->translateRequest($call);
@@ -162,7 +183,7 @@ class Adapter
                     sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
                     $decoded
                 );
-                return $decoded;
+                return ['status' => $result->status, 'body' => $decoded];
             } else {
                 if ($body) {
                     $decoded = json_decode($body, true) ?: [];
@@ -171,7 +192,7 @@ class Adapter
                         sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
                         $decoded
                     );
-                    return $decoded;
+                    return ['status' => $result->status, 'body' => $decoded];
                 } else {
                     $this->logRepository->addDebugLog(
                         sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
@@ -189,19 +210,31 @@ class Adapter
                     // service outage would be reported to the merchant as
                     // "unreachable" instead of "the service errored".
                     return [
-                        'error_code' => 400,
-                        'http_status' => $result->status,
-                        'error_message' => (string)__(
-                            'Invalid API response from %1.',
-                            $this->brandRegistry->getProductName()
-                        ),
+                        'status' => $result->status,
+                        'body' => [
+                            'error_code' => 400,
+                            'http_status' => $result->status,
+                            'error_message' => (string)__(
+                                'Invalid API response from %1.',
+                                $this->brandRegistry->getProductName()
+                            ),
+                        ],
                     ];
                 }
             }
         } catch (Throwable $exception) {
+            // Logged here because the anonymous proxy routes replace this body:
+            // the transport detail is for the merchant's log, not the caller.
+            $this->logRepository->addErrorLog(
+                sprintf('[api-transport-failure] endpoint=%s method=%s', $endpoint, $method),
+                $exception->getMessage()
+            );
             return [
-                'error_code' => 400,
-                'error_message' => $exception->getMessage(),
+                'status' => 0,
+                'body' => [
+                    'error_code' => 400,
+                    'error_message' => $exception->getMessage(),
+                ],
             ];
         }
     }
@@ -220,10 +253,13 @@ class Adapter
             null
         );
         return [
-            'error_code' => 502,
-            'http_status' => 502,
-            'error_source' => 'api_translator',
-            'error_message' => 'Translator failure',
+            'status' => 502,
+            'body' => [
+                'error_code' => 502,
+                'http_status' => 502,
+                'error_source' => 'api_translator',
+                'error_message' => 'Translator failure',
+            ],
         ];
     }
 }

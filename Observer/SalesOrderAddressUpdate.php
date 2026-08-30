@@ -120,7 +120,12 @@ class SalesOrderAddressUpdate implements ObserverInterface
                 // Note that shipping_details is delivery/tracking metadata,
                 // not the buyer's shipping address: shipping_address is a
                 // different field and is composed as usual, above.
-                $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId(), $payload, 'PUT');
+                $response = $this->apiAdapter->execute(
+                    '/v1/order/' . $order->getTwoOrderId(),
+                    $payload,
+                    'PUT',
+                    (int)$order->getStoreId()
+                );
                 $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
                 if ($response && $error) {
                     $order->addStatusToHistory(

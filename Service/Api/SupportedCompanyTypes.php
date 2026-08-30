@@ -62,9 +62,9 @@ class SupportedCompanyTypes
     private $logRepository;
 
     /**
-     * Per-request memo keyed by country. Holds ['types' => string[]]
-     * wrappers so a resolved empty list is distinguishable from "not
-     * yet resolved".
+     * Per-request memo keyed by country and store. Holds
+     * ['types' => string[]] wrappers so a resolved empty list is
+     * distinguishable from "not yet resolved".
      *
      * @var array<string,array{types: array}>
      */
@@ -86,33 +86,37 @@ class SupportedCompanyTypes
      * The registry-enrollable company types for a billing country.
      *
      * @param string $countryCode ISO 3166-1 alpha-2, any case
+     * @param int|null $storeId store whose API key the registry call authenticates with
      * @return string[] e.g. ['SOLE_TRADER']; empty = registered businesses only
      */
-    public function getForCountry(string $countryCode): array
+    public function getForCountry(string $countryCode, ?int $storeId = null): array
     {
         $countryCode = strtoupper(trim($countryCode));
         if (!preg_match('/^[A-Z]{2}$/', $countryCode)) {
             return [];
         }
 
-        if (isset($this->memo[$countryCode])) {
-            return $this->memo[$countryCode]['types'];
+        // Keyed by store as well as country: stores can hold different API
+        // keys, and the registry answers per merchant.
+        $memoKey = $countryCode . '_' . ($storeId ?? 'default');
+        if (isset($this->memo[$memoKey])) {
+            return $this->memo[$memoKey]['types'];
         }
 
-        $cacheKey = self::CACHE_KEY_PREFIX . $countryCode;
+        $cacheKey = self::CACHE_KEY_PREFIX . $memoKey;
         $cached = $this->cache->load($cacheKey);
         if ($cached !== false) {
             $wrapper = $this->json->unserialize($cached);
-            $this->memo[$countryCode] = $wrapper;
+            $this->memo[$memoKey] = $wrapper;
             return $wrapper['types'];
         }
 
-        $types = $this->fetch($countryCode);
+        $types = $this->fetch($countryCode, $storeId);
 
         // Memoize either way so a single request never pays the
         // round-trip twice; persist only a successful answer to the
         // cross-request cache so a failure retries on the next request.
-        $this->memo[$countryCode] = ['types' => $types ?? []];
+        $this->memo[$memoKey] = ['types' => $types ?? []];
         if ($types !== null) {
             $this->cache->save(
                 $this->json->serialize(['types' => $types]),
@@ -122,15 +126,15 @@ class SupportedCompanyTypes
             );
         }
 
-        return $this->memo[$countryCode]['types'];
+        return $this->memo[$memoKey]['types'];
     }
 
     /**
      * Whether the registry supports sole-trader enrollment for a country.
      */
-    public function isSoleTraderSupported(string $countryCode): bool
+    public function isSoleTraderSupported(string $countryCode, ?int $storeId = null): bool
     {
-        return in_array(self::SOLE_TRADER, $this->getForCountry($countryCode), true);
+        return in_array(self::SOLE_TRADER, $this->getForCountry($countryCode, $storeId), true);
     }
 
     /**
@@ -140,9 +144,9 @@ class SupportedCompanyTypes
      *
      * @return string[]|null
      */
-    private function fetch(string $countryCode): ?array
+    private function fetch(string $countryCode, ?int $storeId = null): ?array
     {
-        $response = $this->apiAdapter->execute(sprintf(self::ENDPOINT, $countryCode), [], 'GET');
+        $response = $this->apiAdapter->execute(sprintf(self::ENDPOINT, $countryCode), [], 'GET', $storeId);
 
         // Adapter::execute always returns an array; a failure is
         // signalled by an error_code / http_status marker (never present

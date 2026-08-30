@@ -15,6 +15,7 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\TermSelectionInterface;
 use Two\Gateway\Service\Order\SurchargeCalculator;
+use Two\Gateway\Service\RateLimiter;
 
 /**
  * Sets the buyer's selected payment term and returns recalculated totals.
@@ -26,6 +27,15 @@ use Two\Gateway\Service\Order\SurchargeCalculator;
  */
 class TermSelection implements TermSelectionInterface
 {
+    /**
+     * A chip click per term the merchant offers, with room to change mind.
+     * Metered despite being session-scoped: the recompute below spends one
+     * upstream pricing call per configured term on the merchant's key.
+     */
+    private const LIMIT_PER_MINUTE = 30;
+
+    private const WINDOW_SECONDS = 60;
+
     /**
      * @var CheckoutSession
      */
@@ -56,13 +66,19 @@ class TermSelection implements TermSelectionInterface
      */
     private $logRepository;
 
+    /**
+     * @var RateLimiter
+     */
+    private $rateLimiter;
+
     public function __construct(
         CheckoutSession $checkoutSession,
         CartRepositoryInterface $cartRepository,
         CartTotalRepositoryInterface $cartTotalRepository,
         ConfigRepository $configRepository,
         SurchargeCalculator $surchargeCalculator,
-        LogRepository $logRepository
+        LogRepository $logRepository,
+        RateLimiter $rateLimiter
     ) {
         $this->checkoutSession = $checkoutSession;
         $this->cartRepository = $cartRepository;
@@ -70,6 +86,7 @@ class TermSelection implements TermSelectionInterface
         $this->configRepository = $configRepository;
         $this->surchargeCalculator = $surchargeCalculator;
         $this->logRepository = $logRepository;
+        $this->rateLimiter = $rateLimiter;
     }
 
     /**
@@ -77,6 +94,8 @@ class TermSelection implements TermSelectionInterface
      */
     public function selectTerm(string $cartId, int $termDays): array
     {
+        $this->rateLimiter->assertWithinLimit('two_select_term', self::LIMIT_PER_MINUTE, self::WINDOW_SECONDS);
+
         // Session is the auth boundary on this anonymous webapi route —
         // $cartId is unverifiable here (UserContextInterface doesn't
         // populate when the framework skips auth) and is therefore

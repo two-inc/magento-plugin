@@ -158,7 +158,9 @@ class SalesOrderShipmentAfter implements ObserverInterface
             }
             $response = $this->apiAdapter->execute(
                 "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
-                $payload
+                $payload,
+                'POST',
+                (int)$order->getStoreId()
             );
 
             $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);

@@ -50,8 +50,7 @@ const PANEL_FIELD_ATTRIBUTES = [
     'role',
     'aria-haspopup',
     'aria-controls',
-    'aria-expanded',
-    'placeholder'
+    'aria-expanded'
 ];
 
 /**
@@ -115,7 +114,7 @@ function setup(chips) {
     const CompanySearchPanel = loadCompanySearchPanel($, null, GLOBALS);
     const panel = new CompanySearchPanel({
         fieldSelector: FIELD,
-        config: { checkoutApiUrl: 'https://api.example.test', companySearchLimit: 50 },
+        config: { checkoutApiUrl: 'https://api.example.test' },
         getChips: function () { return chips || []; },
         getCountryCode: function () { return 'gb'; }
     });

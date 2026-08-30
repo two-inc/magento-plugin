@@ -46,6 +46,44 @@ namespace Magento\Payment\Model\Method {
             {
                 return $this->stubAvailableInBase;
             }
+
+            /**
+             * Admin payment config, keyed by field name.
+             *
+             * @var array<string,mixed>
+             */
+            protected $stubConfigData = [];
+
+            /** @var mixed */
+            protected $stubStore = null;
+
+            public function getConfigData($field, $storeId = null)
+            {
+                return $this->stubConfigData[$field] ?? null;
+            }
+
+            public function getStore()
+            {
+                return $this->stubStore;
+            }
+
+            /**
+             * Core's allowspecific/specificcountry gate, reproduced so
+             * Model\Two::canUseForCountry() is tested against real core
+             * behaviour rather than a stub that always concedes.
+             *
+             * @return bool
+             */
+            public function canUseForCountry($country)
+            {
+                if ($this->getConfigData('allowspecific') == 1) {
+                    $availableCountries = explode(',', (string)$this->getConfigData('specificcountry'));
+                    if (!in_array($country, $availableCountries)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
         }
     }
 }

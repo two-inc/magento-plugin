@@ -171,7 +171,9 @@ describe('order-intent request body omits buyer.company.website (TWO-25365)', ()
         ctx.placeOrderIntent.call(ctx);
 
         expect(requests).toHaveLength(1);
-        const body = JSON.parse(requests[0].data);
+        // The tile posts to the plugin's own route, which carries the
+        // order-intent body as a JSON string.
+        const body = JSON.parse(JSON.parse(requests[0].data).payload);
 
         expect(body.buyer.company).toEqual({
             organization_number: '923456789',

@@ -33,6 +33,8 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
+use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
@@ -59,6 +61,7 @@ class Two extends AbstractMethod
      */
     public $request;
     protected $_code = self::CODE;
+    protected $_infoBlockType = \Two\Gateway\Block\Payment\Info::class;
     /**
      * @var bool
      */
@@ -156,6 +159,14 @@ class Two extends AbstractMethod
      */
     private $lifecycleEvents;
     /**
+     * @var BuyerCountryResolver
+     */
+    private $buyerCountryResolver;
+    /**
+     * @var SupportedCountriesProvider
+     */
+    private $supportedCountriesProvider;
+    /**
      * Per-store memo for isAmastyCheckoutStore(); isAvailable() fires many
      * times per page and the detection reads config + core_config_data.
      *
@@ -190,6 +201,8 @@ class Two extends AbstractMethod
      * @param ApiKeyStatus $apiKeyStatus
      * @param SurchargeCalculator $surchargeCalculator
      * @param LifecycleEventDispatcher $lifecycleEvents
+     * @param BuyerCountryResolver $buyerCountryResolver
+     * @param SupportedCountriesProvider $supportedCountriesProvider
      * @param AbstractResource|null $resource
      * @param AbstractDb|null $resourceCollection
      * @param array $data
@@ -221,6 +234,8 @@ class Two extends AbstractMethod
         ApiKeyStatus $apiKeyStatus,
         SurchargeCalculator $surchargeCalculator,
         LifecycleEventDispatcher $lifecycleEvents,
+        BuyerCountryResolver $buyerCountryResolver,
+        SupportedCountriesProvider $supportedCountriesProvider,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -256,6 +271,8 @@ class Two extends AbstractMethod
         $this->apiKeyStatus = $apiKeyStatus;
         $this->surchargeCalculator = $surchargeCalculator;
         $this->lifecycleEvents = $lifecycleEvents;
+        $this->buyerCountryResolver = $buyerCountryResolver;
+        $this->supportedCountriesProvider = $supportedCountriesProvider;
     }
 
     /**
@@ -285,7 +302,7 @@ class Two extends AbstractMethod
         );
 
         // Create order
-        $response = $this->apiAdapter->execute('/v1/order', $payload);
+        $response = $this->apiAdapter->execute('/v1/order', $payload, 'POST', (int)$order->getStoreId());
         $error = $this->getErrorFromResponse($response);
         if ($error) {
             throw new LocalizedException($error);
@@ -554,7 +571,12 @@ class Two extends AbstractMethod
         $order = $payment->getOrder();
         try {
             $twoOrderId = $order->getTwoOrderId();
-            $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId() . '/cancel');
+            $response = $this->apiAdapter->execute(
+                '/v1/order/' . $order->getTwoOrderId() . '/cancel',
+                [],
+                'POST',
+                (int)$order->getStoreId()
+            );
             if ($response) {
                 $error = $this->getErrorFromResponse($response);
                 $comment = __(
@@ -627,7 +649,12 @@ class Two extends AbstractMethod
                         'partial' => $this->composeCapture->execute($createdInvoice),
                     ];
                 }
-                $response = $this->apiAdapter->execute('/v1/order/' . $twoOrderId . '/fulfillments', $payload);
+                $response = $this->apiAdapter->execute(
+                    '/v1/order/' . $twoOrderId . '/fulfillments',
+                    $payload,
+                    'POST',
+                    (int)$order->getStoreId()
+                );
                 $error = $this->getErrorFromResponse($response);
 
                 if ($error) {
@@ -739,7 +766,9 @@ class Two extends AbstractMethod
         );
         $response = $this->apiAdapter->execute(
             "/v1/order/" . $twoOrderId . "/refund",
-            $payload
+            $payload,
+            'POST',
+            (int)$order->getStoreId()
         );
 
         $error = $this->getErrorFromResponse($response);
@@ -806,7 +835,7 @@ class Two extends AbstractMethod
             return false;
         }
         // Platform minimum-order constraint (the API-resolved tuple from
-        // GET /v1/merchant - the same value checkout-api enforces at order
+        // GET /v1/merchant - the same value the API enforces at order
         // create/intent) plus the merchant's own optional minimum (admin
         // setting in the STORE BASE currency; validated on save to meet or
         // exceed the platform floor converted to that currency).
@@ -865,6 +894,15 @@ class Two extends AbstractMethod
             );
             return false;
         }
+        // Judged on the billing-first country, not core's shipping-for-physical-quote choice.
+        $buyerCountry = $this->buyerCountryResolver->resolve($quote);
+        if ($buyerCountry !== '' && !$this->canUseForCountry($buyerCountry)) {
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: buyer country not supported', $this->_code),
+                ['country' => $buyerCountry]
+            );
+            return false;
+        }
         // Amasty OneStepCheckout persists the buyer's shipping method to the
         // server quote only at order placement, so at checkout-render time the
         // server quote is blind to the live shipping choice and this gate would
@@ -874,7 +912,7 @@ class Two extends AbstractMethod
         // against the live total (see Model\Ui\ConfigProvider + the renderer).
         // Enforcement is not waived, only deferred: authorize() re-checks the
         // finalised order total (shipping now known) against BOTH the platform
-        // and merchant minimums fail-closed at placement, and checkout-api
+        // and merchant minimums fail-closed at placement, and the API
         // independently enforces the platform floor. isAmastyCheckoutStore()
         // requires an explicit admin override, not Amasty's inherited config.xml
         // default, so the bypass cannot leak onto other checkouts.
@@ -886,6 +924,23 @@ class Two extends AbstractMethod
             ? $this->buildMerchantMinimum((string)$store->getBaseCurrencyCode(), $platformMinimum, $storeId)
             : null;
         return $this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum);
+    }
+
+    /**
+     * @inheritDoc
+     *
+     * TWO-40: the merchant's server-supplied allowlist is ANDed with core's admin-configured one.
+     */
+    public function canUseForCountry($country)
+    {
+        if (!parent::canUseForCountry($country)) {
+            return false;
+        }
+        $storeId = $this->getStore();
+        return $this->supportedCountriesProvider->isAllowed(
+            (string)$country,
+            is_numeric($storeId) ? (int)$storeId : null
+        );
     }
 
     /**
@@ -986,7 +1041,7 @@ class Two extends AbstractMethod
      * total that dropped after the method was selected. It is also the SOLE
      * server enforcer of the MERCHANT minimum on Amasty, where isAvailable() is
      * bypassed and the order total (with shipping) is only complete here at
-     * placement; checkout-api independently enforces the platform floor but
+     * placement; the API independently enforces the platform floor but
      * never receives the merchant's own admin minimum.
      *
      * Split fail policy on an unprojectable minimum (missing FX rate), the

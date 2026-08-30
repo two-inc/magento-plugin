@@ -28,7 +28,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { loadAmdModule, defaultMocks } = require('./amd-harness');
+const { loadAmdModule, defaultMocks, proxyEnvelope } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
@@ -111,12 +111,12 @@ describe('(b) the search-results rows never render a TWO: number', () => {
             return jqxhr;
         };
         const search = loadAmdModule(SEARCH, { jquery: $ }).searchCompanies({
-            config: { checkoutApiUrl: 'https://api.example.test', companySearchLimit: 10 },
+            config: {},
             token: {},
             term: 'acme',
             getCountryCode: function () { return 'gb'; }
         });
-        settlers.forEach(function (cb) { cb({ items: items }); });
+        settlers.forEach(function (cb) { cb(proxyEnvelope({ items: items })); });
         return search.then(function (result) { return result.items; });
     }
 

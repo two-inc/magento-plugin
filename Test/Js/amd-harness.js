@@ -24,6 +24,9 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
+/** Storefront base the default `mage/url` mock builds against. */
+const HARNESS_BASE_URL = 'https://store.example.test/';
+
 /**
  * Default mock implementations of Magento RequireJS modules used
  * across the Two_Gateway frontend/adminhtml JS. Each test file may
@@ -67,7 +70,12 @@ function defaultMocks() {
         prototype: {},
         loader: {},
         'mage/translate': function (s) { return s; },
-        'mage/url': { build: function (u) { return u; }, setBaseUrl: function () {} },
+        'mage/url': {
+            // Absolute, like the real builder: an identity mock lets a route
+            // assertion pass without the module reaching the builder at all.
+            build: function (u) { return HARNESS_BASE_URL + String(u == null ? '' : u).replace(/^\//, ''); },
+            setBaseUrl: function () {}
+        },
         'mage/utils/wrapper': { wrap: function (target, wrapper) { return wrapper.bind(null, target); } },
         'mage/validation': {},
         'mage/cookies': {},
@@ -155,6 +163,9 @@ function defaultMocks() {
             billingRoleFormRoot: function () { return null; },
             hasPrimaryAddressForm: function () { return true; },
             isDegradedResponse: function () { return false; },
+            // DELEGATED, like the display helpers below: an inert stub would
+            // make every proxy pass/fail assertion vacuous.
+            unwrapProxyResponse: function (raw) { return realCompanySearch().unwrapProxyResponse(raw); },
             clearResultCache: function () {},
             MIN_INPUT_LENGTH: 3,
             // Derived from this mock's own MIN_INPUT_LENGTH so the harness
@@ -763,8 +774,26 @@ function dispatchNative(node, type, value) {
     node.dispatchEvent(new Ctor(type, { bubbles: true, cancelable: true }));
 }
 
+/** Proxy-route responses arrive as an `{ok, status, body}` envelope. */
+function isProxyRoute(url) {
+    return typeof url === 'string' && url.indexOf('rest/V1/two/') !== -1;
+}
+
+/** The envelope JSON-encoded inside the array Magento wraps a `: string` return in. */
+function proxyEnvelope(body, options) {
+    const opts = options || {};
+    return [JSON.stringify({
+        ok: opts.ok !== false,
+        status: opts.status || 200,
+        body: body
+    })];
+}
+
 module.exports = {
     dispatchNative: dispatchNative,
+    isProxyRoute: isProxyRoute,
+    HARNESS_BASE_URL: HARNESS_BASE_URL,
+    proxyEnvelope: proxyEnvelope,
     loadAmdModule: loadAmdModule,
     defaultMocks: defaultMocks,
     loadCompanySearchPanel: loadCompanySearchPanel,

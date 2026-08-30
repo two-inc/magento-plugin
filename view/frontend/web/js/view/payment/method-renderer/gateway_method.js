@@ -21,6 +21,7 @@ define([
     'Two_Gateway/js/model/company-identity',
     'Two_Gateway/js/model/company-capture',
     'Two_Gateway/js/model/minimum-order-visibility',
+    'mage/url',
     'Magento_Ui/js/lib/view/utils/async',
     'mage/validation',
     'jquery/jquery-storageapi'
@@ -41,7 +42,8 @@ define([
     companySearch,
     identity,
     companyCapture,
-    isAboveMinimums
+    isAboveMinimums,
+    url
 ) {
     'use strict';
 
@@ -442,6 +444,15 @@ define([
          */
         isOrderIntentErrorNoticeVisible: function () {
             return !!(this.orderIntentErrorNotice && this.orderIntentErrorNotice());
+        },
+        /**
+         * Same guard, for the company-address lookup failure — not one of the
+         * order-intent notices, see initOrderIntentApprovedNotice().
+         *
+         * @returns {boolean}
+         */
+        isAddressNoticeVisible: function () {
+            return !!(this.addressNotice && this.addressNotice());
         },
         /**
          * Blank all three order-intent outcome notices.
@@ -1077,6 +1088,11 @@ define([
             // processOrderIntent*Response() re-sets afterwards; a company
             // edited by hand in the input clears both notices and leaves
             // them cleared, which is the correct fail-closed outcome.
+            // Its OWN box, not the intent-error one: the credit check normally
+            // answers after the address lookup, and clearOrderIntentNotices()
+            // would blank an address failure the buyer still has to act on.
+            this.addressNotice = identity.addressNotice;
+
             var self = this;
             this._noticeSubs = [
                 this.companyName.subscribe(function () {
@@ -1172,6 +1188,16 @@ define([
             // text or leave the first error's wording under a newer one.
             this.clearOrderIntentNotices();
 
+            // A 429 is transient — a wait, not a decline. It arrives either as
+            // a raw Magento webapi fault or inside a proxy envelope.
+            if (response && response.status === 429) {
+                this.showOrderIntentErrorNotice(
+                    (response.responseJSON && response.responseJSON.message) ||
+                    $t('Too many requests. Please wait a moment and try again.')
+                );
+                return;
+            }
+
             // `let`, not `const`: the SCHEMA_ERROR branch below reassigns
             // this to '' once it has pushed the field-level errors into
             // messageContainer itself. A `const` here made every
@@ -1204,6 +1230,9 @@ define([
                         if (errorDetails) {
                             message = errorDetails;
                         }
+                        break;
+                    case 'PROXY_REFUSED':
+                        message = errorMessage;
                         break;
                     case 'MERCHANT_NOT_FOUND_ERROR':
                     case 'ORDER_INVALID':
@@ -1327,22 +1356,17 @@ define([
                         last_name: billingAddress.lastname,
                         phone_number: this.getTelephone()
                     }
-                },
-                merchant_id: this._brandConfig.orderIntentConfig.merchant?.id,
-                merchant_short_name: this._brandConfig.orderIntentConfig.merchant?.short_name
+                }
             };
 
             console.debug({ logger: 'twoPayment.placeOrderIntent', orderIntentRequestBody });
 
-            const queryParams = new URLSearchParams({
-                client: this._brandConfig.orderIntentConfig.extensionPlatformName,
-                client_v: this._brandConfig.orderIntentConfig.extensionDBVersion
-            });
-
-            return $.ajax({
-                url: `${
-                    this._brandConfig.checkoutApiUrl
-                }/v1/order_intent?${queryParams.toString()}`,
+            // Proxied through the plugin's own backend so the merchant API
+            // key and any configured firewall token stay server-side; the
+            // merchant identity in the body is replaced there too.
+            const deferred = $.Deferred();
+            $.ajax({
+                url: url.build('rest/V1/two/order-intent'),
                 type: 'POST',
                 // `global: false`, and this is load-bearing for the tile-local
                 // spinner rather than a micro-optimisation. Magento's
@@ -1358,9 +1382,23 @@ define([
                 // through the tile's messageContainer.
                 global: false,
                 contentType: 'application/json',
-                headers: {},
-                data: JSON.stringify(orderIntentRequestBody)
-            });
+                data: JSON.stringify({ payload: JSON.stringify(orderIntentRequestBody) })
+            })
+                .done(function (raw) {
+                    const envelope = companySearch.unwrapProxyResponse(raw);
+                    if (envelope.ok) {
+                        deferred.resolve(envelope.body);
+                    } else {
+                        // Shaped like a jqXHR: processOrderIntentErrorResponse
+                        // reads both fields off one, and drops to a generic
+                        // decline without the status.
+                        deferred.reject({ status: envelope.status, responseJSON: envelope.body });
+                    }
+                })
+                .fail(function (jqXHR) {
+                    deferred.reject(jqXHR);
+                });
+            return deferred.promise();
         },
         validate: function () {
             return $(this.formSelector).valid();

@@ -106,8 +106,6 @@
             <xs:element name="csp_origins" type="cspOriginsType" minOccurs="0"/>
             <xs:element name="admin_resource" type="xs:string"/>
             <xs:element name="module_label_chain" type="moduleLabelChainType" minOccurs="0"/>
-            <xs:element name="allowed_currencies" type="allowedCurrenciesType" minOccurs="0"/>
-            <xs:element name="allowed_countries" type="allowedCountriesType" minOccurs="0"/>
             <xs:element name="extra_http_headers" type="extraHttpHeadersType" minOccurs="0"/>
             <xs:element name="suppressed_fields" type="suppressedFieldsType" minOccurs="0"/>
             <!--
@@ -193,18 +191,6 @@
                     </xs:simpleContent>
                 </xs:complexType>
             </xs:element>
-        </xs:sequence>
-    </xs:complexType>
-
-    <xs:complexType name="allowedCurrenciesType">
-        <xs:sequence>
-            <xs:element name="currency" type="xs:string" minOccurs="1" maxOccurs="unbounded"/>
-        </xs:sequence>
-    </xs:complexType>
-
-    <xs:complexType name="allowedCountriesType">
-        <xs:sequence>
-            <xs:element name="country" type="xs:string" minOccurs="1" maxOccurs="unbounded"/>
         </xs:sequence>
     </xs:complexType>
 

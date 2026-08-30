@@ -30,13 +30,18 @@ const { loadAmdModule, loadCompanySearchPanel, dispatchNative } = require('./amd
 
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
 
+const PANEL_PATH = 'view/frontend/web/js/model/company-search-panel.js';
+
+const STYLESHEET_PATH = 'view/frontend/web/css/style.css';
+
+const REMOVED_WATERMARK = 'Enter company name to search';
+
 const GLOBALS = { document: document, window: window };
 
 const FIELD_SELECTOR = '#company_name';
 
 const BASE_CONFIG = {
-    checkoutApiUrl: 'https://api.example.test',
-    companySearchLimit: 50
+    checkoutApiUrl: 'https://api.example.test'
 };
 
 /** Nothing here is 3, so a surviving literal 3 cannot pass. */
@@ -163,27 +168,45 @@ describe('below-threshold hint (element 4)', () => {
     });
 });
 
-describe('the company field carries its own closed-state watermark', () => {
-    test('the panel sets it, rather than leaving the host form to', () => {
-        // On the address step core renders this field with no placeholder at
-        // all, so nothing would say what clicking it does.
+describe('the company field carries no watermark', () => {
+    test('the panel leaves the host field placeholder-less', () => {
         openPanel(loadCompanySearchWithWrongThreshold());
 
-        expect($(FIELD_SELECTOR).attr('placeholder')).toBe('Enter company name to search');
-        // Not the query field's hint: that one carries the length requirement.
-        expect($(FIELD_SELECTOR).attr('placeholder'))
-            .not.toBe($('.two-company-dropdown__query').attr('placeholder'));
+        expect($(FIELD_SELECTOR).attr('placeholder')).toBeUndefined();
     });
 
-    test('the watermark is translated in every catalogue', () => {
-        const msgid = 'Enter company name to search';
+    test.each([
+        [PANEL_PATH, 'the panel source'],
+        ['i18n/nb_NO.csv', 'the nb_NO catalogue'],
+        ['i18n/nl_NL.csv', 'the nl_NL catalogue'],
+        ['i18n/sv_SE.csv', 'the sv_SE catalogue']
+    ])('%s keeps no trace of the removed watermark (%s)', (relPath, description) => {
+        expect(readSource(relPath)).not.toContain(REMOVED_WATERMARK);
+    });
+});
 
-        ['nb_NO', 'nl_NL', 'sv_SE'].forEach((locale) => {
-            const csv = readSource('i18n/' + locale + '.csv');
-            expect(csv).toContain('"' + msgid + '","');
-            // Magento drops rows whose translation equals the msgid.
-            expect(csv).not.toContain('"' + msgid + '","' + msgid + '"');
-        });
+describe('the length hint survives a field too narrow to show it', () => {
+    test('the query field hovers the FULL hint, not the clipped form', () => {
+        openPanel(loadCompanySearchWithWrongThreshold());
+        const query = $('.two-company-dropdown__query');
+
+        expect(query.attr('title')).toBe('Enter ' + WRONG_THRESHOLD + ' or more characters');
+        expect(query.attr('title')).toBe(query.attr('placeholder'));
+    });
+
+    // jsdom does not lay text out, so nothing here proves the hint visibly
+    // clips; it proves the declarations that do the clipping are shipped.
+    test.each([
+        ['.two-company-dropdown__query {', 'text-overflow: ellipsis;', 'the input itself (Firefox)'],
+        ['.two-company-dropdown__query::placeholder {', 'text-overflow: ellipsis;', 'the pseudo-element (Chrome, Safari)'],
+        ['.two-company-dropdown__query::placeholder {', 'overflow: hidden;', 'the pseudo-element clips'],
+        ['.two-company-dropdown__query::placeholder {', 'white-space: nowrap;', 'the hint stays on one line']
+    ])('%s declares %s for %s', (selector, declaration, description) => {
+        const css = readSource(STYLESHEET_PATH);
+        const block = css.slice(css.indexOf(selector));
+
+        expect(css).toContain(selector);
+        expect(block.slice(0, block.indexOf('}'))).toContain(declaration);
     });
 });
 

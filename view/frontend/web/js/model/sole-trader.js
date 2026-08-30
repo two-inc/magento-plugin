@@ -409,9 +409,15 @@
         const config = this._component.config();
         const params = new URLSearchParams(this.host().apiClientParams(config)).toString();
         const URL = `${config.checkoutApiUrl}/autofill/v1/buyer/current${params ? `?${params}` : ''}`;
+        const headers = { 'two-delegated-authority-token': this.autofillToken };
+        // The one call that cannot be proxied: it is authenticated by the
+        // buyer's own session cookie on the API's domain, which a server-side
+        // call has no way to present. `firewallToken` is populated only when
+        // the merchant switched the browser toggle on.
+        if (config.firewallToken) headers['X-WAF-TOKEN'] = config.firewallToken;
         return fetch(URL, {
             credentials: 'include',
-            headers: { 'two-delegated-authority-token': this.autofillToken }
+            headers: headers
         })
             .then((response) => {
                 if (response.ok) return response.json();

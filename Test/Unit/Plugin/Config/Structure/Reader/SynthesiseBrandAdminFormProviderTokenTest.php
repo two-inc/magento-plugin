@@ -179,8 +179,6 @@ class SynthesiseBrandAdminFormProviderTokenTest extends TestCase
             cspOrigins: [],
             adminResource: 'Magento_Sales::config_sales',
             moduleLabelChain: [],
-            allowedCurrencies: [],
-            allowedCountries: [],
             extraHttpHeaders: []
         );
     }

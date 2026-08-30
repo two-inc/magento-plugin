@@ -844,4 +844,39 @@ class Repository implements RepositoryInterface
     {
         return $this->isSetFlag($this->path('disable_ssl_verify'), $storeId);
     }
+
+    /**
+     * @inheritDoc
+     */
+    public function getFirewallToken(?int $storeId = null): string
+    {
+        return trim((string)$this->getConfig($this->path('firewall_token'), $storeId));
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isFirewallTokenSentFromBrowser(?int $storeId = null): bool
+    {
+        return $this->isSetFlag($this->path('firewall_token_browser'), $storeId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getTrustedProxies(?int $storeId = null): array
+    {
+        $configured = (string)$this->getConfig($this->path('trusted_proxies'), $storeId);
+        $entries = preg_split('/[\s,;]+/', $configured) ?: [];
+
+        return array_values(array_unique(array_filter($entries, static fn($entry) => $entry !== '')));
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function isRateLimitDisabled(?int $storeId = null): bool
+    {
+        return $this->isSetFlag($this->path('disable_rate_limit'), $storeId);
+    }
 }

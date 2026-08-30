@@ -126,8 +126,6 @@ across modules). Elements may appear in any order (`xs:all`).
 | `csp_origins`                    | no       | `<origin>` list           | Extra CSP origins.                                                                                                                                              |
 | `admin_resource`                 | yes      | string                    | ACL resource gating the admin section.                                                                                                                          |
 | `module_label_chain`             | no       | `<module label="…">` list | Admin Version-panel rows; rows for missing modules silently skip.                                                                                               |
-| `allowed_currencies`             | no       | `<currency>` list         | Currency allow-list.                                                                                                                                            |
-| `allowed_countries`              | no       | `<country>` list          | Country allow-list.                                                                                                                                             |
 | `extra_http_headers`             | no       | `<header name="…">` list  | Extra headers on API calls.                                                                                                                                     |
 | `suppressed_fields`              | no       | `<field path="…">` list   | Hides admin controls for this brand (below).                                                                                                                    |
 | `inline_term_fees`               | no       | boolean                   | Show per-term merchant fee beside Payment Terms checkboxes in admin (default true).                                                                             |
@@ -346,7 +344,7 @@ deploy.
 intrinsically brand-static: URLs, labels, CSP origins, admin-form shape.
 
 Anything the platform owns and may change per merchant comes from
-`GET /v1/merchant`, never brand.xml, so the storefront and checkout-api
+`GET /v1/merchant`, never brand.xml, so the storefront and the API
 can never disagree:
 
 -   minimum order value — `min_order_amount/currency/basis`, read via
@@ -354,7 +352,12 @@ can never disagree:
     `Service/Order/MinimumOrderGate`;
 -   offerable payment terms — `available_terms`, read via
     `Service/Merchant/SettingsProvider`;
--   buyer-surcharge cap — `surcharge_limit`, same provider.
+-   buyer-surcharge cap — `surcharge_limit`, same provider;
+-   buyer-country allowlist — `supported_buyer_countries`, read via
+    `Service/Merchant/SupportedCountriesProvider` and applied by
+    `Model\Two::canUseForCountry()` alongside core's own
+    `sallowspecific`/`specificcountry` restriction. Both gates must
+    concede; an absent or empty allowlist restricts nothing.
 
 ## Local development
 

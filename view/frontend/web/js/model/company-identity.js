@@ -53,7 +53,9 @@
         companyIdSource: '',
         soleTraderAvailable: false,
         soleTraderAdopted: false,
-        soleTraderBusy: false
+        soleTraderBusy: false,
+        /** Why the picked company's address could not be filled in, or ''. */
+        addressNotice: ''
     };
 
     /**
@@ -102,6 +104,7 @@
         soleTraderAvailable: accessor('soleTraderAvailable', asBoolean),
         soleTraderAdopted: accessor('soleTraderAdopted', asBoolean),
         soleTraderBusy: accessor('soleTraderBusy', asBoolean),
+        addressNotice: accessor('addressNotice', asString),
 
         /**
          * @param {function(object)} subscriber called after every change

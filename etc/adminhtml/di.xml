@@ -39,4 +39,11 @@
         un-synthesised result to subsequent admin web requests and the
         brand-overlay admin tab disappeared.
     -->
+    <type name="Magento\Framework\Notification\MessageList">
+        <arguments>
+            <argument name="messages" xsi:type="array">
+                <item name="twoGatewayTrustedProxiesUnset" xsi:type="string">Two\Gateway\Model\AdminNotification\TrustedProxiesMessage</item>
+            </argument>
+        </arguments>
+    </type>
 </config>

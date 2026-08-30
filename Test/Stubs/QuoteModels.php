@@ -21,8 +21,18 @@ namespace Magento\Quote\Api\Data {
 
 namespace Magento\Store\Model {
     if (!class_exists(Store::class, false)) {
-        class Store
+        class Store implements \Magento\Store\Api\Data\StoreInterface
         {
+            public function getId()
+            {
+                return null;
+            }
+
+            public function getWebsiteId()
+            {
+                return null;
+            }
+
             public function getBaseCurrencyCode()
             {
                 return null;
@@ -40,6 +50,17 @@ namespace Magento\Store\Model {
             }
 
             public function getCurrentCurrencyCode()
+            {
+                return null;
+            }
+
+            /**
+             * Declared so tests can configure the store-default country
+             * Service\Order\BuyerCountryResolver falls back to.
+             *
+             * @return mixed
+             */
+            public function getConfig($path)
             {
                 return null;
             }
@@ -99,6 +120,14 @@ namespace Magento\Quote\Model {
              * @return \Magento\Quote\Model\Quote\Address|null
              */
             public function getBillingAddress()
+            {
+                return null;
+            }
+
+            /**
+             * @return \Magento\Quote\Model\Quote\Address|null
+             */
+            public function getShippingAddress()
             {
                 return null;
             }

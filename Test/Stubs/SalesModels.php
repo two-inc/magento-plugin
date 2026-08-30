@@ -124,6 +124,24 @@ if (!class_exists(Creditmemo::class, false)) {
     }
 }
 
+if (!class_exists(Payment::class, false)) {
+    class Payment extends AbstractSalesModelStub
+    {
+        private $order;
+
+        public function setOrder($order): self
+        {
+            $this->order = $order;
+            return $this;
+        }
+
+        public function getOrder()
+        {
+            return $this->order;
+        }
+    }
+}
+
 namespace Magento\Sales\Model;
 
 use Two\Gateway\Test\Stubs\AbstractSalesModelStub;
