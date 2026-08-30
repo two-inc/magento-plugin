@@ -27,6 +27,8 @@ interface RepositoryInterface
     public const XML_PATH_API_KEY = 'payment/two_payment/api_key';
     public const XML_PATH_FIREWALL_TOKEN = 'payment/two_payment/firewall_token';
     public const XML_PATH_FIREWALL_TOKEN_BROWSER = 'payment/two_payment/firewall_token_browser';
+    public const XML_PATH_TRUSTED_PROXIES = 'payment/two_payment/trusted_proxies';
+    public const XML_PATH_DISABLE_RATE_LIMIT = 'payment/two_payment/disable_rate_limit';
     public const XML_PATH_FULFILL_TRIGGER = 'payment/two_payment/fulfill_trigger';
     public const XML_PATH_FULFILL_ORDER_STATUS = 'payment/two_payment/fulfill_order_status';
     public const XML_PATH_ENABLE_COMPANY_SEARCH = 'payment/two_payment/enable_company_search';
@@ -562,4 +564,27 @@ interface RepositoryInterface
      * @return bool
      */
     public function isFirewallTokenSentFromBrowser(?int $storeId = null): bool;
+
+    /**
+     * Addresses of the store's own reverse proxies, load balancers or CDN
+     * egress, as IPs or CIDR ranges. Empty by default: until a merchant
+     * names them, a forwarding header is a client-supplied value and the
+     * connecting peer is the only trustworthy caller identity.
+     *
+     * @param int|null $storeId
+     *
+     * @return string[]
+     */
+    public function getTrustedProxies(?int $storeId = null): array;
+
+    /**
+     * Whether the per-caller ceiling on the anonymous checkout routes is
+     * switched off. The escape hatch for a store whose callers all resolve
+     * to one address, where the ceiling would apply store-wide.
+     *
+     * @param int|null $storeId
+     *
+     * @return bool
+     */
+    public function isRateLimitDisabled(?int $storeId = null): bool;
 }

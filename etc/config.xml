@@ -36,6 +36,8 @@
                 <vendor_site_name/>
                 <firewall_token/>
                 <firewall_token_browser>0</firewall_token_browser>
+                <trusted_proxies/>
+                <disable_rate_limit>0</disable_rate_limit>
                 <subtitle/>
                 <!-- TWO-25386: show_about_link defaults ON. display_tooltips
                      default ON preserves Magento's prior behaviour — the optional

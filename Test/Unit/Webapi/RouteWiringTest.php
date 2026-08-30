@@ -37,20 +37,37 @@ class RouteWiringTest extends TestCase
     }
 
     /**
-     * The thing worth pinning is that a route never silently loses its
-     * `<resources>` declaration and becomes unroutable — not which resource
-     * it names, since tightening one to a real ACL is the safe direction.
+     * A route that silently loses its `<resources>` declaration becomes
+     * unroutable, and a typo'd ref is the same outage — so the ref must be one
+     * the framework actually resolves. Tightening `anonymous` to a real ACL
+     * stays allowed: the set is what is legal, not one fixed value.
      *
      * @dataProvider registeredRoutes
      */
-    public function testEachRouteDeclaresItsAccessResource(
+    public function testEachRouteDeclaresAResolvableAccessResource(
         string $interface,
         string $method,
         string $description,
         string $resource
     ): void {
-        $this->assertNotSame('', $resource, $description);
+        $this->assertContains(
+            $resource,
+            self::KNOWN_RESOURCES,
+            $description . ': unknown <resource ref>, which the framework resolves to no route at all'
+        );
     }
+
+    /**
+     * Refs the framework resolves for this module's routes: the guest-checkout
+     * pseudo-resources, and the ACLs a merchant may tighten a route to.
+     */
+    private const KNOWN_RESOURCES = [
+        'anonymous',
+        'self',
+        'Magento_Sales::sales',
+        'Magento_Sales::actions_view',
+        'Magento_Cart::cart',
+    ];
 
     /**
      * @return array<string, array{0: string, 1: string, 2: string, 3: string}>

@@ -24,10 +24,8 @@ trait UpstreamEnvelopeTrait
         $body = $result['body'] ?? [];
 
         if ($status === 0) {
-            // Status 0 is the Adapter's transport-failure branch, whose body
-            // carries the raw exception text — cURL/DNS/TLS messages naming
-            // internal hosts. These routes are anonymous; the detail stays in
-            // the log the Adapter already wrote.
+            // The Adapter's transport-failure branch: its body is raw exception
+            // text naming internal hosts, and these routes are anonymous.
             $body = [
                 'error_code' => 'PROXY_REFUSED',
                 'error_message' => (string)__('The service is temporarily unavailable. Please try again.'),

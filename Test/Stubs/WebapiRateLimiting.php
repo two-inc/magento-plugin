@@ -50,6 +50,114 @@ namespace Magento\Framework\App\Request {
     }
 }
 
+namespace Magento\Framework\HTTP\PhpEnvironment {
+
+    use Magento\Framework\App\Request\Http as HttpRequest;
+
+    if (!class_exists(RemoteAddress::class, false)) {
+        /**
+         * Port of the framework class (2.4.7). Typed against the concrete
+         * request rather than RequestInterface, which the bootstrap's
+         * catch-all would generate as an interface the request stub does
+         * not implement.
+         */
+        class RemoteAddress
+        {
+            /** @var HttpRequest */
+            private $request;
+
+            /** @var string[] */
+            private $alternativeHeaders;
+
+            /** @var string[]|null */
+            private $trustedProxies;
+
+            /** @var string|false|null */
+            private $remoteAddress;
+
+            public function __construct(
+                HttpRequest $httpRequest,
+                array $alternativeHeaders = [],
+                ?array $trustedProxies = null
+            ) {
+                $this->request = $httpRequest;
+                $this->alternativeHeaders = $alternativeHeaders;
+                $this->trustedProxies = $trustedProxies;
+            }
+
+            /**
+             * @return string|null
+             */
+            private function readAddress()
+            {
+                $remoteAddress = null;
+                foreach ($this->alternativeHeaders as $var) {
+                    if ($this->request->getServer($var, false)) {
+                        $remoteAddress = $this->request->getServer($var);
+                        break;
+                    }
+                }
+                if (!$remoteAddress) {
+                    $remoteAddress = $this->request->getServer('REMOTE_ADDR');
+                }
+
+                return $remoteAddress;
+            }
+
+            /**
+             * @return string|null
+             */
+            private function filterAddress(string $remoteAddress)
+            {
+                $ipList = strpos($remoteAddress, ',') !== false
+                    ? explode(',', $remoteAddress)
+                    : [$remoteAddress];
+                $ipList = array_filter(
+                    $ipList,
+                    static fn(string $ip) => filter_var(trim($ip), FILTER_VALIDATE_IP)
+                );
+                if ($this->trustedProxies !== null) {
+                    $ipList = array_filter(
+                        $ipList,
+                        fn(string $ip) => !in_array(trim($ip), $this->trustedProxies, true)
+                    );
+                    $remoteAddress = empty($ipList) ? '' : trim((string)array_pop($ipList));
+                } else {
+                    $remoteAddress = trim((string)reset($ipList));
+                }
+
+                return $remoteAddress ?: null;
+            }
+
+            /**
+             * @return string|false
+             */
+            public function getRemoteAddress(bool $ipToLong = false)
+            {
+                if ($this->remoteAddress !== null) {
+                    return $ipToLong ? ip2long($this->remoteAddress) : $this->remoteAddress;
+                }
+
+                $remoteAddress = $this->readAddress();
+                if (!$remoteAddress) {
+                    $this->remoteAddress = false;
+
+                    return false;
+                }
+                $remoteAddress = $this->filterAddress((string)$remoteAddress);
+                if (!$remoteAddress) {
+                    $this->remoteAddress = false;
+
+                    return false;
+                }
+                $this->remoteAddress = $remoteAddress;
+
+                return $ipToLong ? ip2long($this->remoteAddress) : $this->remoteAddress;
+            }
+        }
+    }
+}
+
 namespace Magento\Framework\Webapi {
 
     use Magento\Framework\Phrase;

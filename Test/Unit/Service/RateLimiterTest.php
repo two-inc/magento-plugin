@@ -7,6 +7,8 @@ use Magento\Framework\App\CacheInterface;
 use Magento\Framework\App\Request\Http as HttpRequest;
 use Magento\Framework\Webapi\Exception as WebapiException;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\RateLimiter;
 
 /**
@@ -19,6 +21,9 @@ class RateLimiterTest extends TestCase
 
     /** @var array<string,int|null> */
     private $lifetimes = [];
+
+    /** @var array<int,array{0: string, 1: mixed}> */
+    private $errorLog = [];
 
     private function cache(): CacheInterface
     {
@@ -39,13 +44,29 @@ class RateLimiterTest extends TestCase
 
     /**
      * @param array<string,string> $server the CGI environment of the request
+     * @param string[] $trustedProxies
      */
-    private function limiterFor(array $server): RateLimiter
-    {
+    private function limiterFor(
+        array $server,
+        array $trustedProxies = [],
+        bool $rateLimitDisabled = false
+    ): RateLimiter {
         $request = new HttpRequest();
         $request->setTestEnvironment($server);
 
-        return new RateLimiter($this->cache(), $request);
+        $config = $this->createMock(ConfigRepository::class);
+        $config->method('getTrustedProxies')->willReturn($trustedProxies);
+        $config->method('isRateLimitDisabled')->willReturn($rateLimitDisabled);
+
+        $log = $this->createMock(LogRepository::class);
+        $log->method('addErrorLog')->willReturnCallback(
+            function ($type, $data) {
+                $this->errorLog[] = [$type, $data];
+                return null;
+            }
+        );
+
+        return new RateLimiter($this->cache(), $request, $config, $log);
     }
 
     private function limiter(string $peer = '198.51.100.7'): RateLimiter
@@ -176,5 +197,180 @@ class RateLimiterTest extends TestCase
 
         $this->expectException(WebapiException::class);
         $limiter->assertWithinLimit('route', 1, 60);
+    }
+
+    /**
+     * Given a request arriving from an address the merchant named as its own
+     * proxy; When two buyers behind it are forwarded; Then each gets its own
+     * budget instead of sharing the proxy's.
+     *
+     * This is the whole point of the setting: without it a store behind a
+     * reverse proxy, CDN or ALB counts every buyer as one caller and the
+     * per-caller ceiling becomes a store-wide one.
+     *
+     * @dataProvider trustedProxyForms
+     */
+    public function testATrustedProxyLetsTheForwardedBuyerKeyTheLimiter(
+        array $trustedProxies,
+        string $peer,
+        string $description
+    ): void {
+        $this->limiterFor(
+            ['REMOTE_ADDR' => $peer, 'HTTP_X_FORWARDED_FOR' => '203.0.113.5'],
+            $trustedProxies
+        )->assertWithinLimit('route', 1, 60);
+
+        $second = $this->limiterFor(
+            ['REMOTE_ADDR' => $peer, 'HTTP_X_FORWARDED_FOR' => '203.0.113.6'],
+            $trustedProxies
+        );
+        $second->assertWithinLimit('route', 1, 60);
+
+        $this->assertCount(2, $this->entries, $description);
+
+        // Still a ceiling: the second buyer is refused on its own budget.
+        $this->expectException(WebapiException::class);
+        $second->assertWithinLimit('route', 1, 60);
+    }
+
+    /**
+     * @return array<string, array{0: string[], 1: string, 2: string}>
+     */
+    public static function trustedProxyForms(): array
+    {
+        return [
+            'exact address' => [
+                ['198.51.100.7'],
+                '198.51.100.7',
+                'a proxy named by address is trusted',
+            ],
+            'ipv4 cidr' => [
+                ['10.0.0.0/8'],
+                '10.4.5.6',
+                'a proxy inside a named range is trusted',
+            ],
+            'ipv6 cidr' => [
+                ['2001:db8::/32'],
+                '2001:db8:1234::9',
+                'ranges are matched for IPv6 too',
+            ],
+            'one of several' => [
+                ['192.0.2.1', '10.0.0.0/8'],
+                '10.4.5.6',
+                'any entry in the list may match',
+            ],
+        ];
+    }
+
+    /**
+     * Given trusted proxies configured; When the request arrives from an
+     * address that is not one of them; Then the forwarding header it carries
+     * is still ignored.
+     */
+    public function testAPeerOutsideTheTrustedSetCannotNameItsOwnClient(): void
+    {
+        $server = ['REMOTE_ADDR' => '198.51.100.7', 'HTTP_X_FORWARDED_FOR' => '203.0.113.5'];
+
+        $this->limiterFor($server, ['10.0.0.0/8'])->assertWithinLimit('route', 1, 60);
+        $rotated = $this->limiterFor(
+            ['REMOTE_ADDR' => '198.51.100.7', 'HTTP_X_FORWARDED_FOR' => '203.0.113.99'],
+            ['10.0.0.0/8']
+        );
+
+        $this->assertCount(1, $this->entries, 'an untrusted peer keys on its own address');
+
+        $this->expectException(WebapiException::class);
+        $rotated->assertWithinLimit('route', 1, 60);
+    }
+
+    /**
+     * Given a chain of hops; When the trailing ones are the merchant's own;
+     * Then the buyer is the last address none of them account for.
+     */
+    public function testTheProxyHopsAreStrippedFromTheForwardedChain(): void
+    {
+        $chain = [
+            'REMOTE_ADDR' => '10.0.0.9',
+            'HTTP_X_FORWARDED_FOR' => '203.0.113.5, 10.0.0.4, 10.0.0.9',
+        ];
+        $this->limiterFor($chain, ['10.0.0.0/8'])->assertWithinLimit('route', 1, 60);
+
+        // The same buyer through a different hop of the same estate shares
+        // the budget, which only holds if the hops were stripped.
+        $viaOtherHop = $this->limiterFor(
+            ['REMOTE_ADDR' => '10.0.0.4', 'HTTP_X_FORWARDED_FOR' => '203.0.113.5, 10.0.0.4'],
+            ['10.0.0.0/8']
+        );
+
+        $this->assertCount(1, $this->entries, 'the buyer, not the hop, keys the budget');
+
+        $this->expectException(WebapiException::class);
+        $viaOtherHop->assertWithinLimit('route', 1, 60);
+    }
+
+    /**
+     * Given the Diagnostics escape hatch is on; When a caller runs far past
+     * the ceiling; Then nothing is refused and no counter is kept.
+     */
+    public function testTheDiagnosticsToggleSwitchesTheCeilingOffEntirely(): void
+    {
+        $limiter = $this->limiterFor(['REMOTE_ADDR' => '198.51.100.7'], [], true);
+
+        for ($i = 0; $i < 25; $i++) {
+            $limiter->assertWithinLimit('route', 1, 60);
+        }
+
+        $this->assertSame([], $this->entries, 'a disabled limiter keeps no state');
+        $this->assertSame([], $this->errorLog, 'and refuses nothing to report');
+    }
+
+    /**
+     * Given every refusal in the window comes from one address and no trusted
+     * proxies are set; When a call is refused; Then the log says so and names
+     * the two settings that resolve it.
+     */
+    public function testOneAddressBehindEveryRefusalIsCalledOutInTheLog(): void
+    {
+        $limiter = $this->limiterFor(['REMOTE_ADDR' => '198.51.100.7']);
+        $limiter->assertWithinLimit('route', 1, 60);
+
+        try {
+            $limiter->assertWithinLimit('route', 1, 60);
+        } catch (WebapiException $e) {
+            // The log is what this test is about.
+        }
+
+        $this->assertCount(1, $this->errorLog);
+        [$line, $hint] = $this->errorLog[0];
+        $this->assertStringContainsString('[rate-limit-exceeded] route=route', $line);
+        $this->assertStringContainsString('caller=198.51.100.7', $line);
+        $this->assertStringContainsString('distinct_callers_refused=1', $line);
+        $this->assertStringContainsString('trusted_proxies=0', $line);
+        $this->assertStringContainsString('Trusted proxies', (string)$hint);
+        $this->assertStringContainsString('Disable checkout rate limiting', (string)$hint);
+    }
+
+    /**
+     * Given refusals spread across several addresses; When they are logged;
+     * Then the count says so and the single-address hint is withheld — that
+     * is an abusive-caller picture, not a collapsed-bucket one.
+     */
+    public function testRefusalsFromSeveralAddressesAreCountedApart(): void
+    {
+        foreach (['198.51.100.7', '203.0.113.9', '192.0.2.44'] as $peer) {
+            $limiter = $this->limiterFor(['REMOTE_ADDR' => $peer]);
+            $limiter->assertWithinLimit('route', 1, 60);
+            try {
+                $limiter->assertWithinLimit('route', 1, 60);
+            } catch (WebapiException $e) {
+                // The log is what this test is about.
+            }
+        }
+
+        $this->assertCount(3, $this->errorLog);
+        [$line, $hint] = $this->errorLog[2];
+        $this->assertStringContainsString('distinct_callers_refused=3', $line);
+        $this->assertStringContainsString('refusals_in_window=3', $line);
+        $this->assertNull($hint, 'several callers is not the collapsed-bucket picture');
     }
 }

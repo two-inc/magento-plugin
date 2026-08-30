@@ -78,10 +78,12 @@ function installAjaxDouble() {
                 jqxhr.aborted = true;
                 jqxhr.settleFail('abort');
             },
-            settleDone: function (data) {
+            settleDone: function (data, envelopeOptions) {
                 // A proxy route answers with the envelope, not the upstream
                 // body the test states.
-                const payload = isProxyRoute(options && options.url) ? proxyEnvelope(data) : data;
+                const payload = isProxyRoute(options && options.url)
+                    ? proxyEnvelope(data, envelopeOptions)
+                    : data;
                 bound.done.forEach(function (fn) { fn(payload); });
                 bound.always.forEach(function (fn) { fn(); });
             },
@@ -816,5 +818,69 @@ describe('re-render safety of the panel binding', () => {
         panel._renderResults([{ text: 'Example Trading Ltd', html: 'Example Trading Ltd' }]);
 
         expect(document.querySelectorAll(ROW)).toHaveLength(1);
+    });
+});
+
+describe('a company-detail lookup that brings back no address says so', () => {
+    let requests;
+    let messages;
+
+    function loadWithMessageSpy() {
+        messages = [];
+        const companySearch = loadAmdModule(
+            MODEL_PATH,
+            {
+                jquery: $,
+                'Magento_Ui/js/model/messageList': {
+                    addErrorMessage: function (m) { messages.push(m.message); },
+                    addSuccessMessage: function () {}
+                }
+            },
+            GLOBALS
+        );
+        companySearch.clearResultCache();
+        return companySearch;
+    }
+
+    beforeEach(() => {
+        requests = installAjaxDouble();
+    });
+
+    /**
+     * Silence here reads as the picker having done nothing: the buyer picked a
+     * company and the address fields stayed blank with no explanation.
+     */
+    test.each([
+        ['a refused envelope', (req) => { req.settleDone({ error_code: 'PROXY_REFUSED' }, { ok: false, status: 503 }); }],
+        ['a 500', (req) => { req.settleFail('error'); }],
+        ['a timeout', (req) => { req.settleFail('timeout'); }],
+        ['an empty address list', (req) => { req.settleDone({ addresses: [] }); }]
+    ])('%s tells the buyer to enter the address themselves', (_label, settle) => {
+        const companySearch = loadWithMessageSpy();
+
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
+        settle(requests[0]);
+
+        expect(messages).toHaveLength(1);
+        expect(messages[0]).toContain('enter it below');
+    });
+
+    /** The buyer typing on, or the panel torn down — expected, and silent. */
+    test('an abort says nothing', () => {
+        const companySearch = loadWithMessageSpy();
+
+        const request = companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
+        request.abort();
+
+        expect(messages).toEqual([]);
+    });
+
+    test('an address that arrives is applied without a notice', () => {
+        const companySearch = loadWithMessageSpy();
+
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
+        requests[0].settleDone({ addresses: [{ streetAddress: 'Somewhere 1' }] });
+
+        expect(messages).toEqual([]);
     });
 });

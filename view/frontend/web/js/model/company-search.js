@@ -12,7 +12,12 @@
  * these results is `company-search-panel.js`; where it is mounted and what its
  * chips mean is `company-capture-component.js`.
  */
-define(['jquery', 'mage/url', 'mage/translate'], function ($, url, $t) {
+define([
+    'jquery',
+    'mage/url',
+    'Magento_Ui/js/model/messageList',
+    'mage/translate'
+], function ($, url, messageList, $t) {
     'use strict';
 
     /**
@@ -920,6 +925,16 @@ define(['jquery', 'mage/url', 'mage/translate'], function ($, url, $t) {
         return { ok: !!parsed.ok, status: parsed.status || 0, body: parsed.body };
     }
 
+    /**
+     * Tell the buyer the address did not arrive. Without this the fields stay
+     * blank with nothing said, which reads as the picker having done nothing.
+     */
+    function announceAddressUnavailable() {
+        messageList.addErrorMessage({
+            message: $t('We could not fetch this company\'s address. Please enter it below.')
+        });
+    }
+
     function currentAddressFormCountry() {
         for (let i = 0; i < COUNTRY_SELECT_SELECTORS.length; i++) {
             const $select = $(COUNTRY_SELECT_SELECTORS[i]).first();
@@ -1424,7 +1439,12 @@ define(['jquery', 'mage/url', 'mage/translate'], function ($, url, $t) {
                 const response = envelope.ok ? envelope.body : null;
                 if (response && response.addresses && response.addresses.length) {
                     self.applyAddress(response.addresses[0], root);
+                    return;
                 }
+                announceAddressUnavailable();
+            });
+            addressResponse.fail(function (jqXHR, textStatus) {
+                if (textStatus !== 'abort') announceAddressUnavailable();
             });
             return addressResponse;
         },

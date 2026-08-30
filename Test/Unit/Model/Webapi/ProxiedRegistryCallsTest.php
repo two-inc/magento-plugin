@@ -44,7 +44,14 @@ class ProxiedRegistryCallsTest extends TestCase
 
         $this->configRepository = $this->createMock(ConfigRepository::class);
         $this->configRepository->method('getCheckoutApiUrl')->willReturn('https://api.two.inc');
-        $this->configRepository->method('addVersionDataInURL')->willReturnArgument(0);
+        // Mirrors Model\Config\Repository::addVersionDataInURL(): the client
+        // identity rides on every outbound URL, which is how the proxied calls
+        // keep reporting it now the browser no longer builds the query itself.
+        $this->configRepository->method('addVersionDataInURL')->willReturnCallback(
+            static fn(string $url) => $url
+                . (strpos($url, '?') === false ? '?' : '&')
+                . http_build_query(['client' => 'Magento', 'client_v' => '2.3.0+abc1234'])
+        );
         $this->configRepository->method('getApiKey')->willReturn('merchant-key');
         $this->configRepository->method('getFirewallToken')->willReturn('waf-token');
     }
@@ -90,7 +97,12 @@ class ProxiedRegistryCallsTest extends TestCase
 
     private function orderIntent(string $status = ApiKeyStatus::OK): OrderIntent
     {
-        return new OrderIntent($this->adapter(), $this->apiKeyStatus($status), $this->rateLimiter());
+        return new OrderIntent(
+            $this->adapter(),
+            $this->apiKeyStatus($status),
+            $this->rateLimiter(),
+            $this->logRepository()
+        );
     }
 
     private function companyLookup(string $status = ApiKeyStatus::OK): CompanyLookup
@@ -115,6 +127,22 @@ class ProxiedRegistryCallsTest extends TestCase
     private function rateLimiter(): RateLimiter
     {
         return $this->createMock(RateLimiter::class);
+    }
+
+    /** @var array<int,array{0: string, 1: mixed}> */
+    private $errorLog = [];
+
+    private function logRepository(): LogRepository
+    {
+        $log = $this->createMock(LogRepository::class);
+        $log->method('addErrorLog')->willReturnCallback(
+            function ($type, $data) {
+                $this->errorLog[] = [$type, $data];
+                return null;
+            }
+        );
+
+        return $log;
     }
 
     /**
@@ -246,9 +274,11 @@ class ProxiedRegistryCallsTest extends TestCase
         $this->companyLookup()->get('NO/123 456');
 
         $this->assertSame(
-            'https://api.two.inc/companies/v2/company/NO%2F123%20456?merchant=acme',
-            $this->requestedUrl
+            'https://api.two.inc/companies/v2/company/NO%2F123%20456',
+            strtok($this->requestedUrl, '?')
         );
+        parse_str((string)parse_url($this->requestedUrl, PHP_URL_QUERY), $query);
+        $this->assertSame('acme', $query['merchant'] ?? null);
     }
 
     public function testOrderIntentReplacesTheMerchantIdentityTheBrowserSent(): void
@@ -412,5 +442,79 @@ class ProxiedRegistryCallsTest extends TestCase
         $this->assertFalse($decoded['ok']);
         $this->assertSame(422, $decoded['status']);
         $this->assertSame('SCHEMA_ERROR', $decoded['body']['error_code']);
+    }
+
+    /**
+     * Given each proxied call; When it reaches the API; Then it still reports
+     * who is calling — the three params the browser used to put on the query
+     * itself, now all resolved server-side.
+     *
+     * @dataProvider proxiedEndpoints
+     */
+    public function testEveryProxiedCallStillReportsTheClientAndMerchant(
+        string $endpoint,
+        string $description
+    ): void {
+        $this->invoke($endpoint);
+
+        parse_str((string)parse_url($this->requestedUrl, PHP_URL_QUERY), $query);
+        $this->assertSame('Magento', $query['client'] ?? null, $description);
+        $this->assertSame('2.3.0+abc1234', $query['client_v'] ?? null, $description);
+    }
+
+    /**
+     * Given a merchant whose record carries no short name; When the intent is
+     * proxied; Then the key is absent rather than an explicit null — the
+     * browser's optional chaining dropped it, and upstream reads the two apart.
+     */
+    public function testAnAbsentMerchantShortNameIsOmittedRatherThanSentAsNull(): void
+    {
+        $apiKeyStatus = $this->createMock(ApiKeyStatus::class);
+        $apiKeyStatus->method('getStatus')->willReturn([
+            'status' => ApiKeyStatus::OK,
+            'code' => 200,
+            'merchant' => ['id' => 'merchant-uuid'],
+        ]);
+
+        (new OrderIntent(
+            $this->adapter(),
+            $apiKeyStatus,
+            $this->rateLimiter(),
+            $this->logRepository()
+        ))->place('{"gross_amount":"10.00"}');
+
+        $sent = json_decode($this->requestedBody, true);
+        $this->assertArrayNotHasKey('merchant_short_name', $sent);
+        $this->assertStringNotContainsString('merchant_short_name', $this->requestedBody);
+    }
+
+    /**
+     * Given a cart whose intent body is past the cap; When it is refused; Then
+     * the merchant has a log line to diagnose it from, and the buyer is told
+     * the size is the problem rather than the payload being invalid.
+     */
+    public function testAnOversizeIntentIsLoggedAndNamedAsOversizeToTheBuyer(): void
+    {
+        $decoded = json_decode($this->orderIntent()->place(str_repeat('x', 300000)), true);
+
+        $this->assertSame(413, $decoded['status']);
+        $this->assertStringContainsString('too large', $decoded['body']['error_message']);
+        $this->assertCount(1, $this->errorLog);
+        $this->assertStringContainsString('[order-intent-oversize]', $this->errorLog[0][0]);
+        $this->assertStringContainsString('bytes=300000', $this->errorLog[0][0]);
+        $this->assertSame('', $this->requestedUrl, 'nothing was sent upstream');
+    }
+
+    /**
+     * A multi-byte company name is 120 characters, not 120 bytes.
+     */
+    public function testTheQueryCapCountsCharactersNotBytes(): void
+    {
+        $decoded = json_decode($this->companyLookup()->search('no', str_repeat('æ', 120)), true);
+
+        $this->assertTrue($decoded['ok'], 'a 120-character term is within the cap');
+
+        $overLong = json_decode($this->companyLookup()->search('no', str_repeat('æ', 121)), true);
+        $this->assertSame(400, $overLong['status']);
     }
 }

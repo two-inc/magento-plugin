@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Webapi;
 
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\OrderIntentInterface;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
@@ -16,11 +17,7 @@ class OrderIntent implements OrderIntentInterface
 {
     use UpstreamEnvelopeTrait;
 
-    /**
-     * One intent per checkout attempt, plus a re-check on each address or
-     * total change — with headroom for a whole office sharing one NAT
-     * address, which is the normal case for this plugin's B2B buyers.
-     */
+    /** Headroom for a whole office behind one NAT address. */
     private const LIMIT_PER_MINUTE = 60;
 
     private const WINDOW_SECONDS = 60;
@@ -31,7 +28,8 @@ class OrderIntent implements OrderIntentInterface
     public function __construct(
         private readonly Adapter $adapter,
         private readonly ApiKeyStatus $apiKeyStatus,
-        private readonly RateLimiter $rateLimiter
+        private readonly RateLimiter $rateLimiter,
+        private readonly LogRepository $logRepository
     ) {
     }
 
@@ -43,7 +41,16 @@ class OrderIntent implements OrderIntentInterface
         $this->rateLimiter->assertWithinLimit('two_order_intent', self::LIMIT_PER_MINUTE, self::WINDOW_SECONDS);
 
         if (strlen($payload) > self::MAX_PAYLOAD_BYTES) {
-            return $this->refusal(413, (string)__('Invalid order intent payload.'));
+            $this->logRepository->addErrorLog(
+                sprintf(
+                    '[order-intent-oversize] bytes=%d cap=%d',
+                    strlen($payload),
+                    self::MAX_PAYLOAD_BYTES
+                ),
+                'Order intent refused before it was sent. Raise MAX_PAYLOAD_BYTES if legitimate carts reach this size.'
+            );
+
+            return $this->refusal(413, (string)__('This order is too large to send for approval.'));
         }
 
         $body = json_decode($payload, true);
@@ -61,7 +68,13 @@ class OrderIntent implements OrderIntentInterface
         }
 
         $body['merchant_id'] = $merchantId;
-        $body['merchant_short_name'] = $status['merchant']['short_name'] ?? null;
+        // Absent means absent: the browser's optional chaining dropped the key
+        // rather than sending an explicit null, and upstream reads the two apart.
+        unset($body['merchant_short_name']);
+        $shortName = $status['merchant']['short_name'] ?? null;
+        if (is_string($shortName) && $shortName !== '') {
+            $body['merchant_short_name'] = $shortName;
+        }
 
         return $this->envelope($this->adapter->executeWithStatus(self::ENDPOINT, $body));
     }

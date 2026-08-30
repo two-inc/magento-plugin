@@ -52,7 +52,7 @@ class CompanyLookup implements CompanyLookupInterface
         );
 
         $country = strtoupper(trim($country));
-        if (strlen($country) > self::MAX_COUNTRY_LENGTH || strlen($query) > self::MAX_QUERY_LENGTH) {
+        if (mb_strlen($country) > self::MAX_COUNTRY_LENGTH || mb_strlen($query) > self::MAX_QUERY_LENGTH) {
             return $this->refusal(400, (string)__('Invalid company search request.'));
         }
 
@@ -80,7 +80,7 @@ class CompanyLookup implements CompanyLookupInterface
             self::WINDOW_SECONDS
         );
 
-        if (strlen($lookupId) > self::MAX_LOOKUP_ID_LENGTH) {
+        if (mb_strlen($lookupId) > self::MAX_LOOKUP_ID_LENGTH) {
             return $this->refusal(400, (string)__('Invalid company lookup request.'));
         }
 

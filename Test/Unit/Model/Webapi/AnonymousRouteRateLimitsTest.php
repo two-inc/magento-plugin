@@ -112,7 +112,8 @@ class AnonymousRouteRateLimitsTest extends TestCase
                 (new OrderIntent(
                     $this->createMock(Adapter::class),
                     $this->createMock(ApiKeyStatus::class),
-                    $limiter
+                    $limiter,
+                    $this->createMock(LogRepository::class)
                 ))->place('{}');
                 return;
             case 'surcharges':
@@ -172,6 +173,11 @@ class AnonymousRouteRateLimitsTest extends TestCase
         $request = new HttpRequest();
         $request->setTestEnvironment(['REMOTE_ADDR' => '198.51.100.7']);
 
-        return new RateLimiter($cache, $request);
+        return new RateLimiter(
+            $cache,
+            $request,
+            $this->createMock(ConfigRepository::class),
+            $this->createMock(LogRepository::class)
+        );
     }
 }
