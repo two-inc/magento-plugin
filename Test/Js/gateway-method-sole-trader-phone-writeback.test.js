@@ -16,10 +16,9 @@
 'use strict';
 
 const $ = require('jquery');
-const { loadAmdModule, defaultMocks } = require('./amd-harness');
+const { loadAmdModule, loadCompanyCapture, brandConfigMock, defaultMocks } = require('./amd-harness');
 
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
-const SOLE_TRADER = 'view/frontend/web/js/model/sole-trader.js';
 const COMPANY_SEARCH = 'view/frontend/web/js/model/company-search.js';
 
 const BILLING = { street: 'Mill Lane', city: 'Ashford', postal_code: 'TN23 1AA', country_code: 'GB' };
@@ -47,17 +46,17 @@ function telephoneValue() {
 }
 
 /**
- * The real flow over the real company-search model, both closed over jsdom's
- * own document.
+ * The real flow, reached the way the checkout reaches it: through Luma's wired
+ * capture component, over the real company-search model, both closed over
+ * jsdom's own document.
  *
- * Loaded fresh per test: the once-per-identity address guard is module-scope
- * state in the flow, and the identity model is a page-level singleton.
+ * Loaded fresh per test — the once-per-identity address guard lives on the flow
+ * instance and the identity is a page-level singleton.
  *
  * @returns {object} `{ flow, companySearch, identity }`
  */
 function loadFlow() {
     const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
-    identity.captureMode('soletrader');
 
     const globals = {
         document: document,
@@ -74,26 +73,23 @@ function loadFlow() {
         globals
     );
 
-    const SoleTraderCtor = loadAmdModule(
-        SOLE_TRADER,
+    const component = loadCompanyCapture(
         {
             jquery: $,
             'Two_Gateway/js/model/company-identity': identity,
-            'Two_Gateway/js/model/company-search': companySearch
+            'Two_Gateway/js/model/company-search': companySearch,
+            'Two_Gateway/js/model/brand-config': brandConfigMock({
+                checkoutPageUrl: 'https://checkout.example',
+                checkoutApiUrl: 'https://api.example',
+                isCompanySearchEnabled: true
+            })
         },
         globals
     );
+    component.start();
+    identity.captureMode('soletrader');
 
-    const host = {
-        config: function () { return { checkoutPageUrl: 'https://checkout.example', checkoutApiUrl: 'https://api.example' }; },
-        countryCode: function () { return 'gb'; },
-        adoptSoleTrader: function (buyer) {
-            identity.write({ companyId: buyer.organization_number, companyName: buyer.company_name });
-        },
-        abandonSoleTrader: function () {}
-    };
-
-    return { flow: new SoleTraderCtor(host), companySearch: companySearch, identity: identity };
+    return { flow: component.soleTrader(), companySearch: companySearch, identity: identity };
 }
 
 beforeEach(() => {

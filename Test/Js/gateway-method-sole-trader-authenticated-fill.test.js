@@ -24,7 +24,7 @@
 const fs = require('fs');
 const path = require('path');
 const $ = require('jquery');
-const { loadAmdModule, defaultMocks } = require('./amd-harness');
+const { loadAmdModule, loadCompanyCapture, brandConfigMock, defaultMocks } = require('./amd-harness');
 
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const SOLE_TRADER = 'view/frontend/web/js/model/sole-trader.js';
@@ -43,7 +43,8 @@ const BUYER = {
 };
 
 /**
- * The real flow against a stub host, with `fetch` recorded.
+ * The real flow, reached through Luma's wired capture component, with `fetch`
+ * recorded.
  *
  * @param {object} [options] `{ buyer, mode, firewallToken }` — what the buyer
  *        endpoint answers with (null for a 404), the capture mode to start in,
@@ -63,7 +64,6 @@ function loadFlow(options) {
     };
 
     const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
-    identity.captureMode('mode' in opts ? opts.mode : 'soletrader');
 
     const fakeWindow = {
         open: function () { return null; },
@@ -71,8 +71,7 @@ function loadFlow(options) {
         removeEventListener: function () {}
     };
 
-    const SoleTraderCtor = loadAmdModule(
-        SOLE_TRADER,
+    const component = loadCompanyCapture(
         {
             jquery: $,
             'Two_Gateway/js/model/company-identity': identity,
@@ -81,6 +80,12 @@ function loadFlow(options) {
                 defaultMocks()['Two_Gateway/js/model/company-search'],
                 { apiClientParams: function () { return { client: 'magento' }; } }
             ),
+            'Two_Gateway/js/model/brand-config': brandConfigMock({
+                checkoutPageUrl: CHECKOUT_PAGE_URL,
+                checkoutApiUrl: CHECKOUT_API_URL,
+                isCompanySearchEnabled: true,
+                firewallToken: opts.firewallToken || ''
+            }),
             'Magento_Ui/js/model/messageList': {
                 addErrorMessage: function (message) { rec.errors.push(message); },
                 addSuccessMessage: function () {}
@@ -110,31 +115,22 @@ function loadFlow(options) {
             }
         }
     );
+    component.start();
+    identity.captureMode('mode' in opts ? opts.mode : 'soletrader');
 
-    const host = {
-        config: function () {
-            return {
-                checkoutPageUrl: CHECKOUT_PAGE_URL,
-                checkoutApiUrl: CHECKOUT_API_URL,
-                firewallToken: opts.firewallToken || ''
-            };
-        },
-        countryCode: function () { return 'gb'; },
-        adoptSoleTrader: function (buyer) {
-            rec.busyDuringWrite = identity.isBusy();
-            rec.adopted.push(buyer);
-            identity.write({ companyId: buyer.organization_number, companyName: buyer.company_name });
-            identity.soleTraderAdopted(true);
-        },
-        abandonSoleTrader: function () { rec.abandons.push(true); }
+    const adopt = component.adoptSoleTrader.bind(component);
+    component.adoptSoleTrader = function (buyer) {
+        rec.busyDuringWrite = identity.isBusy();
+        rec.adopted.push(buyer);
+        return adopt(buyer);
     };
+    component.abandonSoleTrader = function () { rec.abandons.push(true); };
 
-    const flow = new SoleTraderCtor(host);
+    const flow = component.soleTrader();
     flow.autofillToken = 'at';
     // The tracked popup, set directly: opening one would also arm the close
     // watcher, whose own flight would mask the handshake's.
     flow._popupWindow = POPUP;
-    flow.listenForSignupResult();
     const bound = rec.listeners.filter((entry) => entry.name === 'message');
     expect(bound).toHaveLength(1);
 

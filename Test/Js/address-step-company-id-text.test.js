@@ -28,6 +28,7 @@
 
 const { loadAmdModule } = require('./amd-harness');
 
+const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const MODULE = 'view/frontend/web/js/view/address-autocomplete.js';
 const NAME_SELECTOR = '#shipping-new-address-form input[name="company"]';
 const ID_SELECTOR =
@@ -177,7 +178,7 @@ function load() {
         '</form>';
 
     const $ = makeMiniQuery();
-    const identity = makeIdentityStub();
+    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
     const component = loadAmdModule(
         MODULE,
         {
@@ -200,22 +201,6 @@ function load() {
         { document: document, window: window }
     );
     return { component: component, $: $, identity: identity };
-}
-
-/** The page-level capture state the label decides on, as bare observables. */
-function makeIdentityStub() {
-    function observable(initial) {
-        let value = initial;
-        return function (next) {
-            if (arguments.length) value = next;
-            return value;
-        };
-    }
-    return {
-        captureMode: observable('registered'),
-        companyId: observable(''),
-        companyName: observable('')
-    };
 }
 
 /** Put select2 "on" the company-name input, i.e. search mode is active. */

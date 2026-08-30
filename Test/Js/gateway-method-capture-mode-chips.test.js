@@ -30,13 +30,12 @@ const {
     loadAmdModule,
     loadCompanySearchPanel,
     defaultMocks,
-    installAsyncSimulation, dispatchNative } = require('./amd-harness');
+    installAsyncSimulation, dispatchNative, loadCompanyCapture, brandConfigMock } = require('./amd-harness');
 
 // Real jQuery has no `$.async`; installed up front so the per-test reset below
 // can clear observers one test registered before the next one loads anything.
 installAsyncSimulation($);
 
-const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const LAYOUT = 'view/frontend/layout/checkout_index_index.xml';
 
@@ -93,8 +92,7 @@ function load(options) {
         this.forgetAdoptions = function () {};
     };
 
-    const component = loadAmdModule(
-        COMPONENT,
+    const component = loadCompanyCapture(
         {
             jquery: $,
             'Two_Gateway/js/model/company-identity': identity,
@@ -104,16 +102,12 @@ function load(options) {
                 { document: document, window: window }
             ),
             'Two_Gateway/js/model/sole-trader': SoleTraderStub,
-            'Two_Gateway/js/model/brand-config': {
-                getActiveTwoBrandConfig: function () {
-                    return {
-                        isCompanySearchEnabled: opts.isCompanySearchEnabled !== false,
-                        checkoutApiUrl: 'https://api.example',
-                        checkoutPageUrl: 'https://checkout.example',
-                        supportedCompanyTypes: {}
-                    };
-                }
-            },
+            'Two_Gateway/js/model/brand-config': brandConfigMock({
+                isCompanySearchEnabled: opts.isCompanySearchEnabled !== false,
+                checkoutApiUrl: 'https://api.example',
+                checkoutPageUrl: 'https://checkout.example',
+                supportedCompanyTypes: {}
+            }),
             'Two_Gateway/js/model/company-search': companySearchMock
         },
         { document: document, window: window }

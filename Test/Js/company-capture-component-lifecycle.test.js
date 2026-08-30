@@ -25,18 +25,60 @@ const path = require('path');
 const $ = require('jquery');
 const {
     loadAmdModule,
+    loadCompanyCapture,
     loadCompanySearchPanel,
+    brandConfigMock,
     defaultMocks,
     installAsyncSimulation
 } = require('./amd-harness');
 
-const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
+const CONTROLLER = 'view/frontend/web/js/model/company-capture-component.js';
+const ADAPTER = 'view/frontend/web/js/model/company-capture.js';
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const BOOT = 'view/frontend/web/js/view/company-search-boot.js';
 const LAYOUT = 'view/frontend/layout/checkout_index_index.xml';
 
 const ADDRESS_FIELD = '#shipping-new-address-form input[name="company"]';
 const TILE_FIELD = '#two_gateway_form input#company_name';
+
+const HOST_MEMBERS = [
+    ['fieldExists', 'a mount host is never found, so nothing ever mounts'],
+    ['isVirtualCart', 'a virtual cart still claims the address step'],
+    ['getAdjacentCountry', 'the country beside the mount cannot be read'],
+    ['getQuoteCountry', 'the quote can never answer for the country'],
+    ['getFallbackCountry', 'the pre-quote window has no country at all'],
+    ['watchCountryChanges', 'a country change is never noticed'],
+    ['supportedCompanyTypesUrl', 'sole-trader availability cannot be asked'],
+    ['applyCompanyAddress', 'a registry pick writes no address'],
+    ['revertAutofilledAddress', 'a country change throws mid-invalidation'],
+    ['clearField', 'manual entry leaves the previous company in the field'],
+    ['tokensUrl', 'no signup token can be minted'],
+    ['quoteId', 'the token mint is scoped to nothing'],
+    ['apiClientParams', 'the buyer read identifies no client'],
+    ['signupPrefill', 'the hosted signup opens with no buyer in it'],
+    ['signupCountry', 'the signup runs the wrong country identity checks'],
+    ['applyBuyerAddress', 'an adopted sole trader writes no address'],
+    ['applyTelephone', 'an adopted sole trader writes no phone'],
+    ['showError', 'a failed signup reports nothing'],
+    ['renderSignupPrompt', 'a blocked popup leaves no way through']
+];
+
+/** @returns {object} a host satisfying every member of the contract */
+function completeHost() {
+    const host = {
+        config: {},
+        Panel: function () {},
+        SoleTraderFlow: function () {},
+        identity: {},
+        search: {},
+        addressFieldSelector: ADDRESS_FIELD,
+        tileFieldSelector: TILE_FIELD
+    };
+    HOST_MEMBERS.forEach(function (member) {
+        host[member[0]] = function () {};
+    });
+    return host;
+}
 
 function readSource(relPath) {
     return fs.readFileSync(path.resolve(__dirname, '..', '..', relPath), 'utf8');
@@ -113,23 +155,18 @@ function load(options) {
         this.forgetAdoptions = function () {};
     };
 
-    const component = loadAmdModule(
-        COMPONENT,
+    const component = loadCompanyCapture(
         {
             jquery: $,
             'Two_Gateway/js/model/company-identity': identity,
             'Two_Gateway/js/model/company-search-panel': RecordingPanel,
             'Two_Gateway/js/model/sole-trader': SoleTraderStub,
-            'Two_Gateway/js/model/brand-config': {
-                getActiveTwoBrandConfig: function () {
-                    return {
-                        isCompanySearchEnabled: opts.isCompanySearchEnabled !== false,
-                        checkoutApiUrl: 'https://api.example',
-                        checkoutPageUrl: 'https://checkout.example',
-                        supportedCompanyTypes: { gb: ['SOLE_TRADER'] }
-                    };
-                }
-            },
+            'Two_Gateway/js/model/brand-config': brandConfigMock({
+                isCompanySearchEnabled: opts.isCompanySearchEnabled !== false,
+                checkoutApiUrl: 'https://api.example',
+                checkoutPageUrl: 'https://checkout.example',
+                supportedCompanyTypes: { gb: ['SOLE_TRADER'] }
+            }),
             'Magento_Checkout/js/model/quote': Object.assign(
                 {},
                 defaultMocks()['Magento_Checkout/js/model/quote'],
@@ -191,13 +228,26 @@ describe('the component is constructed once per page', () => {
         });
     });
 
-    test('the module exports one shared instance, not a constructor', () => {
+    test('Luma resolves one shared instance, built at the single construction site', () => {
         mountTile();
         const { component } = load();
-        // A constructor would hand every caller its own component, which is
-        // the architecture this replaced.
+        // The controller is a constructor so Hyvä can build its own with its
+        // own host. Luma's half is what must never hand a caller a second one.
         expect(typeof component).toBe('object');
         expect(typeof component.start).toBe('function');
+        const sites = readSource(ADAPTER).match(/new CompanyCaptureComponent\(/g) || [];
+        expect(sites).toHaveLength(1);
+    });
+
+    test('the controller carries no capture surface of its own', () => {
+        // Everything platform-shaped arrives as a host option; a direct
+        // RequireJS dep or a search call of its own would be a second
+        // implementation drifting from the panel's.
+        const controller = readSource(CONTROLLER);
+
+        expect(controller).toContain('define([], factory)');
+        expect(controller).not.toContain('searchCompanies(');
+        expect(controller).not.toContain('Magento_Checkout/');
     });
 
     test('a second start() builds no second panel and binds no second listener', () => {
@@ -332,16 +382,13 @@ describe('a checkout with no Two-family method is left alone', () => {
     function loadWithoutBrand() {
         const requests = [];
         const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
-        const component = loadAmdModule(
-            COMPONENT,
+        const component = loadCompanyCapture(
             {
                 jquery: $,
                 'Two_Gateway/js/model/company-identity': identity,
                 'Two_Gateway/js/model/sole-trader': function () {},
                 // No Two-family method on this checkout.
-                'Two_Gateway/js/model/brand-config': {
-                    getActiveTwoBrandConfig: function () { return null; }
-                },
+                'Two_Gateway/js/model/brand-config': brandConfigMock(null),
                 'Two_Gateway/js/model/company-search': Object.assign(
                     {},
                     defaultMocks()['Two_Gateway/js/model/company-search'],
@@ -529,5 +576,147 @@ describe('the host arriving after boot still gets a mount', () => {
         await Promise.resolve();
 
         expect(identity.soleTraderAvailable()).toBe(true);
+    });
+});
+
+describe('the host contract is checked at construction', () => {
+    test('a complete host constructs', () => {
+        const Controller = loadAmdModule(CONTROLLER);
+        expect(() => new Controller(completeHost())).not.toThrow();
+    });
+
+    test.each(HOST_MEMBERS)(
+        'a host missing %s is refused, because %s',
+        (member) => {
+            const Controller = loadAmdModule(CONTROLLER);
+            const host = completeHost();
+            delete host[member];
+            expect(() => new Controller(host)).toThrow(member);
+        }
+    );
+});
+
+describe('a checkout that loses both hosts', () => {
+    test('stops answering for the form the mount has left', () => {
+        // `adjacentCountry()` reads through the bound selector, so a mount left
+        // standing after its host has gone keeps sourcing the country from a
+        // form that is no longer on the page — and every later answer, the
+        // sole-trader registry call included, is for the wrong country.
+        const Controller = loadAmdModule(CONTROLLER);
+        let hostPresent = true;
+        function StubPanel() {}
+        StubPanel.prototype.bind = function () {};
+        StubPanel.prototype.isBound = function () { return hostPresent; };
+        StubPanel.prototype.syncChips = function () {};
+        StubPanel.prototype.releaseField = function () {};
+        const controller = new Controller(Object.assign(completeHost(), {
+            Panel: StubPanel,
+            config: { isCompanySearchEnabled: true },
+            identity: loadAmdModule(IDENTITY),
+            fieldExists: function () { return hostPresent; },
+            isVirtualCart: function () { return false; },
+            getAdjacentCountry: function () { return 'gb'; },
+            getQuoteCountry: function () { return 'no'; }
+        }));
+
+        controller.refreshMount();
+        expect(controller.countryCode()).toBe('gb');
+
+        hostPresent = false;
+        controller.refreshMount();
+
+        expect(controller.countryCode()).toBe('no');
+    });
+});
+
+describe('a typed company name carries no vouched number', () => {
+    /**
+     * `commitManualCompany()` is the released field's only writer, so a name the
+     * buyer has edited away from the one a registry number was written for must
+     * take that number with it — a hand-typed name under a registry number is
+     * one company's identifier submitted under another's name.
+     */
+    const CASES = [
+        ['Acme Ltd', 'Acme Ltd', '123', 'a name still matching its registry pick keeps the number'],
+        ['Acme Ltd', 'Acme Limited', '', 'an edited name drops the number it no longer describes'],
+        ['Acme Ltd', '', '', 'a cleared name drops it too']
+    ];
+
+    test.each(CASES)('picked %s, typed %s -> %s: %s', (picked, typed, expectedId) => {
+        const { component, identity } = load();
+        mountTile();
+        component.start();
+        component.selectCompany({ text: picked, companyId: '123', lookupId: 'l1' });
+
+        component.commitManualCompany(typed);
+
+        expect(identity.companyId()).toBe(expectedId);
+        expect(identity.companyName()).toBe(typed);
+    });
+
+    test('the released field is what carries a typed edit, not just a direct call', () => {
+        // `manualEntryMode()` releases the field as a plain input — this
+        // proves typing into THAT NODE reaches `commitManualCompany()`, not
+        // just that the method works when called directly.
+        const { component, identity } = load();
+        mountTile();
+        component.start();
+        component.selectCompany({ text: 'Acme Ltd', companyId: '123', lookupId: 'l1' });
+
+        component.manualEntryMode();
+        const field = document.querySelector(TILE_FIELD);
+        field.value = 'Acme Limited';
+        field.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+        expect(identity.companyId()).toBe('');
+        expect(identity.companyName()).toBe('Acme Limited');
+    });
+
+    test('a cart flipping virtual mid-manual-entry moves the watcher with the mount', () => {
+        // TWO-25503 round 5: the mount re-points from the address field to the
+        // tile field when the cart goes virtual, and a single per-lifetime
+        // flag left the tile field's manual edits never observed — a typed
+        // company name silently lost. `opts` is read live by the quote mock
+        // below, so flipping it after `start()` simulates the cart changing
+        // shape under an already-mounted component.
+        mountAddressForm();
+        mountTile();
+        const opts = { isVirtual: false };
+        const { component, identity } = load(opts);
+        component.start();
+        expect(component._boundSelector).toBe(ADDRESS_FIELD);
+
+        component.manualEntryMode();
+
+        opts.isVirtual = true;
+        component.refreshMount();
+        expect(component._boundSelector).toBe(TILE_FIELD);
+
+        const registrationsBeforeReentry = $.async.registrations(TILE_FIELD);
+        component.manualEntryMode();
+
+        expect($.async.registrations(TILE_FIELD)).toBe(registrationsBeforeReentry + 1);
+
+        const field = document.querySelector(TILE_FIELD);
+        field.value = 'Acme Limited';
+        field.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+        expect(identity.companyName()).toBe('Acme Limited');
+    });
+
+    test('manual entry before anything has mounted asks the host to clear nothing', () => {
+        // Nothing bound means there is no selector, and a host handed one
+        // resolves it against the whole document — Hyva's `querySelector(null)`
+        // would answer for a field this control does not own.
+        const Controller = loadAmdModule(CONTROLLER);
+        const cleared = [];
+        const controller = new Controller(Object.assign(completeHost(), {
+            identity: loadAmdModule(IDENTITY),
+            clearField: function (selector) { cleared.push(selector); }
+        }));
+
+        controller.manualEntryMode();
+
+        expect(cleared).toEqual([]);
     });
 });

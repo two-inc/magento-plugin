@@ -19,7 +19,7 @@ define([
     'Two_Gateway/js/model/brand-config',
     'Two_Gateway/js/model/company-search',
     'Two_Gateway/js/model/company-identity',
-    'Two_Gateway/js/model/company-capture-component',
+    'Two_Gateway/js/model/company-capture',
     'Two_Gateway/js/model/minimum-order-visibility',
     'mage/url',
     'Magento_Ui/js/lib/view/utils/async',
@@ -48,6 +48,35 @@ define([
     'use strict';
 
     window.quote = quote;
+
+    /*
+     * Knockout's view of the page-level identity, which is framework-free so
+     * that Hyvä loads the same file. `companyName` mirrors both ways because the
+     * tile's `value:` binding writes back; `mirroring` stops that write echoing
+     * into a second pass.
+     */
+    const capturedName = ko.observable(identity.companyName());
+    const capturedId = ko.observable(identity.companyId());
+    const soleTraderAdopted = ko.observable(identity.soleTraderAdopted());
+    const soleTraderBusy = ko.observable(identity.soleTraderBusy());
+    let mirroring = false;
+
+    identity.subscribe(function () {
+        mirroring = true;
+        capturedName(identity.companyName());
+        capturedId(identity.companyId());
+        soleTraderAdopted(identity.soleTraderAdopted());
+        soleTraderBusy(identity.soleTraderBusy());
+        mirroring = false;
+    });
+
+    // Only `companyName` mirrors back, because it is the only two-way binding.
+    // A write to any of the other three would be reverted by the identity's next
+    // notification rather than reaching it.
+    capturedName.subscribe(function (value) {
+        if (mirroring) return;
+        identity.companyName(value);
+    });
 
     // The tile-side host the company-capture component binds at; the tile's own
     // field is visible only while that component has chosen it over the address
@@ -134,10 +163,10 @@ define([
         // The page-level identity's own observables, aliased onto the prototype
         // so template bindings and getData() read the one company the buyer
         // picked — which outlives every tile rebuild.
-        companyName: identity.companyName,
-        companyId: identity.companyId,
-        soleTraderAdopted: identity.soleTraderAdopted,
-        soleTraderBusy: identity.soleTraderBusy,
+        companyName: capturedName,
+        companyId: capturedId,
+        soleTraderAdopted: soleTraderAdopted,
+        soleTraderBusy: soleTraderBusy,
         invoiceEmails: ko.observable(''),
         project: ko.observable(''),
         department: ko.observable(''),

@@ -32,9 +32,8 @@ const {
     loadAmdModule,
     defaultMocks,
     loadCompanySearchPanel,
-    installAsyncSimulation, dispatchNative } = require('./amd-harness');
+    installAsyncSimulation, dispatchNative, loadCompanyCapture, brandConfigMock } = require('./amd-harness');
 
-const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
 const IDENTITY_PATH = 'view/frontend/web/js/model/company-identity.js';
 
 const GLOBALS = { document: document, window: window };
@@ -73,8 +72,7 @@ function mount() {
         { currentAddressFormCountry: function () { return 'gb'; } }
     );
 
-    const component = loadAmdModule(
-        COMPONENT_PATH,
+    const component = loadCompanyCapture(
         {
             jquery: $,
             'Two_Gateway/js/model/company-identity': identity,
@@ -85,9 +83,7 @@ function mount() {
                 GLOBALS
             ),
             'Two_Gateway/js/model/sole-trader': SoleTraderStub,
-            'Two_Gateway/js/model/brand-config': {
-                getActiveTwoBrandConfig: function () { return BASE_CONFIG; }
-            }
+            'Two_Gateway/js/model/brand-config': brandConfigMock(BASE_CONFIG)
         },
         GLOBALS
     );
@@ -156,6 +152,20 @@ describe('returning to registered-company search', () => {
         dispatchNative($(FIELD_SELECTOR)[0], 'mousedown');
 
         expect(panelIsOpen()).toBe(true);
+    });
+
+    test('cycling search -> manual repeatedly registers the manual-edit watcher once, not once per cycle', () => {
+        reachManualMode(mounted);
+        mounted.component.registeredMode({ openDropdown: true });
+        mounted.component.manualEntryMode();
+        mounted.component.registeredMode({ openDropdown: true });
+        mounted.component.manualEntryMode();
+
+        // FIELD_SELECTOR carries two other permanent, already-guarded
+        // observers (the panel's own bind-time watcher, and the mount-host
+        // watcher from `start()`) — this asserts the manual-edit watcher adds
+        // exactly one more, not one per `manualEntryMode()` call.
+        expect($.async.registrations(FIELD_SELECTOR)).toBe(3);
     });
 
     test('a return with no open request still hands the field back as a trigger', () => {

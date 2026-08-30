@@ -13,9 +13,16 @@
 
 'use strict';
 
-const { loadAmdModule, defaultMocks, isProxyRoute, proxyEnvelope, HARNESS_BASE_URL } = require('./amd-harness');
+const {
+    loadAmdModule,
+    defaultMocks,
+    loadCompanyCapture,
+    brandConfigMock,
+    isProxyRoute,
+    proxyEnvelope,
+    HARNESS_BASE_URL
+} = require('./amd-harness');
 
-const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
 
@@ -326,15 +333,13 @@ function loadMountedComponent(configOverride) {
         this.forgetAdoptions = function () {};
     }
 
-    const component = loadAmdModule(COMPONENT, {
+    const component = loadCompanyCapture({
         jquery: $,
         'Two_Gateway/js/model/company-identity': identity,
         'Two_Gateway/js/model/company-search': companySearch,
         'Two_Gateway/js/model/company-search-panel': PanelStub,
         'Two_Gateway/js/model/sole-trader': SoleTraderStub,
-        'Two_Gateway/js/model/brand-config': {
-            getActiveTwoBrandConfig: function () { return config; }
-        },
+        'Two_Gateway/js/model/brand-config': brandConfigMock(config),
         'Magento_Checkout/js/model/quote': Object.assign(
             {},
             defaultMocks()['Magento_Checkout/js/model/quote'],

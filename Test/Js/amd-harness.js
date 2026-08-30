@@ -653,6 +653,52 @@ function loadAmdModule(relPath, extraMocks, extraGlobals, siblingCache) {
 }
 
 /**
+ * Load Luma's WIRED capture component — `company-capture.js`, the adapter that
+ * hands the framework-free controller its Magento shapes — and boot nothing.
+ *
+ * Specs load this rather than `company-capture-component.js` because that file
+ * exports a bare constructor with no host: loading it alone would prove the
+ * controller works against a host the spec invented, not against the one the
+ * checkout ships.
+ *
+ * @param {object} [extraMocks] merged over `defaultMocks()`
+ * @param {object} [extraGlobals] forwarded to `loadAmdModule`
+ * @returns {object} the single `CompanyCaptureComponent` instance
+ */
+function loadCompanyCapture(extraMocks, extraGlobals) {
+    return loadAmdModule(
+        'view/frontend/web/js/model/company-capture.js',
+        extraMocks,
+        extraGlobals
+    );
+}
+
+/**
+ * A `brand-config.js` double answering for exactly one active brand.
+ *
+ * Callable as well as carrying the two statics: the adapter resolves the active
+ * code and then calls the module itself for that code's subtree.
+ *
+ * @param {?object} config the brand's checkout config subtree, or null for a
+ *        checkout carrying no Two-family method at all
+ * @param {string} [brandCode]
+ * @returns {Function}
+ */
+function brandConfigMock(config, brandCode) {
+    const code = config ? (brandCode || 'two_payment') : null;
+    const brandConfig = function () {
+        return config;
+    };
+    brandConfig.getActiveTwoBrandCode = function () {
+        return code;
+    };
+    brandConfig.getActiveTwoBrandConfig = function () {
+        return config || {};
+    };
+    return brandConfig;
+}
+
+/**
  * Load the REAL `company-search-panel.js` class, closed over the given jQuery
  * (usually real jQuery over a jsdom fixture) and the given `company-search.js`
  * mock/real-module.
@@ -751,5 +797,7 @@ module.exports = {
     loadAmdModule: loadAmdModule,
     defaultMocks: defaultMocks,
     loadCompanySearchPanel: loadCompanySearchPanel,
+    loadCompanyCapture: loadCompanyCapture,
+    brandConfigMock: brandConfigMock,
     installAsyncSimulation: installAsyncSimulation
 };

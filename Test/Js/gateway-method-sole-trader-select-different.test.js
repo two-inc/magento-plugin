@@ -21,10 +21,16 @@
 const fs = require('fs');
 const path = require('path');
 const $ = require('jquery');
-const { loadAmdModule, defaultMocks, loadCompanySearchPanel, dispatchNative } = require('./amd-harness');
+const {
+    loadAmdModule,
+    loadCompanyCapture,
+    defaultMocks,
+    loadCompanySearchPanel,
+    dispatchNative,
+    brandConfigMock
+} = require('./amd-harness');
 
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
-const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
 const SOLE_TRADER = 'view/frontend/web/js/model/sole-trader.js';
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
 const TEMPLATE = 'view/frontend/web/template/payment/gateway_method.html';
@@ -69,16 +75,12 @@ function makeEnv() {
             defaultMocks()['Two_Gateway/js/model/company-search'],
             { apiClientParams: function () { return {}; }, currentAddressFormCountry: function () { return ''; } }
         ),
-        'Two_Gateway/js/model/brand-config': {
-            getActiveTwoBrandConfig: function () {
-                return {
-                    checkoutPageUrl: CHECKOUT_PAGE_URL,
-                    checkoutApiUrl: 'https://api.example',
-                    isCompanySearchEnabled: true,
-                    supportedCompanyTypes: { gb: ['SOLE_TRADER'] }
-                };
-            }
-        }
+        'Two_Gateway/js/model/brand-config': brandConfigMock({
+            checkoutPageUrl: CHECKOUT_PAGE_URL,
+            checkoutApiUrl: 'https://api.example',
+            isCompanySearchEnabled: true,
+            supportedCompanyTypes: { gb: ['SOLE_TRADER'] }
+        })
     };
 
     const globals = {
@@ -105,19 +107,17 @@ function makeEnv() {
 }
 
 /**
- * The real flow against a stub host, with tokens already held.
+ * The real flow over Luma's wired capture component, with tokens already held.
+ *
+ * The component is deliberately NOT booted: a boot would mint tokens of its
+ * own, and these cases are about the ones set below.
  *
  * @returns {object} `{ flow, rec }`
  */
 function loadFlow() {
     const env = makeEnv();
     const SoleTraderCtor = loadAmdModule(SOLE_TRADER, env.mocks, env.globals);
-    const flow = new SoleTraderCtor({
-        config: function () { return { checkoutPageUrl: CHECKOUT_PAGE_URL }; },
-        countryCode: function () { return 'gb'; },
-        adoptSoleTrader: function () {},
-        abandonSoleTrader: function () {}
-    });
+    const flow = new SoleTraderCtor(loadCompanyCapture(env.mocks, env.globals));
     flow.delegationToken = 'dt-1';
     flow.autofillToken = 'at-1';
     return { flow: flow, rec: env.rec };
@@ -147,7 +147,7 @@ async function startStack() {
             env.globals
         )
     });
-    const component = loadAmdModule(COMPONENT, mocks, env.globals);
+    const component = loadCompanyCapture(mocks, env.globals);
     component.start();
     await new Promise((resolve) => setTimeout(resolve, 0));
     return { component: component, flow: component.soleTrader(), rec: env.rec, identity: env.identity };
@@ -253,7 +253,7 @@ describe('the payment tile only delegates', () => {
             RENDERER,
             {
                 jquery: $,
-                'Two_Gateway/js/model/company-capture-component': {
+                'Two_Gateway/js/model/company-capture': {
                     config: function () { return {}; },
                     mountSelector: function () { return ''; },
                     refreshMount: function () {},

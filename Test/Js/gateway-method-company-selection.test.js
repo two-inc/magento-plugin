@@ -24,10 +24,9 @@
 
 'use strict';
 
-const { loadAmdModule, defaultMocks } = require('./amd-harness');
+const { loadAmdModule, defaultMocks, loadCompanyCapture, brandConfigMock } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
-const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
 
@@ -198,14 +197,11 @@ function loadRenderer() {
         'Two_Gateway/js/model/company-identity': identity,
         'Two_Gateway/js/model/company-search': companySearch
     };
-    const component = loadAmdModule(
-        COMPONENT,
+    const component = loadCompanyCapture(
         Object.assign({}, shared, {
             'Two_Gateway/js/model/company-search-panel': PanelStub,
             'Two_Gateway/js/model/sole-trader': SoleTraderStub,
-            'Two_Gateway/js/model/brand-config': {
-                getActiveTwoBrandConfig: function () { return BRAND_CONFIG; }
-            }
+            'Two_Gateway/js/model/brand-config': brandConfigMock(BRAND_CONFIG)
         })
     );
     component.start();
@@ -213,7 +209,7 @@ function loadRenderer() {
     const renderer = loadAmdModule(
         RENDERER,
         Object.assign({}, shared, {
-            'Two_Gateway/js/model/company-capture-component': component
+            'Two_Gateway/js/model/company-capture': component
         })
     );
 

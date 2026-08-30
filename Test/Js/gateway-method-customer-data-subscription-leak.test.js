@@ -88,7 +88,7 @@ function loadRenderer(options) {
     const capture = makeCaptureComponent('booted' in opts ? opts.booted : {});
 
     const renderer = loadAmdModule(RENDERER, {
-        'Two_Gateway/js/model/company-capture-component': capture.module,
+        'Two_Gateway/js/model/company-capture': capture.module,
         'Magento_Customer/js/customer-data': {
             get: function (key) {
                 if (key === 'companyData') return companyDataSection;

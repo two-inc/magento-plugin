@@ -32,9 +32,17 @@
 const fs = require('fs');
 const path = require('path');
 const $ = require('jquery');
-const { loadAmdModule, defaultMocks, loadCompanySearchPanel, dispatchNative } = require('./amd-harness');
+const {
+    loadAmdModule,
+    loadCompanyCapture,
+    defaultMocks,
+    loadCompanySearchPanel,
+    dispatchNative,
+    brandConfigMock
+} = require('./amd-harness');
 
 const COMPONENT_PATH = 'view/frontend/web/js/model/company-capture-component.js';
+const ADAPTER_PATH = 'view/frontend/web/js/model/company-capture.js';
 const IDENTITY_PATH = 'view/frontend/web/js/model/company-identity.js';
 const MSGID = 'Enter manually';
 
@@ -83,8 +91,7 @@ function loadCapture(options) {
     };
     const companySearch = companySearchMock();
 
-    const component = loadAmdModule(
-        COMPONENT_PATH,
+    const component = loadCompanyCapture(
         {
             jquery: $,
             'Two_Gateway/js/model/company-identity': identity,
@@ -92,15 +99,12 @@ function loadCapture(options) {
             'Two_Gateway/js/model/company-search-panel':
                 settings.Panel || loadCompanySearchPanel($, companySearch, GLOBALS),
             'Two_Gateway/js/model/sole-trader': SoleTraderStub,
-            'Two_Gateway/js/model/brand-config': {
-                getActiveTwoBrandConfig: function () {
-                    return {
-                        isCompanySearchEnabled: settings.companySearchEnabled !== false,
-                        checkoutApiUrl: 'https://api.example.test',
-                        supportedCompanyTypes: {}
-                    };
-                }
-            }
+            'Two_Gateway/js/model/brand-config': brandConfigMock({
+                isCompanySearchEnabled: settings.companySearchEnabled !== false,
+                checkoutApiUrl: 'https://api.example.test',
+                companySearchLimit: 50,
+                supportedCompanyTypes: {}
+            })
         },
         GLOBALS
     );
@@ -143,8 +147,11 @@ describe('the manual-entry affordance is a real, native button', () => {
         // ever interpolated into HTML.
         const source = readSource(COMPONENT_PATH);
 
-        expect(source).toContain("$t('" + MSGID + "')");
+        expect(source).toContain("this.translate('" + MSGID + "')");
         expect(source).not.toMatch(/<button[^>]*>\$\{/);
+        // Luma's `translate` is the catalogue, so the msgid above is a real
+        // lookup rather than a string that only looks translated.
+        expect(readSource(ADAPTER_PATH)).toContain('translate: $t');
     });
 
     test.each(['nb_NO', 'nl_NL', 'sv_SE'])('the label is translated in %s', (locale) => {

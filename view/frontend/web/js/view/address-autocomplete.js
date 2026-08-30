@@ -650,30 +650,37 @@ define([
             ) {
                 identity._addressStepWatcher.dispose();
             }
-            const captured = ko
-                .computed(function () {
-                    // Manual entry is the buyer's own typing, published by the
-                    // company-number field's own change handler, so nothing is
-                    // mirrored for it here.
-                    if (identity.captureMode() === 'manual') {
-                        return { companyId: '', companyName: '' };
-                    }
-                    return {
-                        companyId: identity.companyId(),
-                        companyName: identity.companyName()
-                    };
-                })
-                .extend({ rateLimit: 0 });
-            identity._addressStepWatcher = captured;
-            captured.subscribe(function (value) {
+            let scheduled = false;
+            let watcher = null;
+            const publish = function () {
+                scheduled = false;
+                // The timer outlives dispose(), and this view may already have
+                // been superseded — writing from here would paint a form the
+                // buyer is no longer looking at.
+                if (identity._addressStepWatcher !== watcher) return;
+                // Manual entry is the buyer's own typing, published by the
+                // company-number field's own change handler, so nothing is
+                // mirrored for it here.
+                const manual = identity.captureMode() === 'manual';
+                const companyId = manual ? '' : identity.companyId();
+                const companyName = manual ? '' : identity.companyName();
                 if (
-                    value.companyId === self._appliedCompanyId &&
-                    value.companyName === self._appliedCompanyName
+                    companyId === self._appliedCompanyId &&
+                    companyName === self._appliedCompanyName
                 ) {
                     return;
                 }
-                self.setCompanyData(value.companyId, value.companyName);
+                self.setCompanyData(companyId, companyName);
+            };
+            watcher = identity.subscribe(function () {
+                // Deferred by one turn so that the name and the number — written
+                // back to back — are published together rather than as a name
+                // under the previous company's number.
+                if (scheduled) return;
+                scheduled = true;
+                setTimeout(publish, 0);
             });
+            identity._addressStepWatcher = watcher;
         }
     });
 });

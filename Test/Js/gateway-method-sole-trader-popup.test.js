@@ -6,9 +6,9 @@
  * is launched with, and what happens to the checkout while it is open.
  *
  * The flow is PAGE-LEVEL (`model/sole-trader.js`), constructed by the
- * company-capture component with that component as its host, so everything
- * below drives either the real flow against a stub host or the real component
- * with the real flow underneath it. Nothing here reaches through a payment
+ * company-capture component, which is what it reads its host adapter, its
+ * config and the identity through — so everything below drives the real flow
+ * over Luma's real wired component. Nothing here reaches through a payment
  * renderer, which no longer participates.
  *
  * Mutation-resistance notes:
@@ -20,7 +20,7 @@
  *    between: an `await` introduced anywhere on the launch path leaves the
  *    popup unopened at the assertion, which is exactly what a popup blocker
  *    would do;
- *  - the country param is read back off the URL under a host whose own
+ *  - the country param is read back off the URL under a component whose own
  *    `countryCode()` throws, so sourcing it from the DOM-fed value fails;
  *  - the busy flag and the abandon callback are read after driving the real
  *    watcher tick, never by asserting a method exists.
@@ -31,11 +31,17 @@
 const fs = require('fs');
 const path = require('path');
 const $ = require('jquery');
-const { loadAmdModule, defaultMocks, loadCompanySearchPanel, dispatchNative } = require('./amd-harness');
+const {
+    loadAmdModule,
+    loadCompanyCapture,
+    defaultMocks,
+    loadCompanySearchPanel,
+    dispatchNative,
+    brandConfigMock
+} = require('./amd-harness');
 
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const SOLE_TRADER = 'view/frontend/web/js/model/sole-trader.js';
-const COMPONENT = 'view/frontend/web/js/model/company-capture-component.js';
 
 const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
 const CHECKOUT_API_URL = 'https://api.example';
@@ -102,16 +108,12 @@ function makeEnv(options) {
         'Magento_Checkout/js/model/quote': quote,
         'Two_Gateway/js/model/company-identity': identity,
         'Two_Gateway/js/model/company-search': companySearch,
-        'Two_Gateway/js/model/brand-config': {
-            getActiveTwoBrandConfig: function () {
-                return {
-                    checkoutPageUrl: CHECKOUT_PAGE_URL,
-                    checkoutApiUrl: CHECKOUT_API_URL,
-                    isCompanySearchEnabled: true,
-                    supportedCompanyTypes: opts.companyTypes || { gb: ['SOLE_TRADER'] }
-                };
-            }
-        },
+        'Two_Gateway/js/model/brand-config': brandConfigMock({
+            checkoutPageUrl: CHECKOUT_PAGE_URL,
+            checkoutApiUrl: CHECKOUT_API_URL,
+            isCompanySearchEnabled: true,
+            supportedCompanyTypes: opts.companyTypes || { gb: ['SOLE_TRADER'] }
+        }),
         'Magento_Ui/js/model/messageList': {
             addErrorMessage: function (message) { rec.errors.push(message); },
             addSuccessMessage: function () {}
@@ -148,25 +150,23 @@ function makeEnv(options) {
 }
 
 /**
- * The real flow against a stub host, for everything that does not need the
- * component's chips.
+ * The real flow over Luma's wired capture component, for everything that does
+ * not need the component's chips.
+ *
+ * The component is deliberately NOT booted: a boot would mint tokens of its
+ * own, and the cases below set the token state they are about.
  *
  * @param {object} [options] forwarded to makeEnv()
- * @returns {object} `{ flow, rec, identity, host }`
+ * @returns {object} `{ flow, rec, identity, component }`
  */
 function loadFlow(options) {
     const env = makeEnv(options);
     const SoleTraderCtor = loadAmdModule(SOLE_TRADER, env.mocks, env.globals);
-    const host = {
-        config: function () {
-            return { checkoutPageUrl: CHECKOUT_PAGE_URL, checkoutApiUrl: CHECKOUT_API_URL };
-        },
-        countryCode: function () { return 'gb'; },
-        adoptSoleTrader: function (buyer) { env.rec.adopted.push(buyer); },
-        abandonSoleTrader: function () { env.rec.abandons.push(true); }
-    };
-    const flow = new SoleTraderCtor(host);
-    return { flow: flow, rec: env.rec, identity: env.identity, host: host };
+    const component = loadCompanyCapture(env.mocks, env.globals);
+    component.adoptSoleTrader = function (buyer) { env.rec.adopted.push(buyer); };
+    component.abandonSoleTrader = function () { env.rec.abandons.push(true); };
+    const flow = new SoleTraderCtor(component);
+    return { flow: flow, rec: env.rec, identity: env.identity, component: component };
 }
 
 /**
@@ -194,7 +194,7 @@ async function startStack(options) {
             env.globals
         )
     });
-    const component = loadAmdModule(COMPONENT, mocks, env.globals);
+    const component = loadCompanyCapture(mocks, env.globals);
     component.start();
     // The availability answer is seeded, so one macrotask turn is enough for it
     // and the mint it triggers to settle.
@@ -260,7 +260,7 @@ describe('the tokens are minted on availability, never on the click', () => {
 describe('what the signup URL carries', () => {
     /**
      * @param {object} [options] forwarded to loadFlow()
-     * @returns {object} `{ flow, rec, identity, host }` with tokens already held
+     * @returns {object} `{ flow, rec, identity, component }` with tokens already held
      */
     function mintedFlow(options) {
         const loaded = loadFlow(options);
@@ -314,8 +314,8 @@ describe('what the signup URL carries', () => {
         // PDEV-4669: the popup only renders its country-specific identity step
         // when the URL says so, and a buyer must not be able to pick their own
         // verification flow by editing the address form.
-        const { flow, rec, host } = mintedFlow({ billingAddress: { countryId: 'US' } });
-        host.countryCode = function () {
+        const { flow, rec, component } = mintedFlow({ billingAddress: { countryId: 'US' } });
+        component.countryCode = function () {
             throw new Error('the DOM-fed country must not reach the signup URL');
         };
 
