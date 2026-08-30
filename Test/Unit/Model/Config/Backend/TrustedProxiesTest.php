@@ -59,6 +59,16 @@ class TrustedProxiesTest extends TestCase
             'ipv6 suffix past the address width' => ['2001:db8::/129'],
             'not an address at all' => ['proxy.example.com'],
             'malformed beside valid' => ["192.168.0.0/16\n10.0.0.0/"],
+            // A zero width parses cleanly and names every address of its
+            // family, so it is the one entry the admin must not be able to
+            // store believing they have named a proxy.
+            'zero suffix' => ['10.0.0.0/0'],
+            'zero suffix padded' => ['10.0.0.0/00'],
+            'zero suffix padded further' => ['10.0.0.0/000'],
+            'ipv4 match-everything block' => ['0.0.0.0/0'],
+            'ipv6 match-everything block' => ['::/0'],
+            'ipv6 zero suffix' => ['2001:db8::/0'],
+            'zero suffix beside valid' => ["192.168.0.0/16\n0.0.0.0/0"],
         ];
     }
 
@@ -93,6 +103,10 @@ class TrustedProxiesTest extends TestCase
             'ipv6 range keeps its width' => ['2001:0db8::/32', '2001:db8::/32'],
             'duplicate spellings collapse' => ['2001:0db8::1, 2001:db8::1', '2001:db8::1'],
             'full-width ranges' => ['10.0.0.0/32, 2001:db8::/128', "10.0.0.0/32\n2001:db8::/128"],
+            // Only the numerically zero width is refused; a padded real one is
+            // decimal and names the range the admin meant.
+            'padded width is decimal' => ['10.0.0.0/008', '10.0.0.0/8'],
+            'narrowest range' => ['10.0.0.0/1', '10.0.0.0/1'],
         ];
     }
 }

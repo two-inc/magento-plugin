@@ -365,14 +365,16 @@ class RateLimiterTest extends TestCase
 
     /**
      * Given a flood of refused calls; When they are all in one window; Then
-     * the log is written a bounded number of times — a correctly refused
-     * flood must not turn into a self-inflicted write storm.
+     * the log grows with the logarithm of the flood, not with it — a correctly
+     * refused flood must not turn into a self-inflicted write storm, and the
+     * reports it does cost must keep arriving so the reading stays current.
      */
     public function testARefusedFloodIsNotAmplifiedIntoALogStorm(): void
     {
         $this->refuse(500);
 
-        $this->assertLessThanOrEqual(2, count($this->errorLog), 'refusals are reported per window');
+        // 1, 5, 25, 125 — a twentyfold larger flood would add one more line.
+        $this->assertCount(4, $this->errorLog, 'reports escalate geometrically within a window');
     }
 
     /**
@@ -407,6 +409,76 @@ class RateLimiterTest extends TestCase
         [$line, $hint] = $this->errorLog[count($this->errorLog) - 1];
         $this->assertStringContainsString('distinct_callers_refused=3', $line);
         $this->assertStringContainsString('spread across 3 addresses', (string)$hint);
+    }
+
+    /**
+     * Given a window one address dominates but does not hold alone; When it is
+     * reported; Then it reads as one caller, and the advice to turn the
+     * ceiling off is withheld — a second incidental address must not be enough
+     * to have the log recommend disabling protection mid-attack.
+     */
+    public function testOneIncidentalBuyerDoesNotMaskADominantCaller(): void
+    {
+        $peers = ['198.51.100.7', '203.0.113.9'];
+        foreach ($peers as $peer) {
+            $this->limiterFor(['REMOTE_ADDR' => $peer])->assertWithinLimit('route', 1, 60);
+        }
+        $this->refuseFrom(array_merge(array_fill(0, 4, $peers[0]), [$peers[1]]));
+
+        [$line, $hint] = $this->errorLog[count($this->errorLog) - 1];
+        $this->assertStringContainsString('distinct_callers_refused=2', $line);
+        $this->assertStringContainsString('top_caller_share=80%', $line);
+        $this->assertStringContainsString('Nearly every refusal', (string)$hint);
+        $this->assertStringNotContainsString('spread across', (string)$hint);
+        $this->assertStringNotContainsString(
+            'Disable checkout rate limiting',
+            (string)$hint,
+            'never advise disabling protection against what may be an attack'
+        );
+    }
+
+    /**
+     * Given a window that opens as one caller and then genuinely broadens;
+     * When it is reported again; Then the later reading describes the traffic
+     * as it now stands rather than as it opened.
+     */
+    public function testTheReadingFollowsTheWindowInsteadOfFreezingOnItsOpening(): void
+    {
+        $this->limiterFor(['REMOTE_ADDR' => '198.51.100.7'])->assertWithinLimit('route', 1, 60);
+        $this->refuseFrom(array_fill(0, 5, '198.51.100.7'));
+
+        [, $opening] = $this->errorLog[count($this->errorLog) - 1];
+        $this->assertStringContainsString('Every refusal', (string)$opening);
+
+        $buyers = [];
+        for ($i = 1; $i <= 20; $i++) {
+            $peer = '203.0.113.' . $i;
+            $this->limiterFor(['REMOTE_ADDR' => $peer])->assertWithinLimit('route', 1, 60);
+            $buyers[] = $peer;
+        }
+        $this->refuseFrom($buyers);
+
+        [$line, $revised] = $this->errorLog[count($this->errorLog) - 1];
+        $this->assertStringContainsString('refusals_in_window=25', $line);
+        $this->assertStringContainsString('top_caller_share=20%', $line);
+        $this->assertStringContainsString('spread across 21 addresses', (string)$revised);
+    }
+
+    /**
+     * Refuses one call from each peer in order, in the order given.
+     *
+     * @param string[] $peers
+     */
+    private function refuseFrom(array $peers): void
+    {
+        foreach ($peers as $peer) {
+            try {
+                $this->limiterFor(['REMOTE_ADDR' => $peer])->assertWithinLimit('route', 1, 60);
+                $this->fail('the call past the ceiling should have been refused');
+            } catch (WebapiException $e) {
+                // The log is what these tests are about.
+            }
+        }
     }
 
     /**
@@ -455,6 +527,107 @@ class RateLimiterTest extends TestCase
             'fractional suffix' => ['10.0.0.0/8.5', 'a fractional suffix is not a range'],
             'over-wide suffix' => ['10.0.0.0/33', 'a suffix past the address width is not a range'],
         ];
+    }
+
+    /**
+     * Given a trusted-proxy entry whose bit width is zero; When a caller of
+     * that entry's own family rotates a forwarding header; Then the entry
+     * matches nothing and the caller is still keyed on its own address.
+     *
+     * A zero width passes a plain numeric guard and then matches before any
+     * address byte is compared, so every caller of that family becomes a
+     * trusted proxy free to name its own identity — and a cross-family
+     * forwarded value is not matched by the rule either, so it is taken as
+     * the caller verbatim: a fresh bucket per request.
+     *
+     * @dataProvider zeroWidthCidrRules
+     */
+    public function testAZeroWidthCidrSuffixTrustsNothing(
+        string $rule,
+        string $peer,
+        string $forwarded,
+        string $description
+    ): void {
+        $rules = [$rule, '192.168.0.0/16'];
+        $ceiling = 3;
+
+        for ($i = 0; $i < $ceiling; $i++) {
+            $this->limiterFor(
+                ['REMOTE_ADDR' => $peer, 'HTTP_X_FORWARDED_FOR' => sprintf($forwarded, $i)],
+                $rules
+            )->assertWithinLimit('route', $ceiling, 60);
+        }
+
+        $this->assertCount(1, $this->entries, $description);
+
+        $this->expectException(WebapiException::class);
+        $this->limiterFor(
+            ['REMOTE_ADDR' => $peer, 'HTTP_X_FORWARDED_FOR' => sprintf($forwarded, 99)],
+            $rules
+        )->assertWithinLimit('route', $ceiling, 60);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: string, 3: string}>
+     */
+    public static function zeroWidthCidrRules(): array
+    {
+        return [
+            'zero suffix' => [
+                '10.0.0.0/0', '198.51.100.7', '2001:db8::%d',
+                'a zero width is not a range',
+            ],
+            'zero suffix padded' => [
+                '10.0.0.0/00', '198.51.100.7', '2001:db8::%d',
+                'a padded zero width is not a range',
+            ],
+            'zero suffix padded further' => [
+                '10.0.0.0/000', '198.51.100.7', '2001:db8::%d',
+                'a further padded zero width is not a range',
+            ],
+            'ipv4 match-everything block' => [
+                '0.0.0.0/0', '198.51.100.7', '2001:db8::%d',
+                'the IPv4 match-everything block is not a proxy',
+            ],
+            'ipv6 match-everything block' => [
+                '::/0', '2001:db8::7', '198.51.100.%d',
+                'the IPv6 match-everything block is not a proxy',
+            ],
+            'ipv6 zero suffix' => [
+                'fe80::/0', '2001:db8::7', '198.51.100.%d',
+                'a zero-width IPv6 range is not a proxy',
+            ],
+        ];
+    }
+
+    /**
+     * Given `0.0.0.0/0` trusted; When one caller sends 40 requests against a
+     * ceiling of 5, naming a fresh cross-family address each time; Then the
+     * ceiling still refuses it.
+     *
+     * The end-to-end shape of the bypass: a match-everything rule makes the
+     * attacker its own trusted proxy, and the IPv6 identity it supplies is
+     * outside the IPv4 rule so it survives the trust filter and becomes the
+     * caller — every request a new bucket, the ceiling retired entirely.
+     */
+    public function testAMatchEverythingProxyRuleCannotRetireTheCeiling(): void
+    {
+        $rules = ['0.0.0.0/0'];
+        $served = 0;
+
+        for ($i = 0; $i < 40; $i++) {
+            try {
+                $this->limiterFor(
+                    ['REMOTE_ADDR' => '198.51.100.7', 'HTTP_X_FORWARDED_FOR' => '2001:db8::' . $i],
+                    $rules
+                )->assertWithinLimit('route', 5, 60);
+                $served++;
+            } catch (WebapiException $e) {
+                break;
+            }
+        }
+
+        $this->assertSame(5, $served, 'the ceiling must hold whatever identity the caller names');
     }
 
     /**

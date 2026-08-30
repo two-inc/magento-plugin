@@ -70,10 +70,14 @@ class TrustedProxies extends Value
             return null;
         }
 
-        if ((int)$bits > strlen($packed) * 8) {
+        // A width of 0 names every address of its family rather than a proxy,
+        // so it is refused here too — stored, it would retire the ceiling
+        // silently. Leading zeros read as decimal, so /008 is the genuine /8.
+        $bits = (int)$bits;
+        if ($bits < 1 || $bits > strlen($packed) * 8) {
             return null;
         }
 
-        return @inet_ntop($packed) . '/' . (int)$bits;
+        return @inet_ntop($packed) . '/' . $bits;
     }
 }

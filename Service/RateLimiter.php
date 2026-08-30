@@ -41,6 +41,12 @@ class RateLimiter
      */
     private const HINT_MIN_REFUSALS = 5;
 
+    /** Share of a window's refusals one caller must hold to read as one caller. */
+    private const HINT_DOMINANT_SHARE = 80;
+
+    /** Each report costs this many times the refusals the one before it did. */
+    private const HINT_ESCALATION_FACTOR = 5;
+
     public function __construct(
         private readonly CacheInterface $cache,
         private readonly HttpRequest $request,
@@ -83,10 +89,11 @@ class RateLimiter
      * caller concentration behind it, so an admin can tell one abusive
      * caller from every buyer arriving as one address.
      *
-     * A refused flood must not become its own load: the roster stops being
-     * written and nothing further is logged once the window has reported,
-     * bounding a window of any size to two log lines and a handful of cache
-     * writes per route.
+     * A refused flood must not become its own load, and a window's reading
+     * must not be decided by its opening moments: the roster keeps counting
+     * for the whole window, and reports land on a geometric ladder, so a
+     * window of any size costs a handful of log lines and the verdict on the
+     * last one describes the traffic as it finally stood.
      */
     private function reportRefusal(
         string $route,
@@ -98,9 +105,6 @@ class RateLimiter
         $rosterKey = self::CACHE_KEY_PREFIX . 'refusals_' . hash('sha256', $route . "\0" . $window);
         $stored = json_decode((string)$this->cache->load($rosterKey), true);
         $stored = is_array($stored) ? $stored : [];
-        if (!empty($stored['reported'])) {
-            return;
-        }
 
         $roster = is_array($stored['callers'] ?? null) ? $stored['callers'] : [];
         $total = (int)($stored['total'] ?? 0) + 1;
@@ -110,35 +114,44 @@ class RateLimiter
             $roster[$identity] = (int)($roster[$identity] ?? 0) + 1;
         }
 
-        $reported = $total >= self::HINT_MIN_REFUSALS;
         $this->cache->save(
-            (string)json_encode(['callers' => $roster, 'total' => $total, 'reported' => $reported]),
+            (string)json_encode(['callers' => $roster, 'total' => $total]),
             $rosterKey,
             [],
             $windowSeconds
         );
 
-        if ($total !== 1 && !$reported) {
+        if (!self::isReportingMilestone($total)) {
             return;
         }
 
         $trustedProxies = $this->configRepository->getTrustedProxies();
         $distinct = count($roster);
+        // Against the refusals actually attributed, not the window total: past
+        // the roster limit the unattributed ones would dilute a real dominance
+        // into the "ordinary load" reading, which is the one that advises
+        // turning the ceiling off.
+        $attributed = array_sum($roster);
+        $top = $roster === [] ? 0 : max($roster);
+        $share = $attributed > 0 ? (int)round(100 * $top / $attributed) : 0;
+        $reported = $total >= self::HINT_MIN_REFUSALS;
         $this->logRepository->addErrorLog(
             sprintf(
                 '[rate-limit-exceeded] route=%s ceiling=%d/%ds caller=%s caller_source=%s '
-                . 'distinct_callers_refused=%s refusals_in_window=%d this_caller_refusals=%d trusted_proxies=%d',
+                . 'distinct_callers_refused=%s top_caller_share=%d%% refusals_in_window=%d '
+                . 'this_caller_refusals=%d trusted_proxies=%d',
                 $route,
                 $maxRequests,
                 $windowSeconds,
                 $caller,
                 $trustedProxies === [] ? 'remote_addr' : 'forwarded_for',
                 $distinct >= self::REFUSAL_ROSTER_LIMIT ? $distinct . '+' : (string)$distinct,
+                $share,
                 $total,
                 $roster[$identity] ?? 0,
                 count($trustedProxies)
             ),
-            $reported ? $this->concentrationHint($distinct, $trustedProxies === []) : null
+            $reported ? $this->concentrationHint($share, $distinct, $trustedProxies === []) : null
         );
     }
 
@@ -150,15 +163,20 @@ class RateLimiter
      * as the merchant's own buyers — advising it against what looks like an
      * attack would hand the attacker the store.
      */
-    private function concentrationHint(int $distinct, bool $noTrustedProxies): ?string
+    private function concentrationHint(int $share, int $distinct, bool $noTrustedProxies): ?string
     {
-        if ($distinct === 1) {
+        // Gated on the share one address holds, not on it being the only one:
+        // a single incidental buyer refused alongside a caller at 97% would
+        // otherwise flip the reading to ordinary load mid-attack.
+        if ($share >= self::HINT_DOMINANT_SHARE) {
+            $scope = $distinct === 1 ? 'Every refusal' : 'Nearly every refusal';
+
             return $noTrustedProxies
-                ? 'Every refusal in this window comes from one address. If this store sits behind a reverse '
+                ? $scope . ' in this window comes from one address. If this store sits behind a reverse '
                     . 'proxy, load balancer or CDN, that is every buyer counted as a single caller and the '
                     . 'ceiling is store-wide: set Trusted proxies under General. If it does not, one caller is '
                     . 'sending sustained traffic and the ceiling is holding it.'
-                : 'Every refusal in this window comes from one resolved buyer address, which is one caller '
+                : $scope . ' in this window comes from one resolved buyer address, which is one caller '
                     . 'sending sustained traffic rather than ordinary checkout load.';
         }
 
@@ -168,6 +186,22 @@ class RateLimiter
                 . 'switch Disable checkout rate limiting on under Diagnostics while you investigate.',
             $distinct
         );
+    }
+
+    /** Reports land on 1, then HINT_MIN_REFUSALS scaled repeatedly by the escalation factor. */
+    private static function isReportingMilestone(int $total): bool
+    {
+        if ($total === 1) {
+            return true;
+        }
+
+        for ($at = self::HINT_MIN_REFUSALS; $at <= $total; $at *= self::HINT_ESCALATION_FACTOR) {
+            if ($at === $total) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -245,9 +279,12 @@ class RateLimiter
             return false;
         }
 
+        // A width of 0 matches every address of its family, so it can only be a
+        // typo or an attempt to switch the ceiling off, which the Diagnostics
+        // toggle already does. Leading zeros read as decimal, so /008 is /8.
         $bits = (int)$bits;
         $maxBits = strlen($packedSubnet) * 8;
-        if ($bits > $maxBits) {
+        if ($bits < 1 || $bits > $maxBits) {
             return false;
         }
 
