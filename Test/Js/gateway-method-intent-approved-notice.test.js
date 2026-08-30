@@ -378,7 +378,16 @@ describe('gateway_method intent-approved notice', () => {
 describe('the address-lookup failure notice lands in the tile box', () => {
     function contextOn(addressNotice) {
         const component = loadAmdModule(RENDERER, {
-            'Two_Gateway/js/model/company-identity': { addressNotice: addressNotice }
+            'Two_Gateway/js/model/company-identity': {
+                addressNotice: addressNotice,
+                companyName: koObservable(''),
+                companyId: koObservable(''),
+                soleTraderAdopted: koObservable(false),
+                soleTraderBusy: koObservable(false),
+                subscribe: function () {
+                    return { dispose: function () {} };
+                }
+            }
         });
         const ctx = Object.assign({}, component, {
             companyName: koObservable(''),
