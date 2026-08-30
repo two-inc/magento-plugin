@@ -1057,6 +1057,11 @@ define([
                 }),
                 this.companyId.subscribe(function () {
                     self.clearOrderIntentNotices();
+                }),
+                // Same box as the intent verdicts: the subscriptions above
+                // already retire it on the next pick.
+                identity.addressNotice.subscribe(function (text) {
+                    if (text) self.showOrderIntentErrorNotice(text);
                 })
             ];
         },

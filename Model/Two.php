@@ -302,7 +302,7 @@ class Two extends AbstractMethod
         );
 
         // Create order
-        $response = $this->apiAdapter->execute('/v1/order', $payload);
+        $response = $this->apiAdapter->execute('/v1/order', $payload, 'POST', (int)$order->getStoreId());
         $error = $this->getErrorFromResponse($response);
         if ($error) {
             throw new LocalizedException($error);
@@ -571,7 +571,12 @@ class Two extends AbstractMethod
         $order = $payment->getOrder();
         try {
             $twoOrderId = $order->getTwoOrderId();
-            $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId() . '/cancel');
+            $response = $this->apiAdapter->execute(
+                '/v1/order/' . $order->getTwoOrderId() . '/cancel',
+                [],
+                'POST',
+                (int)$order->getStoreId()
+            );
             if ($response) {
                 $error = $this->getErrorFromResponse($response);
                 $comment = __(
@@ -644,7 +649,12 @@ class Two extends AbstractMethod
                         'partial' => $this->composeCapture->execute($createdInvoice),
                     ];
                 }
-                $response = $this->apiAdapter->execute('/v1/order/' . $twoOrderId . '/fulfillments', $payload);
+                $response = $this->apiAdapter->execute(
+                    '/v1/order/' . $twoOrderId . '/fulfillments',
+                    $payload,
+                    'POST',
+                    (int)$order->getStoreId()
+                );
                 $error = $this->getErrorFromResponse($response);
 
                 if ($error) {
@@ -756,7 +766,9 @@ class Two extends AbstractMethod
         );
         $response = $this->apiAdapter->execute(
             "/v1/order/" . $twoOrderId . "/refund",
-            $payload
+            $payload,
+            'POST',
+            (int)$order->getStoreId()
         );
 
         $error = $this->getErrorFromResponse($response);

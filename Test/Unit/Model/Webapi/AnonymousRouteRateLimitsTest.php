@@ -129,7 +129,8 @@ class AnonymousRouteRateLimitsTest extends TestCase
         return new CompanyLookup(
             $this->createMock(Adapter::class),
             $this->createMock(ApiKeyStatus::class),
-            $limiter
+            $limiter,
+            $this->createMock(LogRepository::class)
         );
     }
 

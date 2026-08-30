@@ -107,7 +107,12 @@ class ProxiedRegistryCallsTest extends TestCase
 
     private function companyLookup(string $status = ApiKeyStatus::OK): CompanyLookup
     {
-        return new CompanyLookup($this->adapter(), $this->apiKeyStatus($status), $this->rateLimiter());
+        return new CompanyLookup(
+            $this->adapter(),
+            $this->apiKeyStatus($status),
+            $this->rateLimiter(),
+            $this->logRepository()
+        );
     }
 
     private function apiKeyStatus(string $status): ApiKeyStatus
@@ -352,11 +357,45 @@ class ProxiedRegistryCallsTest extends TestCase
     {
         return [
             'not json' => ['not json', 400, 'an unparseable body is refused in-envelope'],
+            'json list' => ['[1,2]', 400, 'a list is not an order intent, however well-formed'],
+            'no fields' => ['{}', 400, 'a body with no fields is not an order intent'],
             'oversized' => [
                 '{"pad":"' . str_repeat('x', 262144) . '"}',
                 413,
                 'an unbounded body from an anonymous caller is capped',
             ],
+        ];
+    }
+
+    /**
+     * Given a search the registry could not act on; When it is submitted; Then
+     * it is refused here rather than relayed upstream under the merchant's key.
+     *
+     * @dataProvider unusableSearchInputs
+     */
+    public function testCompanySearchRefusesAnInputTheRegistryCannotActOn(
+        string $country,
+        string $query,
+        string $description
+    ): void {
+        $decoded = json_decode($this->companyLookup()->search($country, $query), true);
+
+        $this->assertSame('', $this->requestedUrl, $description);
+        $this->assertSame(400, $decoded['status'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: string}>
+     */
+    public static function unusableSearchInputs(): array
+    {
+        return [
+            'no country' => ['', 'acme', 'a missing country is refused'],
+            'alpha-3 country' => ['nor', 'acme', 'the registry endpoints take ISO-2 only'],
+            'single letter country' => ['n', 'acme', 'a truncated code is refused'],
+            'non-alpha country' => ['N1', 'acme', 'a code with a digit is not a country'],
+            'no query' => ['no', '', 'an empty term searches for nothing'],
+            'whitespace query' => ['no', "  \t ", 'a whitespace term searches for nothing'],
         ];
     }
 
@@ -433,15 +472,62 @@ class ProxiedRegistryCallsTest extends TestCase
         ];
     }
 
-    public function testAnUpstreamFailureIsRelayedAsANotOkEnvelopeRatherThanASuccess(): void
+    /**
+     * Given an upstream failure body; When it would reach an anonymous caller;
+     * Then the merchant's log keeps the real body and the caller gets only the
+     * generic refusal — the status still carries the pass/fail verdict.
+     *
+     * @dataProvider upstreamFailures
+     */
+    public function testAnUpstreamFailureBodyIsLoggedRatherThanRelayedToAnAnonymousCaller(
+        int $status,
+        string $body,
+        string $internalDetail,
+        string $description
+    ): void {
+        $this->stageUpstream($status, $body);
+
+        $answer = $this->companyLookup()->search('no', 'x');
+        $decoded = json_decode($answer, true);
+
+        $this->assertFalse($decoded['ok'], $description);
+        $this->assertSame($status, $decoded['status'], $description);
+        $this->assertSame('PROXY_REFUSED', $decoded['body']['error_code'], $description);
+        $this->assertStringNotContainsString($internalDetail, $answer, $description);
+        $this->assertCount(1, $this->errorLog, $description);
+        $this->assertStringContainsString('[upstream-failure]', $this->errorLog[0][0], $description);
+        $this->assertStringContainsString(
+            $internalDetail,
+            (string)json_encode($this->errorLog[0][1]),
+            $description
+        );
+    }
+
+    /**
+     * @return array<string, array{0: int, 1: string, 2: string, 3: string}>
+     */
+    public static function upstreamFailures(): array
     {
-        $this->stageUpstream(422, '{"error_code":"SCHEMA_ERROR"}');
-
-        $decoded = json_decode($this->companyLookup()->search('no', 'x'), true);
-
-        $this->assertFalse($decoded['ok']);
-        $this->assertSame(422, $decoded['status']);
-        $this->assertSame('SCHEMA_ERROR', $decoded['body']['error_code']);
+        return [
+            'unprocessable' => [
+                422,
+                '{"error_code":"SCHEMA_ERROR","error_details":"merchant acme-internal-7f3a rejected"}',
+                'acme-internal-7f3a',
+                'a validation body naming merchant internals is not relayed',
+            ],
+            'not found' => [
+                404,
+                '{"error_message":"no route for pg.internal.example"}',
+                'pg.internal.example',
+                'an upstream 404 body is not relayed',
+            ],
+            'server error' => [
+                500,
+                '{"error_message":"stack trace in two-internal-app.py"}',
+                'two-internal-app.py',
+                'an upstream outage body is not relayed',
+            ],
+        ];
     }
 
     /**

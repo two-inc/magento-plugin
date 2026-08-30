@@ -54,7 +54,9 @@ class OrderIntent implements OrderIntentInterface
         }
 
         $body = json_decode($payload, true);
-        if (!is_array($body)) {
+        // A JSON list decodes to an array too, and merchant_id written onto one
+        // would go upstream as an appended element rather than an identity.
+        if (!is_array($body) || array_is_list($body)) {
             return $this->refusal(400, (string)__('Invalid order intent payload.'));
         }
 

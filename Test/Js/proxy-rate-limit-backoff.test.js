@@ -58,6 +58,29 @@ function search(companySearch, term) {
     });
 }
 
+/**
+ * The two registry routes, as issuers a rate-limit spec can drive
+ * interchangeably. `nonce` keeps each search off the previous one's cache
+ * entry, which would answer without a request and prove nothing.
+ */
+const ROUTES = {
+    search: function (companySearch, nonce) {
+        search(companySearch, `exa${nonce}`);
+    },
+    'address lookup': function (companySearch, nonce) {
+        companySearch.lookupCompanyAddress(
+            { isAddressSearchEnabled: true },
+            { lookupId: `lookup-${nonce}` }
+        );
+    }
+};
+
+function loadCompanySearch() {
+    const companySearch = loadAmdModule(MODEL_PATH, { jquery: $ }, GLOBALS);
+    companySearch.clearResultCache();
+    return companySearch;
+}
+
 describe('company search backs off rather than retrying into the ceiling', () => {
     test.each([
         [429, 1, 'a refused search parks the next keystroke'],
@@ -76,6 +99,38 @@ describe('company search backs off rather than retrying into the ceiling', () =>
 
         await expect(second).resolves.toEqual({ items: [], unavailable: true, aborted: false });
         expect(requests).toHaveLength(expected);
+    });
+
+    // The ceiling is per-merchant, not per-route: it is enforced before either
+    // route runs, so a 429 earned on one has to park the other too.
+    test.each([
+        ['search', 'search'],
+        ['search', 'address lookup'],
+        ['address lookup', 'search'],
+        ['address lookup', 'address lookup']
+    ])('a 429 on the %s route parks the next %s', (first, second) => {
+        const requests = installAjaxDouble();
+        const companySearch = loadCompanySearch();
+
+        ROUTES[first](companySearch, 1);
+        requests[0].settleFail(429);
+        ROUTES[second](companySearch, 2);
+
+        expect(requests).toHaveLength(1);
+    });
+
+    test.each([
+        ['search'],
+        ['address lookup']
+    ])('an ordinary %s failure parks nothing', (route) => {
+        const requests = installAjaxDouble();
+        const companySearch = loadCompanySearch();
+
+        ROUTES[route](companySearch, 1);
+        requests[0].settleFail(500);
+        ROUTES[route](companySearch, 2);
+
+        expect(requests).toHaveLength(2);
     });
 
     test('the park lifts once the backoff window has passed', async () => {

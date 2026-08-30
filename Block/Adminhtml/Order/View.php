@@ -70,7 +70,8 @@ class View extends OrderView
         $response = $this->apiAdapter->execute(
             "/v1/order/" . $order->getTwoOrderId() . "/fulfillments",
             [],
-            'GET'
+            'GET',
+            (int)$order->getStoreId()
         );
         $error = $order->getPayment()->getMethodInstance()->getErrorFromResponse($response);
         if ($error) {

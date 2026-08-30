@@ -822,19 +822,18 @@ describe('re-render safety of the panel binding', () => {
 
 describe('a company-detail lookup that brings back no address says so', () => {
     let requests;
-    let messages;
+    let identity;
 
-    function loadWithMessageSpy() {
-        messages = [];
+    /**
+     * The notice rides the identity bus the tile already renders from, so it
+     * is retired by the same pick that supersedes it — the checkout-wide
+     * message region it used to go to cleared on nobody's schedule.
+     */
+    function loadWithIdentity() {
+        identity = loadAmdModule(IDENTITY_PATH, {}, GLOBALS);
         const companySearch = loadAmdModule(
             MODEL_PATH,
-            {
-                jquery: $,
-                'Magento_Ui/js/model/messageList': {
-                    addErrorMessage: function (m) { messages.push(m.message); },
-                    addSuccessMessage: function () {}
-                }
-            },
+            { jquery: $, 'Two_Gateway/js/model/company-identity': identity },
             GLOBALS
         );
         companySearch.clearResultCache();
@@ -855,31 +854,57 @@ describe('a company-detail lookup that brings back no address says so', () => {
         ['a timeout', (req) => { req.settleFail('timeout'); }],
         ['an empty address list', (req) => { req.settleDone({ addresses: [] }); }]
     ])('%s tells the buyer to enter the address themselves', (_label, settle) => {
-        const companySearch = loadWithMessageSpy();
+        const companySearch = loadWithIdentity();
 
         companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
         settle(requests[0]);
 
-        expect(messages).toHaveLength(1);
-        expect(messages[0]).toContain('enter it below');
+        expect(identity.addressNotice()).toContain('enter it below');
     });
 
     /** The buyer typing on, or the panel torn down — expected, and silent. */
     test('an abort says nothing', () => {
-        const companySearch = loadWithMessageSpy();
+        const companySearch = loadWithIdentity();
 
         const request = companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
         request.abort();
 
-        expect(messages).toEqual([]);
+        expect(identity.addressNotice()).toBe('');
     });
 
     test('an address that arrives is applied without a notice', () => {
-        const companySearch = loadWithMessageSpy();
+        const companySearch = loadWithIdentity();
 
         companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
         requests[0].settleDone({ addresses: [{ streetAddress: 'Somewhere 1' }] });
 
-        expect(messages).toEqual([]);
+        expect(identity.addressNotice()).toBe('');
+    });
+
+    /**
+     * The defect this pins: the notice used to go to the checkout-wide message
+     * list and was never withdrawn, so it sat there contradicting an address
+     * the NEXT pick had filled in perfectly well.
+     */
+    test.each([
+        [
+            'a later pick whose address arrives',
+            (req) => { req.settleDone({ addresses: [{ streetAddress: 'Somewhere 1' }] }); }
+        ],
+        [
+            'a later pick still in flight',
+            () => {}
+        ]
+    ])('%s retires the previous failure', (_label, settleSecond) => {
+        const companySearch = loadWithIdentity();
+
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
+        requests[0].settleFail('error');
+        expect(identity.addressNotice()).toContain('enter it below');
+
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-def-456' });
+        settleSecond(requests[1]);
+
+        expect(identity.addressNotice()).toBe('');
     });
 });

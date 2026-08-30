@@ -49,10 +49,14 @@ define(['ko'], function (ko) {
     let flightDepth = 0;
     const soleTraderBusy = ko.observable(false);
 
+    /** Why the picked company's address could not be filled in, or ''. */
+    const addressNotice = ko.observable('');
+
     return {
         captureMode: captureMode,
         companyName: companyName,
         companyId: companyId,
+        addressNotice: addressNotice,
         soleTraderAvailable: soleTraderAvailable,
         soleTraderAdopted: soleTraderAdopted,
         soleTraderBusy: soleTraderBusy,

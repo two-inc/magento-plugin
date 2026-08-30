@@ -12,6 +12,8 @@ namespace Two\Gateway\Model\Webapi;
  * distinction the browser used to read off the HTTP status of its own direct
  * request. The proxy itself answers 200 either way; a Magento webapi fault
  * would discard the upstream error body these callers render from.
+ *
+ * Requires the using class to hold a `$logRepository`.
  */
 trait UpstreamEnvelopeTrait
 {
@@ -22,10 +24,15 @@ trait UpstreamEnvelopeTrait
     {
         $status = (int)($result['status'] ?? 0);
         $body = $result['body'] ?? [];
+        $ok = $status >= 200 && $status < 300;
 
-        if ($status === 0) {
-            // The Adapter's transport-failure branch: its body is raw exception
-            // text naming internal hosts, and these routes are anonymous.
+        if (!$ok) {
+            // These routes are anonymous, and an upstream failure body is raw
+            // exception text, internal host names and merchant-record detail.
+            $this->logRepository->addErrorLog(
+                sprintf('[upstream-failure] status=%d', $status),
+                $body
+            );
             $body = [
                 'error_code' => 'PROXY_REFUSED',
                 'error_message' => (string)__('The service is temporarily unavailable. Please try again.'),
@@ -33,7 +40,7 @@ trait UpstreamEnvelopeTrait
         }
 
         return (string)json_encode([
-            'ok' => $status >= 200 && $status < 300,
+            'ok' => $ok,
             'status' => $status,
             'body' => $body,
         ]);

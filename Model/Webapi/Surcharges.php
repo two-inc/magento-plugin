@@ -25,7 +25,11 @@ use Two\Gateway\Service\RateLimiter;
  */
 class Surcharges implements SurchargesInterface
 {
-    /** The chip loader refetches on every totals settle, so several per address edit. */
+    /**
+     * The chip loader refetches on every totals settle, so several per address edit.
+     * The calculator's cache is request-scoped, so each call still spends one
+     * upstream pricing call per configured term on the merchant's key.
+     */
     private const LIMIT_PER_MINUTE = 60;
 
     private const WINDOW_SECONDS = 60;

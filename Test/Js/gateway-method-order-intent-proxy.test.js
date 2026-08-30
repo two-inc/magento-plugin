@@ -100,7 +100,16 @@ describe('the order-intent check goes through the plugin, not straight to the AP
 
     test.each([
         [{ approved: true }, { ok: true }, 'resolved'],
-        [{ error_code: 'SCHEMA_ERROR' }, { ok: false, status: 422 }, 'rejected']
+        // An upstream failure body never reaches an anonymous caller — the proxy
+        // logs it and substitutes this refusal, keeping only the real status.
+        [
+            {
+                error_code: 'PROXY_REFUSED',
+                error_message: 'The service is temporarily unavailable. Please try again.'
+            },
+            { ok: false, status: 422 },
+            'rejected'
+        ]
     ])('an upstream %p settles %s', (body, envelope, expectedOutcome) => {
         const { ctx, requests } = loadRenderer();
         const outcomes = [];
@@ -117,7 +126,11 @@ describe('the order-intent check goes through the plugin, not straight to the AP
         ).toEqual(body);
     });
 
-    test('an in-envelope 429 reaches the wait-message branch, not a decline', () => {
+    // The ceiling is enforced in RateLimiter::assertWithinLimit(), which throws a
+    // Magento webapi fault before the route body runs — so a 429 never reaches
+    // the browser as an envelope at all, and arrives on `fail` as a raw jqXHR
+    // whose body carries Magento's own `message`, not the module's `error_message`.
+    test('a 429 webapi fault reaches the wait-message branch, not a decline', () => {
         const { ctx, requests } = loadRenderer();
         const notices = [];
         const tile = Object.assign({}, ctx, {
@@ -129,7 +142,7 @@ describe('the order-intent check goes through the plugin, not straight to the AP
         tile.placeOrderIntent.call(tile).fail(function (response) {
             tile.processOrderIntentErrorResponse.call(tile, response);
         });
-        requests[0].settleDone(proxyEnvelope({ message: RATE_LIMIT_COPY }, { ok: false, status: 429 }));
+        requests[0].settleFail({ status: 429, responseJSON: { message: RATE_LIMIT_COPY } });
 
         expect(notices).toEqual([RATE_LIMIT_COPY]);
     });

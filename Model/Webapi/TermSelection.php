@@ -27,7 +27,11 @@ use Two\Gateway\Service\RateLimiter;
  */
 class TermSelection implements TermSelectionInterface
 {
-    /** A chip click per term the merchant offers, with room to change mind. */
+    /**
+     * A chip click per term the merchant offers, with room to change mind.
+     * Metered despite being session-scoped: the recompute below spends one
+     * upstream pricing call per configured term on the merchant's key.
+     */
     private const LIMIT_PER_MINUTE = 30;
 
     private const WINDOW_SECONDS = 60;

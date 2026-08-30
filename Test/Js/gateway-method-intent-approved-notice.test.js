@@ -369,6 +369,52 @@ describe('gateway_method intent-approved notice', () => {
 });
 
 /**
+ * A failed address lookup reaches the buyer through the SAME bordered box,
+ * carried on the identity bus. It used to go to the checkout-wide message
+ * list, which nothing in this flow ever cleared.
+ */
+describe('the address-lookup failure notice lands in the tile box', () => {
+    function contextOn(addressNotice) {
+        const component = loadAmdModule(RENDERER, {
+            'Two_Gateway/js/model/company-identity': { addressNotice: addressNotice }
+        });
+        const ctx = Object.assign({}, component, {
+            companyName: koObservable(''),
+            companyId: koObservable(''),
+            errors: []
+        });
+        ctx.showErrorMessage = function (message) { ctx.errors.push(message); };
+        component.initOrderIntentApprovedNotice.call(ctx, {});
+        return ctx;
+    }
+
+    test.each([
+        ['We could not fetch this company\'s address. Please enter it below.', true],
+        ['', false]
+    ])('a bus value of %p reaches the box: %p', (text, expected) => {
+        const addressNotice = koObservable('');
+        const ctx = contextOn(addressNotice);
+
+        addressNotice(text);
+
+        expect(ctx.isOrderIntentErrorNoticeVisible()).toBe(expected);
+        if (expected) expect(ctx.orderIntentErrorNotice()).toBe(text);
+        // Never the checkout-wide region.
+        expect(ctx.errors).toEqual([]);
+    });
+
+    test('a later company pick retires it', () => {
+        const addressNotice = koObservable('');
+        const ctx = contextOn(addressNotice);
+        addressNotice('We could not fetch this company\'s address. Please enter it below.');
+
+        ctx.companyId('123456789');
+
+        expect(ctx.orderIntentErrorNotice()).toBe('');
+    });
+});
+
+/**
  * The box itself. TWO-25326 (2026-08-05): one bordered container, the same
  * three semantic colours, and the message ALONE inside it on all four
  * plugins — PrestaShop drops its own "Buy now, pay later" title in the same

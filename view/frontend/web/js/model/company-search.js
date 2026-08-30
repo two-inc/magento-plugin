@@ -15,9 +15,9 @@
 define([
     'jquery',
     'mage/url',
-    'Magento_Ui/js/model/messageList',
+    'Two_Gateway/js/model/company-identity',
     'mage/translate'
-], function ($, url, messageList, $t) {
+], function ($, url, identity, $t) {
     'use strict';
 
     /**
@@ -42,8 +42,13 @@ define([
      */
     const RATE_LIMIT_BACKOFF_MS = 60000;
 
-    /** Epoch ms before which no search is issued. @see RATE_LIMIT_BACKOFF_MS */
-    let searchSuspendedUntil = 0;
+    /**
+     * Epoch ms before which no registry call is issued. Shared by both routes —
+     * the ceiling is per-merchant, not per-route.
+     *
+     * @see RATE_LIMIT_BACKOFF_MS
+     */
+    let registrySuspendedUntil = 0;
 
     /**
      * Search-result cache. MODULE-scoped on purpose: one-page checkouts
@@ -930,9 +935,14 @@ define([
      * blank with nothing said, which reads as the picker having done nothing.
      */
     function announceAddressUnavailable() {
-        messageList.addErrorMessage({
-            message: $t('We could not fetch this company\'s address. Please enter it below.')
-        });
+        identity.addressNotice(
+            $t('We could not fetch this company\'s address. Please enter it below.')
+        );
+    }
+
+    /** The clear half of announceAddressUnavailable(). */
+    function withdrawAddressUnavailable() {
+        identity.addressNotice('');
     }
 
     function currentAddressFormCountry() {
@@ -1300,7 +1310,7 @@ define([
         /** Drop every cached search result and any rate-limit backoff. Exists for tests. */
         clearResultCache: function () {
             resultCache.clear();
-            searchSuspendedUntil = 0;
+            registrySuspendedUntil = 0;
         },
 
         /** @see formatCompanyNumber */
@@ -1350,7 +1360,7 @@ define([
                 });
             }
 
-            if (Date.now() < searchSuspendedUntil) {
+            if (Date.now() < registrySuspendedUntil) {
                 return Promise.resolve({ items: [], unavailable: true, aborted: false });
             }
 
@@ -1394,7 +1404,7 @@ define([
                     // runs. Park searching rather than let each keystroke
                     // re-hit it.
                     if (jqXHR && jqXHR.status === 429) {
-                        searchSuspendedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
+                        registrySuspendedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
                     }
                     // A genuine abort is the buyer typing on, or the panel
                     // being torn down — expected, and silent by design. A
@@ -1432,6 +1442,15 @@ define([
             if (!config.isAddressSearchEnabled) return null;
             if (!selectedCompany || !selectedCompany.lookupId) return null;
 
+            // Withdrawn as this pick STARTS, so no notice outlives the
+            // company it was about.
+            withdrawAddressUnavailable();
+
+            if (Date.now() < registrySuspendedUntil) {
+                announceAddressUnavailable();
+                return null;
+            }
+
             const self = this;
             const addressResponse = proxyPost('rest/V1/two/company', {
                 lookupId: selectedCompany.lookupId
@@ -1446,6 +1465,11 @@ define([
                 announceAddressUnavailable();
             });
             addressResponse.fail(function (jqXHR, textStatus) {
+                // Same ceiling as the search route, so a picked company cannot
+                // keep re-hitting it — see searchCompanies()'s 429 handling.
+                if (jqXHR && jqXHR.status === 429) {
+                    registrySuspendedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
+                }
                 if (textStatus !== 'abort') announceAddressUnavailable();
             });
             return addressResponse;

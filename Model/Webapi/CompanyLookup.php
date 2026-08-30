@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Webapi;
 
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\CompanyLookupInterface;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
@@ -27,8 +28,8 @@ class CompanyLookup implements CompanyLookupInterface
     /** Longer than any registry name; anything past it is not a search term. */
     private const MAX_QUERY_LENGTH = 120;
 
-    /** ISO 3166-1 alpha-2/alpha-3. */
-    private const MAX_COUNTRY_LENGTH = 3;
+    /** ISO 3166-1 alpha-2. */
+    private const COUNTRY_PATTERN = '/^[A-Z]{2}$/';
 
     /** Registry lookup ids are short opaque tokens. */
     private const MAX_LOOKUP_ID_LENGTH = 128;
@@ -36,7 +37,8 @@ class CompanyLookup implements CompanyLookupInterface
     public function __construct(
         private readonly Adapter $adapter,
         private readonly ApiKeyStatus $apiKeyStatus,
-        private readonly RateLimiter $rateLimiter
+        private readonly RateLimiter $rateLimiter,
+        private readonly LogRepository $logRepository
     ) {
     }
 
@@ -52,7 +54,11 @@ class CompanyLookup implements CompanyLookupInterface
         );
 
         $country = strtoupper(trim($country));
-        if (mb_strlen($country) > self::MAX_COUNTRY_LENGTH || mb_strlen($query) > self::MAX_QUERY_LENGTH) {
+        $query = trim($query);
+        if (preg_match(self::COUNTRY_PATTERN, $country) !== 1
+            || $query === ''
+            || mb_strlen($query) > self::MAX_QUERY_LENGTH
+        ) {
             return $this->refusal(400, (string)__('Invalid company search request.'));
         }
 

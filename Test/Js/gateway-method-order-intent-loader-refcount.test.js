@@ -301,9 +301,23 @@ describe('order-intent spinner is tile-local and refcounted (TWO-25326)', () => 
         const path = require('path');
         const src = fs.readFileSync(path.resolve(__dirname, '..', '..', RENDERER), 'utf8');
 
-        const call = src.match(/rest\/V1\/two\/order-intent[\s\S]{0,1200}?\}\)/);
-        expect(call).not.toBeNull();
-        const options = call[0].replace(/\/\/[^\n]*/g, '');
+        // Brace-matched, not regex-terminated: a lazy `})` stops at the first
+        // nested object literal, so reordering the options silently shrinks
+        // the window this asserts over.
+        const at = src.indexOf('rest/V1/two/order-intent');
+        expect(at).toBeGreaterThan(-1);
+        const open = src.indexOf('{', src.lastIndexOf('$.ajax(', at));
+        let depth = 0;
+        let end = -1;
+        for (let i = open; i < src.length; i++) {
+            if (src[i] === '{') depth++;
+            else if (src[i] === '}' && --depth === 0) {
+                end = i;
+                break;
+            }
+        }
+        expect(end).toBeGreaterThan(open);
+        const options = src.slice(open, end + 1).replace(/\/\/[^\n]*/g, '');
         expect(options).toMatch(/global:\s*false/);
         expect(options).not.toMatch(/global:\s*true/);
     });

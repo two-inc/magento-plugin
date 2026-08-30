@@ -56,10 +56,13 @@ namespace Magento\Framework\HTTP\PhpEnvironment {
 
     if (!class_exists(RemoteAddress::class, false)) {
         /**
-         * Port of the framework class (2.4.7). Typed against the concrete
-         * request rather than RequestInterface, which the bootstrap's
-         * catch-all would generate as an interface the request stub does
-         * not implement.
+         * Hand-port of Magento\Framework\HTTP\PhpEnvironment\RemoteAddress as
+         * of 2.4.7 — re-check getRemoteAddress()/trusted-proxy filtering
+         * against the framework on a Magento upgrade, it can drift silently.
+         *
+         * Typed against the concrete request rather than RequestInterface,
+         * which the bootstrap's catch-all would generate as an interface the
+         * request stub does not implement.
          */
         class RemoteAddress
         {
