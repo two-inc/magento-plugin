@@ -174,6 +174,28 @@ class SynthesiseBrandAdminFormProviderTokenTest extends TestCase
         );
     }
 
+    public function testApiKeyCheckSortsBetweenApiKeyAndFirewallToken(): void
+    {
+        $dom = $this->renderTemplateForProvider('Two');
+        $xpath = new \DOMXPath($dom);
+
+        $sortOrder = fn (string $fieldId): int => (int)$xpath->query(
+            sprintf('//section[@id="brandx_general"]//field[@id="%s"]/@sortOrder', $fieldId)
+        )->item(0)->value;
+
+        self::assertGreaterThan($sortOrder('api_key'), $sortOrder('api_key_check'));
+        self::assertLessThan($sortOrder('firewall_token'), $sortOrder('api_key_check'));
+    }
+
+    public function testFirewallTokenLabelIsSentenceCase(): void
+    {
+        $dom = $this->renderTemplateForProvider('Two');
+        $xpath = new \DOMXPath($dom);
+
+        $label = $xpath->query('//section[@id="brandx_general"]//field[@id="firewall_token"]/label')->item(0);
+        self::assertSame('Firewall token', $label->textContent);
+    }
+
     /**
      * @return array<string, array{0: string}>
      */
