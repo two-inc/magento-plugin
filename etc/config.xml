@@ -45,7 +45,7 @@
                      tooltip unconditionally before this flag existed. -->
                 <show_about_link>1</show_about_link>
                 <display_tooltips>1</display_tooltips>
-                <skip_confirm_nonce_check>0</skip_confirm_nonce_check>
+                <skip_confirm_token_check>0</skip_confirm_token_check>
                 <clear_settings_on_uninstall>0</clear_settings_on_uninstall>
                 <!-- TWO-25386: default OFF — TLS verification ON/secure. -->
                 <disable_ssl_verify>0</disable_ssl_verify>
