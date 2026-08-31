@@ -12,23 +12,29 @@
             <label>Two</label>
         </tab>
         <!--
-            TWO-25386 Part 1: unified 6-section admin scheme, same names
+            TWO-25386 Part 1: unified 5-section admin scheme, same names
             and order as prestashop-plugin and woocommerce-plugin —
-            A. General, B. Checkout Fields, C. Company Lookup,
-            D. Payment Terms, E. Order Management, F. Diagnostics.
+            A. General, B. Checkout Fields, C. Payment Terms,
+            D. Order Management, E. Diagnostics.
 
             Pure reorganization: no field's config_path or behavior
             changed here, only which <section>/<group> it renders under
-            and the section/group labels. `two_general`, `two_search` and
-            `two_payment` keep their historical section ids (relabeled)
-            to avoid breaking Plugin\Config\Structure\HidePaymentSection
-            and any brand-overlay `suppressed_fields` path that targets
-            them by section suffix; `two_checkout_fields` and
+            and the section/group labels. `two_general` and `two_payment`
+            keep their historical section ids (relabeled) to avoid
+            breaking Plugin\Config\Structure\HidePaymentSection and any
+            brand-overlay `suppressed_fields` path that targets them by
+            section suffix; `two_checkout_fields` and
             `two_order_management` are new section ids introduced to
             hold content split out of the old `two_payment` section.
             `two_version` keeps its id, relabeled to Diagnostics and
             folding in the general/debug/health fields that used to
             live in `two_general`/`two_payment`.
+
+            Follow-up: the standalone "Company Lookup" section
+            (`two_search`) was folded into `two_checkout_fields` as its
+            own `search` group, appended last — see the group's own
+            comment below for why it's a sibling group rather than
+            merged into `checkout_fields`.
         -->
         <!-- A. General -->
         <section id="two_general" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
@@ -61,6 +67,7 @@
                        showInStore="1">
                     <label>API key</label>
                     <comment>API key for sandbox environment is available on your merchant portal (however please reach out to integration@two.inc for access to production keys).</comment>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\ApiKey</backend_model>
                     <validate>required-entry</validate>
                     <depends>
@@ -68,15 +75,11 @@
                     </depends>
                     <config_path>payment/two_payment/api_key</config_path>
                 </field>
-                <field id="api_key_check" translate="label comment" type="button" sortOrder="51" showInDefault="1"
-                       showInWebsite="1" showInStore="1">
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck</frontend_model>
-                </field>
                 <!-- Plain text, not obscure: a coarse network-egress gate the
                      merchant's IT administrator hands out, not a credential. -->
                 <field id="firewall_token" translate="label comment" type="text" sortOrder="52" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Firewall token</label>
+                    <label>Firewall token (optional)</label>
                     <comment model="Two\Gateway\Model\Config\Comment\FirewallToken"/>
                     <config_path>payment/two_payment/firewall_token</config_path>
                 </field>
@@ -246,25 +249,16 @@
                     <config_path>payment/two_payment/display_tooltips</config_path>
                 </field>
             </group>
-        </section>
-        <!-- C. Company Lookup -->
-        <section id="two_search" translate="label comment" type="text" sortOrder="30" showInDefault="1" showInWebsite="1"
-                 showInStore="1">
-            <class>separator-top</class>
-            <label>Company Lookup</label>
-            <tab>two_gateway</tab>
-            <resource>Magento_Sales::config_sales</resource>
-            <group id="search" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
+            <!-- TWO-25386 follow-up: the former standalone "Company Lookup"
+                 section (two_search) folded into this section as its own
+                 group, appended last, rather than into the checkout_fields
+                 group above — that group's field order/count is pinned by
+                 Test\Unit\Config\CheckoutFieldOrderTest as the cross-plugin
+                 canonical checkout-field sequence (TWO-25263), which these
+                 two fields are not part of on any platform. -->
+            <group id="search" translate="label comment" type="text" sortOrder="40" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>Company Lookup</label>
-                <!-- TWO-25386: no <depends> on "active" — it lives in a different
-                     top-level <section> (two_general) than this one, and Magento
-                     can only resolve <depends> within the section it's declared
-                     in, since each section renders as its own admin page. This
-                     was already the case before this PR (the old two_search
-                     section vs. the old two_payment section); pre-existing dead
-                     markup, removed while this PR is already touching the same
-                     contract elsewhere. -->
                 <field id="enable_company_search" translate="label comment" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Enable company search in address entry</label>
@@ -285,7 +279,7 @@
                 </field>
             </group>
         </section>
-        <!-- D. Payment Terms -->
+        <!-- C. Payment Terms -->
         <section id="two_payment" translate="label comment" type="text" sortOrder="40" showInDefault="1" showInWebsite="1"
                  showInStore="1">
             <class>separator-top</class>
@@ -297,7 +291,7 @@
                 <label>Payment Terms</label>
                 <field id="payment_terms_type" translate="label comment" type="select" sortOrder="10" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Payment Terms Type</label>
+                    <label>Payment terms type</label>
                     <comment><![CDATA[<strong>Standard:</strong> Payment due after a fixed number of days from fulfilment.<br/><strong>End of Month:</strong> Payment due at the end of month plus additional days from fulfilment.]]></comment>
                     <source_model>Two\Gateway\Model\Config\Source\PaymentTermsType</source_model>
                     <config_path>payment/two_payment/payment_terms_type</config_path>
@@ -312,7 +306,7 @@
                 </field>
                 <field id="payment_terms_duration_days" translate="label comment" type="text" sortOrder="30" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Custom Payment Terms (days)</label>
+                    <label>Custom payment terms (days)</label>
                     <comment>Optional. Enter a custom number of days to offer alongside the selected terms above.</comment>
                     <validate>validate-digits validate-zero-or-greater</validate>
                     <!-- Clears itself on save when it duplicates a merchant-offered
@@ -323,7 +317,7 @@
                 </field>
                 <field id="default_payment_term" translate="label comment" type="select" sortOrder="40" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Default Payment Terms</label>
+                    <label>Default payment terms</label>
                     <comment>Select the payment term that will be automatically selected for your customer.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\AvailablePaymentTerms</source_model>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\DefaultPaymentTerm</frontend_model>
@@ -345,6 +339,7 @@
                 <field id="surcharge_differential" translate="label comment" type="select" sortOrder="60" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Surcharge Calculation Basis</label>
+                    <comment>Total fee charges the configured surcharge for the chosen term. Fee difference charges only the difference versus the default payment term.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\SurchargeCalculationBasis</source_model>
                     <config_path>payment/two_payment/surcharge_differential</config_path>
                 </field>
@@ -418,7 +413,7 @@
                 </field>
             </group>
         </section>
-        <!-- E. Order Management -->
+        <!-- D. Order Management -->
         <section id="two_order_management" translate="label comment" type="text" sortOrder="50" showInDefault="1"
                  showInWebsite="1" showInStore="1">
             <class>separator-top</class>
@@ -452,10 +447,24 @@
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/enable_tax_subtotals</config_path>
                 </field>
-                <field id="default_shipping_tax_rate" translate="label comment" type="text" sortOrder="40"
+                <field id="default_shipping_tax_class" translate="label comment" type="select" sortOrder="40"
                        showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Default Shipping Tax Rate (%)</label>
-                    <comment>Only used when a shipping method charges tax but Magento declares no rate for it. Leave empty to refuse such orders instead of assuming a rate.</comment>
+                    <label>Default shipping tax class</label>
+                    <comment>Only used when a shipping method charges tax but Magento declares no rate for it. The rate is resolved through this Product Tax Class against the order's shipping destination, the same way a product's tax is resolved. Leave unselected to refuse such orders instead of assuming a rate.</comment>
+                    <source_model>Magento\Tax\Model\TaxClass\Source\Product</source_model>
+                    <config_path>payment/two_payment/default_shipping_tax_class</config_path>
+                </field>
+                <!-- DEPRECATED: superseded by default_shipping_tax_class above.
+                     Hidden unless a value is already stored — Plugin\Config\
+                     Structure\HideDeprecatedShippingTaxRateField, same
+                     hidden-unless-already-configured carve-out as
+                     custom_surcharge_tax_rate's, applied directly to this
+                     field rather than through a sibling selector's option
+                     list, since this field has no sibling selector. -->
+                <field id="default_shipping_tax_rate" translate="label comment" type="text" sortOrder="50"
+                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Default Shipping Tax Rate (%) (deprecated)</label>
+                    <comment>Deprecated flat rate. Only used when default_shipping_tax_class above is unset.</comment>
                     <backend_model>Two\Gateway\Model\Config\Backend\LocaleDecimal</backend_model>
                     <validate>validate-zero-or-greater</validate>
                     <config_path>payment/two_payment/default_shipping_tax_rate</config_path>
@@ -463,12 +472,12 @@
             </group>
         </section>
         <!--
-            F. Diagnostics. Standalone section so the operator can land
+            E. Diagnostics. Standalone section so the operator can land
             directly on it from the left nav. Was the "Version" section
             (two_version, sortOrder=100, kept at the bottom regardless of
             how many sections grew above it); now folds in the debug/log/
             admin-control fields that used to live in two_general and
-            two_payment, and sits last in the 6-section A-F scheme at
+            two_payment, and sits last in the 5-section A-E scheme at
             sortOrder=60.
         -->
         <section id="two_version" translate="label comment" type="text" sortOrder="60" showInDefault="1" showInWebsite="1"
@@ -482,7 +491,7 @@
                 <label>Debug &amp; Logging</label>
                 <field id="debug" translate="label comment" type="select" sortOrder="10" showInDefault="1" showInWebsite="1"
                        showInStore="1">
-                    <label>Debug mode</label>
+                    <label>Enable debug logging</label>
                     <comment>The debug mode enables writing to the error logs below. Debug mode should only be enabled when the sandbox environment is active</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/debug</config_path>
@@ -501,18 +510,6 @@
             <group id="admin_controls" translate="label comment" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>Admin Controls</label>
-                <!-- TWO-25386: see Controller\Payment\Confirm — Magento's
-                     confirmation callback has no separate token layer to skip
-                     today (only the mandatory order-reference match), so this
-                     flag is currently a documented
-                     no-op kept for admin-surface parity across plugins. -->
-                <field id="skip_confirm_token_check" translate="label comment" type="select" sortOrder="10"
-                       showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Skip confirm-order token check</label>
-                    <comment>Debug/support use only. No effect today: Magento's order-confirmation callback is identified solely by the order reference, which is always checked and cannot be skipped.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/two_payment/skip_confirm_token_check</config_path>
-                </field>
                 <!-- TWO-25386: module uninstall is Magento's nearest lifecycle
                      event for this; see Setup\Uninstall. -->
                 <field id="clear_settings_on_uninstall" translate="label comment" type="select" sortOrder="20"

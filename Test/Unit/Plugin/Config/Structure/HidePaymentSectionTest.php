@@ -103,12 +103,6 @@ class HidePaymentSectionTest extends TestCase
         $this->assertFalse($plugin->afterIsVisible($this->section('two_general'), true));
     }
 
-    public function testHidesTwoSearchSection(): void
-    {
-        $plugin = $this->plugin(true, true);
-        $this->assertFalse($plugin->afterIsVisible($this->section('two_search'), true));
-    }
-
     public function testHidesTwoCheckoutFieldsSection(): void
     {
         $plugin = $this->plugin(true, true);

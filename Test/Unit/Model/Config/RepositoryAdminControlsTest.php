@@ -16,7 +16,7 @@ use Two\Gateway\Model\Provenance;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
- * TWO-25386: config accessors for the 8 admin controls.
+ * TWO-25386: config accessors for the 7 admin controls.
  */
 class RepositoryAdminControlsTest extends TestCase
 {
@@ -24,7 +24,6 @@ class RepositoryAdminControlsTest extends TestCase
     private const SUBTITLE_PATH = 'payment/two_payment/subtitle';
     private const ABOUT_LINK_PATH = 'payment/two_payment/show_about_link';
     private const TOOLTIPS_PATH = 'payment/two_payment/display_tooltips';
-    private const SKIP_TOKEN_PATH = 'payment/two_payment/skip_confirm_token_check';
     private const CLEAR_ON_UNINSTALL_PATH = 'payment/two_payment/clear_settings_on_uninstall';
     private const DISABLE_SSL_VERIFY_PATH = 'payment/two_payment/disable_ssl_verify';
     private const TRUSTED_PROXIES_PATH = 'payment/two_payment/trusted_proxies';
@@ -96,7 +95,6 @@ class RepositoryAdminControlsTest extends TestCase
         return [
             'about link' => ['isAboutLinkEnabled', self::ABOUT_LINK_PATH],
             'display tooltips' => ['isDisplayTooltipsEnabled', self::TOOLTIPS_PATH],
-            'skip confirm token check' => ['isSkipConfirmTokenCheckEnabled', self::SKIP_TOKEN_PATH],
             'clear settings on uninstall' => ['isClearSettingsOnUninstallEnabled', self::CLEAR_ON_UNINSTALL_PATH],
             'disable ssl verify' => ['isSslVerificationDisabled', self::DISABLE_SSL_VERIFY_PATH],
         ];

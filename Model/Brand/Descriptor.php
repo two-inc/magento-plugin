@@ -145,10 +145,10 @@ final class Descriptor
     /**
      * Short identifier used as the prefix for synthesised admin
      * Configuration section IDs (e.g. `two_general`,
-     * `two_checkout_fields`, `two_search`, `two_payment`,
-     * `two_order_management`, `two_version` — TWO-25386's A-F regroup)
-     * and the admin tab id (`{prefix}_gateway`). Falls back to `code`
-     * minus a trailing `_payment` suffix when not explicitly declared.
+     * `two_checkout_fields`, `two_payment`, `two_order_management`,
+     * `two_version` — TWO-25386's A-E regroup) and the admin tab id
+     * (`{prefix}_gateway`). Falls back to `code` minus a trailing
+     * `_payment` suffix when not explicitly declared.
      */
     public function getSectionPrefix(): string
     {

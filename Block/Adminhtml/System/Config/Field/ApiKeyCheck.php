@@ -14,9 +14,10 @@ use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
 
 /**
- * Renders the API-key verification result in Stores Configuration, and
- * carries the wiring (endpoint URL, target field id, active scope) the
- * live re-verification JS binds to.
+ * Renders the `api_key` field itself with its live verification result
+ * inline (icon + status), matching woocommerce-plugin's and
+ * prestashop-plugin's pattern — there is no separate "check" button
+ * field.
  *
  * Verification at page load is deliberately a LIVE check
  * (ApiKeyStatus::refresh) rather than a cached read: an admin on this page
@@ -83,15 +84,24 @@ class ApiKeyCheck extends Field
     }
 
     /**
-     * Html id of the API key input this panel reports on. This renderer is
-     * the `api_key_check` sibling of that field, so its own element id
-     * minus the suffix names it.
+     * The actual obscure `<input>` markup Magento would have rendered for
+     * this field absent this renderer — the verification panel is
+     * additional markup around it, not a replacement for it.
+     */
+    public function getInputHtml(): string
+    {
+        $element = $this->getData('element');
+        return $element ? (string)$element->getElementHtml() : '';
+    }
+
+    /**
+     * Html id of the API key input this panel reports on — this renderer
+     * decorates that field directly.
      */
     public function getApiKeyFieldId(): string
     {
         $element = $this->getData('element');
-        $id = $element ? (string)$element->getHtmlId() : '';
-        return preg_replace('/_check$/', '', $id) ?? '';
+        return $element ? (string)$element->getHtmlId() : '';
     }
 
     /**
@@ -113,15 +123,6 @@ class ApiKeyCheck extends Field
     {
         $form = $this->getForm();
         return $form ? (int)$form->getScopeId() : 0;
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function render(AbstractElement $element)
-    {
-        $element->unsScope()->unsCanUseWebsiteValue()->unsCanUseDefaultValue();
-        return parent::render($element);
     }
 
     /**
