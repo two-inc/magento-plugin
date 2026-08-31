@@ -541,6 +541,15 @@
     top: 100%;
     left: 0;
     right: 0;
+    /*
+     * `min-width` rather than a fixed width: `left`/`right` still make the
+     * panel fill the field on any field wide enough (Luma), but on a narrow
+     * one (Hyva's payment tile is roughly a third of the row) `right` is the
+     * constraint the box model drops to honour this, so the panel overhangs
+     * the field instead of truncating every result to a few characters.
+     * 320px matches PrestaShop's `TwoCompanySearch` cap.
+     */
+    min-width: 320px;
     box-sizing: border-box;
     padding: 8px;
     border: 1px solid var(--color-gray89);
@@ -641,11 +650,8 @@
 }
 
 /*
- * Ellipsised on one line, matching PrestaShop's rows. The panel is only as wide
- * as the company field, and that field is half a column on a three-column
- * checkout — wrapping a row instead puts every result on three or four lines
- * and gives the scroll container a horizontal scrollbar as well as a vertical
- * one.
+ * Ellipsised on one line, matching PrestaShop's rows — wrapping a row instead
+ * gives the scroll container a horizontal scrollbar as well as a vertical one.
  */
 .two-company-dropdown__row {
     padding: 6px 8px;

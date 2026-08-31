@@ -4,10 +4,9 @@
  *
  * TWO-25503 — the popover's appearance inside a field-width panel.
  *
- * The panel is exactly as wide as the company field, and that field can be half
- * a column on a three-column checkout. Three rules carry the whole difference
- * between a control that reads and one that does not at that width, and none of
- * them is visible from the DOM:
+ * The panel can be as narrow as half a column on a three-column checkout.
+ * Three rules carry the whole difference between a control that reads and one
+ * that does not at that width, and none of them is visible from the DOM:
  *
  *  - result rows are ellipsised on one line, or every result takes three or
  *    four lines and the scroll container gets a horizontal scrollbar too;
@@ -78,6 +77,13 @@ function declaredStyle(selector) {
 afterEach(() => {
     document.head.innerHTML = '';
     document.body.innerHTML = '';
+});
+
+describe('the panel can overhang a narrow field', () => {
+    test('the panel declares a min-width wider than a three-column tile\'s field', () => {
+        computedPanelStyles();
+        expect(declaredStyle('.two-company-dropdown').getPropertyValue('min-width')).toBe('320px');
+    });
 });
 
 describe('a result row stays on one line', () => {
