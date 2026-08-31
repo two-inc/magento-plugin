@@ -90,6 +90,33 @@ class SynthesiseBrandAdminFormProviderTokenTest extends TestCase
     }
 
     /**
+     * Regression: a field added to system.xml with no matching entry in
+     * brand_form_template.xml is silently dropped by the merge
+     * (SynthesiseBrandAdminForm::afterRead drops any system.xml field the
+     * template doesn't already declare) — invisible in the admin UI on
+     * every environment, not just uncached.
+     */
+    public function testFirewallAndRateLimitFieldsSurviveSynthesis(): void
+    {
+        $dom = $this->renderTemplateForProvider('Two');
+        $xpath = new \DOMXPath($dom);
+
+        foreach (
+            [
+                'brandx_general' => ['firewall_token', 'firewall_token_browser', 'trusted_proxies'],
+                'brandx_version' => ['disable_rate_limit'],
+            ] as $sectionId => $fieldIds
+        ) {
+            foreach ($fieldIds as $fieldId) {
+                $node = $xpath->query(
+                    sprintf('//section[@id="%s"]//field[@id="%s"]', $sectionId, $fieldId)
+                )->item(0);
+                self::assertNotNull($node, sprintf('%s must exist in section %s', $fieldId, $sectionId));
+            }
+        }
+    }
+
+    /**
      * The disable_ssl_verify comment is a CDATA section, which the XML
      * parser never entity-decodes. A provider name containing "&" must
      * come through literally ("Smith & Co."), NOT as an entity-escaped
