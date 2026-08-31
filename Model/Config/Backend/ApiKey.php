@@ -10,6 +10,7 @@ namespace Two\Gateway\Model\Config\Backend;
 use Magento\Config\Model\Config\Backend\Encrypted;
 use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
+use Magento\Framework\Data\Collection\AbstractDb;
 use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Model\Context;
@@ -47,7 +48,7 @@ class ApiKey extends Encrypted
         ApiKeyStatus $apiKeyStatus,
         ApiKeyStatusMessage $statusMessage,
         ?AbstractResource $resource = null,
-        $resourceCollection = null,
+        ?AbstractDb $resourceCollection = null,
         array $data = []
     ) {
         parent::__construct(
