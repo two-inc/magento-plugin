@@ -194,7 +194,7 @@ class RateLimiter
             return $noTrustedProxies
                 ? $scope . ' in this window comes from one address. If this store sits behind a reverse '
                     . 'proxy, load balancer or CDN, that is every buyer counted as a single caller and the '
-                    . 'ceiling is store-wide: set Trusted proxies under General. If it does not, one caller is '
+                    . 'ceiling is store-wide: set Trusted proxies under Diagnostics. If it does not, one caller is '
                     . 'sending sustained traffic and the ceiling is holding it.'
                 : $scope . ' in this window comes from one resolved buyer address, which is one caller '
                     . 'sending sustained traffic rather than ordinary checkout load.';

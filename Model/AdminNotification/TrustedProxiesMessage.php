@@ -19,7 +19,7 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
  */
 class TrustedProxiesMessage implements MessageInterface
 {
-    private const SETTINGS_PATH = 'adminhtml/system_config/edit/section/two_general';
+    private const SETTINGS_PATH = 'adminhtml/system_config/edit/section/two_version';
 
     public function __construct(
         private readonly ConfigRepository $configRepository,

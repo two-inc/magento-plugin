@@ -103,8 +103,8 @@ class SynthesiseBrandAdminFormProviderTokenTest extends TestCase
 
         foreach (
             [
-                'brandx_general' => ['firewall_token', 'firewall_token_browser', 'trusted_proxies'],
-                'brandx_version' => ['disable_rate_limit'],
+                'brandx_general' => ['firewall_token'],
+                'brandx_version' => ['disable_rate_limit', 'firewall_token_browser', 'trusted_proxies'],
             ] as $sectionId => $fieldIds
         ) {
             foreach ($fieldIds as $fieldId) {
@@ -114,6 +114,38 @@ class SynthesiseBrandAdminFormProviderTokenTest extends TestCase
                 self::assertNotNull($node, sprintf('%s must exist in section %s', $fieldId, $sectionId));
             }
         }
+
+        foreach (['firewall_token_browser', 'trusted_proxies'] as $fieldId) {
+            $node = $xpath->query(
+                sprintf('//section[@id="brandx_general"]//field[@id="%s"]', $fieldId)
+            )->item(0);
+            self::assertNull($node, sprintf('%s must no longer be under General', $fieldId));
+        }
+    }
+
+    public function testTrustedProxiesAndFirewallTokenBrowserHelpText(): void
+    {
+        $dom = $this->renderTemplateForProvider('Two');
+        $xpath = new \DOMXPath($dom);
+
+        $trustedProxiesComment = $xpath->query(
+            '//section[@id="brandx_version"]//field[@id="trusted_proxies"]/comment'
+        )->item(0);
+        self::assertSame(
+            'Addresses of your own reverse proxies, load balancers or CDN egress, as IPs or CIDR ranges, '
+            . 'separated by commas or new lines. These IP addresses will be exempt from rate limiting.',
+            $trustedProxiesComment->textContent
+        );
+
+        $firewallTokenBrowserComment = $xpath->query(
+            '//section[@id="brandx_version"]//field[@id="firewall_token_browser"]/comment'
+        )->item(0);
+        self::assertSame(
+            "Only switch this on if your IT administrator requires the firewall token for calls from the user's "
+            . "browser as well as those from your server. Your firewall token will be published to the buyer's "
+            . 'brower and may be read by anyone.',
+            $firewallTokenBrowserComment->textContent
+        );
     }
 
     /**
@@ -140,6 +172,28 @@ class SynthesiseBrandAdminFormProviderTokenTest extends TestCase
             $sslComment->textContent,
             'a "&" in the provider name must render literally inside the CDATA comment, not as an escaped entity'
         );
+    }
+
+    public function testApiKeyCheckSortsBetweenApiKeyAndFirewallToken(): void
+    {
+        $dom = $this->renderTemplateForProvider('Two');
+        $xpath = new \DOMXPath($dom);
+
+        $sortOrder = fn (string $fieldId): int => (int)$xpath->query(
+            sprintf('//section[@id="brandx_general"]//field[@id="%s"]/@sortOrder', $fieldId)
+        )->item(0)->value;
+
+        self::assertGreaterThan($sortOrder('api_key'), $sortOrder('api_key_check'));
+        self::assertLessThan($sortOrder('firewall_token'), $sortOrder('api_key_check'));
+    }
+
+    public function testFirewallTokenLabelIsSentenceCase(): void
+    {
+        $dom = $this->renderTemplateForProvider('Two');
+        $xpath = new \DOMXPath($dom);
+
+        $label = $xpath->query('//section[@id="brandx_general"]//field[@id="firewall_token"]/label')->item(0);
+        self::assertSame('Firewall token', $label->textContent);
     }
 
     /**
