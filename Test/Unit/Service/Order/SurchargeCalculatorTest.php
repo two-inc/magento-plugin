@@ -3,7 +3,9 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Service\Order;
 
+use Magento\Framework\App\CacheInterface;
 use Magento\Framework\HTTP\Client\CurlFactory;
+use Magento\Framework\Serialize\Serializer\Json;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
@@ -29,6 +31,9 @@ class SurchargeCalculatorTest extends TestCase
     /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
     private $log;
 
+    /** @var CacheInterface|\PHPUnit\Framework\MockObject\MockObject */
+    private $cache;
+
     /** @var SurchargeCalculator */
     private $calculator;
 
@@ -48,13 +53,23 @@ class SurchargeCalculatorTest extends TestCase
 
         $this->log = $this->createMock(LogRepository::class);
         $this->ratesProvider = $this->createMock(CurrencyRatesProviderInterface::class);
+        $this->cache = $this->createMock(CacheInterface::class);
+        $this->cache->method('load')->willReturn(false);
 
         $this->calculator = new SurchargeCalculator(
             $this->config,
             $this->adapter,
             $this->log,
-            $this->ratesProvider
+            $this->ratesProvider,
+            $this->cache,
+            new Json()
         );
+    }
+
+    /** A calculator wired to a fresh instance — simulates a new PHP request: no per-request memo, only whatever $cache serves. */
+    private function freshRequestCalculator(CacheInterface $cache): SurchargeCalculator
+    {
+        return new SurchargeCalculator($this->config, $this->adapter, $this->log, $this->ratesProvider, $cache, new Json());
     }
 
     /**
@@ -1122,5 +1137,99 @@ class SurchargeCalculatorTest extends TestCase
         $second = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
 
         $this->assertEquals(17.50, $second['amount']);
+    }
+
+    // ── Cross-request cache (scoped to cart state) ───────────────────
+
+    public function testCrossRequestCacheServedOnUnchangedInputsWithoutHittingTheApi(): void
+    {
+        // Repeated interactions within the same cart state (opening/
+        // closing the chip UI, a re-render across separate requests) must
+        // reuse the cached quote rather than re-calling the pricing API.
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+        $this->adapter->expects($this->once())->method('execute')->willReturn(['buyer_fee_share' => 17.50]);
+        $store = [];
+        $this->cache = $this->createMock(CacheInterface::class);
+        $this->cache->method('load')->willReturnCallback(function ($key) use (&$store) { return $store[$key] ?? false; });
+        $this->cache->method('save')->willReturnCallback(function ($data, $key) use (&$store) {
+            $store[$key] = $data;
+            return true;
+        });
+        $this->calculator = $this->freshRequestCalculator($this->cache);
+
+        $first = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+        // A fresh calculator instance per call simulates a new PHP request:
+        // no per-request memo survives, only the persisted cache entry.
+        $second = $this->freshRequestCalculator($this->cache)->calculate(1000.0, 60, 'NO', 'NOK');
+
+        $this->assertEquals(17.50, $first['amount']);
+        $this->assertEquals(17.50, $second['amount']);
+    }
+
+    /**
+     * @dataProvider cartStateChangeProvider
+     * Mutation-provable: a cache key omitting the varied input would wrongly
+     * hit here, and the "exactly twice" expectation below would fail.
+     */
+    public function testCrossRequestCacheMissesWhenCartStateChanges(
+        float $grossAmountA,
+        int $termA,
+        string $countryA,
+        string $currencyA,
+        float $grossAmountB,
+        int $termB,
+        string $countryB,
+        string $currencyB,
+        string $case
+    ): void {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+        $calls = 0;
+        $this->adapter->method('execute')->willReturnCallback(function () use (&$calls) {
+            $calls++;
+            return ['buyer_fee_share' => 17.50];
+        });
+        $store = [];
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->method('load')->willReturnCallback(function ($key) use (&$store) { return $store[$key] ?? false; });
+        $cache->method('save')->willReturnCallback(function ($data, $key) use (&$store) {
+            $store[$key] = $data;
+            return true;
+        });
+
+        $this->freshRequestCalculator($cache)->calculate($grossAmountA, $termA, $countryA, $currencyA);
+        $this->freshRequestCalculator($cache)->calculate($grossAmountB, $termB, $countryB, $currencyB);
+
+        $this->assertSame(2, $calls, "a $case must miss the cache and re-quote");
+    }
+
+    public function cartStateChangeProvider(): array
+    {
+        return [
+            [1000.0, 60, 'NO', 'NOK', 2000.0, 60, 'NO', 'NOK', 'cart total changed'],
+            [1000.0, 60, 'NO', 'NOK', 1000.0, 60, 'NO', 'SEK', 'currency changed'],
+            [1000.0, 60, 'NO', 'NOK', 1000.0, 60, 'SE', 'NOK', 'buyer country changed'],
+            [1000.0, 60, 'NO', 'NOK', 1000.0, 90, 'NO', 'NOK', 'term changed'],
+        ];
+    }
+
+    public function testCrossRequestCacheNotWrittenOnApiFailureSoNextRequestRetries(): void
+    {
+        // A failed quote must stay request-scoped: persisting it would
+        // mask a recoverable API blip as "no fee" for the whole TTL.
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(50);
+        $this->adapter->method('execute')->willReturn(['error_code' => 503, 'http_status' => 503]);
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->method('load')->willReturn(false);
+        $cache->expects($this->never())->method('save');
+
+        try {
+            $this->freshRequestCalculator($cache)->calculate(1000.0, 60, 'NO', 'NOK');
+            $this->fail('expected a LocalizedException');
+        } catch (\Magento\Framework\Exception\LocalizedException $e) {
+            // expected
+        }
     }
 }

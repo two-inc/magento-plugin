@@ -7,7 +7,9 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Service\Order;
 
+use Magento\Framework\App\CacheInterface;
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Serialize\Serializer\Json;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -45,6 +47,18 @@ class SurchargeCalculator
         RoundingBasis::STANDARD => 'STANDARD',
     ];
 
+    private const CACHE_KEY_PREFIX = 'two_gateway_surcharge_';
+
+    /**
+     * Safety-net TTL for the cross-request cache below: the cache key
+     * already changes with anything that would change the quote (cart
+     * total, currency, buyer country, term, the merchant's surcharge
+     * config), so this only bounds a quote drifting from something the
+     * request body can't see (e.g. the backend's own FX rate), matching
+     * RecordProvider::CACHE_LIFETIME's role for the same class of risk.
+     */
+    private const CACHE_LIFETIME = 300;
+
     /**
      * @var ConfigRepository
      */
@@ -66,6 +80,16 @@ class SurchargeCalculator
     private $ratesProvider;
 
     /**
+     * @var CacheInterface
+     */
+    private $cache;
+
+    /**
+     * @var Json
+     */
+    private $json;
+
+    /**
      * Request-scoped cache of resolved surcharges, keyed on the public
      * calculate() inputs. The pricing endpoint is side-effect-free and
      * callers (total collector, ConfigProvider, TermSelection) repeat
@@ -79,12 +103,16 @@ class SurchargeCalculator
         ConfigRepository $configRepository,
         Adapter $apiAdapter,
         LogRepository $logRepository,
-        CurrencyRatesProviderInterface $ratesProvider
+        CurrencyRatesProviderInterface $ratesProvider,
+        CacheInterface $cache,
+        Json $json
     ) {
         $this->configRepository = $configRepository;
         $this->apiAdapter = $apiAdapter;
         $this->logRepository = $logRepository;
         $this->ratesProvider = $ratesProvider;
+        $this->cache = $cache;
+        $this->json = $json;
     }
 
     /**
@@ -119,20 +147,33 @@ class SurchargeCalculator
         }
 
         $buyerFeeShare = $this->buildBuyerFeeShare($surchargeType, $selectedTermDays, $orderCurrency, $storeId);
+        $request = [
+            'buyer_country_code' => $buyerCountry,
+            'approved_on_recourse' => false,
+            'currency' => $orderCurrency,
+            'gross_amount' => $grossAmount,
+            'order_terms' => $this->buildOrderTerms($selectedTermDays, $storeId),
+            'buyer_fee_share' => $buyerFeeShare,
+        ];
 
-        $response = $this->apiAdapter->execute(
-            '/v1/pricing/order/fee',
-            [
-                'buyer_country_code' => $buyerCountry,
-                'approved_on_recourse' => false,
-                'currency' => $orderCurrency,
-                'gross_amount' => $grossAmount,
-                'order_terms' => $this->buildOrderTerms($selectedTermDays, $storeId),
-                'buyer_fee_share' => $buyerFeeShare,
-            ],
-            'POST',
-            $storeId
-        );
+        // Cross-request cache, keyed on the exact outgoing request body
+        // (plus store, since the same request on two stores is still the
+        // same question to the pricing API): the cart total, currency,
+        // buyer country, term and the merchant's surcharge config
+        // (already folded into buyer_fee_share/order_terms) all fall out
+        // of the key naturally, so any of them changing is a cache miss —
+        // see CACHE_LIFETIME's doc comment for why a TTL sits underneath
+        // this anyway. Only a successful quote is persisted; a failure
+        // stays request-scoped (thrown below, never reaching this cache)
+        // so a flapping API is retried on the next request, not
+        // remembered as an error for CACHE_LIFETIME.
+        $crossRequestCacheKey = self::CACHE_KEY_PREFIX . hash('sha256', serialize([$request, $storeId]));
+        $cached = $this->cache->load($crossRequestCacheKey);
+        if ($cached !== false) {
+            return $this->responseCache[$cacheKey] = $this->json->unserialize($cached);
+        }
+
+        $response = $this->apiAdapter->execute('/v1/pricing/order/fee', $request, 'POST', $storeId);
 
         // `http_status` may be set on success too (observability convenience);
         // gate on the actual 4xx/5xx range plus presence of `error_code`.
@@ -196,11 +237,13 @@ class SurchargeCalculator
 
         $descriptionTemplate = $this->configRepository->getSurchargeLineDescription($storeId);
 
-        return $this->responseCache[$cacheKey] = [
+        $result = [
             'amount' => $surcharge,
             'tax_rate' => $this->configRepository->getCustomSurchargeTaxRate($storeId),
             'description' => (string)__($descriptionTemplate, $selectedTermDays),
         ];
+        $this->cache->save($this->json->serialize($result), $crossRequestCacheKey, [], self::CACHE_LIFETIME);
+        return $this->responseCache[$cacheKey] = $result;
     }
 
     /**
