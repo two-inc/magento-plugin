@@ -82,7 +82,7 @@ afterEach(() => {
 describe('the panel can overhang a narrow field', () => {
     test('the panel declares a min-width wider than a three-column tile\'s field', () => {
         computedPanelStyles();
-        expect(declaredStyle('.two-company-dropdown').getPropertyValue('min-width')).toBe('320px');
+        expect(declaredStyle('.two-company-dropdown').getPropertyValue('min-width')).toBe('480px');
     });
 });
 
