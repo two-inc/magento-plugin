@@ -816,9 +816,9 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
-    public function isSkipConfirmNonceCheckEnabled(?int $storeId = null): bool
+    public function isSkipConfirmTokenCheckEnabled(?int $storeId = null): bool
     {
-        return $this->isSetFlag($this->path('skip_confirm_nonce_check'), $storeId);
+        return $this->isSetFlag($this->path('skip_confirm_token_check'), $storeId);
     }
 
     /**

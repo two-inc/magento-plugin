@@ -516,16 +516,16 @@
                    showInStore="1">
                 <label>Admin Controls</label>
                 <!-- TWO-25386: see Controller\Payment\Confirm — Magento's
-                     confirmation callback has no separate nonce layer to skip
+                     confirmation callback has no separate token layer to skip
                      today (only the mandatory order-reference match), so this
                      flag is currently a documented
                      no-op kept for admin-surface parity across plugins. -->
-                <field id="skip_confirm_nonce_check" translate="label comment" type="select" sortOrder="10"
+                <field id="skip_confirm_token_check" translate="label comment" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Skip confirm-order nonce check</label>
+                    <label>Skip confirm-order token check</label>
                     <comment>Debug/support use only. No effect today: Magento's order-confirmation callback is identified solely by the order reference, which is always checked and cannot be skipped.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/two_payment/skip_confirm_nonce_check</config_path>
+                    <config_path>payment/two_payment/skip_confirm_token_check</config_path>
                 </field>
                 <!-- TWO-25386: module uninstall is Magento's nearest lifecycle
                      event for this; see Setup\Uninstall. -->

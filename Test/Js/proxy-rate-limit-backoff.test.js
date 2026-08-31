@@ -65,17 +65,17 @@ function search(companySearch, term) {
 
 /**
  * The two registry routes, as issuers a rate-limit spec can drive
- * interchangeably. `nonce` keeps each search off the previous one's cache
+ * interchangeably. `callId` keeps each search off the previous one's cache
  * entry, which would answer without a request and prove nothing.
  */
 const ROUTES = {
-    search: function (companySearch, nonce) {
-        search(companySearch, `exa${nonce}`);
+    search: function (companySearch, callId) {
+        search(companySearch, `exa${callId}`);
     },
-    'address lookup': function (companySearch, nonce) {
+    'address lookup': function (companySearch, callId) {
         companySearch.lookupCompanyAddress(
             { isAddressSearchEnabled: true },
-            { lookupId: `lookup-${nonce}` }
+            { lookupId: `lookup-${callId}` }
         );
     }
 };

@@ -505,7 +505,7 @@ interface RepositoryInterface
      *
      * @return bool
      */
-    public function isSkipConfirmNonceCheckEnabled(?int $storeId = null): bool;
+    public function isSkipConfirmTokenCheckEnabled(?int $storeId = null): bool;
 
     /**
      * Whether stored Two configuration (payment/two_payment/* and
