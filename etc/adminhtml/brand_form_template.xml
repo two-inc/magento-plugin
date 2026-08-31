@@ -132,6 +132,29 @@
                     </depends>
                     <config_path>payment/{{code}}/api_key</config_path>
                 </field>
+                <field id="firewall_token" translate="label" type="text" sortOrder="51"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Firewall Token</label>
+                    <comment model="Two\Gateway\Model\Config\Comment\FirewallToken"/>
+                    <config_path>payment/{{code}}/firewall_token</config_path>
+                </field>
+                <field id="firewall_token_browser" translate="label" type="select" sortOrder="52"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Add firewall token to browser-originated traffic</label>
+                    <comment>Switch this on if your IT administrator requires the firewall token for calls from the user's browser as well as those from your server. The token is then published in the source of your checkout page, where every visitor can read it. Only switch this on if your IT administrator has confirmed that is acceptable.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/firewall_token_browser</config_path>
+                </field>
+                <field id="trusted_proxies" translate="label" type="textarea" sortOrder="53"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Trusted proxies</label>
+                    <comment><![CDATA[Addresses of your own reverse proxies, load balancers or CDN egress, as IPs or CIDR ranges, separated by commas or new lines. When a request arrives from one of these, the buyer's own address is read from the forwarding header it sets; otherwise the connecting address is used. <strong>If this store sits behind a CDN, load balancer or reverse proxy and this is empty, every buyer reaches the store as that one address, shares a single checkout rate-limit ceiling, and buyers can be refused mid-checkout.</strong> Ask your IT administrator for the list. Leave empty only if buyers reach this store directly.]]></comment>
+                    <backend_model>Two\Gateway\Model\Config\Backend\TrustedProxies</backend_model>
+                    <config_path>payment/{{code}}/trusted_proxies</config_path>
+                </field>
                 <field id="api_key_check" translate="label" type="button" sortOrder="55"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        brand_code="{{code}}">
@@ -613,6 +636,14 @@
                     <comment><![CDATA[<strong>WARNING: unsafe for production.</strong> Skips TLS certificate verification on outbound calls to the {{provider_cdata}} API. Only enable this if this store sits behind a corporate proxy that terminates TLS with its own certificate. Leave this Off everywhere else.]]></comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/{{code}}/disable_ssl_verify</config_path>
+                </field>
+                <field id="disable_rate_limit" translate="label" type="select" sortOrder="40"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Disable checkout rate limiting</label>
+                    <comment><![CDATA[Removes the per-caller ceiling on the company-lookup and order-intent routes. The ceiling is on by default. <strong>If this store sits behind a CDN, load balancer or reverse proxy and <em>Trusted proxies</em> under General is empty, every buyer arrives as that one address and shares a single ceiling — buyers are then refused mid-checkout with a too-many-requests message.</strong> The fix is to fill in <strong>Trusted proxies</strong>, which lets the ceiling tell buyers apart; switch this On only as a stopgap while you get that list, and back Off afterwards.]]></comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/disable_rate_limit</config_path>
                 </field>
             </group>
             <group id="general" translate="label" type="text" sortOrder="30"
