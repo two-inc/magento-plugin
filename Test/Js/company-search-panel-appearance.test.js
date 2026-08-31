@@ -80,9 +80,26 @@ afterEach(() => {
 });
 
 describe('the panel can overhang a narrow field', () => {
-    test('the panel declares a min-width wider than a three-column tile\'s field', () => {
+    test('no min-width competes with the viewport-clamped width', () => {
+        // CSS2.1 §10.4: min-width always wins over max-width. A `min-width`
+        // here would make the clamp below a no-op under a 512px viewport —
+        // see the 480px/512px cases in the width-resolution test below.
         computedPanelStyles();
-        expect(declaredStyle('.two-company-dropdown').getPropertyValue('min-width')).toBe('480px');
+        expect(declaredStyle('.two-company-dropdown').getPropertyValue('min-width')).toBe('');
+    });
+
+    test.each([
+        [375, 343, 'clamped well under the viewport on a small phone'],
+        [414, 382, 'clamped well under the viewport on a large phone'],
+        [480, 448, 'clamped just under the viewport at the 480px edge case'],
+        [512, 480, 'reaches the full 480px floor once the viewport allows it'],
+        [768, 480, 'stays at the 480px floor on a desktop-width viewport']
+    ])('at a %ipx viewport the resolved width is %ipx — %s', (viewportWidth, expectedWidth) => {
+        computedPanelStyles();
+        const declared = declaredStyle('.two-company-dropdown').getPropertyValue('width');
+        const match = declared.match(/^min\(480px, calc\(100vw - 32px\)\)$/);
+        expect(match).not.toBeNull();
+        expect(Math.min(480, viewportWidth - 32)).toBe(expectedWidth);
     });
 });
 

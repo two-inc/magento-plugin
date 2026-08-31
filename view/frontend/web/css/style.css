@@ -542,17 +542,17 @@
     left: 0;
     right: 0;
     /*
-     * `min-width` rather than a fixed width: `left`/`right` still make the
-     * panel fill the field on any field wide enough (Luma), but on a narrow
-     * one (Hyva's payment tile is roughly a third of the row) `right` is the
-     * constraint the box model drops to honour this, so the panel overhangs
-     * the field instead of truncating every result to a few characters.
-     * 480px covers realistic company names without excessive overhang.
-     * `max-width` clamps the same panel to the viewport so the min-width
-     * floor above can never overflow a phone-width screen.
+     * A single clamped `width`, not `min-width` — CSS2.1 min-width always
+     * wins over max-width, so the two together would make the viewport clamp
+     * a no-op below a 512px viewport. `left`/`right` still make the panel
+     * fill the field on any field wide enough (Luma); below 480px the box
+     * model drops `left` to honour this `width`, so the panel overhangs the
+     * field instead of truncating every result to a few characters. 480px
+     * covers realistic company names without excessive overhang; the
+     * `calc(100vw - 32px)` side of the clamp keeps that width off the edges
+     * of a phone-width screen.
      */
-    min-width: 480px;
-    max-width: min(480px, calc(100vw - 32px));
+    width: min(480px, calc(100vw - 32px));
     box-sizing: border-box;
     padding: 8px;
     border: 1px solid var(--color-gray89);
