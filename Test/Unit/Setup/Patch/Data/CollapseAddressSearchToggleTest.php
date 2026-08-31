@@ -26,6 +26,9 @@ class CollapseAddressSearchToggleTest extends TestCase
     private const COMPANY_PATH = 'payment/two_payment/enable_company_search';
     private const ADDRESS_PATH = 'payment/two_payment/enable_address_search';
 
+    private const OTHER_COMPANY_PATH = 'payment/two_example_payment/enable_company_search';
+    private const OTHER_ADDRESS_PATH = 'payment/two_example_payment/enable_address_search';
+
     /** @var CollapseConnection */
     private $connection;
 
@@ -226,15 +229,15 @@ class CollapseAddressSearchToggleTest extends TestCase
         $patch = $this->buildPatch([
             self::row('default', 0, self::COMPANY_PATH, '0'),
             self::row('default', 0, self::ADDRESS_PATH, '1'),
-            self::row('default', 0, 'payment/two_abn_payment/enable_company_search', '0'),
-            self::row('default', 0, 'payment/two_abn_payment/enable_address_search', '1'),
+            self::row('default', 0, self::OTHER_COMPANY_PATH, '0'),
+            self::row('default', 0, self::OTHER_ADDRESS_PATH, '1'),
         ]);
 
         $patch->apply();
 
         $paths = array_column($this->saves, 0);
         $this->assertContains(self::ADDRESS_PATH, $paths);
-        $this->assertContains('payment/two_abn_payment/enable_address_search', $paths);
+        $this->assertContains(self::OTHER_ADDRESS_PATH, $paths);
     }
 
     public function testQueriesTheCoreConfigDataTableWithThePrefix(): void
