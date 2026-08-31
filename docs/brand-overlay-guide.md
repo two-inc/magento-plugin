@@ -297,6 +297,13 @@ Any `suppressed_fields` entry targeting one of those fields by its old
 `section_suffix` segment updated to match, or the suppression silently
 stops matching and the field reappears for that brand.
 
+`trusted_proxies` and `firewall_token_browser` now live under
+`{section_prefix}_version` (group `admin_controls`) instead of
+`{section_prefix}_general` (group `general`). An overlay's
+`suppressed_fields` entry for either needs its path updated from
+`general/general/…` to `version/admin_controls/…`. `firewall_token`
+itself is unaffected — it stays under `general/general`.
+
 ## Worked example: adding a brand-driven field
 
 `surcharge_rounding_steps` is the reference implementation for extending
