@@ -541,6 +541,18 @@
     top: 100%;
     left: 0;
     right: 0;
+    /*
+     * A single clamped `width`, not `min-width` — CSS2.1 min-width always
+     * wins over max-width, so the two together would make the viewport clamp
+     * a no-op below a 512px viewport. `left`/`right` still make the panel
+     * fill the field on any field wide enough (Luma); below 480px the box
+     * model drops `left` to honour this `width`, so the panel overhangs the
+     * field instead of truncating every result to a few characters. 480px
+     * covers realistic company names without excessive overhang; the
+     * `calc(100vw - 32px)` side of the clamp keeps that width off the edges
+     * of a phone-width screen.
+     */
+    width: min(480px, calc(100vw - 32px));
     box-sizing: border-box;
     padding: 8px;
     border: 1px solid var(--color-gray89);
@@ -641,11 +653,8 @@
 }
 
 /*
- * Ellipsised on one line, matching PrestaShop's rows. The panel is only as wide
- * as the company field, and that field is half a column on a three-column
- * checkout — wrapping a row instead puts every result on three or four lines
- * and gives the scroll container a horizontal scrollbar as well as a vertical
- * one.
+ * Ellipsised on one line, matching PrestaShop's rows — wrapping a row instead
+ * gives the scroll container a horizontal scrollbar as well as a vertical one.
  */
 .two-company-dropdown__row {
     padding: 6px 8px;

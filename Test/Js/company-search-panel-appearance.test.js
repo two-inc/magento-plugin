@@ -4,10 +4,9 @@
  *
  * TWO-25503 — the popover's appearance inside a field-width panel.
  *
- * The panel is exactly as wide as the company field, and that field can be half
- * a column on a three-column checkout. Three rules carry the whole difference
- * between a control that reads and one that does not at that width, and none of
- * them is visible from the DOM:
+ * The panel can be as narrow as half a column on a three-column checkout.
+ * Three rules carry the whole difference between a control that reads and one
+ * that does not at that width, and none of them is visible from the DOM:
  *
  *  - result rows are ellipsised on one line, or every result takes three or
  *    four lines and the scroll container gets a horizontal scrollbar too;
@@ -78,6 +77,24 @@ function declaredStyle(selector) {
 afterEach(() => {
     document.head.innerHTML = '';
     document.body.innerHTML = '';
+});
+
+describe('the panel can overhang a narrow field', () => {
+    test('no min-width competes with the viewport-clamped width', () => {
+        // CSS2.1 §10.4: min-width always wins over max-width. A `min-width`
+        // here would make the clamp a no-op under a 512px viewport.
+        computedPanelStyles();
+        expect(declaredStyle('.two-company-dropdown').getPropertyValue('min-width')).toBe('');
+    });
+
+    // jsdom's CSS engine does not evaluate calc()/min() (getComputedStyle
+    // returns '' for a width using either), so the per-viewport resolved
+    // pixel value can't be asserted here — only the declared formula itself.
+    test('the width formula is the 480px floor clamped to the viewport', () => {
+        computedPanelStyles();
+        expect(declaredStyle('.two-company-dropdown').getPropertyValue('width'))
+            .toBe('min(480px, calc(100vw - 32px))');
+    });
 });
 
 describe('a result row stays on one line', () => {
