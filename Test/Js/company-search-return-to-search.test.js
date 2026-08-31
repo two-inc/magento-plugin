@@ -58,7 +58,6 @@ const BASE_CONFIG = {
  * @returns {object} `{ component, identity }`
  */
 function mount() {
-    const identity = loadAmdModule(IDENTITY_PATH, {}, GLOBALS);
     const SoleTraderStub = function () {
         this.listenForSignupResult = function () {};
         this.ensureTokens = function () { return Promise.resolve(true); };
@@ -75,7 +74,6 @@ function mount() {
     const component = loadCompanyCapture(
         {
             jquery: $,
-            'Two_Gateway/js/model/company-identity': identity,
             'Two_Gateway/js/model/company-search': companySearch,
             'Two_Gateway/js/model/company-search-panel': loadCompanySearchPanel(
                 $,
@@ -86,9 +84,9 @@ function mount() {
             'Two_Gateway/js/model/brand-config': brandConfigMock(BASE_CONFIG)
         },
         GLOBALS
-    );
+    ).shipping;
     component.start();
-    return { component: component, identity: identity };
+    return { component: component, identity: component.identity() };
 }
 
 function panelIsOpen() {

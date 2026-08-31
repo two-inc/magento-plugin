@@ -423,7 +423,6 @@ const DECLINED_NOTICE_COPY = {
  */
 function loadTile() {
     const dom = makeRecordingDom();
-    const identity = loadAmdModule(IDENTITY, {});
     const soleTrader = { launches: [] };
 
     function SoleTraderStub() {
@@ -439,8 +438,7 @@ function loadTile() {
     }
 
     const shared = {
-        jquery: dom.$,
-        'Two_Gateway/js/model/company-identity': identity
+        jquery: dom.$
     };
     const component = loadCompanyCapture(
         Object.assign({}, shared, {
@@ -487,7 +485,7 @@ function loadTile() {
         errorMessages: { remove: function () {} }
     };
 
-    return { renderer, component, identity, dom, soleTrader };
+    return { renderer, component, identity: component.identity, dom, soleTrader };
 }
 
 /**
@@ -495,8 +493,8 @@ function loadTile() {
  * back an authenticated buyer record.
  */
 function adoptSoleTrader(component, organizationNumber, companyName) {
-    component.soleTraderMode();
-    component.adoptSoleTrader({
+    component.shipping.soleTraderMode();
+    component.shipping.adoptSoleTrader({
         organization_number: organizationNumber,
         company_name: companyName
     });
@@ -564,7 +562,7 @@ describe('the payment tile shows the number as an uneditable label, not a field'
         const { renderer, component, dom } = loadTile();
         dom.presence[ADDRESS_FIELD_SELECTOR] = 1;
         dom.node(ADDRESS_FIELD_SELECTOR).length = 1;
-        component.refreshMount();
+        component.shipping.refreshMount();
 
         expect(nameFieldVisible(renderer)).toBe(false);
     });
@@ -598,7 +596,7 @@ describe('the payment tile shows the number as an uneditable label, not a field'
         adoptSoleTrader(component, 'ST-SYNTH-005', 'Sole Trader Example');
         expect(isReadOnly('company_name', renderer)).toBe(true);
 
-        component.registeredMode();
+        component.shipping.registeredMode();
         expect(isReadOnly('company_name', renderer)).toBe(false);
     });
 
@@ -613,7 +611,7 @@ describe('the payment tile shows the number as an uneditable label, not a field'
         // mode clears the number, and nothing refills it.
         const { renderer, component, identity } = loadTile();
 
-        component.soleTraderMode();
+        component.shipping.soleTraderMode();
 
         expect(identity.captureMode()).toBe('soletrader');
         expect(renderer.companyId()).toBe('');
@@ -632,7 +630,7 @@ describe('the payment tile shows the number as an uneditable label, not a field'
             { companyName: 'First Example Ltd', companyId: '12345678' },
             { authoritative: true }
         );
-        component.soleTraderMode();
+        component.shipping.soleTraderMode();
 
         expect(renderer.companyId()).toBe('');
         expect(isReadOnly('company_name', renderer)).toBe(false);
@@ -734,7 +732,7 @@ describe('what each capture mode puts in front of the buyer', () => {
         expect(approvedNoticeVisible(renderer)).toBe(true);
         expect(companyIdLabel(renderer).visible).toBe(true);
 
-        component.manualEntryMode();
+        component.shipping.manualEntryMode();
 
         expect(renderer.companyId()).toBe('');
         expect(approvedNoticeVisible(renderer)).toBe(false);
@@ -755,7 +753,7 @@ describe('what each capture mode puts in front of the buyer', () => {
         approveIntent(renderer);
         expect(approvedNoticeVisible(renderer)).toBe(true);
 
-        component.registeredMode();
+        component.shipping.registeredMode();
 
         expect(identity.captureMode()).toBe('registered');
         expect(identity.soleTraderAdopted()).toBe(false);
@@ -778,7 +776,7 @@ describe('what each capture mode puts in front of the buyer', () => {
             { authoritative: true }
         );
 
-        component.registeredMode();
+        component.shipping.registeredMode();
 
         expect(renderer.companyId()).toBe('12345678');
         expect(renderer.isCompanyCaptured()).toBe(true);

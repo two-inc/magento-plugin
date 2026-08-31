@@ -15,6 +15,42 @@
 const { loadAmdModule, defaultMocks } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
+const IDENTITY_PATH = 'view/frontend/web/js/model/company-identity.js';
+
+/**
+ * A context wired to a REAL identity instance (TWO-25554), for the two cases
+ * below that need a company CHANGE to reach the resolver and back — a plain
+ * substituted `ko.observable()` for companyName/companyId, as makeContext()
+ * uses for every other case here, is disconnected from that round trip and
+ * never fires it.
+ *
+ * @returns {object} `{ ctx, identity }`
+ */
+function makeContextWithRealIdentity(noticeCopy, declinedCopy) {
+    const identity = loadAmdModule(IDENTITY_PATH, {}, { document: document, window: window })();
+    const component = loadAmdModule(RENDERER, {
+        'Two_Gateway/js/model/company-capture': {
+            identity: identity,
+            shipping: { identity: function () { return identity; } },
+            refreshMount: function () {}
+        }
+    });
+    const ctx = Object.assign({}, component, {
+        messageContainer: {
+            clear: function () {},
+            addSuccessMessage: function () {},
+            addErrorMessage: function () {},
+            errorMessages: { push: function () {}, remove: function () {} }
+        },
+        errors: []
+    });
+    ctx.showErrorMessage = function (message) { ctx.errors.push(message); };
+    component.initOrderIntentApprovedNotice.call(ctx, {
+        orderIntentApprovedNotice: noticeCopy,
+        orderIntentDeclinedNotice: declinedCopy
+    });
+    return { ctx: ctx, identity: identity };
+}
 
 const DEFAULT_COPY = {
     withCompany: 'This order by {{companyName}} ({{companyNumber}}) is likely to be accepted by Two',
@@ -316,13 +352,12 @@ describe('gateway_method intent-approved notice', () => {
     });
 
     test('changing the company clears both notices', () => {
-        const ctx = makeContext(DEFAULT_COPY, DECLINED_COPY);
-        ctx.companyName('Acme Widgets AS');
-        ctx.companyId('123456789');
+        const { ctx, identity } = makeContextWithRealIdentity(DEFAULT_COPY, DECLINED_COPY);
+        identity.write({ companyName: 'Acme Widgets AS', companyId: '123456789' }, { authoritative: true });
         ctx.processOrderIntentSuccessResponse.call(ctx, { approved: true });
         expect(ctx.orderIntentApprovedNotice()).not.toBe('');
 
-        ctx.companyName('Different Co AS');
+        identity.write({ companyName: 'Different Co AS' }, { authoritative: true });
 
         // The approval was for the previous company; keeping it would be a
         // buyer-facing lie.
@@ -331,12 +366,11 @@ describe('gateway_method intent-approved notice', () => {
     });
 
     test('changing the company number clears both notices', () => {
-        const ctx = makeContext(DEFAULT_COPY, DECLINED_COPY);
-        ctx.companyName('Acme Widgets AS');
-        ctx.companyId('123456789');
+        const { ctx, identity } = makeContextWithRealIdentity(DEFAULT_COPY, DECLINED_COPY);
+        identity.write({ companyName: 'Acme Widgets AS', companyId: '123456789' }, { authoritative: true });
         ctx.processOrderIntentSuccessResponse.call(ctx, { approved: true });
 
-        ctx.companyId('999888777');
+        identity.write({ companyName: 'Acme Widgets AS', companyId: '999888777' }, { authoritative: true });
 
         expect(ctx.orderIntentApprovedNotice()).toBe('');
         expect(ctx.orderIntentDeclinedNotice()).toBe('');
@@ -377,16 +411,21 @@ describe('gateway_method intent-approved notice', () => {
  */
 describe('the address-lookup failure notice lands in the tile box', () => {
     function contextOn(addressNotice) {
+        const identityStub = {
+            addressNotice: addressNotice,
+            companyName: koObservable(''),
+            companyId: koObservable(''),
+            soleTraderAdopted: koObservable(false),
+            soleTraderBusy: koObservable(false),
+            subscribe: function () {
+                return { dispose: function () {} };
+            }
+        };
         const component = loadAmdModule(RENDERER, {
-            'Two_Gateway/js/model/company-identity': {
-                addressNotice: addressNotice,
-                companyName: koObservable(''),
-                companyId: koObservable(''),
-                soleTraderAdopted: koObservable(false),
-                soleTraderBusy: koObservable(false),
-                subscribe: function () {
-                    return { dispose: function () {} };
-                }
+            'Two_Gateway/js/model/company-capture': {
+                identity: identityStub,
+                shipping: { identity: function () { return identityStub; } },
+                refreshMount: function () {}
             }
         });
         const ctx = Object.assign({}, component, {

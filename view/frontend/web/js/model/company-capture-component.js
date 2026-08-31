@@ -412,7 +412,10 @@
                 return this._options.addressFieldSelector;
             }
         }
-        if (this._options.fieldExists(this._options.tileFieldSelector)) {
+        // A host with no tile fallback at all (TWO-25554's billing panel,
+        // which only ever lives at its own address field) passes ''; that must
+        // never reach fieldExists() as a query.
+        if (this._options.tileFieldSelector && this._options.fieldExists(this._options.tileFieldSelector)) {
             return this._options.tileFieldSelector;
         }
         return '';

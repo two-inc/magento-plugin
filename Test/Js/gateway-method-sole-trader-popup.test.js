@@ -76,8 +76,6 @@ function makeEnv(options) {
     };
     let intervalSeq = 0;
 
-    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
-
     const fakeWindow = {
         open: function (url, target, features) {
             rec.opened.push({ url: url, target: target, features: features });
@@ -106,7 +104,6 @@ function makeEnv(options) {
     const mocks = {
         jquery: $,
         'Magento_Checkout/js/model/quote': quote,
-        'Two_Gateway/js/model/company-identity': identity,
         'Two_Gateway/js/model/company-search': companySearch,
         'Two_Gateway/js/model/brand-config': brandConfigMock({
             checkoutPageUrl: CHECKOUT_PAGE_URL,
@@ -146,7 +143,7 @@ function makeEnv(options) {
         }
     };
 
-    return { rec: rec, identity: identity, mocks: mocks, globals: globals };
+    return { rec: rec, mocks: mocks, globals: globals };
 }
 
 /**
@@ -162,11 +159,11 @@ function makeEnv(options) {
 function loadFlow(options) {
     const env = makeEnv(options);
     const SoleTraderCtor = loadAmdModule(SOLE_TRADER, env.mocks, env.globals);
-    const component = loadCompanyCapture(env.mocks, env.globals);
+    const component = loadCompanyCapture(env.mocks, env.globals).shipping;
     component.adoptSoleTrader = function (buyer) { env.rec.adopted.push(buyer); };
     component.abandonSoleTrader = function () { env.rec.abandons.push(true); };
     const flow = new SoleTraderCtor(component);
-    return { flow: flow, rec: env.rec, identity: env.identity, component: component };
+    return { flow: flow, rec: env.rec, identity: component.identity(), component: component };
 }
 
 /**
@@ -194,12 +191,12 @@ async function startStack(options) {
             env.globals
         )
     });
-    const component = loadCompanyCapture(mocks, env.globals);
+    const component = loadCompanyCapture(mocks, env.globals).shipping;
     component.start();
     // The availability answer is seeded, so one macrotask turn is enough for it
     // and the mint it triggers to settle.
     await new Promise((resolve) => setTimeout(resolve, 0));
-    return { component: component, flow: component.soleTrader(), rec: env.rec, identity: env.identity };
+    return { component: component, flow: component.soleTrader(), rec: env.rec, identity: component.identity() };
 }
 
 /**

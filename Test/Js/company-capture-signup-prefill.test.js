@@ -13,10 +13,14 @@
 const $ = require('jquery');
 const { loadCompanyCapture, brandConfigMock, defaultMocks } = require('./amd-harness');
 
+/**
+ * @returns {object} the shipping panel's own `_options` — signupPrefill()
+ *          reads the RESOLVED identity (TWO-25554), seeded here to 'Acme Ltd'
+ *          the way the resolver would once a capture actually resolved.
+ */
 function load(billingAddress, guestEmail) {
-    return loadCompanyCapture({
+    const capture = loadCompanyCapture({
         jquery: $,
-        'Two_Gateway/js/model/company-identity': { companyName: function () { return 'Acme Ltd'; } },
         'Two_Gateway/js/model/sole-trader': function () {},
         'Two_Gateway/js/model/brand-config': brandConfigMock(null),
         'Two_Gateway/js/model/company-search': defaultMocks()['Two_Gateway/js/model/company-search'],
@@ -29,6 +33,8 @@ function load(billingAddress, guestEmail) {
             }
         )
     });
+    capture.identity.companyName('Acme Ltd');
+    return capture.shipping;
 }
 
 describe('signupPrefill() builds the hosted-signup payload', () => {

@@ -56,8 +56,6 @@ function telephoneValue() {
  * @returns {object} `{ flow, companySearch, identity }`
  */
 function loadFlow() {
-    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
-
     const globals = {
         document: document,
         window: { open: function () { return null; }, addEventListener: function () {}, removeEventListener: function () {} },
@@ -76,7 +74,6 @@ function loadFlow() {
     const component = loadCompanyCapture(
         {
             jquery: $,
-            'Two_Gateway/js/model/company-identity': identity,
             'Two_Gateway/js/model/company-search': companySearch,
             'Two_Gateway/js/model/brand-config': brandConfigMock({
                 checkoutPageUrl: 'https://checkout.example',
@@ -85,8 +82,9 @@ function loadFlow() {
             })
         },
         globals
-    );
+    ).shipping;
     component.start();
+    const identity = component.identity();
     identity.captureMode('soletrader');
 
     return { flow: component.soleTrader(), companySearch: companySearch, identity: identity };

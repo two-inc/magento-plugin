@@ -178,12 +178,12 @@ function load() {
         '</form>';
 
     const $ = makeMiniQuery();
-    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
+    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window })();
     const component = loadAmdModule(
         MODULE,
         {
             jquery: $,
-            'Two_Gateway/js/model/company-identity': identity,
+            'Two_Gateway/js/model/company-capture': { shipping: { identity: function () { return identity; } } },
             'Magento_Customer/js/customer-data': {
                 set: function () {},
                 get: function () {

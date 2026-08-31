@@ -705,7 +705,6 @@ describe('dropping below the minimum input length', () => {
  * ------------------------------------------------------------------ */
 
 function mount() {
-    const identity = loadAmdModule(IDENTITY_PATH, {}, GLOBALS);
     const companySearch = loadCompanySearch();
     const SoleTraderStub = function () {
         this.listenForSignupResult = function () {};
@@ -718,7 +717,6 @@ function mount() {
     const component = loadCompanyCapture(
         {
             jquery: $,
-            'Two_Gateway/js/model/company-identity': identity,
             'Two_Gateway/js/model/company-search': companySearch,
             'Two_Gateway/js/model/company-search-panel': loadCompanySearchPanel(
                 $,
@@ -729,9 +727,9 @@ function mount() {
             'Two_Gateway/js/model/brand-config': brandConfigMock(BASE_CONFIG)
         },
         GLOBALS
-    );
+    ).shipping;
     component.start();
-    return { component: component, identity: identity, companySearch: companySearch };
+    return { component: component, identity: component.identity(), companySearch: companySearch };
 }
 
 /** Replace the mounted field, as a one-page checkout's re-render does. */
@@ -835,12 +833,8 @@ describe('a company-detail lookup that brings back no address says so', () => {
      * message region it used to go to cleared on nobody's schedule.
      */
     function loadWithIdentity() {
-        identity = loadAmdModule(IDENTITY_PATH, {}, GLOBALS);
-        const companySearch = loadAmdModule(
-            MODEL_PATH,
-            { jquery: $, 'Two_Gateway/js/model/company-identity': identity },
-            GLOBALS
-        );
+        identity = loadAmdModule(IDENTITY_PATH, {}, GLOBALS)();
+        const companySearch = loadAmdModule(MODEL_PATH, { jquery: $ }, GLOBALS);
         companySearch.clearResultCache();
         return companySearch;
     }
@@ -861,7 +855,7 @@ describe('a company-detail lookup that brings back no address says so', () => {
     ])('%s tells the buyer to enter the address themselves', (_label, settle) => {
         const companySearch = loadWithIdentity();
 
-        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, undefined, identity);
         settle(requests[0]);
 
         expect(identity.addressNotice()).toContain('enter it below');
@@ -871,7 +865,7 @@ describe('a company-detail lookup that brings back no address says so', () => {
     test('an abort says nothing', () => {
         const companySearch = loadWithIdentity();
 
-        const request = companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
+        const request = companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, undefined, identity);
         request.abort();
 
         expect(identity.addressNotice()).toBe('');
@@ -880,7 +874,7 @@ describe('a company-detail lookup that brings back no address says so', () => {
     test('an address that arrives is applied without a notice', () => {
         const companySearch = loadWithIdentity();
 
-        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, undefined, identity);
         requests[0].settleDone({ addresses: [{ streetAddress: 'Somewhere 1' }] });
 
         expect(identity.addressNotice()).toBe('');
@@ -914,8 +908,8 @@ describe('a company-detail lookup that brings back no address says so', () => {
         const applied = [];
         companySearch.applyAddress = function (address) { applied.push(address.streetAddress); };
 
-        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'company-a' });
-        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'company-b' });
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'company-a' }, undefined, identity);
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'company-b' }, undefined, identity);
         settle(companySearch, requests);
 
         expect(applied).toEqual(expectedApplied, description);
@@ -939,11 +933,11 @@ describe('a company-detail lookup that brings back no address says so', () => {
     ])('%s retires the previous failure', (_label, settleSecond) => {
         const companySearch = loadWithIdentity();
 
-        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, undefined, identity);
         requests[0].settleFail('error');
         expect(identity.addressNotice()).toContain('enter it below');
 
-        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-def-456' });
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-def-456' }, undefined, identity);
         settleSecond(requests[1]);
 
         expect(identity.addressNotice()).toBe('');

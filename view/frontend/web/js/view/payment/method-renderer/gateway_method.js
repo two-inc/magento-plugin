@@ -18,7 +18,6 @@ define([
     'Two_Gateway/js/model/surcharge',
     'Two_Gateway/js/model/brand-config',
     'Two_Gateway/js/model/company-search',
-    'Two_Gateway/js/model/company-identity',
     'Two_Gateway/js/model/company-capture',
     'Two_Gateway/js/model/minimum-order-visibility',
     'mage/url',
@@ -40,7 +39,6 @@ define([
     surchargeModel,
     getBrandConfig,
     companySearch,
-    identity,
     companyCapture,
     isAboveMinimums,
     url
@@ -50,16 +48,34 @@ define([
     window.quote = quote;
 
     /*
-     * Knockout's view of the page-level identity, which is framework-free so
-     * that Hyvä loads the same file. `companyName` mirrors both ways because the
-     * tile's `value:` binding writes back; `mirroring` stops that write echoing
-     * into a second pass.
+     * Knockout's view of the RESOLVED identity (TWO-25554) — whichever of the
+     * shipping/billing panels' own captures currently wins, per
+     * company-capture.js's resolver — framework-free so that Hyvä loads the
+     * same file. `companyName` mirrors both ways because the tile's `value:`
+     * binding writes back; `mirroring` stops that write echoing into a second
+     * pass. The tile only ever renders when there is no distinct billing
+     * panel at all (see CompanyCaptureComponent.mountSelector()), so the
+     * resolved identity and the shipping panel's own are the same value
+     * whenever this binding is live — see the write-back below.
      */
+    const identity = companyCapture.identity;
     const capturedName = ko.observable(identity.companyName());
     const capturedId = ko.observable(identity.companyId());
     const soleTraderAdopted = ko.observable(identity.soleTraderAdopted());
     const soleTraderBusy = ko.observable(identity.soleTraderBusy());
     let mirroring = false;
+
+    /**
+     * The live renderer instance's own reaction to a resolved-company change
+     * (TWO-25554) — set by initialize(), cleared by dispose(). A module
+     * function rather than a ko subscription on `capturedName`/`capturedId`
+     * directly: those two are set ONE AT A TIME below, each with its own
+     * synchronous notify, and a subscriber reacting mid-mirror would read one
+     * new value paired with the other's still-stale one. Firing this once,
+     * after every mirrored observable has already landed, is what keeps the
+     * pair consistent.
+     */
+    let onResolvedCompanyChange = null;
 
     identity.subscribe(function () {
         mirroring = true;
@@ -68,6 +84,7 @@ define([
         soleTraderAdopted(identity.soleTraderAdopted());
         soleTraderBusy(identity.soleTraderBusy());
         mirroring = false;
+        if (onResolvedCompanyChange) onResolvedCompanyChange();
     });
 
     // Only `companyName` mirrors back, because it is the only two-way binding.
@@ -75,7 +92,12 @@ define([
     // notification rather than reaching it.
     capturedName.subscribe(function (value) {
         if (mirroring) return;
-        identity.companyName(value);
+        // The shipping panel's own identity, not the resolved one: this write
+        // fires only from the tile's plain-text input, which is always the
+        // shipping/no-billing-panel mount's own field (see the comment above),
+        // and the resolver would otherwise overwrite this on its next
+        // recompute rather than treat it as a captured edit.
+        companyCapture.shipping.identity().companyName(value);
     });
 
     // The tile-side host the company-capture component binds at; the tile's own
@@ -309,12 +331,11 @@ define([
          * doesn't accumulate live subscriptions to the singleton quote totals.
          */
         dispose: function () {
-            // The notice subscriptions are on the page-level identity, which
-            // outlives this renderer — undisposed, every re-render would leave
-            // another live subscriber writing to a destroyed instance.
-            if (this._noticeSubs) {
-                this._noticeSubs.forEach((sub) => sub.dispose());
-                this._noticeSubs = null;
+            // onResolvedCompanyChange is module-scope and outlives this
+            // renderer — undisposed, a re-render would leave a destroyed
+            // instance's reaction still wired to the page-level identity.
+            if (onResolvedCompanyChange === this._reactToResolvedCompanyChange) {
+                onResolvedCompanyChange = null;
             }
             if (this._twoVisibilitySub) {
                 this._twoVisibilitySub.dispose();
@@ -358,8 +379,10 @@ define([
          * @returns {boolean}
          */
         isTileCompanyFieldVisible: function () {
-            if (!companyCapture.config()) return false;
-            return companyCapture.mountSelector() === TILE_COMPANY_FIELD_SELECTOR;
+            // The tile is exclusively the shipping/no-billing-panel mount's
+            // own fallback (TWO-25554) — the billing panel never binds there.
+            if (!companyCapture.shipping.config()) return false;
+            return companyCapture.shipping.mountSelector() === TILE_COMPANY_FIELD_SELECTOR;
         },
         /**
          * Re-point the component's mount after a quote address change, which is
@@ -369,7 +392,7 @@ define([
          * start().
          */
         refreshCompanyMount: function () {
-            if (companyCapture.config()) companyCapture.refreshMount();
+            if (companyCapture.shipping.config()) companyCapture.refreshMount();
         },
         /**
          * Name AND organisation number, as opposed to merely named — a manual,
@@ -579,7 +602,12 @@ define([
             companyName = typeof companyName == 'string' && companyName ? companyName : '';
             companyId = typeof companyId == 'string' ? companyId : '';
             if (!companyName || !companyId) return;
-            identity.write({ companyName, companyId });
+            // The shipping panel's own identity, never the resolved one
+            // (TWO-25554): every caller of fillCompanyData() (the customerData
+            // section, a saved shipping/billing address's customAttributes) is
+            // shipping-panel-sourced, and the resolver — not this write — is
+            // what resolvedIdentity is allowed to change from.
+            companyCapture.shipping.identity().write({ companyName, companyId });
             if (this.isOrderIntentEnabled) {
                 // TWO-25347 belt-and-braces: refuse a second concurrent
                 // order_intent POST for the SAME captured company. The root
@@ -704,7 +732,12 @@ define([
             // "wrong country" would drop a legitimate company on the first load
             // after an upgrade. They gain the stamp on the next write.
             const capturedCountry = data.companyCountry ? String(data.companyCountry) : '';
-            const currentCountry = companyCapture.countryCode();
+            // Unchanged from pre-TWO-25554 behaviour: this guard predates the
+            // billing panel and this method's callers (the customerData
+            // section and the shipping-form address subscription) are both
+            // shipping-panel-driven, so scoping it to the shipping panel's
+            // own country preserves exactly today's answer.
+            const currentCountry = companyCapture.shipping.countryCode();
             if (
                 capturedCountry &&
                 currentCountry &&
@@ -755,7 +788,8 @@ define([
          */
         selectCompanyWithoutIdentifier: function (companyName) {
             console.debug({ logger: 'twoPayment.selectCompanyWithoutIdentifier', companyName });
-            identity.write({ companyName, companyId: '' }, { authoritative: true });
+            // See fillCompanyData()'s own comment — same shipping-panel scope.
+            companyCapture.shipping.identity().write({ companyName, companyId: '' }, { authoritative: true });
         },
         fillTelephone: function (telephone) {
             console.debug({ logger: 'twoPayment.fillTelephone', telephone });
@@ -1094,14 +1128,26 @@ define([
             this.addressNotice = identity.addressNotice;
 
             var self = this;
-            this._noticeSubs = [
-                this.companyName.subscribe(function () {
-                    self.clearOrderIntentNotices();
-                }),
-                this.companyId.subscribe(function () {
-                    self.clearOrderIntentNotices();
-                })
-            ];
+            /**
+             * TWO-25554: the resolved company can change without a fresh pick
+             * — billing's own capture changing, or "same as shipping" being
+             * toggled — since the resolver mirrors whichever panel wins into
+             * this same pair. clearOrderIntentNotices() runs unconditionally,
+             * same as the per-field subscriptions this replaces (a stale
+             * verdict is retired whether or not order-intent is even on);
+             * fillCompanyData() below is the separate, gated "start a fresh
+             * check" concern, and covers a resolve-to-nothing by simply not
+             * running (it no-ops on an empty id/name for its other callers).
+             */
+            this._reactToResolvedCompanyChange = function () {
+                self.clearOrderIntentNotices();
+                const companyName = self.companyName();
+                const companyId = self.companyId();
+                if (companyName && companyId) {
+                    self.fillCompanyData({ companyName: companyName, companyId: companyId });
+                }
+            };
+            onResolvedCompanyChange = this._reactToResolvedCompanyChange;
         },
         /**
          * Substitute the buyer's company name/number into a
@@ -1454,7 +1500,9 @@ define([
          * state in which no sole trader can have been adopted anyway.
          */
         selectDifferentSoleTrader() {
-            const soleTrader = companyCapture.soleTrader();
+            // The tile's own "select a different sole trader" affordance —
+            // the shipping/no-billing-panel mount's, same as the field above.
+            const soleTrader = companyCapture.shipping.soleTrader();
             if (!soleTrader) return null;
             return soleTrader.selectDifferentSoleTrader();
         }

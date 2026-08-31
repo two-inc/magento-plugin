@@ -63,8 +63,6 @@ function loadFlow(options) {
         busyDuringWrite: null
     };
 
-    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
-
     const fakeWindow = {
         open: function () { return null; },
         addEventListener: function (name, fn) { rec.listeners.push({ name: name, fn: fn }); },
@@ -74,7 +72,6 @@ function loadFlow(options) {
     const component = loadCompanyCapture(
         {
             jquery: $,
-            'Two_Gateway/js/model/company-identity': identity,
             'Two_Gateway/js/model/company-search': Object.assign(
                 {},
                 defaultMocks()['Two_Gateway/js/model/company-search'],
@@ -114,8 +111,9 @@ function loadFlow(options) {
                 });
             }
         }
-    );
+    ).shipping;
     component.start();
+    const identity = component.identity();
     identity.captureMode('mode' in opts ? opts.mode : 'soletrader');
 
     const adopt = component.adoptSoleTrader.bind(component);

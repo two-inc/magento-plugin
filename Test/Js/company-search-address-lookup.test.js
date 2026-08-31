@@ -309,7 +309,6 @@ function loadMountedComponent(configOverride) {
     const recorder = makeRecorder();
     const $ = makeSpyJQuery(recorder);
     const companySearch = loadCompanySearch($);
-    const identity = loadAmdModule(IDENTITY, {});
     const config = Object.assign({}, BASE_CONFIG, configOverride || {});
     const panel = { options: null };
 
@@ -335,7 +334,6 @@ function loadMountedComponent(configOverride) {
 
     const component = loadCompanyCapture({
         jquery: $,
-        'Two_Gateway/js/model/company-identity': identity,
         'Two_Gateway/js/model/company-search': companySearch,
         'Two_Gateway/js/model/company-search-panel': PanelStub,
         'Two_Gateway/js/model/sole-trader': SoleTraderStub,
@@ -345,7 +343,7 @@ function loadMountedComponent(configOverride) {
             defaultMocks()['Magento_Checkout/js/model/quote'],
             { billingAddress: function () { return { countryId: 'GB' }; } }
         )
-    });
+    }).shipping;
     component.start();
 
     /**
@@ -376,7 +374,7 @@ function loadMountedComponent(configOverride) {
 
     return {
         component: component,
-        identity: identity,
+        identity: component.identity(),
         recorder: recorder,
         pick: pick,
         settle: settle

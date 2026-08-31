@@ -196,18 +196,18 @@ describe('company search backs off rather than retrying into the ceiling', () =>
  */
 describe('a parked address lookup keeps its notice through the intent verdict', () => {
     function wire() {
-        const identity = loadAmdModule(IDENTITY_PATH, {}, GLOBALS);
-        const companySearch = loadAmdModule(
-            MODEL_PATH,
-            { jquery: $, 'Two_Gateway/js/model/company-identity': identity },
-            GLOBALS
-        );
+        const identity = loadAmdModule(IDENTITY_PATH, {}, GLOBALS)();
+        const companySearch = loadAmdModule(MODEL_PATH, { jquery: $ }, GLOBALS);
         companySearch.clearResultCache();
 
         const component = loadAmdModule(
             RENDERER,
             Object.assign(defaultMocks(), {
-                'Two_Gateway/js/model/company-identity': identity
+                'Two_Gateway/js/model/company-capture': {
+                    identity: identity,
+                    shipping: { identity: function () { return identity; } },
+                    refreshMount: function () {}
+                }
             })
         );
         const ko = defaultMocks().ko;
@@ -230,12 +230,16 @@ describe('a parked address lookup keeps its notice through the intent verdict', 
         const requests = installAjaxDouble();
         const { identity, companySearch, tile } = wire();
 
-        companySearch.lookupCompanyAddress({ isAddressSearchEnabled: true }, { lookupId: 'lookup-1' });
+        companySearch.lookupCompanyAddress(
+            { isAddressSearchEnabled: true }, { lookupId: 'lookup-1' }, undefined, identity
+        );
         requests[0].settleFail(429);
 
         // The park is now up, so this second pick never issues a request and
         // announces immediately.
-        companySearch.lookupCompanyAddress({ isAddressSearchEnabled: true }, { lookupId: 'lookup-2' });
+        companySearch.lookupCompanyAddress(
+            { isAddressSearchEnabled: true }, { lookupId: 'lookup-2' }, undefined, identity
+        );
         expect(identity.addressNotice()).toContain('enter it below');
 
         settleVerdict(tile);
