@@ -18,21 +18,25 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             return;
         }
 
-        var $live = $panel.find('.two-api-key-verify__live');
-        var $message = $live.find('.two-api-key-verify__message');
-        var $icon = $live.find('.two-api-key-verify__icon');
+        var $message = $panel.find('.two-api-key-verify__message');
+        var $icon = $panel.find('.two-api-key-verify__icon');
+        // The server-rendered verdict for the SAVED key — restored whenever
+        // the field reverts to that value (or to its untouched placeholder),
+        // rather than left showing a stale "checking"/live verdict.
+        var savedMessage = $message.text();
+        var savedIconClass = $icon.attr('class');
         var timer = null;
         var latest = 0;
         var pending = null;
 
         function render(status, message) {
             if (!status) {
-                $live.hide();
+                $message.text(savedMessage);
+                $icon.attr('class', savedIconClass);
                 return;
             }
             $message.text(message);
             $icon.attr('class', 'two-api-key-verify__icon api-key-status-icon api-key-' + status);
-            $live.show();
         }
 
         function verify() {
@@ -81,6 +85,13 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         $input.on('input', function () {
             clearTimeout(timer);
             timer = setTimeout(verify, DEBOUNCE_MS);
+        });
+        // Blur fires immediately (no debounce) — an admin who tabs away
+        // right after pasting a key should not wait out DEBOUNCE_MS for
+        // the verdict that "input" alone would already be about to show.
+        $input.on('blur', function () {
+            clearTimeout(timer);
+            verify();
         });
     }
 

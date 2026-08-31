@@ -157,7 +157,10 @@ interface RepositoryInterface
     public function isTaxSubtotalsEnabled(?int $storeId = null): bool;
 
     /**
-     * Merchant-declared fallback shipping tax rate, as a percentage.
+     * DEPRECATED FIELD: merchant-declared fallback shipping tax rate, as a
+     * flat percentage. Superseded by getDefaultShippingTaxClassId()'s
+     * tax-rules-engine resolution; retained only for pre-existing
+     * merchants (TWO-25386) and consulted only when that is unset.
      *
      * Only consulted when Magento's tax engine declares no rate at all for a
      * taxed shipping line (TWO-25503). NULL when unset — the plugin refuses
@@ -168,6 +171,24 @@ interface RepositoryInterface
      * @return float|null
      */
     public function getDefaultShippingTaxRate(?int $storeId = null): ?float;
+
+    /**
+     * Product Tax Class id used to resolve a fallback shipping tax rate
+     * through Magento's tax rules engine (destination-aware, rule-driven —
+     * the same mechanism a product line's own tax is resolved through) when
+     * Magento declares no rate at all for a taxed shipping line (TWO-25503).
+     * Primary mechanism (TWO-25386); getDefaultShippingTaxRate() is the
+     * deprecated flat-rate fallback consulted only when this is unset.
+     *
+     * Returns null when unconfigured. A value of 0 is a valid selection
+     * ("None"): no tax rule can match class id 0, so the fallback resolves
+     * to untaxed.
+     *
+     * @param int|null $storeId
+     *
+     * @return int|null
+     */
+    public function getDefaultShippingTaxClassId(?int $storeId = null): ?int;
 
     /**
      * Check if department is enabled
@@ -495,23 +516,9 @@ interface RepositoryInterface
     public function isDisplayTooltipsEnabled(?int $storeId = null): bool;
 
     /**
-     * Debug flag: skip the additional confirmation-callback check on
-     * top of the mandatory order-reference match (TWO-25386). See
-     * Controller\Payment\Confirm for why this is currently a documented
-     * no-op on Magento — kept for admin-surface parity with the other
-     * plugins pending a Magento-side signing mechanism to actually gate.
-     *
-     * @param int|null $storeId
-     *
-     * @return bool
-     */
-    public function isSkipConfirmTokenCheckEnabled(?int $storeId = null): bool;
-
-    /**
-     * Whether stored Two configuration (payment/two_payment/* and
-     * payment/two_search/*) is deleted from core_config_data when the
-     * module is uninstalled (TWO-25386). Module uninstall is the nearest
-     * lifecycle event Magento offers for this.
+     * Whether stored Two configuration (payment/<code>/*) is deleted from
+     * core_config_data when the module is uninstalled (TWO-25386). Module
+     * uninstall is the nearest lifecycle event Magento offers for this.
      *
      * @param int|null $storeId
      *

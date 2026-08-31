@@ -25,6 +25,7 @@ use Magento\Sales\Model\Order\Invoice\Item as InvoiceItem;
 use Magento\Sales\Model\Order\Item as OrderItem;
 use Magento\Store\Model\App\Emulation;
 use Magento\Tax\Api\OrderTaxManagementInterface;
+use Magento\Tax\Model\Calculation as TaxCalculation;
 use Magento\Tax\Model\Sales\Total\Quote\CommonTaxCollector;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -104,6 +105,11 @@ abstract class Order
     private $orderTaxManagement;
 
     /**
+     * @var TaxCalculation
+     */
+    private $taxCalculation;
+
+    /**
      * Order constructor.
      *
      * @param Image $imageHelper
@@ -115,6 +121,7 @@ abstract class Order
      * @param LogRepository $logRepository
      * @param FeeLineProviderPool $feeLineProviderPool
      * @param OrderTaxManagementInterface $orderTaxManagement
+     * @param TaxCalculation $taxCalculation
      */
     public function __construct(
         Image $imageHelper,
@@ -125,7 +132,8 @@ abstract class Order
         Url $url,
         LogRepository $logRepository,
         FeeLineProviderPool $feeLineProviderPool,
-        OrderTaxManagementInterface $orderTaxManagement
+        OrderTaxManagementInterface $orderTaxManagement,
+        TaxCalculation $taxCalculation
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -136,6 +144,7 @@ abstract class Order
         $this->logRepository = $logRepository;
         $this->feeLineProviderPool = $feeLineProviderPool;
         $this->orderTaxManagement = $orderTaxManagement;
+        $this->taxCalculation = $taxCalculation;
     }
 
     /**
@@ -570,6 +579,31 @@ abstract class Order
         }
 
         $storeId = (int)$entity->getStoreId();
+
+        // Primary fallback: resolve the rate through Magento's tax rules
+        // engine for the configured Product Tax Class against the order's
+        // shipping destination — the same mechanism a product line's own
+        // tax is resolved through, rather than a merchant-typed flat
+        // percentage. TWO-25386.
+        $taxClassId = $this->configRepository->getDefaultShippingTaxClassId($storeId);
+        if ($taxClassId !== null) {
+            $rate = $this->resolveShippingTaxRateForClass($taxClassId, $entity, $storeId);
+            $this->logRepository->addDebugLog(
+                'ShippingTaxRateFallback',
+                sprintf(
+                    'Using the tax-rules-engine rate %.6F%% for entity %s (Product Tax Class %d): '
+                    . 'Magento declared no rate for a taxed shipping line.',
+                    $rate * 100,
+                    $entity->getIncrementId(),
+                    $taxClassId
+                )
+            );
+            return $rate;
+        }
+
+        // Deprecated fallback: only consulted once the primary mechanism
+        // above is unconfigured, for merchants who set the flat rate
+        // before default_shipping_tax_class existed.
         $fallbackPercent = $this->configRepository->getDefaultShippingTaxRate($storeId);
         if ($fallbackPercent === null) {
             $this->logRepository->addErrorLog(
@@ -597,6 +631,56 @@ abstract class Order
         );
 
         return $fallbackPercent / 100;
+    }
+
+    /**
+     * Resolves a shipping tax rate through Magento's tax rules engine for
+     * the given Product Tax Class against the entity's shipping
+     * destination — mirrors Repository::getDefaultTaxRate()'s
+     * getRateRequest()/getRate() call, but destination-aware (that one
+     * resolves the store's overall default with no address at all).
+     *
+     * A destination with no matching Tax Rule resolves to 0.0, same as an
+     * ordinary product line in an untaxed region — not a refusal, since a
+     * merchant selecting a real Product Tax Class has made a rate
+     * decision, however it resolves per destination.
+     *
+     * @param OrderModel|CreditmemoModel $entity
+     */
+    private function resolveShippingTaxRateForClass(int $taxClassId, $entity, int $storeId): float
+    {
+        $address = $this->resolveShippingAddressForTax($entity);
+        $request = $this->taxCalculation->getRateRequest($address, $address, null, $storeId);
+        $request->setProductClassId($taxClassId);
+        return (float)$this->taxCalculation->getRate($request) / 100;
+    }
+
+    /**
+     * The address a shipping tax rate is resolved against: the order's
+     * shipping address, falling back to billing for a virtual order (no
+     * shipping address exists) — same fallback getAddress() applies.
+     *
+     * @param OrderModel|CreditmemoModel $entity
+     * @return \Magento\Sales\Model\Order\Address|null
+     */
+    private function resolveShippingAddressForTax($entity)
+    {
+        $order = method_exists($entity, 'getOrder') && $entity->getOrder()
+            ? $entity->getOrder()
+            : $entity;
+
+        if (!method_exists($order, 'getShippingAddress')) {
+            return null;
+        }
+
+        $address = $order->getShippingAddress();
+        if (!$address && method_exists($order, 'getIsVirtual') && $order->getIsVirtual()
+            && method_exists($order, 'getBillingAddress')
+        ) {
+            $address = $order->getBillingAddress();
+        }
+
+        return $address ?: null;
     }
 
     /**

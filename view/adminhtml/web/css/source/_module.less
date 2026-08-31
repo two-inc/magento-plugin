@@ -99,6 +99,20 @@
 }
 
 
+// The verification icon sits inline beside the api_key input itself
+// (TWO-25386) rather than a separate row below it.
+.two-api-key-verify__input-wrap {
+    position: relative;
+    display: inline-block;
+}
+
+.two-api-key-verify__icon {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
 .api-key-status-icon::before {
     display: inline-block;
     margin-left: 8px;

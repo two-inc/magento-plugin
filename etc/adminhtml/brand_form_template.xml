@@ -25,8 +25,7 @@
  *   section_prefix   Short brand prefix, e.g. "two", "overlay". Used
  *                    for tab id (`{prefix}_gateway`) and section
  *                    ids (`{prefix}_general`/`_checkout_fields`/
- *                    `_search`/`_payment`/`_order_management`/
- *                    `_version`).
+ *                    `_payment`/`_order_management`/`_version`).
  *   provider         Short brand name (Descriptor::getProvider()), e.g.
  *                    "Two", or a partner overlay's own name. Interpolated
  *                    into a handful of admin <comment>/<label> strings
@@ -67,19 +66,27 @@
  * per-field. Overlays cannot ADD controls via this mechanism — the
  * canonical template is the source of truth for what fields exist.
  *
- * TWO-25386 Part 1: unified 6-section admin scheme (A. General,
- * B. Checkout Fields, C. Company Lookup, D. Payment Terms,
- * E. Order Management, F. Diagnostics — same names/order as
- * prestashop-plugin and woocommerce-plugin). `_general`, `_search`
- * and `_payment` keep their historical suffixes (relabeled); this is
- * what keeps a brand.xml `<suppressed_fields>` entry of the form
- * `general/…`, `search/…` or `payment/payment_terms/…` matching
- * unchanged. `_checkout_fields` and `_order_management` are new
- * suffixes for content split out of the old `_payment` section — an
- * overlay that suppressed a field which moved into one of those two
- * (title, subtitle, sort_order, country availability, minimum order,
- * order intent, fulfilment trigger/status, tax subtotals) needs its
- * `suppressed_fields` path updated to match.
+ * TWO-25386 Part 1: unified 5-section admin scheme (A. General,
+ * B. Checkout Fields, C. Payment Terms, D. Order Management,
+ * E. Diagnostics — same names/order as prestashop-plugin and
+ * woocommerce-plugin). `_general` and `_payment` keep their
+ * historical suffixes (relabeled); this is what keeps a brand.xml
+ * `<suppressed_fields>` entry of the form `general/…` or
+ * `payment/payment_terms/…` matching unchanged. `_checkout_fields`
+ * and `_order_management` are new suffixes for content split out of
+ * the old `_payment` section — an overlay that suppressed a field
+ * which moved into one of those two (title, subtitle, sort_order,
+ * country availability, minimum order, order intent, fulfilment
+ * trigger/status, tax subtotals) needs its `suppressed_fields` path
+ * updated to match.
+ *
+ * Follow-up: the standalone "Company Lookup" section (`_search`) was
+ * folded into `_checkout_fields` as its own `search` group, appended
+ * last. An overlay's `suppressed_fields` entry for
+ * `search/search/enable_company_search` or
+ * `search/search/enable_address_search` needs its `section_suffix`
+ * segment updated from `search` to `checkout_fields` — the group id
+ * (`search`) is unchanged.
  */
 -->
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -125,6 +132,7 @@
                        brand_code="{{code}}">
                     <label>API key</label>
                     <comment>API key for sandbox environment is available on your merchant portal (however please reach out to integration@two.inc for access to production keys).</comment>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\ApiKey</backend_model>
                     <validate>required-entry</validate>
                     <depends>
@@ -132,15 +140,10 @@
                     </depends>
                     <config_path>payment/{{code}}/api_key</config_path>
                 </field>
-                <field id="api_key_check" translate="label" type="button" sortOrder="51"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       brand_code="{{code}}">
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck</frontend_model>
-                </field>
                 <field id="firewall_token" translate="label" type="text" sortOrder="52"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Firewall token</label>
+                    <label>Firewall token (optional)</label>
                     <comment model="Two\Gateway\Model\Config\Comment\FirewallToken"/>
                     <config_path>payment/{{code}}/firewall_token</config_path>
                 </field>
@@ -338,23 +341,14 @@
                     <config_path>payment/{{code}}/display_tooltips</config_path>
                 </field>
             </group>
-        </section>
-        <!-- C. Company Lookup -->
-        <section id="{{section_prefix}}_search" translate="label" type="text" sortOrder="30"
-                 showInDefault="1" showInWebsite="1" showInStore="1"
-                 brand_code="{{code}}">
-            <class>separator-top</class>
-            <label>Company Lookup</label>
-            <tab>{{section_prefix}}_gateway</tab>
-            <resource>{{admin_resource}}</resource>
-            <group id="search" translate="label" type="text" sortOrder="10"
+            <!-- TWO-25386 follow-up: former standalone "Company Lookup"
+                 section folded into this section as its own group, appended
+                 last — see the matching comment in system.xml for why it is
+                 a sibling group rather than merged into checkout_fields. -->
+            <group id="search" translate="label" type="text" sortOrder="40"
                    showInDefault="1" showInWebsite="1" showInStore="1"
                    brand_code="{{code}}">
                 <label>Company Lookup</label>
-                <!-- TWO-25386: no <depends> on "active" — it lives in a different
-                     top-level <section> ({{section_prefix}}_general) than this
-                     one; pre-existing dead markup (same issue pre-dates this PR),
-                     removed while this PR is already touching the same contract. -->
                 <field id="enable_company_search" translate="label comment" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
@@ -377,7 +371,7 @@
                 </field>
             </group>
         </section>
-        <!-- D. Payment Terms -->
+        <!-- C. Payment Terms -->
         <section id="{{section_prefix}}_payment" translate="label" type="text" sortOrder="40"
                  showInDefault="1" showInWebsite="1" showInStore="1"
                  brand_code="{{code}}">
@@ -392,7 +386,7 @@
                 <field id="payment_terms_type" translate="label comment" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Payment Terms Type</label>
+                    <label>Payment terms type</label>
                     <comment><![CDATA[<strong>Standard:</strong> Payment due after a fixed number of days from fulfilment.<br/><strong>End of Month:</strong> Payment due at the end of month plus additional days from fulfilment.]]></comment>
                     <source_model>Two\Gateway\Model\Config\Source\PaymentTermsType</source_model>
                     <config_path>payment/{{code}}/payment_terms_type</config_path>
@@ -409,7 +403,7 @@
                 <field id="payment_terms_duration_days" translate="label comment" type="text" sortOrder="30"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Custom Payment Terms (days)</label>
+                    <label>Custom payment terms (days)</label>
                     <comment>Optional. Enter a custom number of days to offer alongside the selected terms above.</comment>
                     <validate>validate-digits validate-zero-or-greater</validate>
                     <!-- Clears itself on save when it duplicates a merchant-offered
@@ -421,7 +415,7 @@
                 <field id="default_payment_term" translate="label comment" type="select" sortOrder="40"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Default Payment Terms</label>
+                    <label>Default payment terms</label>
                     <comment>Select the payment term that will be automatically selected for your customer.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\AvailablePaymentTerms</source_model>
                     <config_path>payment/{{code}}/default_payment_term</config_path>
@@ -434,10 +428,11 @@
                     <source_model>Two\Gateway\Model\Config\Source\SurchargeType</source_model>
                     <config_path>payment/{{code}}/surcharge_type</config_path>
                 </field>
-                <field id="surcharge_differential" translate="label" type="select" sortOrder="60"
+                <field id="surcharge_differential" translate="label comment" type="select" sortOrder="60"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
                     <label>Surcharge Calculation Basis</label>
+                    <comment>Total fee charges the configured surcharge for the chosen term. Fee difference charges only the difference versus the default payment term.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\SurchargeCalculationBasis</source_model>
                     <config_path>payment/{{code}}/surcharge_differential</config_path>
                 </field>
@@ -510,7 +505,7 @@
                 </field>
             </group>
         </section>
-        <!-- E. Order Management -->
+        <!-- D. Order Management -->
         <section id="{{section_prefix}}_order_management" translate="label" type="text" sortOrder="50"
                  showInDefault="1" showInWebsite="1" showInStore="1"
                  brand_code="{{code}}">
@@ -549,18 +544,28 @@
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/{{code}}/enable_tax_subtotals</config_path>
                 </field>
-                <field id="default_shipping_tax_rate" translate="label" type="text" sortOrder="40"
+                <field id="default_shipping_tax_class" translate="label comment" type="select" sortOrder="40"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Default Shipping Tax Rate (%)</label>
-                    <comment>Only used when a shipping method charges tax but Magento declares no rate for it. Leave empty to refuse such orders instead of assuming a rate.</comment>
+                    <label>Default shipping tax class</label>
+                    <comment>Only used when a shipping method charges tax but Magento declares no rate for it. The rate is resolved through this Product Tax Class against the order's shipping destination, the same way a product's tax is resolved. Leave unselected to refuse such orders instead of assuming a rate.</comment>
+                    <source_model>Magento\Tax\Model\TaxClass\Source\Product</source_model>
+                    <config_path>payment/{{code}}/default_shipping_tax_class</config_path>
+                </field>
+                <!-- DEPRECATED: hidden unless a value is already stored — see
+                     the matching comment in system.xml. -->
+                <field id="default_shipping_tax_rate" translate="label" type="text" sortOrder="50"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Default Shipping Tax Rate (%) (deprecated)</label>
+                    <comment>Deprecated flat rate. Only used when default_shipping_tax_class above is unset.</comment>
                     <backend_model>Two\Gateway\Model\Config\Backend\LocaleDecimal</backend_model>
                     <validate>validate-zero-or-greater</validate>
                     <config_path>payment/{{code}}/default_shipping_tax_rate</config_path>
                 </field>
             </group>
         </section>
-        <!-- F. Diagnostics -->
+        <!-- E. Diagnostics -->
         <section id="{{section_prefix}}_version" translate="label" type="text" sortOrder="60"
                  showInDefault="1" showInWebsite="1" showInStore="1"
                  brand_code="{{code}}">
@@ -575,7 +580,7 @@
                 <field id="debug" translate="label" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        brand_code="{{code}}">
-                    <label>Debug mode</label>
+                    <label>Enable debug logging</label>
                     <comment>The debug mode enables writing to the error logs below. Debug mode should only be enabled when the sandbox environment is active</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/{{code}}/debug</config_path>
@@ -597,14 +602,6 @@
                    showInDefault="1" showInWebsite="1" showInStore="1"
                    brand_code="{{code}}">
                 <label>Admin Controls</label>
-                <field id="skip_confirm_token_check" translate="label comment" type="select" sortOrder="10"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Skip confirm-order token check</label>
-                    <comment>Debug/support use only. No effect today: Magento's order-confirmation callback is identified solely by the order reference, which is always checked and cannot be skipped.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/{{code}}/skip_confirm_token_check</config_path>
-                </field>
                 <field id="clear_settings_on_uninstall" translate="label comment" type="select" sortOrder="20"
                        showInDefault="1" showInWebsite="0" showInStore="0"
                        canRestore="1" brand_code="{{code}}">

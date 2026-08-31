@@ -14,10 +14,10 @@ use Two\Gateway\Api\BrandOverlayRegistryInterface;
 
 /**
  * Hide every vanilla Two_Gateway admin config section (`two_general`,
- * `two_checkout_fields`, `two_search`, `two_payment`,
- * `two_order_management`, `two_version` — TWO-25386's A-F regroup:
- * General/Checkout Fields/Company Lookup/Payment Terms/Order
- * Management/Diagnostics) when:
+ * `two_checkout_fields`, `two_payment`, `two_order_management`,
+ * `two_version` — TWO-25386's A-E regroup: General/Checkout Fields/
+ * Payment Terms/Order Management/Diagnostics; company lookup lives as a
+ * group inside Checkout Fields, so hiding that section hides it too) when:
  *   - At least one brand overlay (e.g. Overlay_Gateway) is registered, AND
  *   - `two_brand_synthesis/hide_payment_section/enabled` resolves to truthy.
  *
@@ -68,9 +68,9 @@ use Two\Gateway\Api\BrandOverlayRegistryInterface;
  * unauthorised, redirecting away cleanly.
  *
  * `two_general` carries Two-only fields (API key, environment, debug
- * toggle). `two_search` is the Two-side company-search admin. Both
- * are irrelevant to an overlay merchant who configures their own
- * brand under a separate admin section.
+ * toggle) and `two_checkout_fields` carries the Two-side company-search
+ * admin among its checkout fields — both irrelevant to an overlay
+ * merchant who configures their own brand under a separate admin section.
  */
 class HidePaymentSection
 {
@@ -80,7 +80,6 @@ class HidePaymentSection
     private const TARGET_SECTIONS = [
         'two_general',
         'two_checkout_fields',
-        'two_search',
         'two_payment',
         'two_order_management',
         'two_version',

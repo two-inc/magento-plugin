@@ -265,6 +265,21 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
+    public function getDefaultShippingTaxClassId(?int $storeId = null): ?int
+    {
+        $configured = $this->getConfig($this->path('default_shipping_tax_class'), $storeId);
+        // Unselected ('' / unset) or non-numeric never int-casts to 0 —
+        // class id 0 is a real selection ("None"), same convention as
+        // getSurchargeTaxClassId().
+        if ($configured === null || $configured === '' || !is_numeric($configured)) {
+            return null;
+        }
+        return (int)$configured;
+    }
+
+    /**
+     * @inheritDoc
+     */
     public function isDepartmentEnabled(?int $storeId = null): bool
     {
         return $this->isSetFlag($this->path('enable_department'), $storeId);
@@ -811,14 +826,6 @@ class Repository implements RepositoryInterface
     public function isDisplayTooltipsEnabled(?int $storeId = null): bool
     {
         return $this->isSetFlag($this->path('display_tooltips'), $storeId);
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function isSkipConfirmTokenCheckEnabled(?int $storeId = null): bool
-    {
-        return $this->isSetFlag($this->path('skip_confirm_token_check'), $storeId);
     }
 
     /**

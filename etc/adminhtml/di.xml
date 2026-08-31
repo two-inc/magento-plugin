@@ -29,6 +29,16 @@
                 sortOrder="10"/>
     </type>
     <!--
+        Hides the deprecated default_shipping_tax_rate field unless a
+        value is already stored — see
+        Two\Gateway\Plugin\Config\Structure\HideDeprecatedShippingTaxRateField.
+    -->
+    <type name="Magento\Config\Model\Config\Structure\Element\Field">
+        <plugin name="two-hide-deprecated-shipping-tax-rate-field"
+                type="Two\Gateway\Plugin\Config\Structure\HideDeprecatedShippingTaxRateField"
+                sortOrder="10"/>
+    </type>
+    <!--
         SynthesiseBrandAdminForm is registered globally in etc/di.xml,
         not here. CLI commands (bin/magento config:set, app:config:import,
         deploy:mode:set, etc.) populate the adminhtml-scoped structure

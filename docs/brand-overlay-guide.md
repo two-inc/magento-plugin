@@ -105,7 +105,7 @@ across modules). Elements may appear in any order (`xs:all`).
 | ---------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `code`           | yes      | Brand + payment-method code (`[a-z][a-z0-9_]*`). Keyed into `sales_order.payment.method` and `core_config_data` paths — frozen for live installs.                       |
 | `tab_sort_order` | yes      | Admin Configuration tab ordering.                                                                                                                                       |
-| `section_prefix` | no       | Prefix for synthesised admin section ids (`{prefix}_general`, `{prefix}_checkout_fields`, `{prefix}_search`, `{prefix}_payment`, `{prefix}_order_management`, `{prefix}_version` — TWO-25386's A-F regroup) and the tab id `{prefix}_gateway`. Defaults to `code` minus a trailing `_payment`. |
+| `section_prefix` | no       | Prefix for synthesised admin section ids (`{prefix}_general`, `{prefix}_checkout_fields`, `{prefix}_payment`, `{prefix}_order_management`, `{prefix}_version` — TWO-25386's A-E regroup; company lookup is a group inside `{prefix}_checkout_fields`) and the tab id `{prefix}_gateway`. Defaults to `code` minus a trailing `_payment`. |
 
 **Elements**
 

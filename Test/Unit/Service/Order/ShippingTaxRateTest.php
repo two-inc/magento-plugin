@@ -8,6 +8,7 @@ use Magento\Tax\Api\Data\OrderTaxDetailsAppliedTaxInterface;
 use Magento\Tax\Api\Data\OrderTaxDetailsInterface;
 use Magento\Tax\Api\Data\OrderTaxDetailsItemInterface;
 use Magento\Tax\Api\OrderTaxManagementInterface;
+use Magento\Tax\Model\Calculation as TaxCalculation;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -31,16 +32,24 @@ class ShippingTaxRateTest extends TestCase
 
     /**
      * @param float|null $declaredPercent percent Magento declares for shipping, null for none
-     * @param float|null $fallbackPercent merchant-configured default, null for unset
+     * @param float|null $fallbackPercent merchant-configured deprecated flat-rate default, null for unset
+     * @param int|null $taxClassId configured default_shipping_tax_class, null for unset
+     * @param TaxCalculation|null $taxCalculation stub/mock resolving the tax-class rate; a fresh
+     *        real stub (always resolves to 0.0) when omitted
      * @return Order|\PHPUnit\Framework\MockObject\MockObject
      */
-    private function orderService(?float $declaredPercent, ?float $fallbackPercent = null)
-    {
+    private function orderService(
+        ?float $declaredPercent,
+        ?float $fallbackPercent = null,
+        ?int $taxClassId = null,
+        ?TaxCalculation $taxCalculation = null
+    ) {
         $orderService = $this->getMockForAbstractClass(Order::class, [], '', false);
 
         $this->logRepository = $this->createMock(LogRepository::class);
         $configRepository = $this->createMock(ConfigRepository::class);
         $configRepository->method('getDefaultShippingTaxRate')->willReturn($fallbackPercent);
+        $configRepository->method('getDefaultShippingTaxClassId')->willReturn($taxClassId);
         $orderService->configRepository = $configRepository;
 
         $this->setProperty($orderService, 'logRepository', $this->logRepository);
@@ -49,6 +58,7 @@ class ShippingTaxRateTest extends TestCase
             'orderTaxManagement',
             $this->taxManagement($declaredPercent)
         );
+        $this->setProperty($orderService, 'taxCalculation', $taxCalculation ?? new TaxCalculation());
 
         return $orderService;
     }
@@ -145,6 +155,96 @@ class ShippingTaxRateTest extends TestCase
             public function getIncrementId(): string
             {
                 return '100000007';
+            }
+        };
+    }
+
+    /**
+     * An entity carrying its own shipping (and optionally billing) address —
+     * for the tax-class resolution path, which needs a destination.
+     */
+    private function entityWithAddress(
+        float $shippingTax,
+        float $shippingAmount,
+        float $shippingInclTax,
+        ?object $shippingAddress,
+        bool $isVirtual = false,
+        ?object $billingAddress = null
+    ): object {
+        return new class (
+            $shippingTax,
+            $shippingAmount,
+            $shippingInclTax,
+            $shippingAddress,
+            $isVirtual,
+            $billingAddress
+        ) {
+            private $shippingTax;
+            private $shippingAmount;
+            private $shippingInclTax;
+            private $shippingAddress;
+            private $isVirtual;
+            private $billingAddress;
+
+            public function __construct(
+                float $shippingTax,
+                float $shippingAmount,
+                float $shippingInclTax,
+                ?object $shippingAddress,
+                bool $isVirtual,
+                ?object $billingAddress
+            ) {
+                $this->shippingTax = $shippingTax;
+                $this->shippingAmount = $shippingAmount;
+                $this->shippingInclTax = $shippingInclTax;
+                $this->shippingAddress = $shippingAddress;
+                $this->isVirtual = $isVirtual;
+                $this->billingAddress = $billingAddress;
+            }
+
+            public function getShippingTaxAmount(): float
+            {
+                return $this->shippingTax;
+            }
+
+            public function getShippingAmount(): float
+            {
+                return $this->shippingAmount;
+            }
+
+            public function getShippingInclTax(): float
+            {
+                return $this->shippingInclTax;
+            }
+
+            public function getShippingAddress(): ?object
+            {
+                return $this->shippingAddress;
+            }
+
+            public function getIsVirtual(): bool
+            {
+                return $this->isVirtual;
+            }
+
+            public function getBillingAddress(): ?object
+            {
+                return $this->billingAddress;
+            }
+
+            public function getId(): int
+            {
+                return 9;
+            }
+
+            public function getStoreId(): int
+            {
+                return 1;
+            }
+
+            public function getIncrementId(): string
+            {
+                return '100000009';
             }
         };
     }
@@ -329,5 +429,112 @@ class ShippingTaxRateTest extends TestCase
                 return '100000008';
             }
         };
+    }
+
+    // ── TWO-25386: default_shipping_tax_class, the tax-rules-engine
+    // fallback that supersedes the deprecated flat-rate field ────────────
+
+    public function testTaxClassResolutionTakesPrecedenceOverTheLegacyFlatRate(): void
+    {
+        // Given both the new tax-class fallback AND the deprecated flat
+        // rate are configured; When resolving; Then the tax class wins and
+        // the flat rate is never consulted.
+        $address = new \Magento\Framework\DataObject(['country_id' => 'DE']);
+        $taxCalculation = $this->createMock(TaxCalculation::class);
+        $taxCalculation->method('getRateRequest')->willReturn(new \Magento\Framework\DataObject());
+        $taxCalculation->method('getRate')->willReturn(19.0);
+
+        $orderService = $this->orderService(null, 25.0, 5, $taxCalculation);
+        $this->logRepository->expects($this->once())->method('addDebugLog');
+
+        $rate = $orderService->getTaxRateShipping(
+            $this->entityWithAddress(19.00, 100.00, 119.00, $address)
+        );
+
+        $this->assertSame(0.19, $rate);
+    }
+
+    /**
+     * A destination with no matching Tax Rule is a real resolution
+     * (untaxed there), not "unset" — must not fall through to the
+     * deprecated flat rate or refuse the order.
+     */
+    public function testTaxClassResolvingToZeroIsAcceptedNotTreatedAsUnset(): void
+    {
+        $taxCalculation = $this->createMock(TaxCalculation::class);
+        $taxCalculation->method('getRateRequest')->willReturn(new \Magento\Framework\DataObject());
+        $taxCalculation->method('getRate')->willReturn(0.0);
+
+        $orderService = $this->orderService(null, 25.0, 5, $taxCalculation);
+
+        $rate = $orderService->getTaxRateShipping(
+            $this->entityWithAddress(0.01, 100.00, 100.01, new \Magento\Framework\DataObject())
+        );
+
+        $this->assertSame(0.0, $rate);
+    }
+
+    public function testTaxClassResolutionUsesTheShippingAddress(): void
+    {
+        $shippingAddress = new \Magento\Framework\DataObject(['country_id' => 'NO']);
+        $seenAddresses = [];
+        $taxCalculation = $this->createMock(TaxCalculation::class);
+        $taxCalculation->method('getRateRequest')->willReturnCallback(
+            function ($shipping, $billing, $customerTaxClass, $storeId) use (&$seenAddresses) {
+                $seenAddresses[] = $shipping;
+                return new \Magento\Framework\DataObject();
+            }
+        );
+        $taxCalculation->method('getRate')->willReturn(25.0);
+
+        $orderService = $this->orderService(null, null, 3, $taxCalculation);
+        $orderService->getTaxRateShipping(
+            $this->entityWithAddress(25.00, 100.00, 125.00, $shippingAddress)
+        );
+
+        $this->assertSame([$shippingAddress], $seenAddresses);
+    }
+
+    public function testTaxClassResolutionFallsBackToBillingAddressForAVirtualOrder(): void
+    {
+        // Given a virtual order (no shipping address exists at all); When
+        // resolving the destination; Then billing stands in, same fallback
+        // getAddress() applies elsewhere in this class.
+        $billingAddress = new \Magento\Framework\DataObject(['country_id' => 'SE']);
+        $seenAddresses = [];
+        $taxCalculation = $this->createMock(TaxCalculation::class);
+        $taxCalculation->method('getRateRequest')->willReturnCallback(
+            function ($shipping, $billing, $customerTaxClass, $storeId) use (&$seenAddresses) {
+                $seenAddresses[] = $shipping;
+                return new \Magento\Framework\DataObject();
+            }
+        );
+        $taxCalculation->method('getRate')->willReturn(25.0);
+
+        $orderService = $this->orderService(null, null, 3, $taxCalculation);
+        $orderService->getTaxRateShipping(
+            $this->entityWithAddress(25.00, 100.00, 125.00, null, true, $billingAddress)
+        );
+
+        $this->assertSame([$billingAddress], $seenAddresses);
+    }
+
+    public function testLegacyFlatRateStillResolvesWhenNoTaxClassIsConfigured(): void
+    {
+        // A pre-existing merchant who never touches default_shipping_tax_class
+        // keeps their configured flat rate working exactly as before.
+        $rate = $this->orderService(null, 25.0, null)
+            ->getTaxRateShipping($this->entity(25.00, 100.00, 125.00));
+
+        $this->assertSame(0.25, $rate);
+    }
+
+    public function testBothUnsetStillRefusesTheOrder(): void
+    {
+        $orderService = $this->orderService(null, null, null);
+        $this->logRepository->expects($this->once())->method('addErrorLog');
+
+        $this->expectException(LocalizedException::class);
+        $orderService->getTaxRateShipping($this->entity(25.00, 100.00, 125.00));
     }
 }
