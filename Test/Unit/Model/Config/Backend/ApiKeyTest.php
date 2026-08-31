@@ -10,6 +10,7 @@ use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Model\Context;
 use Magento\Framework\Registry;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Config\Backend\ApiKey;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
@@ -233,5 +234,36 @@ class ApiKeyTest extends TestCase
                 'nothing submitted leaves the stored environment to decide',
             ],
         ];
+    }
+
+    /**
+     * setup:di:compile resolves resource/resourceCollection's inherited
+     * object bindings (core's Proxy wiring on Value/Encrypted) by matching
+     * the constructor parameter's type hint. An untyped resourceCollection
+     * param compiled to a broken literal instead of the resolved object,
+     * fataling on every instantiation and taking down the whole admin
+     * config section that field lives in — a real production incident,
+     * reproduced live via setup:di:compile + reflection on the compiled
+     * arguments. The test double for Encrypted isn't a reliable reference
+     * (it's untyped too), so this pins the exact real Magento types instead.
+     */
+    public function testResourceParamsKeepTheTypeHintsDiCompileNeedsToResolveThem(): void
+    {
+        $params = (new ReflectionMethod(ApiKey::class, '__construct'))->getParameters();
+        $byName = [];
+        foreach ($params as $param) {
+            $byName[$param->getName()] = (string)$param->getType();
+        }
+
+        self::assertSame(
+            '?Magento\Framework\Model\ResourceModel\AbstractResource',
+            $byName['resource'],
+            '$resource must stay typed, matching Encrypted/Value'
+        );
+        self::assertSame(
+            '?Magento\Framework\Data\Collection\AbstractDb',
+            $byName['resourceCollection'],
+            '$resourceCollection must stay typed, matching Encrypted/Value'
+        );
     }
 }
