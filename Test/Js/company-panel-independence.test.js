@@ -504,12 +504,10 @@ describe('the quote\'s billing address belongs to the billing panel', () => {
     });
 
     test('a virtual cart with no billing form rendered still leaves shipping empty', () => {
-        // The quote holds one address and it is the billing one, so the billing
-        // identity is where it lands whether or not a form for it is on the page
-        // — the destination follows the quote, never the DOM (TWO-25554). With
-        // no form rendered the resolver reads the shipping capture, so the
-        // company is not offered back to this buyer; the alternative is worse,
-        // because it paints a billing company into the shipping panel's field.
+        // The destination follows the quote, never the DOM (TWO-25554). With no
+        // billing form rendered the resolver reads the shipping capture, so this
+        // buyer is not offered the company back — routing it to shipping to
+        // avoid that paints a billing company into the shipping panel's field.
         const booted = boot({
             isVirtual: true,
             shippingForm: false,
