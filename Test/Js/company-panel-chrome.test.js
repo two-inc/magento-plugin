@@ -418,3 +418,46 @@ describe('the "select a different sole trader" link belongs to its own panel', (
         expect(soleTraderCalls).toEqual([panels[actor]]);
     });
 });
+
+describe('a panel that loses its mount leaves no chrome behind', () => {
+    const WRAP_CLASS = 'two-company-field-wrap';
+    /** Numbered, so both pieces of chrome are on the page at once. */
+    const TRADER = { company_name: 'Billing Trader', organization_number: '333333333' };
+
+    /** What re-checking "same as shipping" leaves: the fieldset, hidden. */
+    function hideBillingFieldset() {
+        document.querySelector(FORMS.billing).setAttribute('data-test-hidden', '');
+    }
+
+    test('the billing form keeps neither the number nor a link to a torn-down flow', async () => {
+        const { panels, soleTraderCalls } = boot();
+        panels.billing.adoptSoleTrader(TRADER);
+        expect(linksIn('billing')).toBe(1);
+        expect(numbersIn('billing')).toHaveLength(1);
+
+        hideBillingFieldset();
+        panels.billing.refreshMount();
+        await flushCapture();
+        await flushCapture();
+
+        const form = document.querySelector(FORMS.billing);
+        expect(form.querySelectorAll(`.${WRAP_CLASS}`)).toHaveLength(0);
+        expect(numbersIn('billing')).toEqual([]);
+        expect(linksIn('billing')).toBe(0);
+        expect(soleTraderCalls).toEqual([]);
+    });
+
+    test('the shipping panel keeps its own chrome through the other\'s loss', async () => {
+        const { panels } = boot();
+        panels.shipping.adoptSoleTrader(TRADER);
+        panels.billing.adoptSoleTrader(TRADER);
+
+        hideBillingFieldset();
+        panels.billing.refreshMount();
+        await flushCapture();
+        await flushCapture();
+
+        expect(numbersIn('shipping')).toHaveLength(1);
+        expect(linksIn('shipping')).toBe(1);
+    });
+});

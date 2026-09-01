@@ -445,10 +445,12 @@
         const selector = this.mountSelector();
         const previous = this._boundSelector;
         if (!selector) {
+            // Before the selector is forgotten: every chrome lookup is made
+            // through the bound field.
+            this._removeChrome();
             // Neither host is on the page any more. Forgetting where the control
             // was is what stops `adjacentCountry()` answering for a form that has
             // gone, and lets the next host that appears mount cleanly.
-            this.removeChrome();
             this._boundSelector = null;
             if (this._panel) this._panel.unmount();
             if (previous !== null) this._notifyMount();
@@ -459,7 +461,7 @@
             this.renderChrome();
             return;
         }
-        if (previous !== selector) this.removeChrome();
+        if (previous !== selector) this._removeChrome();
         this._boundSelector = selector;
         this.mountPanel(selector);
         this.syncChips();
@@ -590,24 +592,24 @@
         }) || null;
     };
 
-    /**
-     * Clear this panel's chrome from the mount it is bound to.
-     *
-     * Chrome sits outside the wrapper, so releasing the wrapper leaves it
-     * standing: a mount that moves would strand a company number and a
-     * sole-trader link in the form the buyer has been taken off.
-     */
-    CompanyCaptureComponent.prototype.removeChrome = function () {
-        [COMPANY_NUMBER_CLASS, SOLE_TRADER_LINK_CLASS].forEach(function (className) {
-            const node = this._chromeNode(className);
-            if (node) node.remove();
-        }, this);
-    };
-
     /** Repaint every piece of chrome this panel renders for its own identity. */
     CompanyCaptureComponent.prototype.renderChrome = function () {
         this.renderCompanyNumber();
         this.renderSoleTraderLink();
+    };
+
+    /**
+     * Take this panel's chrome back off the page.
+     *
+     * The chrome is a SIBLING of the wrapper, so `unmount()` does not carry it
+     * away, and its button drives a flow the same call tears down (TWO-25554).
+     */
+    CompanyCaptureComponent.prototype._removeChrome = function () {
+        const self = this;
+        [COMPANY_NUMBER_CLASS, SOLE_TRADER_LINK_CLASS].forEach(function (className) {
+            const node = self._chromeNode(className);
+            if (node) node.remove();
+        });
     };
 
     /**
