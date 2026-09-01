@@ -10,6 +10,12 @@
  * REAL popover, the REAL payment renderer and the REAL company-search module
  * over a jsdom checkout — every coupling this pins had a live path through one
  * of those, and a fixture that omits the path proves nothing about it.
+ *
+ * `isAddressSearchEnabled` is off here, so `lookupCompanyAddress()` returns at
+ * its first line in every row and the registry address lookup is NOT exercised:
+ * its own per-panel scoping (and its abort/generation handling) is covered in
+ * company-search-address-lookup.test.js, and the write it performs in
+ * company-search-address-writes.test.js.
  */
 
 'use strict';
@@ -46,6 +52,19 @@ const RETRACTED_FIELDS = ['street[0]', 'street[1]', 'city', 'postcode'];
 
 /** The other panel, for a table row naming one. */
 const OTHER = { shipping: 'billing', billing: 'shipping' };
+
+/**
+ * Pair a value with its row's description. Jest ignores a second argument to
+ * `toBe()`/`toEqual()`, so a row description only reaches a failure by being
+ * part of the compared value.
+ *
+ * @param {string} description
+ * @param {*} value
+ * @returns {Array}
+ */
+function tagged(description, value) {
+    return [description, value];
+}
 
 const GLOBALS = { document: document, window: window };
 
@@ -92,22 +111,22 @@ function addressFields(country) {
 /**
  * A checkout rendering BOTH address forms and the payment tile: the buyer has
  * unchecked "my billing address is the same as shipping".
- *
- * The billing form sits inside the block carrying core's own checkbox, which is
- * what the address mirror keys its per-address record on.
  */
 function renderCheckout(options) {
     const shipping = options.shippingForm === false
         ? ''
         : `<form id="shipping-new-address-form">${addressFields(options.shippingCountry)}</form>`;
+    const billing = options.billingForm === false
+        ? ''
+        : `<div data-form="billing-new-address"${options.billingHidden ? ' data-test-hidden' : ''}>`
+            + addressFields(options.billingCountry)
+            + '</div>';
     document.body.innerHTML =
         shipping +
         '<div class="checkout-billing-address">' +
         '<input type="checkbox" id="billing-address-same-as-shipping-two_payment"' +
         ' name="billing-address-same-as-shipping">' +
-        `<div data-form="billing-new-address"${options.billingHidden ? ' data-test-hidden' : ''}>` +
-        addressFields(options.billingCountry) +
-        '</div>' +
+        billing +
         '</div>' +
         '<form id="two_gateway_form"><input id="company_name" name="company_name" /></form>';
 }
@@ -115,8 +134,8 @@ function renderCheckout(options) {
 /**
  * Both panels booted over the real modules, plus the real address step.
  *
- * @param {object} [options] `{ shippingForm, shippingCountry, billingCountry,
- *        billingHidden, isVirtual, quoteBillingAddress }`
+ * @param {object} [options] `{ shippingForm, billingForm, shippingCountry,
+ *        billingCountry, billingHidden, isVirtual, quoteBillingAddress }`
  * @returns {object} `{ capture, search, panels, identities, addressStep, mocks }`
  */
 function boot(options) {
@@ -143,7 +162,6 @@ function boot(options) {
 
     const search = loadAmdModule(SEARCH, { jquery: $ }, GLOBALS);
     search.clearResultCache();
-    search.resetMirrorState();
 
     const quote = Object.assign(
         {},
@@ -269,11 +287,6 @@ function flushAddressStep() {
     return new Promise(function (resolve) { setTimeout(resolve, 0); });
 }
 
-/** The baseline `view/address-autocomplete.js` takes at the form's own render. */
-function captureBillingBaseline(search) {
-    search.captureSecondaryAddressBaseline(document.querySelector(BILLING_FORM));
-}
-
 beforeEach(() => {
     document.body.innerHTML = '';
     // The watchers are delegated off the document, which outlives a test;
@@ -295,7 +308,8 @@ describe('a registered pick lands on one panel only', () => {
         picks(booted.panels[actor], COMPANIES[actor]);
         await flushAddressStep();
 
-        expect(booted.identities[actor].companyId()).toBe(COMPANIES[actor].companyId, description);
+        expect(tagged(description, booted.identities[actor].companyId()))
+            .toEqual(tagged(description, COMPANIES[actor].companyId));
         expect(displayed(actor)).toBe(COMPANIES[actor].text);
         expect(booted.identities[other].companyId()).toBe('');
         expect(booted.identities[other].companyName()).toBe('');
@@ -312,15 +326,14 @@ describe('a registered pick lands on one panel only', () => {
         picks(booted.panels[actor], COMPANIES[actor]);
         await flushAddressStep();
 
-        expect(booted.identities[other].addressNotice())
-            .toBe('We could not fetch this address.', description);
+        expect(tagged(description, booted.identities[other].addressNotice()))
+            .toEqual(tagged(description, 'We could not fetch this address.'));
     });
 
     test('a shipping pick never reaches a billing form whose panel is not mounted', async () => {
-        // The state the old ownership gate opened in: the billing fieldset is in
-        // the DOM (Amasty pre-renders it; core leaves it there once "same as
-        // shipping" is re-checked) with no live panel on it, and the shipping
-        // step then mirrored its own company and organisation number into it.
+        // The billing fieldset is in the DOM with no live panel on it — Amasty
+        // pre-renders it, and core leaves it there once "same as shipping" is
+        // re-checked.
         const booted = boot({ billingHidden: true });
         bootAddressStep(booted);
         expect(booted.panels.billing.mountSelector()).toBe('');
@@ -342,7 +355,8 @@ describe('a sole-trader adoption lands on one panel only', () => {
         booted.panels[actor].adoptSoleTrader(BUYERS[actor]);
         await flushAddressStep();
 
-        expect(booted.identities[actor].soleTraderAdopted()).toBe(true, description);
+        expect(tagged(description, booted.identities[actor].soleTraderAdopted()))
+            .toEqual(tagged(description, true));
         expect(displayed(actor)).toBe(BUYERS[actor].company_name);
         expect(booted.identities[other].soleTraderAdopted()).toBe(false);
         expect(booted.identities[other].companyName()).toBe('');
@@ -366,7 +380,7 @@ describe('a sole-trader adoption lands on one panel only', () => {
             booted.panels[actor].adoptSoleTrader(BUYERS[actor]);
             renderer.selectDifferentSoleTrader();
 
-            expect(acted).toEqual([actor], description);
+            expect(tagged(description, acted)).toEqual(tagged(description, [actor]));
         }
     );
 
@@ -397,7 +411,8 @@ describe('a country switch invalidates its own panel\'s company and nothing else
 
         switchCountry(actor, 'SE');
 
-        expect(booted.identities[actor].companyId()).toBe('', description);
+        expect(tagged(description, booted.identities[actor].companyId()))
+            .toEqual(tagged(description, ''));
         expect(booted.identities[other].companyId()).toBe(COMPANIES[other].companyId);
         expect(displayed(other)).toBe(COMPANIES[other].text);
     });
@@ -405,16 +420,12 @@ describe('a country switch invalidates its own panel\'s company and nothing else
     test.each(DIRECTIONS)(
         '%s switches country and the OTHER form\'s address fields stand (%s)',
         (actor, description) => {
-            // The live Fire-checkout report: changing the BILLING country
-            // cleared the SHIPPING address fields, because the retraction was
-            // page-wide rather than scoped to the panel that asked for it. The
-            // mirror image was live too, on Luma.
+            // A country switch retracts the address fields of the form the
+            // buyer made it in, and of no other form.
             const other = OTHER[actor];
             const booted = boot();
             bootAddressStep(booted);
-            captureBillingBaseline(booted.search);
-            // Each panel picks, which is what puts an address in its own form
-            // and — for the billing form — what pins it.
+            // Each panel picks, which is what puts an address in its own form.
             picks(booted.panels.shipping, COMPANIES.shipping);
             picks(booted.panels.billing, COMPANIES.billing);
             booted.search.applyAddress(ADDRESSES.shipping, $(SHIPPING_FORM));
@@ -425,7 +436,7 @@ describe('a country switch invalidates its own panel\'s company and nothing else
 
             switchCountry(actor, 'SE');
 
-            expect(addressValues(other)).toEqual(before, description);
+            expect(tagged(description, addressValues(other))).toEqual(tagged(description, before));
             expect(document.querySelector(COUNTRIES[other]).value).toBe(beforeCountry);
         }
     );
@@ -433,20 +444,19 @@ describe('a country switch invalidates its own panel\'s company and nothing else
     test.each(DIRECTIONS)(
         '%s switches its OWN country and its OWN company and address go (%s)',
         (actor, description) => {
-            // Live-verified pre-fix: the BILLING panel did not react to its own
-            // country select at all — its company and address survived a switch
-            // the shipping panel handled correctly. Not a cross-panel bug: a
-            // panel failing to react to its own input.
+            // Each panel answers its OWN country select: independence is not
+            // only "does not reach the other panel", it is also "reacts to its
+            // own input".
             const booted = boot();
             bootAddressStep(booted);
-            captureBillingBaseline(booted.search);
             picks(booted.panels[actor], COMPANIES[actor]);
             booted.search.applyAddress(ADDRESSES[actor], $(FORMS[actor]));
             expect(addressValues(actor)['city']).toBe(ADDRESSES[actor].city);
 
             switchCountry(actor, 'SE');
 
-            expect(booted.identities[actor].companyId()).toBe('', description);
+            expect(tagged(description, booted.identities[actor].companyId()))
+            .toEqual(tagged(description, ''));
             expect(booted.identities[actor].companyName()).toBe('');
             expect(addressValues(actor)['city']).toBe('');
             expect(addressValues(actor)['postcode']).toBe('');
@@ -469,12 +479,12 @@ describe('a country switch invalidates its own panel\'s company and nothing else
         expect(booted.identities.billing.companyId()).toBe(COMPANIES.billing.companyId);
     });
 
-    test('billing switches country while the shipping panel is on the tile', () => {
+    test('a billing country switch while the shipping panel is on the tile', () => {
         // With no shipping form on the checkout the shipping panel mounts on the
-        // payment tile, which has no country select — so it read the billing
-        // form's, and a billing country switch invalidated a company the buyer
-        // had picked on the tile.
-        const booted = boot({ shippingForm: false });
+        // payment tile, which has no country select of its own — and the billing
+        // form's is the other panel's, whatever core does with that form's
+        // visibility.
+        const booted = boot({ shippingForm: false, billingHidden: true });
         expect(booted.panels.shipping.mountSelector()).toBe(TILE_FIELD);
         picks(booted.panels.shipping, COMPANIES.shipping);
 
@@ -529,11 +539,33 @@ describe('the quote\'s billing address belongs to the billing panel', () => {
 
         renderer.updateBillingAddress(SAVED);
 
-        expect(booted.identities.billing.companyId()).toBe('555', description);
+        expect(tagged(description, booted.identities.billing.companyId()))
+            .toEqual(tagged(description, '555'));
         expect(booted.identities.billing.companyName()).toBe('Saved Billing Co');
         expect(booted.identities.shipping.companyId()).toBe('');
         expect(booted.identities.shipping.companyName()).toBe('');
         expect(renderer.telephone()).toBe('+4420 7946 0000');
+    });
+
+    test('a virtual cart with no billing form at all seeds the SHIPPING identity', () => {
+        // The buyer's only address, and no billing company field is rendered for
+        // it — so the resolver reads the shipping capture, and seeding the
+        // billing panel there loses a saved company outright: a `TWO:` or
+        // sole-trader identity cannot be recovered by searching (TWO-25554).
+        const booted = boot({
+            isVirtual: true,
+            shippingForm: false,
+            billingForm: false,
+            quoteBillingAddress: SAVED
+        });
+        const renderer = bootRenderer(booted);
+
+        renderer.updateBillingAddress(SAVED);
+
+        expect(booted.identities.shipping.companyId()).toBe('555');
+        expect(booted.identities.shipping.companyName()).toBe('Saved Billing Co');
+        expect(booted.capture.identity.companyId()).toBe('555');
+        expect(booted.identities.billing.companyId()).toBe('');
     });
 
     test('a billing address with no shipping panel mounted still leaves shipping empty', () => {
@@ -547,67 +579,115 @@ describe('the quote\'s billing address belongs to the billing panel', () => {
     });
 });
 
-describe('the address prefill stops at a billing address the buyer has answered', () => {
-    test('a pristine billing address still takes the shipping country', () => {
-        const booted = boot();
-        captureBillingBaseline(booted.search);
-
-        expect(booted.search.mirrorCountryToSecondaryAddresses()).toBe(1);
-    });
-
-    test('a billing capture pins the billing address against it', () => {
-        // TWO-25461's own rule — pin once the buyer edits it — applied to a
-        // company pick as an edit.
-        const booted = boot();
-        captureBillingBaseline(booted.search);
-
+describe('nothing at all crosses from one panel\'s form to the other', () => {
+    test('a shipping country switch leaves the billing country select and identity alone', () => {
+        const booted = boot({ shippingCountry: 'GB', billingCountry: 'NO' });
+        bootAddressStep(booted);
         picks(booted.panels.billing, COMPANIES.billing);
 
-        expect(booted.search.secondaryAddressIsPinned(document.querySelector(BILLING_FORM)))
-            .toBe(true);
-        expect(booted.search.mirrorCountryToSecondaryAddresses()).toBe(0);
-    });
-
-    test('a mirrored country does not invalidate the billing panel\'s own capture', () => {
-        // The mirror writes with a `change`, because Knockout's `value:` binding
-        // reads the DOM on nothing else, and that event is indistinguishable at
-        // the listener from a buyer's own switch. The pin is what stops it: a
-        // captured billing address is never written into in the first place.
-        const booted = boot();
-        captureBillingBaseline(booted.search);
-        picks(booted.panels.billing, COMPANIES.billing);
-
-        expect(booted.search.mirrorCountryToSecondaryAddresses()).toBe(0);
+        switchCountry('shipping', 'SE');
 
         expect(document.querySelector(COUNTRIES.billing).value).toBe('NO');
         expect(booted.identities.billing.companyId()).toBe(COMPANIES.billing.companyId);
+        expect(displayed('billing')).toBe(COMPANIES.billing.text);
+    });
+
+    test('a shipping country switch fires no `change` on the billing country select', () => {
+        // A written country carries a `change` — Knockout's `value:` binding
+        // reads the DOM on nothing else — and that event is indistinguishable
+        // at the listener from the buyer's own switch, so it ran the billing
+        // panel's onCountryChanged() and cleared its capture.
+        const booted = boot();
+        bootAddressStep(booted);
+        const seen = [];
+        $(COUNTRIES.billing).on('change', function () { seen.push('change'); });
+
+        switchCountry('shipping', 'SE');
+
+        expect(seen).toEqual([]);
+    });
+
+    test('the model offers no cross-panel writer at all', () => {
+        const booted = boot();
+
+        expect(Object.keys(booted.search).filter((name) => /mirror|Secondary/i.test(name)))
+            .toEqual(['SECONDARY_ADDRESS_ROOT_SELECTOR']);
     });
 });
 
-describe('the payment tile writes only the panel it is mounted at', () => {
-    test('the tile displays the panel MOUNTED there, not the resolved company', () => {
-        // Bound to the resolved identity, the tile showed the billing panel's
-        // capture in the shipping panel's own field (TWO-25554).
+describe('the payment tile is the shipping panel\'s mount, or nobody\'s', () => {
+    test('with the billing panel mounted the tile renders no company field at all', () => {
+        // A saved shipping address (or a virtual cart) removes the shipping
+        // form, but the tile is only the shipping panel's fallback while the
+        // buyer has no other company field: a second visible, required and
+        // permanently empty "Company Name" whose value the resolver ignores
+        // cannot be completed at all (TWO-25554).
         const booted = boot({ shippingForm: false });
         const renderer = bootRenderer(booted);
         picks(booted.panels.billing, COMPANIES.billing);
 
+        expect(booted.panels.billing.mountSelector()).toBe(FIELDS.billing);
+        expect(booted.panels.shipping.mountSelector()).toBe('');
+        expect(renderer.isTileCompanyFieldVisible()).toBe(false);
         expect(renderer.companyName()).toBe(COMPANIES.billing.text);
+    });
+
+    test('with no billing panel the tile is the shipping panel\'s own mount', () => {
+        const booted = boot({ shippingForm: false, billingHidden: true });
+        const renderer = bootRenderer(booted);
+
+        expect(booted.panels.shipping.mountSelector()).toBe(TILE_FIELD);
+        expect(renderer.isTileCompanyFieldVisible()).toBe(true);
+    });
+
+    test('the billing panel mounting takes the tile field away again', () => {
+        // `refreshMount()` off core's own checkbox is the one event that means
+        // "the shape changed"; watchForMountHost() only fires on a node
+        // appearing.
+        const booted = boot({ shippingForm: false, billingHidden: true });
+        const renderer = bootRenderer(booted);
+        expect(booted.panels.shipping.mountSelector()).toBe(TILE_FIELD);
+
+        document.querySelector(FIELDS.billing).removeAttribute('data-test-hidden');
+        $(document).find('[data-form="billing-new-address"]').removeAttr('data-test-hidden');
+        $(`input[name="billing-address-same-as-shipping"]`).trigger('change');
+        renderer.refreshCompanyMount();
+
+        expect(booted.panels.billing.mountSelector()).toBe(FIELDS.billing);
+        expect(renderer.isTileCompanyFieldVisible()).toBe(false);
+    });
+
+    test('the tile field never displays the billing panel\'s capture', () => {
+        const booted = boot({ shippingForm: false, billingHidden: true });
+        const renderer = bootRenderer(booted);
+
+        booted.identities.billing.write({
+            companyName: COMPANIES.billing.text,
+            companyId: COMPANIES.billing.companyId
+        });
+
         expect(renderer.tileCompanyName()).toBe('');
+        expect(booted.identities.shipping.companyName()).toBe('');
     });
 
     test.each([
-        [true, 'billing has resolved'],
-        [false, 'the shipping panel has resolved']
-    ])('typing in the tile writes the shipping identity, whether or not %p (%s)', (billingWins, description) => {
-        const booted = boot({ shippingForm: false });
+        [true, 'billing holds a capture'],
+        [false, 'the shipping panel holds it']
+    ])('typing in the tile writes the shipping identity, whether or not %p (%s)', (billingHolds, description) => {
+        const booted = boot({ shippingForm: false, billingHidden: true });
         const renderer = bootRenderer(booted);
-        if (billingWins) picks(booted.panels.billing, COMPANIES.billing);
+        if (billingHolds) {
+            booted.identities.billing.write({
+                companyName: COMPANIES.billing.text,
+                companyId: COMPANIES.billing.companyId
+            });
+        }
 
         renderer.tileCompanyName('Typed By Hand');
 
-        expect(booted.identities.shipping.companyName()).toBe('Typed By Hand', description);
+        expect(tagged(description, booted.identities.shipping.companyName()))
+            .toEqual(tagged(description, 'Typed By Hand'));
         expect(booted.identities.billing.companyName())
-            .toBe(billingWins ? COMPANIES.billing.text : '');
+            .toBe(billingHolds ? COMPANIES.billing.text : '');
     });
 });
