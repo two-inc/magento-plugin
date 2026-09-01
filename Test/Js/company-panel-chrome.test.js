@@ -323,9 +323,8 @@ describe('the company number is painted under its own panel\'s field', () => {
     );
 
     test('a panel whose own form carries no number field claims neither neighbour\'s', () => {
-        // Two billing fieldsets, a number restored into each. The shipping form
-        // has no number field, so the nearest ancestor holding any spans both —
-        // and neither is answerable as this panel's.
+        // Two billing fieldsets, a number restored into each, and a shipping
+        // form with no number field of its own.
         const { panels } = boot({
             shippingCompanyIdField: false,
             billingNumber: '999999999',
@@ -383,6 +382,24 @@ describe('chrome never enters the popover\'s positioning context', () => {
             .toEqual(tagged(description, true));
         expect(tagged(description, numbersIn(actor).length)).toEqual(tagged(description, 1));
         expect(tagged(description, linksIn(actor))).toEqual(tagged(description, 1));
+    });
+
+    test.each(DIRECTIONS)('%s never claims chrome-classed markup inside the wrap (%s)', (actor, description) => {
+        const { panels } = boot();
+        panels[actor].adoptSoleTrader(NUMBERED_TRADER);
+        const wrap = document.querySelector(`${FORMS[actor]} .two-company-field-wrap`);
+        const insidePopover = document.createElement('div');
+        insidePopover.className = NUMBER_CLASS;
+        wrap.appendChild(insidePopover);
+
+        panels[actor].renderChrome();
+
+        expect(tagged(description, insidePopover.isConnected)).toEqual(tagged(description, true));
+        const own = Array.prototype.filter.call(
+            wrap.parentElement.children,
+            (child) => child.classList.contains(NUMBER_CLASS)
+        );
+        expect(tagged(description, own.length)).toEqual(tagged(description, 1));
     });
 });
 
