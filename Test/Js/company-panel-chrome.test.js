@@ -22,7 +22,8 @@ const {
     loadCompanySearchPanel,
     defaultMocks,
     brandConfigMock,
-    installAsyncSimulation
+    installAsyncSimulation,
+    tagged
 } = require('./amd-harness');
 
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
@@ -278,30 +279,35 @@ describe('the company number is painted under its own panel\'s field', () => {
     test.each([
         [
             'shipping',
-            { shippingCompanyIdField: false, billingNumber: '555555555' },
-            'the shipping form has no number field and one billing neighbour has one'
+            'the shipping form has no number field and one billing neighbour has one',
+            { shippingCompanyIdField: false, billingNumber: '555555555' }
         ],
         [
             'billing',
-            { billingCompanyIdField: false, shippingNumber: '777777777' },
-            'the billing form has no number field and one shipping neighbour has one'
+            'the billing form has no number field and one shipping neighbour has one',
+            { billingCompanyIdField: false, shippingNumber: '777777777' }
         ]
-    ])('%s claims nothing from the single neighbour holding a number (%s)', async (actor, fixture) => {
-        const other = OTHER[actor];
-        const restored = { shipping: fixture.shippingNumber, billing: fixture.billingNumber };
-        const { panels } = boot(fixture);
-        expect(panels[actor].mountSelector()).toBe(FIELDS[actor]);
+    ])(
+        '%s claims nothing from the single neighbour holding a number (%s)',
+        async (actor, description, fixture) => {
+            const other = OTHER[actor];
+            const restored = { shipping: fixture.shippingNumber, billing: fixture.billingNumber };
+            const { panels } = boot(fixture);
+            expect(panels[actor].mountSelector()).toBe(FIELDS[actor]);
 
-        // `watchCapturedIdentity` publishes on a macrotask, so an assertion made
-        // before it has run denies a propagation that had not happened yet.
-        await flushCapture();
-        await flushCapture();
+            // `watchCapturedIdentity` publishes on a macrotask, so an assertion
+            // made before it has run denies a propagation that had not happened.
+            await flushCapture();
+            await flushCapture();
 
-        expect(panels[actor].displayCompanyNumber()).toBe('');
-        expect(numbersIn(actor)).toEqual([]);
-        // The neighbour still paints the number in its OWN field.
-        expect(numbersIn(other)).toEqual([restored[other]]);
-    });
+            expect(tagged(description, panels[actor].displayCompanyNumber()))
+                .toEqual(tagged(description, ''));
+            expect(tagged(description, numbersIn(actor))).toEqual(tagged(description, []));
+            // The neighbour still paints the number in its OWN field.
+            expect(tagged(description, numbersIn(other)))
+                .toEqual(tagged(description, [restored[other]]));
+        }
+    );
 
     test('a panel whose own form carries no number field claims neither neighbour\'s', () => {
         // Two billing fieldsets, a number restored into each. The shipping form
@@ -331,21 +337,24 @@ describe('chrome never enters the popover\'s positioning context', () => {
      *  pieces of chrome are on the page at once. */
     const NUMBERED_TRADER = { company_name: 'Numbered Trader', organization_number: '333333333' };
 
-    test.each(DIRECTIONS)('%s renders both pieces of chrome (%s)', (actor) => {
+    test.each(DIRECTIONS)('%s renders both pieces of chrome (%s)', (actor, description) => {
         const { panels } = boot();
 
         panels[actor].adoptSoleTrader(NUMBERED_TRADER);
 
         const wrap = document.querySelector(`${FORMS[actor]} .two-company-field-wrap`);
         expect(wrap).not.toBeNull();
-        expect(wrap.querySelectorAll(`.${NUMBER_CLASS}, .${LINK_CLASS}`)).toHaveLength(0);
+        expect(tagged(description, wrap.querySelectorAll(`.${NUMBER_CLASS}, .${LINK_CLASS}`).length))
+            .toEqual(tagged(description, 0));
 
         const number = document.querySelector(`${FORMS[actor]} .${NUMBER_CLASS}`);
         const link = document.querySelector(`${FORMS[actor]} .${LINK_CLASS}`);
-        expect(number.parentElement).toBe(wrap.parentElement);
-        expect(link.parentElement).toBe(wrap.parentElement);
-        expect(wrap.nextElementSibling).toBe(number);
-        expect(number.nextElementSibling).toBe(link);
+        expect(tagged(description, number.parentElement))
+            .toEqual(tagged(description, wrap.parentElement));
+        expect(tagged(description, link.parentElement))
+            .toEqual(tagged(description, wrap.parentElement));
+        expect(tagged(description, wrap.nextElementSibling)).toEqual(tagged(description, number));
+        expect(tagged(description, number.nextElementSibling)).toEqual(tagged(description, link));
     });
 
     test('the billing panel takes its chrome down when it loses its mount', () => {
@@ -365,17 +374,19 @@ describe('chrome never enters the popover\'s positioning context', () => {
         expect(linksIn('billing')).toBe(0);
     });
 
-    test.each(DIRECTIONS)('%s keeps that order across a repaint (%s)', (actor) => {
+    test.each(DIRECTIONS)('%s keeps that order across a repaint (%s)', (actor, description) => {
         const { panels } = boot();
         panels[actor].adoptSoleTrader(NUMBERED_TRADER);
 
         panels[actor].renderChrome();
 
         const wrap = document.querySelector(`${FORMS[actor]} .two-company-field-wrap`);
-        expect(wrap.querySelectorAll(`.${NUMBER_CLASS}, .${LINK_CLASS}`)).toHaveLength(0);
-        expect(wrap.nextElementSibling.classList.contains(NUMBER_CLASS)).toBe(true);
-        expect(numbersIn(actor)).toHaveLength(1);
-        expect(linksIn(actor)).toBe(1);
+        expect(tagged(description, wrap.querySelectorAll(`.${NUMBER_CLASS}, .${LINK_CLASS}`).length))
+            .toEqual(tagged(description, 0));
+        expect(tagged(description, wrap.nextElementSibling.classList.contains(NUMBER_CLASS)))
+            .toEqual(tagged(description, true));
+        expect(tagged(description, numbersIn(actor).length)).toEqual(tagged(description, 1));
+        expect(tagged(description, linksIn(actor))).toEqual(tagged(description, 1));
     });
 });
 
