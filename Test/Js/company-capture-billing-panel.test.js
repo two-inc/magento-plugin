@@ -30,6 +30,11 @@ const BILLING_COUNTRY = `${BILLING_FORM} select[name="country_id"]`;
  * (no layout engine, so every element reports zero size), so this models
  * visibility directly rather than through computed layout.
  *
+ * Also models `$(document).on(event, selector, handler)` delegation, enough
+ * to fire the ONE delegated listener a spec cares about by selector —
+ * production's own event object is never read by either handler this file
+ * fires, so the stub handed to a fired handler carries no `target`.
+ *
  * @returns {{$: function, setVisible: function(string, boolean): void}}
  */
 function makeDom() {
@@ -38,9 +43,13 @@ function makeDom() {
     function node(selector) {
         if (nodes[selector]) return nodes[selector];
         let visible = true;
+        let exists = true;
         let value = '';
+        const delegated = [];
         const n = {
-            length: 1,
+            get length() {
+                return exists ? 1 : 0;
+            },
             val: function (next) {
                 if (!arguments.length) return value;
                 value = next;
@@ -58,7 +67,12 @@ function makeDom() {
             first: function () {
                 return n;
             },
-            on: function () {
+            on: function (event, selectorOrHandler, maybeHandler) {
+                // Delegated form only ($(document).on(event, selector, fn)) —
+                // the module under test never binds directly to a node.
+                if (typeof maybeHandler === 'function') {
+                    delegated.push({ event: String(event).split('.')[0], selector: selectorOrHandler, handler: maybeHandler });
+                }
                 return n;
             },
             trigger: function () {
@@ -66,6 +80,14 @@ function makeDom() {
             },
             _setVisible: function (v) {
                 visible = v;
+            },
+            _setExists: function (v) {
+                exists = v;
+            },
+            _fireDelegated: function (event, selector) {
+                delegated
+                    .filter(function (d) { return d.event === event && d.selector === selector; })
+                    .forEach(function (d) { d.handler({}); });
             }
         };
         nodes[selector] = n;
@@ -85,8 +107,17 @@ function makeDom() {
         setVisible: function (selector, value) {
             node(selector)._setVisible(value);
         },
+        setExists: function (selector, value) {
+            node(selector)._setExists(value);
+        },
         setCountry: function (selector, value) {
             node(selector).val(value);
+        },
+        // `document` is jsdom's real global, passed as an extraGlobal — the
+        // stub's own `$(document)` resolves it to the same node every time
+        // via `String(document)`, exactly as company-capture.js's own calls do.
+        fireChange: function (selector) {
+            node(String(document))._fireDelegated('change', selector);
         }
     };
 }
@@ -310,5 +341,120 @@ describe('a checkbox toggle mid-checkout supersedes the order-intent already in 
         requests[1].always();
         requests[1].done({ approved: true });
         expect(renderer.orderIntentApprovedNotice()).toContain('Billing Co');
+    });
+});
+
+/**
+ * TWO-25554 Amasty regression: shipping's own writes must never land in
+ * billing's form, even though `billingRoleFormRoot()` is happy to answer
+ * with it (see company-capture.js's `shippingWriteRoot()` doc). Amasty's
+ * one-step layout pre-renders every payment method's billing fieldset
+ * hidden from page load, so `billingRoleFormRoot()` — which wins on
+ * presence alone, visible or not — would otherwise outrank shipping's own
+ * visible form the whole time shipping is the panel in play.
+ */
+describe('the shipping panel writes into its OWN form — never billingRoleFormRoot()\'s answer', () => {
+    /**
+     * @param {object} dom
+     * @returns {{mock: object, lookupRoots: Array}}
+     */
+    function companySearchSpy(dom) {
+        const lookupRoots = [];
+        const mock = Object.assign({}, defaultMocks()['Two_Gateway/js/model/company-search'], {
+            // A billing candidate exists in the DOM (hidden) from page load,
+            // same as Amasty — billingRoleFormRoot() answers with it
+            // regardless of whether shipping is the panel in play.
+            billingRoleFormRoot: function () { return dom.$(BILLING_FORM); },
+            hasPrimaryAddressForm: function () { return true; },
+            lookupCompanyAddress: function (config, item, root) {
+                lookupRoots.push(root);
+                return null;
+            }
+        });
+        return { mock: mock, lookupRoots: lookupRoots };
+    }
+
+    function loadWithSpy(dom, spy) {
+        return loadCompanyCapture(
+            {
+                jquery: dom.$,
+                'Two_Gateway/js/model/brand-config': brandConfigMock({
+                    isCompanySearchEnabled: true,
+                    checkoutApiUrl: 'https://api.example.test',
+                    supportedCompanyTypes: {}
+                }),
+                'Two_Gateway/js/model/company-search': spy.mock
+            },
+            { document: document, window: window }
+        );
+    }
+
+    test('a shipping pick writes into the shipping form, not the hidden billing form Amasty always renders', () => {
+        const dom = makeDom();
+        dom.setVisible(BILLING_FIELD, false);
+        const spy = companySearchSpy(dom);
+        const capture = loadWithSpy(dom, spy);
+        capture.shipping.start();
+
+        capture.shipping.selectCompany({ text: 'Shipping Co', companyId: '111', lookupId: 'l1' });
+
+        expect(spy.lookupRoots).toHaveLength(1);
+        expect(spy.lookupRoots[0]).toBe(dom.$(ADDRESS_FORM));
+    });
+
+    test('mounted on the tile fallback (no shipping form on this checkout at all), still defers to billingRoleFormRoot() as before the split', () => {
+        const dom = makeDom();
+        dom.setExists(ADDRESS_FIELD, false);
+        const spy = companySearchSpy(dom);
+        const capture = loadWithSpy(dom, spy);
+        capture.shipping.start();
+        expect(capture.shipping.mountSelector()).toBe('#two_gateway_form input#company_name');
+
+        capture.shipping.selectCompany({ text: 'Shipping Co', companyId: '111', lookupId: 'l1' });
+
+        expect(spy.lookupRoots).toHaveLength(1);
+        expect(spy.lookupRoots[0]).toBe(dom.$(BILLING_FORM));
+    });
+});
+
+/**
+ * TWO-25554 Amasty regression: `watchForMountHost()`
+ * (company-capture-component.js) mounts the instant a node matching its
+ * selector APPEARS — a one-shot check, never re-run on a later visibility
+ * change alone. Luma only inserts the billing fieldset once "same as
+ * shipping" is unchecked, so that appearance IS the toggle. Amasty renders
+ * every payment method's billing fieldset hidden from page load, so the
+ * one-shot check runs (and fails) before the buyer ever reveals it, and
+ * nothing re-drives it afterwards without the checkbox listener this pins.
+ */
+describe('the "same as shipping" checkbox toggle re-checks both panels\' mounts', () => {
+    const BILLING_TOGGLE = 'input[name="billing-address-same-as-shipping"]';
+
+    // Asserts against panel() — whether mountPanel() actually RAN — not
+    // mountSelector(), which recomputes fresh from current DOM state on
+    // every call and would read as mounted even when refreshMount() was
+    // never re-driven at all (the exact vacuous read this pins against).
+    test('billing mounts once revealed, even though its field already existed hidden at boot', () => {
+        const { capture, dom } = load();
+        capture.start();
+        expect(capture.billing.panel()).toBeNull();
+
+        dom.setVisible(BILLING_FIELD, true);
+        dom.fireChange(BILLING_TOGGLE);
+
+        expect(capture.billing.panel()).not.toBeNull();
+    });
+
+    test('unmounts again once re-hidden, same as an explicit refreshMount() already does', () => {
+        const { capture, dom } = load();
+        capture.start();
+        dom.setVisible(BILLING_FIELD, true);
+        dom.fireChange(BILLING_TOGGLE);
+        expect(capture.billing.panel()).not.toBeNull();
+
+        dom.setVisible(BILLING_FIELD, false);
+        dom.fireChange(BILLING_TOGGLE);
+
+        expect(capture.billing.mountSelector()).toBe('');
     });
 });
