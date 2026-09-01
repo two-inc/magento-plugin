@@ -166,6 +166,9 @@ function defaultMocks() {
             announceAddressUnavailable: function (identity) {
                 identity.addressNotice('address unavailable');
             },
+            announceAddressUndeliverable: function (identity) {
+                identity.addressNotice('address undeliverable');
+            },
             hasPrimaryAddressForm: function () { return true; },
             isDegradedResponse: function () { return false; },
             // DELEGATED, like the display helpers below: an inert stub would

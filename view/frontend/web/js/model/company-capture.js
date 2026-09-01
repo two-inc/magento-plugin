@@ -332,7 +332,7 @@ define([
      */
     function shippingWriteTarget() {
         const root = shippingWriteRoot();
-        if (!root) companySearch.announceAddressUnavailable(shippingIdentity);
+        if (!root) companySearch.announceAddressUndeliverable(shippingIdentity);
         return root;
     }
 

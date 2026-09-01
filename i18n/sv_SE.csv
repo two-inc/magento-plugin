@@ -308,6 +308,7 @@
 "Invalid company lookup request.","Ogiltig förfrågan om företagsuppslag."
 "This order is too large to send for approval.","Den här ordern är för stor för att skickas för godkännande."
 "We could not fetch this company's address. Please enter it below.","Vi kunde inte hämta företagets adress. Ange den nedan."
+"We could not fill in this company's address on this page.","We could not fill in this company's address on this page."
 "Trusted proxies","Betrodda proxyservrar"
 "Trusted proxies: ""%1"" is not a valid IP address or CIDR range.","Betrodda proxyservrar: ""%1"" är inte en giltig IP-adress eller ett giltigt CIDR-intervall."
 "Disable checkout rate limiting","Inaktivera hastighetsbegränsning i kassan"
