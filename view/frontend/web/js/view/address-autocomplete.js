@@ -46,6 +46,7 @@ define([
     const EVENT_NS = '.twoAddressCompanyId';
 
     return Component.extend({
+        addressFormSelector: '#shipping-new-address-form',
         countrySelector: '#shipping-new-address-form select[name="country_id"]',
         companyNameSelector: '#shipping-new-address-form input[name="company"]',
         companyIdSelector: '#shipping-new-address-form input[name="custom_attributes[company_id]"]',
@@ -63,27 +64,6 @@ define([
                         self.onCountryChanged();
                     });
             });
-            // Record what each billing address form was rendered holding, the
-            // moment core puts it in the document. `$.async` is what makes that
-            // moment reachable — the form appears when the buyer unchecks "My
-            // billing and shipping address are the same", long after this
-            // component initialises, and it reappears on every re-render. See
-            // companySearch.captureSecondaryAddressBaseline() for why the
-            // baseline has to be taken before the buyer can touch the form.
-            // Watched on the country SELECT inside the form, not the form
-            // itself, then walked back up. Core inserts the fieldset before its
-            // child field components resolve their own templates, and `$.async`
-            // fires on the insertion — so watching the fieldset would run this
-            // against a form with no fields in it yet. The select is the last
-            // thing to arrive that the baseline needs.
-            $.async(
-                companySearch.SECONDARY_ADDRESS_ROOT_SELECTOR + ' select[name="country_id"]',
-                function (countrySelect) {
-                    companySearch.captureSecondaryAddressBaseline(
-                        $(countrySelect).closest(companySearch.SECONDARY_ADDRESS_ROOT_SELECTOR)
-                    );
-                }
-            );
             this.watchCapturedIdentity();
             this.enableManualCompanyId();
             const setTwoTelephone = (e) => customerData.set('shippingTelephone', e.target.value);
@@ -140,17 +120,13 @@ define([
                 this.toggleCompanyVisibility();
                 return;
             }
-            companySearch.revertAutofilledAddress();
+            // THIS form alone — the other panel's fields are never touched
+            // (TWO-25554).
+            companySearch.revertAutofilledAddress($(this.addressFormSelector));
             // Clears the name input, the number field, and the published
             // `companyData` section the payment tile reads — every surviving
             // copy of the previous country's company.
             this.setCompanyData();
-            // …then propagate the country the buyer just chose. AFTER the two
-            // clears above, deliberately: both of them run over the billing
-            // address as well, and both consult the sync pin, so a country
-            // written first would be a value they then had to judge as
-            // already-ours mid-sequence.
-            companySearch.mirrorFieldsToSecondaryAddresses(['country']);
             this.toggleCompanyVisibility();
         },
         toggleCompanyVisibility: function () {
@@ -204,21 +180,6 @@ define([
             this.setCompanyIdValue(companyId);
             this.syncCompanyIdEditable();
             this.renderCompanyIdText();
-            // The company half of the two-address propagation. Every path that
-            // establishes a company on the default address comes through here —
-            // a registry pick, the manual-entry reset, the country-switch clear
-            // — so this is the one place it has to be wired, and the pin inside
-            // decides whether a given billing address accepts it.
-            // The number travels with the name. Both are in the pin's field
-            // set, and a field the pin JUDGES but the mirror never WRITES is a
-            // field that can only ever freeze the address.
-            // Never onto a billing form whose own panel owns that field
-            // (TWO-25554): the pin cannot speak for it — it judges buyer
-            // authorship, and a panel's pick is neither the buyer typing nor
-            // the mirror's own earlier write.
-            if (!companyCapture.billingOwnsCompanyField()) {
-                companySearch.mirrorFieldsToSecondaryAddresses(['company', 'organization']);
-            }
         },
         /**
          * Write the captured organisation number so that it SURVIVES A PAGE

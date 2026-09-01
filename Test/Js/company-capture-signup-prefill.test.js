@@ -14,9 +14,9 @@ const $ = require('jquery');
 const { loadCompanyCapture, brandConfigMock, defaultMocks } = require('./amd-harness');
 
 /**
- * @returns {object} the shipping panel's own `_options` — signupPrefill()
- *          reads the RESOLVED identity (TWO-25554), seeded here to 'Acme Ltd'
- *          the way the resolver would once a capture actually resolved.
+ * @returns {object} the shipping panel — signupPrefill() carries the company of
+ *          the panel the buyer opened the signup from (TWO-25554), seeded here
+ *          on the shipping panel's own identity.
  */
 function load(billingAddress, guestEmail) {
     const capture = loadCompanyCapture({
@@ -33,9 +33,40 @@ function load(billingAddress, guestEmail) {
             }
         )
     });
-    capture.identity.companyName('Acme Ltd');
+    capture.shipping.identity().companyName('Acme Ltd');
     return capture.shipping;
 }
+
+/**
+ * @returns {object} `{ shipping, billing }` panels over the same quote
+ */
+function loadBoth(billingAddress) {
+    const capture = loadCompanyCapture({
+        jquery: $,
+        'Two_Gateway/js/model/sole-trader': function () {},
+        'Two_Gateway/js/model/brand-config': brandConfigMock(null),
+        'Two_Gateway/js/model/company-search': defaultMocks()['Two_Gateway/js/model/company-search'],
+        'Magento_Checkout/js/model/quote': Object.assign(
+            {},
+            defaultMocks()['Magento_Checkout/js/model/quote'],
+            { billingAddress: function () { return billingAddress; } }
+        )
+    });
+    return capture;
+}
+
+describe('each panel prefills from its OWN capture', () => {
+    test.each([
+        ['shipping', 'billing', 'a shipping capture never reaches billing\'s signup'],
+        ['billing', 'shipping', 'a billing capture never reaches shipping\'s signup']
+    ])('%s captures, %s prefills empty (%s)', (captor, other) => {
+        const capture = loadBoth({ countryId: 'NO' });
+        capture[captor].identity().companyName('Acme Ltd');
+
+        expect(capture[captor].host().signupPrefill().company_name).toBe('Acme Ltd');
+        expect(capture[other].host().signupPrefill().company_name).toBe('');
+    });
+});
 
 describe('signupPrefill() builds the hosted-signup payload', () => {
     test('the full shape, from a complete billing address', () => {

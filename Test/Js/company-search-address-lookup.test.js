@@ -29,19 +29,27 @@ const SEARCH = 'view/frontend/web/js/model/company-search.js';
 /** The node the component mounts its one panel at in these fixtures. */
 const TILE_FIELD_SELECTOR = '#two_gateway_form input#company_name';
 
+/** The shipping panel's own field and the form it writes into. */
+const ADDRESS_FIELD_SELECTOR = '#shipping-new-address-form input[name="company"]';
+const ADDRESS_FORM_SELECTOR = '#shipping-new-address-form';
+
 /**
  * jQuery test double that records $.ajax calls and the values written to
  * address inputs.
  *
- * `TILE_FIELD_SELECTOR` is the one selector reported as PRESENT, which is what
- * makes the component resolve its mount there — every other lookup answers an
- * empty set, so `billingRoleFormRoot()` finds no form and the address write
- * takes its unscoped, document-wide branch.
+ * `present` is what the fixture reports as being on the page, which is what
+ * decides where the component mounts and therefore which form it writes into.
+ * A scoped `find()` resolves to the field selector alone, so what a write
+ * records is the field it landed in rather than the path it took to get there.
+ *
+ * @param {object} recorder
+ * @param {Array<string>} [present] selectors reported as matching one node
  */
-function makeSpyJQuery(recorder) {
+function makeSpyJQuery(recorder, present) {
+    const matching = present || [ADDRESS_FIELD_SELECTOR, ADDRESS_FORM_SELECTOR];
     function $(selector) {
         const obj = {
-            length: selector === TILE_FIELD_SELECTOR ? 1 : 0,
+            length: matching.indexOf(selector) === -1 ? 0 : 1,
             val: function (v) {
                 if (arguments.length) {
                     recorder.written.push([selector, v]);
@@ -81,13 +89,10 @@ function makeSpyJQuery(recorder) {
                 return recorder.data[key];
             },
             closest: function () { return obj; },
-            find: function () { return obj; },
+            find: function (sel) { return typeof sel === 'string' ? $(sel) : obj; },
             first: function () { return obj; },
             eq: function () { return obj; },
             is: function () { return false; },
-            // A length-0 set for every address field: this fixture has no
-            // address form as a node, so the writes go through the module's
-            // document-wide branch and `each` never calls back.
             each: function () { return obj; },
             append: function () { return obj; },
             appendTo: function () { return obj; },
@@ -207,6 +212,11 @@ const BASE_CONFIG = {
 
 const LOOKUP_ROUTE = HARNESS_BASE_URL + 'rest/V1/two/company';
 
+/** A real identity — `lookupCompanyAddress()` notices land on the caller's own. */
+function makeIdentity() {
+    return loadAmdModule(IDENTITY)();
+}
+
 describe('company-search shared module', () => {
     test('searchCompanies carries lookup_id through as lookupId', async () => {
         const recorder = makeRecorder();
@@ -243,9 +253,15 @@ describe('company-search shared module', () => {
 
     test('lookupCompanyAddress fetches the company and fills the address form', () => {
         const recorder = makeRecorder();
-        const companySearch = loadCompanySearch(makeSpyJQuery(recorder));
+        const $ = makeSpyJQuery(recorder);
+        const companySearch = loadCompanySearch($);
 
-        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
+        companySearch.lookupCompanyAddress(
+            BASE_CONFIG,
+            { lookupId: 'lookup-abc-123' },
+            $(ADDRESS_FORM_SELECTOR),
+            makeIdentity()
+        );
 
         expect(recorder.ajax).toHaveLength(1);
         expect(recorder.ajax[0].url).toBe(LOOKUP_ROUTE);
@@ -281,11 +297,14 @@ describe('company-search shared module', () => {
         [{}, {}, 'the picked result carries no lookupId']
     ])('lookupCompanyAddress is a no-op when %p / %p (%s)', (configOverride, selected) => {
         const recorder = makeRecorder();
-        const companySearch = loadCompanySearch(makeSpyJQuery(recorder));
+        const $ = makeSpyJQuery(recorder);
+        const companySearch = loadCompanySearch($);
 
         const result = companySearch.lookupCompanyAddress(
             Object.assign({}, BASE_CONFIG, configOverride),
-            selected
+            selected,
+            $(ADDRESS_FORM_SELECTOR),
+            makeIdentity()
         );
 
         expect(result).toBeNull();
@@ -303,11 +322,12 @@ describe('company-search shared module', () => {
  * `searchCompanies`, so nothing about the pick is hand-rolled.
  *
  * @param {object} [configOverride] merged over BASE_CONFIG
+ * @param {Array<string>} [present] selectors this checkout renders
  * @returns {object} `{ component, identity, recorder, pick, settle }`
  */
-function loadMountedComponent(configOverride) {
+function loadMountedComponent(configOverride, present) {
     const recorder = makeRecorder();
-    const $ = makeSpyJQuery(recorder);
+    const $ = makeSpyJQuery(recorder, present);
     const companySearch = loadCompanySearch($);
     const config = Object.assign({}, BASE_CONFIG, configOverride || {});
     const panel = { options: null };
@@ -435,5 +455,54 @@ describe('the one panel the capture component mounts', () => {
         expect(lastWrite('input[name="city"]')).toBe('Stockholm');
         expect(lastWrite('input[name="postcode"]')).toBe('111 22');
         expect(lastWrite('input[name="street[0]"]')).toBe('2 Second Street');
+    });
+});
+
+describe('a tile-mounted shipping panel has no form of its own to write into (TWO-25554)', () => {
+    /**
+     * A checkout with no shipping form: the shipping panel falls to the tile,
+     * and the only address form on the page is the BILLING panel's.
+     */
+    const TILE_ONLY_CHECKOUT = [TILE_FIELD_SELECTOR, '[data-form="billing-new-address"]'];
+
+    test('the registry lookup is never even issued', async () => {
+        // A panel with no form of its own has nowhere to put an address, and
+        // the billing panel's form is not its to write (TWO-25554).
+        const { component, identity, recorder, pick } = loadMountedComponent(
+            null,
+            TILE_ONLY_CHECKOUT
+        );
+        expect(component.mountSelector()).toBe(TILE_FIELD_SELECTOR);
+
+        await pick('example', SEARCH_RESPONSE);
+
+        expect(identity.companyId()).toBe('12345678');
+        expect(lookupIds(recorder)).toEqual([]);
+        expect(recorder.written).toHaveLength(0);
+    });
+
+    test.each([
+        [
+            function (search, root, identity) { return search.applyAddress({ city: 'X' }, root); },
+            0,
+            'applyAddress refuses'
+        ],
+        [
+            function (search, root) { return search.revertAutofilledAddress(root); },
+            0,
+            'revertAutofilledAddress refuses'
+        ],
+        [
+            function (search, root) { return search.applyTelephone('+47 1', root); },
+            false,
+            'applyTelephone refuses'
+        ]
+    ])('with no write root, %p returns %p (%s)', (act, expected, description) => {
+        const recorder = makeRecorder();
+        const $ = makeSpyJQuery(recorder, TILE_ONLY_CHECKOUT);
+        const companySearch = loadCompanySearch($);
+
+        expect(act(companySearch, null, makeIdentity())).toBe(expected, description);
+        expect(recorder.written).toHaveLength(0);
     });
 });

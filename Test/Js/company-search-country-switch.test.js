@@ -262,7 +262,14 @@ function makeCustomerData() {
 /** Load the real shared model against a jQuery whose DOM the test owns. */
 function loadModel() {
     const dom = makeDom();
-    return { model: loadAmdModule(MODEL, { jquery: dom.$ }), node: dom.node, dom: dom };
+    return {
+        model: loadAmdModule(MODEL, { jquery: dom.$ }),
+        node: dom.node,
+        dom: dom,
+        // Every write and revert is scoped to the calling panel's own form
+        // (TWO-25554); there is no page-wide path.
+        root: dom.$(PRIMARY_ROOT)
+    };
 }
 
 /**
@@ -281,38 +288,35 @@ function loadAddressStep(options) {
     const calls = {
         revert: 0,
         applyAddress: [],
-        baselines: [],
-        mirrored: [],
+        touched: [],
         sequence: []
     };
 
     dom.node(COUNTRY_FIELD).val(opts.country || 'GB');
 
-    const companySearch = Object.assign({}, defaultMocks()['Two_Gateway/js/model/company-search'], {
-        AUTOFILL_MARKER_ATTR: MARKER,
-        SECONDARY_ADDRESS_ROOT_SELECTOR: SECONDARY_ROOT,
-        applyAddress: function (address) {
-            calls.applyAddress.push(address);
-        },
-        revertAutofilledAddress: function () {
-            calls.revert += 1;
-            calls.sequence.push('revert');
-            return 0;
-        },
-        // Recorded rather than executed: these fixtures model the shipping step
-        // alone, so what is checkable here is that the address step ASKS for the
-        // propagation — the mirror's own pin logic is covered against real
-        // markup in company-search-address-mirror.test.js.
-        captureSecondaryAddressBaseline: function (root) {
-            calls.baselines.push(root);
-            calls.sequence.push('baseline');
-        },
-        mirrorFieldsToSecondaryAddresses: function (names) {
-            calls.mirrored.push(names);
-            calls.sequence.push('mirror:' + names.join('+'));
-            return 0;
+    // A Proxy rather than a plain object: `calls.touched` is then every member
+    // of the model the address step reaches for, which is what makes "it asks
+    // the model for nothing beyond its own form" assertable.
+    const companySearch = new Proxy(
+        Object.assign({}, defaultMocks()['Two_Gateway/js/model/company-search'], {
+            AUTOFILL_MARKER_ATTR: MARKER,
+            SECONDARY_ADDRESS_ROOT_SELECTOR: SECONDARY_ROOT,
+            applyAddress: function (address) {
+                calls.applyAddress.push(address);
+            },
+            revertAutofilledAddress: function () {
+                calls.revert += 1;
+                calls.sequence.push('revert');
+                return 0;
+            }
+        }),
+        {
+            get: function (target, name) {
+                calls.touched.push(String(name));
+                return target[name];
+            }
         }
-    });
+    );
 
     const component = loadAmdModule(ADDRESS_STEP, {
         jquery: dom.$,
@@ -440,13 +444,13 @@ beforeEach(() => {
 
 describe('reverting an address autofilled from the previous country', () => {
     test('applyAddress records exactly what it wrote, on every field', () => {
-        const { model, node } = loadModel();
+        const { model, node, root } = loadModel();
 
         model.applyAddress({
             city: 'London',
             postal_code: 'EC1A 1BB',
             street_address: '1 Example Street'
-        });
+        }, root);
 
         expect(node(CITY).val()).toBe('London');
         expect(node(CITY).attr(MARKER)).toBe('London');
@@ -455,15 +459,15 @@ describe('reverting an address autofilled from the previous country', () => {
     });
 
     test('the revert clears an untouched autofill and fires change for it', () => {
-        const { model, node, dom } = loadModel();
+        const { model, node, dom, root } = loadModel();
         model.applyAddress({
             city: 'London',
             postal_code: 'EC1A 1BB',
             street_address: '1 Example Street'
-        });
+        }, root);
         dom.triggered.length = 0;
 
-        expect(model.revertAutofilledAddress()).toBe(3);
+        expect(model.revertAutofilledAddress(root)).toBe(3);
 
         expect(node(CITY).val()).toBe('');
         expect(node(POSTCODE).val()).toBe('');
@@ -477,27 +481,27 @@ describe('reverting an address autofilled from the previous country', () => {
         // The whole reason the marker records the VALUE rather than a boolean.
         // Over-clearing here deletes buyer input on a keystroke they may have
         // made minutes earlier — worse than leaving a stale value they can see.
-        const { model, node } = loadModel();
+        const { model, node, root } = loadModel();
         model.applyAddress({
             city: 'London',
             postal_code: 'EC1A 1BB',
             street_address: '1 Example Street'
-        });
+        }, root);
         node(CITY).val('Madrid');
 
-        expect(model.revertAutofilledAddress()).toBe(2);
+        expect(model.revertAutofilledAddress(root)).toBe(2);
 
         expect(node(CITY).val()).toBe('Madrid');
         expect(node(POSTCODE).val()).toBe('');
     });
 
     test('a hand-filled form with no autofill behind it is left entirely alone', () => {
-        const { model, node } = loadModel();
+        const { model, node, root } = loadModel();
         node(CITY).val('Madrid');
         node(POSTCODE).val('28001');
         node(STREET).val('Calle Example 1');
 
-        expect(model.revertAutofilledAddress()).toBe(0);
+        expect(model.revertAutofilledAddress(root)).toBe(0);
 
         expect(node(CITY).val()).toBe('Madrid');
         expect(node(POSTCODE).val()).toBe('28001');
@@ -508,25 +512,25 @@ describe('reverting an address autofilled from the previous country', () => {
         // Two companies sharing a postcode: without the refresh the second
         // write leaves no recording, and the field reads as buyer-typed — so
         // the revert would strand it — for the rest of the page's life.
-        const { model, node } = loadModel();
-        model.applyAddress({ city: 'London', postal_code: 'EC1A 1BB', street_address: 'One' });
+        const { model, node, root } = loadModel();
+        model.applyAddress({ city: 'London', postal_code: 'EC1A 1BB', street_address: 'One' }, root);
         node(POSTCODE).removeAttr(MARKER);
 
-        model.applyAddress({ city: 'London', postal_code: 'EC1A 1BB', street_address: 'Two' });
+        model.applyAddress({ city: 'London', postal_code: 'EC1A 1BB', street_address: 'Two' }, root);
 
         expect(node(POSTCODE).attr(MARKER)).toBe('EC1A 1BB');
-        expect(model.revertAutofilledAddress()).toBe(3);
+        expect(model.revertAutofilledAddress(root)).toBe(3);
     });
 
     test('an empty registry value is a recording, not an absence', () => {
         // `''` is what the API sends for a field the registry has nothing for.
         // A falsiness test here would leave the marker unread and the field
         // permanently un-revertable.
-        const { model, node } = loadModel();
-        model.applyAddress({ city: 'London', postal_code: '', street_address: 'One' });
+        const { model, node, root } = loadModel();
+        model.applyAddress({ city: 'London', postal_code: '', street_address: 'One' }, root);
 
         expect(node(POSTCODE).attr(MARKER)).toBe('');
-        expect(model.revertAutofilledAddress()).toBe(3);
+        expect(model.revertAutofilledAddress(root)).toBe(3);
     });
 });
 
@@ -743,46 +747,41 @@ describe('a company restored from a previous visit', () => {
     });
 });
 
-describe('the address step asks for the two-address propagation', () => {
+describe('the address step reaches into its OWN form and nowhere else', () => {
     /**
-     * These wirings live in `address-autocomplete.js` and are invisible to the
-     * mirror's own suite, which drives the model directly. Deleting any one of
-     * them left every suite in the repo green before these tests existed.
+     * The wirings under test live in `address-autocomplete.js`, which no model
+     * suite exercises: a cross-panel write reintroduced there is invisible to
+     * every suite that drives the model directly.
      */
-    test('the billing form is watched so its rendered baseline can be captured', () => {
-        const ctx = loadAddressStep({ country: 'GB' });
+    /**
+     * The cross-panel writers, by name. Not every mention of the billing form:
+     * `SECONDARY_ADDRESS_ROOT_SELECTOR` is where the BILLING panel's own mount
+     * lives, and reading it is the point.
+     */
+    const CROSS_PANEL_WRITERS = /mirror|captureSecondary/i;
 
-        // Watched via a FIELD inside the form and walked back up, not the form
-        // itself: core inserts the fieldset before its child fields render.
-        expect(ctx.calls.baselines).toHaveLength(1);
-    });
-
-    test('a country change propagates the country, after the two clears', () => {
+    test('a country change retracts its own address fields and propagates nothing', () => {
         const ctx = loadAddressStep({ country: 'GB' });
-        ctx.calls.sequence.length = 0;
+        ctx.calls.touched.length = 0;
 
         switchCountryTo(ctx, 'ES');
 
-        expect(ctx.calls.mirrored).toContainEqual(['country']);
-        // The country goes LAST. Both clears run over the billing address and
-        // both consult the sync pin, so a country written first would be a value
-        // they then had to judge as already-ours mid-sequence.
-        expect(ctx.calls.sequence.indexOf('revert')).toBeLessThan(
-            ctx.calls.sequence.indexOf('mirror:country')
-        );
-        expect(ctx.calls.sequence.indexOf('mirror:company+organization')).toBeLessThan(
-            ctx.calls.sequence.indexOf('mirror:country')
-        );
+        expect(ctx.calls.revert).toBe(1);
+        expect(ctx.calls.touched.filter((name) => CROSS_PANEL_WRITERS.test(name))).toEqual([]);
     });
 
-    test('every company write propagates the name AND the number it belongs to', () => {
-        // A field the pin JUDGES but the mirror never WRITES can only ever
-        // freeze the address, so the organisation number travels with the name.
+    test('a company write propagates nothing — each panel owns its own company field', () => {
         const ctx = loadAddressStep({ country: 'GB' });
-        ctx.calls.mirrored.length = 0;
+        ctx.calls.touched.length = 0;
 
         ctx.component.setCompanyData('12345678', 'Example Ltd');
 
-        expect(ctx.calls.mirrored).toEqual([['company', 'organization']]);
+        expect(ctx.calls.touched.filter((name) => CROSS_PANEL_WRITERS.test(name))).toEqual([]);
+    });
+
+    test('booting reaches for no cross-panel writer at all', () => {
+        const ctx = loadAddressStep({ country: 'GB' });
+
+        expect(ctx.calls.touched.filter((name) => CROSS_PANEL_WRITERS.test(name))).toEqual([]);
     });
 });

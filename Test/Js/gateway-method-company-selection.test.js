@@ -340,6 +340,7 @@ describe('a company picked on the shipping step reaches the payment step', () =>
         const sections = { companyData: observable(initialCompanyData) };
         const address = { getCacheKey: () => 'k', countryId: 'GB' };
         const billingAddress = observable(address);
+        const shippingAddress = observable(address);
         const intents = [];
         const renderer = loadAmdModule(RENDERER, {
             jquery: dom.$,
@@ -356,7 +357,7 @@ describe('a company picked on the shipping step reaches the payment step', () =>
                 reload: function () {}
             },
             'Magento_Checkout/js/model/quote': {
-                shippingAddress: observable(address),
+                shippingAddress: shippingAddress,
                 billingAddress: billingAddress,
                 getTotals: () => observable({}),
                 getQuoteId: () => null,
@@ -370,7 +371,7 @@ describe('a company picked on the shipping step reaches the payment step', () =>
             intents.push(renderer.companyId());
             return { always: () => ({ done: () => ({ fail: () => {} }) }) };
         };
-        return { renderer, sections, dom, billingAddress, intents };
+        return { renderer, sections, dom, billingAddress, shippingAddress, intents };
     }
 
     test('the companyData subscription clears the previous company id', () => {
@@ -446,25 +447,50 @@ describe('a company picked on the shipping step reaches the payment step', () =>
         expect(renderer.companyId()).toBe('99999999');
     });
 
-    test('an address notification carrying company_id reaches the observable', () => {
+    test('a SHIPPING address notification carrying company_id reaches the observable', () => {
         // updateAddress()'s custom-attribute parsing is a writer path of its
         // own, and the one most easily conflated with the `companyData`
         // notification — this one fires from the quote subscriptions with no
         // address-step interaction at all. Without it,
         // `if (item.attribute_code == 'company_id')` has no test anywhere.
+        const { renderer, billingAddress, shippingAddress } = loadWithSections({});
+
+        renderer.fillCustomerData();
+
+        const address = {
+            getCacheKey: () => 'k2',
+            countryId: 'GB',
+            company: 'First Example Ltd',
+            customAttributes: [{ attribute_code: 'company_id', value: '12345678' }]
+        };
+        billingAddress(address);
+        shippingAddress(address);
+
+        expect(renderer.companyName()).toBe('First Example Ltd');
+        expect(renderer.companyId()).toBe('12345678');
+    });
+
+    test('the same company on the BILLING address alone still seeds the billing role', () => {
+        // No billing panel is mounted on this checkout, so billing is not a
+        // distinct address and the shipping identity is the only capture the
+        // resolver reads — which is what the resolved observables show
+        // (TWO-25554). Where the billing panel IS mounted the seed stops there:
+        // company-capture-billing-panel.test.js.
         const { renderer, billingAddress } = loadWithSections({});
 
         renderer.fillCustomerData();
 
         billingAddress({
-            getCacheKey: () => 'k2',
+            getCacheKey: () => 'k3',
             countryId: 'GB',
-            company: 'First Example Ltd',
-            customAttributes: [{ attribute_code: 'company_id', value: '12345678' }]
+            telephone: '+47 123 45 678',
+            company: 'Billing Example Ltd',
+            customAttributes: [{ attribute_code: 'company_id', value: '87654321' }]
         });
 
-        expect(renderer.companyName()).toBe('First Example Ltd');
-        expect(renderer.companyId()).toBe('12345678');
+        expect(renderer.companyName()).toBe('Billing Example Ltd');
+        expect(renderer.companyId()).toBe('87654321');
+        expect(renderer.telephone()).toBe('+47123 45 678');
     });
 });
 

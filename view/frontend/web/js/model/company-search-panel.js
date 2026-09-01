@@ -105,6 +105,8 @@
      *        nothing and drives `bind()` itself.
      * @param {function(): (string|undefined)} [options.getCountryCode] the
      *        current ISO country code, read fresh on every search.
+     * @param {function(): ?object} [options.getSearchScope] this panel's own
+     *        rate-limit scope, so a 429 parks this panel alone.
      * @param {function(): Array<{mode: string, text: string,
      *        onActivate: function}>} options.getChips the chips to render, in
      *        display order. Called on every sync, so a chip's label can follow
@@ -129,6 +131,7 @@
         this.translate = options.translate || function (text) { return text; };
         this.observe = options.observe || null;
         this.getCountryCode = options.getCountryCode || function () { return ''; };
+        this.getSearchScope = options.getSearchScope || function () { return null; };
         this.getChips = options.getChips || function () { return []; };
         this.isChipVisible = options.isChipVisible || function () { return true; };
         this.getSelectedMode = options.getSelectedMode || function () { return ''; };
@@ -729,6 +732,7 @@
             .searchCompanies({
                 config: this.config,
                 token: this._token,
+                scope: this.getSearchScope(),
                 term: query,
                 getCountryCode: this.getCountryCode
             })
@@ -1031,6 +1035,11 @@
      */
     CompanySearchPanel.prototype.getField = function () {
         return this._field ? [this._field] : [];
+    };
+
+    /** @returns {?Element} this panel's own popover, never a page-wide match */
+    CompanySearchPanel.prototype.getPanelElement = function () {
+        return this._panel || null;
     };
 
     /**

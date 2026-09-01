@@ -345,15 +345,12 @@ describe('a checkbox toggle mid-checkout supersedes the order-intent already in 
 });
 
 /**
- * TWO-25554 Amasty regression: shipping's own writes must never land in
- * billing's form, even though `billingRoleFormRoot()` is happy to answer
- * with it (see company-capture.js's `shippingWriteRoot()` doc). Amasty's
- * one-step layout pre-renders every payment method's billing fieldset
- * hidden from page load, so `billingRoleFormRoot()` — which wins on
- * presence alone, visible or not — would otherwise outrank shipping's own
- * visible form the whole time shipping is the panel in play.
+ * TWO-25554: shipping's own writes never land in billing's form. Amasty's
+ * one-step layout pre-renders every payment method's billing fieldset hidden
+ * from page load, so a "best available address form" answer outranked
+ * shipping's own visible form the whole time shipping was the panel in play.
  */
-describe('the shipping panel writes into its OWN form — never billingRoleFormRoot()\'s answer', () => {
+describe('the shipping panel writes into its OWN form, or nowhere', () => {
     /**
      * @param {object} dom
      * @returns {{mock: object, lookupRoots: Array}}
@@ -361,13 +358,9 @@ describe('the shipping panel writes into its OWN form — never billingRoleFormR
     function companySearchSpy(dom) {
         const lookupRoots = [];
         const mock = Object.assign({}, defaultMocks()['Two_Gateway/js/model/company-search'], {
-            // A billing candidate exists in the DOM (hidden) from page load,
-            // same as Amasty — billingRoleFormRoot() answers with it
-            // regardless of whether shipping is the panel in play.
-            billingRoleFormRoot: function () { return dom.$(BILLING_FORM); },
             hasPrimaryAddressForm: function () { return true; },
             lookupCompanyAddress: function (config, item, root) {
-                lookupRoots.push(root);
+                lookupRoots.push(root || null);
                 return null;
             }
         });
@@ -402,9 +395,12 @@ describe('the shipping panel writes into its OWN form — never billingRoleFormR
         expect(spy.lookupRoots[0]).toBe(dom.$(ADDRESS_FORM));
     });
 
-    test('mounted on the tile fallback (no shipping form on this checkout at all), still defers to billingRoleFormRoot() as before the split', () => {
+    test('mounted on the tile fallback, with no shipping form at all, it writes NOWHERE', () => {
+        // A panel with no form of its own writes nowhere: the only address form
+        // on such a checkout is the BILLING panel's (TWO-25554).
         const dom = makeDom();
         dom.setExists(ADDRESS_FIELD, false);
+        dom.setVisible(BILLING_FIELD, false);
         const spy = companySearchSpy(dom);
         const capture = loadWithSpy(dom, spy);
         capture.shipping.start();
@@ -412,8 +408,22 @@ describe('the shipping panel writes into its OWN form — never billingRoleFormR
 
         capture.shipping.selectCompany({ text: 'Shipping Co', companyId: '111', lookupId: 'l1' });
 
-        expect(spy.lookupRoots).toHaveLength(1);
-        expect(spy.lookupRoots[0]).toBe(dom.$(BILLING_FORM));
+        expect(spy.lookupRoots).toEqual([null]);
+    });
+
+    test('the tile is not the shipping panel\'s while the billing panel is mounted', () => {
+        // One control per field: a second visible, required company field the
+        // resolver ignores cannot be completed by the buyer at all (TWO-25554).
+        const dom = makeDom();
+        dom.setExists(ADDRESS_FIELD, false);
+        dom.setVisible(BILLING_FIELD, true);
+        const spy = companySearchSpy(dom);
+        const capture = loadWithSpy(dom, spy);
+        capture.shipping.start();
+        capture.billing.start();
+
+        expect(capture.billing.mountSelector()).toBe(BILLING_FIELD);
+        expect(capture.shipping.mountSelector()).toBe('');
     });
 });
 
@@ -460,28 +470,19 @@ describe('the "same as shipping" checkbox toggle re-checks both panels\' mounts'
 });
 
 /**
- * TWO-25554, Fire Checkout regression: a company the BILLING panel captured
- * must never become the shipping identity's, however it reaches the payment
- * renderer.
+ * TWO-25554: the quote's BILLING address seeds exactly one panel — the one that
+ * owns the billing ROLE.
  *
- * The first fix for this asked one question — does the billing panel hold a
- * live mount at its own field — and asked it of the DOM at the moment of the
- * write. That is sound for the mirror, which runs while nothing is
- * re-rendering, and it held on Amasty's static one-step layout in both
- * directions. It does not hold for a company arriving through the quote or
- * through `companyData`:
+ * The billing panel while billing is a distinct address, and while it still
+ * holds a capture of its own: Fire Checkout re-renders its payment area from
+ * the same `change` that pushes the pick into the quote, so the notification
+ * can land while the billing fieldset is detached. Otherwise billing IS
+ * shipping, and the shipping identity is the only capture the resolver reads.
  *
- *  - Fire Checkout re-renders its payment area from the same `change` that
- *    pushes the pick into the quote, so the quote's notification can land
- *    while the billing fieldset is detached — mounted in every sense the
- *    buyer can see, and the query answers no;
- *  - `companyData` is a localStorage section that outlives the page load, so
- *    a company can arrive from it before any billing form exists.
- *
- * Both are modelled here by taking the billing field away AFTER the pick,
- * which is what either one looks like at the one moment that matters.
+ * The billing field is taken away AFTER the pick below, which is what such a
+ * re-render looks like at the one moment that matters.
  */
-describe('a company the billing panel captured is never adopted by the shipping identity', () => {
+describe('the quote\'s billing address seeds the panel owning the billing role', () => {
     const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
 
     /**
@@ -510,7 +511,7 @@ describe('a company the billing panel captured is never adopted by the shipping 
     /** What Fire's re-render (or a page that has not rendered one yet) leaves. */
     function billingFieldsetAway(dom, capture) {
         dom.setExists(BILLING_FIELD, false);
-        expect(capture.billingOwnsCompanyField()).toBe(false);
+        expect(capture.billing.mountSelector()).toBe('');
     }
 
     function billingQuoteAddress(company) {
@@ -534,18 +535,23 @@ describe('a company the billing panel captured is never adopted by the shipping 
         expect(capture.billing.identity().companyName()).toBe('Billing Co');
     });
 
-    test('through the companyData section, which outlives the page the panel was mounted on', () => {
+    test('the companyData section still restores the shipping step\'s own company', () => {
+        // The section has exactly one writer — publishCompanyData() in
+        // view/address-autocomplete.js, off the SHIPPING identity — so a row in
+        // it is the shipping step's by construction, and is how a reload
+        // restores it.
         const { capture, dom } = load();
         billingPicks(capture, dom, 'Billing Co');
         const renderer = loadRenderer(capture, dom);
         billingFieldsetAway(dom, capture);
 
         renderer.applyCompanyData(
-            { companyName: 'Billing Co', companyId: '222' },
+            { companyName: 'Shipping Co', companyId: '111' },
             { authoritative: true }
         );
 
-        expect(capture.shipping.identity().companyName()).toBe('');
+        expect(capture.shipping.identity().companyName()).toBe('Shipping Co');
+        expect(capture.billing.identity().companyName()).toBe('Billing Co');
     });
 
     test('the telephone on that same billing address still travels', () => {
@@ -559,7 +565,10 @@ describe('a company the billing panel captured is never adopted by the shipping 
         expect(renderer.telephone()).toBe('+47123 45 678');
     });
 
-    test('a company the billing panel never captured is still the shipping identity\'s to adopt', () => {
+    test('with no billing panel and no billing capture, the seed is the SHIPPING identity\'s', () => {
+        // Billing is not a distinct address here, so the shipping identity is
+        // the only capture the resolver reads: seeding the billing panel would
+        // discard a saved company the buyer cannot re-search (TWO-25554).
         const { capture, dom } = load();
         capture.shipping.start();
         capture.billing.start();
@@ -568,12 +577,13 @@ describe('a company the billing panel captured is never adopted by the shipping 
         renderer.updateBillingAddress(billingQuoteAddress('Some Other Co'));
 
         expect(capture.shipping.identity().companyName()).toBe('Some Other Co');
+        expect(capture.shipping.identity().companyId()).toBe('222');
+        expect(capture.billing.identity().companyName()).toBe('');
     });
 
     test('the shipping step\'s own company still restores from the section while a billing panel is mounted', () => {
-        // The section is how a reload restores the shipping company. Gating it
-        // on the billing panel's MOUNT — rather than on billing's own capture —
-        // would take that away from every buyer with a distinct billing address.
+        // The section is how a reload restores the shipping company, and a
+        // buyer with a distinct billing address must not lose that.
         const { capture, dom } = load();
         billingPicks(capture, dom, 'Billing Co');
         const renderer = loadRenderer(capture, dom);

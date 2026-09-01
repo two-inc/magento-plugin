@@ -242,10 +242,12 @@ describe('a re-signup offers a choice rather than the identity on screen', () =>
 
 describe('the payment tile only delegates', () => {
     /**
-     * @param {?object} flowStub what the component hands back, or null before boot
+     * @param {?object} flowStub what the adopting panel hands back, or null
+     *        before boot
+     * @param {string} [owner] which panel adopted — 'shipping' by default
      * @returns {object} the loaded renderer
      */
-    function loadRenderer(flowStub) {
+    function loadRenderer(flowStub, owner) {
         const identityStub = {
             companyName: function () { return ''; },
             companyId: function () { return ''; },
@@ -265,7 +267,16 @@ describe('the payment tile only delegates', () => {
                         config: function () { return {}; },
                         mountSelector: function () { return ''; },
                         countryCode: function () { return 'gb'; },
-                        soleTrader: function () { return flowStub; }
+                        identity: function () { return identityStub; },
+                        soleTrader: function () { return owner === 'billing' ? null : flowStub; }
+                    },
+                    billing: {
+                        soleTrader: function () { return owner === 'billing' ? flowStub : null; }
+                    },
+                    soleTraderOwner: function () {
+                        return owner === 'billing'
+                            ? { soleTrader: function () { return flowStub; } }
+                            : (flowStub ? { soleTrader: function () { return flowStub; } } : null);
                     },
                     refreshMount: function () {}
                 }
@@ -282,6 +293,19 @@ describe('the payment tile only delegates', () => {
 
         expect(renderer.selectDifferentSoleTrader()).toBe('popup');
         expect(calls).toHaveLength(1);
+    });
+
+    test('billing\'s adoption is handed to BILLING\'s flow, never the shipping panel\'s', () => {
+        // The link is rendered off the RESOLVED adoption, which either panel
+        // can hold; acting on the shipping panel by construction mutated the
+        // shipping identity for a sole trader billing had adopted (TWO-25554).
+        const calls = [];
+        const renderer = loadRenderer({
+            selectDifferentSoleTrader: function () { calls.push('billing'); return 'popup'; }
+        }, 'billing');
+
+        expect(renderer.selectDifferentSoleTrader()).toBe('popup');
+        expect(calls).toEqual(['billing']);
     });
 
     test('a tile rendered before the component booted is silent, not broken', () => {

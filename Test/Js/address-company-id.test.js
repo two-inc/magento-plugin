@@ -205,10 +205,7 @@ function load(options) {
         jquery: dom.$,
         'Magento_Customer/js/customer-data': cd.api,
         'Two_Gateway/js/model/company-capture': {
-                shipping: { identity: function () { return identity; } },
-                // No billing panel in this fixture, so the shipping step's
-                // company mirror stays the page's only company writer.
-                billingOwnsCompanyField: function () { return false; }
+                shipping: { identity: function () { return identity; } }
             },
         'Two_Gateway/js/model/brand-config': {
             // Company search off by default: enableCompanySearch() then

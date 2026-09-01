@@ -647,7 +647,7 @@ describe('the payment tile shows the number as an uneditable label, not a field'
         expect(hasAttribute(tag, 'required')).toBe(false);
         expect(tag).toMatch(/required:\s*isTileCompanyFieldVisible\(\)/);
         expect(tag).toMatch(/name="payment\[company_name\]"/);
-        expect(tag).toMatch(/value:\s*companyName\b/);
+        expect(tag).toMatch(/value:\s*tileCompanyName\b/);
     });
 
     test('company_name is still the only input whose required state jQuery Validation would enforce', () => {
@@ -798,7 +798,7 @@ describe('what each capture mode puts in front of the buyer', () => {
 
         adoptSoleTrader(component, 'TWO:ST:0199', 'Sole Trader Example');
 
-        expect(renderer.displayCompanyId()).toBe('');
+        expect(renderer.tileDisplayCompanyId()).toBe('');
         expect(companyIdLabel(renderer).visible).toBe(false);
         expect(renderer.getData().additional_data.companyId).toBe('TWO:ST:0199');
     });
@@ -978,8 +978,8 @@ describe('the notices are gated on their own observables, not on capture', () =>
         approveIntent(renderer);
         expect(approvedNoticeVisible(renderer)).toBe(true);
 
-        // Only the name, as a buyer typing into the input would.
-        renderer.companyName('First Example Limited');
+        // Only the name, as a buyer typing into the tile's input would.
+        renderer.tileCompanyName('First Example Limited');
 
         expect(renderer.companyId()).toBe('12345678');
         expect(approvedNoticeVisible(renderer)).toBe(false);

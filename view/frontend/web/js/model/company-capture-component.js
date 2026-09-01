@@ -107,10 +107,9 @@
      * @param {function(string): boolean} options.fieldExists whether a selector
      *        matches anything right now.
      * @param {function(): boolean} options.isVirtualCart
-     * @param {function(string): ?string} options.getAdjacentCountry the country
-     *        selected in the form the control at `mountSelector` answers to,
-     *        lower cased. `null` — a different answer from `''` — when there is
-     *        no such select at all.
+     * @param {function(): ?string} options.getAdjacentCountry the country
+     *        selected in the host's OWN form, lower cased. `null` — a different
+     *        answer from `''` — when there is no such select at all.
      * @param {function(): string} options.getQuoteCountry the quote's billing
      *        country, lower cased.
      * @param {function(): string} options.getFallbackCountry a live read for the
@@ -258,9 +257,10 @@
      *          different answer from `''` — a present one with nothing chosen
      */
     CompanyCaptureComponent.prototype.adjacentCountry = function () {
-        const mount = this._boundSelector || this.mountSelector();
-        if (!mount) return null;
-        const answer = this._options.getAdjacentCountry(mount);
+        // Unmounted the panel has no form to answer for, and the quote read
+        // behind this is the honest fallback.
+        if (!(this._boundSelector || this.mountSelector())) return null;
+        const answer = this._options.getAdjacentCountry();
         return typeof answer === 'string' ? answer.toLowerCase() : null;
     };
 
@@ -277,14 +277,7 @@
         // there is no flow to tell, no registry to ask and nothing captured to
         // invalidate — and a host hook calls this on every address change.
         if (!this._config || !this._started) return;
-        // The observed select is ignored where an adjacent one exists: a second
-        // form firing `change` must not decide the country for a control mounted
-        // beside a different one, or availability and the search answer for
-        // different countries (TWO-25461).
-        const adjacent = this.adjacentCountry();
-        const country = adjacent !== null
-            ? adjacent
-            : String(observedCountry || this.countryCode() || '').toLowerCase();
+        const country = String(observedCountry || this.countryCode() || '').toLowerCase();
         if (!country || country === this._lastCountry) return;
         const hadCountry = !!this._lastCountry;
         this._lastCountry = country;
@@ -468,6 +461,9 @@
                 } : null,
                 getCountryCode: function () {
                     return self.countryCode();
+                },
+                getSearchScope: function () {
+                    return self._identity;
                 },
                 getChips: function () {
                     return self.chipDefinitions();

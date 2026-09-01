@@ -12,7 +12,7 @@
  *
  *   (a) the label under the company-name field on the address step
  *       (renderCompanyIdText() in address-autocomplete.js) and its payment-tile
- *       twin (`.two-company-id-text`, bound to displayCompanyId());
+ *       twin (`.two-company-id-text`, bound to tileDisplayCompanyId());
  *   (b) the search-results rows (searchCompanies());
  *   (c) the order-intent status sentence (resolveCompanyNotice()) — where the
  *       BRACKETS the number normally sits in have to go with it, so the
@@ -244,15 +244,17 @@ describe('(a) the tile label goes through the same filter', () => {
         return Object.assign({}, component, {
             companyName: plainObservable('Acme Widgets Ltd'),
             companyId: plainObservable(id),
-            // The label rides the tile's own field, so it is only ever shown
-            // where that field is.
+            // The label rides the TILE field, which is the mounted panel's own
+            // (TWO-25554) — hence the tile observables, not the resolved pair.
+            tileCompanyName: plainObservable('Acme Widgets Ltd'),
+            tileCompanyId: plainObservable(id),
             isTileCompanyFieldVisible: function () { return true; }
         });
     }
 
-    test('displayCompanyId() hides a TWO: number and shows a real one', () => {
-        expect(ctxWith('TWO:internal-ref').displayCompanyId()).toBe('');
-        expect(ctxWith('923609016').displayCompanyId()).toBe('923609016');
+    test('tileDisplayCompanyId() hides a TWO: number and shows a real one', () => {
+        expect(ctxWith('TWO:internal-ref').tileDisplayCompanyId()).toBe('');
+        expect(ctxWith('923609016').tileDisplayCompanyId()).toBe('923609016');
     });
 
     test('getData() still submits the RAW number the label refuses to show', () => {
@@ -270,7 +272,7 @@ describe('(a) the tile label goes through the same filter', () => {
         expect(ctx.getData().additional_data.companyId).toBe('TWO:internal-ref');
     });
 
-    test('the template binds the label to displayCompanyId and hides it when that is empty', () => {
+    test('the template binds the label to tileDisplayCompanyId and hides it when that is empty', () => {
         const markup = fs
             .readFileSync(
                 path.resolve(
@@ -289,7 +291,7 @@ describe('(a) the tile label goes through the same filter', () => {
         /**
          * Evaluate a `data-bind` sub-expression the way ko does — with the view
          * model as implicit scope. Both halves are EVALUATED, not string-matched:
-         * `text: displayCompanyId` (no parens) satisfies a string match but
+         * `text: tileDisplayCompanyId` (no parens) satisfies a string match but
          * makes ko render the function's own source into the tile, which is
          * exactly the defect this evaluation catches.
          *

@@ -122,7 +122,6 @@ function load(options) {
                 return select ? String(select.value || '').toLowerCase() : '';
             },
             revertAutofilledAddress: function () {},
-            billingRoleFormRoot: function () { return null; },
             applyAddress: function () {},
             lookupCompanyAddress: function () {}
         }
