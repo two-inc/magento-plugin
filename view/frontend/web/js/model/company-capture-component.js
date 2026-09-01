@@ -75,6 +75,17 @@
         'renderSignupPrompt'
     ];
 
+    /** The address step's own number label class, so its CSS rule applies here. */
+    const COMPANY_NUMBER_CLASS = 'two-company-id-text';
+
+    const SOLE_TRADER_LINK_CLASS = 'two-select-different-sole-trader';
+
+    /**
+     * A company number the checkout restored into an address form, under either
+     * host's field naming.
+     */
+    const RESTORED_NUMBER_SELECTOR = 'input[name$="[company_id]"], input[name="company_id"]';
+
     function assertHost(options) {
         HOST_CONTRACT.forEach(function (member) {
             if (typeof options[member] !== 'function') {
@@ -207,6 +218,10 @@
         // address yet, which is what still lets that genuine first resolution
         // through.
         this._lastCountry = this.countryCode();
+        const self = this;
+        this._identity.subscribe(function () {
+            self.renderChrome();
+        });
         this.watchForMountHost();
         this.refreshMount();
         this.refreshSoleTraderAvailability();
@@ -432,11 +447,13 @@
         }
         if (selector === this._boundSelector && this._panel && this._panel.isBound()) {
             this.syncChips();
+            this.renderChrome();
             return;
         }
         this._boundSelector = selector;
         this.mountPanel(selector);
         this.syncChips();
+        this.renderChrome();
     };
 
     /**
@@ -491,6 +508,144 @@
         // A re-render takes the return link with the wrapper, and without it
         // manual entry is a dead end.
         if (this._identity.captureMode() === 'manual') this._panel.releaseField();
+    };
+
+    // ---------------------------------------------------------------- chrome
+
+    /**
+     * This panel's own bound field, or null when it has no live mount.
+     *
+     * @returns {?Element}
+     */
+    CompanyCaptureComponent.prototype.fieldNode = function () {
+        if (!this._boundSelector) return null;
+        return document.querySelector(this._boundSelector);
+    };
+
+    /**
+     * Where this panel's own chrome lives: inside the wrapper the panel puts
+     * around its field (`CompanySearchPanel._ensureWrap()`), which is the one
+     * element that belongs to THIS panel and nothing else. A re-render takes
+     * the wrapper and the chrome with it, and `refreshMount()` repaints.
+     *
+     * @returns {?Element}
+     */
+    CompanyCaptureComponent.prototype._chromeHost = function () {
+        const field = this.fieldNode();
+        return (field && field.parentElement) || null;
+    };
+
+    /**
+     * Repaint every piece of chrome this panel renders for its OWN identity.
+     * Cheap, idempotent, and safe with no mount.
+     */
+    CompanyCaptureComponent.prototype.renderChrome = function () {
+        this.renderCompanyNumber();
+        this.renderSoleTraderLink();
+    };
+
+    /**
+     * The captured company number as it may be SHOWN under this panel's field,
+     * or '' for nothing to show.
+     *
+     * Manual entry is name-only capture, so a number rendered there would claim
+     * a registry identity the buyer never picked.
+     *
+     * @returns {string}
+     */
+    CompanyCaptureComponent.prototype.displayCompanyNumber = function () {
+        if (this._identity.captureMode() === 'manual') return '';
+        // The shared display filter, so an internal prefixed identifier renders
+        // no label at all (TWO-25326). Absent on a host adapter that carries
+        // only the panel's own search contract, which then shows no number
+        // rather than an identifier the buyer cannot make sense of.
+        const format = this._options.search && this._options.search.formatCompanyNumber;
+        if (typeof format !== 'function') return '';
+        return format(this._identity.companyId() || this._restoredCompanyNumber());
+    };
+
+    /**
+     * A company number a reload restored into this panel's OWN form, for the
+     * window before anything has been captured in-page.
+     *
+     * Read here rather than written into the identity by whoever restores it:
+     * an identity write would make a restored company drive order intent, which
+     * is a decision this label has no business taking.
+     *
+     * @returns {string}
+     */
+    CompanyCaptureComponent.prototype._restoredCompanyNumber = function () {
+        // The tile carries no address fields, so any number reachable from
+        // there belongs to some other panel's form.
+        if (this._boundSelector === this._options.tileFieldSelector) return '';
+        const field = this.fieldNode();
+        if (!field) return '';
+        let node = field.parentElement;
+        while (node) {
+            const found = node.querySelectorAll(RESTORED_NUMBER_SELECTOR);
+            // Exactly one: several under one ancestor means it spans a second
+            // address form, so neither is answerable as this panel's own.
+            if (found.length === 1) return found[0].value || '';
+            node = node.parentElement;
+        }
+        return '';
+    };
+
+    /**
+     * Paint the company number as plain text under this panel's field.
+     *
+     * Not an input: the number arrives with the picked company and an editable
+     * box would only let the buyer contradict the registry.
+     *
+     * The caption is an `aria-label`, not visible text — TWO-25326 §7 forbids
+     * an additional visible label here, and a bare number with no accessible
+     * name is unreadable to a screen reader.
+     */
+    CompanyCaptureComponent.prototype.renderCompanyNumber = function () {
+        const host = this._chromeHost();
+        if (!host) return;
+        const existing = host.querySelector('.' + COMPANY_NUMBER_CLASS);
+        if (existing) existing.remove();
+        const number = this.displayCompanyNumber();
+        if (!number) return;
+        const label = document.createElement('div');
+        label.className = COMPANY_NUMBER_CLASS;
+        label.setAttribute('aria-label', this.translate('Company Number'));
+        label.textContent = number;
+        host.appendChild(label);
+    };
+
+    /**
+     * "Select a different sole trader" under this panel's field.
+     *
+     * Gated on adoption, not on capture: a sole trader with no trading name of
+     * their own has no company number, and keying on capture left them no route
+     * out (TWO-25461 §7).
+     */
+    CompanyCaptureComponent.prototype.renderSoleTraderLink = function () {
+        const host = this._chromeHost();
+        if (!host) return;
+        const existing = host.querySelector('.' + SOLE_TRADER_LINK_CLASS);
+        const adopted = this._identity.soleTraderAdopted();
+        if (!adopted) {
+            if (existing) existing.remove();
+            return;
+        }
+        if (existing) return;
+        const self = this;
+        const wrapper = document.createElement('div');
+        wrapper.className = SOLE_TRADER_LINK_CLASS;
+        const link = document.createElement('button');
+        link.type = 'button';
+        link.className = `${SOLE_TRADER_LINK_CLASS}__link`;
+        link.textContent = this.translate('Select a different sole trader');
+        link.addEventListener('click', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            self._soleTrader.selectDifferentSoleTrader();
+        });
+        wrapper.appendChild(link);
+        host.appendChild(wrapper);
     };
 
     // ----------------------------------------------------------------- chips
