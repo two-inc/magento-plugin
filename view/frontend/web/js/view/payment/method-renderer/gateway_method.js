@@ -864,23 +864,6 @@ define([
             this.refreshCompanyMount();
         },
         /**
-         * Is the quote's billing address a distinct address from its shipping
-         * one? The same cache-key comparison updateShippingAddress() gates its
-         * own relay on.
-         *
-         * No shipping address at all — a virtual cart — leaves billing as the
-         * only address the quote holds, which no shipping address can be the
-         * same as.
-         *
-         * @param {object} billingAddress quote address
-         * @returns {boolean}
-         */
-        billingAddressIsDistinct: function (billingAddress) {
-            const shippingAddress = quote.shippingAddress();
-            if (!shippingAddress) return true;
-            return shippingAddress.getCacheKey() != billingAddress.getCacheKey();
-        },
-        /**
          * The quote's BILLING address. Its company seeds the identity of the
          * panel that owns the billing ROLE — the billing panel while billing is
          * a distinct address, the shipping panel otherwise, which is the only
@@ -896,7 +879,7 @@ define([
             const fields = this.readAddressFields(billingAddress);
             this.applyBuyerFields(fields);
             if (fields.companyName && fields.companyId) {
-                companyCapture.billingRoleIdentity(this.billingAddressIsDistinct(billingAddress)).write({
+                companyCapture.billingRoleIdentity().write({
                     companyName: fields.companyName,
                     companyId: fields.companyId
                 });

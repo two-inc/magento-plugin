@@ -38,8 +38,8 @@
      * @param {object} options.resolved the identity downstream consumers read
      * @param {function(): boolean} options.billingIsDistinct whether billing
      *        is currently a distinct address from shipping (core's "my
-     *        billing address is the same as shipping" unchecked and a
-     *        billing form rendered)
+     *        billing address is the same as shipping" unchecked and the quote
+     *        holding a billing address that is not its shipping one)
      * @param {function(function())} [options.watchBillingToggle] report every
      *        time billingIsDistinct()'s answer could have changed
      */

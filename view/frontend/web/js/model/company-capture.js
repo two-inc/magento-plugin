@@ -101,9 +101,34 @@ define([
         return typeof $field.is === 'function' ? $field.is(':visible') : true;
     }
 
-    /** Is billing currently a distinct address from shipping? @returns {boolean} */
+    /**
+     * Is billing currently a distinct address from shipping? The single
+     * authority — the resolver and billingRoleIdentity() both read this one.
+     *
+     * The buyer's checkbox and the quote, never whether the billing fieldset is
+     * on screen: a third-party re-render detaches that fieldset for an instant
+     * while neither the buyer's intent nor the quote has changed (TWO-25554).
+     *
+     * @returns {boolean}
+     */
     function billingIsDistinct() {
-        return isVisible($(BILLING_FIELD_SELECTOR));
+        const $toggle = $(BILLING_TOGGLE_SELECTOR);
+        if ($toggle.length && $toggle.prop('checked')) return false;
+        return quoteHoldsDistinctBillingAddress();
+    }
+
+    /**
+     * No shipping address at all — a virtual cart — leaves billing as the only
+     * address the quote holds, which no shipping address can be the same as.
+     *
+     * @returns {boolean}
+     */
+    function quoteHoldsDistinctBillingAddress() {
+        const billingAddress = quote.billingAddress();
+        if (!billingAddress) return false;
+        const shippingAddress = quote.shippingAddress();
+        if (!shippingAddress) return true;
+        return shippingAddress.getCacheKey() != billingAddress.getCacheKey();
     }
 
     /**
@@ -404,7 +429,6 @@ define([
         tileFieldSelector: '',
         fieldExists: function (selector) {
             if (!selector) return false;
-            // See isVisible() and billingIsDistinct() above.
             return isVisible($(selector));
         },
         getAdjacentCountry: function () {
@@ -454,6 +478,10 @@ define([
             // once for that — this only covers a LATER DOM appearance of the
             // billing form/checkbox that the initial recompute() ran before.
             $.async(BILLING_FIELD_SELECTOR, onChange);
+            // Core can select a billing address without the checkbox moving,
+            // and the quote is the predicate's other input.
+            quote.billingAddress.subscribe(onChange);
+            quote.shippingAddress.subscribe(onChange);
         }
     });
 
@@ -475,15 +503,10 @@ define([
          * the resolver reads (company-source-resolver.js); seeding the billing
          * panel there discards a saved company outright.
          *
-         * @param {boolean} billingIsDistinctAddress the QUOTE's own answer.
-         *        Never a read of the billing fieldset: a checkout that has that
-         *        fieldset transiently away still has two addresses, and routing
-         *        on what is on screen puts billing's company into the shipping
-         *        panel's own field (TWO-25554).
          * @returns {object}
          */
-        billingRoleIdentity: function (billingIsDistinctAddress) {
-            return billingIsDistinctAddress ? billingIdentity : shippingIdentity;
+        billingRoleIdentity: function () {
+            return billingIsDistinct() ? billingIdentity : shippingIdentity;
         },
         start: function () {
             shippingComponent.start();

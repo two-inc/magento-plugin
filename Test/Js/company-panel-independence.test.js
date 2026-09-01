@@ -28,7 +28,9 @@ const {
     defaultMocks,
     brandConfigMock,
     installAsyncSimulation,
-    tagged
+    tagged,
+    quoteAddress,
+    makeObservable
 } = require('./amd-harness');
 
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
@@ -123,7 +125,8 @@ function renderCheckout(options) {
  * Both panels booted over the real modules, plus the real address step.
  *
  * @param {object} [options] `{ shippingForm, billingForm, shippingCountry,
- *        billingCountry, billingHidden, isVirtual, quoteBillingAddress }`
+ *        billingCountry, billingHidden, isVirtual, quoteBillingAddress,
+ *        quoteShippingAddress }`
  * @returns {object} `{ capture, search, panels, identities, addressStep, mocks }`
  */
 function boot(options) {
@@ -151,14 +154,14 @@ function boot(options) {
     const search = loadAmdModule(SEARCH, { jquery: $ }, GLOBALS);
     search.clearResultCache();
 
+    // No shipping address unless a spec asks for one: the quote then holds
+    // billing alone, which no shipping address can be the same as.
     const quote = Object.assign(
         {},
         defaultMocks()['Magento_Checkout/js/model/quote'],
         {
-            billingAddress: function () {
-                return opts.quoteBillingAddress || { countryId: 'GB' };
-            },
-            shippingAddress: function () { return null; },
+            billingAddress: quoteAddress(opts.quoteBillingAddress || { countryId: 'GB' }),
+            shippingAddress: makeObservable(opts.quoteShippingAddress || null),
             isVirtual: function () { return !!opts.isVirtual; }
         }
     );
@@ -503,11 +506,10 @@ describe('the quote\'s billing address belongs to the billing panel', () => {
         expect(renderer.telephone()).toBe('+4420 7946 0000');
     });
 
-    test('a virtual cart with no billing form rendered still leaves shipping empty', () => {
-        // The destination follows the quote, never the DOM (TWO-25554). With no
-        // billing form rendered the resolver reads the shipping capture, so this
-        // buyer is not offered the company back — routing it to shipping to
-        // avoid that paints a billing company into the shipping panel's field.
+    test('a virtual cart with no billing form rendered still offers the company back', () => {
+        // The seed and the resolver answer off ONE predicate, so a company that
+        // lands on billing is a company downstream reads — without painting it
+        // into the shipping panel's own field (TWO-25554).
         const booted = boot({
             isVirtual: true,
             shippingForm: false,
@@ -519,8 +521,27 @@ describe('the quote\'s billing address belongs to the billing panel', () => {
         renderer.updateBillingAddress(SAVED);
 
         expect(booted.identities.billing.companyId()).toBe('555');
+        expect(booted.capture.identity.companyId()).toBe('555');
+        expect(booted.capture.identity.companyName()).toBe('Saved Billing Co');
         expect(booted.identities.shipping.companyId()).toBe('');
         expect(booted.identities.shipping.companyName()).toBe('');
+    });
+
+    test('a billing address the quote says IS the shipping address seeds SHIPPING', () => {
+        // Billing is not a distinct address, so the shipping identity is the
+        // only capture the resolver reads: seeding billing discards the company.
+        const booted = boot({
+            billingForm: false,
+            quoteBillingAddress: SAVED,
+            quoteShippingAddress: { getCacheKey: function () { return 'billing'; } }
+        });
+        const renderer = bootRenderer(booted);
+
+        renderer.updateBillingAddress(SAVED);
+
+        expect(booted.identities.shipping.companyId()).toBe('555');
+        expect(booted.capture.identity.companyId()).toBe('555');
+        expect(booted.identities.billing.companyId()).toBe('');
     });
 
     test('a billing address with no shipping panel mounted still leaves shipping empty', () => {
