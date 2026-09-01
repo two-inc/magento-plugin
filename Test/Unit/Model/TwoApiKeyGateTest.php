@@ -41,6 +41,11 @@ class TwoApiKeyGateTest extends TestCase
         $minimumOrderGate = $this->createMock(MinimumOrderGate::class);
         $minimumOrderGate->method('isSatisfied')->willReturn($minimumSatisfied);
 
+        // Unrestricted: the buyer-country gate has its own tests and must not
+        // decide the verdict here.
+        $countriesProvider = $this->createMock(SupportedCountriesProvider::class);
+        $countriesProvider->method('isAllowed')->willReturn(true);
+
         $properties = [
             '_scopeConfig' => $scopeConfig,
             'apiKeyStatus' => $apiKeyStatus,
@@ -49,7 +54,7 @@ class TwoApiKeyGateTest extends TestCase
             'minimumOrderGate' => $minimumOrderGate,
             'amastyCheckoutStore' => [],
             'buyerCountryResolver' => new BuyerCountryResolver(),
-            'supportedCountriesProvider' => $this->createMock(SupportedCountriesProvider::class),
+            'supportedCountriesProvider' => $countriesProvider,
         ];
         foreach ($properties as $name => $value) {
             $reflection->getProperty($name)->setValue($model, $value);

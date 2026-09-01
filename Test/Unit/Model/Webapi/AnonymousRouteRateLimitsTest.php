@@ -20,6 +20,8 @@ use Two\Gateway\Model\Webapi\TermSelection;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
+use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\SurchargeCalculator;
 use Two\Gateway\Service\RateLimiter;
 
@@ -114,7 +116,9 @@ class AnonymousRouteRateLimitsTest extends TestCase
                     $this->createMock(ApiKeyStatus::class),
                     $limiter,
                     $this->createMock(LogRepository::class),
-                    $this->createMock(CheckoutSession::class)
+                    $this->createMock(CheckoutSession::class),
+                    $this->createMock(BuyerCountryResolver::class),
+                    $this->createMock(SupportedCountriesProvider::class)
                 ))->place('{}');
                 return;
             case 'surcharges':
