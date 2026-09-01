@@ -97,15 +97,12 @@ define([
      * in the DOM hidden once "same as shipping" is re-checked, and a hidden
      * field is neither a live mount nor a distinct address.
      *
-     * `.is` is feature-detected: jQuery-shaped test doubles model presence
-     * only, and presence is the best answer available for those.
-     *
-     * @param {object} $field a jQuery(-shaped) set
+     * @param {object} $field a jQuery set
      * @returns {boolean}
      */
     function isVisible($field) {
         if (!$field.length) return false;
-        return typeof $field.is === 'function' ? $field.is(':visible') : true;
+        return $field.is(':visible');
     }
 
     /**
@@ -139,9 +136,7 @@ define([
      */
     function activeBillingToggle() {
         const $all = $(BILLING_TOGGLE_SELECTOR);
-        // `> 1` rather than `< 2`: a jQuery-shaped double reports no length at
-        // all, and presence is the best answer available for those.
-        if (!($all.length > 1)) return $all;
+        if ($all.length < 2) return $all;
         const selected = quote.paymentMethod();
         const code = selected && selected.method;
         return code ? $(`#${BILLING_TOGGLE_ID_PREFIX}${code}`) : null;
@@ -356,13 +351,12 @@ define([
         if ($(ADDRESS_FORM_ROOT).length || $(BILLING_FORM_ROOT).length) return null;
         const $streets = $(ADDRESS_STREET_SELECTOR);
         if ($streets.length !== 1) return null;
-        if (typeof $streets.closest !== 'function') return null;
         // `closest()` answers with the NEAREST container, which on a themed
         // checkout is often a row holding the street line alone — a write scoped
         // there fills in a street and nothing else. The city is what makes the
         // container the whole address form.
         const $form = $streets.closest(ADDRESS_FORM_CONTAINER_SELECTOR);
-        if (!$form.length || typeof $form.find !== 'function') return null;
+        if (!$form.length) return null;
         return $form.find(ADDRESS_CITY_SELECTOR).length ? $form : null;
     }
 
