@@ -1167,9 +1167,12 @@ class Two extends AbstractMethod
     }
 
     /**
-     * Placement backstop for the buyer-country gate isAvailable() applies: a
-     * hidden method can still be submitted (JS disabled, direct API call, an
-     * address changed after selection).
+     * Placement backstop for the merchant's server-supplied allowlist, which a
+     * hidden method can still be submitted past (JS disabled, direct API call,
+     * an address changed after selection). Core's own
+     * allowspecific/specificcountry gate is not re-checked here: it is scoped
+     * to the method's own store, which canUseForCountry() reads off the
+     * registry rather than off the order being placed.
      *
      * @throws LocalizedException when the allowlist does not admit the order's
      *     country, or the merchant restricts and no country resolves
