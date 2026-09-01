@@ -638,6 +638,21 @@ describe('the payment tile is the shipping panel\'s mount, or nobody\'s', () => 
         expect(tileFieldVisible()).toBe(false);
     });
 
+    test('a tile-mounted panel refuses to write into core\'s hidden billing form, and says so', () => {
+        // Amasty renders every payment method's billing fieldset from page
+        // load, hidden. It is still the BILLING panel's form, mounted or not,
+        // so the sole-trader write-back has no destination here — and refusing
+        // silently leaves the buyer with neither an address nor a reason.
+        const booted = boot({ shippingForm: false, billingHidden: true });
+        bootRenderer(booted);
+        expect(booted.panels.shipping.mountSelector()).toBe(TILE_FIELD);
+
+        booted.panels.shipping.host().applyBuyerAddress({ city: 'Ashford' });
+
+        expect(addressValues('billing')['city']).toBe('');
+        expect(booted.identities.shipping.addressNotice()).not.toBe('');
+    });
+
     test('the tile field never displays the billing panel\'s capture', () => {
         const booted = boot({ shippingForm: false, billingHidden: true });
         const renderer = bootRenderer(booted);

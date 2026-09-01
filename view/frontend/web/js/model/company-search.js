@@ -980,6 +980,9 @@ define([
 
         unwrapProxyResponse: unwrapProxyResponse,
 
+        /** @see announceAddressUnavailable */
+        announceAddressUnavailable: announceAddressUnavailable,
+
         /**
          * Run one company search and hand back rows the panel can render.
          *
@@ -1106,6 +1109,9 @@ define([
             if (!config.isAddressSearchEnabled) return null;
             if (!selectedCompany || !selectedCompany.lookupId) return null;
             if (!root || !root.length || !identity) {
+                // A picked company that fills nothing in, with nothing said,
+                // reads as the picker having done nothing.
+                if (identity) announceAddressUnavailable(identity);
                 console.debug({ logger: 'companySearch.lookupCompanyAddress.refused' });
                 return null;
             }

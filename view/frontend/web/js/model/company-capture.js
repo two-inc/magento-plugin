@@ -68,6 +68,12 @@ define([
     /** "My billing and shipping address are the same" — core's own checkbox. */
     const BILLING_TOGGLE_SELECTOR = 'input[name="billing-address-same-as-shipping"]';
 
+    /** @see soleAddressForm — what makes a container an address form. */
+    const ADDRESS_STREET_SELECTOR = 'input[name="street[0]"]';
+
+    /** @see soleAddressForm — the element kinds a checkout wraps one in. */
+    const ADDRESS_FORM_CONTAINER_SELECTOR = 'form, fieldset, [data-form]';
+
     const brandCode = brandConfig.getActiveTwoBrandCode();
     const config = brandCode ? brandConfig(brandCode) : null;
 
@@ -277,16 +283,57 @@ define([
     let billingComponent;
 
     /**
-     * Where the SHIPPING panel's own writes land, or `null` when it has no form
-     * of its own — tile-mounted, the only address form on the page is the
-     * BILLING panel's, and a panel with no form of its own writes nowhere
-     * (TWO-25554).
+     * The one address form a checkout supplying its own markup renders, or
+     * `null` when that cannot be established.
+     *
+     * Either core form present means the panels' own forms are in play and this
+     * is not that checkout. Beyond them an address form is recognised by its
+     * first street line, and the answer stands only while there is exactly one
+     * — anything else is a choice between destinations rather than a
+     * destination (TWO-25554).
+     *
+     * @returns {?object} jQuery set, or null
+     */
+    function soleAddressForm() {
+        if ($(ADDRESS_FORM_ROOT).length || $(BILLING_FORM_ROOT).length) return null;
+        const $streets = $(ADDRESS_STREET_SELECTOR);
+        if ($streets.length !== 1 || typeof $streets.closest !== 'function') return null;
+        const $form = $streets.closest(ADDRESS_FORM_CONTAINER_SELECTOR);
+        return $form.length === 1 ? $form : null;
+    }
+
+    /**
+     * Where the SHIPPING panel's own writes land, or `null` when there is no
+     * single destination for them.
+     *
+     * Its own form while it is mounted there. Tile-mounted it has no form of its
+     * own, and the checkout's own markup is the only address form there is —
+     * tileIsShippingPanels() already means no billing panel is mounted, and
+     * soleAddressForm() refuses while either core form exists, so the write
+     * cannot reach a second panel's fields (TWO-25554). The sole-trader address
+     * and phone write-back is owed to the buyer wherever the control is mounted
+     * (TWO-25461 §5), so refusing outright there fills nothing in and says
+     * nothing.
      *
      * @returns {?object} jQuery set, or null
      */
     function shippingWriteRoot() {
-        if (shippingComponent.mountSelector() !== ADDRESS_FIELD_SELECTOR) return null;
-        return $(ADDRESS_FORM_ROOT);
+        const mount = shippingComponent.mountSelector();
+        if (mount === ADDRESS_FIELD_SELECTOR) return $(ADDRESS_FORM_ROOT);
+        if (mount !== TILE_FIELD_SELECTOR) return null;
+        return soleAddressForm();
+    }
+
+    /**
+     * The same destination, telling the buyer when there is none: a pick that
+     * fills nothing in and says nothing reads as the picker having done nothing.
+     *
+     * @returns {?object} jQuery set, or null
+     */
+    function shippingWriteTarget() {
+        const root = shippingWriteRoot();
+        if (!root) companySearch.announceAddressUnavailable(shippingIdentity);
+        return root;
     }
 
     /**
@@ -323,10 +370,10 @@ define([
             companySearch.revertAutofilledAddress(shippingWriteRoot());
         },
         applyBuyerAddress: function (source) {
-            companySearch.applyAddress(source, shippingWriteRoot());
+            companySearch.applyAddress(source, shippingWriteTarget());
         },
         applyTelephone: function (phoneNumber) {
-            companySearch.applyTelephone(phoneNumber, shippingWriteRoot());
+            companySearch.applyTelephone(phoneNumber, shippingWriteTarget());
         },
         getFallbackCountry: function () {
             return companySearch.hasPrimaryAddressForm()
