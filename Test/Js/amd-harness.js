@@ -160,9 +160,6 @@ function defaultMocks() {
             // above: a spec that cares about what the write or the revert
             // actually does loads the real module.
             revertAutofilledAddress: function () { return 0; },
-            announceAddressUnavailable: function (identity) {
-                identity.addressNotice('address unavailable');
-            },
             announceAddressUndeliverable: function (identity) {
                 identity.addressNotice('address undeliverable');
             },

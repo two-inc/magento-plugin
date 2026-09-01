@@ -992,8 +992,6 @@ define([
         apiClientParams: apiClientParams,
         unwrapProxyResponse: unwrapProxyResponse,
 
-        /** @see announceAddressUnavailable */
-        announceAddressUnavailable: announceAddressUnavailable,
         /** @see announceAddressUndeliverable */
         announceAddressUndeliverable: announceAddressUndeliverable,
 

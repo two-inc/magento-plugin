@@ -304,7 +304,8 @@ describe('the company number is painted under its own panel\'s field', () => {
             const other = OTHER[actor];
             const restored = { shipping: fixture.shippingNumber, billing: fixture.billingNumber };
             const { panels } = boot(fixture);
-            expect(panels[actor].mountSelector()).toBe(FIELDS[actor]);
+            expect(tagged(description, panels[actor].mountSelector()))
+                .toEqual(tagged(description, FIELDS[actor]));
 
             // `watchCapturedIdentity` publishes on a macrotask, so an assertion
             // made before it has run denies a propagation that had not happened.
