@@ -307,10 +307,13 @@
             // A search still on the wire would answer for the country the buyer
             // just left and repopulate what this call is clearing.
             if (this._panel) this._panel.abortActiveRequest();
+            // Read before the retirement, which resets the mode itself: the
+            // panel still has to be handed back as a search trigger.
+            const wasSoleTrader = this._identity.isSoleTrader();
             this._identity.clear();
             this._options.revertAutofilledAddress();
             this._soleTrader.forgetAdoptions();
-            if (this._identity.isSoleTrader()) this.registeredMode();
+            if (wasSoleTrader) this.registeredMode();
         }
         this.refreshSoleTraderAvailability(country);
     };

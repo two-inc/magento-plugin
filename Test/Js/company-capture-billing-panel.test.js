@@ -545,11 +545,15 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
     test('re-checking "same as shipping" retires the billing panel\'s own capture', () => {
         const { capture, dom } = load();
         billingPicks(capture, dom, 'Billing Co');
+        capture.billing.identity().soleTraderAdopted(true);
+        capture.billing.identity().captureMode('soletrader');
 
         sameAsShippingAgain(capture, dom);
 
         expect(capture.billing.identity().companyName()).toBe('');
         expect(capture.billing.identity().companyId()).toBe('');
+        expect(capture.billing.identity().soleTraderAdopted()).toBe(false);
+        expect(capture.billing.identity().captureMode()).toBe('registered');
     });
 
     test('after that re-check the returning buyer\'s saved company seeds SHIPPING, not billing', () => {
