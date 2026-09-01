@@ -62,8 +62,6 @@ const DEFAULT_COPY = {
     companyNumberToken: '{{companyNumber}}'
 };
 
-const ADDRESS_FAILURE_COPY = 'We could not fetch this company\'s address. Please enter it below.';
-
 const DECLINED_COPY = {
     withCompany: 'Two is not available for this order by {{companyName}} ({{companyNumber}})',
     withoutCompany: 'Two is not available for this order',
@@ -408,96 +406,6 @@ describe('gateway_method intent-approved notice', () => {
 });
 
 /**
- * A failed address lookup reaches the buyer in its own bordered box, carried
- * on the identity bus. It used to go to the checkout-wide message list, which
- * nothing in this flow ever cleared.
- */
-describe('the address-lookup failure notice lands in the tile box', () => {
-    function contextOn(addressNotice) {
-        const identityStub = {
-            addressNotice: addressNotice,
-            companyName: koObservable(''),
-            companyId: koObservable(''),
-            soleTraderAdopted: koObservable(false),
-            soleTraderBusy: koObservable(false),
-            subscribe: function () {
-                return { dispose: function () {} };
-            }
-        };
-        const component = loadAmdModule(RENDERER, {
-            'Two_Gateway/js/model/company-capture': {
-                identity: identityStub,
-                shipping: {
-                    identity: function () { return identityStub; },
-                    subscribeMount: function () {}
-                },
-                refreshMount: function () {}
-            }
-        });
-        const ctx = Object.assign({}, component, {
-            companyName: koObservable(''),
-            companyId: koObservable(''),
-            generalErrorMessage: 'Something went wrong with your order.',
-            errors: []
-        });
-        ctx.showErrorMessage = function (message) { ctx.errors.push(message); };
-        component.initOrderIntentApprovedNotice.call(ctx, {});
-        return ctx;
-    }
-
-    test.each([
-        [ADDRESS_FAILURE_COPY, true],
-        ['', false]
-    ])('a bus value of %p reaches the box: %p', (text, expected) => {
-        const addressNotice = koObservable('');
-        const ctx = contextOn(addressNotice);
-
-        addressNotice(text);
-
-        expect(ctx.isAddressNoticeVisible()).toBe(expected);
-        if (expected) expect(ctx.addressNotice()).toBe(text);
-        // Never the checkout-wide region.
-        expect(ctx.errors).toEqual([]);
-    });
-
-    test('withdrawing it empties the box', () => {
-        const addressNotice = koObservable('');
-        const ctx = contextOn(addressNotice);
-        addressNotice(ADDRESS_FAILURE_COPY);
-
-        addressNotice('');
-
-        expect(ctx.isAddressNoticeVisible()).toBe(false);
-    });
-
-    // The real ordering: the address lookup answers FIRST, the slower credit
-    // check second. The intent verdict must not take the address notice with it.
-    test.each([
-        [{ approved: true }, 'orderIntentApprovedNotice'],
-        [{ approved: false }, 'orderIntentDeclinedNotice']
-    ])('an intent verdict of %p leaves the address notice standing', (response) => {
-        const addressNotice = koObservable('');
-        const ctx = contextOn(addressNotice);
-        addressNotice(ADDRESS_FAILURE_COPY);
-
-        ctx.processOrderIntentSuccessResponse.call(ctx, response);
-
-        expect(ctx.addressNotice()).toBe(ADDRESS_FAILURE_COPY);
-        expect(ctx.isAddressNoticeVisible()).toBe(true);
-    });
-
-    test('an errored intent leaves the address notice standing', () => {
-        const addressNotice = koObservable('');
-        const ctx = contextOn(addressNotice);
-        addressNotice(ADDRESS_FAILURE_COPY);
-
-        ctx.processOrderIntentErrorResponse.call(ctx, { status: 500 });
-
-        expect(ctx.addressNotice()).toBe(ADDRESS_FAILURE_COPY);
-    });
-});
-
-/**
  * The box itself. TWO-25326 (2026-08-05): one bordered container, the same
  * three semantic colours, and the message ALONE inside it on all four
  * plugins — PrestaShop drops its own "Buy now, pay later" title in the same
@@ -550,12 +458,11 @@ describe('order-intent message box markup and palette', () => {
         const blocks = markup.match(
             /<div\b[^>]*class="two-order-intent-message [a-z]+"[\s\S]*?<\/div>/g
         );
-        // Three intent outcomes plus the address-lookup failure.
-        expect(blocks).toHaveLength(4);
+        expect(blocks).toHaveLength(3);
         blocks.forEach((block) => {
             // A single `text:`-bound element: no nested element to put a
             // heading in, and no literal copy in the markup either.
-            expect(block).toMatch(/data-bind="text: (orderIntent\w+|address)Notice"/);
+            expect(block).toMatch(/data-bind="text: orderIntent\w+Notice"/);
             expect(block).not.toMatch(/<(h\d|strong|p|span)\b/);
         });
         // Nor a heading immediately before the boxes.

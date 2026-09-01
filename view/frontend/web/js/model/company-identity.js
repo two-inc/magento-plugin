@@ -239,14 +239,23 @@
             },
 
             /**
-             * Every field, as one plain object — for a caller mirroring this
+             * WHICH COMPANY, and nothing else — for a caller mirroring this
              * identity onto another one (`company-source-resolver.js`) that
-             * must copy the whole thing in a single notify, not one per field.
+             * must copy it in a single notify, not one field at a time.
+             *
+             * The capture mode and the address notice are the owning PANEL's
+             * own UI state, rendered at its own field by whichever panel holds
+             * them; travelling here they surfaced against the other panel's
+             * form or against no form at all (TWO-25554).
              *
              * @returns {object}
              */
             snapshot: function () {
-                return Object.assign({}, state);
+                return {
+                    companyName: state.companyName,
+                    companyId: state.companyId,
+                    companyIdSource: state.companyIdSource
+                };
             },
 
             /**

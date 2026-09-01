@@ -40,6 +40,7 @@ const TILE_FIELD = '#two_gateway_form input#company_name';
 
 const NUMBER_CLASS = 'two-company-id-text';
 const LINK_CLASS = 'two-select-different-sole-trader';
+const NOTICE_CLASS = 'two-company-address-notice';
 
 /** The other panel, for a table row naming one. */
 const OTHER = { shipping: 'billing', billing: 'shipping' };
@@ -199,6 +200,14 @@ function numbersIn(which) {
 /** @returns {number} how many sole-trader links are rendered in one panel's form */
 function linksIn(which) {
     return document.querySelectorAll(`${FORMS[which]} .${LINK_CLASS}`).length;
+}
+
+/** @returns {Array<string>} the address notices rendered in one panel's form */
+function noticesIn(which) {
+    return Array.prototype.map.call(
+        document.querySelectorAll(`${FORMS[which]} .${NOTICE_CLASS}`),
+        (node) => node.textContent
+    );
 }
 
 beforeEach(() => {
@@ -429,6 +438,80 @@ describe('the "select a different sole trader" link belongs to its own panel', (
         document.querySelector(`${FORMS[actor]} .${LINK_CLASS}__link`).click();
 
         expect(tagged(description, soleTraderCalls)).toEqual(tagged(description, [panels[actor]]));
+    });
+});
+
+/*
+ * TWO-25554: an address-lookup failure is the panel's own, rendered at the
+ * panel's own field. It used to travel through the resolved identity into the
+ * payment tile, where a shipping failure was displayed only while shipping
+ * happened to win and a billing failure told the buyer to "enter it below" a
+ * form that was not theirs.
+ */
+describe('an address notice is painted under its own panel\'s field', () => {
+    const NOTICE = 'We could not fetch this company\'s address. Please enter it below.';
+    const OTHER_NOTICE = 'We could not fill in this company\'s address on this page.';
+
+    test.each(DIRECTIONS)('%s raises a notice (%s)', (actor, description) => {
+        const other = OTHER[actor];
+        const { identities } = boot();
+
+        identities[actor].addressNotice(NOTICE);
+
+        expect(tagged(description, noticesIn(actor))).toEqual(tagged(description, [NOTICE]));
+        expect(tagged(description, noticesIn(other))).toEqual(tagged(description, []));
+    });
+
+    test.each(DIRECTIONS)('%s withdraws its notice (%s)', (actor, description) => {
+        const { identities } = boot();
+        identities[actor].addressNotice(NOTICE);
+
+        identities[actor].addressNotice('');
+
+        expect(tagged(description, noticesIn(actor))).toEqual(tagged(description, []));
+    });
+
+    test('both panels can hold their own notice at once, each at its own field', () => {
+        const { identities } = boot();
+
+        identities.shipping.addressNotice(NOTICE);
+        identities.billing.addressNotice(OTHER_NOTICE);
+
+        expect(noticesIn('shipping')).toEqual([NOTICE]);
+        expect(noticesIn('billing')).toEqual([OTHER_NOTICE]);
+    });
+
+    test.each(DIRECTIONS)('%s repaints rather than stacking notices (%s)', (actor, description) => {
+        const { identities } = boot();
+        identities[actor].addressNotice(NOTICE);
+
+        identities[actor].addressNotice(OTHER_NOTICE);
+
+        expect(tagged(description, noticesIn(actor))).toEqual(tagged(description, [OTHER_NOTICE]));
+    });
+
+    test('a tile-mounted panel paints its notice at the tile, and the other panel\'s form stays clean', () => {
+        const { panels, identities } = boot({ shippingForm: false, billingHidden: true });
+        expect(panels.shipping.mountSelector()).toBe(TILE_FIELD);
+
+        identities.shipping.addressNotice(NOTICE);
+
+        expect(
+            Array.prototype.map.call(
+                document.querySelectorAll(`#two_gateway_form .${NOTICE_CLASS}`),
+                (node) => node.textContent
+            )
+        ).toEqual([NOTICE]);
+        expect(noticesIn('billing')).toEqual([]);
+    });
+
+    test.each(DIRECTIONS)('%s announces its notice to a screen reader (%s)', (actor, description) => {
+        const { identities } = boot();
+
+        identities[actor].addressNotice(NOTICE);
+
+        const box = document.querySelector(`${FORMS[actor]} .${NOTICE_CLASS}`);
+        expect(tagged(description, box.getAttribute('role'))).toEqual(tagged(description, 'alert'));
     });
 });
 

@@ -468,15 +468,6 @@ define([
             return !!(this.orderIntentErrorNotice && this.orderIntentErrorNotice());
         },
         /**
-         * Same guard, for the company-address lookup failure — not one of the
-         * order-intent notices, see initOrderIntentApprovedNotice().
-         *
-         * @returns {boolean}
-         */
-        isAddressNoticeVisible: function () {
-            return !!(this.addressNotice && this.addressNotice());
-        },
-        /**
          * Blank all three order-intent outcome notices.
          *
          * Called at the START of every order-intent check as well as from the
@@ -1165,10 +1156,6 @@ define([
             // processOrderIntent*Response() re-sets afterwards; a company
             // edited by hand in the input clears both notices and leaves
             // them cleared, which is the correct fail-closed outcome.
-            // Its OWN box, not the intent-error one: the credit check normally
-            // answers after the address lookup, and clearOrderIntentNotices()
-            // would blank an address failure the buyer still has to act on.
-            this.addressNotice = identity.addressNotice;
 
             var self = this;
             /**

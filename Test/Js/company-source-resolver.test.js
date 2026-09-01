@@ -13,7 +13,7 @@
 
 'use strict';
 
-const { loadAmdModule } = require('./amd-harness');
+const { loadAmdModule, tagged } = require('./amd-harness');
 
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const RESOLVER = 'view/frontend/web/js/model/company-source-resolver.js';
@@ -75,7 +75,6 @@ describe('billing not distinct — shipping always wins, wholesale', () => {
         shipping.companyName('Acme');
         resolver.connect();
 
-        expect(resolved.captureMode()).toBe('manual');
         expect(resolved.companyName()).toBe('Acme');
         expect(resolved.companyId()).toBe('');
     });
@@ -196,19 +195,43 @@ describe('re-resolves live, on every input that could change the answer', () => 
     });
 });
 
-describe('the mirror copies every field, not just the name/number pair', () => {
-    test('soleTraderAvailable, soleTraderBusy and addressNotice all mirror the winning identity', () => {
+describe('the mirror carries the company fields and nothing else', () => {
+    test('the winning identity\'s name, number and source all reach the mirror', () => {
         const { shipping, resolver, resolved } = build();
-        shipping.soleTraderAvailable(true);
-        shipping.soleTraderBusy(true);
-        shipping.addressNotice('We could not fetch this company\'s address. Please enter it below.');
+        shipping.write(
+            { companyName: 'Shipping Co', companyId: '111', companyIdSource: 'registry' },
+            { authoritative: true }
+        );
         resolver.connect();
 
-        expect(resolved.soleTraderAvailable()).toBe(true);
-        expect(resolved.soleTraderBusy()).toBe(true);
-        expect(resolved.addressNotice()).toBe(
-            'We could not fetch this company\'s address. Please enter it below.'
-        );
+        expect(resolved.companyName()).toBe('Shipping Co');
+        expect(resolved.companyId()).toBe('111');
+        expect(resolved.companyIdSource()).toBe('registry');
+    });
+
+    /*
+     * Each of these is one panel's own UI state, rendered by that panel at its
+     * own field. Travelling through the mirror, an address failure raised by
+     * one panel rendered against the other panel's form — or, once the tile
+     * stopped rendering it at all, nowhere (TWO-25554).
+     */
+    test.each([
+        ['captureMode', 'soletrader', 'registered'],
+        ['addressNotice', 'We could not fetch this address.', ''],
+        ['soleTraderAdopted', true, false],
+        ['soleTraderAvailable', true, false],
+        ['soleTraderBusy', true, false]
+    ])('%s never reaches the mirror', (field, panelValue, untouched) => {
+        const { shipping, resolver, resolved } = build();
+        resolver.connect();
+        // A distinct value: writing back what the identity already holds
+        // notifies nothing, and a stale mirror would satisfy the assertion.
+        expect(resolved[field]()).toBe(untouched);
+
+        shipping[field](panelValue);
+
+        expect(tagged(field, shipping[field]())).toEqual(tagged(field, panelValue));
+        expect(tagged(field, resolved[field]())).toEqual(tagged(field, untouched));
     });
 
     test('a torn read is impossible: a subscriber sees BOTH halves of the pair already updated', () => {

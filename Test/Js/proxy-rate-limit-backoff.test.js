@@ -257,8 +257,8 @@ describe('company search backs off rather than retrying into the ceiling', () =>
 
 /**
  * The parked-lookup notice fires synchronously on the pick, and the slower
- * credit check answers after it. Both used to write the same observable, so
- * the verdict blanked the notice in exactly the case it exists for.
+ * credit check answers after it — so nothing the order-intent verdict clears
+ * may reach the panel's own notice, which the buyer still has to act on.
  */
 describe('a parked address lookup keeps its notice through the intent verdict', () => {
     function wire() {
@@ -311,10 +311,11 @@ describe('a parked address lookup keeps its notice through the intent verdict', 
         );
         expect(identity.addressNotice()).toContain('enter it below');
 
+        const standing = identity.addressNotice();
+
         settleVerdict(tile);
 
-        expect(identity.addressNotice()).toContain('enter it below');
-        expect(tagged(description, tile.isAddressNoticeVisible())).toEqual(tagged(description, true));
+        expect(tagged(description, identity.addressNotice())).toEqual(tagged(description, standing));
     });
 });
 
