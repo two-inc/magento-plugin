@@ -75,7 +75,7 @@
         'renderSignupPrompt'
     ];
 
-    /** The address step's own number label class, so its CSS rule applies here. */
+    /** style.css keys this label's alignment off the class. */
     const COMPANY_NUMBER_CLASS = 'two-company-id-text';
 
     const SOLE_TRADER_LINK_CLASS = 'two-select-different-sole-trader';

@@ -384,17 +384,7 @@
     flex-direction: column;
 }
 
-/*
- * Fire Checkout, billing address form: `country_id` sorts above the company
- * field (LayoutProcessorPlugin::moveCountryBeforeCompany, because the country
- * decides which registry the search queries), which leaves the select alone on
- * its row at its own content width while the company input below it fills the
- * row. Widened to match, so the two read as one column.
- *
- * `[data-form="billing-new-address"]` is core's own hook for that form, which
- * carries no id (see company-search.js). Inside `.firecheckout`, so Luma and
- * Amasty are untouched.
- */
+/* Reordered above the company field, the select is alone on its row at content width. */
 .firecheckout [data-form="billing-new-address"] .field select[name="country_id"] {
     width: 100%;
 }
@@ -498,18 +488,9 @@
 }
 
 /*
- * The captured company number, rendered as a plain text label rather than
- * an editable input, under whichever company field its own capture panel is
- * mounted at — the address step's, a billing form's, or the payment tile's
- * (TWO-25326 §5, 2026-08-04 ruling, Bug B). Painted by
- * renderCompanyNumber() in company-capture-component.js, which withholds it
- * entirely before a selection, in manual-entry mode (name-only capture) and
- * for an internal `TWO:`-prefixed number, rather than rendering a blank one.
- *
- * `text-align: end` rather than `right` so it follows the writing direction
- * on RTL store views instead of pinning to the physical right edge. The
- * panel's own wrapper spans the input's containing box, so aligning to its
- * end edge lines the number up with the input's end edge exactly.
+ * TWO-25326 §5, 2026-08-04 ruling, Bug B. `text-align: end` rather than
+ * `right` so it follows the writing direction on RTL store views; the panel's
+ * wrapper spans the input's containing box, so its end edge lines up exactly.
  */
 .two-company-id-text {
     display: block;
