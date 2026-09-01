@@ -540,6 +540,48 @@ describe('the billing panel\'s own writes have their own destination', () => {
         });
 });
 
+/*
+ * TWO-25554: what a panel autofilled is recorded per IDENTITY. One page-wide
+ * record is replaced wholesale by whichever panel writes last, so the first
+ * panel's revert then judges its own fields against the other panel's values —
+ * and leaves the previous country's address standing.
+ */
+describe('each panel\'s record of what it autofilled is its own', () => {
+    const MARKER = 'data-two-autofilled-value';
+
+    /**
+     * A third-party re-render, which drops the per-field markers and leaves the
+     * record as the only thing a revert can judge against.
+     */
+    function stripMarkers(which) {
+        Array.prototype.forEach.call(
+            document.querySelectorAll(`${FORMS[which]} [${MARKER}]`),
+            (node) => node.removeAttribute(MARKER)
+        );
+    }
+
+    test.each(DIRECTIONS)('%s reverts against its own record (%s)', (actor, description) => {
+        const other = OTHER[actor];
+        const booted = boot();
+        booted.search.applyAddress(ADDRESSES[actor], $(FORMS[actor]), booted.identities[actor]);
+        // The OTHER panel writes SECOND: one shared record is wiped here.
+        booted.search.applyAddress(ADDRESSES[other], $(FORMS[other]), booted.identities[other]);
+        expect(addressValues(actor)['city']).toBe(ADDRESSES[actor].city);
+        stripMarkers(actor);
+
+        booted.search.revertAutofilledAddress($(FORMS[actor]), booted.identities[actor]);
+
+        expect(tagged(description, addressValues(actor)['city'])).toEqual(tagged(description, ''));
+        // The other panel's record survived its neighbour's revert, so its own
+        // fields are still both filled and still retractable.
+        expect(tagged(description, addressValues(other)['city']))
+            .toEqual(tagged(description, ADDRESSES[other].city));
+        stripMarkers(other);
+        booted.search.revertAutofilledAddress($(FORMS[other]), booted.identities[other]);
+        expect(tagged(description, addressValues(other)['city'])).toEqual(tagged(description, ''));
+    });
+});
+
 describe('the quote\'s billing address belongs to the billing panel', () => {
     const SAVED = {
         countryId: 'GB',
