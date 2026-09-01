@@ -148,9 +148,8 @@ describe('which address on the buyer record is written', () => {
     });
 
     test('the write is scoped to the panel\'s OWN form, never the other panel\'s', () => {
-        // The payment step has more than one address form in the DOM to get
-        // this wrong in, and a tile-mounted panel used to borrow the BILLING
-        // panel's (TWO-25554).
+        // The payment step has more than one address form in the DOM, and a
+        // tile-mounted panel has none of them (TWO-25554).
         const { flow, rec } = loadFlow();
 
         flow.adoptBuyer(BUYER);

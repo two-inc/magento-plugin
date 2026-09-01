@@ -189,8 +189,8 @@ function load(regionShape) {
         '</div>';
     const $ = makeDollar();
     const model = loadAmdModule(SEARCH, { jquery: $ });
-    // Every write and every revert is scoped to the calling panel's OWN form;
-    // there is no page-wide path any more (TWO-25554).
+    // Every write and every revert is scoped to the calling panel's OWN form
+    // (TWO-25554).
     const root = $('#shipping-new-address-form');
     return {
         model: model,

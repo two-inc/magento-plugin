@@ -581,15 +581,21 @@ describe('the quote\'s billing address belongs to the billing panel', () => {
 
 describe('nothing at all crosses from one panel\'s form to the other', () => {
     test('a shipping country switch leaves the billing country select and identity alone', () => {
+        // The billing capture is seeded rather than picked, and the billing form
+        // left pristine: a saved address restores an identity with nothing typed
+        // into the form beside it, which is the state a written country reached.
         const booted = boot({ shippingCountry: 'GB', billingCountry: 'NO' });
         bootAddressStep(booted);
-        picks(booted.panels.billing, COMPANIES.billing);
+        booted.identities.billing.write({
+            companyName: COMPANIES.billing.text,
+            companyId: COMPANIES.billing.companyId
+        });
 
         switchCountry('shipping', 'SE');
 
         expect(document.querySelector(COUNTRIES.billing).value).toBe('NO');
         expect(booted.identities.billing.companyId()).toBe(COMPANIES.billing.companyId);
-        expect(displayed('billing')).toBe(COMPANIES.billing.text);
+        expect(booted.identities.billing.companyName()).toBe(COMPANIES.billing.text);
     });
 
     test('a shipping country switch fires no `change` on the billing country select', () => {

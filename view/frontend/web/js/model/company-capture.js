@@ -290,12 +290,9 @@ define([
     }
 
     /**
-     * Which panel owns the payment tile's company field. The tile is a single
-     * field for a single company, so exactly one control may bind there: the
-     * shipping panel takes it only while the billing panel has no mount of its
-     * own, because a mounted billing panel is already the buyer's route to
-     * supply a company and a second required field for the same answer cannot
-     * be completed (TWO-25554).
+     * One control per field: a mounted billing panel is already the buyer's
+     * route to supply a company, and a second required one the resolver ignores
+     * cannot be completed at all (TWO-25554).
      *
      * @returns {boolean}
      */
@@ -416,13 +413,11 @@ define([
          * destination, chosen before the seed is written.
          *
          * The billing panel while billing is a distinct address, and while it
-         * still holds a capture of its own: a checkout that re-renders (Fire)
-         * drops the billing fieldset for an instant while the quote still
-         * carries that distinct address. Otherwise billing IS shipping, and the
-         * shipping identity is the only capture the resolver reads
-         * (company-source-resolver.js) — sending the seed to the billing panel
-         * there discards a returning buyer's saved company, which a `TWO:` or
-         * sole-trader identity cannot be re-searched to recover.
+         * still holds a capture of its own — Fire Checkout drops the billing
+         * fieldset for an instant while the quote still carries that address.
+         * Otherwise billing IS shipping, and the shipping identity is the only
+         * capture the resolver reads (company-source-resolver.js); seeding the
+         * billing panel there discards a saved company outright.
          *
          * @returns {object}
          */

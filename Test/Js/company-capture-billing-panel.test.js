@@ -470,21 +470,19 @@ describe('the "same as shipping" checkbox toggle re-checks both panels\' mounts'
 });
 
 /**
- * TWO-25554: the quote's BILLING address never speaks for the shipping
- * identity, whatever the DOM looks like at the moment it notifies.
+ * TWO-25554: the quote's BILLING address seeds exactly one panel — the one that
+ * owns the billing ROLE.
  *
- * Earlier fixes asked whether the billing panel held a live mount, or whether
- * the arriving name matched billing's own capture. Both were questions about
- * the instant of the write, and neither survived Fire Checkout re-rendering
- * its payment area from the same `change` that pushes the pick into the quote.
- * The provenance of the address is the whole answer: a billing address is the
- * billing panel's, mounted or not.
+ * The billing panel while billing is a distinct address, and while it still
+ * holds a capture of its own: Fire Checkout re-renders its payment area from
+ * the same `change` that pushes the pick into the quote, so the notification
+ * can land while the billing fieldset is detached. Otherwise billing IS
+ * shipping, and the shipping identity is the only capture the resolver reads.
  *
- * The billing field is taken away AFTER the pick below, which is what a
- * re-render — or a `companyData` row outliving the page — looks like at the
- * one moment that matters.
+ * The billing field is taken away AFTER the pick below, which is what such a
+ * re-render looks like at the one moment that matters.
  */
-describe('the quote\'s billing address is never adopted by the shipping identity', () => {
+describe('the quote\'s billing address seeds the panel owning the billing role', () => {
     const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
 
     /**

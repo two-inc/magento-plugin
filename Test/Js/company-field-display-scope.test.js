@@ -5,21 +5,13 @@
  * TWO-25554: with a distinct billing address, EACH PANEL'S OWN COMPANY FIELD
  * displays that panel's capture and nothing else.
  *
- * Both defects this pins were live on a checkout rendering both panels, and
- * neither is about the address sub-fields `shippingWriteRoot()` already
- * scopes — they are about the value of the company field ITSELF, which two
- * page-level paths that predate the split used to write:
- *
- *  - the shipping step mirrors its own company/organization onto every
- *    billing address form (`setCompanyData()`), so a shipping pick painted
- *    the billing panel's field;
- *  - the quote's billing address feeds the SHIPPING identity
- *    (`updateBillingAddress()` → `fillCompanyData()`), which the shipping
- *    step then paints into its own field, so a billing pick painted the
- *    shipping panel's field.
+ * Not about the address sub-fields `shippingWriteRoot()` already scopes: about
+ * the value of the company field ITSELF, on the two page-level paths that can
+ * reach it — the shipping step's own paint (`setCompanyData()`) and the quote's
+ * billing address (`updateBillingAddress()`).
  *
  * Asserted on the two FIELDS in a real document, with the real
- * `company-search.js` mirror behind them: the identity-level independence is
+ * `company-search.js` behind them: the identity-level independence is
  * pinned by company-capture-billing-panel.test.js and held throughout, which
  * is exactly why it proved nothing about what the buyer saw.
  */

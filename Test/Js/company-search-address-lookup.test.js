@@ -466,8 +466,8 @@ describe('a tile-mounted shipping panel has no form of its own to write into (TW
     const TILE_ONLY_CHECKOUT = [TILE_FIELD_SELECTOR, '[data-form="billing-new-address"]'];
 
     test('the registry lookup is never even issued', async () => {
-        // It used to be issued and scoped to the billing form, so a company
-        // picked on the tile overwrote the billing panel's own address.
+        // A panel with no form of its own has nowhere to put an address, and
+        // the billing panel's form is not its to write (TWO-25554).
         const { component, identity, recorder, pick } = loadMountedComponent(
             null,
             TILE_ONLY_CHECKOUT
