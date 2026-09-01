@@ -397,7 +397,12 @@ function pageLoad(storage, options) {
                     return { isCompanySearchEnabled: false };
                 }
             },
-            'Two_Gateway/js/model/company-capture': { shipping: { identity: function () { return identity; } } }
+            'Two_Gateway/js/model/company-capture': {
+                shipping: { identity: function () { return identity; } },
+                // No billing panel in this fixture, so the shipping step's
+                // company mirror stays the page's only company writer.
+                billingOwnsCompanyField: function () { return false; }
+            }
         },
         { document: document, window: window }
     );

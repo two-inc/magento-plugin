@@ -212,7 +212,13 @@ define([
             // The number travels with the name. Both are in the pin's field
             // set, and a field the pin JUDGES but the mirror never WRITES is a
             // field that can only ever freeze the address.
-            companySearch.mirrorFieldsToSecondaryAddresses(['company', 'organization']);
+            // Never onto a billing form whose own panel owns that field
+            // (TWO-25554): the pin cannot speak for it — it judges buyer
+            // authorship, and a panel's pick is neither the buyer typing nor
+            // the mirror's own earlier write.
+            if (!companyCapture.billingOwnsCompanyField()) {
+                companySearch.mirrorFieldsToSecondaryAddresses(['company', 'organization']);
+            }
         },
         /**
          * Write the captured organisation number so that it SURVIVES A PAGE
