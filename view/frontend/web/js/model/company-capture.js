@@ -131,8 +131,9 @@ define([
      * found by core's id convention, and a checkout that renders several and
      * abandons that convention leaves the quote as the honest source.
      *
-     * @returns {?object} jQuery(-shaped) set, or `null` when no box can be
-     *          attributed to the active method
+     * @returns {?object} jQuery set — empty when several boxes are rendered
+     *          and the active method's own is absent; `null` when several are
+     *          rendered and no payment method is selected
      */
     function activeBillingToggle() {
         const $all = $(BILLING_TOGGLE_SELECTOR);
