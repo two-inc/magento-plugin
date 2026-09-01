@@ -18,6 +18,7 @@
 
 const $ = require('jquery');
 const {
+    tagged,
     loadAmdModule,
     loadCompanyCapture,
     loadCompanySearchPanel,
@@ -932,7 +933,7 @@ describe('a company-detail lookup that brings back no address says so', () => {
         companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'company-b' }, PANEL_FORM, identity);
         settle(companySearch, requests);
 
-        expect(applied).toEqual(expectedApplied, description);
+        expect(tagged(description, applied)).toEqual(tagged(description, expectedApplied));
         expect(identity.addressNotice()).toBe('');
     });
 
