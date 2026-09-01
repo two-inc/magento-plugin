@@ -608,88 +608,105 @@ define([
             // shipping-panel-sourced, and the resolver — not this write — is
             // what resolvedIdentity is allowed to change from.
             companyCapture.shipping.identity().write({ companyName, companyId });
-            if (this.isOrderIntentEnabled) {
-                // TWO-25347 belt-and-braces: refuse a second concurrent
-                // order_intent POST for the SAME captured company. The root
-                // cause — fillCustomerData() stacking undisposed
-                // subscriptions on every re-render, each one independently
-                // reaching fillCompanyData() for an unchanged company pick
-                // — is fixed in dispose()/fillCustomerData() above; this
-                // guard is a second line of defence against any other path
-                // that could re-enter here before the first request settles
-                // (Fire Checkout re-renders this payment renderer on every
-                // totals/shipping change).
-                if (this._orderIntentInFlightFor === companyId) {
-                    return;
-                }
-                this._orderIntentInFlightFor = companyId;
-                // The previous verdict goes as the new check STARTS, not when
-                // its answer arrives (TWO-25326, 2026-08-05). See
-                // clearOrderIntentNotices() for why the company-change
-                // subscriptions do not already cover this.
-                this.clearOrderIntentNotices();
-                startOrderIntentSpinner();
-                const self = this;
-                let deferred;
-                try {
-                    // Found in adversarial review, 2026-08-04: placeOrderIntent()
-                    // can THROW synchronously rather than return a Deferred —
-                    // quote.billingAddress() can legitimately be null for a
-                    // transient window (see the comment on that observable
-                    // elsewhere in this file), and placeOrderIntent() reads
-                    // `billingAddress.countryId` unguarded. An unhandled throw
-                    // here would skip `.always()` entirely, and
-                    // `_orderIntentInFlightFor` would stay set to this
-                    // companyId FOREVER — every later pick of the SAME
-                    // company would silently no-op against the guard above,
-                    // with no recovery short of a page reload.
-                    deferred = self.placeOrderIntent();
-                } catch (error) {
-                    // Deliberately does NOT rethrow: every caller of
-                    // fillCompanyData() is an unguarded synchronous context with
-                    // its own statements after the call, and rethrowing aborted
-                    // those too while leaving the buyer nothing to act on.
-                    console.error({ logger: 'twoPayment.fillCompanyData.placeOrderIntent', error });
-                    stopOrderIntentSpinner();
-                    self._orderIntentInFlightFor = null;
-                    // Same surface as processOrderIntentErrorResponse()'s
-                    // message (TWO-25326, 2026-08-05): a synchronous throw and
-                    // a failed request are the same outcome to the buyer.
-                    self.showOrderIntentErrorNotice(self.generalErrorMessage);
-                    return;
-                }
-                deferred
-                    .always(function () {
-                        stopOrderIntentSpinner();
-                        if (self._orderIntentInFlightFor === companyId) {
-                            self._orderIntentInFlightFor = null;
-                        }
-                    })
-                    .done(function (response) {
-                        // Found in adversarial review, 2026-08-04: a cross-
-                        // company race. The in-flight guard above only
-                        // dedupes a repeat request for the SAME company — it
-                        // does nothing if the buyer picks company A, then
-                        // (once A's request settles and re-arms the guard)
-                        // picks company B before A's response has actually
-                        // arrived back is not the risk; the risk is A's
-                        // response landing AFTER the buyer has already moved
-                        // on to B. resolveCompanyNotice() reads
-                        // companyName()/companyId() LIVE at settle time, so a
-                        // stale response for A would render A's verdict with
-                        // B's name/number substituted in. Guarded by
-                        // confirming the observables still match what THIS
-                        // request was for before writing either notice.
-                        if (self.companyId() === companyId && self.companyName() === companyName) {
-                            self.processOrderIntentSuccessResponse(response);
-                        }
-                    })
-                    .fail(function (response) {
-                        if (self.companyId() === companyId && self.companyName() === companyName) {
-                            self.processOrderIntentErrorResponse(response);
-                        }
-                    });
+            this.startOrderIntentFor(companyName, companyId);
+        },
+        /**
+         * Start a fresh order-intent check for one company, and retire the
+         * previous verdict as it starts.
+         *
+         * Split out from fillCompanyData() because the two concerns have
+         * DIFFERENT sources (TWO-25554). Firing a check is driven by the
+         * RESOLVED company — whichever panel currently wins — while writing an
+         * identity is only ever the shipping panel's own business. Sharing one
+         * function made every resolved-company change write the resolved
+         * company back into the shipping panel's identity, which is how a
+         * billing-only pick ended up displayed on the shipping step.
+         *
+         * @param {string} companyName
+         * @param {string} companyId
+         */
+        startOrderIntentFor: function (companyName, companyId) {
+            if (!this.isOrderIntentEnabled) return;
+            // TWO-25347 belt-and-braces: refuse a second concurrent
+            // order_intent POST for the SAME captured company. The root
+            // cause — fillCustomerData() stacking undisposed
+            // subscriptions on every re-render, each one independently
+            // reaching fillCompanyData() for an unchanged company pick
+            // — is fixed in dispose()/fillCustomerData() above; this
+            // guard is a second line of defence against any other path
+            // that could re-enter here before the first request settles
+            // (Fire Checkout re-renders this payment renderer on every
+            // totals/shipping change).
+            if (this._orderIntentInFlightFor === companyId) {
+                return;
             }
+            this._orderIntentInFlightFor = companyId;
+            // The previous verdict goes as the new check STARTS, not when
+            // its answer arrives (TWO-25326, 2026-08-05). See
+            // clearOrderIntentNotices() for why the company-change
+            // subscriptions do not already cover this.
+            this.clearOrderIntentNotices();
+            startOrderIntentSpinner();
+            const self = this;
+            let deferred;
+            try {
+                // Found in adversarial review, 2026-08-04: placeOrderIntent()
+                // can THROW synchronously rather than return a Deferred —
+                // quote.billingAddress() can legitimately be null for a
+                // transient window (see the comment on that observable
+                // elsewhere in this file), and placeOrderIntent() reads
+                // `billingAddress.countryId` unguarded. An unhandled throw
+                // here would skip `.always()` entirely, and
+                // `_orderIntentInFlightFor` would stay set to this
+                // companyId FOREVER — every later pick of the SAME
+                // company would silently no-op against the guard above,
+                // with no recovery short of a page reload.
+                deferred = self.placeOrderIntent();
+            } catch (error) {
+                // Deliberately does NOT rethrow: every caller is an unguarded
+                // synchronous context with its own statements after the call,
+                // and rethrowing aborted those too while leaving the buyer
+                // nothing to act on.
+                console.error({ logger: 'twoPayment.startOrderIntentFor.placeOrderIntent', error });
+                stopOrderIntentSpinner();
+                self._orderIntentInFlightFor = null;
+                // Same surface as processOrderIntentErrorResponse()'s
+                // message (TWO-25326, 2026-08-05): a synchronous throw and
+                // a failed request are the same outcome to the buyer.
+                self.showOrderIntentErrorNotice(self.generalErrorMessage);
+                return;
+            }
+            deferred
+                .always(function () {
+                    stopOrderIntentSpinner();
+                    if (self._orderIntentInFlightFor === companyId) {
+                        self._orderIntentInFlightFor = null;
+                    }
+                })
+                .done(function (response) {
+                    // Found in adversarial review, 2026-08-04: a cross-
+                    // company race. The in-flight guard above only
+                    // dedupes a repeat request for the SAME company — it
+                    // does nothing if the buyer picks company A, then
+                    // (once A's request settles and re-arms the guard)
+                    // picks company B before A's response has actually
+                    // arrived back is not the risk; the risk is A's
+                    // response landing AFTER the buyer has already moved
+                    // on to B. resolveCompanyNotice() reads
+                    // companyName()/companyId() LIVE at settle time, so a
+                    // stale response for A would render A's verdict with
+                    // B's name/number substituted in. Guarded by
+                    // confirming the observables still match what THIS
+                    // request was for before writing either notice.
+                    if (self.companyId() === companyId && self.companyName() === companyName) {
+                        self.processOrderIntentSuccessResponse(response);
+                    }
+                })
+                .fail(function (response) {
+                    if (self.companyId() === companyId && self.companyName() === companyName) {
+                        self.processOrderIntentErrorResponse(response);
+                    }
+                });
         },
         /**
          * Apply a company the buyer (or a customer-data section) selected.
@@ -1173,8 +1190,13 @@ define([
                 self.clearOrderIntentNotices();
                 const companyName = self.companyName();
                 const companyId = self.companyId();
+                // The CHECK only. These two observables mirror the RESOLVED
+                // identity, so writing an identity from here wrote billing's
+                // own capture into the shipping panel's — which the shipping
+                // step then displayed as if the buyer had picked it there
+                // (TWO-25554).
                 if (companyName && companyId) {
-                    self.fillCompanyData({ companyName: companyName, companyId: companyId });
+                    self.startOrderIntentFor(companyName, companyId);
                 }
             };
             onResolvedCompanyChange = this._reactToResolvedCompanyChange;
