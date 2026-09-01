@@ -111,6 +111,34 @@ define([
     }
 
     /**
+     * What applyAddress() last wrote into ONE address form, field name → value,
+     * keyed by that form's own element exactly as addressLookupState() is.
+     *
+     * The DOM markers are the primary record and this is their survivor: a
+     * checkout rebuilding an address fieldset destroys every attribute on it,
+     * and a country switch after such a rebuild still has to retract the
+     * previous country's address rather than leave it standing (TWO-25554).
+     *
+     * Per FORM, and read only for the form the calling panel passed in, so
+     * neither panel can reach the other's recording through it.
+     */
+    const addressWriteRecords = new WeakMap();
+
+    /**
+     * @param {object} root jQuery-wrapped address form
+     * @returns {object} that form's live record, created empty on first use
+     */
+    function addressWriteRecord(root) {
+        const key = firstElement(root) || root;
+        let record = addressWriteRecords.get(key);
+        if (!record) {
+            record = {};
+            addressWriteRecords.set(key, record);
+        }
+        return record;
+    }
+
+    /**
      * Shortest term the search will act on. The ONE place this number is
      * written: it gates the request AND is interpolated into the hint the
      * buyer reads, so the two cannot drift apart.
@@ -180,12 +208,17 @@ define([
      * `region` resolves through a function rather than a selector because core
      * renders two mutually exclusive controls for it and which one is in play
      * depends on the country; see resolveRegionField().
+     *
+     * `written` is the name applyAddress() records the field under
+     * (AUTOFILLED_FIELDS), which is not this list's own name for either street
+     * line; region's depends on which control is in play, so it is resolved per
+     * call instead.
      */
     const REVERTABLE_FIELDS = [
-        { name: 'street0', selector: 'input[name="street[0]"]' },
-        { name: 'street1', selector: 'input[name="street[1]"]' },
-        { name: 'city', selector: 'input[name="city"]' },
-        { name: 'postcode', selector: 'input[name="postcode"]' },
+        { name: 'street0', written: 'street[0]', selector: 'input[name="street[0]"]' },
+        { name: 'street1', written: 'street[1]', selector: 'input[name="street[1]"]' },
+        { name: 'city', written: 'city', selector: 'input[name="city"]' },
+        { name: 'postcode', written: 'postcode', selector: 'input[name="postcode"]' },
         { name: 'region', resolve: resolveRegionField }
     ];
 
@@ -593,6 +626,12 @@ define([
             const $field = scopedFind($root, fieldSelector(name));
             $field.val(values[name]).attr(AUTOFILL_MARKER_ATTR, recordAs[name]);
         });
+        // Replaced wholesale rather than merged: a field this payload says
+        // nothing about is retracted below, so a recording for it would outlive
+        // the value it describes.
+        const record = addressWriteRecord($root);
+        Object.keys(record).forEach(function (name) { delete record[name]; });
+        Object.assign(record, recordAs);
         retractStaleFields(
             AUTOFILLED_FIELDS.filter(function (field) {
                 return names.indexOf(field.name) === -1;
@@ -603,7 +642,6 @@ define([
             scopedFind($root, fieldSelector(name)).trigger('change');
         });
     }
-
 
     /**
      * An organisation-number value carrying this literal prefix is an
@@ -814,15 +852,19 @@ define([
      * @returns {Array<string>} the names of the fields cleared
      */
     function revertAddressFormFields($root) {
+        const record = addressWriteRecord($root);
         const cleared = [];
         REVERTABLE_FIELDS.forEach(function (field) {
             const handle = revertableFieldHandle($root, field);
             if (!handle.$field.length) return;
-            const marker = handle.$field.attr(AUTOFILL_MARKER_ATTR);
+            const written = field.written || (handle.select ? 'region_id' : 'region');
+            const attribute = handle.$field.attr(AUTOFILL_MARKER_ATTR);
+            const marker = typeof attribute === 'undefined' ? record[written] : attribute;
             const current = trimmedString(
                 handle.select ? selectedOptionText(handle.select) : handle.$field.val() || ''
             );
             handle.$field.removeAttr(AUTOFILL_MARKER_ATTR);
+            delete record[written];
             // An EMPTY field with a marker on it is still ours to retract — the
             // marker may be an empty-string recording, which is a real one (the
             // registry had no value for this field).
@@ -901,7 +943,6 @@ define([
         minInputLengthMessage: minInputLengthMessage,
         noResultsMessage: noResultsMessage,
 
-
         /**
          * Cancel the in-flight search for a bind, if any.
          *
@@ -932,10 +973,11 @@ define([
         formatCompanyNumber: formatCompanyNumber,
         stripBracketedToken: stripBracketedToken,
         currentAddressFormCountry: currentAddressFormCountry,
-
         apiClientParams: apiClientParams,
-
         unwrapProxyResponse: unwrapProxyResponse,
+
+        /** @see announceAddressUnavailable */
+        announceAddressUnavailable: announceAddressUnavailable,
 
         /**
          * Run one company search and hand back rows the panel can render.
@@ -956,12 +998,19 @@ define([
          *        returns the current ISO country code (any case)
          * @param {object} options.token bind identity, so an abort raised
          *        against a torn-down panel cannot cancel the live one's search
-         * @param {object} [options.scope] the calling panel's rate-limit scope
+         * @param {object} options.scope the calling panel's rate-limit scope.
+         *        Required: falling back to the bind token scoped the backoff to
+         *        a token a re-render replaces, i.e. to no backoff at all
+         *        (TWO-25554).
          * @returns {Promise<{items: Array, unavailable: boolean, aborted: boolean}>}
          */
         searchCompanies: function (options) {
             const token = options.token;
-            const scope = options.scope || token;
+            const scope = options.scope;
+            if (!scope) {
+                console.error('companySearch: searchCompanies called without a rate-limit scope');
+                return Promise.resolve({ items: [], unavailable: true, aborted: false });
+            }
             const country = options.getCountryCode()?.toUpperCase();
             const cacheKey = `search|${country}|${options.term}`;
 
@@ -1063,6 +1112,9 @@ define([
             if (!config.isAddressSearchEnabled) return null;
             if (!selectedCompany || !selectedCompany.lookupId) return null;
             if (!root || !root.length || !identity) {
+                // A picked company that fills nothing in, with nothing said,
+                // reads as the picker having done nothing.
+                if (identity) announceAddressUnavailable(identity);
                 console.debug({ logger: 'companySearch.lookupCompanyAddress.refused' });
                 return null;
             }

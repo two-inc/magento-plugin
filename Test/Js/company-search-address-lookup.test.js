@@ -20,7 +20,8 @@ const {
     brandConfigMock,
     isProxyRoute,
     proxyEnvelope,
-    HARNESS_BASE_URL
+    HARNESS_BASE_URL,
+    tagged
 } = require('./amd-harness');
 
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
@@ -225,6 +226,7 @@ describe('company-search shared module', () => {
         const search = companySearch.searchCompanies({
             config: BASE_CONFIG,
             token: {},
+            scope: {},
             term: 'example',
             getCountryCode: function () { return 'gb'; }
         });
@@ -243,6 +245,7 @@ describe('company-search shared module', () => {
         companySearch.searchCompanies({
             config: BASE_CONFIG,
             token: {},
+            scope: {},
             term: 'example',
             getCountryCode: function () { return 'gb'; }
         });
@@ -343,6 +346,7 @@ function loadMountedComponent(configOverride, present) {
         this.releaseField = function () {};
         this.reclaimField = function () {};
         this.abortActiveRequest = function () {};
+        this.unmount = function () {};
     }
     function SoleTraderStub() {
         this.listenForSignupResult = function () {};
@@ -378,6 +382,7 @@ function loadMountedComponent(configOverride, present) {
         const search = companySearch.searchCompanies({
             config: config,
             token: {},
+            scope: {},
             term: term,
             getCountryCode: function () { return 'gb'; }
         });
@@ -458,20 +463,38 @@ describe('the one panel the capture component mounts', () => {
     });
 });
 
-describe('a tile-mounted shipping panel has no form of its own to write into (TWO-25554)', () => {
+describe('a tile-mounted shipping panel and the one address form there is (TWO-25554)', () => {
     /**
-     * A checkout with no shipping form: the shipping panel falls to the tile,
-     * and the only address form on the page is the BILLING panel's.
+     * A checkout supplying its own address markup: neither panel's core form is
+     * rendered, so the shipping panel falls to the tile and the page's single
+     * address form is the only destination a write could have.
      */
-    const TILE_ONLY_CHECKOUT = [TILE_FIELD_SELECTOR, '[data-form="billing-new-address"]'];
+    const OWN_MARKUP_CHECKOUT = [TILE_FIELD_SELECTOR, 'input[name="street[0]"]'];
 
-    test('the registry lookup is never even issued', async () => {
-        // A panel with no form of its own has nowhere to put an address, and
-        // the billing panel's form is not its to write (TWO-25554).
-        const { component, identity, recorder, pick } = loadMountedComponent(
+    /** The same checkout with no address form at all — a virtual cart. */
+    const TILE_ALONE = [TILE_FIELD_SELECTOR];
+
+    test('the pick fills that form', async () => {
+        const { component, identity, recorder, pick, settle } = loadMountedComponent(
             null,
-            TILE_ONLY_CHECKOUT
+            OWN_MARKUP_CHECKOUT
         );
+        expect(component.mountSelector()).toBe(TILE_FIELD_SELECTOR);
+
+        await pick('example', SEARCH_RESPONSE);
+        settle({ city: 'London', postal_code: 'EC1A 1BB', street_address: '1 Example Street' });
+
+        expect(lookupIds(recorder)).toEqual(['lookup-abc-123']);
+        expect(recorder.written).toEqual(
+            expect.arrayContaining([['input[name="city"]', 'London']])
+        );
+        expect(identity.addressNotice()).toBe('');
+    });
+
+    test('with no address form at all the write is refused, and the buyer is told', async () => {
+        // Refused, not guessed at — and NOT silently: the buyer gets neither an
+        // address nor a reason for its absence otherwise.
+        const { component, identity, recorder, pick } = loadMountedComponent(null, TILE_ALONE);
         expect(component.mountSelector()).toBe(TILE_FIELD_SELECTOR);
 
         await pick('example', SEARCH_RESPONSE);
@@ -479,6 +502,7 @@ describe('a tile-mounted shipping panel has no form of its own to write into (TW
         expect(identity.companyId()).toBe('12345678');
         expect(lookupIds(recorder)).toEqual([]);
         expect(recorder.written).toHaveLength(0);
+        expect(identity.addressNotice()).not.toBe('');
     });
 
     test.each([
@@ -499,10 +523,11 @@ describe('a tile-mounted shipping panel has no form of its own to write into (TW
         ]
     ])('with no write root, %p returns %p (%s)', (act, expected, description) => {
         const recorder = makeRecorder();
-        const $ = makeSpyJQuery(recorder, TILE_ONLY_CHECKOUT);
+        const $ = makeSpyJQuery(recorder, TILE_ALONE);
         const companySearch = loadCompanySearch($);
 
-        expect(act(companySearch, null, makeIdentity())).toBe(expected, description);
+        expect(tagged(description, act(companySearch, null, makeIdentity())))
+            .toEqual(tagged(description, expected));
         expect(recorder.written).toHaveLength(0);
     });
 });

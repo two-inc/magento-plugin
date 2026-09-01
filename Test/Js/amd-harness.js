@@ -160,6 +160,9 @@ function defaultMocks() {
             // above: a spec that cares about what the write or the revert
             // actually does loads the real module.
             revertAutofilledAddress: function () { return 0; },
+            announceAddressUnavailable: function (identity) {
+                identity.addressNotice('address unavailable');
+            },
             hasPrimaryAddressForm: function () { return true; },
             isDegradedResponse: function () { return false; },
             // DELEGATED, like the display helpers below: an inert stub would
@@ -218,6 +221,7 @@ function defaultMocks() {
             CompanySearchPanelMock.prototype.close = function () {};
             CompanySearchPanelMock.prototype.isOpen = function () { return false; };
             CompanySearchPanelMock.prototype.destroy = function () {};
+            CompanySearchPanelMock.prototype.unmount = function () { this._field = null; };
             CompanySearchPanelMock.prototype.syncChips = function () {};
             CompanySearchPanelMock.prototype.setDisplayText = function () {};
             CompanySearchPanelMock.prototype.releaseField = function () {};
@@ -252,16 +256,40 @@ function defaultMocks() {
     };
 }
 
+/**
+ * The computed currently evaluating, so an observable read inside it registers
+ * as a dependency. Knockout's caching is the point being modelled: a `visible:`
+ * binding over a live DOM read re-evaluates ONLY when an observable it read
+ * changes, so a spec that calls such a function directly cannot see a missing
+ * notification at all.
+ */
+let evaluatingComputed = null;
+
 function makeKnockoutMock() {
-    function pureComputed(fn) {
-        const o = makeObservable(fn());
-        return o;
+    function computed(fn) {
+        const out = makeObservable(undefined);
+        const dependencies = [];
+        function evaluate() {
+            const outer = evaluatingComputed;
+            evaluatingComputed = function (dependency) {
+                if (dependencies.indexOf(dependency) !== -1) return;
+                dependencies.push(dependency);
+                dependency.subscribe(evaluate);
+            };
+            try {
+                out(fn());
+            } finally {
+                evaluatingComputed = outer;
+            }
+        }
+        evaluate();
+        return out;
     }
     return {
         observable: makeObservable,
         observableArray: function (init) { return makeObservable(init || []); },
-        pureComputed: pureComputed,
-        computed: pureComputed,
+        pureComputed: computed,
+        computed: computed,
         applyBindings: function () {},
         bindingHandlers: {}
     };
@@ -271,7 +299,10 @@ function makeObservable(initial) {
     let value = initial;
     const subscribers = [];
     function obs(next) {
-        if (arguments.length === 0) return value;
+        if (arguments.length === 0) {
+            if (evaluatingComputed) evaluatingComputed(obs);
+            return value;
+        }
         value = next;
         subscribers.forEach(function (s) { s(value); });
         return obs;
@@ -785,7 +816,21 @@ function proxyEnvelope(body, options) {
     })];
 }
 
+/**
+ * Pair a value with its row's description. Jest IGNORES a second argument to
+ * `toBe()`/`toEqual()`, so a row description only ever reaches a failure diff
+ * by being part of the compared value.
+ *
+ * @param {string} description
+ * @param {*} value
+ * @returns {Array}
+ */
+function tagged(description, value) {
+    return [description, value];
+}
+
 module.exports = {
+    tagged: tagged,
     dispatchNative: dispatchNative,
     isProxyRoute: isProxyRoute,
     HARNESS_BASE_URL: HARNESS_BASE_URL,

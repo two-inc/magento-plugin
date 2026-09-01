@@ -105,8 +105,9 @@
      *        nothing and drives `bind()` itself.
      * @param {function(): (string|undefined)} [options.getCountryCode] the
      *        current ISO country code, read fresh on every search.
-     * @param {function(): ?object} [options.getSearchScope] this panel's own
-     *        rate-limit scope, so a 429 parks this panel alone.
+     * @param {function(): object} [options.getSearchScope] this panel's own
+     *        rate-limit scope, so a 429 parks this panel alone. Defaults to the
+     *        panel itself.
      * @param {function(): Array<{mode: string, text: string,
      *        onActivate: function}>} options.getChips the chips to render, in
      *        display order. Called on every sync, so a chip's label can follow
@@ -124,6 +125,7 @@
      *        link to come back out of manual entry.
      */
     function CompanySearchPanel(options) {
+        const self = this;
         options = options || {};
         this.fieldSelector = options.fieldSelector;
         this.config = options.config;
@@ -131,7 +133,9 @@
         this.translate = options.translate || function (text) { return text; };
         this.observe = options.observe || null;
         this.getCountryCode = options.getCountryCode || function () { return ''; };
-        this.getSearchScope = options.getSearchScope || function () { return null; };
+        // This panel itself where the host names nothing: the rate-limit scope
+        // must outlive a re-bind, which the bind token deliberately does not.
+        this.getSearchScope = options.getSearchScope || function () { return self; };
         this.getChips = options.getChips || function () { return []; };
         this.isChipVisible = options.isChipVisible || function () { return true; };
         this.getSelectedMode = options.getSelectedMode || function () { return ''; };
@@ -1060,6 +1064,34 @@
     /** @returns {object|null} the current bind identity — for tests that pin it */
     CompanySearchPanel.prototype.getBindToken = function () {
         return this._token;
+    };
+
+    /**
+     * Give the host field back, keeping this panel re-mountable — unlike
+     * destroy(), which is final.
+     *
+     * Without it a field this panel has left keeps its key handlers, its popover
+     * and its combobox attributes, so the control the buyer has moved off stays
+     * live under the one they are using (TWO-25554).
+     */
+    CompanySearchPanel.prototype.unmount = function () {
+        this._cancelFocusOutClose();
+        this._cancelPendingSearch();
+        this.search.abortActiveRequest(this._token);
+        this.removeBackToSearchLink();
+        this._releaseWrap(this._field);
+        ['role', 'aria-haspopup', 'aria-controls', 'aria-expanded'].forEach(function (attr) {
+            if (this._field) this._field.removeAttribute(attr);
+        }, this);
+        this._field = null;
+        this._panel = null;
+        this._query = null;
+        this._results = null;
+        this._chips = null;
+        this._open = false;
+        // A search issued by the bind this call ends resolves into a token
+        // nothing is listening for.
+        this._token = {};
     };
 
     /**

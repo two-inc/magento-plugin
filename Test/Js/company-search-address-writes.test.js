@@ -19,7 +19,7 @@
 
 'use strict';
 
-const { loadAmdModule } = require('./amd-harness');
+const { loadAmdModule, tagged } = require('./amd-harness');
 
 const MODEL = 'view/frontend/web/js/model/company-search.js';
 
@@ -305,7 +305,7 @@ describe('an external address payload is routed onto the two address lines', () 
 
         writeInto(model, Object.assign({ city: 'Ashford', postal_code: 'TN23' }, address), PRIMARY);
 
-        expect(read(PRIMARY, 'street0')).toBe(line1, description);
+        expect(tagged(description, read(PRIMARY, 'street0'))).toEqual(tagged(description, line1));
         expect(read(PRIMARY, 'street1')).toBe(line2);
         // The other panel's form is untouched, whatever the routing decided.
         expect(read(SECONDARY, 'street0')).toBe('');
@@ -370,7 +370,8 @@ describe("an external payload's region lands somewhere, always", () => {
                 PRIMARY
             );
 
-            expect(read(PRIMARY, 'region')).toBe(expectedRegion, description);
+            expect(tagged(description, read(PRIMARY, 'region')))
+                .toEqual(tagged(description, expectedRegion));
             expect(read(PRIMARY, 'city')).toBe(expectedCity);
         }
     );
@@ -437,6 +438,70 @@ describe('a retraction stops at the form it was scoped to', () => {
 
         expect(read(PRIMARY, 'telephone')).toBe('');
         expect(read(SECONDARY, 'telephone')).toBe('');
+    });
+});
+
+describe('a retraction survives the checkout rebuilding its own fieldset', () => {
+    /**
+     * A re-render replaces an address fieldset's inputs — destroying every
+     * attribute on them, the autofill marker included — while keeping the
+     * fieldset itself, and repaints the values from the quote. Fire Checkout
+     * does it on every totals change.
+     *
+     * @param {string} rootSelector
+     * @param {object} values field name → what the re-render paints back
+     */
+    function rebuildFieldset(rootSelector, values) {
+        const root = document.querySelector(rootSelector);
+        root.innerHTML = addressFields({ regions: true });
+        Object.keys(values).forEach(function (name) {
+            root.querySelector(FIELD_SELECTORS[name]).value = values[name];
+        });
+    }
+
+    test('a country switch after a rebuild still retracts the previous country\'s address', () => {
+        const model = renderCheckout({ regions: true });
+        writeInto(model, COMPANY_A, SECONDARY);
+
+        rebuildFieldset(SECONDARY, {
+            city: 'London',
+            postcode: 'EC1A 1BB',
+            street0: '1 Example Street'
+        });
+
+        expect(model.revertAutofilledAddress($(SECONDARY))).toBe(3);
+        expect(read(SECONDARY, 'city')).toBe('');
+        expect(read(SECONDARY, 'street0')).toBe('');
+    });
+
+    test('and still leaves what the buyer typed after that rebuild alone', () => {
+        const model = renderCheckout({ regions: true });
+        writeInto(model, COMPANY_A, SECONDARY);
+
+        rebuildFieldset(SECONDARY, {
+            city: 'Ashford',
+            postcode: 'EC1A 1BB',
+            street0: '1 Example Street'
+        });
+
+        expect(model.revertAutofilledAddress($(SECONDARY))).toBe(2);
+        expect(read(SECONDARY, 'city')).toBe('Ashford');
+    });
+
+    test('the other panel\'s form is not reachable through the record either', () => {
+        const model = renderCheckout({ regions: true });
+        writeInto(model, COMPANY_A, PRIMARY);
+        writeInto(model, COMPANY_B, SECONDARY);
+
+        rebuildFieldset(SECONDARY, {
+            city: 'Stockholm',
+            postcode: '111 22',
+            street0: '2 Second Street'
+        });
+        model.revertAutofilledAddress($(SECONDARY));
+
+        expect(read(PRIMARY, 'city')).toBe('London');
+        expect(read(PRIMARY, 'street0')).toBe('1 Example Street');
     });
 });
 

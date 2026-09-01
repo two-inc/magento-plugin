@@ -31,7 +31,10 @@ function makeContextWithRealIdentity(noticeCopy, declinedCopy) {
     const component = loadAmdModule(RENDERER, {
         'Two_Gateway/js/model/company-capture': {
             identity: identity,
-            shipping: { identity: function () { return identity; } },
+            shipping: {
+                identity: function () { return identity; },
+                subscribeMount: function () {}
+            },
             refreshMount: function () {}
         }
     });
@@ -424,7 +427,10 @@ describe('the address-lookup failure notice lands in the tile box', () => {
         const component = loadAmdModule(RENDERER, {
             'Two_Gateway/js/model/company-capture': {
                 identity: identityStub,
-                shipping: { identity: function () { return identityStub; } },
+                shipping: {
+                    identity: function () { return identityStub; },
+                    subscribeMount: function () {}
+                },
                 refreshMount: function () {}
             }
         });

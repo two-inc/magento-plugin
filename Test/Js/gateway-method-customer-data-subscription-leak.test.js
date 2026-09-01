@@ -81,6 +81,7 @@ function makeCaptureComponent(config) {
                 config: function () { return config; },
                 countryCode: function () { return 'gb'; },
                 mountSelector: function () { return ''; },
+                subscribeMount: function () {},
                 soleTrader: function () { return null; },
                 identity: function () { return identity; }
             },

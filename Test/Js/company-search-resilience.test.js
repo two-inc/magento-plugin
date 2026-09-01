@@ -131,12 +131,17 @@ function loadCompanySearch() {
  * @param {object} companySearch
  * @param {string} term
  * @param {object} [token] bind identity
+ * @param {object} [scope] the calling panel's rate-limit scope
  * @returns {Promise<{items: Array, unavailable: boolean, aborted: boolean}>}
  */
-function search(companySearch, term, token) {
+/** One panel's rate-limit scope, shared by every row that does not name one. */
+const SCOPE = {};
+
+function search(companySearch, term, token, scope) {
     return companySearch.searchCompanies({
         config: BASE_CONFIG,
         token: token || {},
+        scope: scope || SCOPE,
         term: term,
         getCountryCode: function () { return 'gb'; }
     });

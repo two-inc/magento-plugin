@@ -31,7 +31,7 @@
 
 'use strict';
 
-const { loadAmdModule } = require('./amd-harness');
+const { loadAmdModule, tagged } = require('./amd-harness');
 
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
 const MARKER = 'data-two-autofilled-value';
@@ -653,7 +653,8 @@ describe('the write can be scoped to one address form', () => {
 
         model.applyAddress({ city: 'Ashford', street: 'Mill Lane' }, $(written));
 
-        expect(valueIn(written, 'city')).toBe('Ashford', description);
+        expect(tagged(description, valueIn(written, 'city')))
+            .toEqual(tagged(description, 'Ashford'));
         expect(valueIn(untouched, 'city')).toBe(before);
     });
 
@@ -667,7 +668,8 @@ describe('the write can be scoped to one address form', () => {
         const { model, $ } = loadTwoForms();
         const root = rootKind === 'empty' ? $('#nothing-here') : rootKind;
 
-        expect(model.applyAddress({ city: 'Ashford' }, root)).toBe(0, description);
+        expect(tagged(description, model.applyAddress({ city: 'Ashford' }, root)))
+            .toEqual(tagged(description, 0));
         expect(valueIn('#shipping-new-address-form', 'city')).toBe('Shipping City');
         expect(valueIn('[data-form="billing-new-address"]', 'city')).toBe('Billing City');
     });

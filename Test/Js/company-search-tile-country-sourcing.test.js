@@ -28,7 +28,13 @@
 'use strict';
 
 const $ = require('jquery');
-const { loadAmdModule, defaultMocks, loadCompanyCapture, brandConfigMock } = require('./amd-harness');
+const {
+    loadAmdModule,
+    defaultMocks,
+    loadCompanyCapture,
+    brandConfigMock,
+    tagged
+} = require('./amd-harness');
 
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
@@ -72,6 +78,7 @@ function load(options) {
         this.setDisplayText = function () {};
         this.releaseField = function () {};
         this.reclaimField = function () {};
+        this.unmount = function () {};
     }
     function SoleTraderStub() {
         this.listenForSignupResult = function () {};
@@ -210,7 +217,8 @@ describe('a country read is scoped to ONE form, never document-wide (TWO-25554)'
             '<select name="country_id"><option value="NO" selected>NO</option></select></div>'
         );
 
-        expect(loadCompanySearch().currentAddressFormCountry(root)).toBe('', description);
+        expect(tagged(description, loadCompanySearch().currentAddressFormCountry(root)))
+            .toEqual(tagged(description, ''));
     });
 
     test('a one-page checkout supplying its own address markup falls to the quote', () => {
@@ -253,6 +261,7 @@ describe('a country read is scoped to ONE form, never document-wide (TWO-25554)'
             companySearch.searchCompanies({
                 config: { checkoutApiUrl: 'https://api.example.test' },
                 token: {},
+                scope: {},
                 term: 'acme',
                 getCountryCode: function () { return component.countryCode(); }
             });
@@ -506,6 +515,7 @@ describe('the shipping panel reads its OWN form, never the billing form (TWO-255
             companySearch.searchCompanies({
                 config: { checkoutApiUrl: 'https://api.example.test' },
                 token: {},
+                scope: {},
                 term: 'acme',
                 getCountryCode: function () { return component.countryCode(); }
             });

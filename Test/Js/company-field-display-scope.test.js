@@ -222,6 +222,7 @@ function load() {
             config: function () { return { isCompanySearchEnabled: true }; },
             countryCode: function () { return 'no'; },
             mountSelector: function () { return SHIPPING_COMPANY; },
+            subscribeMount: function () {},
             soleTrader: function () { return null; }
         },
         billing: { identity: function () { return billingIdentity; } },

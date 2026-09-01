@@ -123,6 +123,7 @@ describe('(b) the search-results rows never render a TWO: number', () => {
         const search = loadAmdModule(SEARCH, { jquery: $ }).searchCompanies({
             config: {},
             token: {},
+            scope: {},
             term: 'acme',
             getCountryCode: function () { return 'gb'; }
         });

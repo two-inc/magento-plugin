@@ -11,7 +11,7 @@
 'use strict';
 
 const $ = require('jquery');
-const { loadAmdModule, defaultMocks, proxyEnvelope } = require('./amd-harness');
+const { loadAmdModule, defaultMocks, proxyEnvelope, tagged } = require('./amd-harness');
 
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
@@ -110,6 +110,21 @@ function loadCompanySearch() {
 }
 
 describe('company search backs off rather than retrying into the ceiling', () => {
+    test('a search naming no scope is refused rather than left with no backoff', async () => {
+        // Falling back to the bind token scoped the ceiling to something a
+        // re-render replaces, so every re-render walked straight back into it.
+        const requests = installAjaxDouble();
+        const companySearch = loadAmdModule(MODEL_PATH, { jquery: $ }, GLOBALS);
+        companySearch.clearResultCache();
+
+        await expect(search(companySearch, 'exa', undefined)).resolves.toEqual({
+            items: [],
+            unavailable: true,
+            aborted: false
+        });
+        expect(requests).toHaveLength(0);
+    });
+
     test.each([
         [429, 1, 'a refused search parks the next keystroke'],
         [500, 2, 'an ordinary failure is retried on the next keystroke']
@@ -256,7 +271,10 @@ describe('a parked address lookup keeps its notice through the intent verdict', 
             Object.assign(defaultMocks(), {
                 'Two_Gateway/js/model/company-capture': {
                     identity: identity,
-                    shipping: { identity: function () { return identity; } },
+                    shipping: {
+                        identity: function () { return identity; },
+                        subscribeMount: function () {}
+                    },
                     refreshMount: function () {}
                 }
             })
@@ -296,7 +314,7 @@ describe('a parked address lookup keeps its notice through the intent verdict', 
         settleVerdict(tile);
 
         expect(identity.addressNotice()).toContain('enter it below');
-        expect(tile.isAddressNoticeVisible()).toBe(true, description);
+        expect(tagged(description, tile.isAddressNoticeVisible())).toEqual(tagged(description, true));
     });
 });
 

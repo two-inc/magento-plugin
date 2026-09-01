@@ -359,6 +359,7 @@ function loadCaptureComponent(options) {
         this.setDisplayText = function () {};
         this.releaseField = function () {};
         this.reclaimField = function () {};
+        this.unmount = function () {};
     }
     function SoleTraderStub() {
         this.listenForSignupResult = function () {};
@@ -754,11 +755,25 @@ describe('the address step reaches into its OWN form and nowhere else', () => {
      * every suite that drives the model directly.
      */
     /**
-     * The cross-panel writers, by name. Not every mention of the billing form:
+     * Every member of the model the address step may reach for. An ALLOWLIST,
+     * not a pattern over the writers already removed: a cross-panel writer
+     * added later under any name at all fails this.
+     *
      * `SECONDARY_ADDRESS_ROOT_SELECTOR` is where the BILLING panel's own mount
-     * lives, and reading it is the point.
+     * lives, and the step reads it to stay OUT of that form — so reading it is
+     * the point.
      */
-    const CROSS_PANEL_WRITERS = /mirror|captureSecondary/i;
+    const ALLOWED_MODEL_MEMBERS = ['SECONDARY_ADDRESS_ROOT_SELECTOR', 'revertAutofilledAddress'];
+
+    /**
+     * @param {object} calls the Proxy recorder
+     * @returns {Array<string>} members reached for that are not allowed
+     */
+    function disallowedMembers(calls) {
+        return calls.touched.filter(function (name) {
+            return ALLOWED_MODEL_MEMBERS.indexOf(name) === -1;
+        });
+    }
 
     test('a country change retracts its own address fields and propagates nothing', () => {
         const ctx = loadAddressStep({ country: 'GB' });
@@ -767,7 +782,7 @@ describe('the address step reaches into its OWN form and nowhere else', () => {
         switchCountryTo(ctx, 'ES');
 
         expect(ctx.calls.revert).toBe(1);
-        expect(ctx.calls.touched.filter((name) => CROSS_PANEL_WRITERS.test(name))).toEqual([]);
+        expect(disallowedMembers(ctx.calls)).toEqual([]);
     });
 
     test('a company write propagates nothing — each panel owns its own company field', () => {
@@ -776,12 +791,12 @@ describe('the address step reaches into its OWN form and nowhere else', () => {
 
         ctx.component.setCompanyData('12345678', 'Example Ltd');
 
-        expect(ctx.calls.touched.filter((name) => CROSS_PANEL_WRITERS.test(name))).toEqual([]);
+        expect(disallowedMembers(ctx.calls)).toEqual([]);
     });
 
     test('booting reaches for no cross-panel writer at all', () => {
         const ctx = loadAddressStep({ country: 'GB' });
 
-        expect(ctx.calls.touched.filter((name) => CROSS_PANEL_WRITERS.test(name))).toEqual([]);
+        expect(disallowedMembers(ctx.calls)).toEqual([]);
     });
 });

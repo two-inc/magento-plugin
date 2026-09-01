@@ -168,6 +168,8 @@
         this._started = false;
         /** Selectors with a manual-edit MutationObserver already registered. */
         this._manualWatchedSelectors = {};
+        /** @see subscribeMount */
+        this._mountSubs = [];
 
         this.translate = options.translate || function (text) { return text; };
         this.observe = options.observe || null;
@@ -438,11 +440,14 @@
      */
     CompanyCaptureComponent.prototype.refreshMount = function () {
         const selector = this.mountSelector();
+        const previous = this._boundSelector;
         if (!selector) {
             // Neither host is on the page any more. Forgetting where the control
             // was is what stops `adjacentCountry()` answering for a form that has
             // gone, and lets the next host that appears mount cleanly.
             this._boundSelector = null;
+            if (this._panel) this._panel.unmount();
+            if (previous !== null) this._notifyMount();
             return;
         }
         if (selector === this._boundSelector && this._panel && this._panel.isBound()) {
@@ -454,6 +459,29 @@
         this.mountPanel(selector);
         this.syncChips();
         this.renderChrome();
+        if (previous !== selector) this._notifyMount();
+    };
+
+    /**
+     * Report every move of this component's mount, including its loss.
+     *
+     * A host binding the visibility of a field this component can take over —
+     * Luma's payment tile — has no other way to learn the mount moved, and one
+     * control per field cannot hold if it learns only when a caller remembers
+     * to say so (TWO-25554).
+     *
+     * @param {function(string)} onChange receives the new mount selector, '' for
+     *        none
+     */
+    CompanyCaptureComponent.prototype.subscribeMount = function (onChange) {
+        this._mountSubs.push(onChange);
+    };
+
+    CompanyCaptureComponent.prototype._notifyMount = function () {
+        const selector = this._boundSelector || '';
+        this._mountSubs.forEach(function (onChange) {
+            onChange(selector);
+        });
     };
 
     /**

@@ -185,6 +185,7 @@ function loadRenderer() {
         this.releaseField = function () {};
         this.reclaimField = function () {};
         this.abortActiveRequest = function () {};
+        this.unmount = function () {};
     }
 
     const companySearch = loadAmdModule(SEARCH, { jquery: dom.$ });
