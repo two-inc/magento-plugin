@@ -458,3 +458,86 @@ describe('a panel that loses its mount leaves no chrome behind', () => {
         expect(linksIn('shipping')).toBe(1);
     });
 });
+
+describe('a panel that MOVES its mount leaves no chrome behind at the old host', () => {
+    /** Numbered, so both pieces of chrome are on the page at once. */
+    const TRADER = { company_name: 'Tile Trader', organization_number: '333333333' };
+
+    const TILE_FORM = '#two_gateway_form';
+
+    /**
+     * The shipping form arriving after the panel already fell back to the tile
+     * — a buyer switching off a saved address, which is the move this covers.
+     */
+    function addShippingForm() {
+        const form = document.createElement('form');
+        form.id = 'shipping-new-address-form';
+        form.innerHTML = addressFields('GB');
+        document.body.insertBefore(form, document.body.firstChild);
+    }
+
+    /** @returns {Array<string>} number labels rendered inside a container */
+    function numbersUnder(root) {
+        return Array.prototype.map.call(
+            document.querySelectorAll(`${root} .${NUMBER_CLASS}`),
+            (node) => node.textContent
+        );
+    }
+
+    /**
+     * Tile-mounted, sole trader adopted, then the shipping form arrives and the
+     * mount moves off the tile.
+     *
+     * @returns {Promise<object>} `{ panels, soleTraderCalls, tileInput }`
+     */
+    async function movesOffTheTile() {
+        const booted = boot({ shippingForm: false, billingHidden: true });
+        expect(booted.panels.shipping.mountSelector()).toBe(TILE_FIELD);
+        booted.panels.shipping.adoptSoleTrader(TRADER);
+        const tileInput = document.querySelector(TILE_FIELD);
+        expect(numbersUnder(TILE_FORM)).toEqual([TRADER.organization_number]);
+        expect(document.querySelectorAll(`${TILE_FORM} .${LINK_CLASS}`)).toHaveLength(1);
+        expect(tileInput.getAttribute('role')).toBe('combobox');
+
+        addShippingForm();
+        booted.panels.shipping.refreshMount();
+        await flushCapture();
+        await flushCapture();
+
+        expect(booted.panels.shipping.mountSelector()).toBe(FIELDS.shipping);
+        return Object.assign({ tileInput: tileInput }, booted);
+    }
+
+    test('the tile keeps neither the number nor a link to a flow it no longer hosts', async () => {
+        const { soleTraderCalls } = await movesOffTheTile();
+
+        expect(numbersUnder(TILE_FORM)).toEqual([]);
+        expect(document.querySelectorAll(`${TILE_FORM} .${LINK_CLASS}`)).toHaveLength(0);
+        expect(soleTraderCalls).toEqual([]);
+    });
+
+    test.each([
+        ['role', 'the abandoned field still announces itself as a combobox'],
+        ['aria-haspopup', 'it still claims a listbox'],
+        ['aria-controls', 'it still points at the moved popover'],
+        ['aria-expanded', 'it still reports the moved popover\'s open state']
+    ])('the tile field keeps no %s (%s)', async (attribute, description) => {
+        const { tileInput } = await movesOffTheTile();
+
+        expect(tagged(description, tileInput.getAttribute(attribute)))
+            .toEqual(tagged(description, null));
+    });
+
+    test('the chrome the move carries lands at the new host, once', async () => {
+        const { panels } = boot({ shippingForm: false, billingHidden: true });
+        panels.shipping.adoptSoleTrader(TRADER);
+
+        addShippingForm();
+        panels.shipping.refreshMount();
+        await flushCapture();
+        await flushCapture();
+
+        expect(numbersIn('shipping')).toEqual([TRADER.organization_number]);
+        expect(linksIn('shipping')).toBe(1);
+    });
+});
