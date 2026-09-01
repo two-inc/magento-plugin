@@ -200,18 +200,10 @@ function defaultMocks() {
             // address-form country read has to supply the real module (or its
             // own double) the same way it already does for the search itself.
             currentAddressFormCountry: function () { return ''; },
-            // Two-address mirror (TWO-25461 §2). Exactly the three members
-            // `view/address-autocomplete.js` calls, and no more: a mock member
-            // with no production caller is a surface that drifts silently. The
-            // specs that exercise the mirror itself load the real module so its
-            // DOM reads hit their own fixture.
-            //
-            // The selector is NOT inert — the address-step component builds a
-            // `$.async` selector from it, so a mock returning undefined would
-            // exercise a selector production never uses.
-            SECONDARY_ADDRESS_ROOT_SELECTOR: '[data-form="billing-new-address"]',
-            mirrorCountryToSecondaryAddresses: function () { return 0; },
-            captureSecondaryAddressBaseline: function () {}
+            // NOT inert — company-capture.js builds the billing panel's own
+            // mount selectors from it, so a mock returning undefined would
+            // exercise selectors production never uses.
+            SECONDARY_ADDRESS_ROOT_SELECTOR: '[data-form="billing-new-address"]'
         },
         // Inert default, same convention as the company-search mock above: a
         // constructor whose instances no-op every method. Tests that exercise

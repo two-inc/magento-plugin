@@ -64,27 +64,6 @@ define([
                         self.onCountryChanged();
                     });
             });
-            // Record what each billing address form was rendered holding, the
-            // moment core puts it in the document. `$.async` is what makes that
-            // moment reachable — the form appears when the buyer unchecks "My
-            // billing and shipping address are the same", long after this
-            // component initialises, and it reappears on every re-render. See
-            // companySearch.captureSecondaryAddressBaseline() for why the
-            // baseline has to be taken before the buyer can touch the form.
-            // Watched on the country SELECT inside the form, not the form
-            // itself, then walked back up. Core inserts the fieldset before its
-            // child field components resolve their own templates, and `$.async`
-            // fires on the insertion — so watching the fieldset would run this
-            // against a form with no fields in it yet. The select is the last
-            // thing to arrive that the baseline needs.
-            $.async(
-                companySearch.SECONDARY_ADDRESS_ROOT_SELECTOR + ' select[name="country_id"]',
-                function (countrySelect) {
-                    companySearch.captureSecondaryAddressBaseline(
-                        $(countrySelect).closest(companySearch.SECONDARY_ADDRESS_ROOT_SELECTOR)
-                    );
-                }
-            );
             this.watchCapturedIdentity();
             this.enableManualCompanyId();
             const setTwoTelephone = (e) => customerData.set('shippingTelephone', e.target.value);
@@ -141,18 +120,13 @@ define([
                 this.toggleCompanyVisibility();
                 return;
             }
-            // THIS form alone: a page-wide retraction cleared the other
-            // panel's address fields too (TWO-25554).
+            // THIS form alone — the other panel's fields are never touched
+            // (TWO-25554).
             companySearch.revertAutofilledAddress($(this.addressFormSelector));
             // Clears the name input, the number field, and the published
             // `companyData` section the payment tile reads — every surviving
             // copy of the previous country's company.
             this.setCompanyData();
-            // …then propagate the country the buyer just chose, AFTER the
-            // clears above: it consults the sync pin, so a country written
-            // first would be a value the pin then had to judge as already-ours
-            // mid-sequence.
-            companySearch.mirrorCountryToSecondaryAddresses();
             this.toggleCompanyVisibility();
         },
         toggleCompanyVisibility: function () {

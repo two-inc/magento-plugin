@@ -288,38 +288,35 @@ function loadAddressStep(options) {
     const calls = {
         revert: 0,
         applyAddress: [],
-        baselines: [],
-        mirrored: [],
+        touched: [],
         sequence: []
     };
 
     dom.node(COUNTRY_FIELD).val(opts.country || 'GB');
 
-    const companySearch = Object.assign({}, defaultMocks()['Two_Gateway/js/model/company-search'], {
-        AUTOFILL_MARKER_ATTR: MARKER,
-        SECONDARY_ADDRESS_ROOT_SELECTOR: SECONDARY_ROOT,
-        applyAddress: function (address) {
-            calls.applyAddress.push(address);
-        },
-        revertAutofilledAddress: function () {
-            calls.revert += 1;
-            calls.sequence.push('revert');
-            return 0;
-        },
-        // Recorded rather than executed: these fixtures model the shipping step
-        // alone, so what is checkable here is that the address step ASKS for the
-        // propagation — the mirror's own pin logic is covered against real
-        // markup in company-search-address-mirror.test.js.
-        captureSecondaryAddressBaseline: function (root) {
-            calls.baselines.push(root);
-            calls.sequence.push('baseline');
-        },
-        mirrorCountryToSecondaryAddresses: function () {
-            calls.mirrored.push(['country']);
-            calls.sequence.push('mirror:country');
-            return 0;
+    // A Proxy rather than a plain object: `calls.touched` is then every member
+    // of the model the address step reaches for, which is what makes "it asks
+    // the model for nothing beyond its own form" assertable.
+    const companySearch = new Proxy(
+        Object.assign({}, defaultMocks()['Two_Gateway/js/model/company-search'], {
+            AUTOFILL_MARKER_ATTR: MARKER,
+            SECONDARY_ADDRESS_ROOT_SELECTOR: SECONDARY_ROOT,
+            applyAddress: function (address) {
+                calls.applyAddress.push(address);
+            },
+            revertAutofilledAddress: function () {
+                calls.revert += 1;
+                calls.sequence.push('revert');
+                return 0;
+            }
+        }),
+        {
+            get: function (target, name) {
+                calls.touched.push(String(name));
+                return target[name];
+            }
         }
-    });
+    );
 
     const component = loadAmdModule(ADDRESS_STEP, {
         jquery: dom.$,
@@ -750,44 +747,41 @@ describe('a company restored from a previous visit', () => {
     });
 });
 
-describe('the address step asks for the two-address propagation', () => {
+describe('the address step reaches into its OWN form and nowhere else', () => {
     /**
-     * These wirings live in `address-autocomplete.js` and are invisible to the
-     * mirror's own suite, which drives the model directly. Deleting any one of
-     * them left every suite in the repo green before these tests existed.
+     * The wirings under test live in `address-autocomplete.js`, which no model
+     * suite exercises: a cross-panel write reintroduced there is invisible to
+     * every suite that drives the model directly.
      */
-    test('the billing form is watched so its rendered baseline can be captured', () => {
-        const ctx = loadAddressStep({ country: 'GB' });
+    /**
+     * The cross-panel writers, by name. Not every mention of the billing form:
+     * `SECONDARY_ADDRESS_ROOT_SELECTOR` is where the BILLING panel's own mount
+     * lives, and reading it is the point.
+     */
+    const CROSS_PANEL_WRITERS = /mirror|captureSecondary/i;
 
-        // Watched via a FIELD inside the form and walked back up, not the form
-        // itself: core inserts the fieldset before its child fields render.
-        expect(ctx.calls.baselines).toHaveLength(1);
-    });
-
-    test('a country change propagates the country, after the two clears', () => {
+    test('a country change retracts its own address fields and propagates nothing', () => {
         const ctx = loadAddressStep({ country: 'GB' });
-        ctx.calls.sequence.length = 0;
+        ctx.calls.touched.length = 0;
 
         switchCountryTo(ctx, 'ES');
 
-        expect(ctx.calls.mirrored).toContainEqual(['country']);
-        // The country goes LAST. Both clears run over the billing address and
-        // both consult the sync pin, so a country written first would be a value
-        // they then had to judge as already-ours mid-sequence.
-        expect(ctx.calls.sequence.indexOf('revert')).toBeLessThan(
-            ctx.calls.sequence.indexOf('mirror:country')
-        );
+        expect(ctx.calls.revert).toBe(1);
+        expect(ctx.calls.touched.filter((name) => CROSS_PANEL_WRITERS.test(name))).toEqual([]);
     });
 
     test('a company write propagates nothing — each panel owns its own company field', () => {
-        // TWO-25554: mirroring company/organization onto every billing address
-        // was the whole propagation model while billing had no picker of its
-        // own. With one, it painted the billing panel's field.
         const ctx = loadAddressStep({ country: 'GB' });
-        ctx.calls.mirrored.length = 0;
+        ctx.calls.touched.length = 0;
 
         ctx.component.setCompanyData('12345678', 'Example Ltd');
 
-        expect(ctx.calls.mirrored).toEqual([]);
+        expect(ctx.calls.touched.filter((name) => CROSS_PANEL_WRITERS.test(name))).toEqual([]);
+    });
+
+    test('booting reaches for no cross-panel writer at all', () => {
+        const ctx = loadAddressStep({ country: 'GB' });
+
+        expect(ctx.calls.touched.filter((name) => CROSS_PANEL_WRITERS.test(name))).toEqual([]);
     });
 });

@@ -233,6 +233,9 @@ function load() {
             soleTrader: function () { return null; }
         },
         billing: { identity: function () { return billingIdentity; } },
+        // A distinct billing form is rendered in this fixture, so the billing
+        // panel owns the billing role.
+        billingRoleIdentity: function () { return billingIdentity; },
         soleTraderOwner: function () { return null; },
         refreshMount: function () {}
     };
@@ -250,13 +253,8 @@ function load() {
         }
     }, globals);
 
-    // Both wired the way `initialize()` wires them in production: the mirror
-    // needs the billing form's rendered baseline to tell store defaults from
-    // buyer answers (without it every billing address reads as authored and
-    // pins itself), and the field paint hangs off the identity watcher.
-    search.captureSecondaryAddressBaseline(
-        document.querySelector('[data-form="billing-new-address"]')
-    );
+    // Wired the way `initialize()` wires it in production: the field paint
+    // hangs off the identity watcher.
     addressStep.watchCapturedIdentity();
 
     const renderer = loadAmdModule(RENDERER, Object.assign({}, defaultMocks(), {
@@ -320,13 +318,5 @@ describe('a pick on one panel never paints the other panel\'s field', () => {
         billingPick(renderer);
 
         expect(renderer.telephone()).toBe('+47123 45 678');
-    });
-
-    // The address prefill TWO-25461 asks for is unaffected: only company and
-    // organisation number stop crossing between the two addresses.
-    test('the country still mirrors from shipping onto an unpinned billing address', () => {
-        const { search } = load();
-
-        expect(search.mirrorCountryToSecondaryAddresses()).toBe(1);
     });
 });
