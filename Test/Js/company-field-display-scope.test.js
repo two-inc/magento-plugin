@@ -280,7 +280,8 @@ describe('a pick on one panel never paints the other panel\'s field', () => {
         renderer.updateBillingAddress({
             company: 'Billing Co',
             telephone: '+47 123 45 678',
-            customAttributes: [{ attribute_code: 'company_id', value: '222' }]
+            customAttributes: [{ attribute_code: 'company_id', value: '222' }],
+            getCacheKey: function () { return 'billing-of-its-own'; }
         });
     }
 

@@ -32,7 +32,15 @@
 'use strict';
 
 const jq = require('jquery');
-const { loadAmdModule, defaultMocks, loadCompanyCapture, brandConfigMock } = require('./amd-harness');
+const {
+    loadAmdModule,
+    defaultMocks,
+    loadCompanyCapture,
+    brandConfigMock,
+    quoteAddress,
+    quoteAddressValue,
+    makeObservable
+} = require('./amd-harness');
 
 const MODEL = 'view/frontend/web/js/model/company-search.js';
 const ADDRESS_STEP = 'view/frontend/web/js/view/address-autocomplete.js';
@@ -371,11 +379,12 @@ function loadCaptureComponent(options) {
         this.forgetAdoptions = function () { calls.forgotten += 1; };
     }
 
-    let billing = 'billingCountry' in opts ? opts.billingCountry : 'GB';
+    const billing = 'billingCountry' in opts ? opts.billingCountry : 'GB';
+    const billingAddress = billing === null
+        ? makeObservable(null)
+        : quoteAddress({ countryId: billing });
     const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
-        billingAddress: function () {
-            return billing === null ? null : { countryId: billing };
-        },
+        billingAddress: billingAddress,
         isVirtual: function () { return false; }
     });
 
@@ -412,7 +421,9 @@ function loadCaptureComponent(options) {
         component: component,
         identity: component.identity(),
         calls: calls,
-        setBillingCountry: function (iso) { billing = iso; }
+        setBillingCountry: function (iso) {
+            billingAddress(iso === null ? null : quoteAddressValue({ countryId: iso }));
+        }
     };
 }
 
@@ -431,7 +442,7 @@ function loadRenderer(billingCountry) {
     // such checkout renders.
     dom.node('#shipping-new-address-form input[name="company"]').length = 0;
     const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
-        billingAddress: function () { return { countryId: billingCountry }; }
+        billingAddress: quoteAddress({ countryId: billingCountry })
     });
     const renderer = loadAmdModule(RENDERER, {
         jquery: dom.$,

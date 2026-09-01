@@ -28,7 +28,10 @@ const {
     defaultMocks,
     brandConfigMock,
     installAsyncSimulation,
-    tagged
+    tagged,
+    quoteAddress,
+    quoteAddressValue,
+    makeObservable
 } = require('./amd-harness');
 
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
@@ -123,7 +126,8 @@ function renderCheckout(options) {
  * Both panels booted over the real modules, plus the real address step.
  *
  * @param {object} [options] `{ shippingForm, billingForm, shippingCountry,
- *        billingCountry, billingHidden, isVirtual, quoteBillingAddress }`
+ *        billingCountry, billingHidden, isVirtual, quoteBillingAddress,
+ *        quoteShippingAddress }`
  * @returns {object} `{ capture, search, panels, identities, addressStep, mocks }`
  */
 function boot(options) {
@@ -151,14 +155,14 @@ function boot(options) {
     const search = loadAmdModule(SEARCH, { jquery: $ }, GLOBALS);
     search.clearResultCache();
 
+    // No shipping address unless a spec asks for one: the quote then holds
+    // billing alone, which no shipping address can be the same as.
     const quote = Object.assign(
         {},
         defaultMocks()['Magento_Checkout/js/model/quote'],
         {
-            billingAddress: function () {
-                return opts.quoteBillingAddress || { countryId: 'GB' };
-            },
-            shippingAddress: function () { return null; },
+            billingAddress: quoteAddress(opts.quoteBillingAddress || { countryId: 'GB' }),
+            shippingAddress: makeObservable(opts.quoteShippingAddress || null),
             isVirtual: function () { return !!opts.isVirtual; }
         }
     );
@@ -541,6 +545,80 @@ describe('the billing panel\'s own writes have their own destination', () => {
 });
 
 /*
+ * TWO-25554: core renders one "same as shipping" checkbox per payment-method
+ * renderer, each with its own default. Read page-wide, whichever renderer the
+ * checkout output first answered for the buyer — so an inactive method's box,
+ * still at core's checked default, said billing was shipping while the buyer
+ * had unchecked the box they could actually see.
+ */
+describe('only the ACTIVE payment method\'s "same as shipping" checkbox is read', () => {
+    const ACTIVE_METHOD = 'two_payment';
+
+    /** @returns {string} which panel speaks for the quote's billing address */
+    function billingRole(booted) {
+        return booted.capture.billingRoleIdentity() === booted.identities.billing
+            ? 'billing'
+            : 'shipping';
+    }
+
+    /**
+     * An inactive method's checkbox at core's checked default, output BEFORE the
+     * active method's — which is what a page-wide read lands on.
+     */
+    function addInactiveMethodToggle() {
+        const container = document.querySelector('.checkout-billing-address');
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.id = 'billing-address-same-as-shipping-checkmo';
+        box.name = 'billing-address-same-as-shipping';
+        box.checked = true;
+        container.insertBefore(box, container.firstChild);
+    }
+
+    test('an inactive method\'s checked box does not answer for the active method', () => {
+        const booted = boot();
+        booted.quote.paymentMethod({ method: ACTIVE_METHOD });
+        // The buyer's own box, on the method they are looking at: unchecked.
+        expect(billingRole(booted)).toBe('billing');
+
+        addInactiveMethodToggle();
+
+        expect(billingRole(booted)).toBe('billing');
+    });
+
+    test('the resolved company still follows the billing panel through the extra box', () => {
+        const booted = boot();
+        booted.quote.paymentMethod({ method: ACTIVE_METHOD });
+        addInactiveMethodToggle();
+
+        picks(booted.panels.shipping, COMPANIES.shipping);
+        picks(booted.panels.billing, COMPANIES.billing);
+
+        expect(booted.capture.identity.companyId()).toBe(COMPANIES.billing.companyId);
+    });
+
+    test('the ACTIVE method\'s own box is still obeyed when the buyer checks it', () => {
+        const booted = boot();
+        booted.quote.paymentMethod({ method: ACTIVE_METHOD });
+        addInactiveMethodToggle();
+
+        document.querySelector(`#billing-address-same-as-shipping-${ACTIVE_METHOD}`).checked = true;
+
+        expect(billingRole(booted)).toBe('shipping');
+    });
+
+    test('with no method selected, no box is attributable and the quote answers alone', () => {
+        const booted = boot();
+        addInactiveMethodToggle();
+        expect(booted.quote.paymentMethod()).toBeNull();
+
+        // The quote holds a billing address and no shipping one, so billing is
+        // an address of its own whatever the unattributable boxes say.
+        expect(billingRole(booted)).toBe('billing');
+    });
+});
+
+/*
  * TWO-25554: what a panel autofilled is recorded per IDENTITY. One page-wide
  * record is replaced wholesale by whichever panel writes last, so the first
  * panel's revert then judges its own fields against the other panel's values —
@@ -582,6 +660,48 @@ describe('each panel\'s record of what it autofilled is its own', () => {
     });
 });
 
+/*
+ * TWO-25554: core can select a billing address without the checkbox moving —
+ * a saved-address pick, or a virtual cart taking one on — and the quote is the
+ * predicate's other input, so the resolver subscribes to both quote addresses.
+ */
+describe('a quote address change re-resolves with no checkbox event', () => {
+    const DISTINCT_KEY = 'billing-of-its-own';
+
+    /** Both panels captured, billing not yet a distinct address. */
+    function bothCaptured() {
+        const booted = boot({ quoteShippingAddress: quoteAddressValue({ countryId: 'GB' }) });
+        picks(booted.panels.shipping, COMPANIES.shipping);
+        picks(booted.panels.billing, COMPANIES.billing);
+        expect(booted.capture.identity.companyId()).toBe(COMPANIES.shipping.companyId);
+        return booted;
+    }
+
+    test.each([
+        ['billingAddress', 'the quote taking on a billing address of its own'],
+        ['shippingAddress', 'the quote losing the shipping address billing matched']
+    ])('%s notifying re-resolves the company (%s)', (which, description) => {
+        const booted = bothCaptured();
+
+        // A DISTINCT value: re-writing what the observable already holds
+        // notifies nothing, and a stale resolution would satisfy this.
+        if (which === 'billingAddress') {
+            booted.quote.billingAddress(quoteAddressValue({ countryId: 'GB' }, DISTINCT_KEY));
+        } else {
+            booted.quote.shippingAddress(null);
+        }
+
+        expect(tagged(description, booted.capture.identity.companyId()))
+            .toEqual(tagged(description, COMPANIES.billing.companyId));
+        // Nothing touched the checkbox — it is still unchecked and still the
+        // only one on the page.
+        expect(tagged(description, $('input[name="billing-address-same-as-shipping"]').length))
+            .toEqual(tagged(description, 1));
+        expect(tagged(description, $('input[name="billing-address-same-as-shipping"]').prop('checked')))
+            .toEqual(tagged(description, false));
+    });
+});
+
 describe('the quote\'s billing address belongs to the billing panel', () => {
     const SAVED = {
         countryId: 'GB',
@@ -614,11 +734,10 @@ describe('the quote\'s billing address belongs to the billing panel', () => {
         expect(renderer.telephone()).toBe('+4420 7946 0000');
     });
 
-    test('a virtual cart with no billing form at all seeds the SHIPPING identity', () => {
-        // The buyer's only address, and no billing company field is rendered for
-        // it — so the resolver reads the shipping capture, and seeding the
-        // billing panel there loses a saved company outright: a `TWO:` or
-        // sole-trader identity cannot be recovered by searching (TWO-25554).
+    test('a virtual cart with no billing form rendered still offers the company back', () => {
+        // The seed and the resolver answer off ONE predicate, so a company that
+        // lands on billing is a company downstream reads — without painting it
+        // into the shipping panel's own field (TWO-25554).
         const booted = boot({
             isVirtual: true,
             shippingForm: false,
@@ -629,8 +748,26 @@ describe('the quote\'s billing address belongs to the billing panel', () => {
 
         renderer.updateBillingAddress(SAVED);
 
+        expect(booted.identities.billing.companyId()).toBe('555');
+        expect(booted.capture.identity.companyId()).toBe('555');
+        expect(booted.capture.identity.companyName()).toBe('Saved Billing Co');
+        expect(booted.identities.shipping.companyId()).toBe('');
+        expect(booted.identities.shipping.companyName()).toBe('');
+    });
+
+    test('a billing address the quote says IS the shipping address seeds SHIPPING', () => {
+        // Billing is not a distinct address, so the shipping identity is the
+        // only capture the resolver reads: seeding billing discards the company.
+        const booted = boot({
+            billingForm: false,
+            quoteBillingAddress: SAVED,
+            quoteShippingAddress: { getCacheKey: function () { return 'billing'; } }
+        });
+        const renderer = bootRenderer(booted);
+
+        renderer.updateBillingAddress(SAVED);
+
         expect(booted.identities.shipping.companyId()).toBe('555');
-        expect(booted.identities.shipping.companyName()).toBe('Saved Billing Co');
         expect(booted.capture.identity.companyId()).toBe('555');
         expect(booted.identities.billing.companyId()).toBe('');
     });
