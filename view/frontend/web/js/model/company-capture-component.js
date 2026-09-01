@@ -113,6 +113,9 @@
      *        `refreshMount()` off its own re-render hook instead.
      * @param {string} options.addressFieldSelector the address step's company
      *        field.
+     * @param {string} options.addressFormRootSelector the form that field
+     *        belongs to — the one `addressFieldSelector` is built from. Bounds
+     *        every DOM read this panel makes, so absent it reads nothing.
      * @param {string} options.tileFieldSelector the payment tile's company
      *        field.
      * @param {function(string): boolean} options.fieldExists whether a selector
@@ -445,6 +448,7 @@
             // Neither host is on the page any more. Forgetting where the control
             // was is what stops `adjacentCountry()` answering for a form that has
             // gone, and lets the next host that appears mount cleanly.
+            this.removeChrome();
             this._boundSelector = null;
             if (this._panel) this._panel.unmount();
             if (previous !== null) this._notifyMount();
@@ -455,6 +459,7 @@
             this.renderChrome();
             return;
         }
+        if (previous !== selector) this.removeChrome();
         this._boundSelector = selector;
         this.mountPanel(selector);
         this.syncChips();
@@ -553,9 +558,50 @@
      *
      * @returns {?Element}
      */
-    CompanyCaptureComponent.prototype._chromeHost = function () {
+    CompanyCaptureComponent.prototype._chromeAnchor = function () {
         const field = this.fieldNode();
         return (field && field.parentElement) || null;
+    };
+
+    /**
+     * Where this panel's chrome lives: alongside the wrapper, never within it.
+     * The popover is positioned off the wrapper's own box (`top: 100%`), so
+     * chrome inside it pushes the popover off the field by the chrome's height.
+     *
+     * @returns {?Element}
+     */
+    CompanyCaptureComponent.prototype._chromeHost = function () {
+        const anchor = this._chromeAnchor();
+        return (anchor && anchor.parentElement) || null;
+    };
+
+    /**
+     * A piece of this panel's chrome, matched only among the wrapper's own
+     * siblings so the lookup cannot descend into the popover or another form.
+     *
+     * @param {string} className
+     * @returns {?Element}
+     */
+    CompanyCaptureComponent.prototype._chromeNode = function (className) {
+        const host = this._chromeHost();
+        if (!host) return null;
+        return Array.prototype.find.call(host.children, function (child) {
+            return child.classList.contains(className);
+        }) || null;
+    };
+
+    /**
+     * Clear this panel's chrome from the mount it is bound to.
+     *
+     * Chrome sits outside the wrapper, so releasing the wrapper leaves it
+     * standing: a mount that moves would strand a company number and a
+     * sole-trader link in the form the buyer has been taken off.
+     */
+    CompanyCaptureComponent.prototype.removeChrome = function () {
+        [COMPANY_NUMBER_CLASS, SOLE_TRADER_LINK_CLASS].forEach(function (className) {
+            const node = this._chromeNode(className);
+            if (node) node.remove();
+        }, this);
     };
 
     /** Repaint every piece of chrome this panel renders for its own identity. */
@@ -584,8 +630,8 @@
     /**
      * A company number a reload restored into this panel's own form.
      *
-     * Read rather than written into the identity, which would newly let a
-     * restored company drive order intent.
+     * Read rather than written into the identity, which would let a restored
+     * company drive order intent.
      *
      * @returns {string}
      */
@@ -595,8 +641,10 @@
         if (this._boundSelector === this._options.tileFieldSelector) return '';
         const field = this.fieldNode();
         if (!field) return '';
+        const root = this._ownFormRoot(field);
+        if (!root) return '';
         let node = field.parentElement;
-        while (node) {
+        while (node && root.contains(node)) {
             const found = node.querySelectorAll(RESTORED_NUMBER_SELECTOR);
             // Exactly one: several under one ancestor means it spans a second
             // address form, so neither is answerable as this panel's own.
@@ -607,6 +655,23 @@
     };
 
     /**
+     * The form this panel's field belongs to — the ceiling on every DOM read it
+     * makes, so no read can reach the other panel's form.
+     *
+     * `closest` off the field, not a page-wide query for the root: the billing
+     * root selector matches per-payment-method fieldsets, and the one holding
+     * THIS field is the only one that is this panel's own.
+     *
+     * @param {Element} field
+     * @returns {?Element}
+     */
+    CompanyCaptureComponent.prototype._ownFormRoot = function (field) {
+        const selector = this._options.addressFormRootSelector;
+        if (!selector) return null;
+        return field.closest(selector);
+    };
+
+    /**
      * Paint the company number as plain text under this panel's field.
      *
      * The caption is an `aria-label`, not visible text: TWO-25326 §7 forbids an
@@ -614,9 +679,10 @@
      * unreadable to a screen reader.
      */
     CompanyCaptureComponent.prototype.renderCompanyNumber = function () {
+        const anchor = this._chromeAnchor();
         const host = this._chromeHost();
-        if (!host) return;
-        const existing = host.querySelector('.' + COMPANY_NUMBER_CLASS);
+        if (!anchor || !host) return;
+        const existing = this._chromeNode(COMPANY_NUMBER_CLASS);
         if (existing) existing.remove();
         const number = this.displayCompanyNumber();
         if (!number) return;
@@ -624,7 +690,7 @@
         label.className = COMPANY_NUMBER_CLASS;
         label.setAttribute('aria-label', this.translate('Company Number'));
         label.textContent = number;
-        host.appendChild(label);
+        host.insertBefore(label, anchor.nextSibling);
     };
 
     /**
@@ -634,9 +700,10 @@
      * (TWO-25461 §7).
      */
     CompanyCaptureComponent.prototype.renderSoleTraderLink = function () {
+        const anchor = this._chromeAnchor();
         const host = this._chromeHost();
-        if (!host) return;
-        const existing = host.querySelector('.' + SOLE_TRADER_LINK_CLASS);
+        if (!anchor || !host) return;
+        const existing = this._chromeNode(SOLE_TRADER_LINK_CLASS);
         const adopted = this._identity.soleTraderAdopted();
         if (!adopted) {
             if (existing) existing.remove();
@@ -656,7 +723,10 @@
             self._soleTrader.selectDifferentSoleTrader();
         });
         wrapper.appendChild(link);
-        host.appendChild(wrapper);
+        // After the number when there is one, so the two keep a stable order
+        // across repaints regardless of which was rendered first.
+        const after = this._chromeNode(COMPANY_NUMBER_CLASS) || anchor;
+        host.insertBefore(wrapper, after.nextSibling);
     };
 
     // ----------------------------------------------------------------- chips

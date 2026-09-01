@@ -355,9 +355,6 @@ describe('a sole-trader adoption lands on one panel only', () => {
         expect(displayed(other)).toBe('');
         expect(organisationNumber(other)).toBe('');
     });
-
-    // Which panel's own "select a different sole trader" link is rendered, and
-    // whose flow a click on it reaches, is company-panel-chrome.test.js.
 });
 
 describe('a country switch invalidates its own panel\'s company and nothing else', () => {
