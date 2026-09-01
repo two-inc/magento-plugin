@@ -793,7 +793,20 @@ define([
         );
     }
 
-    /** The clear half of announceAddressUnavailable(). */
+    /**
+     * Tell the buyer the address had nowhere to land. Its own wording, because
+     * the sibling notice above asks them to enter it below and this fires
+     * precisely when there is no form below to enter it into.
+     *
+     * @param {object} identity the CALLING panel's own identity
+     */
+    function announceAddressUndeliverable(identity) {
+        identity.addressNotice(
+            $t('We could not fill in this company\'s address on this page.')
+        );
+    }
+
+    /** The clear half of both announcements above. */
     function withdrawAddressUnavailable(identity) {
         identity.addressNotice('');
     }
@@ -980,6 +993,8 @@ define([
 
         /** @see announceAddressUnavailable */
         announceAddressUnavailable: announceAddressUnavailable,
+        /** @see announceAddressUndeliverable */
+        announceAddressUndeliverable: announceAddressUndeliverable,
 
         /**
          * Run one company search and hand back rows the panel can render.
@@ -1116,7 +1131,7 @@ define([
             if (!root || !root.length || !identity) {
                 // A picked company that fills nothing in, with nothing said,
                 // reads as the picker having done nothing.
-                if (identity) announceAddressUnavailable(identity);
+                if (identity) announceAddressUndeliverable(identity);
                 console.debug({ logger: 'companySearch.lookupCompanyAddress.refused' });
                 return null;
             }

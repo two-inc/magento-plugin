@@ -502,7 +502,10 @@ describe('a tile-mounted shipping panel and the one address form there is (TWO-2
         expect(identity.companyId()).toBe('12345678');
         expect(lookupIds(recorder)).toEqual([]);
         expect(recorder.written).toHaveLength(0);
-        expect(identity.addressNotice()).not.toBe('');
+        // Its own copy: there is no form below to enter the address into, so
+        // the fetch-failed notice would send the buyer nowhere.
+        expect(identity.addressNotice())
+            .toBe('We could not fill in this company\'s address on this page.');
     });
 
     test.each([

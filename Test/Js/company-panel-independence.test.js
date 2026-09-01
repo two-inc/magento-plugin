@@ -649,7 +649,8 @@ describe('the payment tile is the shipping panel\'s mount, or nobody\'s', () => 
         booted.panels.shipping.host().applyBuyerAddress({ city: 'Ashford' });
 
         expect(addressValues('billing')['city']).toBe('');
-        expect(booted.identities.shipping.addressNotice()).not.toBe('');
+        expect(booted.identities.shipping.addressNotice())
+            .toBe('We could not fill in this company\'s address on this page.');
     });
 
     test('the tile field never displays the billing panel\'s capture', () => {
