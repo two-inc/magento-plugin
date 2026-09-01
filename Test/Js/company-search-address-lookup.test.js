@@ -509,6 +509,8 @@ describe('a tile-mounted shipping panel and the one address form there is (TWO-2
         expect(component.mountSelector()).toBe(TILE_FIELD_SELECTOR);
 
         await pick('example', SEARCH_RESPONSE);
+        await new Promise(function (resolve) { setTimeout(resolve, 0); });
+        await new Promise(function (resolve) { setTimeout(resolve, 0); });
 
         expect(lookupIds(recorder)).toEqual([]);
         expect(recorder.written).toHaveLength(0);
