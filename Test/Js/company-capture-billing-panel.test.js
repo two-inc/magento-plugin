@@ -555,9 +555,9 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
     test('after that re-check the returning buyer\'s saved company seeds SHIPPING, not billing', () => {
         // A saved shipping address carries the company as a custom attribute
         // and reaches the panels only through the quote's billing address. A
-        // billing capture left standing from before the re-check routed the
-        // seed to a panel the resolver no longer reads, so the tile and
-        // order-intent showed nothing at all.
+        // billing capture still standing after the re-check routes that seed to
+        // a panel the resolver does not read, and the tile and order-intent
+        // then show nothing at all.
         const { capture, dom } = load();
         billingPicks(capture, dom, 'Billing Co');
         const renderer = loadRenderer(capture, dom);

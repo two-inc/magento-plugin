@@ -1070,9 +1070,9 @@
      * Give the host field back, keeping this panel re-mountable — unlike
      * destroy(), which is final.
      *
-     * A field the component no longer owns keeps this panel's key handlers, its
-     * popover and its combobox attributes otherwise, so the control the buyer
-     * left is still live under the one they are using (TWO-25554).
+     * Without it a field this panel has left keeps its key handlers, its popover
+     * and its combobox attributes, so the control the buyer has moved off stays
+     * live under the one they are using (TWO-25554).
      */
     CompanySearchPanel.prototype.unmount = function () {
         this._cancelFocusOutClose();
