@@ -360,7 +360,7 @@ function pageLoad(storage, options) {
     }
     if (opts.restoreBeforeInit !== false) restore();
 
-    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
+    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window })();
     identity.captureMode(opts.captureMode || 'registered');
 
     const component = loadAmdModule(
@@ -397,7 +397,7 @@ function pageLoad(storage, options) {
                     return { isCompanySearchEnabled: false };
                 }
             },
-            'Two_Gateway/js/model/company-identity': identity
+            'Two_Gateway/js/model/company-capture': { shipping: { identity: function () { return identity; } } }
         },
         { document: document, window: window }
     );

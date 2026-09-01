@@ -15,9 +15,8 @@
 define([
     'jquery',
     'mage/url',
-    'Two_Gateway/js/model/company-identity',
     'mage/translate'
-], function ($, url, identity, $t) {
+], function ($, url, $t) {
     'use strict';
 
     /**
@@ -76,14 +75,33 @@ define([
     const activeRequests = new WeakMap();
 
     /**
-     * Last-REQUEST-wins guard for the address lookup: picking company B while
-     * A is in flight must not write A's address under B. Bumped per pick; a
-     * response carrying a stale generation is dropped.
+     * Last-REQUEST-wins guard for the address lookup, one per calling panel:
+     * picking company B while A is in flight must not write A's address under
+     * B, and — since TWO-25554 — a shipping-panel pick in flight must not be
+     * aborted by an unrelated billing-panel pick either. Keyed by the address
+     * form `lookupCompanyAddress()` was scoped to (`root`'s element), so two
+     * independent panels never share a generation counter or abort each
+     * other's request. `FALLBACK_ADDRESS_LOOKUP_KEY` covers the one caller
+     * with no root at all — the tile fallback on a checkout rendering no
+     * address form — where there is only ever one mount live to share it.
      */
-    let addressLookupGeneration = 0;
+    const addressLookupStates = new WeakMap();
+    const FALLBACK_ADDRESS_LOOKUP_KEY = {};
 
-    /** The in-flight address lookup, aborted when a newer pick supersedes it. */
-    let pendingAddressRequest = null;
+    /**
+     * @param {?object} root jQuery-wrapped scope `lookupCompanyAddress()` was
+     *        called with, or null
+     * @returns {{generation: number, pending: ?object}}
+     */
+    function addressLookupState(root) {
+        const key = (root && typeof root.get === 'function' && root.get(0)) || FALLBACK_ADDRESS_LOOKUP_KEY;
+        let state = addressLookupStates.get(key);
+        if (!state) {
+            state = { generation: 0, pending: null };
+            addressLookupStates.set(key, state);
+        }
+        return state;
+    }
 
     /**
      * Shortest term the search will act on. The ONE place this number is
@@ -940,18 +958,25 @@ define([
         return { ok: !!parsed.ok, status: parsed.status || 0, body: parsed.body };
     }
 
+    /** A no-op stand-in for a caller of lookupCompanyAddress() with no identity to notify. */
+    const NULL_IDENTITY = { addressNotice: function () {} };
+
     /**
      * Tell the buyer the address did not arrive. Without this the fields stay
      * blank with nothing said, which reads as the picker having done nothing.
+     *
+     * @param {object} identity the CALLING panel's own identity (TWO-25554) —
+     *        this module is shared by every panel, so the notice has to land
+     *        on whichever one is actually searching, not a fixed instance.
      */
-    function announceAddressUnavailable() {
+    function announceAddressUnavailable(identity) {
         identity.addressNotice(
             $t('We could not fetch this company\'s address. Please enter it below.')
         );
     }
 
     /** The clear half of announceAddressUnavailable(). */
-    function withdrawAddressUnavailable() {
+    function withdrawAddressUnavailable(identity) {
         identity.addressNotice('');
     }
 
@@ -1317,11 +1342,15 @@ define([
             return true;
         },
 
-        /** Drop every cached search result and any rate-limit backoff. Exists for tests. */
+        /**
+         * Drop every cached search result and any rate-limit backoff. Exists
+         * for tests. Address-lookup state needs no reset here: it is keyed by
+         * the root a test passes in, so a fresh root per test starts clean —
+         * see addressLookupState().
+         */
         clearResultCache: function () {
             resultCache.clear();
             registrySuspendedUntil = 0;
-            pendingAddressRequest = null;
         },
 
         /** @see formatCompanyNumber */
@@ -1446,25 +1475,35 @@ define([
          *
          * @param {object} config brand config subtree
          * @param {object} selectedCompany search result row (needs lookupId)
-         * @param {object} [root] scope for the write — see applyAddress()
+         * @param {object} [root] scope for the write — see applyAddress(). Also
+         *        the key the in-flight-request guard is scoped by (TWO-25554):
+         *        two panels calling this with different roots never abort or
+         *        supersede each other.
+         * @param {object} [identity] the calling panel's own identity, for
+         *        announceAddressUnavailable()/withdrawAddressUnavailable().
+         *        Optional: a caller that does not care whether the buyer sees
+         *        the notice (most of this module's own tests) is not made to
+         *        supply one just to satisfy it.
          * @returns {object|null} the jqXHR, or null when gated off / no id
          */
-        lookupCompanyAddress: function (config, selectedCompany, root) {
+        lookupCompanyAddress: function (config, selectedCompany, root, identity) {
             if (!config.isAddressSearchEnabled) return null;
             if (!selectedCompany || !selectedCompany.lookupId) return null;
 
-            const generation = ++addressLookupGeneration;
-            if (pendingAddressRequest) {
-                pendingAddressRequest.abort();
-                pendingAddressRequest = null;
+            const notify = identity || NULL_IDENTITY;
+            const lookupState = addressLookupState(root);
+            const generation = ++lookupState.generation;
+            if (lookupState.pending) {
+                lookupState.pending.abort();
+                lookupState.pending = null;
             }
 
             // Withdrawn as this pick STARTS, so no notice outlives the
             // company it was about.
-            withdrawAddressUnavailable();
+            withdrawAddressUnavailable(notify);
 
             if (Date.now() < registrySuspendedUntil) {
-                announceAddressUnavailable();
+                announceAddressUnavailable(notify);
                 return null;
             }
 
@@ -1472,9 +1511,9 @@ define([
             const addressResponse = proxyPost('rest/V1/two/company', {
                 lookupId: selectedCompany.lookupId
             });
-            pendingAddressRequest = addressResponse;
+            lookupState.pending = addressResponse;
             const isCurrent = function () {
-                return generation === addressLookupGeneration;
+                return generation === lookupState.generation;
             };
             addressResponse.done(function (raw) {
                 if (!isCurrent()) return;
@@ -1484,7 +1523,7 @@ define([
                     self.applyAddress(response.addresses[0], root);
                     return;
                 }
-                announceAddressUnavailable();
+                announceAddressUnavailable(notify);
             });
             addressResponse.fail(function (jqXHR, textStatus) {
                 // Recorded even for a superseded pick: the ceiling is
@@ -1493,10 +1532,10 @@ define([
                     registrySuspendedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
                 }
                 if (!isCurrent()) return;
-                if (textStatus !== 'abort') announceAddressUnavailable();
+                if (textStatus !== 'abort') announceAddressUnavailable(notify);
             });
             addressResponse.always(function () {
-                if (pendingAddressRequest === addressResponse) pendingAddressRequest = null;
+                if (lookupState.pending === addressResponse) lookupState.pending = null;
             });
             return addressResponse;
         },

@@ -81,7 +81,6 @@ function companySearchMock() {
  */
 function loadCapture(options) {
     const settings = options || {};
-    const identity = loadAmdModule(IDENTITY_PATH, {}, GLOBALS);
     const SoleTraderStub = function () {
         this.listenForSignupResult = function () {};
         this.ensureTokens = function () { return Promise.resolve(true); };
@@ -94,7 +93,6 @@ function loadCapture(options) {
     const component = loadCompanyCapture(
         {
             jquery: $,
-            'Two_Gateway/js/model/company-identity': identity,
             'Two_Gateway/js/model/company-search': companySearch,
             'Two_Gateway/js/model/company-search-panel':
                 settings.Panel || loadCompanySearchPanel($, companySearch, GLOBALS),
@@ -107,9 +105,9 @@ function loadCapture(options) {
             })
         },
         GLOBALS
-    );
+    ).shipping;
     component.start();
-    return { component: component, identity: identity };
+    return { component: component, identity: component.identity() };
 }
 
 function manualChip() {

@@ -11,7 +11,7 @@ define([
     'Magento_Customer/js/customer-data',
     'Magento_Checkout/js/model/step-navigator',
     'uiRegistry',
-    'Two_Gateway/js/model/company-identity',
+    'Two_Gateway/js/model/company-capture',
     'Two_Gateway/js/model/company-search',
     // `$.async`, used below — it decorates jQuery as a side effect and takes no
     // factory parameter, hence LAST in the list. Declared rather than relied on
@@ -27,10 +27,18 @@ define([
     customerData,
     stepNavigator,
     uiRegistry,
-    identity,
+    companyCapture,
     companySearch
 ) {
     'use strict';
+
+    // This module owns the ADDRESS STEP's own company field specifically
+    // (TWO-25554) — the shipping panel's identity, never the resolved one:
+    // publishCompanyData() below feeds the customerData section the
+    // shipping-step search has always driven, and reading the resolved
+    // identity here would let a billing-panel pick masquerade as a
+    // shipping-step one the moment billing became authoritative.
+    const identity = companyCapture.shipping.identity();
 
     // Our own event namespace, separate from the panel's: its teardown paths
     // clear their own namespace off the company-name input, and the

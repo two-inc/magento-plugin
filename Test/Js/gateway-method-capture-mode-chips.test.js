@@ -58,7 +58,6 @@ const HIDDEN_CLASS = 'two-hidden';
  */
 function load(options) {
     const opts = options || {};
-    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
     const search = { aborts: 0, lookups: [] };
     const soleTrader = { launches: [], ensured: 0 };
 
@@ -95,7 +94,6 @@ function load(options) {
     const component = loadCompanyCapture(
         {
             jquery: $,
-            'Two_Gateway/js/model/company-identity': identity,
             'Two_Gateway/js/model/company-search-panel': loadCompanySearchPanel(
                 $,
                 companySearchMock,
@@ -111,10 +109,10 @@ function load(options) {
             'Two_Gateway/js/model/company-search': companySearchMock
         },
         { document: document, window: window }
-    );
+    ).shipping;
     return {
         component: component,
-        identity: identity,
+        identity: component.identity(),
         search: search,
         soleTrader: soleTrader
     };

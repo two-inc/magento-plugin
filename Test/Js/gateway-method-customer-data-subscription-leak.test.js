@@ -25,6 +25,7 @@
 const { loadAmdModule } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
+const IDENTITY_PATH = 'view/frontend/web/js/model/company-identity.js';
 
 /** Observable whose subscribe() returns a dispose() that actually removes the subscriber. */
 function realDisposeObservable(initial) {
@@ -66,13 +67,23 @@ function realDisposeObservable(initial) {
  */
 function makeCaptureComponent(config) {
     const calls = { refreshMount: 0 };
+    // A REAL identity instance, shared as both the resolved one gateway_method.js
+    // mirrors from AND the shipping panel's own — fillCompanyData()'s write has
+    // to actually reach what this renderer reads, and only a real, reactive
+    // identity does that (TWO-25554: production's own resolver sits between the
+    // two in real life, but this double has no second panel to resolve between).
+    const identity = loadAmdModule(IDENTITY_PATH, {}, { document: document, window: window })();
     return {
         calls: calls,
         module: {
-            config: function () { return config; },
-            countryCode: function () { return 'gb'; },
-            mountSelector: function () { return ''; },
-            soleTrader: function () { return null; },
+            identity: identity,
+            shipping: {
+                config: function () { return config; },
+                countryCode: function () { return 'gb'; },
+                mountSelector: function () { return ''; },
+                soleTrader: function () { return null; },
+                identity: function () { return identity; }
+            },
             refreshMount: function () { calls.refreshMount += 1; }
         }
     };

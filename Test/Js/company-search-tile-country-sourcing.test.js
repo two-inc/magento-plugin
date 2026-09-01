@@ -57,7 +57,6 @@ function loadCompanySearch() {
  */
 function load(options) {
     const opts = options || {};
-    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
     const companySearch = opts.companySearch || loadCompanySearch();
     const panel = { constructed: [], binds: 0, aborts: 0 };
 
@@ -94,7 +93,6 @@ function load(options) {
         {
             jquery: $,
             'Magento_Checkout/js/model/quote': quote,
-            'Two_Gateway/js/model/company-identity': identity,
             'Two_Gateway/js/model/company-search': companySearch,
             'Two_Gateway/js/model/company-search-panel': PanelStub,
             'Two_Gateway/js/model/sole-trader': SoleTraderStub,
@@ -107,11 +105,11 @@ function load(options) {
             })
         },
         { document: document, window: window }
-    );
+    ).shipping;
 
     return {
         component: component,
-        identity: identity,
+        identity: component.identity(),
         companySearch: companySearch,
         panel: panel
     };

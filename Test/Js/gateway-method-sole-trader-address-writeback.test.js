@@ -69,8 +69,6 @@ function loadFlow() {
     /** `failAddressWrite` is flipped mid-test to model a DOM failure. */
     const rec = { applied: [], roots: [], phones: [], adopted: [], failAddressWrite: false };
 
-    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
-
     const companySearch = Object.assign(
         {},
         defaultMocks()['Two_Gateway/js/model/company-search'],
@@ -89,7 +87,6 @@ function loadFlow() {
     const component = loadCompanyCapture(
         {
             jquery: $,
-            'Two_Gateway/js/model/company-identity': identity,
             'Two_Gateway/js/model/company-search': companySearch,
             'Two_Gateway/js/model/brand-config': brandConfigMock({
                 checkoutPageUrl: CHECKOUT_PAGE_URL,
@@ -105,8 +102,9 @@ function loadFlow() {
             clearInterval: function () {},
             fetch: function () { return Promise.resolve({ ok: false, status: 404 }); }
         }
-    );
+    ).shipping;
     component.start();
+    const identity = component.identity();
     identity.captureMode('soletrader');
 
     const adopt = component.adoptSoleTrader.bind(component);

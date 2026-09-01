@@ -11,11 +11,14 @@
  * regression guard on the container itself rather than on any one behaviour.
  *
  * The invariants:
- *  - the component is constructed once per page, by the boot component alone;
+ *  - the component is constructed exactly twice per page, by the boot
+ *    component alone — one shipping instance, one billing instance
+ *    (TWO-25554), each with its own panel, never re-pointed between the two;
  *  - a payment-tile re-render takes nothing with it;
- *  - exactly one search panel exists, re-pointed rather than duplicated;
- *  - the merchant setting decides WHERE the panel mounts, never whether the
- *    buyer can capture a company at all.
+ *  - within EACH instance, exactly one search panel exists, re-pointed
+ *    between the address step and the tile rather than duplicated;
+ *  - the merchant setting decides WHERE the shipping instance's panel
+ *    mounts, never whether the buyer can capture a company at all.
  */
 
 'use strict';
@@ -104,7 +107,6 @@ function load(options) {
     // observer simulation rather than real jQuery's absent `$.async`.
     installAsyncSimulation($);
     $.async.reset();
-    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
     const panels = [];
     const soleTrader = { instances: 0, listeners: 0, ensured: 0 };
 
@@ -158,7 +160,6 @@ function load(options) {
     const component = loadCompanyCapture(
         {
             jquery: $,
-            'Two_Gateway/js/model/company-identity': identity,
             'Two_Gateway/js/model/company-search-panel': RecordingPanel,
             'Two_Gateway/js/model/sole-trader': SoleTraderStub,
             'Two_Gateway/js/model/brand-config': brandConfigMock({
@@ -183,10 +184,14 @@ function load(options) {
             'Two_Gateway/js/model/company-search': companySearchMock
         },
         { document: document, window: window }
-    );
+    ).shipping;
     return {
         component: component,
-        identity: identity,
+        identity: component.identity(),
+        // TWO-25554 also constructs an (independent) billing panel, but this
+        // suite only ever calls THIS component's start() — the top-level
+        // fan-out start() that would boot billing too is never reached — so
+        // panels[0] stays the shipping panel these specs have always tested.
         panels: panels,
         soleTrader: soleTrader
     };
@@ -210,7 +215,7 @@ beforeEach(() => {
     document.body.innerHTML = '';
 });
 
-describe('the component is constructed once per page', () => {
+describe('the component is constructed exactly twice per page (TWO-25554)', () => {
     test('the layout declares the boot component exactly once', () => {
         const declarations =
             readSource(LAYOUT).match(/Two_Gateway\/js\/view\/company-search-boot/g) || [];
@@ -228,15 +233,18 @@ describe('the component is constructed once per page', () => {
         });
     });
 
-    test('Luma resolves one shared instance, built at the single construction site', () => {
+    test('Luma resolves exactly two instances — shipping and billing (TWO-25554) — never a third', () => {
         mountTile();
         const { component } = load();
         // The controller is a constructor so Hyvä can build its own with its
-        // own host. Luma's half is what must never hand a caller a second one.
+        // own host, and so Luma can build ITS two independent ones: one panel
+        // is no longer the invariant since TWO-25554 — two coexisting,
+        // independently-mounted instances is. What must still never happen is
+        // a THIRD, or a re-pointed instance masquerading as two.
         expect(typeof component).toBe('object');
         expect(typeof component.start).toBe('function');
         const sites = readSource(ADAPTER).match(/new CompanyCaptureComponent\(/g) || [];
-        expect(sites).toHaveLength(1);
+        expect(sites).toHaveLength(2);
     });
 
     test('the controller carries no capture surface of its own', () => {
@@ -381,11 +389,9 @@ describe('a checkout with no Two-family method is left alone', () => {
      */
     function loadWithoutBrand() {
         const requests = [];
-        const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
         const component = loadCompanyCapture(
             {
                 jquery: $,
-                'Two_Gateway/js/model/company-identity': identity,
                 'Two_Gateway/js/model/sole-trader': function () {},
                 // No Two-family method on this checkout.
                 'Two_Gateway/js/model/brand-config': brandConfigMock(null),
@@ -403,7 +409,7 @@ describe('a checkout with no Two-family method is left alone', () => {
                     return Promise.resolve({ ok: true, json: function () { return []; } });
                 }
             }
-        );
+        ).shipping;
         return { component: component, requests: requests };
     }
 
@@ -612,7 +618,7 @@ describe('a checkout that loses both hosts', () => {
         const controller = new Controller(Object.assign(completeHost(), {
             Panel: StubPanel,
             config: { isCompanySearchEnabled: true },
-            identity: loadAmdModule(IDENTITY),
+            identity: loadAmdModule(IDENTITY)(),
             fieldExists: function () { return hostPresent; },
             isVirtualCart: function () { return false; },
             getAdjacentCountry: function () { return 'gb'; },
@@ -711,7 +717,7 @@ describe('a typed company name carries no vouched number', () => {
         const Controller = loadAmdModule(CONTROLLER);
         const cleared = [];
         const controller = new Controller(Object.assign(completeHost(), {
-            identity: loadAmdModule(IDENTITY),
+            identity: loadAmdModule(IDENTITY)(),
             clearField: function (selector) { cleared.push(selector); }
         }));
 

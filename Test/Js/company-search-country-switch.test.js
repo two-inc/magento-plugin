@@ -342,7 +342,6 @@ function switchCountryTo(ctx, iso) {
  */
 function loadCaptureComponent(options) {
     const opts = options || {};
-    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
     const calls = { reverts: 0, aborts: 0, binds: [], forgotten: 0, destroys: 0 };
 
     function PanelStub() {
@@ -389,7 +388,6 @@ function loadCaptureComponent(options) {
         {
             jquery: jq,
             'Magento_Checkout/js/model/quote': quote,
-            'Two_Gateway/js/model/company-identity': identity,
             'Two_Gateway/js/model/company-search': companySearch,
             'Two_Gateway/js/model/company-search-panel': PanelStub,
             'Two_Gateway/js/model/sole-trader': SoleTraderStub,
@@ -401,11 +399,11 @@ function loadCaptureComponent(options) {
             })
         },
         { document: document, window: window }
-    );
+    ).shipping;
 
     return {
         component: component,
-        identity: identity,
+        identity: component.identity(),
         calls: calls,
         setBillingCountry: function (iso) { billing = iso; }
     };

@@ -45,8 +45,6 @@ const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
 function makeEnv() {
     const rec = { opened: [], handles: [], tokenMints: 0 };
 
-    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window });
-
     const fakeWindow = {
         open: function (url, target, features) {
             rec.opened.push({ url: url, target: target, features: features });
@@ -69,7 +67,6 @@ function makeEnv() {
                 isVirtual: function () { return false; }
             }
         ),
-        'Two_Gateway/js/model/company-identity': identity,
         'Two_Gateway/js/model/company-search': Object.assign(
             {},
             defaultMocks()['Two_Gateway/js/model/company-search'],
@@ -103,7 +100,7 @@ function makeEnv() {
         }
     };
 
-    return { rec: rec, identity: identity, mocks: mocks, globals: globals };
+    return { rec: rec, mocks: mocks, globals: globals };
 }
 
 /**
@@ -117,7 +114,7 @@ function makeEnv() {
 function loadFlow() {
     const env = makeEnv();
     const SoleTraderCtor = loadAmdModule(SOLE_TRADER, env.mocks, env.globals);
-    const flow = new SoleTraderCtor(loadCompanyCapture(env.mocks, env.globals));
+    const flow = new SoleTraderCtor(loadCompanyCapture(env.mocks, env.globals).shipping);
     flow.delegationToken = 'dt-1';
     flow.autofillToken = 'at-1';
     return { flow: flow, rec: env.rec };
@@ -147,10 +144,10 @@ async function startStack() {
             env.globals
         )
     });
-    const component = loadCompanyCapture(mocks, env.globals);
+    const component = loadCompanyCapture(mocks, env.globals).shipping;
     component.start();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    return { component: component, flow: component.soleTrader(), rec: env.rec, identity: env.identity };
+    return { component: component, flow: component.soleTrader(), rec: env.rec, identity: component.identity() };
 }
 
 /**
@@ -249,16 +246,28 @@ describe('the payment tile only delegates', () => {
      * @returns {object} the loaded renderer
      */
     function loadRenderer(flowStub) {
+        const identityStub = {
+            companyName: function () { return ''; },
+            companyId: function () { return ''; },
+            soleTraderAdopted: function () { return false; },
+            soleTraderBusy: function () { return false; },
+            addressNotice: function () { return ''; },
+            isSoleTrader: function () { return false; },
+            subscribe: function () { return { dispose: function () {} }; }
+        };
         return loadAmdModule(
             RENDERER,
             {
                 jquery: $,
                 'Two_Gateway/js/model/company-capture': {
-                    config: function () { return {}; },
-                    mountSelector: function () { return ''; },
-                    refreshMount: function () {},
-                    countryCode: function () { return 'gb'; },
-                    soleTrader: function () { return flowStub; }
+                    identity: identityStub,
+                    shipping: {
+                        config: function () { return {}; },
+                        mountSelector: function () { return ''; },
+                        countryCode: function () { return 'gb'; },
+                        soleTrader: function () { return flowStub; }
+                    },
+                    refreshMount: function () {}
                 }
             },
             { document: document, window: { checkoutConfig: { payment: {} }, addEventListener: function () {} } }

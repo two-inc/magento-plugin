@@ -189,7 +189,7 @@ function load(options) {
     const opts = options || {};
     const dom = makeDom();
     const cd = makeCustomerData();
-    const identity = loadAmdModule(IDENTITY, {});
+    const identity = loadAmdModule(IDENTITY, {})();
     // Country has to read as a string: toggleCompanyVisibility() lowercases it.
     dom.node(COUNTRY_FIELD).val(opts.country || 'GB');
     if (opts.prefillName) {
@@ -204,7 +204,7 @@ function load(options) {
     const component = loadAmdModule(MODULE, {
         jquery: dom.$,
         'Magento_Customer/js/customer-data': cd.api,
-        'Two_Gateway/js/model/company-identity': identity,
+        'Two_Gateway/js/model/company-capture': { shipping: { identity: function () { return identity; } } },
         'Two_Gateway/js/model/brand-config': {
             // Company search off by default: enableCompanySearch() then
             // early-returns and these tests stay about the company-number
