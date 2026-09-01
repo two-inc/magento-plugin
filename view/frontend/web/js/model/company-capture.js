@@ -74,6 +74,9 @@ define([
     /** @see soleAddressForm — the element kinds a checkout wraps one in. */
     const ADDRESS_FORM_CONTAINER_SELECTOR = 'form, fieldset, [data-form]';
 
+    /** @see soleAddressForm — the second field that makes one a whole address. */
+    const ADDRESS_CITY_SELECTOR = 'input[name="city"]';
+
     const brandCode = brandConfig.getActiveTwoBrandCode();
     const config = brandCode ? brandConfig(brandCode) : null;
 
@@ -297,9 +300,15 @@ define([
     function soleAddressForm() {
         if ($(ADDRESS_FORM_ROOT).length || $(BILLING_FORM_ROOT).length) return null;
         const $streets = $(ADDRESS_STREET_SELECTOR);
-        if ($streets.length !== 1 || typeof $streets.closest !== 'function') return null;
+        if ($streets.length !== 1) return null;
+        if (typeof $streets.closest !== 'function') return null;
+        // `closest()` answers with the NEAREST container, which on a themed
+        // checkout is often a row holding the street line alone — a write scoped
+        // there fills in a street and nothing else. The city is what makes the
+        // container the whole address form.
         const $form = $streets.closest(ADDRESS_FORM_CONTAINER_SELECTOR);
-        return $form.length === 1 ? $form : null;
+        if (!$form.length || typeof $form.find !== 'function') return null;
+        return $form.find(ADDRESS_CITY_SELECTOR).length ? $form : null;
     }
 
     /**
