@@ -12,6 +12,8 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\OrderIntentInterface;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
+use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\RateLimiter;
 
 class OrderIntent implements OrderIntentInterface
@@ -31,7 +33,9 @@ class OrderIntent implements OrderIntentInterface
         private readonly ApiKeyStatus $apiKeyStatus,
         private readonly RateLimiter $rateLimiter,
         private readonly LogRepository $logRepository,
-        private readonly CheckoutSession $checkoutSession
+        private readonly CheckoutSession $checkoutSession,
+        private readonly BuyerCountryResolver $buyerCountryResolver,
+        private readonly SupportedCountriesProvider $supportedCountriesProvider
     ) {
     }
 
@@ -70,6 +74,23 @@ class OrderIntent implements OrderIntentInterface
             return $this->refusal(503, (string)__('The payment integration is not available right now.'));
         }
 
+        $storeId = $this->quoteStoreId();
+        // Server-resolved, never the payload's own country_prefix — a buyer
+        // must not be able to name the country their eligibility is judged on.
+        $buyerCountry = $this->quoteBuyerCountry();
+        if (!$this->supportedCountriesProvider->isAllowed($buyerCountry, $storeId)) {
+            $this->logRepository->addLog(
+                '[order-intent-country-refused] buyer country not supported',
+                [
+                    'merchant_id' => $merchantId,
+                    'country' => $buyerCountry,
+                    'restriction' => $this->supportedCountriesProvider->getState($storeId),
+                ]
+            );
+
+            return $this->refusal(403, (string)__('The payment integration is not available right now.'));
+        }
+
         $body['merchant_id'] = $merchantId;
         // Absent means absent — upstream reads an absent key and an explicit
         // null apart.
@@ -80,7 +101,16 @@ class OrderIntent implements OrderIntentInterface
         }
 
         return $this->envelope(
-            $this->adapter->executeWithStatus(self::ENDPOINT, $body, 'POST', $this->quoteStoreId())
+            $this->adapter->executeWithStatus(self::ENDPOINT, $body, 'POST', $storeId)
         );
+    }
+
+    private function quoteBuyerCountry(): string
+    {
+        try {
+            return $this->buyerCountryResolver->resolve($this->checkoutSession->getQuote());
+        } catch (\Throwable $e) {
+            return '';
+        }
     }
 }

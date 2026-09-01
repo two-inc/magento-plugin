@@ -290,6 +290,7 @@ class Two extends AbstractMethod
         $order = $payment->getOrder();
         $this->assertOrderMeetsMinimum($order);
         $this->assertSurchargeResolvable($order);
+        $this->assertBuyerCountrySupported($order);
         $additionalInformation = $payment->getAdditionalInformation();
         $this->assertOrganizationNumberPresent($additionalInformation);
         $this->urlCookie->delete();
@@ -896,10 +897,18 @@ class Two extends AbstractMethod
         }
         // Judged on the billing-first country, not core's shipping-for-physical-quote choice.
         $buyerCountry = $this->buyerCountryResolver->resolve($quote);
-        if ($buyerCountry !== '' && !$this->canUseForCountry($buyerCountry)) {
+        // Core's admin gate cannot judge an empty country, so only the merchant
+        // restriction speaks there — and a restricted one withholds.
+        $countryAllowed = $buyerCountry === ''
+            ? $this->supportedCountriesProvider->isAllowed('', $storeId)
+            : $this->canUseForCountry($buyerCountry);
+        if (!$countryAllowed) {
             $this->logRepository->addDebugLog(
                 sprintf('%s hidden from checkout: buyer country not supported', $this->_code),
-                ['country' => $buyerCountry]
+                [
+                    'country' => $buyerCountry,
+                    'restriction' => $this->supportedCountriesProvider->getState($storeId),
+                ]
             );
             return false;
         }
@@ -1155,6 +1164,37 @@ class Two extends AbstractMethod
                 __('Invoice purchase with %1 is not available for this order.', $this->brandRegistry->getProductName())
             );
         }
+    }
+
+    /**
+     * Placement backstop for the buyer-country gate isAvailable() applies: a
+     * hidden method can still be submitted (JS disabled, direct API call, an
+     * address changed after selection).
+     *
+     * @throws LocalizedException when the allowlist does not admit the order's
+     *     country, or the merchant restricts and no country resolves
+     */
+    private function assertBuyerCountrySupported(Order $order): void
+    {
+        $storeId = $order->getStoreId() !== null ? (int)$order->getStoreId() : null;
+        $buyerCountry = $this->buyerCountryResolver->resolveFromOrder($order);
+        if ($this->supportedCountriesProvider->isAllowed($buyerCountry, $storeId)) {
+            return;
+        }
+
+        $status = $this->apiKeyStatus->getStatus($storeId);
+        $this->logRepository->addLog(
+            sprintf('%s refused an order: buyer country not supported', $this->_code),
+            [
+                'merchant_id' => $status['merchant']['id'] ?? null,
+                'country' => $buyerCountry,
+                'restriction' => $this->supportedCountriesProvider->getState($storeId),
+            ]
+        );
+
+        throw new LocalizedException(
+            __('Invoice purchase with %1 is not available for this order.', $this->brandRegistry->getProductName())
+        );
     }
 
     /**

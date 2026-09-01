@@ -9,6 +9,7 @@ namespace Two\Gateway\Service\Order;
 
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\Quote\Model\Quote;
+use Magento\Sales\Model\Order;
 
 /**
  * Buyer country for a quote: billing, then shipping, then the store default.
@@ -31,6 +32,23 @@ class BuyerCountryResolver
             return (string)$shipping->getCountryId();
         }
         $store = $quote->getStore();
+        return $store !== null ? (string)$store->getConfig('general/country/default') : '';
+    }
+
+    /**
+     * The same precedence for a placed order, which is not a CartInterface.
+     */
+    public function resolveFromOrder(Order $order): string
+    {
+        $billing = $order->getBillingAddress();
+        if ($billing && $billing->getCountryId()) {
+            return (string)$billing->getCountryId();
+        }
+        $shipping = $order->getShippingAddress();
+        if ($shipping && $shipping->getCountryId()) {
+            return (string)$shipping->getCountryId();
+        }
+        $store = $order->getStore();
         return $store !== null ? (string)$store->getConfig('general/country/default') : '';
     }
 }

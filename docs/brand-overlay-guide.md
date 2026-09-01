@@ -363,8 +363,12 @@ can never disagree:
 -   buyer-country allowlist — `supported_buyer_countries`, read via
     `Service/Merchant/SupportedCountriesProvider` and applied by
     `Model\Two::canUseForCountry()` alongside core's own
-    `sallowspecific`/`specificcountry` restriction. Both gates must
-    concede; an absent or empty allowlist restricts nothing.
+    `sallowspecific`/`specificcountry` restriction, then again at
+    placement (`Model\Two::authorize()`) and on the order-intent route.
+    Both gates must concede. A record with no allowlist field restricts
+    nothing; a field that is present but empty, null or malformed allows
+    no country at all, as does a restricted merchant whose buyer country
+    cannot be resolved.
 
 ## Local development
 

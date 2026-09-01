@@ -97,7 +97,7 @@ class TwoCountryGateTest extends TestCase
             'neither address, store default refused' =>
                 [null, null, 'NO', false, 'store default judged as a last resort'],
             'no country resolvable' =>
-                [null, null, null, true, 'an unjudgeable quote must not withdraw the method'],
+                [null, null, null, false, 'a restricted merchant withholds rather than guess'],
         ];
     }
 
@@ -120,7 +120,26 @@ class TwoCountryGateTest extends TestCase
 
         $this->assertCount(1, $logged);
         $this->assertStringContainsString('buyer country not supported', $logged[0][0]);
-        $this->assertSame(['country' => 'DE'], $logged[0][1]);
+        $this->assertSame(
+            ['country' => 'DE', 'restriction' => SupportedCountriesProvider::STATE_ALLOWLIST],
+            $logged[0][1]
+        );
+    }
+
+    /**
+     * The other side of the unjudgeable-quote branch: withholding is the
+     * restricted merchant's answer, not everyone's.
+     */
+    public function testAnUnrestrictedMerchantIsStillOfferedWhenNoCountryResolves(): void
+    {
+        $model = $this->build($this->countriesProvider(null));
+
+        $quote = $this->createMock(Quote::class);
+        $quote->method('getBillingAddress')->willReturn(null);
+        $quote->method('getShippingAddress')->willReturn(null);
+        $quote->method('getStore')->willReturn($this->createMock(Store::class));
+
+        $this->assertTrue($model->isAvailable($quote));
     }
 
     /**
@@ -166,14 +185,19 @@ class TwoCountryGateTest extends TestCase
     }
 
     /**
-     * @param list<string> $allowed
+     * @param list<string>|null $allowed null for a merchant that restricts nothing.
      */
-    private function countriesProvider(array $allowed): SupportedCountriesProvider
+    private function countriesProvider(?array $allowed): SupportedCountriesProvider
     {
         $provider = $this->createMock(SupportedCountriesProvider::class);
         $provider->method('isAllowed')->willReturnCallback(
             static fn(string $country, ?int $storeId = null): bool
-                => in_array(strtoupper($country), $allowed, true)
+                => $allowed === null || in_array(strtoupper(trim($country)), $allowed, true)
+        );
+        $provider->method('getState')->willReturn(
+            $allowed === null
+                ? SupportedCountriesProvider::STATE_UNRESTRICTED
+                : SupportedCountriesProvider::STATE_ALLOWLIST
         );
         return $provider;
     }

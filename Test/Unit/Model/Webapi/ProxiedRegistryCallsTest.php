@@ -7,6 +7,7 @@ use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use Magento\Quote\Model\Quote;
+use Magento\Quote\Model\Quote\Address;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
@@ -16,6 +17,9 @@ use Two\Gateway\Model\Webapi\CompanyLookup;
 use Two\Gateway\Model\Webapi\OrderIntent;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\RecordProvider;
+use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
+use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\RateLimiter;
 
 /**
@@ -101,14 +105,29 @@ class ProxiedRegistryCallsTest extends TestCase
         );
     }
 
-    private function orderIntent(string $status = ApiKeyStatus::OK, ?int $storeId = null): OrderIntent
-    {
+    /**
+     * @param array<string,mixed>|null $merchantRecord null for a merchant whose
+     *     record carries no buyer-country allowlist.
+     */
+    private function orderIntent(
+        string $status = ApiKeyStatus::OK,
+        ?int $storeId = null,
+        ?array $merchantRecord = null,
+        ?string $buyerCountry = null
+    ): OrderIntent {
+        // Real provider over a mocked record fetch: the tri-state derivation
+        // the gate depends on is the shipped one, not a mock's.
+        $recordProvider = $this->createMock(RecordProvider::class);
+        $recordProvider->method('getRecord')->willReturn($merchantRecord);
+
         return new OrderIntent(
             $this->adapter(),
             $this->apiKeyStatus($status),
             $this->rateLimiter(),
             $this->logRepository(),
-            $this->checkoutSession($storeId)
+            $this->checkoutSession($storeId, $buyerCountry),
+            new BuyerCountryResolver(),
+            new SupportedCountriesProvider($recordProvider)
         );
     }
 
@@ -142,12 +161,17 @@ class ProxiedRegistryCallsTest extends TestCase
         return $this->createMock(RateLimiter::class);
     }
 
-    private function checkoutSession(?int $storeId = null): CheckoutSession
+    private function checkoutSession(?int $storeId = null, ?string $buyerCountry = null): CheckoutSession
     {
         $session = new CheckoutSession();
-        if ($storeId !== null) {
+        if ($storeId !== null || $buyerCountry !== null) {
             $quote = $this->createMock(Quote::class);
             $quote->method('getStoreId')->willReturn($storeId);
+            if ($buyerCountry !== null) {
+                $address = $this->createMock(Address::class);
+                $address->method('getCountryId')->willReturn($buyerCountry);
+                $quote->method('getBillingAddress')->willReturn($address);
+            }
             $session->setData('quote', $quote);
         }
 
@@ -157,12 +181,21 @@ class ProxiedRegistryCallsTest extends TestCase
     /** @var array<int,array{0: string, 1: mixed}> */
     private $errorLog = [];
 
+    /** @var array<int,array{0: string, 1: mixed}> */
+    private $log = [];
+
     private function logRepository(): LogRepository
     {
         $log = $this->createMock(LogRepository::class);
         $log->method('addErrorLog')->willReturnCallback(
             function ($type, $data) {
                 $this->errorLog[] = [$type, $data];
+                return null;
+            }
+        );
+        $log->method('addLog')->willReturnCallback(
+            function ($type, $data) {
+                $this->log[] = [$type, $data];
                 return null;
             }
         );
@@ -317,6 +350,102 @@ class ProxiedRegistryCallsTest extends TestCase
         $sent = json_decode($this->requestedBody, true);
         $this->assertSame('merchant-uuid', $sent['merchant_id']);
         $this->assertSame('acme', $sent['merchant_short_name']);
+    }
+
+    /**
+     * Given a merchant record and a quote country; When an intent is placed;
+     * Then it reaches upstream only while the allowlist admits that country.
+     *
+     * @param array<string,mixed>|null $record
+     * @dataProvider intentCountryCases
+     */
+    public function testOrderIntentIsRefusedUnlessTheAllowlistAdmitsTheQuoteCountry(
+        ?array $record,
+        ?string $buyerCountry,
+        bool $sent,
+        string $description
+    ): void {
+        $decoded = json_decode(
+            $this->orderIntent(ApiKeyStatus::OK, 1, $record, $buyerCountry)
+                ->place('{"gross_amount":"10.00"}'),
+            true
+        );
+
+        if ($sent) {
+            $this->assertNotSame('', $this->requestedBody, $description);
+            $this->assertTrue($decoded['ok'], $description);
+            $this->assertSame([], $this->log, $description);
+            return;
+        }
+
+        $this->assertSame('', $this->requestedBody, $description);
+        $this->assertFalse($decoded['ok'], $description);
+        $this->assertSame(403, $decoded['status'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: array<string,mixed>|null, 1: ?string, 2: bool, 3: string}>
+     */
+    public static function intentCountryCases(): array
+    {
+        return [
+            'field absent' =>
+                [['min_order_amount' => 100], 'DE', true, 'an old API restricts nothing'],
+            'no record at all' =>
+                [null, 'DE', true, 'a failed merchant fetch must not refuse the intent'],
+            'field null' =>
+                [['supported_buyer_countries' => null], 'GB', false, 'a present null admits no country'],
+            'field empty' =>
+                [['supported_buyer_countries' => []], 'GB', false, 'a present empty list admits no country'],
+            'field malformed' =>
+                [['supported_buyer_countries' => 'GB'], 'GB', false, 'a malformed value is refused, not parsed'],
+            'listed country' =>
+                [['supported_buyer_countries' => ['GB']], 'GB', true, 'a listed country is admitted'],
+            'unlisted country' =>
+                [['supported_buyer_countries' => ['GB']], 'DE', false, 'an unlisted country is refused'],
+            'restricted, no country on the quote' =>
+                [['supported_buyer_countries' => ['GB']], null, false,
+                    'a restricted merchant withholds rather than guess'],
+            'unrestricted, no country on the quote' =>
+                [['min_order_amount' => 100], null, true,
+                    'an unjudgeable quote is only refused when the merchant restricts'],
+        ];
+    }
+
+    public function testAnIntentRefusedOnCountryIsLoggedWithTheStateThatCausedIt(): void
+    {
+        $this->orderIntent(ApiKeyStatus::OK, 1, ['supported_buyer_countries' => []], 'GB')
+            ->place('{"gross_amount":"10.00"}');
+
+        $this->assertCount(1, $this->log);
+        $this->assertStringContainsString('buyer country not supported', $this->log[0][0]);
+        $this->assertSame(
+            [
+                'merchant_id' => 'merchant-uuid',
+                'country' => 'GB',
+                'restriction' => SupportedCountriesProvider::STATE_EMPTY,
+            ],
+            $this->log[0][1]
+        );
+    }
+
+    /**
+     * The buyer names their own country in the payload; the gate must read the
+     * server's quote instead.
+     */
+    public function testTheGateIgnoresTheCountryThePayloadClaims(): void
+    {
+        $decoded = json_decode(
+            $this->orderIntent(ApiKeyStatus::OK, 1, ['supported_buyer_countries' => ['GB']], 'DE')
+                ->place((string)json_encode([
+                    'gross_amount' => '10.00',
+                    'buyer' => ['company' => ['country_prefix' => 'GB']],
+                ])),
+            true
+        );
+
+        $this->assertSame('', $this->requestedBody);
+        $this->assertSame(403, $decoded['status']);
     }
 
     /**
@@ -669,7 +798,9 @@ class ProxiedRegistryCallsTest extends TestCase
             $apiKeyStatus,
             $this->rateLimiter(),
             $this->logRepository(),
-            $this->checkoutSession()
+            $this->checkoutSession(),
+            new BuyerCountryResolver(),
+            new SupportedCountriesProvider($this->createMock(RecordProvider::class))
         ))->place('{"gross_amount":"10.00"}');
 
         $sent = json_decode($this->requestedBody, true);
