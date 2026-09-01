@@ -10,9 +10,9 @@
  * (`companySearch.formatCompanyNumber()`), because a per-site patch is a rule
  * the next surface silently opts out of:
  *
- *   (a) the label under the company-name field on the address step
- *       (renderCompanyIdText() in address-autocomplete.js) and its payment-tile
- *       twin (`.two-company-id-text`, bound to tileDisplayCompanyId());
+ *   (a) the `.two-company-id-text` label each capture panel paints under its
+ *       own company-name field (displayCompanyNumber() in
+ *       company-capture-component.js);
  *   (b) the search-results rows (searchCompanies());
  *   (c) the order-intent status sentence (resolveCompanyNotice()) — where the
  *       BRACKETS the number normally sits in have to go with it, so the
@@ -32,7 +32,17 @@ const { loadAmdModule, defaultMocks, proxyEnvelope } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
-const ADDRESS = 'view/frontend/web/js/view/address-autocomplete.js';
+const CONTROLLER = 'view/frontend/web/js/model/company-capture-component.js';
+const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
+
+/** Every host member the controller's own contract requires. */
+const HOST_MEMBERS = [
+    'fieldExists', 'isVirtualCart', 'getAdjacentCountry', 'getQuoteCountry',
+    'getFallbackCountry', 'watchCountryChanges', 'supportedCompanyTypesUrl',
+    'applyCompanyAddress', 'revertAutofilledAddress', 'clearField', 'tokensUrl',
+    'quoteId', 'apiClientParams', 'signupPrefill', 'signupCountry',
+    'applyBuyerAddress', 'applyTelephone', 'showError', 'renderSignupPrompt'
+];
 
 /** Plain (non-ko) observable factory, matching the sibling specs. */
 function plainObservable(initial) {
@@ -230,35 +240,16 @@ describe('(c) the order-intent notice drops the number AND its brackets', () => 
     });
 });
 
-describe('(a) the tile label goes through the same filter', () => {
+describe('the raw number still reaches the submitting path', () => {
     const companySearch = loadCompanySearch();
     const component = loadAmdModule(RENDERER, {
         'Two_Gateway/js/model/company-search': companySearch
     });
 
-    /**
-     * @param {string} id companyId() value
-     * @returns {object} renderer context
-     */
-    function ctxWith(id) {
-        return Object.assign({}, component, {
-            companyName: plainObservable('Acme Widgets Ltd'),
-            companyId: plainObservable(id),
-            // The label rides the TILE field, which is the mounted panel's own
-            // (TWO-25554) — hence the tile observables, not the resolved pair.
-            tileCompanyName: plainObservable('Acme Widgets Ltd'),
-            tileCompanyId: plainObservable(id),
-            isTileCompanyFieldVisible: function () { return true; }
-        });
-    }
-
-    test('tileDisplayCompanyId() hides a TWO: number and shows a real one', () => {
-        expect(ctxWith('TWO:internal-ref').tileDisplayCompanyId()).toBe('');
-        expect(ctxWith('923609016').tileDisplayCompanyId()).toBe('923609016');
-    });
-
     test('getData() still submits the RAW number the label refuses to show', () => {
-        const ctx = Object.assign({}, ctxWith('TWO:internal-ref'), {
+        const ctx = Object.assign({}, component, {
+            companyName: plainObservable('Acme Widgets Ltd'),
+            companyId: plainObservable('TWO:internal-ref'),
             getCode: function () {
                 return 'two_payment';
             },
@@ -272,140 +263,44 @@ describe('(a) the tile label goes through the same filter', () => {
         expect(ctx.getData().additional_data.companyId).toBe('TWO:internal-ref');
     });
 
-    test('the template binds the label to tileDisplayCompanyId and hides it when that is empty', () => {
-        const markup = fs
-            .readFileSync(
-                path.resolve(
-                    __dirname,
-                    '..',
-                    '..',
-                    'view/frontend/web/template/payment/gateway_method.html'
-                ),
-                'utf8'
-            )
-            .replace(/<!--[\s\S]*?-->/g, '');
-        const tag = markup.match(/<div\b[^>]*class="two-company-id-text"[^>]*>/);
-        expect(tag).not.toBeNull();
-        const bind = tag[0].match(/data-bind="([^"]*)"/)[1];
-
-        /**
-         * Evaluate a `data-bind` sub-expression the way ko does — with the view
-         * model as implicit scope. Both halves are EVALUATED, not string-matched:
-         * `text: tileDisplayCompanyId` (no parens) satisfies a string match but
-         * makes ko render the function's own source into the tile, which is
-         * exactly the defect this evaluation catches.
-         *
-         * @param {string} expr binding expression
-         * @param {object} renderer view model
-         * @returns {*}
-         */
-        function evaluate(expr, renderer) {
-            // eslint-disable-next-line no-new-func
-            return new Function('renderer', 'with (renderer) { return (' + expr + '); }').call(
-                null,
-                renderer
-            );
-        }
-
-        const visible = bind.match(/visible:\s*(.+?)\s*,\s*text:/)[1];
-        const text = bind.match(/text:\s*(.+?)\s*,\s*attr:/)[1];
-
-        expect(!!evaluate(visible, ctxWith('923609016'))).toBe(true);
-        expect(evaluate(text, ctxWith('923609016'))).toBe('923609016');
-        expect(!!evaluate(visible, ctxWith('TWO:internal-ref'))).toBe(false);
-        expect(evaluate(text, ctxWith('TWO:internal-ref'))).toBe('');
-    });
 });
 
-describe('(a) the address-step label goes through the same filter', () => {
-    test('renderCompanyIdText() renders no label for a TWO: number, and one for a real number', () => {
-        const companySearch = loadCompanySearch();
+describe('(a) the capture panel\'s own label goes through the same filter', () => {
+    const CompanyCaptureComponent = loadAmdModule(CONTROLLER);
+    const createIdentity = loadAmdModule(IDENTITY);
 
-        // A recording jQuery double: enough of the chain
-        // renderCompanyIdText() walks (`$(field)` → `.closest('.control')` →
-        // `.find().remove()` → `.append()`) to observe WHETHER a label was
-        // appended and with what text.
-        const appended = [];
-        function node(length) {
-            const obj = {
-                length: length,
-                closest: function () {
-                    return node(length);
-                },
-                find: function () {
-                    return node(length);
-                },
-                remove: function () {
-                    return obj;
-                },
-                append: function (child) {
-                    appended.push(child);
-                    return obj;
-                },
-                addClass: function () {
-                    return obj;
-                },
-                attr: function () {
-                    return obj;
-                },
-                text: function (value) {
-                    obj._text = value;
-                    return obj;
-                },
-                val: function () {
-                    return '';
-                },
-                data: function () {
-                    return { select2: true };
-                },
-                on: function () {
-                    return obj;
-                },
-                off: function () {
-                    return obj;
-                }
-            };
-            return obj;
-        }
-        function $() {
-            return node(1);
-        }
-        $.async = function () {};
-        $.ajax = function () {
-            return {
-                done: function () { return this; },
-                fail: function () { return this; },
-                always: function () { return this; }
-            };
+    /**
+     * A panel whose only real collaborators are its own identity and the real
+     * search module the formatter lives on.
+     *
+     * @param {string} id captured organisation number
+     * @returns {object} the component
+     */
+    function panelWith(id) {
+        const host = {
+            config: {},
+            Panel: function () {},
+            SoleTraderFlow: function () {},
+            identity: createIdentity(),
+            search: loadCompanySearch(),
+            addressFieldSelector: '#shipping-new-address-form input[name="company"]',
+            tileFieldSelector: '#two_gateway_form input#company_name'
         };
-
-        const Component = loadAmdModule(ADDRESS, {
-            jquery: $,
-            'Two_Gateway/js/model/company-search': companySearch
+        HOST_MEMBERS.forEach(function (member) {
+            host[member] = function () {};
         });
+        const component = new CompanyCaptureComponent(host);
+        component.identity().companyId(id);
+        return component;
+    }
 
-        /**
-         * @param {string} id captured organisation number
-         * @returns {object[]} whatever the render appended
-         */
-        function render(id) {
-            appended.length = 0;
-            const ctx = Object.assign({}, Component, {
-                isCompanySearchActive: function () {
-                    return true;
-                },
-                capturedCompanyId: function () {
-                    return id;
-                }
-            });
-            ctx.renderCompanyIdText();
-            return appended;
-        }
+    test('displayCompanyNumber() withholds a TWO: number and shows a real one', () => {
+        expect(panelWith('TWO:internal-ref').displayCompanyNumber()).toBe('');
+        expect(panelWith('two:internal-ref').displayCompanyNumber()).toBe('');
+        expect(panelWith('923609016').displayCompanyNumber()).toBe('923609016');
+    });
 
-        expect(render('923609016')).toHaveLength(1);
-        expect(render('923609016')[0]._text).toBe('923609016');
-        // The whole label is absent, not merely blank.
-        expect(render('TWO:internal-ref')).toHaveLength(0);
-        expect(render('two:internal-ref')).toHaveLength(0);
+    test('the identity keeps the RAW number the label refuses to show', () => {
+        expect(panelWith('TWO:internal-ref').identity().companyId()).toBe('TWO:internal-ref');
     });
 });

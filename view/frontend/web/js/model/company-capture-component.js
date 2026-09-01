@@ -512,21 +512,16 @@
 
     // ---------------------------------------------------------------- chrome
 
-    /**
-     * This panel's own bound field, or null when it has no live mount.
-     *
-     * @returns {?Element}
-     */
+    /** @returns {?Element} this panel's own bound field, or null with no mount */
     CompanyCaptureComponent.prototype.fieldNode = function () {
         if (!this._boundSelector) return null;
         return document.querySelector(this._boundSelector);
     };
 
     /**
-     * Where this panel's own chrome lives: inside the wrapper the panel puts
-     * around its field (`CompanySearchPanel._ensureWrap()`), which is the one
-     * element that belongs to THIS panel and nothing else. A re-render takes
-     * the wrapper and the chrome with it, and `refreshMount()` repaints.
+     * The wrapper the panel puts around its own field
+     * (`CompanySearchPanel._ensureWrap()`) — the one element belonging to THIS
+     * panel and nothing else, so no page-wide query can reach another's chrome.
      *
      * @returns {?Element}
      */
@@ -535,42 +530,34 @@
         return (field && field.parentElement) || null;
     };
 
-    /**
-     * Repaint every piece of chrome this panel renders for its OWN identity.
-     * Cheap, idempotent, and safe with no mount.
-     */
+    /** Repaint every piece of chrome this panel renders for its own identity. */
     CompanyCaptureComponent.prototype.renderChrome = function () {
         this.renderCompanyNumber();
         this.renderSoleTraderLink();
     };
 
     /**
-     * The captured company number as it may be SHOWN under this panel's field,
-     * or '' for nothing to show.
-     *
-     * Manual entry is name-only capture, so a number rendered there would claim
-     * a registry identity the buyer never picked.
+     * The captured company number as it may be SHOWN, or '' for nothing to
+     * show. Manual entry is name-only capture, so a number shown there would
+     * claim a registry identity the buyer never picked.
      *
      * @returns {string}
      */
     CompanyCaptureComponent.prototype.displayCompanyNumber = function () {
         if (this._identity.captureMode() === 'manual') return '';
-        // The shared display filter, so an internal prefixed identifier renders
-        // no label at all (TWO-25326). Absent on a host adapter that carries
-        // only the panel's own search contract, which then shows no number
-        // rather than an identifier the buyer cannot make sense of.
+        // The one shared display filter, so an internal prefixed identifier is
+        // withheld here too (TWO-25326); a host adapter without it shows no
+        // number rather than one the buyer cannot make sense of.
         const format = this._options.search && this._options.search.formatCompanyNumber;
         if (typeof format !== 'function') return '';
         return format(this._identity.companyId() || this._restoredCompanyNumber());
     };
 
     /**
-     * A company number a reload restored into this panel's OWN form, for the
-     * window before anything has been captured in-page.
+     * A company number a reload restored into this panel's own form.
      *
-     * Read here rather than written into the identity by whoever restores it:
-     * an identity write would make a restored company drive order intent, which
-     * is a decision this label has no business taking.
+     * Read rather than written into the identity, which would newly let a
+     * restored company drive order intent.
      *
      * @returns {string}
      */
@@ -594,12 +581,9 @@
     /**
      * Paint the company number as plain text under this panel's field.
      *
-     * Not an input: the number arrives with the picked company and an editable
-     * box would only let the buyer contradict the registry.
-     *
-     * The caption is an `aria-label`, not visible text — TWO-25326 §7 forbids
-     * an additional visible label here, and a bare number with no accessible
-     * name is unreadable to a screen reader.
+     * The caption is an `aria-label`, not visible text: TWO-25326 §7 forbids an
+     * additional visible label, and a bare number with no accessible name is
+     * unreadable to a screen reader.
      */
     CompanyCaptureComponent.prototype.renderCompanyNumber = function () {
         const host = this._chromeHost();
@@ -616,11 +600,10 @@
     };
 
     /**
-     * "Select a different sole trader" under this panel's field.
-     *
-     * Gated on adoption, not on capture: a sole trader with no trading name of
-     * their own has no company number, and keying on capture left them no route
-     * out (TWO-25461 §7).
+     * "Select a different sole trader" under this panel's field, gated on
+     * adoption rather than capture: a sole trader with no trading name of their
+     * own has no company number, and keying on capture left them no route out
+     * (TWO-25461 §7).
      */
     CompanyCaptureComponent.prototype.renderSoleTraderLink = function () {
         const host = this._chromeHost();

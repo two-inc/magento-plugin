@@ -616,13 +616,13 @@ define([
      * The organisation number as it may be SHOWN, or '' when it must not be
      * shown at all (TWO-25326).
      *
-     * ONE formatter for every display site — the dropdown row below, the
-     * address-step label (renderCompanyIdText() in address-autocomplete.js),
-     * the payment tile's own label and the order-intent notice sentence
-     * (tileDisplayCompanyId() / resolveCompanyNotice() in gateway_method.js) — so
-     * a surface added later cannot quietly forget the rule. Callers use the
-     * EMPTY return to decide whether to render a label/brackets at all, not
-     * just what text to put in one.
+     * ONE formatter for every display site — the dropdown row below, each
+     * capture panel's own number label (displayCompanyNumber() in
+     * company-capture-component.js) and the order-intent notice sentence
+     * (resolveCompanyNotice() in gateway_method.js) — so a surface added later
+     * cannot quietly forget the rule. Callers use the EMPTY return to decide
+     * whether to render a label/brackets at all, not just what text to put in
+     * one.
      *
      * Display only. The raw value is untouched everywhere it is SUBMITTED
      * (getData(), placeOrderIntent(), the address form's `company_id`

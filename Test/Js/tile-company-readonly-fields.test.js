@@ -13,9 +13,10 @@
  *    the control disappear on the common approve path with nothing to bring it
  *    back;
  *  - a `.two-company-id-text` org-number LABEL renders under the control once a
- *    company is captured, mirroring address-autocomplete.js's own label. It is
- *    a separate surface from the order-intent notice, which carries its own
- *    embedded "Name (number)" sentence.
+ *    company is captured, painted by the capture panel mounted there
+ *    (renderCompanyNumber() in company-capture-component.js). It is a separate
+ *    surface from the order-intent notice, which carries its own embedded
+ *    "Name (number)" sentence.
  *
  * Four groups, and they are NOT the same kind of test. Be honest about which is
  * which before trusting a green run:
@@ -144,8 +145,8 @@ function evaluateBinding(expression, renderer) {
  * and what it says — both read from the live observable rather than restated,
  * so a rewired binding fails here rather than passing on an assumed string.
  * These observables are the ONLY surface the captured company NAME appears on
- * in the tile; the NUMBER renders separately and notice-independently via
- * `.two-company-id-text`.
+ * in the tile; the NUMBER renders separately and notice-independently in the
+ * capture panel's own `.two-company-id-text` label.
  */
 function approvedNoticeVisible(renderer) {
     return !!renderer.orderIntentApprovedNotice();
@@ -215,45 +216,14 @@ function nameFieldVisible(renderer) {
 }
 
 /**
- * The tile's org-number label — `.two-company-id-text` — as it would currently
- * render: whether it is visible, and what text it would show. Derived from the
- * template's own binding, so a drift in either the gate or the bound value
- * fails here rather than passing on a restated expectation.
+ * The org-number label the capture panel mounted at the tile would paint under
+ * its own field: whether it shows anything, and what. Read through the panel's
+ * own decision rather than restated, so a drift in either the mode gate or the
+ * display filter fails here.
  */
-function companyIdLabel(renderer) {
-    const markup = withoutComments(readTemplate());
-    const tags = markup.match(/<div\b[^>]*class="two-company-id-text"[^>]*>/g) || [];
-    if (tags.length !== 1) {
-        throw new Error('expected exactly one `.two-company-id-text` label, found ' + tags.length);
-    }
-    const bind = tags[0].match(/data-bind="([^"]*)"/);
-    if (!bind) {
-        throw new Error('`.two-company-id-text` has no data-bind attribute');
-    }
-    const visibleMatch = bind[1].match(/visible:\s*([^,]+?)\s*,\s*text:/);
-    const textMatch = bind[1].match(/text:\s*([A-Za-z_$][\w$]*)/);
-    if (!visibleMatch || !textMatch) {
-        throw new Error('`.two-company-id-text` is missing its `visible:`/`text:` binding');
-    }
-    // A bare number with no accessible name is unreadable to a screen reader —
-    // the same reason address-autocomplete.js's renderCompanyIdText() carries an
-    // `aria-label`. Pinned here so a drift that drops it fails the suite.
-    if (!/attr:\s*\{\s*'aria-label':\s*\$t\('Company Number'\)\s*\}/.test(bind[1])) {
-        throw new Error(
-            "`.two-company-id-text` is missing its pinned `aria-label: 'Company Number'` "
-                + 'accessible name binding'
-        );
-    }
-    const target = renderer[textMatch[1]];
-    if (typeof target !== 'function') {
-        throw new Error(
-            '`.two-company-id-text` binds text to `' + textMatch[1] + '`, not on the renderer'
-        );
-    }
-    return {
-        visible: evaluateBinding(visibleMatch[1], renderer),
-        text: target.call(renderer)
-    };
+function companyIdLabel(component) {
+    const text = component.shipping.displayCompanyNumber();
+    return { visible: text !== '', text: text };
 }
 
 /**
@@ -573,7 +543,7 @@ describe('the payment tile shows the number as an uneditable label, not a field'
         // rule as the captured case above, but this case is separate because
         // isCompanyCaptured() still gates the org-number label, and a name-only
         // capture must show neither it nor a notice.
-        const { renderer } = loadTile();
+        const { renderer, component } = loadTile();
 
         renderer.applyCompanyData(
             { companyName: 'Typed By Hand Ltd', companyId: '' },
@@ -583,7 +553,7 @@ describe('the payment tile shows the number as an uneditable label, not a field'
         expect(renderer.isCompanyCaptured()).toBe(false);
         expect(nameFieldVisible(renderer)).toBe(true);
         expect(approvedNoticeVisible(renderer)).toBe(false);
-        expect(companyIdLabel(renderer).visible).toBe(false);
+        expect(companyIdLabel(component).visible).toBe(false);
     });
 
     test('the name field is read-only only once a sole trader has actually been captured', () => {
@@ -685,7 +655,7 @@ describe('the payment tile shows the number as an uneditable label, not a field'
 
 describe('what each capture mode puts in front of the buyer', () => {
     test('search mode: an approved intent embeds "Name (number)" in the notice sentence, and the control stays up', () => {
-        const { renderer } = loadTile();
+        const { renderer, component } = loadTile();
 
         renderer.applyCompanyData(
             { companyName: 'First Example Ltd', companyId: '12345678' },
@@ -699,7 +669,7 @@ describe('what each capture mode puts in front of the buyer', () => {
         expect(nameFieldVisible(renderer)).toBe(true);
         // The org-number label shows alongside both the control and the notice —
         // a separate display route from the notice sentence.
-        expect(companyIdLabel(renderer)).toEqual({ visible: true, text: '12345678' });
+        expect(companyIdLabel(component)).toEqual({ visible: true, text: '12345678' });
     });
 
     test('sole-trader mode: the minted name and synthetic number are embedded the same way', () => {
@@ -730,13 +700,13 @@ describe('what each capture mode puts in front of the buyer', () => {
         );
         approveIntent(renderer);
         expect(approvedNoticeVisible(renderer)).toBe(true);
-        expect(companyIdLabel(renderer).visible).toBe(true);
+        expect(companyIdLabel(component).visible).toBe(true);
 
         component.shipping.manualEntryMode();
 
         expect(renderer.companyId()).toBe('');
         expect(approvedNoticeVisible(renderer)).toBe(false);
-        expect(companyIdLabel(renderer).visible).toBe(false);
+        expect(companyIdLabel(component).visible).toBe(false);
         // The control was never hidden, and is now typeable again — which is the
         // whole point of the mode.
         expect(nameFieldVisible(renderer)).toBe(true);
@@ -780,7 +750,7 @@ describe('what each capture mode puts in front of the buyer', () => {
 
         expect(renderer.companyId()).toBe('12345678');
         expect(renderer.isCompanyCaptured()).toBe(true);
-        expect(companyIdLabel(renderer)).toEqual({ visible: true, text: '12345678' });
+        expect(companyIdLabel(component)).toEqual({ visible: true, text: '12345678' });
         // ...and once the intent for it is approved, the notice appears. Ordered
         // this way round on purpose: the notice's companyId subscription clears
         // it whenever the company changes, so an approval taken BEFORE the mode
@@ -798,8 +768,7 @@ describe('what each capture mode puts in front of the buyer', () => {
 
         adoptSoleTrader(component, 'TWO:ST:0199', 'Sole Trader Example');
 
-        expect(renderer.tileDisplayCompanyId()).toBe('');
-        expect(companyIdLabel(renderer).visible).toBe(false);
+        expect(companyIdLabel(component).visible).toBe(false);
         expect(renderer.getData().additional_data.companyId).toBe('TWO:ST:0199');
     });
 
@@ -896,7 +865,7 @@ describe('the notices are gated on their own observables, not on capture', () =>
     });
 
     test('the capture control stays up through approve, decline, and a re-pick', () => {
-        const { renderer } = loadTile();
+        const { renderer, component } = loadTile();
 
         renderer.applyCompanyData(
             { companyName: 'First Example Ltd', companyId: '12345678' },
@@ -918,7 +887,7 @@ describe('the notices are gated on their own observables, not on capture', () =>
 
         expect(declinedNoticeVisible(renderer)).toBe(false);
         expect(nameFieldVisible(renderer)).toBe(true);
-        expect(companyIdLabel(renderer)).toEqual({ visible: true, text: '87654321' });
+        expect(companyIdLabel(component)).toEqual({ visible: true, text: '87654321' });
     });
 
     test('an errored intent shows neither notice', () => {

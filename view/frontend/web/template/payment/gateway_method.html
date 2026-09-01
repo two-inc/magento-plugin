@@ -87,9 +87,9 @@
             nowhere in the tile — that follows from "the notice is the
             only display surface for the name" and is the ruling, not an
             oversight. The company NUMBER is a separate surface (2026-08-04
-            ruling, §5/§7 follow-up): see the `.two-company-id-text` label
-            further down this template, which renders independently of
-            these notices.
+            ruling, §5/§7 follow-up), rendered by each capture panel under
+            its own company field — see renderCompanyNumber() in
+            view/frontend/web/js/model/company-capture-component.js.
 
             Persistent inline notices, inside the payment tile next to the
             term chips. Each is emitted only when its own observable is
@@ -256,41 +256,7 @@
                             aria-hidden="true"
                             data-bind="visible: tileSoleTraderBusy"
                         ></span>
-                        <!--
-                            The captured organisation number as plain text under
-                            the field, the tile's equivalent of the address
-                            step's own `.two-company-id-text` label.
-
-                            Bound to tileDisplayCompanyId(): an internal
-                            `TWO:`-prefixed identifier is never shown to the
-                            buyer (TWO-25326), and the formatter's empty return
-                            is what takes the whole label out rather than
-                            leaving a blank one.
-                        -->
-                        <div
-                            class="two-company-id-text"
-                            data-bind="visible: isTileCompanyCaptured() && isTileCompanyFieldVisible() && tileDisplayCompanyId() !== '', text: tileDisplayCompanyId(), attr: {'aria-label': $t('Company Number')}"
-                        ></div>
                     </div>
-                </div>
-                <!--
-                    "Select a different sole trader" (TWO-25461 §7). A SIBLING
-                    AFTER the company field's outer wrapper, never a descendant
-                    of it. Gated on adoption, not on capture: a sole trader with
-                    no trading name of their own has no company number, and
-                    keying on capture left them no route out.
-                -->
-                <div
-                    class="two-select-different-sole-trader"
-                    data-bind="visible: soleTraderAdopted"
-                >
-                    <button
-                        type="button"
-                        class="two-select-different-sole-trader__link"
-                        data-bind="event: { click: () => selectDifferentSoleTrader() }"
-                    >
-                        <!-- ko i18n: 'Select a different sole trader' --><!-- /ko -->
-                    </button>
                 </div>
                 <!--
                     Optional buyer fields. ORDER IS LOAD-BEARING: this markup

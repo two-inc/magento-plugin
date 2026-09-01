@@ -4,22 +4,20 @@
  *
  * TWO-25461 §7 — re-signing up as a different sole trader.
  *
- * Two routes reach the same place: the payment tile's "Select a different sole
- * trader" link, and re-clicking the sole-trader chip once one is already
- * adopted. Both must carry `autoselect=false`, or the hosted flow silently
- * re-picks the registration the buyer is trying to replace and hands back the
- * identity already on screen — a dead end with no visible cause.
+ * Two routes reach the same place: the "Select a different sole trader" link
+ * the capture panel renders under its own company field, and re-clicking the
+ * sole-trader chip once one is already adopted. Both must carry
+ * `autoselect=false`, or the hosted flow silently re-picks the registration the
+ * buyer is trying to replace and hands back the identity already on screen — a
+ * dead end with no visible cause.
  *
- * The tile no longer owns the flow. It delegates to the page-level
- * company-capture component, which is what survives the payment-method list
- * being rebuilt on every totals change, so the link's own case below is a
- * delegation check and the behaviour is driven through the real component.
+ * Both routes belong to the panel that holds the adoption, so both are driven
+ * through the real component here. That the link never reaches the OTHER
+ * panel's flow is company-panel-chrome.test.js.
  */
 
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
 const $ = require('jquery');
 const {
     loadAmdModule,
@@ -30,10 +28,7 @@ const {
     brandConfigMock
 } = require('./amd-harness');
 
-const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const SOLE_TRADER = 'view/frontend/web/js/model/sole-trader.js';
-const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
-const TEMPLATE = 'view/frontend/web/template/payment/gateway_method.html';
 
 const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
 
@@ -240,100 +235,39 @@ describe('a re-signup offers a choice rather than the identity on screen', () =>
     });
 });
 
-describe('the payment tile only delegates', () => {
-    /**
-     * @param {?object} flowStub what the adopting panel hands back, or null
-     *        before boot
-     * @param {string} [owner] which panel adopted — 'shipping' by default
-     * @returns {object} the loaded renderer
-     */
-    function loadRenderer(flowStub, owner) {
-        const identityStub = {
-            companyName: function () { return ''; },
-            companyId: function () { return ''; },
-            soleTraderAdopted: function () { return false; },
-            soleTraderBusy: function () { return false; },
-            addressNotice: function () { return ''; },
-            isSoleTrader: function () { return false; },
-            subscribe: function () { return { dispose: function () {} }; }
-        };
-        return loadAmdModule(
-            RENDERER,
-            {
-                jquery: $,
-                'Two_Gateway/js/model/company-capture': {
-                    identity: identityStub,
-                    shipping: {
-                        config: function () { return {}; },
-                        mountSelector: function () { return ''; },
-                        countryCode: function () { return 'gb'; },
-                        identity: function () { return identityStub; },
-                        soleTrader: function () { return owner === 'billing' ? null : flowStub; }
-                    },
-                    billing: {
-                        soleTrader: function () { return owner === 'billing' ? flowStub : null; }
-                    },
-                    soleTraderOwner: function () {
-                        return owner === 'billing'
-                            ? { soleTrader: function () { return flowStub; } }
-                            : (flowStub ? { soleTrader: function () { return flowStub; } } : null);
-                    },
-                    refreshMount: function () {}
-                }
-            },
-            { document: document, window: { checkoutConfig: { payment: {} }, addEventListener: function () {} } }
-        );
+describe('the panel that adopted renders the link, and the click reaches its own flow', () => {
+    /** @returns {?Element} the rendered link, or null */
+    function link() {
+        return document.querySelector('.two-select-different-sole-trader__link');
     }
 
-    test('the tile hands the click to the page-level flow', () => {
-        const calls = [];
-        const renderer = loadRenderer({
-            selectDifferentSoleTrader: function () { calls.push(true); return 'popup'; }
-        });
-
-        expect(renderer.selectDifferentSoleTrader()).toBe('popup');
-        expect(calls).toHaveLength(1);
-    });
-
-    test('billing\'s adoption is handed to BILLING\'s flow, never the shipping panel\'s', () => {
-        // The link is rendered off the RESOLVED adoption, which either panel
-        // can hold; acting on the shipping panel by construction mutated the
-        // shipping identity for a sole trader billing had adopted (TWO-25554).
-        const calls = [];
-        const renderer = loadRenderer({
-            selectDifferentSoleTrader: function () { calls.push('billing'); return 'popup'; }
-        }, 'billing');
-
-        expect(renderer.selectDifferentSoleTrader()).toBe('popup');
-        expect(calls).toEqual(['billing']);
-    });
-
-    test('a tile rendered before the component booted is silent, not broken', () => {
-        // Amasty and Fire Checkout re-create payment renderers on every totals
-        // change, so a tile can exist before the page-level component has one.
-        const renderer = loadRenderer(null);
-
-        expect(renderer.selectDifferentSoleTrader()).toBeNull();
-    });
-});
-
-describe('the template offers the link where a re-signup makes sense', () => {
-    test('the link is bound to selectDifferentSoleTrader and gated on adoption', () => {
+    test('nothing is offered until a sole trader has been adopted', async () => {
         // Gated on adoption, not on capture: a sole trader with no trading name
         // of their own has no company number, and keying on capture left them
         // no route out.
-        const template = fs.readFileSync(path.resolve(__dirname, '..', '..', TEMPLATE), 'utf8');
-        const link = /class="two-select-different-sole-trader"[\s\S]{0,400}?selectDifferentSoleTrader\(\)/.exec(template);
+        await startStack();
 
-        expect(link).not.toBeNull();
-        expect(link[0]).toContain('visible: soleTraderAdopted');
+        expect(link()).toBeNull();
     });
 
-    test('the link is a sibling after the company field, never nested inside it', () => {
-        const template = fs.readFileSync(path.resolve(__dirname, '..', '..', TEMPLATE), 'utf8');
+    test('the click re-signs up with autoselect off', async () => {
+        const { rec, identity, flow } = await startStack();
+        flow.delegationToken = 'dt-1';
+        flow.autofillToken = 'at-1';
+        identity.captureMode('soletrader');
+        identity.soleTraderAdopted(true);
 
-        expect(template.indexOf('id="company_name"')).toBeGreaterThan(-1);
-        expect(template.indexOf('two-select-different-sole-trader'))
-            .toBeGreaterThan(template.indexOf('id="company_name"'));
+        link().click();
+
+        expect(rec.opened).toHaveLength(1);
+        expect(autoselectOf(rec.opened[0])).toBe('false');
+    });
+
+    test('the link sits under the panel\'s own company field', async () => {
+        const { identity } = await startStack();
+        identity.soleTraderAdopted(true);
+
+        const field = document.querySelector('#two_gateway_form input#company_name');
+        expect(link().closest('.control')).toBe(field.closest('.control'));
     });
 });

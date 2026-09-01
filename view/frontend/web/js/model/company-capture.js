@@ -425,18 +425,6 @@ define([
             if (billingIsDistinct() || billingIdentity.companyId()) return billingIdentity;
             return shippingIdentity;
         },
-        /**
-         * The panel whose own capture holds the adopted sole trader, or null.
-         * The tile's "select a different sole trader" link is rendered off the
-         * RESOLVED adoption, which can be either panel's.
-         *
-         * @returns {?object}
-         */
-        soleTraderOwner: function () {
-            if (billingIdentity.soleTraderAdopted()) return billingComponent;
-            if (shippingIdentity.soleTraderAdopted()) return shippingComponent;
-            return null;
-        },
         start: function () {
             shippingComponent.start();
             billingComponent.start();
