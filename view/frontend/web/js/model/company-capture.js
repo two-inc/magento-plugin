@@ -334,8 +334,8 @@ define([
     }
 
     /**
-     * The same destination, telling the buyer when there is none: a pick that
-     * fills nothing in and says nothing reads as the picker having done nothing.
+     * shippingWriteRoot(), and a notice on the shipping identity when there is
+     * no such root.
      *
      * @returns {?object} jQuery set, or null
      */
