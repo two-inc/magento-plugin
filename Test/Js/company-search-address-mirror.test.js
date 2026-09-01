@@ -2,14 +2,16 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25461 §2 — the two-address sync model.
+ * TWO-25461 §2 / TWO-25554 — the two-address sync model.
  *
- * Magento renders a DEFAULT address form (the shipping step's, always present)
- * and a NON-DEFAULT one (the billing form, one per payment method, shown once
- * the buyer unchecks "My billing and shipping address are the same"). The
- * default one propagates into the non-default one, the non-default one stays
- * fully editable, and the propagation stops the moment the buyer authors
- * anything in it — ADDRESS-WIDE, not field by field.
+ * Magento renders a shipping address form (always present) and a billing form
+ * (one per payment method, shown once the buyer unchecks "My billing and
+ * shipping address are the same"). Each has its own capture panel, and a
+ * panel's address writes reach ITS OWN form and nothing else.
+ *
+ * ONE field crosses between the two addresses: the shipping form's COUNTRY.
+ * That propagation stops the moment the buyer authors anything in the billing
+ * address — ADDRESS-WIDE, not field by field — which is what the pin decides.
  *
  * The sync-stop is a content match, not a flag: there is no "resume sync"
  * control anywhere, because the match check is the resumption path.
@@ -298,13 +300,25 @@ afterEach(() => {
     document.body.innerHTML = '';
 });
 
+/** Every field of one form, in the module's own vocabulary. */
+function allFields(rootSelector) {
+    return Object.keys(FIELD_SELECTORS).concat('region').map(function (name) {
+        return read(rootSelector, name);
+    });
+}
+
+/** One panel writing an address into ITS OWN form. */
+function writeInto(model, address, rootSelector) {
+    return model.applyAddress(address, $(rootSelector));
+}
+
 describe('the sync pin is whole-address, and one buyer-edited field freezes all of it', () => {
     /**
-     * Each row edits exactly ONE field of the billing address and then asks the
-     * mirror to write a second company's address. The expectation is the same
-     * for every row: nothing lands, including in the fields the buyer never
-     * touched. That is the address-wide ruling — the alternative reading, where
-     * only the edited field is protected, would pass a per-field pin.
+     * Each row edits exactly ONE field of the billing address and then asks for
+     * the country propagation. The expectation is the same for every row:
+     * nothing lands, including in the fields the buyer never touched. That is
+     * the address-wide ruling — the alternative reading, where only the edited
+     * field is protected, would pass a per-field pin.
      */
     const rows = [
         ['the company name', 'company', 'Buyer Owned Ltd'],
@@ -322,43 +336,26 @@ describe('the sync pin is whole-address, and one buyer-edited field freezes all 
         (description, field, buyerValue) => {
             const model = renderCheckout({ regions: true });
             model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
-            model.applyAddress(COMPANY_A);
-            expect(read(SECONDARY, 'city')).toBe('London');
 
             buyerTypes(SECONDARY, field, buyerValue);
-            const before = Object.keys(FIELD_SELECTORS)
-                .concat('region')
-                .map(function (name) {
-                    return read(SECONDARY, name);
-                });
+            const before = allFields(SECONDARY);
+            buyerTypes(PRIMARY, 'country', 'ES');
 
-            expect(model.applyAddress(COMPANY_B)).toBe(0);
+            expect(model.mirrorCountryToSecondaryAddresses()).toBe(0, description);
 
-            // The default address always takes the write — it is the form the
-            // buyer is working in, and it is never pinned.
-            expect(read(PRIMARY, 'city')).toBe('Stockholm');
             expect(model.secondaryAddressIsPinned(document.querySelector(SECONDARY))).toBe(true);
-            expect(
-                Object.keys(FIELD_SELECTORS)
-                    .concat('region')
-                    .map(function (name) {
-                        return read(SECONDARY, name);
-                    })
-            ).toEqual(before);
+            expect(allFields(SECONDARY)).toEqual(before);
         }
     );
 
-    test('an untouched billing address syncs every write', () => {
+    test('an untouched billing address takes the country', () => {
         const model = renderCheckout({ regions: true });
         model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
 
-        expect(model.applyAddress(COMPANY_A)).toBe(1);
-        expect(read(SECONDARY, 'city')).toBe('London');
+        buyerTypes(PRIMARY, 'country', 'ES');
 
-        expect(model.applyAddress(COMPANY_B)).toBe(1);
-        expect(read(SECONDARY, 'city')).toBe('Stockholm');
-        expect(read(SECONDARY, 'postcode')).toBe('111 22');
-        expect(read(SECONDARY, 'street0')).toBe('2 Second Street');
+        expect(model.mirrorCountryToSecondaryAddresses()).toBe(1);
+        expect(read(SECONDARY, 'country')).toBe('ES');
         expect(model.secondaryAddressIsPinned(document.querySelector(SECONDARY))).toBe(false);
     });
 
@@ -367,14 +364,14 @@ describe('the sync pin is whole-address, and one buyer-edited field freezes all 
         // match, so undoing the edit is what lifts it. Nothing else does.
         const model = renderCheckout({ regions: true });
         model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
-        model.applyAddress(COMPANY_A);
 
         buyerTypes(SECONDARY, 'street1', 'Buyer Annexe');
-        expect(model.applyAddress(COMPANY_B)).toBe(0);
+        buyerTypes(PRIMARY, 'country', 'ES');
+        expect(model.mirrorCountryToSecondaryAddresses()).toBe(0);
 
         buyerTypes(SECONDARY, 'street1', '');
-        expect(model.applyAddress(COMPANY_B)).toBe(1);
-        expect(read(SECONDARY, 'city')).toBe('Stockholm');
+        expect(model.mirrorCountryToSecondaryAddresses()).toBe(1);
+        expect(read(SECONDARY, 'country')).toBe('ES');
     });
 
     test('a country default the buyer never chose does not pin the address', () => {
@@ -387,48 +384,34 @@ describe('the sync pin is whole-address, and one buyer-edited field freezes all 
         model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
 
         expect(model.secondaryAddressIsPinned(document.querySelector(SECONDARY))).toBe(false);
-        expect(model.applyAddress(COMPANY_A)).toBe(1);
-        expect(read(SECONDARY, 'city')).toBe('London');
-    });
-
-    test('a checkout with no billing address form syncs nothing and still fills the default', () => {
-        const model = renderCheckout({ regions: true, billing: false });
-
-        expect(model.applyAddress(COMPANY_A)).toBe(0);
-        expect(read(PRIMARY, 'city')).toBe('London');
-    });
-});
-
-describe('country and company propagate from the default address', () => {
-    test('a country change reaches an in-sync billing address', () => {
-        const model = renderCheckout({ regions: true });
-        model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
-
-        buyerTypes(PRIMARY, 'country', 'ES');
-        expect(model.mirrorFieldsToSecondaryAddresses(['country'])).toBe(1);
-
-        expect(read(SECONDARY, 'country')).toBe('ES');
-    });
-
-    test('a country change does not reach a pinned billing address', () => {
-        const model = renderCheckout({ regions: true });
-        model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
-        buyerTypes(SECONDARY, 'street1', 'Buyer Annexe');
-
-        buyerTypes(PRIMARY, 'country', 'ES');
-        expect(model.mirrorFieldsToSecondaryAddresses(['country'])).toBe(0);
-
+        expect(model.mirrorCountryToSecondaryAddresses()).toBe(1);
         expect(read(SECONDARY, 'country')).toBe('GB');
     });
 
-    test('a company change reaches an in-sync billing address', () => {
+    test('a checkout with no billing address form propagates nothing', () => {
+        const model = renderCheckout({ regions: true, billing: false });
+
+        expect(model.mirrorCountryToSecondaryAddresses()).toBe(0);
+    });
+});
+
+describe('the country is the ONLY field that crosses between the two addresses', () => {
+    test.each([
+        ['company', 'Example Trading Ltd'],
+        ['organization', '12345678'],
+        ['city', 'Ashford'],
+        ['postcode', 'TN23 1AA'],
+        ['street0', 'Mill Lane']
+    ])('%s stays in the shipping form (%p)', (field, value) => {
+        // Company and organisation number belong to their own panel, and the
+        // address fields to whichever panel wrote them (TWO-25554).
         const model = renderCheckout({ regions: true });
         model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
 
-        buyerTypes(PRIMARY, 'company', 'Example Trading Ltd');
-        expect(model.mirrorFieldsToSecondaryAddresses(['company'])).toBe(1);
+        buyerTypes(PRIMARY, field, value);
+        model.mirrorCountryToSecondaryAddresses();
 
-        expect(read(SECONDARY, 'company')).toBe('Example Trading Ltd');
+        expect(read(SECONDARY, field)).toBe('');
     });
 
     test('a mirrored country retracts the region record it invalidates', () => {
@@ -439,11 +422,8 @@ describe('country and company propagate from the default address', () => {
         // address the buyer never touched.
         const model = renderCheckout({ regions: true });
         model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
-        model.applyAddress(Object.assign({ region: 'California' }, COMPANY_A));
-        expect(read(SECONDARY, 'region')).toBe('California');
-
         buyerTypes(PRIMARY, 'country', 'ES');
-        model.mirrorFieldsToSecondaryAddresses(['country']);
+        model.mirrorCountryToSecondaryAddresses();
         // Core's own reset, reproduced: the control is emptied by the country
         // change, not by anything this module did.
         document.querySelector(SECONDARY).querySelector('select[name="region_id"]').value = '';
@@ -461,7 +441,7 @@ describe('country and company propagate from the default address', () => {
         expect(read(SECONDARY, 'region')).toBe('');
 
         buyerTypes(PRIMARY, 'country', 'ES');
-        model.mirrorFieldsToSecondaryAddresses(['country']);
+        model.mirrorCountryToSecondaryAddresses();
         // What core does next: the country now has regions, so the select is
         // repopulated and sits on its placeholder.
         const select = document.querySelector(SECONDARY).querySelector('select[name="region_id"]');
@@ -471,14 +451,13 @@ describe('country and company propagate from the default address', () => {
         select.selectedIndex = 0;
 
         expect(model.secondaryAddressIsPinned(document.querySelector(SECONDARY))).toBe(false);
-        expect(model.applyAddress(COMPANY_A)).toBe(1);
     });
 
-    test('propagation does nothing when there is no default address form', () => {
-        const model = renderCheckout({ regions: true, billing: false });
+    test('propagation does nothing when there is no shipping address form', () => {
+        const model = renderCheckout({ regions: true });
         document.querySelector(PRIMARY).setAttribute('id', 'not-the-shipping-form');
 
-        expect(model.mirrorFieldsToSecondaryAddresses(['country'])).toBe(0);
+        expect(model.mirrorCountryToSecondaryAddresses()).toBe(0);
     });
 });
 
@@ -524,14 +503,14 @@ describe('an external address payload is routed onto the two address lines', () 
 
     test.each(rows)('%s', (description, address, line1, line2) => {
         const model = renderCheckout({ regions: true });
-        model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
 
-        model.applyAddress(Object.assign({ city: 'Ashford', postal_code: 'TN23' }, address));
+        writeInto(model, Object.assign({ city: 'Ashford', postal_code: 'TN23' }, address), PRIMARY);
 
-        [PRIMARY, SECONDARY].forEach(function (root) {
-            expect(read(root, 'street0')).toBe(line1);
-            expect(read(root, 'street1')).toBe(line2);
-        });
+        expect(read(PRIMARY, 'street0')).toBe(line1, description);
+        expect(read(PRIMARY, 'street1')).toBe(line2);
+        // The other panel's form is untouched, whatever the routing decided.
+        expect(read(SECONDARY, 'street0')).toBe('');
+        expect(read(SECONDARY, 'street1')).toBe('');
     });
 });
 
@@ -585,43 +564,37 @@ describe("an external payload's region lands somewhere, always", () => {
         '%s',
         (description, regions, address, expectedRegion, expectedCity) => {
             const model = renderCheckout({ regions: regions });
-            model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
 
-            model.applyAddress(Object.assign({ postal_code: 'TN23', street_address: 'A' }, address));
+            writeInto(
+                model,
+                Object.assign({ postal_code: 'TN23', street_address: 'A' }, address),
+                PRIMARY
+            );
 
-            [PRIMARY, SECONDARY].forEach(function (root) {
-                expect(read(root, 'region')).toBe(expectedRegion);
-                expect(read(root, 'city')).toBe(expectedCity);
-            });
+            expect(read(PRIMARY, 'region')).toBe(expectedRegion, description);
+            expect(read(PRIMARY, 'city')).toBe(expectedCity);
         }
     );
 
     test('the city append does not grow on a repeated write', () => {
         const model = renderCheckout({ regions: true });
-        model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
         const address = { region: 'Kent', city: 'Ashford, Kent', postal_code: 'TN23' };
 
-        model.applyAddress(address);
-        model.applyAddress(address);
+        writeInto(model, address, PRIMARY);
+        writeInto(model, address, PRIMARY);
 
-        expect(read(SECONDARY, 'city')).toBe('Ashford, Kent');
+        expect(read(PRIMARY, 'city')).toBe('Ashford, Kent');
     });
 });
 
 describe('collapsing the billing address back into the default one', () => {
     /**
-     * The reference platform gets its "reopening re-matches" property from a
-     * server round trip that rebuilds the second address form from the first.
-     * Magento does not do that: re-checking "My billing and shipping address
-     * are the same" leaves the billing form's own field values exactly as the
-     * buyer left them (core's `useShippingAddress()` retargets the QUOTE's
-     * billing address and hides the form; it never rewrites the form's data).
-     *
-     * So the two halves of the rule hold here for a different reason than they
-     * do there, and both are pinned below: the collapse/reopen cycle itself
-     * neither pins a pristine address nor unpins an edited one, and the
-     * resumption path is the content match alone. There is deliberately no
-     * resume control.
+     * Re-checking "My billing and shipping address are the same" leaves the
+     * billing form's own field values exactly as the buyer left them (core's
+     * `useShippingAddress()` retargets the QUOTE's billing address and hides
+     * the form; it never rewrites the form's data). So the collapse/reopen
+     * cycle itself neither pins a pristine address nor unpins an edited one,
+     * and the resumption path is the content match alone.
      */
     function collapseAndReopen() {
         const checkbox = document.querySelector(
@@ -633,29 +606,19 @@ describe('collapsing the billing address back into the default one', () => {
         checkbox.dispatchEvent(new window.Event('click', { bubbles: true }));
     }
 
-    test('a pristine billing address still syncs after a collapse and reopen', () => {
+    test.each([
+        [false, 1, 'a pristine billing address still syncs'],
+        [true, 0, 'a buyer-edited billing address stays pinned']
+    ])('after a collapse and reopen (edited: %p) the mirror writes %i (%s)', (edited, expected) => {
         const model = renderCheckout({ regions: true });
         model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
-        model.applyAddress(COMPANY_A);
+        if (edited) buyerTypes(SECONDARY, 'city', 'Bristol');
+        buyerTypes(PRIMARY, 'country', 'ES');
 
         collapseAndReopen();
 
-        expect(model.secondaryAddressIsPinned(document.querySelector(SECONDARY))).toBe(false);
-        expect(model.applyAddress(COMPANY_B)).toBe(1);
-        expect(read(SECONDARY, 'city')).toBe('Stockholm');
-    });
-
-    test('a buyer-edited billing address stays pinned across a collapse and reopen', () => {
-        const model = renderCheckout({ regions: true });
-        model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
-        model.applyAddress(COMPANY_A);
-        buyerTypes(SECONDARY, 'city', 'Bristol');
-
-        collapseAndReopen();
-
-        expect(model.secondaryAddressIsPinned(document.querySelector(SECONDARY))).toBe(true);
-        expect(model.applyAddress(COMPANY_B)).toBe(0);
-        expect(read(SECONDARY, 'city')).toBe('Bristol');
+        expect(model.secondaryAddressIsPinned(document.querySelector(SECONDARY))).toBe(edited);
+        expect(model.mirrorCountryToSecondaryAddresses()).toBe(expected);
     });
 });
 
@@ -667,65 +630,65 @@ describe('the mirror record survives core rebuilding the form', () => {
         // nothing on record — and pin itself.
         const model = renderCheckout({ regions: true });
         model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
-        model.applyAddress(COMPANY_A);
+        buyerTypes(PRIMARY, 'country', 'ES');
+        model.mirrorCountryToSecondaryAddresses();
 
-        const secondary = document.querySelector(SECONDARY);
-        Array.prototype.forEach.call(secondary.querySelectorAll('[' + MARKER + ']'), function (n) {
-            n.removeAttribute(MARKER);
-        });
+        rebuildForms();
 
-        expect(model.secondaryAddressIsPinned(secondary)).toBe(false);
-        expect(model.applyAddress(COMPANY_B)).toBe(1);
+        expect(model.secondaryAddressIsPinned(document.querySelector(SECONDARY))).toBe(false);
+        expect(model.mirrorCountryToSecondaryAddresses()).toBe(1);
+    });
+
+    test('a panel’s OWN scoped write is not a mirror candidate', () => {
+        // Deliberately final rather than recorded: a rebuild leaves it looking
+        // buyer-authored, which freezes the form against a later country sync
+        // instead of letting one overwrite the panel’s own answer.
+        const model = renderCheckout({ regions: true });
+        model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
+        writeInto(model, COMPANY_A, SECONDARY);
+
+        rebuildForms();
+
+        expect(model.secondaryAddressIsPinned(document.querySelector(SECONDARY))).toBe(true);
     });
 });
 
-describe('a country switch retracts the autofill from both addresses', () => {
-    test('an in-sync billing address is reverted alongside the default one', () => {
-        const model = renderCheckout({ regions: true });
-        model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
-        model.applyAddress(COMPANY_A);
-
-        expect(model.revertAutofilledAddress()).toBe(6);
-
-        expect(read(PRIMARY, 'city')).toBe('');
-        expect(read(SECONDARY, 'city')).toBe('');
-        expect(read(SECONDARY, 'street0')).toBe('');
-    });
-
+describe('a retraction stops at the form it was scoped to', () => {
     test.each([
-        [PRIMARY, SECONDARY, 'the shipping form\'s own retraction stops at the shipping form'],
-        [SECONDARY, PRIMARY, 'the billing form\'s own retraction stops at the billing form']
+        [PRIMARY, SECONDARY, 'the shipping form’s own retraction stops at the shipping form'],
+        [SECONDARY, PRIMARY, 'the billing form’s own retraction stops at the billing form']
     ])('a retraction scoped to one form leaves the other alone (%#: %s)', (scoped, other) => {
-        // TWO-25554: each panel retracts ITS OWN root. The zero-arg call below
-        // is the address step's own retraction, which still reaches the mirror.
+        // The reported symptom: changing the BILLING country cleared the
+        // SHIPPING address fields, because the retraction was page-wide
+        // (TWO-25554).
         const model = renderCheckout({ regions: true });
-        model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
-        model.applyAddress(COMPANY_A);
+        writeInto(model, COMPANY_A, PRIMARY);
+        writeInto(model, COMPANY_B, SECONDARY);
 
         expect(model.revertAutofilledAddress($(scoped))).toBe(3);
 
         expect(read(scoped, 'city')).toBe('');
-        expect(read(other, 'city')).toBe('London');
+        expect(read(other, 'city')).toBe(other === PRIMARY ? 'London' : 'Stockholm');
     });
 
-    test('a retraction asked to scope itself and given nothing reverts nothing', () => {
+    test.each([
+        [null, 'null — a panel with no form of its own'],
+        [undefined, 'undefined — a caller that forgot to say']
+    ])('a retraction with no form (%p — %s) reverts nothing', (root, description) => {
         const model = renderCheckout({ regions: true });
-        model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
-        model.applyAddress(COMPANY_A);
+        writeInto(model, COMPANY_A, PRIMARY);
+        writeInto(model, COMPANY_A, SECONDARY);
 
-        expect(model.revertAutofilledAddress(null)).toBe(0);
+        expect(model.revertAutofilledAddress(root)).toBe(0, description);
 
         expect(read(PRIMARY, 'city')).toBe('London');
         expect(read(SECONDARY, 'city')).toBe('London');
     });
 
     test.each([
-        [PRIMARY, SECONDARY, 'the shipping form\'s phone stays in the shipping form'],
-        [SECONDARY, PRIMARY, 'the billing form\'s phone stays in the billing form']
-    ])('a verified phone lands in the calling panel\'s form alone (%#: %s)', (scoped, other) => {
-        // TWO-25554: with no root the write fell to billingRoleFormRoot(), so
-        // the shipping panel's sole trader had their phone written into the
-        // billing form.
+        [PRIMARY, SECONDARY, 'the shipping form’s phone stays in the shipping form'],
+        [SECONDARY, PRIMARY, 'the billing form’s phone stays in the billing form']
+    ])('a verified phone lands in the calling panel’s form alone (%#: %s)', (scoped, other) => {
         const model = renderCheckout({ regions: true });
 
         expect(model.applyTelephone('+47 123 45 678', $(scoped))).toBe(true);
@@ -742,22 +705,6 @@ describe('a country switch retracts the autofill from both addresses', () => {
         expect(read(PRIMARY, 'telephone')).toBe('');
         expect(read(SECONDARY, 'telephone')).toBe('');
     });
-
-    test('a pinned billing address is skipped whole, not field by field', () => {
-        // The address-wide rule applies to the retraction too: clearing the
-        // fields of a pinned address that happen to still match would be the
-        // plugin deleting part of an address the buyer has taken ownership of.
-        const model = renderCheckout({ regions: true });
-        model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
-        model.applyAddress(COMPANY_A);
-        buyerTypes(SECONDARY, 'postcode', 'BS1 4DJ');
-
-        expect(model.revertAutofilledAddress()).toBe(3);
-
-        expect(read(PRIMARY, 'city')).toBe('');
-        expect(read(SECONDARY, 'city')).toBe('London');
-        expect(read(SECONDARY, 'street0')).toBe('1 Example Street');
-    });
 });
 
 describe('the content match is trimmed and case-folded', () => {
@@ -768,22 +715,25 @@ describe('the content match is trimmed and case-folded', () => {
      * ruling, not an implementation detail of the comparison.
      */
     const rows = [
-        ['identical', 'London', true],
-        ['the same text in another case', 'LONDON', true],
-        ['the same text with surrounding space', '  London  ', true],
-        ['genuinely different text', 'Bristol', false]
+        ['identical', 'GB', true],
+        ['the same text in another case', 'gb', true],
+        ['genuinely different text', 'NO', false]
     ];
 
     test.each(rows)('%s -> still syncing = %s', (description, retyped, stillSyncing) => {
         const model = renderCheckout({ regions: true });
         captureAllBaselines(model);
-        model.applyAddress(COMPANY_A);
-        expect(read(SECONDARY, 'city')).toBe('London');
-
-        buyerTypes(SECONDARY, 'city', retyped);
+        // The baseline recorded the option's DISPLAYED text; the buyer choosing
+        // the same country again must read as no answer of their own.
+        buyerTypes(SECONDARY, 'country', retyped.toUpperCase());
+        const select = document.querySelector(SECONDARY)
+            .querySelector('select[name="country_id"]');
+        select.options[select.selectedIndex].text = retyped === 'NO'
+            ? 'Norway'
+            : (retyped === 'gb' ? 'united kingdom' : 'United Kingdom');
 
         expect(model.secondaryAddressIsPinned(billing('two_payment'))).toBe(!stillSyncing);
-        expect(model.applyAddress(COMPANY_B)).toBe(stillSyncing ? 1 : 0);
+        expect(model.mirrorCountryToSecondaryAddresses()).toBe(stillSyncing ? 1 : 0);
     });
 });
 
@@ -793,15 +743,15 @@ describe('each billing form is judged and recorded on its own', () => {
     test('an edit to one payment method’s billing form does not freeze another’s', () => {
         const model = renderCheckout({ regions: true, billingCodes: ['two_payment', 'checkmo'] });
         captureAllBaselines(model);
-        expect(model.applyAddress(COMPANY_A)).toBe(2);
 
         buyerTypes(SECONDARY + '[data-test-code="two_payment"]', 'city', 'Bristol');
+        buyerTypes(PRIMARY, 'country', 'ES');
 
-        expect(model.applyAddress(COMPANY_B)).toBe(1);
+        expect(model.mirrorCountryToSecondaryAddresses()).toBe(1);
         expect(model.secondaryAddressIsPinned(billing('two_payment'))).toBe(true);
         expect(model.secondaryAddressIsPinned(billing('checkmo'))).toBe(false);
-        expect(billing('two_payment').querySelector('input[name="city"]').value).toBe('Bristol');
-        expect(billing('checkmo').querySelector('input[name="city"]').value).toBe('Stockholm');
+        expect(billing('two_payment').querySelector('select[name="country_id"]').value).toBe('GB');
+        expect(billing('checkmo').querySelector('select[name="country_id"]').value).toBe('ES');
     });
 
     test('two forms with no checkbox id to key on still get separate records', () => {
@@ -814,10 +764,11 @@ describe('each billing form is judged and recorded on its own', () => {
             noCheckboxId: true
         });
         captureAllBaselines(model);
+        buyerTypes(PRIMARY, 'country', 'ES');
 
-        expect(model.applyAddress(COMPANY_A)).toBe(2);
-        expect(billing('a').querySelector('input[name="city"]').value).toBe('London');
-        expect(billing('b').querySelector('input[name="city"]').value).toBe('London');
+        expect(model.mirrorCountryToSecondaryAddresses()).toBe(2);
+        expect(billing('a').querySelector('select[name="country_id"]').value).toBe('ES');
+        expect(billing('b').querySelector('select[name="country_id"]').value).toBe('ES');
         expect(model.secondaryAddressIsPinned(billing('b'))).toBe(false);
     });
 });
@@ -840,7 +791,7 @@ describe('the rendered baseline refuses to be captured from a half-built form', 
         model.captureSecondaryAddressBaseline(root);
 
         expect(model.secondaryAddressIsPinned(root)).toBe(false);
-        expect(model.applyAddress(COMPANY_A)).toBe(1);
+        expect(model.mirrorCountryToSecondaryAddresses()).toBe(1);
     });
 
     test('a re-captured baseline never adopts what the buyer has typed', () => {
@@ -860,7 +811,8 @@ describe('the rendered baseline refuses to be captured from a half-built form', 
         // form the buyer actually edited keeps its own pin either way.
         const model = renderCheckout({ regions: true, billingCodes: ['two_payment', 'checkmo'] });
         model.captureSecondaryAddressBaseline(billing('two_payment'));
-        model.applyAddress(COMPANY_A);
+        buyerTypes(PRIMARY, 'country', 'ES');
+        model.mirrorCountryToSecondaryAddresses();
         buyerTypes(SECONDARY + '[data-test-code="two_payment"]', 'city', 'Bristol');
         billing('checkmo').querySelector('input[name="city"]').value = 'Bristol';
 
@@ -871,24 +823,20 @@ describe('the rendered baseline refuses to be captured from a half-built form', 
     });
 });
 
-describe('a shipping form core is not using is not the default address', () => {
-    test('a display:none shipping form neither sources nor receives a write', () => {
+describe('a shipping form core is not using is not the source of the country', () => {
+    test('a display:none shipping form sources nothing', () => {
         // For a logged-in buyer with saved addresses core still RENDERS the
         // new-address form and only hides it, so it sits there holding store
-        // defaults for the whole checkout. Reading country/company from it would
-        // propagate values nobody chose.
+        // defaults for the whole checkout. Reading the country from it would
+        // propagate a value nobody chose.
         const model = renderCheckout({ regions: true, hiddenPrimary: true });
         captureAllBaselines(model);
 
-        expect(model.mirrorFieldsToSecondaryAddresses(['country'])).toBe(0);
-        // With no default form in use the billing form is the buyer's own
-        // working form: it is written directly, and reports no sync.
-        expect(model.applyAddress(COMPANY_A)).toBe(0);
-        expect(read(SECONDARY, 'city')).toBe('London');
-        expect(read(PRIMARY, 'city')).toBe('');
+        expect(model.mirrorCountryToSecondaryAddresses()).toBe(0);
+        expect(read(SECONDARY, 'country')).toBe('GB');
     });
 
-    test('the same form inside a VISIBLE wrapper is the default address', () => {
+    test('the same form inside a VISIBLE wrapper is the source', () => {
         // Live-found regression, twice over. The step collapse that hides the
         // shipping step on the payment step must not read as "core is not using
         // this form", and neither must the form being empty — a country switch
@@ -898,126 +846,54 @@ describe('a shipping form core is not using is not the default address', () => {
         captureAllBaselines(model);
 
         buyerTypes(PRIMARY, 'country', 'ES');
-        expect(model.mirrorFieldsToSecondaryAddresses(['country'])).toBe(1);
+
+        expect(model.mirrorCountryToSecondaryAddresses()).toBe(1);
         expect(read(SECONDARY, 'country')).toBe('ES');
-    });
-
-    test('an EMPTY form in use is still the default address', () => {
-        const model = renderCheckout({ regions: true, savedAddressWrapper: true });
-        captureAllBaselines(model);
-
-        expect(model.applyAddress(COMPANY_A)).toBe(1);
-        expect(read(PRIMARY, 'city')).toBe('London');
-    });
-
-    test('the direct write is recorded, so a later evaluation attributes it', () => {
-        const model = renderCheckout({ regions: true, hiddenPrimary: true });
-        captureAllBaselines(model);
-        model.applyAddress(COMPANY_A);
-
-        rebuildForms();
-
-        expect(model.secondaryAddressIsPinned(billing('two_payment'))).toBe(false);
     });
 });
 
 describe('a replacement pick does not strand the previous line 2', () => {
     test('a payload with no locator retracts a line 2 the plugin wrote', () => {
         const model = renderCheckout({ regions: true });
-        captureAllBaselines(model);
-        model.applyAddress(Object.assign({ building: 'Mill House' }, COMPANY_A));
-        expect(read(SECONDARY, 'street1')).toBe('1 Example Street');
+        writeInto(model, Object.assign({ building: 'Mill House' }, COMPANY_A), PRIMARY);
+        expect(read(PRIMARY, 'street1')).toBe('1 Example Street');
 
-        model.applyAddress(COMPANY_B);
+        writeInto(model, COMPANY_B, PRIMARY);
 
-        [PRIMARY, SECONDARY].forEach(function (root) {
-            expect(read(root, 'street0')).toBe('2 Second Street');
-            expect(read(root, 'street1')).toBe('');
-        });
+        expect(read(PRIMARY, 'street0')).toBe('2 Second Street');
+        expect(read(PRIMARY, 'street1')).toBe('');
     });
 
-    test("a line 2 the BUYER wrote is never retracted", () => {
+    test('a line 2 the BUYER wrote is never retracted', () => {
         // Same code path, opposite outcome: the buyer's line 2 has no recording,
-        // so it is not the plugin's to clear — and it pins the address anyway.
+        // so it is not the plugin's to clear.
         const model = renderCheckout({ regions: true });
-        captureAllBaselines(model);
         buyerTypes(PRIMARY, 'street1', 'Buyer Annexe');
 
-        model.applyAddress(COMPANY_B);
+        writeInto(model, COMPANY_B, PRIMARY);
 
         expect(read(PRIMARY, 'street1')).toBe('Buyer Annexe');
     });
 });
 
-describe('the country is mirrored before the address it belongs to', () => {
-    test('both forms route the same region the same way', () => {
-        // The store default is frequently not the buyer's country, so the billing
-        // form can be sitting on a different country from the address about to be
-        // written into it — and the region routing reads that country's own
-        // option list. Without the country going first, one form selected a state
-        // while the other appended a state name into its city.
-        const model = renderCheckout({ regions: true });
-        billing('two_payment').querySelector('select[name="country_id"]').value = 'NO';
-        captureAllBaselines(model);
-
-        model.applyAddress(Object.assign({ region: 'California' }, COMPANY_A));
-
-        expect(read(PRIMARY, 'region')).toBe('California');
-        expect(read(SECONDARY, 'region')).toBe('California');
-        expect(read(SECONDARY, 'city')).toBe('London');
-        expect(read(SECONDARY, 'country')).toBe('GB');
-    });
-});
-
-describe('a country switch after core has rebuilt the form', () => {
-    test('the mirror’s own values are still retracted, and the address is not pinned', () => {
-        // The markers are gone with the nodes that carried them; the module
-        // record is the only surviving evidence those values are the plugin's.
-        // Retracting the RECORD without clearing the field left the previous
-        // country's address in the billing form attributed to nobody, which the
-        // pin reads as a buyer edit and freezes permanently.
-        const model = renderCheckout({ regions: true });
-        captureAllBaselines(model);
-        model.applyAddress(COMPANY_A);
-
-        rebuildForms();
-        expect(model.revertAutofilledAddress()).toBeGreaterThan(0);
-
-        expect(read(SECONDARY, 'city')).toBe('');
-        expect(model.secondaryAddressIsPinned(billing('two_payment'))).toBe(false);
-        expect(model.applyAddress(COMPANY_B)).toBe(1);
-        expect(read(SECONDARY, 'city')).toBe('Stockholm');
-    });
-
-    test('an in-sync billing address resumes syncing after a revert', () => {
-        const model = renderCheckout({ regions: true });
-        captureAllBaselines(model);
-        model.applyAddress(COMPANY_A);
-
-        model.revertAutofilledAddress();
-
-        expect(model.secondaryAddressIsPinned(billing('two_payment'))).toBe(false);
-        expect(model.applyAddress(COMPANY_B)).toBe(1);
-        expect(read(SECONDARY, 'city')).toBe('Stockholm');
-    });
-});
-
 describe('the mirror record belongs to billing addresses only', () => {
-    test('the default address neither consults a record nor gets stamped with a key', () => {
-        // `secondaryAddressKey()` is reached for the DEFAULT form too — the
+    test('the shipping form neither consults a record nor gets stamped with a key', () => {
+        // `secondaryAddressKey()` is reached for the shipping form too — the
         // retraction asks every form what it is on record as having written. It
         // must answer "nothing" there rather than minting an identity: a minted
         // key stamps an attribute onto a form that is not a billing address, and
         // burns a key a real billing form would otherwise have been given.
         const model = renderCheckout({ regions: true, noCheckboxId: true });
         captureAllBaselines(model);
-        model.applyAddress(COMPANY_A);
+        buyerTypes(PRIMARY, 'country', 'ES');
+        model.mirrorCountryToSecondaryAddresses();
+        writeInto(model, COMPANY_A, PRIMARY);
         rebuildForms();
 
-        model.revertAutofilledAddress();
+        model.revertAutofilledAddress($(PRIMARY));
+        model.revertAutofilledAddress($(SECONDARY));
 
-        const primary = document.querySelector(PRIMARY);
-        expect(primary.hasAttribute('data-two-mirror-key')).toBe(false);
+        expect(document.querySelector(PRIMARY).hasAttribute('data-two-mirror-key')).toBe(false);
         // And the billing form still got its own, so the guard did not disable
         // the fallback it is guarding.
         expect(billing('two_payment').hasAttribute('data-two-mirror-key')).toBe(true);

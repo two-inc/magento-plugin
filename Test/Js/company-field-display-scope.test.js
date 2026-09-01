@@ -328,6 +328,6 @@ describe('a pick on one panel never paints the other panel\'s field', () => {
     test('the country still mirrors from shipping onto an unpinned billing address', () => {
         const { search } = load();
 
-        expect(search.mirrorFieldsToSecondaryAddresses(['country'])).toBe(1);
+        expect(search.mirrorCountryToSecondaryAddresses()).toBe(1);
     });
 });

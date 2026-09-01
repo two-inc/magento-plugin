@@ -30,15 +30,16 @@ const BUYER = {
     billing_address: BILLING
 };
 
-/** The billing-role address form the write is scoped to. */
-function mountBillingForm(priorTelephone) {
+/** The shipping panel's OWN address form — the only one its writes may reach. */
+function mountShippingForm(priorTelephone) {
     document.body.innerHTML =
-        '<div data-form="billing-new-address">' +
+        '<form id="shipping-new-address-form">' +
+        '<input name="company" />' +
         '<input name="street[0]" />' +
         '<input name="city" />' +
         '<input name="postcode" />' +
         `<input name="telephone" value="${priorTelephone || ''}" />` +
-        '</div>';
+        '</form>';
 }
 
 function telephoneValue() {
@@ -102,7 +103,7 @@ describe('the buyer\'s own phone number reaches the checkout', () => {
         ['', '+441234567890', '+441234567890', 'an empty phone number leaves the field untouched'],
         ['   ', '+441234567890', '+441234567890', 'a blank phone number leaves the field untouched']
     ])('%p (prior %p) -> %p (%s)', (buyerPhone, priorTelephone, expected) => {
-        mountBillingForm(priorTelephone);
+        mountShippingForm(priorTelephone);
         const { flow } = loadFlow();
 
         flow.adoptBuyer(Object.assign({}, BUYER, { phone_number: buyerPhone }));
@@ -113,7 +114,7 @@ describe('the buyer\'s own phone number reaches the checkout', () => {
     test('a buyer with a phone but no address still has their phone written', () => {
         // The two writes are separate calls with separate conditions; merging
         // them would leave this buyer's phone behind with their absent address.
-        mountBillingForm('');
+        mountShippingForm('');
         const { flow } = loadFlow();
 
         flow.adoptBuyer({ organization_number: '1', company_name: 'Example', phone_number: '+442012345678' });
@@ -125,12 +126,12 @@ describe('the buyer\'s own phone number reaches the checkout', () => {
 
 describe('the address write is not the route the phone takes', () => {
     test('applyAddress() with the same record never touches telephone', () => {
-        mountBillingForm('+441234567890');
+        mountShippingForm('+441234567890');
         const { companySearch } = loadFlow();
 
         companySearch.applyAddress(
             Object.assign({}, BILLING, { phone_number: '+442012345678' }),
-            companySearch.billingRoleFormRoot()
+            $('#shipping-new-address-form')
         );
 
         expect(document.querySelector('input[name="city"]').value).toBe('Ashford');
@@ -140,7 +141,7 @@ describe('the address write is not the route the phone takes', () => {
 
 describe('a replayed adoption', () => {
     test('does not re-run the phone write over a number the buyer has since corrected', () => {
-        mountBillingForm('');
+        mountShippingForm('');
         const { flow } = loadFlow();
         const buyer = Object.assign({}, BUYER, { phone_number: '+442012345678' });
 
@@ -152,7 +153,7 @@ describe('a replayed adoption', () => {
     });
 
     test('forgetAdoptions() re-arms it, the same as the address half', () => {
-        mountBillingForm('');
+        mountShippingForm('');
         const { flow } = loadFlow();
         const buyer = Object.assign({}, BUYER, { phone_number: '+442012345678' });
 

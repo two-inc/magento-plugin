@@ -46,8 +46,16 @@ const BILLING = {
 
 const SHIPPING = { street: 'Other Lane', city: 'Elsewhere', country_code: 'GB' };
 
-/** Sentinel for the scope the shared model resolves; see the scope case. */
-const BILLING_ROLE_ROOT = { billingRoleFormRoot: true };
+/** The shipping panel's own form — the only one its writes may reach. */
+const SHIPPING_FORM = '#shipping-new-address-form';
+
+function mountShippingForm() {
+    document.body.innerHTML =
+        '<form id="shipping-new-address-form"><input name="company" />' +
+        '<input name="street[0]" /><input name="city" /><input name="telephone" /></form>' +
+        '<div data-form="billing-new-address"><input name="company" />' +
+        '<input name="street[0]" /><input name="city" /><input name="telephone" /></div>';
+}
 
 const BUYER = {
     email: 'trader@example.com',
@@ -74,7 +82,6 @@ function loadFlow() {
         defaultMocks()['Two_Gateway/js/model/company-search'],
         {
             apiClientParams: function () { return {}; },
-            billingRoleFormRoot: function () { return BILLING_ROLE_ROOT; },
             applyAddress: function (address, root) {
                 if (rec.failAddressWrite) throw new Error('DOM write failed');
                 rec.applied.push(address);
@@ -117,7 +124,7 @@ function loadFlow() {
 }
 
 beforeEach(() => {
-    document.body.innerHTML = '';
+    mountShippingForm();
 });
 
 describe('which address on the buyer record is written', () => {
@@ -140,14 +147,32 @@ describe('which address on the buyer record is written', () => {
         expect(rec.applied).toEqual(expected === null ? [] : [expected]);
     });
 
-    test('the write is scoped to the billing-role form, not document-wide', () => {
-        // §1(a.3): this flow captures as the invoice role, and the payment step
-        // has more than one address form in the DOM to get that wrong in.
+    test('the write is scoped to the panel\'s OWN form, never the other panel\'s', () => {
+        // The payment step has more than one address form in the DOM to get
+        // this wrong in, and a tile-mounted panel used to borrow the BILLING
+        // panel's (TWO-25554).
         const { flow, rec } = loadFlow();
 
         flow.adoptBuyer(BUYER);
 
-        expect(rec.roots).toEqual([BILLING_ROLE_ROOT]);
+        expect(rec.roots).toHaveLength(1);
+        expect(rec.roots[0][0]).toBe(document.querySelector(SHIPPING_FORM));
+    });
+
+    test('a tile-mounted panel, with no form of its own, writes nowhere', () => {
+        // No shipping form on this checkout: the panel falls to the tile, and
+        // the only address form on the page is the BILLING panel's.
+        document.body.innerHTML =
+            '<div data-form="billing-new-address"><input name="company" />' +
+            '<input name="city" /><input name="telephone" /></div>' +
+            '<form id="two_gateway_form"><input id="company_name" /></form>';
+        const { flow, rec } = loadFlow();
+
+        flow.adoptBuyer(BUYER);
+
+        expect(rec.roots).toEqual([null]);
+        expect(document.querySelector('[data-form="billing-new-address"] input[name="city"]').value)
+            .toBe('');
     });
 
     test.each([

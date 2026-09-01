@@ -19,9 +19,10 @@
  *  2. mounted on the payment tile, which has no address fields of its own —
  *     still the shipping form's own selector, never the billing form's, which
  *     belongs to the billing panel (TWO-25554);
- *  3. no address form with a country selector anywhere — the quote's billing
- *     address, and behind it the live catch-all DOM read that covers the window
- *     before the quote holds an address at all, the TWO-25326 state.
+ *  3. no shipping form with a country selector at all — the quote's billing
+ *     address, and nothing else. There is no document-wide DOM read: it
+ *     answered for whichever form the page offered first, which is the other
+ *     panel's as often as not (TWO-25554).
  */
 
 'use strict';
@@ -183,30 +184,47 @@ beforeEach(() => {
     $(document).off('.twoCompanyCapture');
 });
 
-describe('the DOM fallback reads the country the buyer actually selected', () => {
-    test('a one-page checkout matching no `#shipping-new-address-form` selector still resolves', () => {
-        // The shape the bug was reported on: the core form id is absent, so the
-        // address-area component never mounts and never publishes a country.
-        mountAddressForm(
-            '<div id="firecheckout-address">' +
-            '<select name="country_id"><option value="US">US</option>' +
-            '<option value="NO" selected>NO</option></select></div>'
-        );
-
-        expect(loadCompanySearch().currentAddressFormCountry()).toBe('no');
-        expect(load({ billingCountry: null }).component.countryCode()).toBe('no');
-    });
-
-    test('the core form\'s select is the highest-priority DOM source', () => {
-        // A second select carrying a different country — a per-payment-method
-        // billing form the buyer has not touched. The core shipping form must
-        // win, or an untouched form's store default decides the search.
+describe('a country read is scoped to ONE form, never document-wide (TWO-25554)', () => {
+    test.each([
+        ['shipping-new-address-form', 'se'],
+        ['billing-new-address-form', 'us']
+    ])('a read scoped to #%s answers %s, and nothing else', (formId, expected) => {
+        // A document-wide read answered for whichever form the page offered
+        // first, which is the other panel's as often as not.
         mountAddressForm(
             selectMarkup('shipping-new-address-form', 'SE') +
             selectMarkup('billing-new-address-form', 'US')
         );
+        const companySearch = loadCompanySearch();
 
-        expect(loadCompanySearch().currentAddressFormCountry()).toBe('se');
+        expect(companySearch.currentAddressFormCountry($('#' + formId))).toBe(expected);
+    });
+
+    test.each([
+        [undefined, 'no argument at all'],
+        [null, 'an explicit null'],
+        [$(), 'an empty set — a panel whose form is not on this checkout']
+    ])('a read with no form answers nothing (%p — %s)', (root, description) => {
+        mountAddressForm(
+            '<div id="firecheckout-address">' +
+            '<select name="country_id"><option value="NO" selected>NO</option></select></div>'
+        );
+
+        expect(loadCompanySearch().currentAddressFormCountry(root)).toBe('', description);
+    });
+
+    test('a one-page checkout supplying its own address markup falls to the quote', () => {
+        // The shape TWO-25326 was reported on: the core form id is absent, so
+        // nothing on the page is the shipping panel's own form. The quote's
+        // billing country is the answer — never a stray select belonging to
+        // whatever else the checkout rendered.
+        mountAddressForm(
+            '<div id="firecheckout-address">' +
+            '<select name="country_id"><option value="NO" selected>NO</option></select></div>'
+        );
+
+        expect(load({ billingCountry: 'GB' }).component.countryCode()).toBe('gb');
+        expect(load({ billingCountry: null }).component.countryCode()).toBe('');
     });
 
     test('a select with no value chosen contributes nothing', () => {
@@ -215,7 +233,9 @@ describe('the DOM fallback reads the country the buyer actually selected', () =>
             '<select name="country_id"><option value="" selected></option></select></form>'
         );
 
-        expect(loadCompanySearch().currentAddressFormCountry()).toBe('');
+        expect(
+            loadCompanySearch().currentAddressFormCountry($('#shipping-new-address-form'))
+        ).toBe('');
         expect(load({ billingCountry: null }).component.countryCode()).toBe('');
     });
 
@@ -223,8 +243,8 @@ describe('the DOM fallback reads the country the buyer actually selected', () =>
         // Through a real searchCompanies() call, so the assertion covers the
         // whole path from the component's getter to the wire, not the getter.
         mountAddressForm(
-            '<div id="firecheckout-address">' +
-            '<select name="country_id"><option value="GB" selected>GB</option></select></div>'
+            '<form id="shipping-new-address-form"><input name="company" />' +
+            '<select name="country_id"><option value="GB" selected>GB</option></select></form>'
         );
         const companySearch = loadCompanySearch();
         const { component } = load({ billingCountry: null, companySearch: companySearch });
@@ -272,7 +292,9 @@ describe('with no control mounted, the quote\'s BILLING address decides (TWO-254
             '</form></div>'
         );
 
-        expect(loadCompanySearch().currentAddressFormCountry()).toBe('us');
+        expect(
+            loadCompanySearch().currentAddressFormCountry($('#shipping-new-address-form'))
+        ).toBe('us');
         const { component } = load({ billingCountry: 'NO' });
         component.start();
 
@@ -551,9 +573,10 @@ describe('the panel the component constructs resolves the country per request', 
         // wiring is the part that regressed, and a spec calling countryCode()
         // itself would pass against a panel constructed with a stale value.
         mountAddressForm(
-            '<div id="firecheckout-address"><select name="country_id">' +
+            '<form id="shipping-new-address-form"><input name="company" />' +
+            '<select name="country_id">' +
             '<option value="NO" selected>NO</option><option value="SE">SE</option>' +
-            '</select></div>' +
+            '</select></form>' +
             '<form id="two_gateway_form"><input id="company_name" name="company_name" /></form>'
         );
         const { component, panel } = load({ billingCountry: null });
@@ -563,7 +586,7 @@ describe('the panel the component constructs resolves the country per request', 
         const getCountryCode = panel.constructed[0].getCountryCode;
         expect(getCountryCode()).toBe('no');
 
-        $('#firecheckout-address select[name="country_id"]').val('SE');
+        $('#shipping-new-address-form select[name="country_id"]').val('SE');
 
         expect(getCountryCode()).toBe('se');
     });

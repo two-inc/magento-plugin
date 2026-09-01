@@ -63,7 +63,13 @@ function installAjaxDouble() {
  */
 function panelScope() {
     const notices = [];
-    return { notices: notices, addressNotice: function (text) { notices.push(text); } };
+    return {
+        notices: notices,
+        addressNotice: function (text) { notices.push(text); },
+        // The panel's own form. `lookupCompanyAddress()` requires one and keys
+        // its in-flight guard by it, so each panel needs its own.
+        form: { length: 1 }
+    };
 }
 
 function search(companySearch, term, scope) {
@@ -88,11 +94,14 @@ const ROUTES = {
         companySearch.lookupCompanyAddress(
             { isAddressSearchEnabled: true },
             { lookupId: `lookup-${callId}` },
-            undefined,
+            scope.form,
             scope
         );
     }
 };
+
+/** One panel's own form, for the calls that only ever drive a single panel. */
+const PANEL_FORM = { length: 1 };
 
 function loadCompanySearch() {
     const companySearch = loadAmdModule(MODEL_PATH, { jquery: $ }, GLOBALS);
@@ -273,14 +282,14 @@ describe('a parked address lookup keeps its notice through the intent verdict', 
         const { identity, companySearch, tile } = wire();
 
         companySearch.lookupCompanyAddress(
-            { isAddressSearchEnabled: true }, { lookupId: 'lookup-1' }, undefined, identity
+            { isAddressSearchEnabled: true }, { lookupId: 'lookup-1' }, PANEL_FORM, identity
         );
         requests[0].settleFail(429);
 
         // The park is now up, so this second pick never issues a request and
         // announces immediately.
         companySearch.lookupCompanyAddress(
-            { isAddressSearchEnabled: true }, { lookupId: 'lookup-2' }, undefined, identity
+            { isAddressSearchEnabled: true }, { lookupId: 'lookup-2' }, PANEL_FORM, identity
         );
         expect(identity.addressNotice()).toContain('enter it below');
 

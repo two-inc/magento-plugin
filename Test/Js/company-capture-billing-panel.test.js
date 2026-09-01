@@ -345,15 +345,12 @@ describe('a checkbox toggle mid-checkout supersedes the order-intent already in 
 });
 
 /**
- * TWO-25554 Amasty regression: shipping's own writes must never land in
- * billing's form, even though `billingRoleFormRoot()` is happy to answer
- * with it (see company-capture.js's `shippingWriteRoot()` doc). Amasty's
- * one-step layout pre-renders every payment method's billing fieldset
- * hidden from page load, so `billingRoleFormRoot()` — which wins on
- * presence alone, visible or not — would otherwise outrank shipping's own
- * visible form the whole time shipping is the panel in play.
+ * TWO-25554: shipping's own writes never land in billing's form. Amasty's
+ * one-step layout pre-renders every payment method's billing fieldset hidden
+ * from page load, so a "best available address form" answer outranked
+ * shipping's own visible form the whole time shipping was the panel in play.
  */
-describe('the shipping panel writes into its OWN form — never billingRoleFormRoot()\'s answer', () => {
+describe('the shipping panel writes into its OWN form, or nowhere', () => {
     /**
      * @param {object} dom
      * @returns {{mock: object, lookupRoots: Array}}
@@ -361,13 +358,9 @@ describe('the shipping panel writes into its OWN form — never billingRoleFormR
     function companySearchSpy(dom) {
         const lookupRoots = [];
         const mock = Object.assign({}, defaultMocks()['Two_Gateway/js/model/company-search'], {
-            // A billing candidate exists in the DOM (hidden) from page load,
-            // same as Amasty — billingRoleFormRoot() answers with it
-            // regardless of whether shipping is the panel in play.
-            billingRoleFormRoot: function () { return dom.$(BILLING_FORM); },
             hasPrimaryAddressForm: function () { return true; },
             lookupCompanyAddress: function (config, item, root) {
-                lookupRoots.push(root);
+                lookupRoots.push(root || null);
                 return null;
             }
         });
@@ -402,7 +395,10 @@ describe('the shipping panel writes into its OWN form — never billingRoleFormR
         expect(spy.lookupRoots[0]).toBe(dom.$(ADDRESS_FORM));
     });
 
-    test('mounted on the tile fallback (no shipping form on this checkout at all), still defers to billingRoleFormRoot() as before the split', () => {
+    test('mounted on the tile fallback, with no shipping form at all, it writes NOWHERE', () => {
+        // The only address form on this checkout is the BILLING panel's.
+        // Borrowing it landed shipping's address, telephone and country-switch
+        // retraction in the other panel's fields (TWO-25554).
         const dom = makeDom();
         dom.setExists(ADDRESS_FIELD, false);
         const spy = companySearchSpy(dom);
@@ -412,8 +408,7 @@ describe('the shipping panel writes into its OWN form — never billingRoleFormR
 
         capture.shipping.selectCompany({ text: 'Shipping Co', companyId: '111', lookupId: 'l1' });
 
-        expect(spy.lookupRoots).toHaveLength(1);
-        expect(spy.lookupRoots[0]).toBe(dom.$(BILLING_FORM));
+        expect(spy.lookupRoots).toEqual([null]);
     });
 });
 

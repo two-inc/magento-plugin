@@ -32,6 +32,17 @@ const {
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
 const IDENTITY_PATH = 'view/frontend/web/js/model/company-identity.js';
 
+/**
+ * The calling panel's own form and identity, both required by
+ * `lookupCompanyAddress()` (TWO-25554). Detached, so a write that does land
+ * touches no fixture.
+ */
+const PANEL_FORM = $('<form></form>');
+
+function makeIdentity() {
+    return loadAmdModule(IDENTITY_PATH, {}, GLOBALS)();
+}
+
 const GLOBALS = { document: document, window: window };
 const MOUNT_SELECTOR = '#two_gateway_form input#company_name';
 const PANEL = '.two-company-dropdown';
@@ -161,7 +172,9 @@ describe('request envelope', () => {
     test('the company-detail lookup carries the same timeout', () => {
         const companySearch = loadCompanySearch();
 
-        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
+        companySearch.lookupCompanyAddress(
+            BASE_CONFIG, { lookupId: 'lookup-abc-123' }, PANEL_FORM, makeIdentity()
+        );
 
         expect(requests).toHaveLength(1);
         expect(requests[0].options.timeout).toBe(30000);
@@ -180,7 +193,9 @@ describe('request envelope', () => {
         [
             'address lookup by id',
             (companySearch) => {
-                companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' });
+                companySearch.lookupCompanyAddress(
+                    BASE_CONFIG, { lookupId: 'lookup-abc-123' }, PANEL_FORM, makeIdentity()
+                );
             },
             'rest/V1/two/company',
             { lookupId: 'lookup-abc-123' }
@@ -855,7 +870,7 @@ describe('a company-detail lookup that brings back no address says so', () => {
     ])('%s tells the buyer to enter the address themselves', (_label, settle) => {
         const companySearch = loadWithIdentity();
 
-        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, undefined, identity);
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, PANEL_FORM, identity);
         settle(requests[0]);
 
         expect(identity.addressNotice()).toContain('enter it below');
@@ -865,7 +880,7 @@ describe('a company-detail lookup that brings back no address says so', () => {
     test('an abort says nothing', () => {
         const companySearch = loadWithIdentity();
 
-        const request = companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, undefined, identity);
+        const request = companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, PANEL_FORM, identity);
         request.abort();
 
         expect(identity.addressNotice()).toBe('');
@@ -874,7 +889,7 @@ describe('a company-detail lookup that brings back no address says so', () => {
     test('an address that arrives is applied without a notice', () => {
         const companySearch = loadWithIdentity();
 
-        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, undefined, identity);
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, PANEL_FORM, identity);
         requests[0].settleDone({ addresses: [{ streetAddress: 'Somewhere 1' }] });
 
         expect(identity.addressNotice()).toBe('');
@@ -908,8 +923,8 @@ describe('a company-detail lookup that brings back no address says so', () => {
         const applied = [];
         companySearch.applyAddress = function (address) { applied.push(address.streetAddress); };
 
-        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'company-a' }, undefined, identity);
-        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'company-b' }, undefined, identity);
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'company-a' }, PANEL_FORM, identity);
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'company-b' }, PANEL_FORM, identity);
         settle(companySearch, requests);
 
         expect(applied).toEqual(expectedApplied, description);
@@ -933,11 +948,11 @@ describe('a company-detail lookup that brings back no address says so', () => {
     ])('%s retires the previous failure', (_label, settleSecond) => {
         const companySearch = loadWithIdentity();
 
-        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, undefined, identity);
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-abc-123' }, PANEL_FORM, identity);
         requests[0].settleFail('error');
         expect(identity.addressNotice()).toContain('enter it below');
 
-        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-def-456' }, undefined, identity);
+        companySearch.lookupCompanyAddress(BASE_CONFIG, { lookupId: 'lookup-def-456' }, PANEL_FORM, identity);
         settleSecond(requests[1]);
 
         expect(identity.addressNotice()).toBe('');

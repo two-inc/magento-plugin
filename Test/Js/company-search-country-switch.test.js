@@ -262,7 +262,14 @@ function makeCustomerData() {
 /** Load the real shared model against a jQuery whose DOM the test owns. */
 function loadModel() {
     const dom = makeDom();
-    return { model: loadAmdModule(MODEL, { jquery: dom.$ }), node: dom.node, dom: dom };
+    return {
+        model: loadAmdModule(MODEL, { jquery: dom.$ }),
+        node: dom.node,
+        dom: dom,
+        // Every write and revert is scoped to the calling panel's own form
+        // (TWO-25554); there is no page-wide path.
+        root: dom.$(PRIMARY_ROOT)
+    };
 }
 
 /**
@@ -307,9 +314,9 @@ function loadAddressStep(options) {
             calls.baselines.push(root);
             calls.sequence.push('baseline');
         },
-        mirrorFieldsToSecondaryAddresses: function (names) {
-            calls.mirrored.push(names);
-            calls.sequence.push('mirror:' + names.join('+'));
+        mirrorCountryToSecondaryAddresses: function () {
+            calls.mirrored.push(['country']);
+            calls.sequence.push('mirror:country');
             return 0;
         }
     });
@@ -440,13 +447,13 @@ beforeEach(() => {
 
 describe('reverting an address autofilled from the previous country', () => {
     test('applyAddress records exactly what it wrote, on every field', () => {
-        const { model, node } = loadModel();
+        const { model, node, root } = loadModel();
 
         model.applyAddress({
             city: 'London',
             postal_code: 'EC1A 1BB',
             street_address: '1 Example Street'
-        });
+        }, root);
 
         expect(node(CITY).val()).toBe('London');
         expect(node(CITY).attr(MARKER)).toBe('London');
@@ -455,15 +462,15 @@ describe('reverting an address autofilled from the previous country', () => {
     });
 
     test('the revert clears an untouched autofill and fires change for it', () => {
-        const { model, node, dom } = loadModel();
+        const { model, node, dom, root } = loadModel();
         model.applyAddress({
             city: 'London',
             postal_code: 'EC1A 1BB',
             street_address: '1 Example Street'
-        });
+        }, root);
         dom.triggered.length = 0;
 
-        expect(model.revertAutofilledAddress()).toBe(3);
+        expect(model.revertAutofilledAddress(root)).toBe(3);
 
         expect(node(CITY).val()).toBe('');
         expect(node(POSTCODE).val()).toBe('');
@@ -477,27 +484,27 @@ describe('reverting an address autofilled from the previous country', () => {
         // The whole reason the marker records the VALUE rather than a boolean.
         // Over-clearing here deletes buyer input on a keystroke they may have
         // made minutes earlier — worse than leaving a stale value they can see.
-        const { model, node } = loadModel();
+        const { model, node, root } = loadModel();
         model.applyAddress({
             city: 'London',
             postal_code: 'EC1A 1BB',
             street_address: '1 Example Street'
-        });
+        }, root);
         node(CITY).val('Madrid');
 
-        expect(model.revertAutofilledAddress()).toBe(2);
+        expect(model.revertAutofilledAddress(root)).toBe(2);
 
         expect(node(CITY).val()).toBe('Madrid');
         expect(node(POSTCODE).val()).toBe('');
     });
 
     test('a hand-filled form with no autofill behind it is left entirely alone', () => {
-        const { model, node } = loadModel();
+        const { model, node, root } = loadModel();
         node(CITY).val('Madrid');
         node(POSTCODE).val('28001');
         node(STREET).val('Calle Example 1');
 
-        expect(model.revertAutofilledAddress()).toBe(0);
+        expect(model.revertAutofilledAddress(root)).toBe(0);
 
         expect(node(CITY).val()).toBe('Madrid');
         expect(node(POSTCODE).val()).toBe('28001');
@@ -508,25 +515,25 @@ describe('reverting an address autofilled from the previous country', () => {
         // Two companies sharing a postcode: without the refresh the second
         // write leaves no recording, and the field reads as buyer-typed — so
         // the revert would strand it — for the rest of the page's life.
-        const { model, node } = loadModel();
-        model.applyAddress({ city: 'London', postal_code: 'EC1A 1BB', street_address: 'One' });
+        const { model, node, root } = loadModel();
+        model.applyAddress({ city: 'London', postal_code: 'EC1A 1BB', street_address: 'One' }, root);
         node(POSTCODE).removeAttr(MARKER);
 
-        model.applyAddress({ city: 'London', postal_code: 'EC1A 1BB', street_address: 'Two' });
+        model.applyAddress({ city: 'London', postal_code: 'EC1A 1BB', street_address: 'Two' }, root);
 
         expect(node(POSTCODE).attr(MARKER)).toBe('EC1A 1BB');
-        expect(model.revertAutofilledAddress()).toBe(3);
+        expect(model.revertAutofilledAddress(root)).toBe(3);
     });
 
     test('an empty registry value is a recording, not an absence', () => {
         // `''` is what the API sends for a field the registry has nothing for.
         // A falsiness test here would leave the marker unread and the field
         // permanently un-revertable.
-        const { model, node } = loadModel();
-        model.applyAddress({ city: 'London', postal_code: '', street_address: 'One' });
+        const { model, node, root } = loadModel();
+        model.applyAddress({ city: 'London', postal_code: '', street_address: 'One' }, root);
 
         expect(node(POSTCODE).attr(MARKER)).toBe('');
-        expect(model.revertAutofilledAddress()).toBe(3);
+        expect(model.revertAutofilledAddress(root)).toBe(3);
     });
 });
 

@@ -3,15 +3,12 @@
  * See COPYING.txt for license details.
  *
  * TWO-25554: the sole-trader flow consults ITS OWN panel's popover when
- * deciding whether focus has come back to checkout.
+ * deciding whether focus has come back to checkout — never a page-wide
+ * `.two-company-dropdown` query, which answers with whichever popover comes
+ * first in the document.
  *
- * The rule it implements (TWO-25461): focus settling on checkout takes the
- * signup popup down, EXCEPT where it settles inside the popover the signup was
- * launched from — the Sole trader chip lives in there, and clicking it is the
- * buyer reaching for the signup rather than away from it. A page-wide
- * `.two-company-dropdown` query answers with whichever popover is first in the
- * document, so on a checkout rendering both panels one flow's decision was made
- * against the other panel's popover.
+ * The rule (TWO-25461): focus settling on checkout takes the signup popup down,
+ * EXCEPT where it settles inside the popover the signup was launched from.
  */
 
 'use strict';
@@ -84,16 +81,16 @@ function load(ownPopover) {
 
 describe('the popup survives focus landing in this flow\'s own popover', () => {
     test.each([
-        ['second', true, 'this flow\'s popover is the second on the page'],
-        ['first', true, 'this flow\'s popover is the first on the page']
-    ])('focus inside the %s popover keeps the popup (%s)', async (which, stillOpen) => {
+        ['second', 'this flow\'s popover is the second on the page'],
+        ['first', 'this flow\'s popover is the first on the page']
+    ])('focus inside the %s popover keeps the popup (%s)', async (which, description) => {
         const popovers = renderTwoPopovers();
         const { flow, returnToCheckout } = load(popovers[which]);
         document.getElementById(`${which}-chip`).focus();
 
         await returnToCheckout();
 
-        expect(flow.isPopupOpen()).toBe(stillOpen);
+        expect(flow.isPopupOpen()).toBe(true, description);
     });
 });
 
@@ -101,14 +98,14 @@ describe('the popup goes when focus lands anywhere else', () => {
     test.each([
         ['first', 'second', 'the OTHER panel\'s popover is not a route to this signup'],
         ['second', 'first', 'and the same the other way round']
-    ])('own=%s, focus in %s: the popup closes (%s)', async (own, focused) => {
+    ])('own=%s, focus in %s: the popup closes (%s)', async (own, focused, description) => {
         const popovers = renderTwoPopovers();
         const { flow, returnToCheckout } = load(popovers[own]);
         document.getElementById(`${focused}-chip`).focus();
 
         await returnToCheckout();
 
-        expect(flow.isPopupOpen()).toBe(false);
+        expect(flow.isPopupOpen()).toBe(false, description);
     });
 
     test('a flow whose panel has not mounted yet closes rather than throwing', () => {

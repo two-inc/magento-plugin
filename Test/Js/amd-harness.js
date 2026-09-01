@@ -160,7 +160,6 @@ function defaultMocks() {
             // above: a spec that cares about what the write or the revert
             // actually does loads the real module.
             revertAutofilledAddress: function () { return 0; },
-            billingRoleFormRoot: function () { return null; },
             hasPrimaryAddressForm: function () { return true; },
             isDegradedResponse: function () { return false; },
             // DELEGATED, like the display helpers below: an inert stub would
@@ -211,11 +210,8 @@ function defaultMocks() {
             // `$.async` selector from it, so a mock returning undefined would
             // exercise a selector production never uses.
             SECONDARY_ADDRESS_ROOT_SELECTOR: '[data-form="billing-new-address"]',
-            mirrorFieldsToSecondaryAddresses: function () { return 0; },
-            captureSecondaryAddressBaseline: function () {},
-            // Never mid-mirror in the inert default: nothing here writes, so
-            // every `change` a spec fires is the buyer's own.
-            isMirrorWriting: function () { return false; }
+            mirrorCountryToSecondaryAddresses: function () { return 0; },
+            captureSecondaryAddressBaseline: function () {}
         },
         // Inert default, same convention as the company-search mock above: a
         // constructor whose instances no-op every method. Tests that exercise

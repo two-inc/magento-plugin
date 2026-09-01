@@ -267,6 +267,7 @@ describe('the payment tile only delegates', () => {
                         config: function () { return {}; },
                         mountSelector: function () { return ''; },
                         countryCode: function () { return 'gb'; },
+                        identity: function () { return identityStub; },
                         soleTrader: function () { return owner === 'billing' ? null : flowStub; }
                     },
                     billing: {
