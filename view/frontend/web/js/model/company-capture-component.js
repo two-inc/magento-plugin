@@ -448,7 +448,7 @@
         const selector = this.mountSelector();
         const previous = this._boundSelector;
         if (!selector) {
-            // Before the selector is forgotten: every chrome lookup is made
+            // Before the selector is forgotten — every chrome lookup goes
             // through the bound field.
             this._removeChrome();
             // Neither host is on the page any more. Forgetting where the control
@@ -602,10 +602,8 @@
     };
 
     /**
-     * Take this panel's chrome back off the page.
-     *
-     * The chrome is a SIBLING of the wrapper, so `unmount()` does not carry it
-     * away, and its button drives a flow the same call tears down (TWO-25554).
+     * Take this panel's chrome back off the page. A SIBLING of the wrapper, so
+     * `unmount()` leaves it standing over a torn-down flow (TWO-25554).
      */
     CompanyCaptureComponent.prototype._removeChrome = function () {
         const self = this;

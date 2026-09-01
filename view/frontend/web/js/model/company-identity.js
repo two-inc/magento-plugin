@@ -200,14 +200,13 @@
             },
 
             /**
-             * Retire the whole capture — a country change invalidates the
-             * registry, and re-checking "same as shipping" retires the panel.
+             * Retire the whole capture. The mode and the adoption go with the
+             * name/number pair: a retired capture left in sole-trader mode
+             * remounts the panel over an empty identity, and the resolver reads
+             * an adoption as a company number (TWO-25554).
              *
-             * The mode and the adoption go with the pair: a retired capture
-             * left in sole-trader mode remounts the panel over an empty
-             * identity, and the resolver reads an adoption flag as a company
-             * number (TWO-25554). `soleTraderAvailable` is a property of the
-             * country, not of the capture, and stays.
+             * `soleTraderAvailable` is a property of the country rather than of
+             * the capture, and stays.
              */
             clear: function () {
                 if (!state.companyName && !state.companyId && !state.companyIdSource

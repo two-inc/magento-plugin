@@ -119,9 +119,9 @@ define([
      * and a country switch after such a rebuild still has to retract the
      * previous country's address rather than leave it standing (TWO-25554).
      *
-     * Keyed on the calling panel's IDENTITY, which is per-panel and unreachable
-     * from the other one, and which a one-step checkout replacing the whole
-     * payment-methods subtree — where the billing form lives — does not replace.
+     * Keyed on the calling panel's IDENTITY: unreachable from the other panel,
+     * and it survives a one-step checkout replacing the payment-methods
+     * subtree the billing form lives in.
      */
     const addressWriteRecords = new WeakMap();
 
