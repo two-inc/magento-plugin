@@ -474,6 +474,75 @@ describe('a tile-mounted shipping panel has no form of its own', () => {
     });
 });
 
+describe('the billing panel\'s own writes have their own destination', () => {
+    const WRITE_BACK = ADDRESSES.billing;
+    const PHONE = '+44 1233 000000';
+    const UNDELIVERABLE = 'We could not fill in this company\'s address on this page.';
+
+    /** @returns {string} the telephone in one form */
+    function telephoneIn(which) {
+        return document.querySelector(`${FORMS[which]} [name="telephone"]`).value;
+    }
+
+    test('a billing sole-trader address lands in the billing form and never the shipping one', () => {
+        const booted = boot();
+        expect(booted.panels.billing.mountSelector()).toBe(FIELDS.billing);
+        const shippingBefore = addressValues('shipping');
+
+        booted.panels.billing.host().applyBuyerAddress(WRITE_BACK);
+
+        expect(addressValues('billing')['city']).toBe(WRITE_BACK.city);
+        expect(addressValues('billing')['postcode']).toBe(WRITE_BACK.postal_code);
+        expect(addressValues('shipping')).toEqual(shippingBefore);
+        expect(booted.identities.billing.addressNotice()).toBe('');
+    });
+
+    test('a billing sole-trader telephone lands in the billing form and never the shipping one', () => {
+        const booted = boot();
+
+        booted.panels.billing.host().applyTelephone(PHONE);
+
+        expect(telephoneIn('billing')).toBe(PHONE);
+        expect(telephoneIn('shipping')).toBe('');
+    });
+
+    /*
+     * Core leaves the fieldset in the DOM hidden once "same as shipping" is
+     * re-checked, so the billing panel has no destination — and a write-back
+     * that fills nothing in and says nothing reads as the picker having done
+     * nothing (TWO-25461 §5).
+     */
+    test.each([
+        [
+            'the address half',
+            function (booted) { booted.panels.billing.host().applyBuyerAddress(WRITE_BACK); },
+            'a billing address write-back with nowhere to land announces instead'
+        ],
+        [
+            'the telephone half',
+            function (booted) { booted.panels.billing.host().applyTelephone(PHONE); },
+            'a billing telephone write-back with nowhere to land announces instead'
+        ]
+    ])('with the fieldset gone, %s announces rather than filling nothing in',
+        (half, write, description) => {
+            const booted = boot({ billingHidden: true });
+            expect(booted.panels.billing.mountSelector()).toBe('');
+
+            write(booted);
+
+            expect(tagged(description, booted.identities.billing.addressNotice()))
+                .toEqual(tagged(description, UNDELIVERABLE));
+            // Never the other panel's form, which is the one still on screen.
+            expect(tagged(description, addressValues('shipping')['city']))
+                .toEqual(tagged(description, ''));
+            expect(tagged(description, telephoneIn('shipping'))).toEqual(tagged(description, ''));
+            // Billing's own identity carries it: it is billing's field the
+            // notice is rendered beside.
+            expect(tagged(description, booted.identities.shipping.addressNotice()))
+                .toEqual(tagged(description, ''));
+        });
+});
+
 describe('the quote\'s billing address belongs to the billing panel', () => {
     const SAVED = {
         countryId: 'GB',

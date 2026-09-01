@@ -360,13 +360,44 @@ define([
 
     /**
      * shippingWriteRoot(), and a notice on the shipping identity when there is
-     * no such root.
+     * none — a pick that fills nothing in and says nothing reads to the buyer
+     * as the picker having done nothing (TWO-25461 §5).
      *
      * @returns {?object} jQuery set, or null
      */
     function shippingWriteTarget() {
         const root = shippingWriteRoot();
         if (!root) companySearch.announceAddressUndeliverable(shippingIdentity);
+        return root;
+    }
+
+    /**
+     * Where the BILLING panel's own writes land, or `null` when there is no
+     * destination for them.
+     *
+     * Its own form and only ever its own form: it has no tile fallback and the
+     * shipping form is the other panel's (TWO-25554). Keyed on the live mount
+     * rather than on the selector matching, because core leaves the fieldset in
+     * the DOM hidden once "same as shipping" is re-checked, and a hidden field
+     * is not somewhere the buyer can read what was written.
+     *
+     * @returns {?object} jQuery set, or null
+     */
+    function billingWriteRoot() {
+        if (billingComponent.mountSelector() !== BILLING_FIELD_SELECTOR) return null;
+        const $root = $(BILLING_FORM_ROOT);
+        return $root.length ? $root : null;
+    }
+
+    /**
+     * billingWriteRoot(), and a notice on the billing identity when there is
+     * none — shippingWriteTarget()'s counterpart, for the same reason.
+     *
+     * @returns {?object} jQuery set, or null
+     */
+    function billingWriteTarget() {
+        const root = billingWriteRoot();
+        if (!root) companySearch.announceAddressUndeliverable(billingIdentity);
         return root;
     }
 
@@ -438,18 +469,18 @@ define([
             companySearch.lookupCompanyAddress(
                 billingComponent.config(),
                 selectedItem,
-                $(BILLING_FORM_ROOT),
+                billingWriteRoot(),
                 billingIdentity
             );
         },
         revertAutofilledAddress: function () {
-            companySearch.revertAutofilledAddress($(BILLING_FORM_ROOT), billingIdentity);
+            companySearch.revertAutofilledAddress(billingWriteRoot(), billingIdentity);
         },
         applyBuyerAddress: function (source) {
-            companySearch.applyAddress(source, $(BILLING_FORM_ROOT), billingIdentity);
+            companySearch.applyAddress(source, billingWriteTarget(), billingIdentity);
         },
         applyTelephone: function (phoneNumber) {
-            companySearch.applyTelephone(phoneNumber, $(BILLING_FORM_ROOT));
+            companySearch.applyTelephone(phoneNumber, billingWriteTarget());
         },
         getFallbackCountry: function () {
             return companySearch.currentAddressFormCountry($(BILLING_FORM_ROOT));
