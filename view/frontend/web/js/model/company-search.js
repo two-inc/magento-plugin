@@ -43,8 +43,9 @@ define([
 
     /**
      * Epoch ms before which no registry call is issued, keyed by the calling
-     * PANEL: a 429 one panel earns must not silence the other's searching or
-     * put an "address unavailable" notice on its identity (TWO-25554).
+     * panel's IDENTITY: a 429 one panel earns must not silence the other's
+     * searching or put an "address unavailable" notice on its identity
+     * (TWO-25554).
      *
      * @see RATE_LIMIT_BACKOFF_MS
      */
@@ -1016,8 +1017,8 @@ define([
          * @param {object} options.token bind identity, so an abort raised
          *        against a torn-down panel cannot cancel the live one's search
          * @param {object} options.scope the calling panel's rate-limit scope.
-         *        Required: falling back to the bind token scoped the backoff to
-         *        a token a re-render replaces, i.e. to no backoff at all
+         *        Required, and never the bind token: a re-render replaces that
+         *        token, so a backoff scoped to one is never observed
          *        (TWO-25554).
          * @returns {Promise<{items: Array, unavailable: boolean, aborted: boolean}>}
          */

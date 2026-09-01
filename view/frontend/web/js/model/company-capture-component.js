@@ -113,7 +113,7 @@
      *        `refreshMount()` off its own re-render hook instead.
      * @param {string} options.addressFieldSelector the address step's company
      *        field.
-     * @param {string} options.addressFormRootSelector the form that field
+     * @param {string} [options.addressFormRootSelector] the form that field
      *        belongs to — the one `addressFieldSelector` is built from. Bounds
      *        every DOM read this panel makes, so absent it reads nothing.
      * @param {string} options.tileFieldSelector the payment tile's company

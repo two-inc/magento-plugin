@@ -272,6 +272,17 @@ function defaultMocks() {
 let evaluatingComputed = null;
 
 function makeKnockoutMock() {
+    /**
+     * A computed over a live read, close enough to model the caching that makes
+     * a missing notification observable — and no closer. Three divergences from
+     * real Knockout, all of which a spec must not lean on: the dependency set
+     * only ever grows, `makeObservable` notifies on every write whether or not
+     * the value changed, so a re-publish can come from an observable the
+     * computed no longer reads; and there is no re-entrancy guard.
+     *
+     * @param {function} fn
+     * @returns {function} the computed's value accessor
+     */
     function computed(fn) {
         const out = makeObservable(undefined);
         const dependencies = [];
