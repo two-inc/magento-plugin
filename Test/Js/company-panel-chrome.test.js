@@ -319,6 +319,66 @@ describe('the company number is painted under its own panel\'s field', () => {
     });
 });
 
+describe('chrome never enters the popover\'s positioning context', () => {
+    /*
+     * `.two-company-dropdown` is `position: absolute; top: 100%` against
+     * `.two-company-field-wrap` (css/style.css), so anything in the wrap's flow
+     * moves the popover off the field by its own height. jsdom has no layout, so
+     * the constraint is pinned where it is decided: chrome is a following
+     * SIBLING of the wrap and never a descendant.
+     */
+    /** A sole trader the registry DOES hold a public number for, so both
+     *  pieces of chrome are on the page at once. */
+    const NUMBERED_TRADER = { company_name: 'Numbered Trader', organization_number: '333333333' };
+
+    test.each(DIRECTIONS)('%s renders both pieces of chrome (%s)', (actor) => {
+        const { panels } = boot();
+
+        panels[actor].adoptSoleTrader(NUMBERED_TRADER);
+
+        const wrap = document.querySelector(`${FORMS[actor]} .two-company-field-wrap`);
+        expect(wrap).not.toBeNull();
+        expect(wrap.querySelectorAll(`.${NUMBER_CLASS}, .${LINK_CLASS}`)).toHaveLength(0);
+
+        const number = document.querySelector(`${FORMS[actor]} .${NUMBER_CLASS}`);
+        const link = document.querySelector(`${FORMS[actor]} .${LINK_CLASS}`);
+        expect(number.parentElement).toBe(wrap.parentElement);
+        expect(link.parentElement).toBe(wrap.parentElement);
+        expect(wrap.nextElementSibling).toBe(number);
+        expect(number.nextElementSibling).toBe(link);
+    });
+
+    test('the billing panel takes its chrome down when it loses its mount', () => {
+        // Hidden rather than removed — "billing same as shipping" re-checked.
+        // The wrapper goes with the mount, and chrome sits outside the wrapper,
+        // so nothing else would take it down.
+        const { panels } = boot();
+        panels.billing.adoptSoleTrader(NUMBERED_TRADER);
+        expect(numbersIn('billing')).toHaveLength(1);
+        expect(linksIn('billing')).toBe(1);
+
+        document.querySelector(FORMS.billing).setAttribute('data-test-hidden', '');
+        panels.billing.refreshMount();
+        expect(panels.billing.mountSelector()).toBe('');
+
+        expect(numbersIn('billing')).toEqual([]);
+        expect(linksIn('billing')).toBe(0);
+    });
+
+    test.each(DIRECTIONS)('%s keeps that order across a repaint (%s)', (actor) => {
+        const { panels } = boot();
+        panels[actor].adoptSoleTrader(NUMBERED_TRADER);
+
+        panels[actor].renderChrome();
+
+        const wrap = document.querySelector(`${FORMS[actor]} .two-company-field-wrap`);
+        expect(wrap.querySelectorAll(`.${NUMBER_CLASS}, .${LINK_CLASS}`)).toHaveLength(0);
+        expect(wrap.nextElementSibling.classList.contains(NUMBER_CLASS)).toBe(true);
+        expect(numbersIn(actor)).toHaveLength(1);
+        expect(linksIn(actor)).toBe(1);
+    });
+});
+
 describe('the "select a different sole trader" link belongs to its own panel', () => {
     test.each(DIRECTIONS)('%s adopts a sole trader (%s)', (actor) => {
         const other = OTHER[actor];

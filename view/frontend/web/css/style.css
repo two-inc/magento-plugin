@@ -489,8 +489,8 @@
 
 /*
  * TWO-25326 §5, 2026-08-04 ruling, Bug B. `text-align: end` rather than
- * `right` so it follows the writing direction on RTL store views; the panel's
- * wrapper spans the input's containing box, so its end edge lines up exactly.
+ * `right` so it follows the writing direction on RTL store views; this block
+ * spans the input's containing box, so its end edge lines up exactly.
  */
 .two-company-id-text {
     display: block;
