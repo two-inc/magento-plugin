@@ -452,7 +452,7 @@ class LayoutProcessorPluginTest extends TestCase
      * (*Display Billing Address On*), and a form is matched by its component
      * rather than by a path or a method code.
      *
-     * @return array<string,array{0: array<string,mixed>, 1: array<string,mixed>, 2: array<string,string>, 3: string}>
+     * @return array<int,array{0: array<string,mixed>, 1: array<string,mixed>, 2: array<string,string>, 3: string}>
      */
     public static function billingContainerProvider(): array
     {
@@ -492,12 +492,96 @@ class LayoutProcessorPluginTest extends TestCase
             // the real form rather than a path the plugin conjured.
             $this->assertSame(['company', 'company_id'], array_keys($fields), $description);
         }
+        // Nowhere else in the payment subtree — with neither container present
+        // that is the only thing this row has to say.
+        $this->assertCount(
+            count($expected),
+            $this->injectedFields($this->paymentChildren($jsLayout)),
+            $description
+        );
         // The shipping injection is unaffected by the billing walk.
         $this->assertArrayHasKey('company_id', $this->fieldset($jsLayout), $description);
     }
 
     /**
-     * @return array<string,array{0: string, 1: string}>
+     * @param array<string,mixed> $jsLayout
+     * @return array<string,mixed> the payment step's own `children`
+     */
+    private function paymentChildren(array $jsLayout): array
+    {
+        return $jsLayout['components']['checkout']['children']['steps']['children']['billing-step']
+            ['children']['payment']['children'];
+    }
+
+    /**
+     * @param array<string,mixed> $subtree
+     * @return array<int,mixed> every `company_id` this plugin injected below it
+     */
+    private function injectedFields(array $subtree): array
+    {
+        $found = [];
+        foreach ($subtree as $key => $value) {
+            if (!is_array($value)) {
+                continue;
+            }
+            if ($key === 'company_id') {
+                $found[] = $value;
+                continue;
+            }
+            $found = array_merge($found, $this->injectedFields($value));
+        }
+
+        return $found;
+    }
+
+    /**
+     * A checkout that renders billing with its own component, or wraps core's
+     * in a container of its own, still binds the form to core's
+     * `billingAddress` scope — and the number has to submit with that address.
+     *
+     * @return array<int,array{0: array<string,mixed>, 1: string, 2: string}>
+     */
+    public static function thirdPartyBillingProvider(): array
+    {
+        $ownComponent = [
+            'component' => 'Vendor_Checkout/js/view/billing-address',
+            'dataScopePrefix' => 'billingAddressvendor_method',
+            'children' => ['form-fields' => ['children' => ['company' => ['label' => 'Company']]]],
+        ];
+
+        return [
+            [$ownComponent, 'billingAddressvendor_method', 'a third-party billing component'],
+            [
+                ['component' => 'Vendor_Checkout/js/view/wrapper', 'children' => ['inner' => $ownComponent]],
+                'billingAddressvendor_method',
+                'core\'s form wrapped in a third-party container',
+            ],
+        ];
+    }
+
+    /**
+     * @dataProvider thirdPartyBillingProvider
+     * @param array<string,mixed> $node
+     */
+    public function testThirdPartyBillingFormsAreFilledToo(
+        array $node,
+        string $scopePrefix,
+        string $description
+    ): void {
+        $jsLayout = $this->process($this->seededLayoutWithBilling(['billing-node' => $node]));
+
+        $injected = $this->injectedFields($this->paymentChildren($jsLayout));
+
+        $this->assertCount(1, $injected, $description);
+        $this->assertSame(
+            $scopePrefix . '.custom_attributes.company_id',
+            $injected[0]['dataScope'],
+            $description
+        );
+    }
+
+    /**
+     * @return array<int,array{0: string, 1: string}>
      */
     public static function billingScopeProvider(): array
     {
@@ -530,7 +614,7 @@ class LayoutProcessorPluginTest extends TestCase
      * this module at all, so the stock EAV order reproduces the mis-ordering on
      * every store.
      *
-     * @return array<string,array{0: array<string,mixed>, 1: mixed, 2: string}>
+     * @return array<int,array{0: array<string,mixed>, 1: mixed, 2: string}>
      */
     public static function billingReorderProvider(): array
     {
@@ -570,7 +654,7 @@ class LayoutProcessorPluginTest extends TestCase
     }
 
     /**
-     * @return array<string,array{0: array<string,mixed>, 1: string}>
+     * @return array<int,array{0: array<string,mixed>, 1: string}>
      */
     public static function untouchedBillingNodeProvider(): array
     {
