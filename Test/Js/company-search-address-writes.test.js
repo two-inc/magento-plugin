@@ -251,13 +251,30 @@ const COMPANY_B = {
     street_address: '2 Second Street'
 };
 
+/**
+ * The identity of the panel that owns one form. The write record is keyed on
+ * it, so two forms must be driven through two of these.
+ */
+let panels = {};
+
+function panel(rootSelector) {
+    panels[rootSelector] = panels[rootSelector] || { form: rootSelector };
+    return panels[rootSelector];
+}
+
 afterEach(() => {
     document.body.innerHTML = '';
+    panels = {};
 });
 
 /** One panel writing an address into ITS OWN form. */
 function writeInto(model, address, rootSelector) {
-    return model.applyAddress(address, $(rootSelector));
+    return model.applyAddress(address, $(rootSelector), panel(rootSelector));
+}
+
+/** The retraction that same panel makes. */
+function revertFrom(model, rootSelector) {
+    return model.revertAutofilledAddress($(rootSelector), panel(rootSelector));
 }
 
 describe('an external address payload is routed onto the two address lines', () => {
@@ -399,7 +416,7 @@ describe('a retraction stops at the form it was scoped to', () => {
         writeInto(model, COMPANY_A, PRIMARY);
         writeInto(model, COMPANY_B, SECONDARY);
 
-        expect(model.revertAutofilledAddress($(scoped))).toBe(3);
+        expect(revertFrom(model, scoped)).toBe(3);
 
         expect(read(scoped, 'city')).toBe('');
         expect(read(other, 'city')).toBe(other === PRIMARY ? 'London' : 'Stockholm');
@@ -413,7 +430,7 @@ describe('a retraction stops at the form it was scoped to', () => {
         writeInto(model, COMPANY_A, PRIMARY);
         writeInto(model, COMPANY_A, SECONDARY);
 
-        expect([description, model.revertAutofilledAddress(root)]).toEqual([description, 0]);
+        expect([description, model.revertAutofilledAddress(root, panel(PRIMARY))]).toEqual([description, 0]);
 
         expect(read(PRIMARY, 'city')).toBe('London');
         expect(read(SECONDARY, 'city')).toBe('London');
@@ -469,7 +486,7 @@ describe('a retraction survives the checkout rebuilding its own fieldset', () =>
             street0: '1 Example Street'
         });
 
-        expect(model.revertAutofilledAddress($(SECONDARY))).toBe(3);
+        expect(revertFrom(model, SECONDARY)).toBe(3);
         expect(read(SECONDARY, 'city')).toBe('');
         expect(read(SECONDARY, 'street0')).toBe('');
     });
@@ -484,8 +501,32 @@ describe('a retraction survives the checkout rebuilding its own fieldset', () =>
             street0: '1 Example Street'
         });
 
-        expect(model.revertAutofilledAddress($(SECONDARY))).toBe(2);
+        expect(revertFrom(model, SECONDARY)).toBe(2);
         expect(read(SECONDARY, 'city')).toBe('Ashford');
+    });
+
+    test('and survives the whole subtree holding that fieldset being replaced', () => {
+        // A one-step layout rebuilds the payment-methods subtree, which is
+        // where the billing fieldset lives — so the fieldset ELEMENT is a
+        // different node afterwards, and a record keyed on it describes a node
+        // no reader can reach (TWO-25554).
+        const model = renderCheckout({ regions: true });
+        writeInto(model, COMPANY_A, SECONDARY);
+
+        const container = document.querySelector('.checkout-billing-address');
+        container.innerHTML =
+            '<fieldset class="fieldset address" data-form="billing-new-address">'
+            + addressFields({ regions: true })
+            + '</fieldset>';
+        const values = { city: 'London', postcode: 'EC1A 1BB', street0: '1 Example Street' };
+        const rebuilt = document.querySelector(SECONDARY);
+        Object.keys(values).forEach(function (name) {
+            rebuilt.querySelector(FIELD_SELECTORS[name]).value = values[name];
+        });
+
+        expect(revertFrom(model, SECONDARY)).toBe(3);
+        expect(read(SECONDARY, 'city')).toBe('');
+        expect(read(SECONDARY, 'street0')).toBe('');
     });
 
     test('the other panel\'s form is not reachable through the record either', () => {
@@ -498,7 +539,7 @@ describe('a retraction survives the checkout rebuilding its own fieldset', () =>
             postcode: '111 22',
             street0: '2 Second Street'
         });
-        model.revertAutofilledAddress($(SECONDARY));
+        revertFrom(model, SECONDARY);
 
         expect(read(PRIMARY, 'city')).toBe('London');
         expect(read(PRIMARY, 'street0')).toBe('1 Example Street');

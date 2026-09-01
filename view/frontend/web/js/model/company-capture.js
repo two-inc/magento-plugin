@@ -368,10 +368,10 @@ define([
             );
         },
         revertAutofilledAddress: function () {
-            companySearch.revertAutofilledAddress(shippingWriteRoot());
+            companySearch.revertAutofilledAddress(shippingWriteRoot(), shippingIdentity);
         },
         applyBuyerAddress: function (source) {
-            companySearch.applyAddress(source, shippingWriteTarget());
+            companySearch.applyAddress(source, shippingWriteTarget(), shippingIdentity);
         },
         applyTelephone: function (phoneNumber) {
             companySearch.applyTelephone(phoneNumber, shippingWriteTarget());
@@ -410,10 +410,10 @@ define([
             );
         },
         revertAutofilledAddress: function () {
-            companySearch.revertAutofilledAddress($(BILLING_FORM_ROOT));
+            companySearch.revertAutofilledAddress($(BILLING_FORM_ROOT), billingIdentity);
         },
         applyBuyerAddress: function (source) {
-            companySearch.applyAddress(source, $(BILLING_FORM_ROOT));
+            companySearch.applyAddress(source, $(BILLING_FORM_ROOT), billingIdentity);
         },
         applyTelephone: function (phoneNumber) {
             companySearch.applyTelephone(phoneNumber, $(BILLING_FORM_ROOT));

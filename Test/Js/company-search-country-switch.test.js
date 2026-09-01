@@ -268,7 +268,9 @@ function loadModel() {
         dom: dom,
         // Every write and revert is scoped to the calling panel's own form
         // (TWO-25554); there is no page-wide path.
-        root: dom.$(PRIMARY_ROOT)
+        root: dom.$(PRIMARY_ROOT),
+        /** The panel the write record is keyed on. */
+        panel: {}
     };
 }
 
@@ -445,13 +447,13 @@ beforeEach(() => {
 
 describe('reverting an address autofilled from the previous country', () => {
     test('applyAddress records exactly what it wrote, on every field', () => {
-        const { model, node, root } = loadModel();
+        const { model, node, root, panel } = loadModel();
 
         model.applyAddress({
             city: 'London',
             postal_code: 'EC1A 1BB',
             street_address: '1 Example Street'
-        }, root);
+        }, root, panel);
 
         expect(node(CITY).val()).toBe('London');
         expect(node(CITY).attr(MARKER)).toBe('London');
@@ -460,15 +462,15 @@ describe('reverting an address autofilled from the previous country', () => {
     });
 
     test('the revert clears an untouched autofill and fires change for it', () => {
-        const { model, node, dom, root } = loadModel();
+        const { model, node, dom, root, panel } = loadModel();
         model.applyAddress({
             city: 'London',
             postal_code: 'EC1A 1BB',
             street_address: '1 Example Street'
-        }, root);
+        }, root, panel);
         dom.triggered.length = 0;
 
-        expect(model.revertAutofilledAddress(root)).toBe(3);
+        expect(model.revertAutofilledAddress(root, panel)).toBe(3);
 
         expect(node(CITY).val()).toBe('');
         expect(node(POSTCODE).val()).toBe('');
@@ -482,27 +484,27 @@ describe('reverting an address autofilled from the previous country', () => {
         // The whole reason the marker records the VALUE rather than a boolean.
         // Over-clearing here deletes buyer input on a keystroke they may have
         // made minutes earlier — worse than leaving a stale value they can see.
-        const { model, node, root } = loadModel();
+        const { model, node, root, panel } = loadModel();
         model.applyAddress({
             city: 'London',
             postal_code: 'EC1A 1BB',
             street_address: '1 Example Street'
-        }, root);
+        }, root, panel);
         node(CITY).val('Madrid');
 
-        expect(model.revertAutofilledAddress(root)).toBe(2);
+        expect(model.revertAutofilledAddress(root, panel)).toBe(2);
 
         expect(node(CITY).val()).toBe('Madrid');
         expect(node(POSTCODE).val()).toBe('');
     });
 
     test('a hand-filled form with no autofill behind it is left entirely alone', () => {
-        const { model, node, root } = loadModel();
+        const { model, node, root, panel } = loadModel();
         node(CITY).val('Madrid');
         node(POSTCODE).val('28001');
         node(STREET).val('Calle Example 1');
 
-        expect(model.revertAutofilledAddress(root)).toBe(0);
+        expect(model.revertAutofilledAddress(root, panel)).toBe(0);
 
         expect(node(CITY).val()).toBe('Madrid');
         expect(node(POSTCODE).val()).toBe('28001');
@@ -513,25 +515,25 @@ describe('reverting an address autofilled from the previous country', () => {
         // Two companies sharing a postcode: without the refresh the second
         // write leaves no recording, and the field reads as buyer-typed — so
         // the revert would strand it — for the rest of the page's life.
-        const { model, node, root } = loadModel();
-        model.applyAddress({ city: 'London', postal_code: 'EC1A 1BB', street_address: 'One' }, root);
+        const { model, node, root, panel } = loadModel();
+        model.applyAddress({ city: 'London', postal_code: 'EC1A 1BB', street_address: 'One' }, root, panel);
         node(POSTCODE).removeAttr(MARKER);
 
-        model.applyAddress({ city: 'London', postal_code: 'EC1A 1BB', street_address: 'Two' }, root);
+        model.applyAddress({ city: 'London', postal_code: 'EC1A 1BB', street_address: 'Two' }, root, panel);
 
         expect(node(POSTCODE).attr(MARKER)).toBe('EC1A 1BB');
-        expect(model.revertAutofilledAddress(root)).toBe(3);
+        expect(model.revertAutofilledAddress(root, panel)).toBe(3);
     });
 
     test('an empty registry value is a recording, not an absence', () => {
         // `''` is what the API sends for a field the registry has nothing for.
         // A falsiness test here would leave the marker unread and the field
         // permanently un-revertable.
-        const { model, node, root } = loadModel();
-        model.applyAddress({ city: 'London', postal_code: '', street_address: 'One' }, root);
+        const { model, node, root, panel } = loadModel();
+        model.applyAddress({ city: 'London', postal_code: '', street_address: 'One' }, root, panel);
 
         expect(node(POSTCODE).attr(MARKER)).toBe('');
-        expect(model.revertAutofilledAddress(root)).toBe(3);
+        expect(model.revertAutofilledAddress(root, panel)).toBe(3);
     });
 });
 
