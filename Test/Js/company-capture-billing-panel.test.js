@@ -473,14 +473,13 @@ describe('the "same as shipping" checkbox toggle re-checks both panels\' mounts'
  * TWO-25554: the quote's BILLING address seeds exactly one panel — the one that
  * owns the billing ROLE.
  *
- * The billing panel while billing is a distinct address, and while it still
- * holds a capture of its own: Fire Checkout re-renders its payment area from
- * the same `change` that pushes the pick into the quote, so the notification
- * can land while the billing fieldset is detached. Otherwise billing IS
- * shipping, and the shipping identity is the only capture the resolver reads.
+ * The billing panel while billing is a distinct address, the shipping panel
+ * otherwise — the only capture the resolver reads then, so seeding the billing
+ * panel discards a saved company the buyer may not be able to re-search.
  *
- * The billing field is taken away AFTER the pick below, which is what such a
- * re-render looks like at the one moment that matters.
+ * Distinctness is the live DOM answer, so a checkout whose billing fieldset is
+ * away at the moment the quote notifies seeds shipping. The "same as shipping"
+ * checkbox is what retires billing's own capture, and it is exercised here.
  */
 describe('the quote\'s billing address seeds the panel owning the billing role', () => {
     const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
@@ -500,11 +499,14 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
         return renderer;
     }
 
-    /** The billing panel, mounted and holding its own pick. */
+    /**
+     * The billing panel, mounted and holding its own pick. Booted through
+     * `capture.start()` — the checkbox listener that retires a stale billing
+     * capture is wired there, so a per-component boot pins nothing about it.
+     */
     function billingPicks(capture, dom, company) {
         dom.setVisible(BILLING_FIELD, true);
-        capture.shipping.start();
-        capture.billing.start();
+        capture.start();
         capture.billing.selectCompany({ text: company, companyId: '222', lookupId: 'l2' });
     }
 
@@ -522,7 +524,13 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
         };
     }
 
-    test('through the quote\'s billing address, with the fieldset gone at the moment it notifies', () => {
+    /** Core's own checkbox, re-checked: billing is shipping again. */
+    function sameAsShippingAgain(capture, dom) {
+        dom.setVisible(BILLING_FIELD, false);
+        dom.fireChange('input[name="billing-address-same-as-shipping"]');
+    }
+
+    test('through the quote\'s billing address, with the fieldset away it seeds SHIPPING', () => {
         const { capture, dom } = load();
         billingPicks(capture, dom, 'Billing Co');
         const renderer = loadRenderer(capture, dom);
@@ -530,9 +538,36 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
 
         renderer.updateBillingAddress(billingQuoteAddress('Billing Co'));
 
-        expect(capture.shipping.identity().companyName()).toBe('');
-        expect(capture.shipping.identity().companyId()).toBe('');
-        expect(capture.billing.identity().companyName()).toBe('Billing Co');
+        expect(capture.shipping.identity().companyName()).toBe('Billing Co');
+        expect(capture.shipping.identity().companyId()).toBe('222');
+    });
+
+    test('re-checking "same as shipping" retires the billing panel\'s own capture', () => {
+        const { capture, dom } = load();
+        billingPicks(capture, dom, 'Billing Co');
+
+        sameAsShippingAgain(capture, dom);
+
+        expect(capture.billing.identity().companyName()).toBe('');
+        expect(capture.billing.identity().companyId()).toBe('');
+    });
+
+    test('after that re-check the returning buyer\'s saved company seeds SHIPPING, not billing', () => {
+        // A saved shipping address carries the company as a custom attribute
+        // and reaches the panels only through the quote's billing address. A
+        // billing capture left standing from before the re-check routed the
+        // seed to a panel the resolver no longer reads, so the tile and
+        // order-intent showed nothing at all.
+        const { capture, dom } = load();
+        billingPicks(capture, dom, 'Billing Co');
+        const renderer = loadRenderer(capture, dom);
+        sameAsShippingAgain(capture, dom);
+
+        renderer.updateBillingAddress(billingQuoteAddress('Saved Shipping Co'));
+
+        expect(capture.shipping.identity().companyName()).toBe('Saved Shipping Co');
+        expect(capture.shipping.identity().companyId()).toBe('222');
+        expect(capture.billing.identity().companyName()).toBe('');
     });
 
     test('the companyData section still restores the shipping step\'s own company', () => {

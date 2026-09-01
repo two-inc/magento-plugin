@@ -412,18 +412,15 @@ define([
          * The identity that speaks for the quote's BILLING address — one
          * destination, chosen before the seed is written.
          *
-         * The billing panel while billing is a distinct address, and while it
-         * still holds a capture of its own — Fire Checkout drops the billing
-         * fieldset for an instant while the quote still carries that address.
-         * Otherwise billing IS shipping, and the shipping identity is the only
-         * capture the resolver reads (company-source-resolver.js); seeding the
-         * billing panel there discards a saved company outright.
+         * The billing panel while billing is a distinct address. Otherwise
+         * billing IS shipping, and the shipping identity is the only capture
+         * the resolver reads (company-source-resolver.js); seeding the billing
+         * panel there discards a saved company outright.
          *
          * @returns {object}
          */
         billingRoleIdentity: function () {
-            if (billingIsDistinct() || billingIdentity.companyId()) return billingIdentity;
-            return shippingIdentity;
+            return billingIsDistinct() ? billingIdentity : shippingIdentity;
         },
         start: function () {
             shippingComponent.start();
@@ -435,6 +432,10 @@ define([
             // hidden from page load, so the checkbox is the only event that
             // means "check again".
             $(document).on('change.twoCompanyCaptureMount', BILLING_TOGGLE_SELECTOR, function () {
+                // The checkbox is the buyer saying so, which a re-render of the
+                // billing fieldset is not: billing being shipping again retires
+                // what the billing panel captured, and nothing else does.
+                if (!billingIsDistinct()) billingIdentity.clear();
                 shippingComponent.refreshMount();
                 billingComponent.refreshMount();
             });
