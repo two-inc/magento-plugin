@@ -99,11 +99,7 @@ define([
 
     /**
      * The country select the SHIPPING/tile mount answers to — its OWN form's,
-     * or none at all.
-     *
-     * Its own form's select wherever it is mounted — the tile has no address
-     * fields, and borrowing the BILLING form's there meant a buyer changing
-     * their billing country invalidated the shipping panel's captured company
+     * never the billing form's, whose switches belong to the other panel
      * (TWO-25554). With no shipping form in play there is no adjacent country
      * at all, and `null` sends the component to the quote instead.
      *
@@ -131,7 +127,7 @@ define([
     /**
      * One panel's own country listener, for the selector of ITS OWN form's
      * select — never a shared `select[name="country_id"]` delegation, which
-     * let one form's switch invalidate the other panel's capture (TWO-25554).
+     * would answer for the other panel's form too (TWO-25554).
      *
      * @param {string} selectSelector
      * @returns {function(function(string))}
@@ -282,12 +278,8 @@ define([
 
     /**
      * Where the SHIPPING panel's own writes land, or `null` when it has no form
-     * of its own.
-     *
-     * Tile-mounted there is no shipping address form on this checkout at all,
-     * and the only form on the page is the BILLING panel's. Borrowing it landed
-     * shipping's address, telephone and country-switch retraction in the other
-     * panel's fields; a panel with no form of its own writes nowhere
+     * of its own — tile-mounted, the only address form on the page is the
+     * BILLING panel's, and a panel with no form of its own writes nowhere
      * (TWO-25554).
      *
      * @returns {?object} jQuery set, or null
@@ -297,11 +289,26 @@ define([
         return $(ADDRESS_FORM_ROOT);
     }
 
+    /**
+     * Which panel owns the payment tile's company field. The tile is a single
+     * field for a single company, so exactly one control may bind there: the
+     * shipping panel takes it only while the billing panel has no mount of its
+     * own, because a mounted billing panel is already the buyer's route to
+     * supply a company and a second required field for the same answer cannot
+     * be completed (TWO-25554).
+     *
+     * @returns {boolean}
+     */
+    function tileIsShippingPanels() {
+        return !billingComponent.mountSelector();
+    }
+
     shippingComponent = new CompanyCaptureComponent(Object.assign(sharedHostOptions(), {
         identity: shippingIdentity,
         addressFieldSelector: ADDRESS_FIELD_SELECTOR,
         tileFieldSelector: TILE_FIELD_SELECTOR,
         fieldExists: function (selector) {
+            if (selector === TILE_FIELD_SELECTOR && !tileIsShippingPanels()) return false;
             return !!$(selector).length;
         },
         getAdjacentCountry: function () {
@@ -404,6 +411,25 @@ define([
         identity: resolvedIdentity,
         shipping: shippingComponent,
         billing: billingComponent,
+        /**
+         * The identity that speaks for the quote's BILLING address — one
+         * destination, chosen before the seed is written.
+         *
+         * The billing panel while billing is a distinct address, and while it
+         * still holds a capture of its own: a checkout that re-renders (Fire)
+         * drops the billing fieldset for an instant while the quote still
+         * carries that distinct address. Otherwise billing IS shipping, and the
+         * shipping identity is the only capture the resolver reads
+         * (company-source-resolver.js) — sending the seed to the billing panel
+         * there discards a returning buyer's saved company, which a `TWO:` or
+         * sole-trader identity cannot be re-searched to recover.
+         *
+         * @returns {object}
+         */
+        billingRoleIdentity: function () {
+            if (billingIsDistinct() || billingIdentity.companyId()) return billingIdentity;
+            return shippingIdentity;
+        },
         /**
          * The panel whose own capture holds the adopted sole trader, or null.
          * The tile's "select a different sole trader" link is rendered off the

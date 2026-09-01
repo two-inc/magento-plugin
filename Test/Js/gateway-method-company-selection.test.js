@@ -470,10 +470,12 @@ describe('a company picked on the shipping step reaches the payment step', () =>
         expect(renderer.companyId()).toBe('12345678');
     });
 
-    test('the same company on the BILLING address alone reaches nothing but the phone', () => {
-        // TWO-25554: the billing address belongs to the billing panel, and
-        // relaying its company here wrote it into the shipping identity, which
-        // the shipping step then displayed as the buyer's own pick there.
+    test('the same company on the BILLING address alone still seeds the billing role', () => {
+        // No billing panel is mounted on this checkout, so billing is not a
+        // distinct address and the shipping identity is the only capture the
+        // resolver reads — which is what the resolved observables show
+        // (TWO-25554). Where the billing panel IS mounted the seed stops there:
+        // company-capture-billing-panel.test.js.
         const { renderer, billingAddress } = loadWithSections({});
 
         renderer.fillCustomerData();
@@ -486,8 +488,8 @@ describe('a company picked on the shipping step reaches the payment step', () =>
             customAttributes: [{ attribute_code: 'company_id', value: '87654321' }]
         });
 
-        expect(renderer.companyName()).toBe('');
-        expect(renderer.companyId()).toBe('');
+        expect(renderer.companyName()).toBe('Billing Example Ltd');
+        expect(renderer.companyId()).toBe('87654321');
         expect(renderer.telephone()).toBe('+47123 45 678');
     });
 });

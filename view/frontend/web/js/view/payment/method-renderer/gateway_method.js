@@ -61,15 +61,22 @@ define([
     /*
      * The tile's own company input, bound to the identity of the panel MOUNTED
      * there — always the shipping panel (isTileCompanyFieldVisible()), never
-     * the resolved one. Binding it to the resolved identity displayed the
-     * billing panel's capture in the shipping panel's field, and a keystroke
-     * there wrote billing's company into the shipping identity (TWO-25554).
+     * the resolved one, which is the billing panel's capture whenever that
+     * panel wins (TWO-25554).
      */
     const tileIdentity = companyCapture.shipping.identity();
     const tileCompanyName = ko.observable(tileIdentity.companyName());
     const tileCompanyId = ko.observable(tileIdentity.companyId());
     const tileSoleTraderBusy = ko.observable(tileIdentity.soleTraderBusy());
     let tileMirroring = false;
+
+    /**
+     * Bumped whenever the component's mount can have moved. `visible:` and
+     * `required:` bind to isTileCompanyFieldVisible(), whose answer is a live
+     * DOM read tracking no observable of its own, so this is the only thing
+     * that makes Knockout re-evaluate them.
+     */
+    const tileMountRevision = ko.observable(0);
 
     tileIdentity.subscribe(function () {
         tileMirroring = true;
@@ -398,8 +405,9 @@ define([
          * @returns {boolean}
          */
         isTileCompanyFieldVisible: function () {
-            // The tile is exclusively the shipping/no-billing-panel mount's
-            // own fallback (TWO-25554) — the billing panel never binds there.
+            tileMountRevision();
+            // The tile is exclusively the shipping panel's fallback, and only
+            // while that panel actually holds it (TWO-25554).
             if (!companyCapture.shipping.config()) return false;
             return companyCapture.shipping.mountSelector() === TILE_COMPANY_FIELD_SELECTOR;
         },
@@ -412,6 +420,7 @@ define([
          */
         refreshCompanyMount: function () {
             if (companyCapture.shipping.config()) companyCapture.refreshMount();
+            tileMountRevision(tileMountRevision() + 1);
         },
         /**
          * Name AND organisation number, as opposed to merely named — a manual,
@@ -864,10 +873,12 @@ define([
             this.refreshCompanyMount();
         },
         /**
-         * The quote's BILLING address, for the BILLING panel. Its company seeds
-         * that panel's OWN identity: relaying it through fillCompanyData()
-         * painted the buyer's billing company into the shipping form
-         * (TWO-25554).
+         * The quote's BILLING address. Its company seeds the identity of the
+         * panel that owns the billing ROLE — the billing panel while billing is
+         * a distinct address, the shipping panel otherwise, which is the only
+         * one the resolver reads then (TWO-25554). Seeding the billing panel
+         * regardless strands a returning buyer's saved company on a virtual
+         * cart, where a `TWO:` or sole-trader identity is not re-searchable.
          *
          * @param {object} billingAddress quote address
          */
@@ -877,7 +888,7 @@ define([
             const fields = this.readAddressFields(billingAddress);
             this.applyBuyerFields(fields);
             if (fields.companyName && fields.companyId) {
-                companyCapture.billing.identity().write({
+                companyCapture.billingRoleIdentity().write({
                     companyName: fields.companyName,
                     companyId: fields.companyId
                 });

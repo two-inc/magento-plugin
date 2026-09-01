@@ -396,11 +396,11 @@ describe('the shipping panel writes into its OWN form, or nowhere', () => {
     });
 
     test('mounted on the tile fallback, with no shipping form at all, it writes NOWHERE', () => {
-        // The only address form on this checkout is the BILLING panel's.
-        // Borrowing it landed shipping's address, telephone and country-switch
-        // retraction in the other panel's fields (TWO-25554).
+        // A panel with no form of its own writes nowhere: the only address form
+        // on such a checkout is the BILLING panel's (TWO-25554).
         const dom = makeDom();
         dom.setExists(ADDRESS_FIELD, false);
+        dom.setVisible(BILLING_FIELD, false);
         const spy = companySearchSpy(dom);
         const capture = loadWithSpy(dom, spy);
         capture.shipping.start();
@@ -409,6 +409,21 @@ describe('the shipping panel writes into its OWN form, or nowhere', () => {
         capture.shipping.selectCompany({ text: 'Shipping Co', companyId: '111', lookupId: 'l1' });
 
         expect(spy.lookupRoots).toEqual([null]);
+    });
+
+    test('the tile is not the shipping panel\'s while the billing panel is mounted', () => {
+        // One control per field: a second visible, required company field the
+        // resolver ignores cannot be completed by the buyer at all (TWO-25554).
+        const dom = makeDom();
+        dom.setExists(ADDRESS_FIELD, false);
+        dom.setVisible(BILLING_FIELD, true);
+        const spy = companySearchSpy(dom);
+        const capture = loadWithSpy(dom, spy);
+        capture.shipping.start();
+        capture.billing.start();
+
+        expect(capture.billing.mountSelector()).toBe(BILLING_FIELD);
+        expect(capture.shipping.mountSelector()).toBe('');
     });
 });
 
@@ -552,10 +567,10 @@ describe('the quote\'s billing address is never adopted by the shipping identity
         expect(renderer.telephone()).toBe('+47123 45 678');
     });
 
-    test('a company on the billing address no panel captured is still not the shipping identity\'s', () => {
-        // No comparison of names any more: the address it arrived on is what
-        // decides, so a company nothing on the page has captured is refused
-        // here exactly as billing's own is.
+    test('with no billing panel and no billing capture, the seed is the SHIPPING identity\'s', () => {
+        // Billing is not a distinct address here, so the shipping identity is
+        // the only capture the resolver reads: seeding the billing panel would
+        // discard a saved company the buyer cannot re-search (TWO-25554).
         const { capture, dom } = load();
         capture.shipping.start();
         capture.billing.start();
@@ -563,7 +578,9 @@ describe('the quote\'s billing address is never adopted by the shipping identity
 
         renderer.updateBillingAddress(billingQuoteAddress('Some Other Co'));
 
-        expect(capture.shipping.identity().companyName()).toBe('');
+        expect(capture.shipping.identity().companyName()).toBe('Some Other Co');
+        expect(capture.shipping.identity().companyId()).toBe('222');
+        expect(capture.billing.identity().companyName()).toBe('');
     });
 
     test('the shipping step\'s own company still restores from the section while a billing panel is mounted', () => {

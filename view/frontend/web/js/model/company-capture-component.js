@@ -107,10 +107,9 @@
      * @param {function(string): boolean} options.fieldExists whether a selector
      *        matches anything right now.
      * @param {function(): boolean} options.isVirtualCart
-     * @param {function(string): ?string} options.getAdjacentCountry the country
-     *        selected in the form the control at `mountSelector` answers to,
-     *        lower cased. `null` — a different answer from `''` — when there is
-     *        no such select at all.
+     * @param {function(): ?string} options.getAdjacentCountry the country
+     *        selected in the host's OWN form, lower cased. `null` — a different
+     *        answer from `''` — when there is no such select at all.
      * @param {function(): string} options.getQuoteCountry the quote's billing
      *        country, lower cased.
      * @param {function(): string} options.getFallbackCountry a live read for the
@@ -258,9 +257,10 @@
      *          different answer from `''` — a present one with nothing chosen
      */
     CompanyCaptureComponent.prototype.adjacentCountry = function () {
-        const mount = this._boundSelector || this.mountSelector();
-        if (!mount) return null;
-        const answer = this._options.getAdjacentCountry(mount);
+        // Unmounted the panel has no form to answer for, and the quote read
+        // behind this is the honest fallback.
+        if (!(this._boundSelector || this.mountSelector())) return null;
+        const answer = this._options.getAdjacentCountry();
         return typeof answer === 'string' ? answer.toLowerCase() : null;
     };
 
