@@ -42,16 +42,15 @@ define([
     const RATE_LIMIT_BACKOFF_MS = 60000;
 
     /**
-     * Epoch ms before which no registry call is issued, PER SCOPE — the scope
-     * being one capture panel, which is what makes a 429 raised by one panel's
-     * lookup unable to silence the other panel's searching or put an
-     * "address unavailable" notice on the other panel's identity (TWO-25554).
+     * Epoch ms before which no registry call is issued, keyed by the calling
+     * PANEL: a 429 one panel earns must not silence the other's searching or
+     * put an "address unavailable" notice on its identity (TWO-25554).
      *
      * @see RATE_LIMIT_BACKOFF_MS
      */
     let registrySuspensions = new WeakMap();
 
-    /** The scope for a caller with none of its own — this module's own tests. */
+    /** The scope for a caller with none of its own. */
     const FALLBACK_SUSPENSION_SCOPE = {};
 
     function suspensionScope(scope) {
@@ -249,13 +248,9 @@ define([
     const secondaryAddressBaselines = new Map();
 
     /**
-     * Non-zero while a mirror write's own `change` is being dispatched.
-     *
-     * A mirrored country lands in the billing form with a `change` — Knockout's
-     * `value:` binding reads the DOM on nothing else — and that event is
-     * indistinguishable, at the listener, from the buyer choosing a country
-     * there. Read as a buyer edit it invalidated the billing panel's captured
-     * company because the SHIPPING country changed (TWO-25554).
+     * Non-zero while a mirror write's own `change` is being dispatched — the
+     * one thing that tells it from the buyer choosing a country in that same
+     * form, which Knockout's `value:` binding leaves it looking exactly like.
      */
     let mirrorWriteDepth = 0;
 
@@ -1013,6 +1008,9 @@ define([
         // stops there (TWO-25554): the priority list below is document-wide,
         // so a panel falling through it ends up running its registry against
         // the other panel's country.
+        // A panel with an address form of its own reads THAT form and stops
+        // there: the priority list below is document-wide, so a panel falling
+        // through it runs its registry against the other panel's country.
         if ($root) {
             const scoped = scopedField($root, COUNTRY_FIELD.selector).val();
             return typeof scoped === 'string' ? scoped.toLowerCase() : '';
@@ -1434,9 +1432,6 @@ define([
          */
         searchCompanies: function (options) {
             const token = options.token;
-            // The panel's own rate-limit scope where it has one; its bind token
-            // otherwise, which is per-panel too but is re-minted on every
-            // re-bind and so forgets a backoff a re-render walks through.
             const scope = options.scope || token;
             const country = options.getCountryCode()?.toUpperCase();
             const cacheKey = `search|${country}|${options.term}`;
@@ -1546,9 +1541,6 @@ define([
             // Whether the caller ASKED for a scope, which applyAddress() tells
             // apart from not passing one at all — see its own refusal.
             const scoped = arguments.length >= 3;
-            // The panel's identity is its rate-limit scope on both routes, so a
-            // 429 on a search and a 429 on a lookup park the same panel and
-            // only that panel.
             const scope = identity;
             const lookupState = addressLookupState(root);
             const generation = ++lookupState.generation;
@@ -1687,9 +1679,7 @@ define([
                 return 0;
             }
             // A caller that ASKED for a scope and came back with nothing gets
-            // no write at all. Falling through to the page-wide path below put
-            // one panel's pick into every address form on the page, the other
-            // panel's included (TWO-25554).
+            // no write: the page-wide path below reaches the other panel's form.
             if (arguments.length > 1) {
                 console.error('companySearch.applyAddress: refused an unscoped write.');
                 return 0;
@@ -2021,11 +2011,9 @@ define([
          * address once they have touched any of it, including the parts they
          * left alone.
          *
-         * @param {object} [root] the calling panel's own form — reverted ALONE,
-         *        so one panel's country switch cannot retract the other panel's
-         *        fields (TWO-25554). Omitted entirely, this is the address
-         *        step's own retraction and reaches the mirror as described
-         *        above; passed but empty, nothing is reverted.
+         * @param {object} [root] the calling panel's own form, reverted ALONE.
+         *        Omitted entirely, this is the address step's own retraction and
+         *        reaches the mirror as described above.
          * @returns {number} how many fields were cleared — for tests, and so a
          *          caller can tell "nothing was ours" from "reverted"
          */
