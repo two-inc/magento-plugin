@@ -543,6 +543,80 @@ describe('the billing panel\'s own writes have their own destination', () => {
         });
 });
 
+/*
+ * TWO-25554: core renders one "same as shipping" checkbox per payment-method
+ * renderer, each with its own default. Read page-wide, whichever renderer the
+ * checkout output first answered for the buyer — so an inactive method's box,
+ * still at core's checked default, said billing was shipping while the buyer
+ * had unchecked the box they could actually see.
+ */
+describe('only the ACTIVE payment method\'s "same as shipping" checkbox is read', () => {
+    const ACTIVE_METHOD = 'two_payment';
+
+    /** @returns {string} which panel speaks for the quote's billing address */
+    function billingRole(booted) {
+        return booted.capture.billingRoleIdentity() === booted.identities.billing
+            ? 'billing'
+            : 'shipping';
+    }
+
+    /**
+     * An inactive method's checkbox at core's checked default, output BEFORE the
+     * active method's — which is what a page-wide read lands on.
+     */
+    function addInactiveMethodToggle() {
+        const container = document.querySelector('.checkout-billing-address');
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.id = 'billing-address-same-as-shipping-checkmo';
+        box.name = 'billing-address-same-as-shipping';
+        box.checked = true;
+        container.insertBefore(box, container.firstChild);
+    }
+
+    test('an inactive method\'s checked box does not answer for the active method', () => {
+        const booted = boot();
+        booted.quote.paymentMethod({ method: ACTIVE_METHOD });
+        // The buyer's own box, on the method they are looking at: unchecked.
+        expect(billingRole(booted)).toBe('billing');
+
+        addInactiveMethodToggle();
+
+        expect(billingRole(booted)).toBe('billing');
+    });
+
+    test('the resolved company still follows the billing panel through the extra box', () => {
+        const booted = boot();
+        booted.quote.paymentMethod({ method: ACTIVE_METHOD });
+        addInactiveMethodToggle();
+
+        picks(booted.panels.shipping, COMPANIES.shipping);
+        picks(booted.panels.billing, COMPANIES.billing);
+
+        expect(booted.capture.identity.companyId()).toBe(COMPANIES.billing.companyId);
+    });
+
+    test('the ACTIVE method\'s own box is still obeyed when the buyer checks it', () => {
+        const booted = boot();
+        booted.quote.paymentMethod({ method: ACTIVE_METHOD });
+        addInactiveMethodToggle();
+
+        document.querySelector(`#billing-address-same-as-shipping-${ACTIVE_METHOD}`).checked = true;
+
+        expect(billingRole(booted)).toBe('shipping');
+    });
+
+    test('with no method selected, no box is attributable and the quote answers alone', () => {
+        const booted = boot();
+        addInactiveMethodToggle();
+        expect(booted.quote.paymentMethod()).toBeNull();
+
+        // The quote holds a billing address and no shipping one, so billing is
+        // an address of its own whatever the unattributable boxes say.
+        expect(billingRole(booted)).toBe('billing');
+    });
+});
+
 describe('the quote\'s billing address belongs to the billing panel', () => {
     const SAVED = {
         countryId: 'GB',

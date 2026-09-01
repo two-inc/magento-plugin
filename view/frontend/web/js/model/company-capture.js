@@ -65,8 +65,15 @@ define([
     /** The country select inside that SAME billing form — never a shared one. */
     const BILLING_COUNTRY_SELECTOR = `${BILLING_FORM_ROOT} select[name="country_id"]`;
 
-    /** "My billing and shipping address are the same" — core's own checkbox. */
+    /**
+     * "My billing and shipping address are the same" — core's own checkbox, one
+     * per payment-method renderer. Bare, so a delegated listener hears every
+     * one of them; see activeBillingToggle() for READING one.
+     */
     const BILLING_TOGGLE_SELECTOR = 'input[name="billing-address-same-as-shipping"]';
+
+    /** Core's own per-renderer id for that checkbox, less the method code. */
+    const BILLING_TOGGLE_ID_PREFIX = 'billing-address-same-as-shipping-';
 
     /** @see soleAddressForm — what makes a container an address form. */
     const ADDRESS_STREET_SELECTOR = 'input[name="street[0]"]';
@@ -112,9 +119,33 @@ define([
      * @returns {boolean}
      */
     function billingIsDistinct() {
-        const $toggle = $(BILLING_TOGGLE_SELECTOR);
-        if ($toggle.length && $toggle.prop('checked')) return false;
+        const $toggle = activeBillingToggle();
+        if ($toggle && $toggle.length && $toggle.prop('checked')) return false;
         return quoteHoldsDistinctBillingAddress();
+    }
+
+    /**
+     * The one "same as shipping" checkbox that speaks for the buyer.
+     *
+     * Core renders one per payment-method renderer, each with its own default,
+     * so a page-wide read is answered by whichever renderer the checkout output
+     * first — an inactive method's box as readily as the active one
+     * (TWO-25554). A single box on the page is unambiguous whatever its id; past
+     * that the active method's own is identified by core's id convention, and a
+     * checkout that renders several and abandons that convention has no
+     * attributable answer, leaving the quote as the honest source.
+     *
+     * @returns {?object} jQuery(-shaped) set, or `null` when no box can be
+     *          attributed to the active method
+     */
+    function activeBillingToggle() {
+        const $all = $(BILLING_TOGGLE_SELECTOR);
+        // `> 1` rather than `< 2`: a jQuery-shaped double reports no length at
+        // all, and presence is the best answer available for those.
+        if (!($all.length > 1)) return $all;
+        const selected = quote.paymentMethod();
+        const code = selected && selected.method;
+        return code ? $(`#${BILLING_TOGGLE_ID_PREFIX}${code}`) : null;
     }
 
     /**
