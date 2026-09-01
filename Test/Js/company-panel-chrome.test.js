@@ -209,17 +209,18 @@ beforeEach(() => {
 });
 
 describe('the company number is painted under its own panel\'s field', () => {
-    test.each(DIRECTIONS)('%s picks a company (%s)', (actor) => {
+    test.each(DIRECTIONS)('%s picks a company (%s)', (actor, description) => {
         const other = OTHER[actor];
         const { panels } = boot();
 
         picks(panels[actor], COMPANIES[actor]);
 
-        expect(numbersIn(actor)).toEqual([COMPANIES[actor].companyId]);
-        expect(numbersIn(other)).toEqual([]);
+        expect(tagged(description, numbersIn(actor)))
+            .toEqual(tagged(description, [COMPANIES[actor].companyId]));
+        expect(tagged(description, numbersIn(other))).toEqual(tagged(description, []));
     });
 
-    test.each(DIRECTIONS)('%s is in manual entry (%s)', (actor) => {
+    test.each(DIRECTIONS)('%s is in manual entry (%s)', (actor, description) => {
         const { panels } = boot();
         picks(panels[actor], COMPANIES[actor]);
 
@@ -227,28 +228,29 @@ describe('the company number is painted under its own panel\'s field', () => {
 
         // Name-only capture: a number here would claim a registry identity the
         // buyer never picked.
-        expect(numbersIn(actor)).toEqual([]);
+        expect(tagged(description, numbersIn(actor))).toEqual(tagged(description, []));
     });
 
-    test.each(DIRECTIONS)('%s captures an internally-prefixed number (%s)', (actor) => {
+    test.each(DIRECTIONS)('%s captures an internally-prefixed number (%s)', (actor, description) => {
         const { panels } = boot();
 
         picks(panels[actor], { text: 'No Public Number Ltd', companyId: 'TWO:abc', lookupId: 'l3' });
 
-        expect(numbersIn(actor)).toEqual([]);
+        expect(tagged(description, numbersIn(actor))).toEqual(tagged(description, []));
     });
 
-    test.each(DIRECTIONS)('%s clears its capture (%s)', (actor) => {
+    test.each(DIRECTIONS)('%s clears its capture (%s)', (actor, description) => {
         const { panels, identities } = boot();
         picks(panels[actor], COMPANIES[actor]);
-        expect(numbersIn(actor)).toEqual([COMPANIES[actor].companyId]);
+        expect(tagged(description, numbersIn(actor)))
+            .toEqual(tagged(description, [COMPANIES[actor].companyId]));
 
         identities[actor].clear();
 
-        expect(numbersIn(actor)).toEqual([]);
+        expect(tagged(description, numbersIn(actor))).toEqual(tagged(description, []));
     });
 
-    test.each(DIRECTIONS)('%s renders a number restored by a reload (%s)', (actor) => {
+    test.each(DIRECTIONS)('%s renders a number restored by a reload (%s)', (actor, description) => {
         const other = OTHER[actor];
         const restored = { shipping: 'shippingNumber', billing: 'billingNumber' };
 
@@ -256,9 +258,9 @@ describe('the company number is painted under its own panel\'s field', () => {
         // the checkoutProvider restores it.
         const { identities } = boot({ [restored[actor]]: '999999999' });
 
-        expect(identities[actor].companyId()).toBe('');
-        expect(numbersIn(actor)).toEqual(['999999999']);
-        expect(numbersIn(other)).toEqual([]);
+        expect(tagged(description, identities[actor].companyId())).toEqual(tagged(description, ''));
+        expect(tagged(description, numbersIn(actor))).toEqual(tagged(description, ['999999999']));
+        expect(tagged(description, numbersIn(other))).toEqual(tagged(description, []));
     });
 
     test('a tile-mounted panel claims no number restored into the billing form', () => {
@@ -391,34 +393,34 @@ describe('chrome never enters the popover\'s positioning context', () => {
 });
 
 describe('the "select a different sole trader" link belongs to its own panel', () => {
-    test.each(DIRECTIONS)('%s adopts a sole trader (%s)', (actor) => {
+    test.each(DIRECTIONS)('%s adopts a sole trader (%s)', (actor, description) => {
         const other = OTHER[actor];
         const { panels } = boot();
 
         panels[actor].adoptSoleTrader(BUYERS[actor]);
 
-        expect(linksIn(actor)).toBe(1);
-        expect(linksIn(other)).toBe(0);
+        expect(tagged(description, linksIn(actor))).toEqual(tagged(description, 1));
+        expect(tagged(description, linksIn(other))).toEqual(tagged(description, 0));
     });
 
-    test.each(DIRECTIONS)('%s picks a registered company instead (%s)', (actor) => {
+    test.each(DIRECTIONS)('%s picks a registered company instead (%s)', (actor, description) => {
         const { panels } = boot();
 
         picks(panels[actor], COMPANIES[actor]);
 
-        expect(linksIn(actor)).toBe(0);
+        expect(tagged(description, linksIn(actor))).toEqual(tagged(description, 0));
     });
 
-    test.each(DIRECTIONS)('%s has its adoption withdrawn (%s)', (actor) => {
+    test.each(DIRECTIONS)('%s has its adoption withdrawn (%s)', (actor, description) => {
         const { panels, identities } = boot();
         panels[actor].adoptSoleTrader(BUYERS[actor]);
 
         identities[actor].soleTraderAdopted(false);
 
-        expect(linksIn(actor)).toBe(0);
+        expect(tagged(description, linksIn(actor))).toEqual(tagged(description, 0));
     });
 
-    test.each(DIRECTIONS)('%s link is clicked (%s)', (actor) => {
+    test.each(DIRECTIONS)('%s link is clicked (%s)', (actor, description) => {
         const other = OTHER[actor];
         const { panels, soleTraderCalls } = boot();
         panels[actor].adoptSoleTrader(BUYERS[actor]);
@@ -426,7 +428,7 @@ describe('the "select a different sole trader" link belongs to its own panel', (
 
         document.querySelector(`${FORMS[actor]} .${LINK_CLASS}__link`).click();
 
-        expect(soleTraderCalls).toEqual([panels[actor]]);
+        expect(tagged(description, soleTraderCalls)).toEqual(tagged(description, [panels[actor]]));
     });
 });
 
