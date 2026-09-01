@@ -54,7 +54,13 @@
 const fs = require('fs');
 const path = require('path');
 
-const { loadAmdModule, defaultMocks, loadCompanyCapture, brandConfigMock } = require('./amd-harness');
+const {
+    loadAmdModule,
+    defaultMocks,
+    loadCompanyCapture,
+    brandConfigMock,
+    quoteAddress
+} = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
@@ -422,7 +428,7 @@ function loadTile() {
             'Magento_Checkout/js/model/quote': Object.assign(
                 {},
                 defaultMocks()['Magento_Checkout/js/model/quote'],
-                { billingAddress: function () { return { countryId: 'GB' }; } }
+                { billingAddress: quoteAddress({ countryId: 'GB' }) }
             )
         })
     );

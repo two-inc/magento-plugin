@@ -23,7 +23,8 @@ const {
     defaultMocks,
     brandConfigMock,
     installAsyncSimulation,
-    tagged
+    tagged,
+    quoteAddress
 } = require('./amd-harness');
 
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
@@ -145,7 +146,7 @@ function boot(options) {
             {},
             defaultMocks()['Magento_Checkout/js/model/quote'],
             {
-                billingAddress: function () { return { countryId: 'GB' }; },
+                billingAddress: quoteAddress({ countryId: 'GB' }, 'billing'),
                 isVirtual: function () { return false; }
             }
         ),
