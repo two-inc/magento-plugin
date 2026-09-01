@@ -25,7 +25,8 @@ const {
     defaultMocks,
     loadCompanySearchPanel,
     dispatchNative,
-    brandConfigMock
+    brandConfigMock,
+    quoteAddress
 } = require('./amd-harness');
 
 const SOLE_TRADER = 'view/frontend/web/js/model/sole-trader.js';
@@ -57,7 +58,7 @@ function makeEnv() {
             {},
             defaultMocks()['Magento_Checkout/js/model/quote'],
             {
-                billingAddress: function () { return { countryId: 'GB' }; },
+                billingAddress: quoteAddress({ countryId: 'GB' }),
                 getQuoteId: function () { return 'cart-1'; },
                 isVirtual: function () { return false; }
             }

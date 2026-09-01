@@ -34,7 +34,8 @@ const {
     loadCompanySearchPanel,
     defaultMocks,
     brandConfigMock,
-    installAsyncSimulation
+    installAsyncSimulation,
+    quoteAddress
 } = require('./amd-harness');
 
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
@@ -82,7 +83,7 @@ function load() {
             {},
             defaultMocks()['Magento_Checkout/js/model/quote'],
             {
-                billingAddress: function () { return { countryId: 'NO' }; },
+                billingAddress: quoteAddress({ countryId: 'NO' }),
                 isVirtual: function () { return false; }
             }
         ),

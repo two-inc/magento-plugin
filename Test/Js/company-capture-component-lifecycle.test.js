@@ -32,7 +32,9 @@ const {
     loadCompanySearchPanel,
     brandConfigMock,
     defaultMocks,
-    installAsyncSimulation
+    installAsyncSimulation,
+    quoteAddress,
+    makeObservable
 } = require('./amd-harness');
 
 const CONTROLLER = 'view/frontend/web/js/model/company-capture-component.js';
@@ -175,9 +177,9 @@ function load(options) {
                     // `deferCountry` reproduces a guest checkout at boot: the
                     // quote carries no address yet, so the country is only
                     // readable once a form exists to read it from.
-                    billingAddress: function () {
-                        return opts.deferCountry ? null : { countryId: 'GB' };
-                    }
+                    billingAddress: opts.deferCountry
+                        ? makeObservable(null)
+                        : quoteAddress({ countryId: 'GB' })
                 }
             ),
             'Two_Gateway/js/model/company-search': companySearchMock

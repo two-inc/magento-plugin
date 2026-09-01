@@ -65,8 +65,15 @@ define([
     /** The country select inside that SAME billing form — never a shared one. */
     const BILLING_COUNTRY_SELECTOR = `${BILLING_FORM_ROOT} select[name="country_id"]`;
 
-    /** "My billing and shipping address are the same" — core's own checkbox. */
+    /**
+     * "My billing and shipping address are the same" — core's own checkbox, one
+     * per payment-method renderer. Bare, so a delegated listener hears every
+     * one of them; see activeBillingToggle() for READING one.
+     */
     const BILLING_TOGGLE_SELECTOR = 'input[name="billing-address-same-as-shipping"]';
+
+    /** Core's own per-renderer id for that checkbox, less the method code. */
+    const BILLING_TOGGLE_ID_PREFIX = 'billing-address-same-as-shipping-';
 
     /** @see soleAddressForm — what makes a container an address form. */
     const ADDRESS_STREET_SELECTOR = 'input[name="street[0]"]';
@@ -88,22 +95,66 @@ define([
     /**
      * Present AND visible — never merely present. Core leaves the billing form
      * in the DOM hidden once "same as shipping" is re-checked, and a hidden
-     * field is neither a live mount nor a distinct address.
+     * field is not a live mount.
      *
-     * `.is` is feature-detected: jQuery-shaped test doubles model presence
-     * only, and presence is the best answer available for those.
-     *
-     * @param {object} $field a jQuery(-shaped) set
+     * @param {object} $field a jQuery set
      * @returns {boolean}
      */
     function isVisible($field) {
         if (!$field.length) return false;
-        return typeof $field.is === 'function' ? $field.is(':visible') : true;
+        return $field.is(':visible');
     }
 
-    /** Is billing currently a distinct address from shipping? @returns {boolean} */
+    /**
+     * Is billing currently a distinct address from shipping? The single
+     * authority — the resolver and billingRoleIdentity() both read this one.
+     *
+     * The buyer's checkbox and the quote, never whether the billing fieldset is
+     * on screen: a third-party re-render detaches that fieldset for an instant
+     * while neither the buyer's intent nor the quote has changed (TWO-25554).
+     *
+     * @returns {boolean}
+     */
     function billingIsDistinct() {
-        return isVisible($(BILLING_FIELD_SELECTOR));
+        const $toggle = activeBillingToggle();
+        if ($toggle && $toggle.length && $toggle.prop('checked')) return false;
+        return quoteHoldsDistinctBillingAddress();
+    }
+
+    /**
+     * The one "same as shipping" checkbox that speaks for the buyer.
+     *
+     * Core renders one per payment-method renderer, each with its own default,
+     * so a page-wide read is answered by whichever the checkout output first —
+     * an inactive method's box as readily as the active one (TWO-25554). One
+     * box is unambiguous whatever its id; past that the active method's own is
+     * found by core's id convention, and a checkout that renders several and
+     * abandons that convention leaves the quote as the honest source.
+     *
+     * @returns {?object} jQuery set — empty when several boxes are rendered
+     *          and the active method's own is absent; `null` when several are
+     *          rendered and no payment method is selected
+     */
+    function activeBillingToggle() {
+        const $all = $(BILLING_TOGGLE_SELECTOR);
+        if ($all.length < 2) return $all;
+        const selected = quote.paymentMethod();
+        const code = selected && selected.method;
+        return code ? $(`#${BILLING_TOGGLE_ID_PREFIX}${code}`) : null;
+    }
+
+    /**
+     * No shipping address at all — a virtual cart — leaves billing as the only
+     * address the quote holds, which no shipping address can be the same as.
+     *
+     * @returns {boolean}
+     */
+    function quoteHoldsDistinctBillingAddress() {
+        const billingAddress = quote.billingAddress();
+        if (!billingAddress) return false;
+        const shippingAddress = quote.shippingAddress();
+        if (!shippingAddress) return true;
+        return shippingAddress.getCacheKey() != billingAddress.getCacheKey();
     }
 
     /**
@@ -434,7 +485,6 @@ define([
         tileFieldSelector: '',
         fieldExists: function (selector) {
             if (!selector) return false;
-            // See isVisible() and billingIsDistinct() above.
             return isVisible($(selector));
         },
         getAdjacentCountry: function () {
@@ -484,6 +534,10 @@ define([
             // once for that — this only covers a LATER DOM appearance of the
             // billing form/checkbox that the initial recompute() ran before.
             $.async(BILLING_FIELD_SELECTOR, onChange);
+            // Core can select a billing address without the checkbox moving,
+            // and the quote is the predicate's other input.
+            quote.billingAddress.subscribe(onChange);
+            quote.shippingAddress.subscribe(onChange);
         }
     });
 
