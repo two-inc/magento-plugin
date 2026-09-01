@@ -1004,10 +1004,6 @@ define([
     }
 
     function currentAddressFormCountry($root) {
-        // A panel that has an address form of its own reads THAT form and
-        // stops there (TWO-25554): the priority list below is document-wide,
-        // so a panel falling through it ends up running its registry against
-        // the other panel's country.
         // A panel with an address form of its own reads THAT form and stops
         // there: the priority list below is document-wide, so a panel falling
         // through it runs its registry against the other panel's country.
@@ -1931,13 +1927,12 @@ define([
             const key = secondaryAddressKey($root);
             if (!key || secondaryAddressBaselines.has(key)) return;
             // Too late to trust what THIS form is holding: the mirror has
-            // already written into it, so what it shows now is ours rather than
-            // a store default. Seal an EMPTY baseline instead — only a
-            // genuinely empty field then counts as unanswered, which pins
-            // rather than overwrites. Asked of this form's own record, never of
-            // whether ANY form on the page has one: a sibling billing form
-            // appearing later is a pristine form, and sealing it empty pinned
-            // it permanently before the buyer had touched it (TWO-25554).
+            // already written into it, so what it shows is ours rather than a
+            // store default. Seal an EMPTY baseline instead, so only a
+            // genuinely empty field counts as unanswered. Asked of this form's
+            // own record, never of whether ANY form has one — a sibling billing
+            // form appearing later is pristine, and sealing it empty pinned it
+            // before the buyer had touched it (TWO-25554).
             if (mirrorWriteRecords.has(key)) {
                 secondaryAddressBaselines.set(key, {});
                 return;
