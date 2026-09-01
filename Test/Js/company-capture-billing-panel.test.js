@@ -583,3 +583,99 @@ describe('a company the billing panel captured is never adopted by the shipping 
         expect(capture.shipping.identity().companyName()).toBe('Shipping Co');
     });
 });
+
+/**
+ * TWO-25554, Fire Checkout regression, the actual vector: the payment
+ * renderer's reaction to the RESOLVED company changing.
+ *
+ * The resolved identity is a live mirror of whichever panel wins, so a
+ * billing-only pick changes it — that is the design. The renderer reacts by
+ * starting a fresh order-intent check for the newly resolved company, which is
+ * also the design. It did so by calling `fillCompanyData()`, whose OTHER half
+ * writes the SHIPPING panel's identity: so every billing pick wrote billing's
+ * company and number back into the shipping panel, which the address step then
+ * displayed as though the buyer had picked it there.
+ *
+ * Nothing about this route touches the billing form, the mount, or the DOM, so
+ * neither of the two gates that scope the mirror and the quote's billing
+ * address stands anywhere near it — which is why it survived both of them.
+ */
+describe('a resolved-company change starts a check WITHOUT writing the shipping identity', () => {
+    const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
+
+    /**
+     * @returns {{renderer: object, requests: Array}} the renderer with order
+     *          intent ON and `placeOrderIntent()` recorded rather than sent
+     */
+    function loadRendererWithIntent(capture, dom) {
+        const requests = [];
+        const renderer = loadAmdModule(RENDERER, Object.assign({}, defaultMocks(), {
+            jquery: dom.$,
+            'Two_Gateway/js/model/company-capture': capture
+        }), { document: document, window: window });
+        renderer.getCode = function () { return 'two_payment'; };
+        renderer.isOrderIntentEnabled = true;
+        renderer.placeOrderIntent = function () {
+            requests.push({ companyId: renderer.companyId(), companyName: renderer.companyName() });
+            return {
+                always: function () { return this; },
+                done: function () { return this; },
+                fail: function () { return this; }
+            };
+        };
+        // Assigns the module-level resolved-company reaction, same as the
+        // renderer's own initialize() does in production.
+        renderer.initOrderIntentApprovedNotice({
+            orderIntentApprovedNotice: {
+                withCompany: 'Approved for {c} ({n}).',
+                withoutCompany: 'Approved.',
+                companyNameToken: '{c}',
+                companyNumberToken: '{n}'
+            }
+        });
+        renderer.messageContainer = {
+            clear: function () {},
+            addErrorMessage: function () {},
+            errorMessages: { remove: function () {} }
+        };
+        return { renderer: renderer, requests: requests };
+    }
+
+    test('a billing-only pick leaves the shipping identity empty', () => {
+        const { capture, dom } = load();
+        dom.setVisible(BILLING_FIELD, true);
+        capture.shipping.start();
+        capture.billing.start();
+        loadRendererWithIntent(capture, dom);
+
+        capture.billing.selectCompany({ text: 'Billing Co', companyId: '222', lookupId: 'l2' });
+
+        expect(capture.billing.identity().companyName()).toBe('Billing Co');
+        expect(capture.shipping.identity().companyName()).toBe('');
+        expect(capture.shipping.identity().companyId()).toBe('');
+    });
+
+    test('and still starts the check for the company that actually resolved', () => {
+        const { capture, dom } = load();
+        dom.setVisible(BILLING_FIELD, true);
+        capture.shipping.start();
+        capture.billing.start();
+        const { requests } = loadRendererWithIntent(capture, dom);
+
+        capture.billing.selectCompany({ text: 'Billing Co', companyId: '222', lookupId: 'l2' });
+
+        expect(requests).toHaveLength(1);
+        expect(requests[0].companyId).toBe('222');
+    });
+
+    test('a shipping pick still reaches the shipping identity, as its own panel\'s write', () => {
+        const { capture, dom } = load();
+        capture.shipping.start();
+        capture.billing.start();
+        loadRendererWithIntent(capture, dom);
+
+        capture.shipping.selectCompany({ text: 'Shipping Co', companyId: '111', lookupId: 'l1' });
+
+        expect(capture.shipping.identity().companyName()).toBe('Shipping Co');
+    });
+});
