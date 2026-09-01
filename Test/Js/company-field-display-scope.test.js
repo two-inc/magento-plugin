@@ -233,7 +233,6 @@ function load() {
             soleTrader: function () { return null; }
         },
         billing: { identity: function () { return billingIdentity; } },
-        tileOwnsCompanyField: function () { return false; },
         soleTraderOwner: function () { return null; },
         refreshMount: function () {}
     };

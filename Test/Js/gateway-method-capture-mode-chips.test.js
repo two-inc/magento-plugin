@@ -67,7 +67,6 @@ function load(options) {
         {
             currentAddressFormCountry: function () { return 'gb'; },
             revertAutofilledAddress: function () {},
-            billingRoleFormRoot: function () { return null; },
             applyAddress: function () {},
             lookupCompanyAddress: function (config, item) { search.lookups.push(item); },
             abortActiveRequest: function () { search.aborts += 1; return true; },
