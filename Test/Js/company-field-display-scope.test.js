@@ -236,6 +236,11 @@ function load(billingOwnsCompanyField) {
         },
         billing: { identity: function () { return billingIdentity; } },
         billingOwnsCompanyField: function () { return billingOwnsCompanyField; },
+        // The value question, answered by the billing panel's own capture.
+        // This fixture's billing panel never picks anything — the two cases
+        // where it does are pinned against the real module in
+        // company-capture-billing-panel.test.js.
+        billingCaptured: function () { return false; },
         refreshMount: function () {}
     };
 

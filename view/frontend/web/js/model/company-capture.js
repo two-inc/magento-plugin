@@ -355,6 +355,44 @@ define([
         return !!billingComponent.mountSelector();
     }
 
+    /**
+     * Whether a company reaching us from somewhere else on the page is one the
+     * BILLING panel captured.
+     *
+     * The mount above answers "who owns that field", which is the only
+     * question the mirror asks and is answered at a moment nothing is
+     * re-rendering. It is the wrong instrument for a company arriving through
+     * the quote or through `companyData`, for two reasons a host can supply
+     * independently:
+     *
+     *  - a live DOM query is only as good as the instant it is made. A
+     *    checkout that re-renders its payment area from the same `change` that
+     *    pushes the pick into the quote (Fire Checkout does; Amasty's static
+     *    one-step layout does not) can deliver the quote's notification while
+     *    the billing fieldset is detached — the panel is mounted in every
+     *    sense the buyer can see, and the query still answers no;
+     *  - `companyData` is a localStorage section that outlives the page load,
+     *    so a company can arrive from it with no billing form on the page at
+     *    all yet.
+     *
+     * The panel's own capture answers both: it is module state, it outlives
+     * every re-render, and a company the billing panel captured is the billing
+     * panel's wherever it surfaces.
+     *
+     * Compared on the name because that is all these arrivals carry in common
+     * — the quote's billing address has no notion of which panel wrote it —
+     * trimmed and case-folded, the same ruling on "the same answer" the
+     * mirror's own comparison makes.
+     *
+     * @param {string} companyName the company about to be applied
+     * @returns {boolean}
+     */
+    function billingCaptured(companyName) {
+        const captured = billingIdentity.companyName();
+        if (!captured || !companyName) return false;
+        return captured.trim().toLowerCase() === String(companyName).trim().toLowerCase();
+    }
+
     shippingComponent = new CompanyCaptureComponent(Object.assign(sharedHostOptions(), {
         identity: shippingIdentity,
         addressFieldSelector: ADDRESS_FIELD_SELECTOR,
@@ -448,6 +486,7 @@ define([
         shipping: shippingComponent,
         billing: billingComponent,
         billingOwnsCompanyField: billingOwnsCompanyField,
+        billingCaptured: billingCaptured,
         start: function () {
             shippingComponent.start();
             billingComponent.start();

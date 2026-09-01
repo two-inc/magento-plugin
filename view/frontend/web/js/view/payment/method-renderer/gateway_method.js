@@ -757,6 +757,16 @@ define([
             // company that HAS an identifier down the identifier-less branch
             // and actively clear it.
             const companyId = data.companyId == null ? '' : String(data.companyId);
+            // The billing panel's own capture, surfacing through a section that
+            // outlives the page load — the shipping identity's to adopt only
+            // while no billing panel has claimed it (TWO-25554). Deliberately
+            // NOT gated on the billing panel's mount as well: this section is
+            // how a reload restores the SHIPPING step's own company, and a
+            // buyer with a distinct billing address would lose that.
+            if (companyCapture.billingCaptured(companyName)) {
+                console.debug({ logger: 'twoPayment.applyCompanyData.billingOwned', companyName });
+                return;
+            }
             if (companyName && !companyId) {
                 if (!authoritative && (this.companyName() || this.companyId())) return;
                 this.selectCompanyWithoutIdentifier(companyName);
@@ -799,10 +809,10 @@ define([
         },
         /**
          * @param {object} address quote address
-         * @param {object} [options] `{ withCompany: boolean }` — `false` where
-         *        the company this address carries belongs to a panel of its own
-         *        (TWO-25554), leaving the telephone and the PO fields to travel
-         *        from it as they always have
+         * @param {object} [options] `{ billingSourced: boolean }` — set where
+         *        the address is the quote's BILLING address, whose company can
+         *        be the billing panel's own (TWO-25554). The telephone and the
+         *        PO fields travel from it either way.
          */
         updateAddress: function (address, options) {
             if (!address) return;
@@ -828,8 +838,14 @@ define([
                     }
                 });
             }
+            // Asked of the resolved NAME rather than of `address.company`: a
+            // saved address carries its company as a custom attribute, which
+            // the loop above has just preferred over the plain field.
+            const billingOwned = !!(options && options.billingSourced)
+                && (companyCapture.billingOwnsCompanyField()
+                    || companyCapture.billingCaptured(companyName));
             this.fillTelephone(telephone);
-            if (!options || options.withCompany !== false) {
+            if (!billingOwned) {
                 this.fillCompanyData({ companyName, companyId });
             }
             if (project) this.project(project);
@@ -854,9 +870,7 @@ define([
             // billing company through here painted the buyer's billing pick
             // into the shipping form (TWO-25554). Only the billing panel may
             // speak for the company on a billing address it owns.
-            this.updateAddress(billingAddress, {
-                withCompany: !companyCapture.billingOwnsCompanyField()
-            });
+            this.updateAddress(billingAddress, { billingSourced: true });
             this.refreshCompanyMount();
         },
         /**
