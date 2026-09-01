@@ -12,7 +12,8 @@ use Magento\Quote\Model\Quote;
 use Magento\Sales\Model\Order;
 
 /**
- * Buyer country for a quote: billing, then shipping, then the store default.
+ * Buyer country for a quote or a placed order: billing, then shipping, then
+ * the store default.
  *
  * Empty string when none resolves — "cannot judge", never a country.
  */
@@ -23,32 +24,38 @@ class BuyerCountryResolver
         if (!$quote instanceof Quote) {
             return '';
         }
-        $billing = $quote->getBillingAddress();
-        if ($billing && $billing->getCountryId()) {
-            return (string)$billing->getCountryId();
-        }
-        $shipping = $quote->getShippingAddress();
-        if ($shipping && $shipping->getCountryId()) {
-            return (string)$shipping->getCountryId();
-        }
-        $store = $quote->getStore();
-        return $store !== null ? (string)$store->getConfig('general/country/default') : '';
+
+        return $this->firstCountry(
+            $quote->getBillingAddress(),
+            $quote->getShippingAddress(),
+            $quote->getStore()
+        );
     }
 
     /**
-     * The same precedence for a placed order, which is not a CartInterface.
+     * An order is not a CartInterface, so it cannot go through resolve().
      */
     public function resolveFromOrder(Order $order): string
     {
-        $billing = $order->getBillingAddress();
-        if ($billing && $billing->getCountryId()) {
-            return (string)$billing->getCountryId();
+        return $this->firstCountry(
+            $order->getBillingAddress(),
+            $order->getShippingAddress(),
+            $order->getStore()
+        );
+    }
+
+    /**
+     * @param mixed $billing an address, null, or false for a virtual order
+     * @param mixed $shipping an address, null, or false for a virtual order
+     */
+    private function firstCountry($billing, $shipping, ?object $store): string
+    {
+        foreach ([$billing, $shipping] as $address) {
+            if ($address && $address->getCountryId()) {
+                return (string)$address->getCountryId();
+            }
         }
-        $shipping = $order->getShippingAddress();
-        if ($shipping && $shipping->getCountryId()) {
-            return (string)$shipping->getCountryId();
-        }
-        $store = $order->getStore();
+
         return $store !== null ? (string)$store->getConfig('general/country/default') : '';
     }
 }
