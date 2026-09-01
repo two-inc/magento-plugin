@@ -12,10 +12,10 @@ use Two\Gateway\Model\Config\Repository;
 class LayoutProcessorPlugin
 {
     /**
-     * Core's own billing-address component. Every billing address form is one
-     * of these, whichever container it was generated into, so matching on it
-     * is what lets both *Display Billing Address On* settings and every
-     * payment method code be covered without naming any of them.
+     * Core's own billing-address component — one of the two things that
+     * identify a billing form, so neither the *Display Billing Address On*
+     * setting nor any payment method code has to be named. See
+     * `isBillingAddressForm()` for the other.
      */
     private const BILLING_ADDRESS_COMPONENT = 'Magento_Checkout/js/view/billing-address';
 
@@ -161,22 +161,52 @@ class LayoutProcessorPlugin
     private function processBillingForms(array &$container)
     {
         foreach ($container as &$node) {
-            if (!is_array($node)
-                || ($node['component'] ?? null) !== self::BILLING_ADDRESS_COMPONENT
-                || !isset($node['dataScopePrefix'])
-                || !is_string($node['dataScopePrefix'])
-                || $node['dataScopePrefix'] === ''
-                || !isset($node['children']['form-fields']['children'])
-                || !is_array($node['children']['form-fields']['children'])
-            ) {
+            if (!is_array($node)) {
                 continue;
             }
-            $fieldset = &$node['children']['form-fields']['children'];
-            $fieldset['company_id'] = $this->companyIdField($node['dataScopePrefix']);
-            $this->moveCountryBeforeCompany($fieldset);
-            unset($fieldset);
+            if ($this->isBillingAddressForm($node)) {
+                $fieldset = &$node['children']['form-fields']['children'];
+                $fieldset['company_id'] = $this->companyIdField($node['dataScopePrefix']);
+                $this->moveCountryBeforeCompany($fieldset);
+                unset($fieldset);
+                continue;
+            }
+            // A checkout that wraps the billing form in a container of its own
+            // puts it below this level, and a form never nests inside a form.
+            if (isset($node['children']) && is_array($node['children'])) {
+                $this->processBillingForms($node['children']);
+            }
         }
         unset($node);
+    }
+
+    /**
+     * Whether one layout node is a billing address form this plugin can fill.
+     *
+     * Core's component OR core's `billingAddress` scope naming, because a
+     * checkout that substitutes its own billing-address component still binds
+     * it to that scope — the field's `dataScope` is what makes the number
+     * submit with the right address, so a node that does not carry that scope
+     * is not a billing form whatever else it looks like. The scope test alone
+     * would also admit the shipping fieldset; it is reached from a different
+     * path and never appears under these containers.
+     *
+     * @param array<string,mixed> $node
+     * @return bool
+     */
+    private function isBillingAddressForm(array $node): bool
+    {
+        if (!isset($node['dataScopePrefix'])
+            || !is_string($node['dataScopePrefix'])
+            || !isset($node['children']['form-fields']['children'])
+            || !is_array($node['children']['form-fields']['children'])
+        ) {
+            return false;
+        }
+
+        return ($node['component'] ?? null) === self::BILLING_ADDRESS_COMPONENT
+            ? $node['dataScopePrefix'] !== ''
+            : strpos($node['dataScopePrefix'], 'billingAddress') === 0;
     }
 
     /**
