@@ -537,7 +537,20 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
         dom.fireChange('input[name="billing-address-same-as-shipping"]');
     }
 
-    test('with the fieldset transiently away, a distinct billing address still seeds BILLING', () => {
+    /**
+     * Two macrotasks. `watchCapturedIdentity` publishes on `setTimeout(0)`, so a
+     * denial made before it has run denies a propagation that had not happened.
+     *
+     * @returns {Promise}
+     */
+    function flushCapture() {
+        return new Promise(function (resolve) { setTimeout(resolve, 0); })
+            .then(function () {
+                return new Promise(function (resolve) { setTimeout(resolve, 0); });
+            });
+    }
+
+    test('with the fieldset transiently away, a distinct billing address still seeds BILLING', async () => {
         // The quote answers "is billing a distinct address", not the fieldset's
         // visibility: a third-party re-render that takes the fieldset away for a
         // moment otherwise puts billing's company in the shipping panel's own
@@ -548,6 +561,7 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
         billingFieldsetAway(dom, capture);
 
         renderer.updateBillingAddress(billingQuoteAddress('Billing Co', 'billing-of-its-own'));
+        await flushCapture();
 
         expect(capture.billing.identity().companyName()).toBe('Billing Co');
         expect(capture.billing.identity().companyId()).toBe('222');
@@ -567,13 +581,14 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
         expect(capture.shipping.identity().companyId()).toBe('222');
     });
 
-    test('re-checking "same as shipping" retires the billing panel\'s own capture', () => {
+    test('re-checking "same as shipping" retires the billing panel\'s own capture', async () => {
         const { capture, dom } = load();
         billingPicks(capture, dom, 'Billing Co');
         capture.billing.identity().soleTraderAdopted(true);
         capture.billing.identity().captureMode('soletrader');
 
         sameAsShippingAgain(capture, dom);
+        await flushCapture();
 
         expect(capture.billing.identity().companyName()).toBe('');
         expect(capture.billing.identity().companyId()).toBe('');
