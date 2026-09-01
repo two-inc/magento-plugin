@@ -27,7 +27,8 @@ const {
     loadCompanySearchPanel,
     defaultMocks,
     brandConfigMock,
-    installAsyncSimulation
+    installAsyncSimulation,
+    tagged
 } = require('./amd-harness');
 
 const SEARCH = 'view/frontend/web/js/model/company-search.js';
@@ -52,19 +53,6 @@ const RETRACTED_FIELDS = ['street[0]', 'street[1]', 'city', 'postcode'];
 
 /** The other panel, for a table row naming one. */
 const OTHER = { shipping: 'billing', billing: 'shipping' };
-
-/**
- * Pair a value with its row's description. Jest ignores a second argument to
- * `toBe()`/`toEqual()`, so a row description only reaches a failure by being
- * part of the compared value.
- *
- * @param {string} description
- * @param {*} value
- * @returns {Array}
- */
-function tagged(description, value) {
-    return [description, value];
-}
 
 const GLOBALS = { document: document, window: window };
 

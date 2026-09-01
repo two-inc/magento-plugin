@@ -345,10 +345,10 @@ describe('a checkbox toggle mid-checkout supersedes the order-intent already in 
 });
 
 /**
- * TWO-25554: shipping's own writes never land in billing's form. Amasty's
+ * TWO-25554: shipping's own writes land in shipping's form or nowhere. Amasty's
  * one-step layout pre-renders every payment method's billing fieldset hidden
- * from page load, so a "best available address form" answer outranked
- * shipping's own visible form the whole time shipping was the panel in play.
+ * from page load, so "the best available address form" is not an answer that can
+ * be trusted to be shipping's own.
  */
 describe('the shipping panel writes into its OWN form, or nowhere', () => {
     /**
@@ -630,20 +630,16 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
 });
 
 /**
- * TWO-25554, Fire Checkout regression, the actual vector: the payment
- * renderer's reaction to the RESOLVED company changing.
+ * TWO-25554: the payment renderer's reaction to the RESOLVED company changing.
  *
  * The resolved identity is a live mirror of whichever panel wins, so a
- * billing-only pick changes it — that is the design. The renderer reacts by
- * starting a fresh order-intent check for the newly resolved company, which is
- * also the design. It did so by calling `fillCompanyData()`, whose OTHER half
- * writes the SHIPPING panel's identity: so every billing pick wrote billing's
- * company and number back into the shipping panel, which the address step then
- * displayed as though the buyer had picked it there.
+ * billing-only pick changes it, and the renderer starts a fresh order-intent
+ * check for it. That check must not travel through anything whose other half
+ * writes the SHIPPING panel's identity — the address step then displays
+ * billing's company as though the buyer had picked it there.
  *
- * Nothing about this route touches the billing form, the mount, or the DOM, so
- * neither of the two gates that scope the mirror and the quote's billing
- * address stands anywhere near it — which is why it survived both of them.
+ * This route touches neither the billing form, the mount nor the DOM, so
+ * nothing that scopes a write by any of those speaks for it.
  */
 describe('a resolved-company change starts a check WITHOUT writing the shipping identity', () => {
     const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';

@@ -11,7 +11,7 @@
 'use strict';
 
 const $ = require('jquery');
-const { loadAmdModule, defaultMocks, proxyEnvelope } = require('./amd-harness');
+const { loadAmdModule, defaultMocks, proxyEnvelope, tagged } = require('./amd-harness');
 
 const MODEL_PATH = 'view/frontend/web/js/model/company-search.js';
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
@@ -314,7 +314,7 @@ describe('a parked address lookup keeps its notice through the intent verdict', 
         settleVerdict(tile);
 
         expect(identity.addressNotice()).toContain('enter it below');
-        expect(tile.isAddressNoticeVisible()).toBe(true, description);
+        expect(tagged(description, tile.isAddressNoticeVisible())).toEqual(tagged(description, true));
     });
 });
 

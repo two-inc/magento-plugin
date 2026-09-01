@@ -643,7 +643,6 @@ define([
         });
     }
 
-
     /**
      * An organisation-number value carrying this literal prefix is an
      * internal reference minted on our side rather than a registry number
@@ -944,7 +943,6 @@ define([
         minInputLengthMessage: minInputLengthMessage,
         noResultsMessage: noResultsMessage,
 
-
         /**
          * Cancel the in-flight search for a bind, if any.
          *
@@ -975,9 +973,7 @@ define([
         formatCompanyNumber: formatCompanyNumber,
         stripBracketedToken: stripBracketedToken,
         currentAddressFormCountry: currentAddressFormCountry,
-
         apiClientParams: apiClientParams,
-
         unwrapProxyResponse: unwrapProxyResponse,
 
         /** @see announceAddressUnavailable */

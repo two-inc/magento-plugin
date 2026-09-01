@@ -20,7 +20,8 @@ const {
     brandConfigMock,
     isProxyRoute,
     proxyEnvelope,
-    HARNESS_BASE_URL
+    HARNESS_BASE_URL,
+    tagged
 } = require('./amd-harness');
 
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
@@ -525,7 +526,8 @@ describe('a tile-mounted shipping panel and the one address form there is (TWO-2
         const $ = makeSpyJQuery(recorder, TILE_ALONE);
         const companySearch = loadCompanySearch($);
 
-        expect(act(companySearch, null, makeIdentity())).toBe(expected, description);
+        expect(tagged(description, act(companySearch, null, makeIdentity())))
+            .toEqual(tagged(description, expected));
         expect(recorder.written).toHaveLength(0);
     });
 });

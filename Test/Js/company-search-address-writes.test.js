@@ -19,7 +19,7 @@
 
 'use strict';
 
-const { loadAmdModule } = require('./amd-harness');
+const { loadAmdModule, tagged } = require('./amd-harness');
 
 const MODEL = 'view/frontend/web/js/model/company-search.js';
 
@@ -305,7 +305,7 @@ describe('an external address payload is routed onto the two address lines', () 
 
         writeInto(model, Object.assign({ city: 'Ashford', postal_code: 'TN23' }, address), PRIMARY);
 
-        expect(read(PRIMARY, 'street0')).toBe(line1, description);
+        expect(tagged(description, read(PRIMARY, 'street0'))).toEqual(tagged(description, line1));
         expect(read(PRIMARY, 'street1')).toBe(line2);
         // The other panel's form is untouched, whatever the routing decided.
         expect(read(SECONDARY, 'street0')).toBe('');
@@ -370,7 +370,8 @@ describe("an external payload's region lands somewhere, always", () => {
                 PRIMARY
             );
 
-            expect(read(PRIMARY, 'region')).toBe(expectedRegion, description);
+            expect(tagged(description, read(PRIMARY, 'region')))
+                .toEqual(tagged(description, expectedRegion));
             expect(read(PRIMARY, 'city')).toBe(expectedCity);
         }
     );

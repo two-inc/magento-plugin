@@ -816,7 +816,21 @@ function proxyEnvelope(body, options) {
     })];
 }
 
+/**
+ * Pair a value with its row's description. Jest IGNORES a second argument to
+ * `toBe()`/`toEqual()`, so a row description only ever reaches a failure diff
+ * by being part of the compared value.
+ *
+ * @param {string} description
+ * @param {*} value
+ * @returns {Array}
+ */
+function tagged(description, value) {
+    return [description, value];
+}
+
 module.exports = {
+    tagged: tagged,
     dispatchNative: dispatchNative,
     isProxyRoute: isProxyRoute,
     HARNESS_BASE_URL: HARNESS_BASE_URL,

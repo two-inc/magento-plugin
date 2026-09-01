@@ -13,7 +13,7 @@
 
 'use strict';
 
-const { loadAmdModule } = require('./amd-harness');
+const { loadAmdModule, tagged } = require('./amd-harness');
 
 const SOLE_TRADER = 'view/frontend/web/js/model/sole-trader.js';
 
@@ -90,7 +90,7 @@ describe('the popup survives focus landing in this flow\'s own popover', () => {
 
         await returnToCheckout();
 
-        expect(flow.isPopupOpen()).toBe(true, description);
+        expect(tagged(description, flow.isPopupOpen())).toEqual(tagged(description, true));
     });
 });
 
@@ -105,7 +105,7 @@ describe('the popup goes when focus lands anywhere else', () => {
 
         await returnToCheckout();
 
-        expect(flow.isPopupOpen()).toBe(false, description);
+        expect(tagged(description, flow.isPopupOpen())).toEqual(tagged(description, false));
     });
 
     test('a flow whose panel has not mounted yet closes rather than throwing', () => {
