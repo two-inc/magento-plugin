@@ -113,6 +113,9 @@
      *        `refreshMount()` off its own re-render hook instead.
      * @param {string} options.addressFieldSelector the address step's company
      *        field.
+     * @param {string} options.addressFormRootSelector the form that field
+     *        belongs to — the one `addressFieldSelector` is built from. Bounds
+     *        every DOM read this panel makes, so absent it reads nothing.
      * @param {string} options.tileFieldSelector the payment tile's company
      *        field.
      * @param {function(string): boolean} options.fieldExists whether a selector
@@ -584,8 +587,8 @@
     /**
      * A company number a reload restored into this panel's own form.
      *
-     * Read rather than written into the identity, which would newly let a
-     * restored company drive order intent.
+     * Read rather than written into the identity, which would let a restored
+     * company drive order intent.
      *
      * @returns {string}
      */
@@ -595,8 +598,10 @@
         if (this._boundSelector === this._options.tileFieldSelector) return '';
         const field = this.fieldNode();
         if (!field) return '';
+        const root = this._ownFormRoot(field);
+        if (!root) return '';
         let node = field.parentElement;
-        while (node) {
+        while (node && root.contains(node)) {
             const found = node.querySelectorAll(RESTORED_NUMBER_SELECTOR);
             // Exactly one: several under one ancestor means it spans a second
             // address form, so neither is answerable as this panel's own.
@@ -604,6 +609,23 @@
             node = node.parentElement;
         }
         return '';
+    };
+
+    /**
+     * The form this panel's field belongs to — the ceiling on every DOM read it
+     * makes, so no read can reach the other panel's form.
+     *
+     * `closest` off the field, not a page-wide query for the root: the billing
+     * root selector matches per-payment-method fieldsets, and the one holding
+     * THIS field is the only one that is this panel's own.
+     *
+     * @param {Element} field
+     * @returns {?Element}
+     */
+    CompanyCaptureComponent.prototype._ownFormRoot = function (field) {
+        const selector = this._options.addressFormRootSelector;
+        if (!selector) return null;
+        return field.closest(selector);
     };
 
     /**

@@ -350,6 +350,7 @@ define([
     shippingComponent = new CompanyCaptureComponent(Object.assign(sharedHostOptions(), {
         identity: shippingIdentity,
         addressFieldSelector: ADDRESS_FIELD_SELECTOR,
+        addressFormRootSelector: ADDRESS_FORM_ROOT,
         tileFieldSelector: TILE_FIELD_SELECTOR,
         fieldExists: function (selector) {
             if (selector === TILE_FIELD_SELECTOR && !tileIsShippingPanels()) return false;
@@ -388,6 +389,7 @@ define([
     billingComponent = new CompanyCaptureComponent(Object.assign(sharedHostOptions(), {
         identity: billingIdentity,
         addressFieldSelector: BILLING_FIELD_SELECTOR,
+        addressFormRootSelector: BILLING_FORM_ROOT,
         // Never falls back to the tile: the tile is the shipping/no-address-
         // form mount's own fallback, and only one control may ever bind there.
         tileFieldSelector: '',
