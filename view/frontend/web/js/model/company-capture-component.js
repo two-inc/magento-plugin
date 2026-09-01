@@ -447,10 +447,12 @@
     CompanyCaptureComponent.prototype.refreshMount = function () {
         const selector = this.mountSelector();
         const previous = this._boundSelector;
+        // While the OLD selector is still bound — every chrome lookup goes
+        // through the bound field, so the host being left is unreachable once
+        // `_boundSelector` moves, and its number and sole-trader link would
+        // stand alongside the new host's (TWO-25554).
+        if (previous !== selector) this._removeChrome();
         if (!selector) {
-            // Before the selector is forgotten — every chrome lookup goes
-            // through the bound field.
-            this._removeChrome();
             // Neither host is on the page any more. Forgetting where the control
             // was is what stops `adjacentCountry()` answering for a form that has
             // gone, and lets the next host that appears mount cleanly.
@@ -464,7 +466,6 @@
             this.renderChrome();
             return;
         }
-        if (previous !== selector) this._removeChrome();
         this._boundSelector = selector;
         this.mountPanel(selector);
         this.syncChips();
