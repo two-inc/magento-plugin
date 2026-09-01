@@ -384,8 +384,8 @@ describe('a country switch invalidates its own panel\'s company and nothing else
             // Each panel picks, which is what puts an address in its own form.
             picks(booted.panels.shipping, COMPANIES.shipping);
             picks(booted.panels.billing, COMPANIES.billing);
-            booted.search.applyAddress(ADDRESSES.shipping, $(SHIPPING_FORM));
-            booted.search.applyAddress(ADDRESSES.billing, $(BILLING_FORM));
+            booted.search.applyAddress(ADDRESSES.shipping, $(SHIPPING_FORM), booted.identities.shipping);
+            booted.search.applyAddress(ADDRESSES.billing, $(BILLING_FORM), booted.identities.billing);
             const before = addressValues(other);
             const beforeCountry = document.querySelector(COUNTRIES[other]).value;
             expect(before['city']).not.toBe('');
@@ -406,7 +406,7 @@ describe('a country switch invalidates its own panel\'s company and nothing else
             const booted = boot();
             bootAddressStep(booted);
             picks(booted.panels[actor], COMPANIES[actor]);
-            booted.search.applyAddress(ADDRESSES[actor], $(FORMS[actor]));
+            booted.search.applyAddress(ADDRESSES[actor], $(FORMS[actor]), booted.identities[actor]);
             expect(addressValues(actor)['city']).toBe(ADDRESSES[actor].city);
 
             switchCountry(actor, 'SE');
@@ -458,7 +458,7 @@ describe('a tile-mounted shipping panel has no form of its own', () => {
         // borrowing are pinned in gateway-method-sole-trader-address-writeback
         // and company-search-address-lookup.
         const booted = boot({ shippingForm: false });
-        booted.search.applyAddress(ADDRESSES.billing, $(BILLING_FORM));
+        booted.search.applyAddress(ADDRESSES.billing, $(BILLING_FORM), booted.identities.billing);
         const before = addressValues('billing');
         expect(before['city']).toBe(ADDRESSES.billing.city);
 

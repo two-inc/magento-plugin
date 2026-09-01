@@ -507,12 +507,16 @@ describe('a tile-mounted shipping panel and the one address form there is (TWO-2
 
     test.each([
         [
-            function (search, root, identity) { return search.applyAddress({ city: 'X' }, root); },
+            function (search, root, identity) {
+                return search.applyAddress({ city: 'X' }, root, identity);
+            },
             0,
             'applyAddress refuses'
         ],
         [
-            function (search, root) { return search.revertAutofilledAddress(root); },
+            function (search, root, identity) {
+                return search.revertAutofilledAddress(root, identity);
+            },
             0,
             'revertAutofilledAddress refuses'
         ],

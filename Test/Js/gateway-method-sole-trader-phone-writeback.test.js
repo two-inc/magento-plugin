@@ -131,7 +131,8 @@ describe('the address write is not the route the phone takes', () => {
 
         companySearch.applyAddress(
             Object.assign({}, BILLING, { phone_number: '+442012345678' }),
-            $('#shipping-new-address-form')
+            $('#shipping-new-address-form'),
+            {}
         );
 
         expect(document.querySelector('input[name="city"]').value).toBe('Ashford');

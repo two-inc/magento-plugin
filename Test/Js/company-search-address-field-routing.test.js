@@ -192,12 +192,14 @@ function load(regionShape) {
     // Every write and every revert is scoped to the calling panel's OWN form
     // (TWO-25554).
     const root = $('#shipping-new-address-form');
+    /** The panel the write record is keyed on. */
+    const panel = {};
     return {
         model: model,
         $: $,
         root: root,
-        apply: function (address) { return model.applyAddress(address, root); },
-        revert: function () { return model.revertAutofilledAddress(root); },
+        apply: function (address) { return model.applyAddress(address, root, panel); },
+        revert: function () { return model.revertAutofilledAddress(root, panel); },
         /**
          * @param {string} name field name
          * @returns {?Element}
@@ -472,7 +474,7 @@ describe('every field the write can reach, the revert can take back', () => {
             street: 'Mill Lane',
             building: 'Mill House',
             region: 'California'
-        }, $('#shipping-new-address-form'));
+        }, $('#shipping-new-address-form'), {});
 
         const complete =
             'city=Los Angeles postcode=90001 street[0]=Mill House street[1]=Mill Lane region_id=12';
@@ -513,7 +515,8 @@ describe('every field the write can reach, the revert can take back', () => {
 
         model.applyAddress(
             { city: 'Los Angeles', street: 'Mill Lane', country_code: 'US' },
-            $('#shipping-new-address-form')
+            $('#shipping-new-address-form'),
+            {}
         );
 
         expect(document.querySelector('[name="country_id"]').value).toBe('GB');
@@ -605,7 +608,8 @@ describe('a shop configured for a single street line', () => {
 
         model.applyAddress(
             { street: 'Mill Lane', building: 'Mill House', city: 'Ashford' },
-            $('#shipping-new-address-form')
+            $('#shipping-new-address-form'),
+            {}
         );
 
         expect(document.querySelector('[name="street[0]"]').value).toBe('Mill House, Mill Lane');
@@ -651,7 +655,7 @@ describe('the write can be scoped to one address form', () => {
         const { model, $ } = loadTwoForms();
         const before = valueIn(untouched, 'city');
 
-        model.applyAddress({ city: 'Ashford', street: 'Mill Lane' }, $(written));
+        model.applyAddress({ city: 'Ashford', street: 'Mill Lane' }, $(written), {});
 
         expect(tagged(description, valueIn(written, 'city')))
             .toEqual(tagged(description, 'Ashford'));
@@ -668,7 +672,7 @@ describe('the write can be scoped to one address form', () => {
         const { model, $ } = loadTwoForms();
         const root = rootKind === 'empty' ? $('#nothing-here') : rootKind;
 
-        expect(tagged(description, model.applyAddress({ city: 'Ashford' }, root)))
+        expect(tagged(description, model.applyAddress({ city: 'Ashford' }, root, {})))
             .toEqual(tagged(description, 0));
         expect(valueIn('#shipping-new-address-form', 'city')).toBe('Shipping City');
         expect(valueIn('[data-form="billing-new-address"]', 'city')).toBe('Billing City');

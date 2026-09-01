@@ -120,7 +120,7 @@ define([
             }
             // THIS form alone — the other panel's fields are never touched
             // (TWO-25554).
-            companySearch.revertAutofilledAddress($(this.addressFormSelector));
+            companySearch.revertAutofilledAddress($(this.addressFormSelector), identity);
             // Clears the name input, the number field, and the published
             // `companyData` section the payment tile reads — every surviving
             // copy of the previous country's company.
