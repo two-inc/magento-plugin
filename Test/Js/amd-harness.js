@@ -84,8 +84,11 @@ function defaultMocks() {
         'domReady!': null,
         'Magento_Checkout/js/view/payment/default': Component,
         'Magento_Checkout/js/model/quote': {
-            shippingAddress: makeObservable({}),
-            billingAddress: makeObservable({}),
+            // One cache key for both: the quote is what answers "is billing a
+            // distinct address", so a double with no key at all cannot model
+            // either answer. Same key means billing IS shipping.
+            shippingAddress: makeObservable({ getCacheKey: function () { return 'one-address'; } }),
+            billingAddress: makeObservable({ getCacheKey: function () { return 'one-address'; } }),
             getTotals: function () { return makeObservable({}); },
             getQuoteId: function () { return null; },
             paymentMethod: makeObservable(null),

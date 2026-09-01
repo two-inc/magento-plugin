@@ -503,11 +503,13 @@ describe('the quote\'s billing address belongs to the billing panel', () => {
         expect(renderer.telephone()).toBe('+4420 7946 0000');
     });
 
-    test('a virtual cart with no billing form at all seeds the SHIPPING identity', () => {
-        // The buyer's only address, and no billing company field is rendered for
-        // it — so the resolver reads the shipping capture, and seeding the
-        // billing panel there loses a saved company outright: a `TWO:` or
-        // sole-trader identity cannot be recovered by searching (TWO-25554).
+    test('a virtual cart with no billing form rendered still leaves shipping empty', () => {
+        // The quote holds one address and it is the billing one, so the billing
+        // identity is where it lands whether or not a form for it is on the page
+        // — the destination follows the quote, never the DOM (TWO-25554). With
+        // no form rendered the resolver reads the shipping capture, so the
+        // company is not offered back to this buyer; the alternative is worse,
+        // because it paints a billing company into the shipping panel's field.
         const booted = boot({
             isVirtual: true,
             shippingForm: false,
@@ -518,10 +520,9 @@ describe('the quote\'s billing address belongs to the billing panel', () => {
 
         renderer.updateBillingAddress(SAVED);
 
-        expect(booted.identities.shipping.companyId()).toBe('555');
-        expect(booted.identities.shipping.companyName()).toBe('Saved Billing Co');
-        expect(booted.capture.identity.companyId()).toBe('555');
-        expect(booted.identities.billing.companyId()).toBe('');
+        expect(booted.identities.billing.companyId()).toBe('555');
+        expect(booted.identities.shipping.companyId()).toBe('');
+        expect(booted.identities.shipping.companyName()).toBe('');
     });
 
     test('a billing address with no shipping panel mounted still leaves shipping empty', () => {

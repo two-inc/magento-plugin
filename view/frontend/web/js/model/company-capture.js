@@ -466,10 +466,15 @@ define([
          * the resolver reads (company-source-resolver.js); seeding the billing
          * panel there discards a saved company outright.
          *
+         * @param {boolean} billingIsDistinctAddress the QUOTE's own answer.
+         *        Never a read of the billing fieldset: a checkout that has that
+         *        fieldset transiently away still has two addresses, and routing
+         *        on what is on screen puts billing's company into the shipping
+         *        panel's own field (TWO-25554).
          * @returns {object}
          */
-        billingRoleIdentity: function () {
-            return billingIsDistinct() ? billingIdentity : shippingIdentity;
+        billingRoleIdentity: function (billingIsDistinctAddress) {
+            return billingIsDistinctAddress ? billingIdentity : shippingIdentity;
         },
         start: function () {
             shippingComponent.start();

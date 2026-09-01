@@ -472,17 +472,17 @@ describe('a company picked on the shipping step reaches the payment step', () =>
     });
 
     test('the same company on the BILLING address alone still seeds the billing role', () => {
-        // No billing panel is mounted on this checkout, so billing is not a
-        // distinct address and the shipping identity is the only capture the
+        // The quote's own key, matching its shipping address: billing is not a
+        // distinct address, so the shipping identity is the only capture the
         // resolver reads — which is what the resolved observables show
-        // (TWO-25554). Where the billing panel IS mounted the seed stops there:
-        // company-capture-billing-panel.test.js.
+        // (TWO-25554). Where the billing address IS distinct the seed stops at
+        // the billing identity: company-capture-billing-panel.test.js.
         const { renderer, billingAddress } = loadWithSections({});
 
         renderer.fillCustomerData();
 
         billingAddress({
-            getCacheKey: () => 'k3',
+            getCacheKey: () => 'k',
             countryId: 'GB',
             telephone: '+47 123 45 678',
             company: 'Billing Example Ltd',

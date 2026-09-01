@@ -516,11 +516,18 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
         expect(capture.billing.mountSelector()).toBe('');
     }
 
-    function billingQuoteAddress(company) {
+    /**
+     * @param {string} company
+     * @param {string} [cacheKey] the quote's own answer to "is this a distinct
+     *        address"; the harness quote's shipping key by default, i.e. not
+     * @returns {object} quote address
+     */
+    function billingQuoteAddress(company, cacheKey) {
         return {
             company: company,
             telephone: '+47 123 45 678',
-            customAttributes: [{ attribute_code: 'company_id', value: '222' }]
+            customAttributes: [{ attribute_code: 'company_id', value: '222' }],
+            getCacheKey: function () { return cacheKey || 'one-address'; }
         };
     }
 
@@ -530,15 +537,33 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
         dom.fireChange('input[name="billing-address-same-as-shipping"]');
     }
 
-    test('through the quote\'s billing address, with the fieldset away it seeds SHIPPING', () => {
+    test('with the fieldset transiently away, a distinct billing address still seeds BILLING', () => {
+        // The quote answers "is billing a distinct address", not the fieldset's
+        // visibility: a third-party re-render that takes the fieldset away for a
+        // moment otherwise puts billing's company in the shipping panel's own
+        // field (TWO-25554).
         const { capture, dom } = load();
         billingPicks(capture, dom, 'Billing Co');
         const renderer = loadRenderer(capture, dom);
         billingFieldsetAway(dom, capture);
 
-        renderer.updateBillingAddress(billingQuoteAddress('Billing Co'));
+        renderer.updateBillingAddress(billingQuoteAddress('Billing Co', 'billing-of-its-own'));
 
-        expect(capture.shipping.identity().companyName()).toBe('Billing Co');
+        expect(capture.billing.identity().companyName()).toBe('Billing Co');
+        expect(capture.billing.identity().companyId()).toBe('222');
+        expect(capture.shipping.identity().companyName()).toBe('');
+        expect(capture.shipping.identity().companyId()).toBe('');
+    });
+
+    test('a billing address the quote says IS the shipping address seeds SHIPPING', () => {
+        const { capture, dom } = load();
+        billingPicks(capture, dom, 'Billing Co');
+        const renderer = loadRenderer(capture, dom);
+        billingFieldsetAway(dom, capture);
+
+        renderer.updateBillingAddress(billingQuoteAddress('Saved Co'));
+
+        expect(capture.shipping.identity().companyName()).toBe('Saved Co');
         expect(capture.shipping.identity().companyId()).toBe('222');
     });
 
