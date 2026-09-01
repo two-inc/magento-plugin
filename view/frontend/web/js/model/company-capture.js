@@ -301,13 +301,12 @@ define([
         if ($(ADDRESS_FORM_ROOT).length || $(BILLING_FORM_ROOT).length) return null;
         const $streets = $(ADDRESS_STREET_SELECTOR);
         if ($streets.length !== 1) return null;
-        if (typeof $streets.closest !== 'function') return null;
         // `closest()` answers with the NEAREST container, which on a themed
         // checkout is often a row holding the street line alone — a write scoped
         // there fills in a street and nothing else. The city is what makes the
         // container the whole address form.
         const $form = $streets.closest(ADDRESS_FORM_CONTAINER_SELECTOR);
-        if (!$form.length || typeof $form.find !== 'function') return null;
+        if (!$form.length) return null;
         return $form.find(ADDRESS_CITY_SELECTOR).length ? $form : null;
     }
 
