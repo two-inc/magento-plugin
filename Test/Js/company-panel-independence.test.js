@@ -30,6 +30,7 @@ const {
     installAsyncSimulation,
     tagged,
     quoteAddress,
+    quoteAddressValue,
     makeObservable
 } = require('./amd-harness');
 
@@ -614,6 +615,90 @@ describe('only the ACTIVE payment method\'s "same as shipping" checkbox is read'
         // The quote holds a billing address and no shipping one, so billing is
         // an address of its own whatever the unattributable boxes say.
         expect(billingRole(booted)).toBe('billing');
+    });
+});
+
+/*
+ * TWO-25554: what a panel autofilled is recorded per IDENTITY. One page-wide
+ * record is replaced wholesale by whichever panel writes last, so the first
+ * panel's revert then judges its own fields against the other panel's values —
+ * and leaves the previous country's address standing.
+ */
+describe('each panel\'s record of what it autofilled is its own', () => {
+    const MARKER = 'data-two-autofilled-value';
+
+    /**
+     * A third-party re-render, which drops the per-field markers and leaves the
+     * record as the only thing a revert can judge against.
+     */
+    function stripMarkers(which) {
+        Array.prototype.forEach.call(
+            document.querySelectorAll(`${FORMS[which]} [${MARKER}]`),
+            (node) => node.removeAttribute(MARKER)
+        );
+    }
+
+    test.each(DIRECTIONS)('%s reverts against its own record (%s)', (actor, description) => {
+        const other = OTHER[actor];
+        const booted = boot();
+        booted.search.applyAddress(ADDRESSES[actor], $(FORMS[actor]), booted.identities[actor]);
+        // The OTHER panel writes SECOND: one shared record is wiped here.
+        booted.search.applyAddress(ADDRESSES[other], $(FORMS[other]), booted.identities[other]);
+        expect(addressValues(actor)['city']).toBe(ADDRESSES[actor].city);
+        stripMarkers(actor);
+
+        booted.search.revertAutofilledAddress($(FORMS[actor]), booted.identities[actor]);
+
+        expect(tagged(description, addressValues(actor)['city'])).toEqual(tagged(description, ''));
+        // The other panel's record survived its neighbour's revert, so its own
+        // fields are still both filled and still retractable.
+        expect(tagged(description, addressValues(other)['city']))
+            .toEqual(tagged(description, ADDRESSES[other].city));
+        stripMarkers(other);
+        booted.search.revertAutofilledAddress($(FORMS[other]), booted.identities[other]);
+        expect(tagged(description, addressValues(other)['city'])).toEqual(tagged(description, ''));
+    });
+});
+
+/*
+ * TWO-25554: core can select a billing address without the checkbox moving —
+ * a saved-address pick, or a virtual cart taking one on — and the quote is the
+ * predicate's other input, so the resolver subscribes to both quote addresses.
+ */
+describe('a quote address change re-resolves with no checkbox event', () => {
+    const DISTINCT_KEY = 'billing-of-its-own';
+
+    /** Both panels captured, billing not yet a distinct address. */
+    function bothCaptured() {
+        const booted = boot({ quoteShippingAddress: quoteAddressValue({ countryId: 'GB' }) });
+        picks(booted.panels.shipping, COMPANIES.shipping);
+        picks(booted.panels.billing, COMPANIES.billing);
+        expect(booted.capture.identity.companyId()).toBe(COMPANIES.shipping.companyId);
+        return booted;
+    }
+
+    test.each([
+        ['billingAddress', 'the quote taking on a billing address of its own'],
+        ['shippingAddress', 'the quote losing the shipping address billing matched']
+    ])('%s notifying re-resolves the company (%s)', (which, description) => {
+        const booted = bothCaptured();
+
+        // A DISTINCT value: re-writing what the observable already holds
+        // notifies nothing, and a stale resolution would satisfy this.
+        if (which === 'billingAddress') {
+            booted.quote.billingAddress(quoteAddressValue({ countryId: 'GB' }, DISTINCT_KEY));
+        } else {
+            booted.quote.shippingAddress(null);
+        }
+
+        expect(tagged(description, booted.capture.identity.companyId()))
+            .toEqual(tagged(description, COMPANIES.billing.companyId));
+        // Nothing touched the checkbox — it is still unchecked and still the
+        // only one on the page.
+        expect(tagged(description, $('input[name="billing-address-same-as-shipping"]').length))
+            .toEqual(tagged(description, 1));
+        expect(tagged(description, $('input[name="billing-address-same-as-shipping"]').prop('checked')))
+            .toEqual(tagged(description, false));
     });
 });
 

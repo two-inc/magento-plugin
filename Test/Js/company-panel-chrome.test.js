@@ -542,6 +542,37 @@ describe('a panel that loses its mount leaves no chrome behind', () => {
     });
 });
 
+/*
+ * TWO-25554: `onCountryChanged()` reads the mode BEFORE `clear()` resets it, so
+ * the retirement can still tell that sole-trader mode is what it is leaving.
+ * Read after the clear, the answer is always "no" and the panel is never handed
+ * back as a search trigger — leaving the buyer on a released field with no route
+ * back into the search.
+ */
+describe('a country change out of sole-trader mode hands the field back to the search', () => {
+    const BACK_CLASS = 'two-company-search-back';
+
+    test.each(DIRECTIONS)('%s switches country while in sole-trader mode (%s)', async (actor, description) => {
+        const { panels } = boot();
+        // Manual entry first, so the field is RELEASED — a plain input with the
+        // return link beside it — and only registeredMode() reclaims it.
+        panels[actor].manualEntryMode();
+        panels[actor].soleTraderMode();
+        const field = document.querySelector(FIELDS[actor]);
+        expect(field.getAttribute('role')).toBeNull();
+        expect(document.querySelectorAll(`${FORMS[actor]} .${BACK_CLASS}`)).toHaveLength(1);
+
+        panels[actor].onCountryChanged(actor === 'shipping' ? 'no' : 'gb');
+        await flushCapture();
+        await flushCapture();
+
+        expect(tagged(description, field.getAttribute('role')))
+            .toEqual(tagged(description, 'combobox'));
+        expect(tagged(description, document.querySelectorAll(`${FORMS[actor]} .${BACK_CLASS}`).length))
+            .toEqual(tagged(description, 0));
+    });
+});
+
 describe('a panel that MOVES its mount leaves no chrome behind at the old host', () => {
     /** Numbered, so both pieces of chrome are on the page at once. */
     const TRADER = { company_name: 'Tile Trader', organization_number: '333333333' };
