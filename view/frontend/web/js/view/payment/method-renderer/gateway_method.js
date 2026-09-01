@@ -92,11 +92,12 @@ define([
     // notification rather than reaching it.
     capturedName.subscribe(function (value) {
         if (mirroring) return;
-        // The shipping panel's own identity, not the resolved one: this write
-        // fires only from the tile's plain-text input, which is always the
-        // shipping/no-billing-panel mount's own field (see the comment above),
-        // and the resolver would otherwise overwrite this on its next
-        // recompute rather than treat it as a captured edit.
+        // The tile's input is bound to the RESOLVED name, so it is only the
+        // buyer typing when the panel mounted there is also the panel that
+        // resolved. Anywhere else it is displaying the other panel's capture,
+        // and writing it back would put billing's company into the shipping
+        // identity (TWO-25554).
+        if (!companyCapture.tileOwnsCompanyField()) return;
         companyCapture.shipping.identity().companyName(value);
     });
 
@@ -774,16 +775,6 @@ define([
             // company that HAS an identifier down the identifier-less branch
             // and actively clear it.
             const companyId = data.companyId == null ? '' : String(data.companyId);
-            // The billing panel's own capture, surfacing through a section that
-            // outlives the page load — the shipping identity's to adopt only
-            // while no billing panel has claimed it (TWO-25554). Deliberately
-            // NOT gated on the billing panel's mount as well: this section is
-            // how a reload restores the SHIPPING step's own company, and a
-            // buyer with a distinct billing address would lose that.
-            if (companyCapture.billingCaptured(companyName)) {
-                console.debug({ logger: 'twoPayment.applyCompanyData.billingOwned', companyName });
-                return;
-            }
             if (companyName && !companyId) {
                 if (!authoritative && (this.companyName() || this.companyId())) return;
                 this.selectCompanyWithoutIdentifier(companyName);
@@ -826,10 +817,10 @@ define([
         },
         /**
          * @param {object} address quote address
-         * @param {object} [options] `{ billingSourced: boolean }` — set where
-         *        the address is the quote's BILLING address, whose company can
-         *        be the billing panel's own (TWO-25554). The telephone and the
-         *        PO fields travel from it either way.
+         * @param {object} [options] `{ billingSourced: true }` where the address
+         *        is the quote's BILLING address. Its company belongs to the
+         *        billing panel and is never relayed to the shipping identity
+         *        (TWO-25554); the telephone and the PO fields travel either way.
          */
         updateAddress: function (address, options) {
             if (!address) return;
@@ -855,14 +846,8 @@ define([
                     }
                 });
             }
-            // Asked of the resolved NAME rather than of `address.company`: a
-            // saved address carries its company as a custom attribute, which
-            // the loop above has just preferred over the plain field.
-            const billingOwned = !!(options && options.billingSourced)
-                && (companyCapture.billingOwnsCompanyField()
-                    || companyCapture.billingCaptured(companyName));
             this.fillTelephone(telephone);
-            if (!billingOwned) {
+            if (!(options && options.billingSourced)) {
                 this.fillCompanyData({ companyName, companyId });
             }
             if (project) this.project(project);
@@ -1552,9 +1537,11 @@ define([
          * state in which no sole trader can have been adopted anyway.
          */
         selectDifferentSoleTrader() {
-            // The tile's own "select a different sole trader" affordance —
-            // the shipping/no-billing-panel mount's, same as the field above.
-            const soleTrader = companyCapture.shipping.soleTrader();
+            // The link is rendered off the RESOLVED adoption, which either
+            // panel can hold, so it acts on whichever one actually adopted
+            // rather than on the shipping panel by construction (TWO-25554).
+            const owner = companyCapture.soleTraderOwner();
+            const soleTrader = owner && owner.soleTrader();
             if (!soleTrader) return null;
             return soleTrader.selectDifferentSoleTrader();
         }

@@ -677,13 +677,16 @@ describe('the write can be scoped to one address form', () => {
         expect(model.billingRoleFormRoot()[0].id).toBe('shipping-new-address-form');
     });
 
-    test('with no address form at all there is no scope, and the write stays document-wide', () => {
+    test('a caller that asked for a scope and got none writes nothing at all', () => {
+        // TWO-25554: falling through to the document-wide write put one
+        // panel's pick into every address form on the page, the other
+        // panel's included.
         document.body.innerHTML = '<div><input name="city" value="" /></div>';
         const model = loadAmdModule(SEARCH, { jquery: makeDollar() });
 
         expect(model.billingRoleFormRoot()).toBeNull();
 
-        model.applyAddress({ city: 'Ashford' }, model.billingRoleFormRoot());
-        expect(document.querySelector('[name="city"]').value).toBe('Ashford');
+        expect(model.applyAddress({ city: 'Ashford' }, model.billingRoleFormRoot())).toBe(0);
+        expect(document.querySelector('[name="city"]').value).toBe('');
     });
 });

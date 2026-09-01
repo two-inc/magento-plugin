@@ -192,6 +192,11 @@ define([
          * Mirror a captured identity onto the address step: the published
          * section, the name input, the `company_id` field, and the label.
          *
+         * The billing form is deliberately not among them. Each panel owns its
+         * own company field (TWO-25554), so company and organisation number are
+         * never propagated between the two addresses — only the genuine address
+         * fields are (TWO-25461).
+         *
          * @param {string} [companyId]
          * @param {string} [companyName]
          */
@@ -204,21 +209,6 @@ define([
             this.setCompanyIdValue(companyId);
             this.syncCompanyIdEditable();
             this.renderCompanyIdText();
-            // The company half of the two-address propagation. Every path that
-            // establishes a company on the default address comes through here —
-            // a registry pick, the manual-entry reset, the country-switch clear
-            // — so this is the one place it has to be wired, and the pin inside
-            // decides whether a given billing address accepts it.
-            // The number travels with the name. Both are in the pin's field
-            // set, and a field the pin JUDGES but the mirror never WRITES is a
-            // field that can only ever freeze the address.
-            // Never onto a billing form whose own panel owns that field
-            // (TWO-25554): the pin cannot speak for it — it judges buyer
-            // authorship, and a panel's pick is neither the buyer typing nor
-            // the mirror's own earlier write.
-            if (!companyCapture.billingOwnsCompanyField()) {
-                companySearch.mirrorFieldsToSecondaryAddresses(['company', 'organization']);
-            }
         },
         /**
          * Write the captured organisation number so that it SURVIVES A PAGE

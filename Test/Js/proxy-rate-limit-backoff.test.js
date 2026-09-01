@@ -55,9 +55,21 @@ function installAjaxDouble() {
     return requests;
 }
 
-function search(companySearch, term) {
+/**
+ * One capture panel's rate-limit scope, identity-shaped because
+ * `lookupCompanyAddress()` reaches the same object for the buyer's notice.
+ *
+ * @returns {object}
+ */
+function panelScope() {
+    const notices = [];
+    return { notices: notices, addressNotice: function (text) { notices.push(text); } };
+}
+
+function search(companySearch, term, scope) {
     return companySearch.searchCompanies({
         token: {},
+        scope: scope,
         term: term,
         getCountryCode: function () { return 'gb'; }
     });
@@ -69,13 +81,15 @@ function search(companySearch, term) {
  * entry, which would answer without a request and prove nothing.
  */
 const ROUTES = {
-    search: function (companySearch, callId) {
-        search(companySearch, `exa${callId}`);
+    search: function (companySearch, callId, scope) {
+        search(companySearch, `exa${callId}`, scope);
     },
-    'address lookup': function (companySearch, callId) {
+    'address lookup': function (companySearch, callId, scope) {
         companySearch.lookupCompanyAddress(
             { isAddressSearchEnabled: true },
-            { lookupId: `lookup-${callId}` }
+            { lookupId: `lookup-${callId}` },
+            undefined,
+            scope
         );
     }
 };
@@ -94,34 +108,59 @@ describe('company search backs off rather than retrying into the ceiling', () =>
         const requests = installAjaxDouble();
         const companySearch = loadAmdModule(MODEL_PATH, { jquery: $ }, GLOBALS);
         companySearch.clearResultCache();
+        const panel = panelScope();
 
-        const first = search(companySearch, 'exa');
+        const first = search(companySearch, 'exa', panel);
         requests[0].settleFail(status);
         await first;
 
-        const second = search(companySearch, 'exam');
+        const second = search(companySearch, 'exam', panel);
         if (requests[1]) requests[1].settleFail(status);
 
         await expect(second).resolves.toEqual({ items: [], unavailable: true, aborted: false });
         expect(requests).toHaveLength(expected);
     });
 
-    // The ceiling is per-merchant, not per-route: it is enforced before either
-    // route runs, so a 429 earned on one has to park the other too.
+    // The ceiling is per-merchant AND per-route within one panel: it is
+    // enforced before either route runs, so a 429 earned on one has to park
+    // the other too — for the panel that earned it.
     test.each([
         ['search', 'search'],
         ['search', 'address lookup'],
         ['address lookup', 'search'],
         ['address lookup', 'address lookup']
-    ])('a 429 on the %s route parks the next %s', (first, second) => {
+    ])('a 429 on the %s route parks the same panel\'s next %s', (first, second) => {
         const requests = installAjaxDouble();
         const companySearch = loadCompanySearch();
+        const panel = panelScope();
 
-        ROUTES[first](companySearch, 1);
+        ROUTES[first](companySearch, 1, panel);
         requests[0].settleFail(429);
-        ROUTES[second](companySearch, 2);
+        ROUTES[second](companySearch, 2, panel);
 
         expect(requests).toHaveLength(1);
+    });
+
+    // TWO-25554: the park is the PANEL's, not the module's. One shared counter
+    // let a 429 raised by the billing panel silence the shipping panel's own
+    // searching and put an "address unavailable" notice on its identity.
+    test.each([
+        ['search', 'search'],
+        ['search', 'address lookup'],
+        ['address lookup', 'search'],
+        ['address lookup', 'address lookup']
+    ])('a 429 on one panel\'s %s does not park the other panel\'s %s', (first, second) => {
+        const requests = installAjaxDouble();
+        const companySearch = loadCompanySearch();
+        const parked = panelScope();
+        const other = panelScope();
+
+        ROUTES[first](companySearch, 1, parked);
+        requests[0].settleFail(429);
+        ROUTES[second](companySearch, 2, other);
+
+        expect(requests).toHaveLength(2);
+        expect(other.notices.filter(function (n) { return n; })).toEqual([]);
     });
 
     test.each([
@@ -130,10 +169,11 @@ describe('company search backs off rather than retrying into the ceiling', () =>
     ])('an ordinary %s failure parks nothing', (route) => {
         const requests = installAjaxDouble();
         const companySearch = loadCompanySearch();
+        const panel = panelScope();
 
-        ROUTES[route](companySearch, 1);
+        ROUTES[route](companySearch, 1, panel);
         requests[0].settleFail(500);
-        ROUTES[route](companySearch, 2);
+        ROUTES[route](companySearch, 2, panel);
 
         expect(requests).toHaveLength(2);
     });
@@ -153,17 +193,18 @@ describe('company search backs off rather than retrying into the ceiling', () =>
             Object.assign({}, GLOBALS, { Date: ClockDate })
         );
         companySearch.clearResultCache();
+        const panel = panelScope();
 
-        const first = search(companySearch, 'exa');
+        const first = search(companySearch, 'exa', panel);
         requests[0].settleFail(429);
         await first;
 
         clock.now += BACKOFF_MS - 1;
-        await search(companySearch, 'exam');
+        await search(companySearch, 'exam', panel);
         expect(requests).toHaveLength(1);
 
         clock.now += 1;
-        const third = search(companySearch, 'examp');
+        const third = search(companySearch, 'examp', panel);
         expect(requests).toHaveLength(2);
         requests[1].settleDone({ items: [] });
         await third;
@@ -174,15 +215,16 @@ describe('company search backs off rather than retrying into the ceiling', () =>
         const companySearch = loadAmdModule(MODEL_PATH, { jquery: $ }, GLOBALS);
         companySearch.clearResultCache();
 
-        const cached = search(companySearch, 'acme');
+        const panel = panelScope();
+        const cached = search(companySearch, 'acme', panel);
         requests[0].settleDone({ items: [{ name: 'Acme Widgets Ltd', national_identifier: { id: '12345678' } }] });
         await cached;
 
-        const refused = search(companySearch, 'other');
+        const refused = search(companySearch, 'other', panel);
         requests[1].settleFail(429);
         await refused;
 
-        const replay = await search(companySearch, 'acme');
+        const replay = await search(companySearch, 'acme', panel);
         expect(requests).toHaveLength(2);
         expect(replay.unavailable).toBe(false);
         expect(replay.items).toHaveLength(1);

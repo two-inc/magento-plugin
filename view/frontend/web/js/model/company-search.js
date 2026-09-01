@@ -42,12 +42,29 @@ define([
     const RATE_LIMIT_BACKOFF_MS = 60000;
 
     /**
-     * Epoch ms before which no registry call is issued. Shared by both routes —
-     * the ceiling is per-merchant, not per-route.
+     * Epoch ms before which no registry call is issued, PER SCOPE — the scope
+     * being one capture panel, which is what makes a 429 raised by one panel's
+     * lookup unable to silence the other panel's searching or put an
+     * "address unavailable" notice on the other panel's identity (TWO-25554).
      *
      * @see RATE_LIMIT_BACKOFF_MS
      */
-    let registrySuspendedUntil = 0;
+    let registrySuspensions = new WeakMap();
+
+    /** The scope for a caller with none of its own — this module's own tests. */
+    const FALLBACK_SUSPENSION_SCOPE = {};
+
+    function suspensionScope(scope) {
+        return scope && typeof scope === 'object' ? scope : FALLBACK_SUSPENSION_SCOPE;
+    }
+
+    function isRegistrySuspended(scope) {
+        return Date.now() < (registrySuspensions.get(suspensionScope(scope)) || 0);
+    }
+
+    function suspendRegistry(scope) {
+        registrySuspensions.set(suspensionScope(scope), Date.now() + RATE_LIMIT_BACKOFF_MS);
+    }
 
     /**
      * Search-result cache. MODULE-scoped on purpose: one-page checkouts
@@ -230,6 +247,17 @@ define([
      */
     const mirrorWriteRecords = new Map();
     const secondaryAddressBaselines = new Map();
+
+    /**
+     * Non-zero while a mirror write's own `change` is being dispatched.
+     *
+     * A mirrored country lands in the billing form with a `change` — Knockout's
+     * `value:` binding reads the DOM on nothing else — and that event is
+     * indistinguishable, at the listener, from the buyer choosing a country
+     * there. Read as a buyer edit it invalidated the billing panel's captured
+     * company because the SHIPPING country changed (TWO-25554).
+     */
+    let mirrorWriteDepth = 0;
 
     /** @see secondaryAddressKey — the no-id fallback's own identity. */
     const FALLBACK_KEY_ATTR = 'data-two-mirror-key';
@@ -980,7 +1008,15 @@ define([
         identity.addressNotice('');
     }
 
-    function currentAddressFormCountry() {
+    function currentAddressFormCountry($root) {
+        // A panel that has an address form of its own reads THAT form and
+        // stops there (TWO-25554): the priority list below is document-wide,
+        // so a panel falling through it ends up running its registry against
+        // the other panel's country.
+        if ($root) {
+            const scoped = scopedField($root, COUNTRY_FIELD.selector).val();
+            return typeof scoped === 'string' ? scoped.toLowerCase() : '';
+        }
         for (let i = 0; i < COUNTRY_SELECT_SELECTORS.length; i++) {
             const $select = $(COUNTRY_SELECT_SELECTORS[i]).first();
             if (!$select.length) continue;
@@ -1199,7 +1235,12 @@ define([
         if (!handle.$field.length && !handle.unscoped) return false;
         handle.$field.attr(AUTOFILL_MARKER_ATTR, recordAs);
         handle.$field.val(value);
-        handle.$field.trigger('change');
+        mirrorWriteDepth += 1;
+        try {
+            handle.$field.trigger('change');
+        } finally {
+            mirrorWriteDepth -= 1;
+        }
         return true;
     }
 
@@ -1350,7 +1391,7 @@ define([
          */
         clearResultCache: function () {
             resultCache.clear();
-            registrySuspendedUntil = 0;
+            registrySuspensions = new WeakMap();
         },
 
         /** @see formatCompanyNumber */
@@ -1359,6 +1400,12 @@ define([
         stripBracketedToken: stripBracketedToken,
         COUNTRY_SELECT_SELECTORS: COUNTRY_SELECT_SELECTORS,
         currentAddressFormCountry: currentAddressFormCountry,
+
+        /** @see mirrorWriteDepth */
+        isMirrorWriting: function () {
+            return mirrorWriteDepth > 0;
+        },
+
         apiClientParams: apiClientParams,
 
         unwrapProxyResponse: unwrapProxyResponse,
@@ -1382,10 +1429,15 @@ define([
          *        returns the current ISO country code (any case)
          * @param {object} options.token bind identity, so an abort raised
          *        against a torn-down panel cannot cancel the live one's search
+         * @param {object} [options.scope] the calling panel's rate-limit scope
          * @returns {Promise<{items: Array, unavailable: boolean, aborted: boolean}>}
          */
         searchCompanies: function (options) {
             const token = options.token;
+            // The panel's own rate-limit scope where it has one; its bind token
+            // otherwise, which is per-panel too but is re-minted on every
+            // re-bind and so forgets a backoff a re-render walks through.
+            const scope = options.scope || token;
             const country = options.getCountryCode()?.toUpperCase();
             const cacheKey = `search|${country}|${options.term}`;
 
@@ -1400,7 +1452,7 @@ define([
                 });
             }
 
-            if (Date.now() < registrySuspendedUntil) {
+            if (isRegistrySuspended(scope)) {
                 return Promise.resolve({ items: [], unavailable: true, aborted: false });
             }
 
@@ -1444,7 +1496,7 @@ define([
                     // runs. Park searching rather than let each keystroke
                     // re-hit it.
                     if (jqXHR && jqXHR.status === 429) {
-                        registrySuspendedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
+                        suspendRegistry(scope);
                     }
                     // A genuine abort is the buyer typing on, or the panel
                     // being torn down — expected, and silent by design. A
@@ -1491,6 +1543,13 @@ define([
             if (!selectedCompany || !selectedCompany.lookupId) return null;
 
             const notify = identity || NULL_IDENTITY;
+            // Whether the caller ASKED for a scope, which applyAddress() tells
+            // apart from not passing one at all — see its own refusal.
+            const scoped = arguments.length >= 3;
+            // The panel's identity is its rate-limit scope on both routes, so a
+            // 429 on a search and a 429 on a lookup park the same panel and
+            // only that panel.
+            const scope = identity;
             const lookupState = addressLookupState(root);
             const generation = ++lookupState.generation;
             if (lookupState.pending) {
@@ -1502,7 +1561,7 @@ define([
             // company it was about.
             withdrawAddressUnavailable(notify);
 
-            if (Date.now() < registrySuspendedUntil) {
+            if (isRegistrySuspended(scope)) {
                 announceAddressUnavailable(notify);
                 return null;
             }
@@ -1520,7 +1579,8 @@ define([
                 const envelope = unwrapProxyResponse(raw);
                 const response = envelope.ok ? envelope.body : null;
                 if (response && response.addresses && response.addresses.length) {
-                    self.applyAddress(response.addresses[0], root);
+                    if (scoped) self.applyAddress(response.addresses[0], root);
+                    else self.applyAddress(response.addresses[0]);
                     return;
                 }
                 announceAddressUnavailable(notify);
@@ -1529,7 +1589,7 @@ define([
                 // Recorded even for a superseded pick: the ceiling is
                 // per-merchant, so a newer lookup would hit the same wall.
                 if (jqXHR && jqXHR.status === 429) {
-                    registrySuspendedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
+                    suspendRegistry(scope);
                 }
                 if (!isCurrent()) return;
                 if (textStatus !== 'abort') announceAddressUnavailable(notify);
@@ -1626,6 +1686,14 @@ define([
                 writeAddressInto(this, address, root);
                 return 0;
             }
+            // A caller that ASKED for a scope and came back with nothing gets
+            // no write at all. Falling through to the page-wide path below put
+            // one panel's pick into every address form on the page, the other
+            // panel's included (TWO-25554).
+            if (arguments.length > 1) {
+                console.error('companySearch.applyAddress: refused an unscoped write.');
+                return 0;
+            }
             const $primary = primaryAddressRoot();
             if ($primary.length) {
                 writeAddressInto(this, address, $primary);
@@ -1665,13 +1733,15 @@ define([
          * country switch invalidates the way a registry address is.
          *
          * @param {string} phone
-         * @param {object} [root] jQuery set to scope the write to a single
-         *        form; defaults to billingRoleFormRoot(), as applyAddress()
+         * @param {object} root the calling panel's own form. Required: an
+         *        unscoped write lands in whichever form the page happens to
+         *        offer first, which is the other panel's as often as not.
          * @returns {boolean} whether a field was written
          */
         applyTelephone: function (phone, root) {
             if (typeof phone !== 'string' || !phone.trim()) return false;
-            const $field = scopedFind(root || this.billingRoleFormRoot(), TELEPHONE_FIELD_SELECTOR);
+            if (!root || !root.length) return false;
+            const $field = scopedFind(root, TELEPHONE_FIELD_SELECTOR);
             if (!$field.length) return false;
             $field.val(phone.trim()).trigger('change');
             return true;
@@ -1870,15 +1940,15 @@ define([
             if (!$root.length) return;
             const key = secondaryAddressKey($root);
             if (!key || secondaryAddressBaselines.has(key)) return;
-            // Too late to trust what the form is holding: the mirror has already
-            // written into some billing address on this page, and every billing
-            // form renders from the same quote billing address, so a form
-            // appearing now can be carrying a value the buyer authored in a
-            // sibling form. Seal an EMPTY baseline instead — only a genuinely
-            // empty field then counts as unanswered, which pins rather than
-            // overwrites. Reachable when the buyer switches payment method,
-            // since each method has a billing form of its own.
-            if (mirrorWriteRecords.size) {
+            // Too late to trust what THIS form is holding: the mirror has
+            // already written into it, so what it shows now is ours rather than
+            // a store default. Seal an EMPTY baseline instead — only a
+            // genuinely empty field then counts as unanswered, which pins
+            // rather than overwrites. Asked of this form's own record, never of
+            // whether ANY form on the page has one: a sibling billing form
+            // appearing later is a pristine form, and sealing it empty pinned
+            // it permanently before the buyer had touched it (TWO-25554).
+            if (mirrorWriteRecords.has(key)) {
                 secondaryAddressBaselines.set(key, {});
                 return;
             }
@@ -1951,10 +2021,19 @@ define([
          * address once they have touched any of it, including the parts they
          * left alone.
          *
+         * @param {object} [root] the calling panel's own form — reverted ALONE,
+         *        so one panel's country switch cannot retract the other panel's
+         *        fields (TWO-25554). Omitted entirely, this is the address
+         *        step's own retraction and reaches the mirror as described
+         *        above; passed but empty, nothing is reverted.
          * @returns {number} how many fields were cleared — for tests, and so a
          *          caller can tell "nothing was ours" from "reverted"
          */
-        revertAutofilledAddress: function () {
+        revertAutofilledAddress: function (root) {
+            if (arguments.length) {
+                if (!root || !root.length) return 0;
+                return revertAddressFormFields(root).length;
+            }
             const $primary = primaryAddressRoot();
             let cleared = revertAddressFormFields($primary.length ? $primary : null).length;
             if ($primary.length) {

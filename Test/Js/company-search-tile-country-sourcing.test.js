@@ -16,10 +16,9 @@
  *
  *  1. mounted in the address form â€” the country selector in that same form,
  *     which is the only thing that can answer "what has the buyer chosen";
- *  2. mounted on the payment tile, which has no address fields of its own and
- *     captures as the invoice role â€” the billing form's selector if the buyer
- *     unchecked "same as shipping" and core rendered one, else the shipping
- *     form's, which is then the invoice address too;
+ *  2. mounted on the payment tile, which has no address fields of its own â€”
+ *     still the shipping form's own selector, never the billing form's, which
+ *     belongs to the billing panel (TWO-25554);
  *  3. no address form with a country selector anywhere â€” the quote's billing
  *     address, and behind it the live catch-all DOM read that covers the window
  *     before the quote holds an address at all, the TWO-25326 state.
@@ -386,7 +385,7 @@ describe('the country follows the selector adjacent to the mounted control', () 
     });
 });
 
-describe('the tile mount reads the form holding the invoice address (TWO-25461 Â§1(a.3))', () => {
+describe('the shipping panel reads its OWN form, never the billing form (TWO-25554)', () => {
     /** Core's billing form: no id, matched on `data-form`, one per payment method. */
     function billingForm(country) {
         return (
@@ -405,16 +404,16 @@ describe('the tile mount reads the form holding the invoice address (TWO-25461 Â
 
     test.each([
         [
-            'GB', 'SE', 'US', 'gb',
-            'billing form shown: the invoice country, not the shipping one the buyer typed first'
+            'GB', 'SE', 'US', 'se',
+            'a billing form alongside cannot outrank the shipping panel\'s own form'
         ],
         [
             '', 'SE', 'US', 'se',
-            '"same as shipping" checked, so core renders no billing form and shipping IS the invoice address'
+            'no billing form at all: unchanged, the shipping form answers'
         ],
         [
-            'GB', '', 'US', 'gb',
-            'a billing form with no shipping form behind it still answers'
+            'GB', '', 'US', 'us',
+            'no shipping form to read: the quote, never the billing form beside it'
         ],
         [
             '', '', 'NO', 'no',
@@ -436,17 +435,16 @@ describe('the tile mount reads the form holding the invoice address (TWO-25461 Â
     );
 
     test.each([
-        [false, 'no billing form: the shipping fallback is the hidden one'],
-        [true, 'a billing form the buyer did open still answers']
+        [false, 'no billing form to fall to'],
+        [true, 'a billing form the buyer did open is still not shipping\'s to read']
     ])(
-        'a shipping form inside the hidden new-address modal is not the invoice address '
+        'a shipping form inside the hidden new-address modal answers for nothing '
         + '(billing form: %p â€” %s)',
         (hasBilling) => {
-            const billing = hasBilling ? billingForm('GB') : '';
             // Core renders it there, holding store defaults, for the whole of a
             // checkout completed against a saved address.
             mountAddressForm(
-                billing +
+                (hasBilling ? billingForm('GB') : '') +
                 '<div id="opc-new-shipping-address" style="display:none">' +
                 shippingForm('US') +
                 '</div>' + TILE
@@ -454,28 +452,27 @@ describe('the tile mount reads the form holding the invoice address (TWO-25461 Â
             const { component } = load({ billingCountry: 'NO' });
             component.start();
 
-            expect(component.countryCode()).toBe(hasBilling ? 'gb' : 'no');
+            expect(component.countryCode()).toBe('no');
         }
     );
 
-    test('unchecking "same as shipping" moves the country to the billing form', async () => {
-        // The switch the buyer makes on the payment step: the shipping form does
-        // not change, a billing form simply appears carrying a different country.
+    test('unchecking "same as shipping" leaves the shipping panel\'s country alone', () => {
+        // The switch the buyer makes on the payment step: a billing form simply
+        // appears carrying a different country. Following it here invalidated
+        // the company the buyer had already picked on the shipping step.
         mountAddressForm(shippingForm('SE') + TILE);
         const { component, identity } = load({ billingCountry: 'US' });
         component.start();
-        expect(component.countryCode()).toBe('se');
+        identity.write({ companyName: 'Example AB', companyId: '5560000000' });
 
         $(document.body).prepend(billingForm('NO'));
         $('[data-form="billing-new-address"] select[name="country_id"]').trigger('change');
-        await component.refreshSoleTraderAvailability();
 
-        expect(component.countryCode()).toBe('no');
-        // Availability follows the same resolver, so the two cannot disagree.
-        expect(identity.soleTraderAvailable()).toBe(true);
+        expect(component.countryCode()).toBe('se');
+        expect(identity.companyId()).toBe('5560000000');
     });
 
-    test('the country reaching the search request is the billing form\'s', () => {
+    test('the country reaching the search request is the shipping form\'s', () => {
         // Through a real searchCompanies() call: the getter is only half the
         // path, and the wire is what the buyer sees results for.
         mountAddressForm(billingForm('GB') + shippingForm('SE') + TILE);
@@ -492,7 +489,7 @@ describe('the tile mount reads the form holding the invoice address (TWO-25461 Â
             });
         });
 
-        expect(JSON.parse(requested[0].data).country).toBe('GB');
+        expect(JSON.parse(requested[0].data).country).toBe('SE');
     });
 });
 

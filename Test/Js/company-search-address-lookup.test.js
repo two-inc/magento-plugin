@@ -30,18 +30,27 @@ const SEARCH = 'view/frontend/web/js/model/company-search.js';
 const TILE_FIELD_SELECTOR = '#two_gateway_form input#company_name';
 
 /**
+ * The one address form these fixtures render, so the tile-mounted panel has a
+ * scope to write into. Without one the write is refused outright rather than
+ * escaping document-wide (TWO-25554).
+ */
+const BILLING_FORM_SELECTOR = '[data-form="billing-new-address"]';
+
+/**
  * jQuery test double that records $.ajax calls and the values written to
  * address inputs.
  *
- * `TILE_FIELD_SELECTOR` is the one selector reported as PRESENT, which is what
- * makes the component resolve its mount there — every other lookup answers an
- * empty set, so `billingRoleFormRoot()` finds no form and the address write
- * takes its unscoped, document-wide branch.
+ * `TILE_FIELD_SELECTOR` is reported as PRESENT, which is what makes the
+ * component resolve its mount there, and so is the billing form it writes
+ * into. A scoped `find()` resolves to the field selector alone, so what a write
+ * records is the field it landed in rather than the path it took to get there.
  */
 function makeSpyJQuery(recorder) {
     function $(selector) {
         const obj = {
-            length: selector === TILE_FIELD_SELECTOR ? 1 : 0,
+            length: (selector === TILE_FIELD_SELECTOR || selector === BILLING_FORM_SELECTOR)
+                ? 1
+                : 0,
             val: function (v) {
                 if (arguments.length) {
                     recorder.written.push([selector, v]);
@@ -81,13 +90,10 @@ function makeSpyJQuery(recorder) {
                 return recorder.data[key];
             },
             closest: function () { return obj; },
-            find: function () { return obj; },
+            find: function (sel) { return typeof sel === 'string' ? $(sel) : obj; },
             first: function () { return obj; },
             eq: function () { return obj; },
             is: function () { return false; },
-            // A length-0 set for every address field: this fixture has no
-            // address form as a node, so the writes go through the module's
-            // document-wide branch and `each` never calls back.
             each: function () { return obj; },
             append: function () { return obj; },
             appendTo: function () { return obj; },

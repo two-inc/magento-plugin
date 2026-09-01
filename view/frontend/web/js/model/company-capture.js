@@ -74,9 +74,6 @@ define([
     /** The country select inside that SAME billing form — never a shared one. */
     const BILLING_COUNTRY_SELECTOR = `${BILLING_FORM_ROOT} select[name="country_id"]`;
 
-    /** Any address form's country select, shipping or billing. */
-    const COUNTRY_SELECT_SELECTOR = 'select[name="country_id"]';
-
     /** "My billing and shipping address are the same" — core's own checkbox. */
     const BILLING_TOGGLE_SELECTOR = 'input[name="billing-address-same-as-shipping"]';
 
@@ -115,32 +112,22 @@ define([
     }
 
     /**
-     * The country select the SHIPPING/tile mount answers to.
+     * The country select the SHIPPING/tile mount answers to — its OWN form's,
+     * or none at all.
      *
-     * Mounted in the address form, that is the selector beside it. Mounted on
-     * the payment tile, which has no address fields of its own, it is the one in
-     * the form holding the buyer's invoice address — the billing form where the
-     * buyer unchecked "same as shipping", the shipping form where they did not
-     * (TWO-25461 §1(a.3)). The billing panel below has no equivalent branching:
-     * it only ever exists at its own form and always reads its own country.
+     * Its own form's select wherever it is mounted — the tile has no address
+     * fields, and borrowing the BILLING form's there meant a buyer changing
+     * their billing country invalidated the shipping panel's captured company
+     * (TWO-25554). With no shipping form in play there is no adjacent country
+     * at all, and `null` sends the component to the quote instead.
      *
-     * @param {string} mountSelector
      * @returns {?object} jQuery set, or `null` when no form can answer yet
      */
-    function shippingAdjacentCountrySelect(mountSelector) {
+    function shippingAdjacentCountrySelect() {
         // For a buyer with saved addresses core renders the shipping form —
         // company field, country select and all — inside the hidden new-address
         // modal, holding store defaults nobody chose.
-        const hasShippingForm = companySearch.hasPrimaryAddressForm();
-        if (mountSelector === ADDRESS_FIELD_SELECTOR) {
-            return hasShippingForm ? $(ADDRESS_COUNTRY_SELECTOR) : null;
-        }
-        // The same form the tile's own address write-back targets, so the
-        // country searched and the address written can never disagree.
-        const $root = companySearch.billingRoleFormRoot();
-        if (!$root) return null;
-        if (!hasShippingForm && $root.is && $root.is(ADDRESS_FORM_ROOT)) return null;
-        return $root.find(COUNTRY_SELECT_SELECTOR);
+        return companySearch.hasPrimaryAddressForm() ? $(ADDRESS_COUNTRY_SELECTOR) : null;
     }
 
     /**
@@ -156,9 +143,73 @@ define([
     }
 
     /**
+     * One panel's own country listener, delegated off the document but for the
+     * selector of ITS OWN form's select.
+     *
+     * One shared `select[name="country_id"]` delegation matched both forms, so
+     * whichever panel had no adjacent select of its own — an unmounted but
+     * still stateful billing panel above all — invalidated its captured company
+     * off the other form's country (TWO-25554).
+     *
+     * @param {string} selectSelector
+     * @returns {function(function(string))}
+     */
+    function makeWatchCountryChanges(selectSelector) {
+        return function (onChange) {
+            // Delegated off the document rather than bound to the node: every
+            // checkout re-renders its address form freely, and delegation
+            // survives that with no re-resolution.
+            $(document).on('change.twoCompanyCapture', selectSelector, function (event) {
+                // A mirrored country is this plugin copying the shipping form's
+                // answer into the billing form, and it arrives as the same
+                // `change` a buyer's own choice does.
+                if (companySearch.isMirrorWriting()) return;
+                onChange(String($(event.target).val() || '').toLowerCase());
+            });
+            // A buyer who accepts the default country never fires `change`, and
+            // sole-trader availability would stay unresolved.
+            $.async(selectSelector, function () {
+                onChange();
+            });
+        };
+    }
+
+    /**
+     * The hosted signup's prefill, carrying the company of the panel the buyer
+     * opened it from — never the resolved one, which is the other panel's
+     * capture whenever that panel wins (TWO-25554).
+     *
+     * @param {object} identity
+     * @returns {function(): object}
+     */
+    function makeSignupPrefill(identity) {
+        return function () {
+            const billingAddress = quote.billingAddress() || {};
+            const street = (billingAddress.street || []).filter((s) => s).join(', ').split(' ');
+            return {
+                email: (billingAddress.email || quote.guestEmail || ''),
+                first_name: billingAddress.firstname,
+                last_name: billingAddress.lastname,
+                company_name: identity.companyName(),
+                phone_number: billingAddress.telephone,
+                billing_address: {
+                    building: (street[0] || '').replace(',', ''),
+                    street: street.slice(1).join(' '),
+                    postal_code: billingAddress.postcode,
+                    city: billingAddress.city,
+                    region: billingAddress.region,
+                    country_code: billingAddress.countryId
+                }
+            };
+        };
+    }
+
+    /**
      * Members every panel's host options share verbatim — the buyer, the
      * transport, and everything that is not "where do I live / what do I
-     * write into".
+     * write into". Everything panel-scoped — the country it reads, the form it
+     * writes, the identity it prefills a signup from — is supplied per panel
+     * below instead.
      *
      * @returns {object}
      */
@@ -180,24 +231,6 @@ define([
                 const fromQuote = billing && billing.countryId;
                 return typeof fromQuote === 'string' ? fromQuote.toLowerCase() : '';
             },
-            getFallbackCountry: function () {
-                return companySearch.currentAddressFormCountry() || '';
-            },
-            watchCountryChanges: function (onChange) {
-                // Delegated off the document rather than bound to the node: every
-                // checkout re-renders its address form freely, and delegation
-                // survives that with no re-resolution. Shared by both panels —
-                // each resolves ITS OWN adjacent country off the changed value via
-                // its own getAdjacentCountry(), per TWO-25461 §1(a.3).
-                $(document).on('change.twoCompanyCapture', COUNTRY_SELECT_SELECTOR, function (event) {
-                    onChange(String($(event.target).val() || '').toLowerCase());
-                });
-                // A buyer who accepts the default country never fires `change`, and
-                // sole-trader availability would stay unresolved.
-                $.async(COUNTRY_SELECT_SELECTOR, function () {
-                    onChange();
-                });
-            },
             supportedCompanyTypesUrl: function (country) {
                 return url.build(`rest/V1/two/supported-company-types/${encodeURIComponent(country)}`);
             },
@@ -216,30 +249,8 @@ define([
             apiClientParams: function (companyConfig) {
                 return companySearch.apiClientParams(companyConfig);
             },
-            signupPrefill: function () {
-                const billingAddress = quote.billingAddress() || {};
-                const street = (billingAddress.street || []).filter((s) => s).join(', ').split(' ');
-                return {
-                    email: (billingAddress.email || quote.guestEmail || ''),
-                    first_name: billingAddress.firstname,
-                    last_name: billingAddress.lastname,
-                    company_name: resolvedIdentity.companyName(),
-                    phone_number: billingAddress.telephone,
-                    billing_address: {
-                        building: (street[0] || '').replace(',', ''),
-                        street: street.slice(1).join(' '),
-                        postal_code: billingAddress.postcode,
-                        city: billingAddress.city,
-                        region: billingAddress.region,
-                        country_code: billingAddress.countryId
-                    }
-                };
-            },
             signupCountry: function () {
                 return ((quote.billingAddress() || {}).countryId || '').toUpperCase();
-            },
-            applyTelephone: function (phoneNumber) {
-                companySearch.applyTelephone(phoneNumber);
             },
             showError: function (message) {
                 messageList.addErrorMessage({ message: message });
@@ -325,74 +336,6 @@ define([
         return companySearch.billingRoleFormRoot();
     }
 
-    /**
-     * The billing panel holds a live mount at the billing form's company
-     * field, so that field's VALUE is its capture and nobody else's.
-     *
-     * The counterpart to shippingWriteRoot() one field further in. That
-     * function stops the shipping panel's ADDRESS writes at the panel
-     * boundary; the two page-level company-field writers that predate
-     * TWO-25554's split have to stop at the same boundary, and neither knew
-     * the boundary existed:
-     *
-     *  - the shipping step mirrors its own company/organization onto every
-     *    billing address (setCompanyData() in view/address-autocomplete.js),
-     *    which was the whole propagation model while billing had no picker;
-     *  - the quote's billing address feeds the SHIPPING identity
-     *    (updateBillingAddress() → fillCompanyData() in the payment
-     *    renderer), which was the same statement read the other way while
-     *    one company served the page.
-     *
-     * Asked of the live mount rather than of the checkbox: the mount is what
-     * makes the field the panel's, and it is already the answer to "is
-     * billing a distinct address" plus "is company search on this checkout
-     * at all" — with the panel unmounted both writers are the only company
-     * writers left and must keep working.
-     *
-     * @returns {boolean}
-     */
-    function billingOwnsCompanyField() {
-        return !!billingComponent.mountSelector();
-    }
-
-    /**
-     * Whether a company reaching us from somewhere else on the page is one the
-     * BILLING panel captured.
-     *
-     * The mount above answers "who owns that field", which is the only
-     * question the mirror asks and is answered at a moment nothing is
-     * re-rendering. It is the wrong instrument for a company arriving through
-     * the quote or through `companyData`, for two reasons a host can supply
-     * independently:
-     *
-     *  - a live DOM query is only as good as the instant it is made. A
-     *    checkout that re-renders its payment area from the same `change` that
-     *    pushes the pick into the quote (Fire Checkout does; Amasty's static
-     *    one-step layout does not) can deliver the quote's notification while
-     *    the billing fieldset is detached — the panel is mounted in every
-     *    sense the buyer can see, and the query still answers no;
-     *  - `companyData` is a localStorage section that outlives the page load,
-     *    so a company can arrive from it with no billing form on the page at
-     *    all yet.
-     *
-     * The panel's own capture answers both: it is module state, it outlives
-     * every re-render, and a company the billing panel captured is the billing
-     * panel's wherever it surfaces.
-     *
-     * Compared on the name because that is all these arrivals carry in common
-     * — the quote's billing address has no notion of which panel wrote it —
-     * trimmed and case-folded, the same ruling on "the same answer" the
-     * mirror's own comparison makes.
-     *
-     * @param {string} companyName the company about to be applied
-     * @returns {boolean}
-     */
-    function billingCaptured(companyName) {
-        const captured = billingIdentity.companyName();
-        if (!captured || !companyName) return false;
-        return captured.trim().toLowerCase() === String(companyName).trim().toLowerCase();
-    }
-
     shippingComponent = new CompanyCaptureComponent(Object.assign(sharedHostOptions(), {
         identity: shippingIdentity,
         addressFieldSelector: ADDRESS_FIELD_SELECTOR,
@@ -400,8 +343,8 @@ define([
         fieldExists: function (selector) {
             return !!$(selector).length;
         },
-        getAdjacentCountry: function (mountSelector) {
-            return readCountry(shippingAdjacentCountrySelect(mountSelector));
+        getAdjacentCountry: function () {
+            return readCountry(shippingAdjacentCountrySelect());
         },
         applyCompanyAddress: function (selectedItem) {
             companySearch.lookupCompanyAddress(
@@ -412,11 +355,27 @@ define([
             );
         },
         revertAutofilledAddress: function () {
-            companySearch.revertAutofilledAddress();
+            companySearch.revertAutofilledAddress(shippingWriteRoot());
         },
         applyBuyerAddress: function (source) {
             companySearch.applyAddress(source, shippingWriteRoot());
         },
+        applyTelephone: function (phoneNumber) {
+            companySearch.applyTelephone(phoneNumber, shippingWriteRoot());
+        },
+        getFallbackCountry: function () {
+            if (companySearch.hasPrimaryAddressForm()) {
+                return companySearch.currentAddressFormCountry($(ADDRESS_FORM_ROOT));
+            }
+            // No form of its own to read. The document-wide read behind this is
+            // the last resort for a checkout supplying its own address markup
+            // (TWO-25326), and is refused outright once a billing form exists
+            // for it to mistake for shipping's (TWO-25554).
+            if ($(BILLING_FORM_ROOT).length) return '';
+            return companySearch.currentAddressFormCountry() || '';
+        },
+        watchCountryChanges: makeWatchCountryChanges(ADDRESS_COUNTRY_SELECTOR),
+        signupPrefill: makeSignupPrefill(shippingIdentity),
         renderSignupPrompt: makeRenderSignupPrompt(function () { return shippingComponent; })
     }));
 
@@ -442,15 +401,20 @@ define([
                 billingIdentity
             );
         },
-        // Zero-arg by its own contract: it already reverts every mirrored
-        // address root, primary and secondary alike, in one pass — see
-        // company-search.js's own revertAutofilledAddress() doc.
         revertAutofilledAddress: function () {
-            companySearch.revertAutofilledAddress();
+            companySearch.revertAutofilledAddress($(BILLING_FORM_ROOT));
         },
         applyBuyerAddress: function (source) {
             companySearch.applyAddress(source, $(BILLING_FORM_ROOT));
         },
+        applyTelephone: function (phoneNumber) {
+            companySearch.applyTelephone(phoneNumber, $(BILLING_FORM_ROOT));
+        },
+        getFallbackCountry: function () {
+            return companySearch.currentAddressFormCountry($(BILLING_FORM_ROOT));
+        },
+        watchCountryChanges: makeWatchCountryChanges(BILLING_COUNTRY_SELECTOR),
+        signupPrefill: makeSignupPrefill(billingIdentity),
         renderSignupPrompt: makeRenderSignupPrompt(function () { return billingComponent; })
     }));
 
@@ -485,8 +449,30 @@ define([
         identity: resolvedIdentity,
         shipping: shippingComponent,
         billing: billingComponent,
-        billingOwnsCompanyField: billingOwnsCompanyField,
-        billingCaptured: billingCaptured,
+        /**
+         * Whether the payment tile's own company field is the SHIPPING panel's
+         * live mount AND the shipping panel is the one currently resolved. The
+         * tile displays the resolved company, so its two-way input would
+         * otherwise write billing's capture into the shipping identity.
+         *
+         * @returns {boolean}
+         */
+        tileOwnsCompanyField: function () {
+            return shippingComponent.mountSelector() === TILE_FIELD_SELECTOR
+                && resolver.chosenIdentity() === shippingIdentity;
+        },
+        /**
+         * The panel whose own capture holds the adopted sole trader, or null.
+         * The tile's "select a different sole trader" link is rendered off the
+         * RESOLVED adoption, which can be either panel's.
+         *
+         * @returns {?object}
+         */
+        soleTraderOwner: function () {
+            if (billingIdentity.soleTraderAdopted()) return billingComponent;
+            if (shippingIdentity.soleTraderAdopted()) return shippingComponent;
+            return null;
+        },
         start: function () {
             shippingComponent.start();
             billingComponent.start();

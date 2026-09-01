@@ -277,14 +277,7 @@
         // there is no flow to tell, no registry to ask and nothing captured to
         // invalidate — and a host hook calls this on every address change.
         if (!this._config || !this._started) return;
-        // The observed select is ignored where an adjacent one exists: a second
-        // form firing `change` must not decide the country for a control mounted
-        // beside a different one, or availability and the search answer for
-        // different countries (TWO-25461).
-        const adjacent = this.adjacentCountry();
-        const country = adjacent !== null
-            ? adjacent
-            : String(observedCountry || this.countryCode() || '').toLowerCase();
+        const country = String(observedCountry || this.countryCode() || '').toLowerCase();
         if (!country || country === this._lastCountry) return;
         const hadCountry = !!this._lastCountry;
         this._lastCountry = country;
@@ -468,6 +461,9 @@
                 } : null,
                 getCountryCode: function () {
                     return self.countryCode();
+                },
+                getSearchScope: function () {
+                    return self._identity;
                 },
                 getChips: function () {
                     return self.chipDefinitions();

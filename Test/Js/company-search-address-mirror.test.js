@@ -798,22 +798,21 @@ describe('the rendered baseline refuses to be captured from a half-built form', 
         expect(model.secondaryAddressIsPinned(billing('two_payment'))).toBe(true);
     });
 
-    test('a form appearing after the mirror has written is judged on emptiness alone', () => {
-        // The payment-method switch: every method's billing form renders from the
-        // same quote billing address, so a form appearing now can be carrying an
-        // edit the buyer made in a sibling. Its render is no longer evidence of
-        // anything, so only a genuinely empty field counts as unanswered.
+    test('a form is judged on ITS OWN record, never on a sibling form\'s', () => {
+        // TWO-25554: asked of whether ANY form on the page had a mirror record,
+        // a form appearing later sealed an empty baseline and pinned itself
+        // permanently against a render it had every right to be judged on. The
+        // form the buyer actually edited keeps its own pin either way.
         const model = renderCheckout({ regions: true, billingCodes: ['two_payment', 'checkmo'] });
         model.captureSecondaryAddressBaseline(billing('two_payment'));
         model.applyAddress(COMPANY_A);
         buyerTypes(SECONDARY + '[data-test-code="two_payment"]', 'city', 'Bristol');
-        // The sibling form renders carrying the buyer's own edit.
         billing('checkmo').querySelector('input[name="city"]').value = 'Bristol';
 
         model.captureSecondaryAddressBaseline(billing('checkmo'));
 
-        expect(model.secondaryAddressIsPinned(billing('checkmo'))).toBe(true);
-        expect(billing('checkmo').querySelector('input[name="city"]').value).toBe('Bristol');
+        expect(model.secondaryAddressIsPinned(billing('checkmo'))).toBe(false);
+        expect(model.secondaryAddressIsPinned(billing('two_payment'))).toBe(true);
     });
 });
 

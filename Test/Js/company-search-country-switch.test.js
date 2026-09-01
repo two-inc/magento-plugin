@@ -770,19 +770,17 @@ describe('the address step asks for the two-address propagation', () => {
         expect(ctx.calls.sequence.indexOf('revert')).toBeLessThan(
             ctx.calls.sequence.indexOf('mirror:country')
         );
-        expect(ctx.calls.sequence.indexOf('mirror:company+organization')).toBeLessThan(
-            ctx.calls.sequence.indexOf('mirror:country')
-        );
     });
 
-    test('every company write propagates the name AND the number it belongs to', () => {
-        // A field the pin JUDGES but the mirror never WRITES can only ever
-        // freeze the address, so the organisation number travels with the name.
+    test('a company write propagates nothing — each panel owns its own company field', () => {
+        // TWO-25554: mirroring company/organization onto every billing address
+        // was the whole propagation model while billing had no picker of its
+        // own. With one, it painted the billing panel's field.
         const ctx = loadAddressStep({ country: 'GB' });
         ctx.calls.mirrored.length = 0;
 
         ctx.component.setCompanyData('12345678', 'Example Ltd');
 
-        expect(ctx.calls.mirrored).toEqual([['company', 'organization']]);
+        expect(ctx.calls.mirrored).toEqual([]);
     });
 });

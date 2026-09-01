@@ -7,8 +7,8 @@
  *
  * Both defects this pins were live on a checkout rendering both panels, and
  * neither is about the address sub-fields `shippingWriteRoot()` already
- * scopes — they are about the value of the company field ITSELF, written by
- * two page-level paths that predate the split:
+ * scopes — they are about the value of the company field ITSELF, which two
+ * page-level paths that predate the split used to write:
  *
  *  - the shipping step mirrors its own company/organization onto every
  *    billing address form (`setCompanyData()`), so a shipping pick painted
@@ -203,11 +203,9 @@ function addressForm(id, dataForm) {
 /**
  * Both panels on the page, wired to the real mirror and the real renderer.
  *
- * @param {boolean} billingOwnsCompanyField whether the billing panel holds a
- *        live mount at the billing form's company field
  * @returns {object}
  */
-function load(billingOwnsCompanyField) {
+function load() {
     // Core's own billing shape: the form sits inside the block carrying the
     // "same as shipping" checkbox, which is what the mirror keys its
     // per-address record on.
@@ -235,12 +233,8 @@ function load(billingOwnsCompanyField) {
             soleTrader: function () { return null; }
         },
         billing: { identity: function () { return billingIdentity; } },
-        billingOwnsCompanyField: function () { return billingOwnsCompanyField; },
-        // The value question, answered by the billing panel's own capture.
-        // This fixture's billing panel never picks anything — the two cases
-        // where it does are pinned against the real module in
-        // company-capture-billing-panel.test.js.
-        billingCaptured: function () { return false; },
+        tileOwnsCompanyField: function () { return false; },
+        soleTraderOwner: function () { return null; },
         refreshMount: function () {}
     };
 
@@ -286,27 +280,7 @@ function flushIdentityWatcher() {
     return new Promise(function (resolve) { setTimeout(resolve, 0); });
 }
 
-describe('a pick on the shipping panel never paints the billing panel\'s field', () => {
-    test('with the billing panel mounted, billing\'s field keeps its own (empty) capture', () => {
-        const { addressStep } = load(true);
-
-        addressStep.setCompanyData('111', 'Shipping Co');
-
-        expect(displayed(SHIPPING_COMPANY)).toBe('Shipping Co');
-        expect(displayed(BILLING_COMPANY)).toBe('');
-    });
-
-    test('with no billing panel, the company still propagates — that mirror is the only writer left', () => {
-        const { addressStep } = load(false);
-
-        addressStep.setCompanyData('111', 'Shipping Co');
-
-        expect(displayed(SHIPPING_COMPANY)).toBe('Shipping Co');
-        expect(displayed(BILLING_COMPANY)).toBe('Shipping Co');
-    });
-});
-
-describe('a pick on the billing panel never paints the shipping panel\'s field', () => {
+describe('a pick on one panel never paints the other panel\'s field', () => {
     /**
      * What the billing panel's own pick leaves behind: its field painted, and
      * the quote's billing address carrying that company to every payment
@@ -321,8 +295,17 @@ describe('a pick on the billing panel never paints the shipping panel\'s field',
         });
     }
 
-    test('with the billing panel mounted, the shipping identity and field are untouched', async () => {
-        const { renderer, shippingIdentity } = load(true);
+    test('a shipping pick paints the shipping field alone', () => {
+        const { addressStep } = load();
+
+        addressStep.setCompanyData('111', 'Shipping Co');
+
+        expect(displayed(SHIPPING_COMPANY)).toBe('Shipping Co');
+        expect(displayed(BILLING_COMPANY)).toBe('');
+    });
+
+    test('a billing pick leaves the shipping identity and field untouched', async () => {
+        const { renderer, shippingIdentity } = load();
 
         billingPick(renderer);
         await flushIdentityWatcher();
@@ -333,20 +316,18 @@ describe('a pick on the billing panel never paints the shipping panel\'s field',
     });
 
     test('the telephone still travels from that same billing address', () => {
-        const { renderer } = load(true);
+        const { renderer } = load();
 
         billingPick(renderer);
 
         expect(renderer.telephone()).toBe('+47123 45 678');
     });
 
-    test('with no billing panel, the billing address is still the shipping identity\'s source', async () => {
-        const { renderer, shippingIdentity } = load(false);
+    // The address prefill TWO-25461 asks for is unaffected: only company and
+    // organisation number stop crossing between the two addresses.
+    test('the country still mirrors from shipping onto an unpinned billing address', () => {
+        const { search } = load();
 
-        billingPick(renderer);
-        await flushIdentityWatcher();
-
-        expect(shippingIdentity.companyName()).toBe('Billing Co');
-        expect(displayed(SHIPPING_COMPANY)).toBe('Billing Co');
+        expect(search.mirrorFieldsToSecondaryAddresses(['country'])).toBe(1);
     });
 });

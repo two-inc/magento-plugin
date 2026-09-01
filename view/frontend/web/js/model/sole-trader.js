@@ -347,7 +347,11 @@
             this._returnCloseTimerId = setTimeout(() => {
                 this._returnCloseTimerId = null;
                 if (typeof document.hasFocus === 'function' && !document.hasFocus()) return;
-                const panel = document.querySelector('.two-company-dropdown');
+                // This flow's OWN popover. A page-wide class query returns the
+                // first match, which is the other capture panel's as often as
+                // not (TWO-25554).
+                const own = this._component.panel();
+                const panel = own && own.getPanelElement();
                 if (panel && panel.contains(document.activeElement)) return;
                 // The CLOSE half only: looking away from the signup is not a
                 // decision about the enrolment, which stays live and resumable

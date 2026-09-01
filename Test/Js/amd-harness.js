@@ -212,7 +212,10 @@ function defaultMocks() {
             // exercise a selector production never uses.
             SECONDARY_ADDRESS_ROOT_SELECTOR: '[data-form="billing-new-address"]',
             mirrorFieldsToSecondaryAddresses: function () { return 0; },
-            captureSecondaryAddressBaseline: function () {}
+            captureSecondaryAddressBaseline: function () {},
+            // Never mid-mirror in the inert default: nothing here writes, so
+            // every `change` a spec fires is the buyer's own.
+            isMirrorWriting: function () { return false; }
         },
         // Inert default, same convention as the company-search mock above: a
         // constructor whose instances no-op every method. Tests that exercise
