@@ -260,6 +260,36 @@ describe('a country switch invalidates its own panel\'s company and nothing else
         expect(identities[other].companyId()).toBe(COMPANIES[other].companyId);
         expect(displayed(other)).toBe(COMPANIES[other].text);
     });
+
+    test('shipping switches country while the billing panel is unmounted', () => {
+        // The billing panel keeps its capture through core re-checking "same as
+        // shipping" and hiding its fieldset. Unmounted it has no country select
+        // to answer for, and one shared delegation then handed it the SHIPPING
+        // form's switch as though the buyer had made it there.
+        const { panels, identities } = boot();
+        picks(panels.billing, COMPANIES.billing);
+        document.querySelector(FIELDS.billing).setAttribute('data-test-hidden', '');
+        panels.billing.refreshMount();
+        expect(panels.billing.mountSelector()).toBe('');
+
+        switchCountry('shipping', 'SE');
+
+        expect(identities.billing.companyId()).toBe(COMPANIES.billing.companyId);
+    });
+
+    test('billing switches country while the shipping panel is on the tile', () => {
+        // With no shipping form on the checkout the shipping panel mounts on the
+        // payment tile, which has no country select — so it read the billing
+        // form's, and a billing country switch invalidated a company the buyer
+        // had picked on the tile.
+        const { panels, identities } = boot({ shippingForm: false });
+        expect(panels.shipping.mountSelector()).toBe('#two_gateway_form input#company_name');
+        picks(panels.shipping, COMPANIES.shipping);
+
+        switchCountry('billing', 'SE');
+
+        expect(identities.shipping.companyId()).toBe(COMPANIES.shipping.companyId);
+    });
 });
 
 describe('the address prefill stops at a billing address the buyer has answered', () => {

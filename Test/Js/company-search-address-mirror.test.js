@@ -37,7 +37,10 @@ const FIELD_SELECTORS = {
     street1: 'input[name="street[1]"]',
     city: 'input[name="city"]',
     postcode: 'input[name="postcode"]',
-    country: 'select[name="country_id"]'
+    country: 'select[name="country_id"]',
+    // Not one of the pin's fields — applyTelephone() is the one write that
+    // lands outside them, and it has a form of its own to stay inside.
+    telephone: 'input[name="telephone"]'
 };
 
 function makeDollar() {
@@ -150,6 +153,7 @@ function addressFields(options) {
         '<input name="street[1]" value="">' +
         '<input name="city" value="">' +
         '<input name="postcode" value="">' +
+        '<input name="telephone" value="">' +
         '<select name="region_id">' +
         regionOptions +
         '</select>' +
@@ -686,6 +690,57 @@ describe('a country switch retracts the autofill from both addresses', () => {
         expect(read(PRIMARY, 'city')).toBe('');
         expect(read(SECONDARY, 'city')).toBe('');
         expect(read(SECONDARY, 'street0')).toBe('');
+    });
+
+    test.each([
+        [PRIMARY, SECONDARY, 'the shipping form\'s own retraction stops at the shipping form'],
+        [SECONDARY, PRIMARY, 'the billing form\'s own retraction stops at the billing form']
+    ])('a retraction scoped to one form leaves the other alone (%#: %s)', (scoped, other) => {
+        // TWO-25554: each panel retracts ITS OWN root. The zero-arg call below
+        // is the address step's own retraction, which still reaches the mirror.
+        const model = renderCheckout({ regions: true });
+        model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
+        model.applyAddress(COMPANY_A);
+
+        expect(model.revertAutofilledAddress($(scoped))).toBe(3);
+
+        expect(read(scoped, 'city')).toBe('');
+        expect(read(other, 'city')).toBe('London');
+    });
+
+    test('a retraction asked to scope itself and given nothing reverts nothing', () => {
+        const model = renderCheckout({ regions: true });
+        model.captureSecondaryAddressBaseline(document.querySelector(SECONDARY));
+        model.applyAddress(COMPANY_A);
+
+        expect(model.revertAutofilledAddress(null)).toBe(0);
+
+        expect(read(PRIMARY, 'city')).toBe('London');
+        expect(read(SECONDARY, 'city')).toBe('London');
+    });
+
+    test.each([
+        [PRIMARY, SECONDARY, 'the shipping form\'s phone stays in the shipping form'],
+        [SECONDARY, PRIMARY, 'the billing form\'s phone stays in the billing form']
+    ])('a verified phone lands in the calling panel\'s form alone (%#: %s)', (scoped, other) => {
+        // TWO-25554: with no root the write fell to billingRoleFormRoot(), so
+        // the shipping panel's sole trader had their phone written into the
+        // billing form.
+        const model = renderCheckout({ regions: true });
+
+        expect(model.applyTelephone('+47 123 45 678', $(scoped))).toBe(true);
+
+        expect(read(scoped, 'telephone')).toBe('+47 123 45 678');
+        expect(read(other, 'telephone')).toBe('');
+    });
+
+    test('a phone write with no form to scope to is refused', () => {
+        const model = renderCheckout({ regions: true });
+
+        expect(model.applyTelephone('+47 123 45 678')).toBe(false);
+
+        expect(read(PRIMARY, 'telephone')).toBe('');
+        expect(read(SECONDARY, 'telephone')).toBe('');
     });
 
     test('a pinned billing address is skipped whole, not field by field', () => {
