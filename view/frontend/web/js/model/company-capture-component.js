@@ -660,9 +660,7 @@
         let node = field.parentElement;
         while (node && root.contains(node)) {
             const found = node.querySelectorAll(RESTORED_NUMBER_SELECTOR);
-            // Exactly one: several under one ancestor means it spans a second
-            // address form, so neither is answerable as this panel's own.
-            if (found.length === 1) return found[0].value || '';
+            if (found.length) return found[0].value || '';
             node = node.parentElement;
         }
         return '';
