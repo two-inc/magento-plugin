@@ -221,6 +221,7 @@ function defaultMocks() {
             CompanySearchPanelMock.prototype.close = function () {};
             CompanySearchPanelMock.prototype.isOpen = function () { return false; };
             CompanySearchPanelMock.prototype.destroy = function () {};
+            CompanySearchPanelMock.prototype.unmount = function () { this._field = null; };
             CompanySearchPanelMock.prototype.syncChips = function () {};
             CompanySearchPanelMock.prototype.setDisplayText = function () {};
             CompanySearchPanelMock.prototype.releaseField = function () {};

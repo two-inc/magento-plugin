@@ -1063,6 +1063,34 @@
     };
 
     /**
+     * Give the host field back, keeping this panel re-mountable — unlike
+     * destroy(), which is final.
+     *
+     * A field the component no longer owns keeps this panel's key handlers, its
+     * popover and its combobox attributes otherwise, so the control the buyer
+     * left is still live under the one they are using (TWO-25554).
+     */
+    CompanySearchPanel.prototype.unmount = function () {
+        this._cancelFocusOutClose();
+        this._cancelPendingSearch();
+        this.search.abortActiveRequest(this._token);
+        this.removeBackToSearchLink();
+        this._releaseWrap(this._field);
+        ['role', 'aria-haspopup', 'aria-controls', 'aria-expanded'].forEach(function (attr) {
+            if (this._field) this._field.removeAttribute(attr);
+        }, this);
+        this._field = null;
+        this._panel = null;
+        this._query = null;
+        this._results = null;
+        this._chips = null;
+        this._open = false;
+        // A search issued by the bind this call ends resolves into a token
+        // nothing is listening for.
+        this._token = {};
+    };
+
+    /**
      * Tear the panel down entirely, leaving the field as core rendered it.
      *
      * Final: the observers outlive this and cannot be disconnected, so

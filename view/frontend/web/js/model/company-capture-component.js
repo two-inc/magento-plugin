@@ -446,6 +446,7 @@
             // was is what stops `adjacentCountry()` answering for a form that has
             // gone, and lets the next host that appears mount cleanly.
             this._boundSelector = null;
+            if (this._panel) this._panel.unmount();
             if (previous !== null) this._notifyMount();
             return;
         }

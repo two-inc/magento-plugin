@@ -638,6 +638,20 @@ describe('the payment tile is the shipping panel\'s mount, or nobody\'s', () => 
         expect(tileFieldVisible()).toBe(false);
     });
 
+    test('losing the tile takes this panel\'s popover and combobox role with it', () => {
+        const booted = boot({ shippingForm: false, billingHidden: true });
+        const tileInput = document.querySelector(TILE_FIELD);
+        expect(tileInput.getAttribute('role')).toBe('combobox');
+
+        document.querySelector(FIELDS.billing).removeAttribute('data-test-hidden');
+        $('[data-form="billing-new-address"]').removeAttr('data-test-hidden');
+        $('input[name="billing-address-same-as-shipping"]').trigger('change');
+
+        expect(booted.panels.shipping.mountSelector()).toBe('');
+        expect(tileInput.getAttribute('role')).toBeNull();
+        expect(booted.panels.shipping.panel().getPanelElement()).toBeNull();
+    });
+
     test('a tile-mounted panel refuses to write into core\'s hidden billing form, and says so', () => {
         // Amasty renders every payment method's billing fieldset from page
         // load, hidden. It is still the BILLING panel's form, mounted or not,

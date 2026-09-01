@@ -343,6 +343,7 @@ function loadMountedComponent(configOverride, present) {
         this.releaseField = function () {};
         this.reclaimField = function () {};
         this.abortActiveRequest = function () {};
+        this.unmount = function () {};
     }
     function SoleTraderStub() {
         this.listenForSignupResult = function () {};

@@ -359,6 +359,7 @@ function loadCaptureComponent(options) {
         this.setDisplayText = function () {};
         this.releaseField = function () {};
         this.reclaimField = function () {};
+        this.unmount = function () {};
     }
     function SoleTraderStub() {
         this.listenForSignupResult = function () {};

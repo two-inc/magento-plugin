@@ -614,6 +614,7 @@ describe('a checkout that loses both hosts', () => {
         StubPanel.prototype.isBound = function () { return hostPresent; };
         StubPanel.prototype.syncChips = function () {};
         StubPanel.prototype.releaseField = function () {};
+        StubPanel.prototype.unmount = function () {};
         const controller = new Controller(Object.assign(completeHost(), {
             Panel: StubPanel,
             config: { isCompanySearchEnabled: true },
