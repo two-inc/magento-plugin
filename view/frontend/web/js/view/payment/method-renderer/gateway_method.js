@@ -48,22 +48,41 @@ define([
     window.quote = quote;
 
     /*
-     * Knockout's view of the RESOLVED identity (TWO-25554) — whichever of the
-     * shipping/billing panels' own captures currently wins, per
-     * company-capture.js's resolver — framework-free so that Hyvä loads the
-     * same file. `companyName` mirrors both ways because the tile's `value:`
-     * binding writes back; `mirroring` stops that write echoing into a second
-     * pass. The tile only ever renders when there is no distinct billing
-     * panel at all (see CompanyCaptureComponent.mountSelector()), so the
-     * resolved identity and the shipping panel's own are the same value
-     * whenever this binding is live — see the write-back below.
+     * Knockout's read-only view of the RESOLVED identity (TWO-25554) —
+     * whichever of the shipping/billing panels' own captures currently wins,
+     * per company-capture.js's resolver. What getData(), the order-intent
+     * check and the notices all read.
      */
     const identity = companyCapture.identity;
     const capturedName = ko.observable(identity.companyName());
     const capturedId = ko.observable(identity.companyId());
     const soleTraderAdopted = ko.observable(identity.soleTraderAdopted());
-    const soleTraderBusy = ko.observable(identity.soleTraderBusy());
-    let mirroring = false;
+
+    /*
+     * The tile's own company input, bound to the identity of the panel MOUNTED
+     * there — always the shipping panel (isTileCompanyFieldVisible()), never
+     * the resolved one. Binding it to the resolved identity displayed the
+     * billing panel's capture in the shipping panel's field, and a keystroke
+     * there wrote billing's company into the shipping identity (TWO-25554).
+     */
+    const tileIdentity = companyCapture.shipping.identity();
+    const tileCompanyName = ko.observable(tileIdentity.companyName());
+    const tileCompanyId = ko.observable(tileIdentity.companyId());
+    const tileSoleTraderBusy = ko.observable(tileIdentity.soleTraderBusy());
+    let tileMirroring = false;
+
+    tileIdentity.subscribe(function () {
+        tileMirroring = true;
+        tileCompanyName(tileIdentity.companyName());
+        tileCompanyId(tileIdentity.companyId());
+        tileSoleTraderBusy(tileIdentity.soleTraderBusy());
+        tileMirroring = false;
+    });
+
+    tileCompanyName.subscribe(function (value) {
+        if (tileMirroring) return;
+        tileIdentity.companyName(value);
+    });
 
     /**
      * The live renderer instance's own reaction to a resolved-company change
@@ -78,27 +97,10 @@ define([
     let onResolvedCompanyChange = null;
 
     identity.subscribe(function () {
-        mirroring = true;
         capturedName(identity.companyName());
         capturedId(identity.companyId());
         soleTraderAdopted(identity.soleTraderAdopted());
-        soleTraderBusy(identity.soleTraderBusy());
-        mirroring = false;
         if (onResolvedCompanyChange) onResolvedCompanyChange();
-    });
-
-    // Only `companyName` mirrors back, because it is the only two-way binding.
-    // A write to any of the other three would be reverted by the identity's next
-    // notification rather than reaching it.
-    capturedName.subscribe(function (value) {
-        if (mirroring) return;
-        // The tile's input is bound to the RESOLVED name, so it is only the
-        // buyer typing when the panel mounted there is also the panel that
-        // resolved. Anywhere else it is displaying the other panel's capture,
-        // and writing it back would put billing's company into the shipping
-        // identity (TWO-25554).
-        if (!companyCapture.tileOwnsCompanyField()) return;
-        companyCapture.shipping.identity().companyName(value);
     });
 
     // The tile-side host the company-capture component binds at; the tile's own
@@ -189,7 +191,10 @@ define([
         companyName: capturedName,
         companyId: capturedId,
         soleTraderAdopted: soleTraderAdopted,
-        soleTraderBusy: soleTraderBusy,
+        // The tile field's own bindings — @see tileIdentity.
+        tileCompanyName: tileCompanyName,
+        tileCompanyId: tileCompanyId,
+        tileSoleTraderBusy: tileSoleTraderBusy,
         invoiceEmails: ko.observable(''),
         project: ko.observable(''),
         department: ko.observable(''),
@@ -370,7 +375,20 @@ define([
          * @returns {boolean}
          */
         isCompanyNameReadOnly: function () {
-            return identity.isSoleTrader() && !!this.companyId();
+            return tileIdentity.isSoleTrader() && !!this.tileCompanyId();
+        },
+        /**
+         * The tile panel's captured organisation number as it may be SHOWN, or
+         * '' when it must not be (an internal `TWO:` value, TWO-25326).
+         *
+         * @returns {string}
+         */
+        tileDisplayCompanyId: function () {
+            return companySearch.formatCompanyNumber(this.tileCompanyId());
+        },
+        /** @returns {boolean} the tile panel has both halves of an identity */
+        isTileCompanyCaptured: function () {
+            return !!(this.tileCompanyName() || '').trim() && !!(this.tileCompanyId() || '').trim();
         },
         /**
          * Whether the tile's own company field is the component's live mount.
@@ -407,26 +425,6 @@ define([
          */
         isCompanyCaptured: function () {
             return !!(this.companyName() || '').trim() && !!(this.companyId() || '').trim();
-        },
-        /**
-         * The captured organisation number as it may be SHOWN in the tile, or
-         * '' when it must not be shown (TWO-25326: an internal `TWO:`-prefixed
-         * identifier). Routed through the ONE shared display formatter that
-         * the dropdown row, the address-step label and the order-intent notice
-         * all use — see companySearch.formatCompanyNumber().
-         *
-         * `companyId()` itself is untouched: it is still the single carrier and
-         * getData()/placeOrderIntent() still read it, never this.
-         *
-         * A plain function, not a computed — same reasoning as
-         * isCompanyCaptured() above: the template reads it inside `visible:`
-         * and `text:` bindings, so ko tracks `companyId` as a dependency of
-         * those bindings and re-evaluates when it changes.
-         *
-         * @returns {string}
-         */
-        displayCompanyId: function () {
-            return companySearch.formatCompanyNumber(this.companyId());
         },
         /**
          * Guarded read of orderIntentApprovedNotice() for the template's
@@ -603,11 +601,9 @@ define([
             companyName = typeof companyName == 'string' && companyName ? companyName : '';
             companyId = typeof companyId == 'string' ? companyId : '';
             if (!companyName || !companyId) return;
-            // The shipping panel's own identity, never the resolved one
-            // (TWO-25554): every caller of fillCompanyData() (the customerData
-            // section, a saved shipping/billing address's customAttributes) is
-            // shipping-panel-sourced, and the resolver — not this write — is
-            // what resolvedIdentity is allowed to change from.
+            // The shipping panel's own identity, never the resolved one: every
+            // caller here is shipping-panel-sourced, and only the resolver may
+            // change what resolvedIdentity mirrors (TWO-25554).
             companyCapture.shipping.identity().write({ companyName, companyId });
             this.startOrderIntentFor(companyName, companyId);
         },
@@ -616,12 +612,9 @@ define([
          * previous verdict as it starts.
          *
          * Split out from fillCompanyData() because the two concerns have
-         * DIFFERENT sources (TWO-25554). Firing a check is driven by the
-         * RESOLVED company — whichever panel currently wins — while writing an
-         * identity is only ever the shipping panel's own business. Sharing one
-         * function made every resolved-company change write the resolved
-         * company back into the shipping panel's identity, which is how a
-         * billing-only pick ended up displayed on the shipping step.
+         * DIFFERENT sources (TWO-25554): firing a check is driven by the
+         * RESOLVED company, while writing an identity is only ever the shipping
+         * panel's own business.
          *
          * @param {string} companyName
          * @param {string} companyId
@@ -816,63 +809,79 @@ define([
             this.telephone(telephone);
         },
         /**
+         * A quote address's company, telephone and PO fields. A saved address
+         * carries the company as a custom attribute, which wins over the plain
+         * field.
+         *
          * @param {object} address quote address
-         * @param {object} [options] `{ billingSourced: true }` where the address
-         *        is the quote's BILLING address. Its company belongs to the
-         *        billing panel and is never relayed to the shipping identity
-         *        (TWO-25554); the telephone and the PO fields travel either way.
+         * @returns {{telephone: string, companyName: string, companyId: string,
+         *          project: string, department: string}}
          */
-        updateAddress: function (address, options) {
-            if (!address) return;
-            let telephone = (address.telephone || '').replace(' ', '');
-            let companyName = address.company;
-            let companyId = '';
-            let department = '';
-            let project = '';
+        readAddressFields: function (address) {
+            const fields = {
+                telephone: (address.telephone || '').replace(' ', ''),
+                companyName: address.company || '',
+                companyId: '',
+                project: '',
+                department: ''
+            };
             if (Array.isArray(address.customAttributes)) {
                 address.customAttributes.forEach(function (item) {
-                    console.debug({ logger: 'twoPayment.updateAddress', item });
-                    if (item.attribute_code == 'company_id') {
-                        companyId = item.value;
-                    }
-                    if (item.attribute_code == 'company_name') {
-                        companyName = item.value;
-                    }
-                    if (item.attribute_code == 'project') {
-                        project = item.value;
-                    }
-                    if (item.attribute_code == 'department') {
-                        department = item.value;
-                    }
+                    console.debug({ logger: 'twoPayment.readAddressFields', item });
+                    if (item.attribute_code == 'company_id') fields.companyId = item.value;
+                    if (item.attribute_code == 'company_name') fields.companyName = item.value;
+                    if (item.attribute_code == 'project') fields.project = item.value;
+                    if (item.attribute_code == 'department') fields.department = item.value;
                 });
             }
-            this.fillTelephone(telephone);
-            if (!(options && options.billingSourced)) {
-                this.fillCompanyData({ companyName, companyId });
-            }
-            if (project) this.project(project);
-            if (department) this.department(department);
+            return fields;
         },
+        /** The buyer's own fields, which belong to neither panel. */
+        applyBuyerFields: function (fields) {
+            this.fillTelephone(fields.telephone);
+            if (fields.project) this.project(fields.project);
+            if (fields.department) this.department(fields.department);
+        },
+        /**
+         * The quote's SHIPPING address, for the SHIPPING panel.
+         *
+         * @param {object} shippingAddress quote address
+         */
         updateShippingAddress: function (shippingAddress) {
             console.debug({ logger: 'twoPayment.updateShippingAddress', shippingAddress });
-            if (shippingAddress.getCacheKey() == quote.billingAddress().getCacheKey()) {
-                this.updateAddress(shippingAddress);
+            if (shippingAddress
+                && shippingAddress.getCacheKey() == quote.billingAddress().getCacheKey()) {
+                const fields = this.readAddressFields(shippingAddress);
+                this.applyBuyerFields(fields);
+                this.fillCompanyData({
+                    companyName: fields.companyName,
+                    companyId: fields.companyId
+                });
             }
-            // Unconditional, unlike updateAddress() above: a SAVED address and a
-            // NEW address differ in whether #shipping-new-address-form exists,
-            // which is what the component picks its mount by — so this has to
-            // re-run on every shipping-address change, not only the ones the
-            // cache-key check lets through.
+            // Unconditional, unlike the relay above: a SAVED address and a NEW
+            // address differ in whether #shipping-new-address-form exists,
+            // which is what the component picks its mount by.
             this.refreshCompanyMount();
         },
+        /**
+         * The quote's BILLING address, for the BILLING panel. Its company seeds
+         * that panel's OWN identity: relaying it through fillCompanyData()
+         * painted the buyer's billing company into the shipping form
+         * (TWO-25554).
+         *
+         * @param {object} billingAddress quote address
+         */
         updateBillingAddress: function (billingAddress) {
             console.debug({ logger: 'twoPayment.updateBillingAddress', billingAddress });
-            // fillCompanyData() writes the SHIPPING panel's identity, and the
-            // shipping panel repaints its own field from it — so relaying a
-            // billing company through here painted the buyer's billing pick
-            // into the shipping form (TWO-25554). Only the billing panel may
-            // speak for the company on a billing address it owns.
-            this.updateAddress(billingAddress, { billingSourced: true });
+            if (!billingAddress) return;
+            const fields = this.readAddressFields(billingAddress);
+            this.applyBuyerFields(fields);
+            if (fields.companyName && fields.companyId) {
+                companyCapture.billing.identity().write({
+                    companyName: fields.companyName,
+                    companyId: fields.companyId
+                });
+            }
             this.refreshCompanyMount();
         },
         /**
@@ -1161,25 +1170,17 @@ define([
 
             var self = this;
             /**
-             * TWO-25554: the resolved company can change without a fresh pick
-             * — billing's own capture changing, or "same as shipping" being
-             * toggled — since the resolver mirrors whichever panel wins into
-             * this same pair. clearOrderIntentNotices() runs unconditionally,
-             * same as the per-field subscriptions this replaces (a stale
-             * verdict is retired whether or not order-intent is even on);
-             * fillCompanyData() below is the separate, gated "start a fresh
-             * check" concern, and covers a resolve-to-nothing by simply not
-             * running (it no-ops on an empty id/name for its other callers).
+             * TWO-25554: the resolved company can change without a fresh pick —
+             * billing's own capture changing, or "same as shipping" being
+             * toggled. A stale verdict is retired whether or not order-intent
+             * is even on, hence the unconditional clear.
              */
             this._reactToResolvedCompanyChange = function () {
                 self.clearOrderIntentNotices();
                 const companyName = self.companyName();
                 const companyId = self.companyId();
-                // The CHECK only. These two observables mirror the RESOLVED
-                // identity, so writing an identity from here wrote billing's
-                // own capture into the shipping panel's — which the shipping
-                // step then displayed as if the buyer had picked it there
-                // (TWO-25554).
+                // The CHECK only — never an identity write. These observables
+                // mirror the RESOLVED identity (TWO-25554).
                 if (companyName && companyId) {
                     self.startOrderIntentFor(companyName, companyId);
                 }
@@ -1537,9 +1538,8 @@ define([
          * state in which no sole trader can have been adopted anyway.
          */
         selectDifferentSoleTrader() {
-            // The link is rendered off the RESOLVED adoption, which either
-            // panel can hold, so it acts on whichever one actually adopted
-            // rather than on the shipping panel by construction (TWO-25554).
+            // Rendered off the RESOLVED adoption, so it acts on whichever panel
+            // actually adopted (TWO-25554).
             const owner = companyCapture.soleTraderOwner();
             const soleTrader = owner && owner.soleTrader();
             if (!soleTrader) return null;

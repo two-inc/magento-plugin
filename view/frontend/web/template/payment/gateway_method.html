@@ -241,7 +241,7 @@
                                 readonly: isCompanyNameReadOnly(),
                                 required: isTileCompanyFieldVisible()
                             },
-                            value: companyName'
+                            value: tileCompanyName'
                             class="input-text"
                         />
                         <!--
@@ -254,22 +254,22 @@
                         <span
                             class="two-sole-trader-prefetch-spinner"
                             aria-hidden="true"
-                            data-bind="visible: soleTraderBusy"
+                            data-bind="visible: tileSoleTraderBusy"
                         ></span>
                         <!--
                             The captured organisation number as plain text under
                             the field, the tile's equivalent of the address
                             step's own `.two-company-id-text` label.
 
-                            Bound to displayCompanyId(), not to `companyId`: an
-                            internal `TWO:`-prefixed identifier is never shown to
-                            the buyer (TWO-25326), and the formatter's empty
-                            return is what takes the whole label out rather than
+                            Bound to tileDisplayCompanyId(): an internal
+                            `TWO:`-prefixed identifier is never shown to the
+                            buyer (TWO-25326), and the formatter's empty return
+                            is what takes the whole label out rather than
                             leaving a blank one.
                         -->
                         <div
                             class="two-company-id-text"
-                            data-bind="visible: isCompanyCaptured() && isTileCompanyFieldVisible() && displayCompanyId() !== '', text: displayCompanyId(), attr: {'aria-label': $t('Company Number')}"
+                            data-bind="visible: isTileCompanyCaptured() && isTileCompanyFieldVisible() && tileDisplayCompanyId() !== '', text: tileDisplayCompanyId(), attr: {'aria-label': $t('Company Number')}"
                         ></div>
                     </div>
                 </div>
