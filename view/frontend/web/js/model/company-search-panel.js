@@ -105,8 +105,9 @@
      *        nothing and drives `bind()` itself.
      * @param {function(): (string|undefined)} [options.getCountryCode] the
      *        current ISO country code, read fresh on every search.
-     * @param {function(): ?object} [options.getSearchScope] this panel's own
-     *        rate-limit scope, so a 429 parks this panel alone.
+     * @param {function(): object} [options.getSearchScope] this panel's own
+     *        rate-limit scope, so a 429 parks this panel alone. Defaults to the
+     *        panel itself.
      * @param {function(): Array<{mode: string, text: string,
      *        onActivate: function}>} options.getChips the chips to render, in
      *        display order. Called on every sync, so a chip's label can follow
@@ -124,6 +125,7 @@
      *        link to come back out of manual entry.
      */
     function CompanySearchPanel(options) {
+        const self = this;
         options = options || {};
         this.fieldSelector = options.fieldSelector;
         this.config = options.config;
@@ -131,7 +133,9 @@
         this.translate = options.translate || function (text) { return text; };
         this.observe = options.observe || null;
         this.getCountryCode = options.getCountryCode || function () { return ''; };
-        this.getSearchScope = options.getSearchScope || function () { return null; };
+        // This panel itself where the host names nothing: the rate-limit scope
+        // must outlive a re-bind, which the bind token deliberately does not.
+        this.getSearchScope = options.getSearchScope || function () { return self; };
         this.getChips = options.getChips || function () { return []; };
         this.isChipVisible = options.isChipVisible || function () { return true; };
         this.getSelectedMode = options.getSelectedMode || function () { return ''; };

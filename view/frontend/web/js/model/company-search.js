@@ -1002,12 +1002,19 @@ define([
          *        returns the current ISO country code (any case)
          * @param {object} options.token bind identity, so an abort raised
          *        against a torn-down panel cannot cancel the live one's search
-         * @param {object} [options.scope] the calling panel's rate-limit scope
+         * @param {object} options.scope the calling panel's rate-limit scope.
+         *        Required: falling back to the bind token scoped the backoff to
+         *        a token a re-render replaces, i.e. to no backoff at all
+         *        (TWO-25554).
          * @returns {Promise<{items: Array, unavailable: boolean, aborted: boolean}>}
          */
         searchCompanies: function (options) {
             const token = options.token;
-            const scope = options.scope || token;
+            const scope = options.scope;
+            if (!scope) {
+                console.error('companySearch: searchCompanies called without a rate-limit scope');
+                return Promise.resolve({ items: [], unavailable: true, aborted: false });
+            }
             const country = options.getCountryCode()?.toUpperCase();
             const cacheKey = `search|${country}|${options.term}`;
 

@@ -254,6 +254,7 @@ describe('a country read is scoped to ONE form, never document-wide (TWO-25554)'
             companySearch.searchCompanies({
                 config: { checkoutApiUrl: 'https://api.example.test' },
                 token: {},
+                scope: {},
                 term: 'acme',
                 getCountryCode: function () { return component.countryCode(); }
             });
@@ -507,6 +508,7 @@ describe('the shipping panel reads its OWN form, never the billing form (TWO-255
             companySearch.searchCompanies({
                 config: { checkoutApiUrl: 'https://api.example.test' },
                 token: {},
+                scope: {},
                 term: 'acme',
                 getCountryCode: function () { return component.countryCode(); }
             });

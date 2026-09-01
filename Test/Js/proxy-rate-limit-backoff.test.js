@@ -110,6 +110,21 @@ function loadCompanySearch() {
 }
 
 describe('company search backs off rather than retrying into the ceiling', () => {
+    test('a search naming no scope is refused rather than left with no backoff', async () => {
+        // Falling back to the bind token scoped the ceiling to something a
+        // re-render replaces, so every re-render walked straight back into it.
+        const requests = installAjaxDouble();
+        const companySearch = loadAmdModule(MODEL_PATH, { jquery: $ }, GLOBALS);
+        companySearch.clearResultCache();
+
+        await expect(search(companySearch, 'exa', undefined)).resolves.toEqual({
+            items: [],
+            unavailable: true,
+            aborted: false
+        });
+        expect(requests).toHaveLength(0);
+    });
+
     test.each([
         [429, 1, 'a refused search parks the next keystroke'],
         [500, 2, 'an ordinary failure is retried on the next keystroke']

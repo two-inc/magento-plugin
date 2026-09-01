@@ -225,6 +225,7 @@ describe('company-search shared module', () => {
         const search = companySearch.searchCompanies({
             config: BASE_CONFIG,
             token: {},
+            scope: {},
             term: 'example',
             getCountryCode: function () { return 'gb'; }
         });
@@ -243,6 +244,7 @@ describe('company-search shared module', () => {
         companySearch.searchCompanies({
             config: BASE_CONFIG,
             token: {},
+            scope: {},
             term: 'example',
             getCountryCode: function () { return 'gb'; }
         });
@@ -379,6 +381,7 @@ function loadMountedComponent(configOverride, present) {
         const search = companySearch.searchCompanies({
             config: config,
             token: {},
+            scope: {},
             term: term,
             getCountryCode: function () { return 'gb'; }
         });
