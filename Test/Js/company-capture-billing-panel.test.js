@@ -588,12 +588,18 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
         capture.billing.identity().captureMode('soletrader');
 
         sameAsShippingAgain(capture, dom);
-        await flushCapture();
 
+        // Synchronously, in the checkbox handler itself. A later availability
+        // resolution retires an adoption too, for its own reason, and asserting
+        // only after that would pin nothing about the retirement.
         expect(capture.billing.identity().companyName()).toBe('');
         expect(capture.billing.identity().companyId()).toBe('');
         expect(capture.billing.identity().soleTraderAdopted()).toBe(false);
         expect(capture.billing.identity().captureMode()).toBe('registered');
+
+        await flushCapture();
+        expect(capture.billing.identity().companyName()).toBe('');
+        expect(capture.billing.identity().soleTraderAdopted()).toBe(false);
     });
 
     test('after that re-check the returning buyer\'s saved company seeds SHIPPING, not billing', () => {
