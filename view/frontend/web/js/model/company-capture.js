@@ -77,6 +77,9 @@ define([
     /** Any address form's country select, shipping or billing. */
     const COUNTRY_SELECT_SELECTOR = 'select[name="country_id"]';
 
+    /** "My billing and shipping address are the same" — core's own checkbox. */
+    const BILLING_TOGGLE_SELECTOR = 'input[name="billing-address-same-as-shipping"]';
+
     const brandCode = brandConfig.getActiveTwoBrandCode();
     const config = brandCode ? brandConfig(brandCode) : null;
 
@@ -293,6 +296,35 @@ define([
     let shippingComponent;
     let billingComponent;
 
+    /**
+     * Where the SHIPPING panel's own writes land — never the billing panel's
+     * form, even though `billingRoleFormRoot()` is happy to return it.
+     *
+     * `billingRoleFormRoot()` picks a billing candidate the moment ONE
+     * EXISTS in the DOM, visible or not (see its own doc) — right for the
+     * old single-instance design, where a hidden billing form was still the
+     * best guess for "the buyer's one true address form" because nothing
+     * else was mounted to disagree with it. TWO-25554 gave that form its own
+     * dedicated panel, so on a checkout that pre-renders every payment
+     * method's billing fieldset hidden from page load (Amasty's one-step
+     * layout, unlike Luma's per-step render) `billingRoleFormRoot()` would
+     * keep winning over shipping's own visible form even while the shipping
+     * panel is the one in play, misdirecting its picks into billing's fields.
+     *
+     * Falls back to `billingRoleFormRoot()` only for the one case it was
+     * always right for: shipping mounted on the payment-tile fallback, where
+     * there is no shipping address form on this checkout to disambiguate
+     * against at all.
+     *
+     * @returns {?object} jQuery set, or null
+     */
+    function shippingWriteRoot() {
+        if (shippingComponent.mountSelector() === ADDRESS_FIELD_SELECTOR) {
+            return $(ADDRESS_FORM_ROOT);
+        }
+        return companySearch.billingRoleFormRoot();
+    }
+
     shippingComponent = new CompanyCaptureComponent(Object.assign(sharedHostOptions(), {
         identity: shippingIdentity,
         addressFieldSelector: ADDRESS_FIELD_SELECTOR,
@@ -307,7 +339,7 @@ define([
             companySearch.lookupCompanyAddress(
                 shippingComponent.config(),
                 selectedItem,
-                companySearch.billingRoleFormRoot(),
+                shippingWriteRoot(),
                 shippingIdentity
             );
         },
@@ -315,7 +347,7 @@ define([
             companySearch.revertAutofilledAddress();
         },
         applyBuyerAddress: function (source) {
-            companySearch.applyAddress(source, companySearch.billingRoleFormRoot());
+            companySearch.applyAddress(source, shippingWriteRoot());
         },
         renderSignupPrompt: makeRenderSignupPrompt(function () { return shippingComponent; })
     }));
@@ -364,7 +396,7 @@ define([
             // billing form's visibility without necessarily rebuilding it.
             $(document).on(
                 'change.twoCompanySourceResolver',
-                'input[name="billing-address-same-as-shipping"]',
+                BILLING_TOGGLE_SELECTOR,
                 onChange
             );
             // Same reasoning as watchCountryChanges() above: the resolver
@@ -389,6 +421,21 @@ define([
             shippingComponent.start();
             billingComponent.start();
             resolver.watchBillingToggle();
+            // watchForMountHost() (company-capture-component.js) mounts the
+            // instant a node matching its selector APPEARS — a one-shot
+            // check, never re-run on a later visibility change alone. Luma
+            // only inserts the billing fieldset once "same as shipping" is
+            // unchecked, so that appearance IS the checkbox toggle. Amasty's
+            // one-step layout renders every payment method's billing
+            // fieldset hidden from page load, so the node already exists
+            // before the toggle ever fires — the one-shot check runs and
+            // fails while it is still hidden, and nothing re-drives it when
+            // the buyer later reveals it. The checkbox is the one event that
+            // actually means "check again".
+            $(document).on('change.twoCompanyCaptureMount', BILLING_TOGGLE_SELECTOR, function () {
+                shippingComponent.refreshMount();
+                billingComponent.refreshMount();
+            });
         },
         refreshMount: function () {
             shippingComponent.refreshMount();
