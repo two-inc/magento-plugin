@@ -458,3 +458,128 @@ describe('the "same as shipping" checkbox toggle re-checks both panels\' mounts'
         expect(capture.billing.mountSelector()).toBe('');
     });
 });
+
+/**
+ * TWO-25554, Fire Checkout regression: a company the BILLING panel captured
+ * must never become the shipping identity's, however it reaches the payment
+ * renderer.
+ *
+ * The first fix for this asked one question — does the billing panel hold a
+ * live mount at its own field — and asked it of the DOM at the moment of the
+ * write. That is sound for the mirror, which runs while nothing is
+ * re-rendering, and it held on Amasty's static one-step layout in both
+ * directions. It does not hold for a company arriving through the quote or
+ * through `companyData`:
+ *
+ *  - Fire Checkout re-renders its payment area from the same `change` that
+ *    pushes the pick into the quote, so the quote's notification can land
+ *    while the billing fieldset is detached — mounted in every sense the
+ *    buyer can see, and the query answers no;
+ *  - `companyData` is a localStorage section that outlives the page load, so
+ *    a company can arrive from it before any billing form exists.
+ *
+ * Both are modelled here by taking the billing field away AFTER the pick,
+ * which is what either one looks like at the one moment that matters.
+ */
+describe('a company the billing panel captured is never adopted by the shipping identity', () => {
+    const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
+
+    /**
+     * @param {object} capture the real company-capture module
+     * @param {object} dom
+     * @returns {object} the renderer, with order intent off
+     */
+    function loadRenderer(capture, dom) {
+        const renderer = loadAmdModule(RENDERER, Object.assign({}, defaultMocks(), {
+            jquery: dom.$,
+            'Two_Gateway/js/model/company-capture': capture
+        }), { document: document, window: window });
+        renderer.getCode = function () { return 'two_payment'; };
+        renderer.isOrderIntentEnabled = false;
+        return renderer;
+    }
+
+    /** The billing panel, mounted and holding its own pick. */
+    function billingPicks(capture, dom, company) {
+        dom.setVisible(BILLING_FIELD, true);
+        capture.shipping.start();
+        capture.billing.start();
+        capture.billing.selectCompany({ text: company, companyId: '222', lookupId: 'l2' });
+    }
+
+    /** What Fire's re-render (or a page that has not rendered one yet) leaves. */
+    function billingFieldsetAway(dom, capture) {
+        dom.setExists(BILLING_FIELD, false);
+        expect(capture.billingOwnsCompanyField()).toBe(false);
+    }
+
+    function billingQuoteAddress(company) {
+        return {
+            company: company,
+            telephone: '+47 123 45 678',
+            customAttributes: [{ attribute_code: 'company_id', value: '222' }]
+        };
+    }
+
+    test('through the quote\'s billing address, with the fieldset gone at the moment it notifies', () => {
+        const { capture, dom } = load();
+        billingPicks(capture, dom, 'Billing Co');
+        const renderer = loadRenderer(capture, dom);
+        billingFieldsetAway(dom, capture);
+
+        renderer.updateBillingAddress(billingQuoteAddress('Billing Co'));
+
+        expect(capture.shipping.identity().companyName()).toBe('');
+        expect(capture.shipping.identity().companyId()).toBe('');
+        expect(capture.billing.identity().companyName()).toBe('Billing Co');
+    });
+
+    test('through the companyData section, which outlives the page the panel was mounted on', () => {
+        const { capture, dom } = load();
+        billingPicks(capture, dom, 'Billing Co');
+        const renderer = loadRenderer(capture, dom);
+        billingFieldsetAway(dom, capture);
+
+        renderer.applyCompanyData(
+            { companyName: 'Billing Co', companyId: '222' },
+            { authoritative: true }
+        );
+
+        expect(capture.shipping.identity().companyName()).toBe('');
+    });
+
+    test('the telephone on that same billing address still travels', () => {
+        const { capture, dom } = load();
+        billingPicks(capture, dom, 'Billing Co');
+        const renderer = loadRenderer(capture, dom);
+        billingFieldsetAway(dom, capture);
+
+        renderer.updateBillingAddress(billingQuoteAddress('Billing Co'));
+
+        expect(renderer.telephone()).toBe('+47123 45 678');
+    });
+
+    test('a company the billing panel never captured is still the shipping identity\'s to adopt', () => {
+        const { capture, dom } = load();
+        capture.shipping.start();
+        capture.billing.start();
+        const renderer = loadRenderer(capture, dom);
+
+        renderer.updateBillingAddress(billingQuoteAddress('Some Other Co'));
+
+        expect(capture.shipping.identity().companyName()).toBe('Some Other Co');
+    });
+
+    test('the shipping step\'s own company still restores from the section while a billing panel is mounted', () => {
+        // The section is how a reload restores the shipping company. Gating it
+        // on the billing panel's MOUNT — rather than on billing's own capture —
+        // would take that away from every buyer with a distinct billing address.
+        const { capture, dom } = load();
+        billingPicks(capture, dom, 'Billing Co');
+        const renderer = loadRenderer(capture, dom);
+
+        renderer.applyCompanyData({ companyName: 'Shipping Co', companyId: '111' });
+
+        expect(capture.shipping.identity().companyName()).toBe('Shipping Co');
+    });
+});
