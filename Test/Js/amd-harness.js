@@ -202,7 +202,11 @@ function defaultMocks() {
             // No DOM in the inert default: a spec that wants the live
             // address-form country read has to supply the real module (or its
             // own double) the same way it already does for the search itself.
-            currentAddressFormCountry: function () { return ''; },
+            // DELEGATED: it is a pure read of the `$root` it is handed, and
+            // WHICH root each panel hands it is the invariant specs assert.
+            currentAddressFormCountry: function ($root) {
+                return realCompanySearch().currentAddressFormCountry($root);
+            },
             // NOT inert — company-capture.js builds the billing panel's own
             // mount selectors from it, so a mock returning undefined would
             // exercise selectors production never uses.

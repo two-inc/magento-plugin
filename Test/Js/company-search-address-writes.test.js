@@ -570,6 +570,29 @@ describe('a replacement pick does not strand the previous line 2', () => {
     });
 });
 
+describe('a call with no owning identity is refused before it touches the form', () => {
+    // The write record is keyed on the calling panel's identity in a WeakMap,
+    // so a call with none throws part-way and leaves the form half-written.
+    test.each([
+        [
+            'an address write',
+            (model) => model.applyAddress(COMPANY_A, $(PRIMARY), undefined),
+            'no identity means no reversible recording, so nothing is written'
+        ],
+        [
+            'a retraction',
+            (model) => model.revertAutofilledAddress($(PRIMARY), undefined),
+            'no identity means no recording to read, so nothing is cleared'
+        ]
+    ])('%s', (_label, act, description) => {
+        const model = renderCheckout({ regions: true });
+        buyerTypes(PRIMARY, 'city', 'Ashford');
+
+        expect(tagged(description, act(model))).toEqual(tagged(description, 0));
+        expect(tagged(description, read(PRIMARY, 'city'))).toEqual(tagged(description, 'Ashford'));
+    });
+});
+
 describe('a shipping form core is not using is not the buyer\'s own form', () => {
     test.each([
         [{ hiddenPrimary: true }, false, 'hidden inside the saved-addresses wrapper'],

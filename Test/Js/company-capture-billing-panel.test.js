@@ -113,6 +113,12 @@ function makeDom() {
         setCountry: function (selector, value) {
             node(selector).val(value);
         },
+        // The unmounted fallback read goes through `$root.find(...)` rather
+        // than the flat country selector, which the stub answers with a node
+        // of its own.
+        setFormCountry: function (rootSelector, value) {
+            node(rootSelector).find('select[name="country_id"]').val(value);
+        },
         // `document` is jsdom's real global, passed as an extraGlobal — the
         // stub's own `$(document)` resolves it to the same node every time
         // via `String(document)`, exactly as company-capture.js's own calls do.
@@ -203,6 +209,18 @@ describe('each panel reads ONLY its own address form\'s country — never a shar
 
         dom.setCountry(BILLING_COUNTRY, 'dk');
         expect(capture.shipping.countryCode()).toBe('se');
+    });
+
+    test('unmounted, billing falls back to its OWN form and not the shipping form', () => {
+        // Unmounted there is no adjacent select to read, and with no country on
+        // the quote either the live form read is the only answer left.
+        const { capture, dom } = load();
+        dom.setFormCountry(BILLING_FORM, 'dk');
+        dom.setFormCountry(ADDRESS_FORM, 'se');
+        capture.billing.start();
+
+        expect(capture.billing.mountSelector()).toBe('');
+        expect(capture.billing.countryCode()).toBe('dk');
     });
 });
 
