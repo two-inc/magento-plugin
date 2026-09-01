@@ -77,6 +77,13 @@ define([
      */
     const tileMountRevision = ko.observable(0);
 
+    // Bumped from inside the component's own re-point, so the tile stops
+    // rendering a second company field on every event that moves the mount and
+    // not only on the ones a caller remembers to report (TWO-25554).
+    companyCapture.shipping.subscribeMount(function () {
+        tileMountRevision(tileMountRevision() + 1);
+    });
+
     tileIdentity.subscribe(function () {
         tileMirroring = true;
         tileCompanyName(tileIdentity.companyName());

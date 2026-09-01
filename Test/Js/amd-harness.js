@@ -252,16 +252,40 @@ function defaultMocks() {
     };
 }
 
+/**
+ * The computed currently evaluating, so an observable read inside it registers
+ * as a dependency. Knockout's caching is the point being modelled: a `visible:`
+ * binding over a live DOM read re-evaluates ONLY when an observable it read
+ * changes, so a spec that calls such a function directly cannot see a missing
+ * notification at all.
+ */
+let evaluatingComputed = null;
+
 function makeKnockoutMock() {
-    function pureComputed(fn) {
-        const o = makeObservable(fn());
-        return o;
+    function computed(fn) {
+        const out = makeObservable(undefined);
+        const dependencies = [];
+        function evaluate() {
+            const outer = evaluatingComputed;
+            evaluatingComputed = function (dependency) {
+                if (dependencies.indexOf(dependency) !== -1) return;
+                dependencies.push(dependency);
+                dependency.subscribe(evaluate);
+            };
+            try {
+                out(fn());
+            } finally {
+                evaluatingComputed = outer;
+            }
+        }
+        evaluate();
+        return out;
     }
     return {
         observable: makeObservable,
         observableArray: function (init) { return makeObservable(init || []); },
-        pureComputed: pureComputed,
-        computed: pureComputed,
+        pureComputed: computed,
+        computed: computed,
         applyBindings: function () {},
         bindingHandlers: {}
     };
@@ -271,7 +295,10 @@ function makeObservable(initial) {
     let value = initial;
     const subscribers = [];
     function obs(next) {
-        if (arguments.length === 0) return value;
+        if (arguments.length === 0) {
+            if (evaluatingComputed) evaluatingComputed(obs);
+            return value;
+        }
         value = next;
         subscribers.forEach(function (s) { s(value); });
         return obs;

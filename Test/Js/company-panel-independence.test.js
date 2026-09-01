@@ -229,9 +229,13 @@ function bootAddressStep(booted) {
  * @returns {object} the renderer view model
  */
 function bootRenderer(booted) {
-    const renderer = loadAmdModule(RENDERER, Object.assign({}, defaultMocks(), booted.mocks, {
+    const mocks = Object.assign({}, defaultMocks(), booted.mocks, {
         'Two_Gateway/js/model/company-capture': booted.capture
-    }), GLOBALS);
+    });
+    // The renderer's OWN Knockout instance, so a spec can read one of its
+    // functions through a computed the way the template's bindings do.
+    booted.ko = mocks.ko;
+    const renderer = loadAmdModule(RENDERER, mocks, GLOBALS);
     renderer.getCode = function () { return 'two_payment'; };
     renderer.isOrderIntentEnabled = false;
     return renderer;
@@ -614,20 +618,24 @@ describe('the payment tile is the shipping panel\'s mount, or nobody\'s', () => 
     });
 
     test('the billing panel mounting takes the tile field away again', () => {
-        // `refreshMount()` off core's own checkbox is the one event that means
-        // "the shape changed"; watchForMountHost() only fires on a node
-        // appearing.
+        // Core's own checkbox and nothing else: watchForMountHost() only fires
+        // on a node appearing, so this is the one event that reports the shape
+        // changing. Read through a computed, the way the template's `visible:`
+        // and `required:` bindings read it — called directly the answer is a
+        // fresh DOM read that cannot show a missing notification.
         const booted = boot({ shippingForm: false, billingHidden: true });
         const renderer = bootRenderer(booted);
-        expect(booted.panels.shipping.mountSelector()).toBe(TILE_FIELD);
+        const tileFieldVisible = booted.ko.computed(function () {
+            return renderer.isTileCompanyFieldVisible();
+        });
+        expect(tileFieldVisible()).toBe(true);
 
         document.querySelector(FIELDS.billing).removeAttribute('data-test-hidden');
         $(document).find('[data-form="billing-new-address"]').removeAttr('data-test-hidden');
         $(`input[name="billing-address-same-as-shipping"]`).trigger('change');
-        renderer.refreshCompanyMount();
 
         expect(booted.panels.billing.mountSelector()).toBe(FIELDS.billing);
-        expect(renderer.isTileCompanyFieldVisible()).toBe(false);
+        expect(tileFieldVisible()).toBe(false);
     });
 
     test('the tile field never displays the billing panel\'s capture', () => {

@@ -256,7 +256,10 @@ describe('a parked address lookup keeps its notice through the intent verdict', 
             Object.assign(defaultMocks(), {
                 'Two_Gateway/js/model/company-capture': {
                     identity: identity,
-                    shipping: { identity: function () { return identity; } },
+                    shipping: {
+                        identity: function () { return identity; },
+                        subscribeMount: function () {}
+                    },
                     refreshMount: function () {}
                 }
             })
