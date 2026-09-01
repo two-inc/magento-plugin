@@ -398,10 +398,7 @@ function pageLoad(storage, options) {
                 }
             },
             'Two_Gateway/js/model/company-capture': {
-                shipping: { identity: function () { return identity; } },
-                // No billing panel in this fixture, so the shipping step's
-                // company mirror stays the page's only company writer.
-                billingOwnsCompanyField: function () { return false; }
+                shipping: { identity: function () { return identity; } }
             }
         },
         { document: document, window: window }
