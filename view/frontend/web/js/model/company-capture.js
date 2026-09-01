@@ -8,15 +8,8 @@
  *
  * The controller is `company-capture-component.js` — framework-free, UMD, and
  * loaded unchanged by Hyvä. This module is the Magento-shaped adapter it is
- * constructed with: RequireJS, the quote model, `$.async`, `mage/url` and the
- * message list, each reduced to the one function the controller asks for.
- *
- * TWO-25554 split the one instance into two — one for the shipping address
- * panel, one for a distinct billing address panel — plus a resolver deciding
- * which one's capture is the buyer's actual paying-as company. Nothing here
- * decides what a mode means or how a mount is chosen; that lives in the
- * shared file. This file only decides WHERE each of the two lives on Luma's
- * DOM and which panel wins.
+ * constructed with, and it decides only WHERE each of the two panels (shipping
+ * address, distinct billing address) lives on Luma's DOM.
  */
 define([
     'jquery',
@@ -61,10 +54,8 @@ define([
 
     /**
      * The billing form core renders per payment method once "my billing
-     * address is the same as shipping" is unchecked. Multi-tile checkouts
-     * (more than one Two-family brand rendering its own billing form) are not
-     * supported here — confirmed dead (TWO-25554) — so exactly 0 or 1 match
-     * is assumed throughout.
+     * address is the same as shipping" is unchecked. Multi-tile checkouts are
+     * confirmed dead (TWO-25554), so 0 or 1 match is assumed throughout.
      */
     const BILLING_FORM_ROOT = companySearch.SECONDARY_ADDRESS_ROOT_SELECTOR;
 
@@ -86,17 +77,12 @@ define([
     const resolvedIdentity = createCompanyIdentity();
 
     /**
-     * Present AND visible — never merely present. Core can leave the billing
-     * form in the DOM hidden once "same as shipping" is re-checked
-     * (TWO-25461's own finding), and a hidden field is neither a live mount
-     * nor a distinct address.
+     * Present AND visible — never merely present. Core leaves the billing form
+     * in the DOM hidden once "same as shipping" is re-checked, and a hidden
+     * field is neither a live mount nor a distinct address.
      *
-     * `.is` is feature-detected rather than assumed: real jQuery always has
-     * it, but this runs against several deliberately minimal jQuery-shaped
-     * test doubles across this module's own suite that model presence only
-     * and have no notion of visibility at all — for those, presence is the
-     * best answer available, same as it always was before this field's
-     * visibility distinction existed.
+     * `.is` is feature-detected: jQuery-shaped test doubles model presence
+     * only, and presence is the best answer available for those.
      *
      * @param {object} $field a jQuery(-shaped) set
      * @returns {boolean}
@@ -143,13 +129,9 @@ define([
     }
 
     /**
-     * One panel's own country listener, delegated off the document but for the
-     * selector of ITS OWN form's select.
-     *
-     * One shared `select[name="country_id"]` delegation matched both forms, so
-     * whichever panel had no adjacent select of its own — an unmounted but
-     * still stateful billing panel above all — invalidated its captured company
-     * off the other form's country (TWO-25554).
+     * One panel's own country listener, for the selector of ITS OWN form's
+     * select — never a shared `select[name="country_id"]` delegation, which
+     * let one form's switch invalidate the other panel's capture (TWO-25554).
      *
      * @param {string} selectSelector
      * @returns {function(function(string))}
@@ -160,10 +142,6 @@ define([
             // checkout re-renders its address form freely, and delegation
             // survives that with no re-resolution.
             $(document).on('change.twoCompanyCapture', selectSelector, function (event) {
-                // A mirrored country is this plugin copying the shipping form's
-                // answer into the billing form, and it arrives as the same
-                // `change` a buyer's own choice does.
-                if (companySearch.isMirrorWriting()) return;
                 onChange(String($(event.target).val() || '').toLowerCase());
             });
             // A buyer who accepts the default country never fires `change`, and
@@ -260,18 +238,13 @@ define([
 
     /**
      * A sole-trader signup prompt scoped to ONE panel's own mount, so two
-     * simultaneously-mounted panels never share (or fight over) one prompt
-     * element (TWO-25554). `getComponent` is a thunk rather than a direct
-     * reference because the component this prompt belongs to does not exist
-     * yet at the point its own host options are built — same
-     * self-reference-through-closure the rest of this file already relies on.
+     * simultaneously-mounted panels never share one prompt element
+     * (TWO-25554). `getComponent` is a thunk because the component this prompt
+     * belongs to does not exist yet when its host options are built.
      *
-     * Anchored OUTSIDE the search popover, after the field's wrapper:
-     * entering sole-trader mode closes the popover, so a prompt inside it is
-     * a route forward the buyer cannot see. The wrapper is always the bound
-     * field's own parent (`CompanySearchPanel._ensureWrap()`), so `.parent()`
-     * finds THIS panel's wrap with no class-based, page-wide query to
-     * disambiguate.
+     * Anchored OUTSIDE the search popover, after the field's wrapper: entering
+     * sole-trader mode closes the popover, so a prompt inside it is a route
+     * forward the buyer cannot see.
      *
      * @param {function(): object} getComponent
      * @returns {function(boolean, function())}
@@ -308,32 +281,20 @@ define([
     let billingComponent;
 
     /**
-     * Where the SHIPPING panel's own writes land — never the billing panel's
-     * form, even though `billingRoleFormRoot()` is happy to return it.
+     * Where the SHIPPING panel's own writes land, or `null` when it has no form
+     * of its own.
      *
-     * `billingRoleFormRoot()` picks a billing candidate the moment ONE
-     * EXISTS in the DOM, visible or not (see its own doc) — right for the
-     * old single-instance design, where a hidden billing form was still the
-     * best guess for "the buyer's one true address form" because nothing
-     * else was mounted to disagree with it. TWO-25554 gave that form its own
-     * dedicated panel, so on a checkout that pre-renders every payment
-     * method's billing fieldset hidden from page load (Amasty's one-step
-     * layout, unlike Luma's per-step render) `billingRoleFormRoot()` would
-     * keep winning over shipping's own visible form even while the shipping
-     * panel is the one in play, misdirecting its picks into billing's fields.
-     *
-     * Falls back to `billingRoleFormRoot()` only for the one case it was
-     * always right for: shipping mounted on the payment-tile fallback, where
-     * there is no shipping address form on this checkout to disambiguate
-     * against at all.
+     * Tile-mounted there is no shipping address form on this checkout at all,
+     * and the only form on the page is the BILLING panel's. Borrowing it landed
+     * shipping's address, telephone and country-switch retraction in the other
+     * panel's fields; a panel with no form of its own writes nowhere
+     * (TWO-25554).
      *
      * @returns {?object} jQuery set, or null
      */
     function shippingWriteRoot() {
-        if (shippingComponent.mountSelector() === ADDRESS_FIELD_SELECTOR) {
-            return $(ADDRESS_FORM_ROOT);
-        }
-        return companySearch.billingRoleFormRoot();
+        if (shippingComponent.mountSelector() !== ADDRESS_FIELD_SELECTOR) return null;
+        return $(ADDRESS_FORM_ROOT);
     }
 
     shippingComponent = new CompanyCaptureComponent(Object.assign(sharedHostOptions(), {
@@ -364,15 +325,9 @@ define([
             companySearch.applyTelephone(phoneNumber, shippingWriteRoot());
         },
         getFallbackCountry: function () {
-            if (companySearch.hasPrimaryAddressForm()) {
-                return companySearch.currentAddressFormCountry($(ADDRESS_FORM_ROOT));
-            }
-            // No form of its own to read. The document-wide read behind this is
-            // the last resort for a checkout supplying its own address markup
-            // (TWO-25326), and is refused outright once a billing form exists
-            // for it to mistake for shipping's (TWO-25554).
-            if ($(BILLING_FORM_ROOT).length) return '';
-            return companySearch.currentAddressFormCountry() || '';
+            return companySearch.hasPrimaryAddressForm()
+                ? companySearch.currentAddressFormCountry($(ADDRESS_FORM_ROOT))
+                : '';
         },
         watchCountryChanges: makeWatchCountryChanges(ADDRESS_COUNTRY_SELECTOR),
         signupPrefill: makeSignupPrefill(shippingIdentity),
@@ -450,18 +405,6 @@ define([
         shipping: shippingComponent,
         billing: billingComponent,
         /**
-         * Whether the payment tile's own company field is the SHIPPING panel's
-         * live mount AND the shipping panel is the one currently resolved. The
-         * tile displays the resolved company, so its two-way input would
-         * otherwise write billing's capture into the shipping identity.
-         *
-         * @returns {boolean}
-         */
-        tileOwnsCompanyField: function () {
-            return shippingComponent.mountSelector() === TILE_FIELD_SELECTOR
-                && resolver.chosenIdentity() === shippingIdentity;
-        },
-        /**
          * The panel whose own capture holds the adopted sole trader, or null.
          * The tile's "select a different sole trader" link is rendered off the
          * RESOLVED adoption, which can be either panel's.
@@ -477,17 +420,11 @@ define([
             shippingComponent.start();
             billingComponent.start();
             resolver.watchBillingToggle();
-            // watchForMountHost() (company-capture-component.js) mounts the
-            // instant a node matching its selector APPEARS — a one-shot
-            // check, never re-run on a later visibility change alone. Luma
-            // only inserts the billing fieldset once "same as shipping" is
-            // unchecked, so that appearance IS the checkbox toggle. Amasty's
-            // one-step layout renders every payment method's billing
-            // fieldset hidden from page load, so the node already exists
-            // before the toggle ever fires — the one-shot check runs and
-            // fails while it is still hidden, and nothing re-drives it when
-            // the buyer later reveals it. The checkbox is the one event that
-            // actually means "check again".
+            // watchForMountHost() mounts on a node APPEARING, a one-shot check
+            // that never re-runs on a later visibility change. Amasty's
+            // one-step layout renders every payment method's billing fieldset
+            // hidden from page load, so the checkbox is the only event that
+            // means "check again".
             $(document).on('change.twoCompanyCaptureMount', BILLING_TOGGLE_SELECTOR, function () {
                 shippingComponent.refreshMount();
                 billingComponent.refreshMount();

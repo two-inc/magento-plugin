@@ -347,9 +347,8 @@
             this._returnCloseTimerId = setTimeout(() => {
                 this._returnCloseTimerId = null;
                 if (typeof document.hasFocus === 'function' && !document.hasFocus()) return;
-                // This flow's OWN popover. A page-wide class query returns the
-                // first match, which is the other capture panel's as often as
-                // not (TWO-25554).
+                // This flow's OWN popover, never a page-wide class query —
+                // that returns the other panel's popover (TWO-25554).
                 const own = this._component.panel();
                 const panel = own && own.getPanelElement();
                 if (panel && panel.contains(document.activeElement)) return;

@@ -50,19 +50,12 @@ define([
      */
     let registrySuspensions = new WeakMap();
 
-    /** The scope for a caller with none of its own. */
-    const FALLBACK_SUSPENSION_SCOPE = {};
-
-    function suspensionScope(scope) {
-        return scope && typeof scope === 'object' ? scope : FALLBACK_SUSPENSION_SCOPE;
-    }
-
     function isRegistrySuspended(scope) {
-        return Date.now() < (registrySuspensions.get(suspensionScope(scope)) || 0);
+        return Date.now() < (registrySuspensions.get(scope) || 0);
     }
 
     function suspendRegistry(scope) {
-        registrySuspensions.set(suspensionScope(scope), Date.now() + RATE_LIMIT_BACKOFF_MS);
+        registrySuspensions.set(scope, Date.now() + RATE_LIMIT_BACKOFF_MS);
     }
 
     /**
@@ -95,22 +88,20 @@ define([
      * picking company B while A is in flight must not write A's address under
      * B, and — since TWO-25554 — a shipping-panel pick in flight must not be
      * aborted by an unrelated billing-panel pick either. Keyed by the address
-     * form `lookupCompanyAddress()` was scoped to (`root`'s element), so two
-     * independent panels never share a generation counter or abort each
-     * other's request. `FALLBACK_ADDRESS_LOOKUP_KEY` covers the one caller
-     * with no root at all — the tile fallback on a checkout rendering no
-     * address form — where there is only ever one mount live to share it.
+     * form `lookupCompanyAddress()` was scoped to, so two independent panels
+     * never share a generation counter or abort each other's request.
      */
     const addressLookupStates = new WeakMap();
-    const FALLBACK_ADDRESS_LOOKUP_KEY = {};
 
     /**
-     * @param {?object} root jQuery-wrapped scope `lookupCompanyAddress()` was
-     *        called with, or null
+     * @param {object} root jQuery-wrapped scope `lookupCompanyAddress()` was
+     *        called with
      * @returns {{generation: number, pending: ?object}}
      */
     function addressLookupState(root) {
-        const key = (root && typeof root.get === 'function' && root.get(0)) || FALLBACK_ADDRESS_LOOKUP_KEY;
+        // The set itself where a double models no element accessor — still one
+        // key per root, which is all this is keyed for.
+        const key = firstElement(root) || root;
         let state = addressLookupStates.get(key);
         if (!state) {
             state = { generation: 0, pending: null };
@@ -162,19 +153,13 @@ define([
     const AUTOFILL_MARKER_ATTR = 'data-two-autofilled-value';
 
     /**
-     * The checkout's two address forms, and which of the two the mirror below
-     * treats as its source.
+     * The checkout's two address forms.
      *
-     * The shipping form is the DEFAULT one: core always renders it, the
-     * company picker lives in it, and it is the one the buyer fills first. The
-     * billing form is the NON-DEFAULT one: it appears only once the buyer
-     * unchecks "My billing and shipping address are the same", and core renders
-     * one PER PAYMENT METHOD — so the second selector routinely matches several
-     * nodes, and every one of them is judged and written independently.
-     *
-     * The billing form is matched on `data-form`, not on an id, because core's
-     * `billing-address/form.html` gives its fieldset no id at all — only
-     * `shipping-address/form.html` carries one (`#shipping-new-address-form`).
+     * Core renders one billing form PER PAYMENT METHOD, so the second selector
+     * routinely matches several nodes, and every one of them is judged and
+     * written independently. It is matched on `data-form` because core's
+     * `billing-address/form.html` gives its fieldset no id — only
+     * `shipping-address/form.html` carries one.
      */
     const PRIMARY_ADDRESS_ROOT_SELECTOR = '#shipping-new-address-form';
     /** @see primaryAddressRoot — core's saved-addresses wrapper for that form. */
@@ -182,16 +167,17 @@ define([
     const SECONDARY_ADDRESS_ROOT_SELECTOR = '[data-form="billing-new-address"]';
 
     /**
-     * Every field of an address the plugin can write, and therefore every field
-     * the sync pin has to judge.
+     * Every field of an address a buyer can answer, and therefore every field
+     * the sync pin has to judge. NOT a list of fields that travel between the
+     * two addresses — only the country does that
+     * (mirrorCountryToSecondaryAddresses()).
      *
      * Completeness is the whole point, not a nicety: the pin's question is
-     * "has the buyer authored anything in this address", and a writable field
-     * left off this list is a field a buyer can type into without the pin ever
-     * noticing. `street1` and `region` are named here specifically because the
-     * sibling platform's first attempt reasoned they were safe to skip — a
-     * buyer typing a second address line is stating an independent answer
-     * exactly as much as one typing a city.
+     * "has the buyer authored anything in this address", and a field left off
+     * this list is a field a buyer can type into without the pin ever
+     * noticing. `company`/`organization` earn their place there and nowhere
+     * else: a company picked in the billing panel is the buyer's own answer,
+     * and it is what pins that address against a later country sync.
      *
      * The name fields and the telephone are deliberately absent: their values
      * are the buyer's own — applyTelephone() writes the one exception, and
@@ -247,13 +233,6 @@ define([
     const mirrorWriteRecords = new Map();
     const secondaryAddressBaselines = new Map();
 
-    /**
-     * Non-zero while a mirror write's own `change` is being dispatched — the
-     * one thing that tells it from the buyer choosing a country in that same
-     * form, which Knockout's `value:` binding leaves it looking exactly like.
-     */
-    let mirrorWriteDepth = 0;
-
     /** @see secondaryAddressKey — the no-id fallback's own identity. */
     const FALLBACK_KEY_ATTR = 'data-two-mirror-key';
     let fallbackKeySequence = 0;
@@ -294,32 +273,16 @@ define([
         if (select && select.options) {
             for (let i = 0; i < select.options.length; i++) {
                 if (select.options[i].value) {
-                    return { $field: $select, select: select, unscoped: !$root };
+                    return { $field: $select, select: select };
                 }
             }
         }
         return {
             $field: scopedField($root, 'input[name="region"]'),
-            select: null,
-            unscoped: !$root
+            select: null
         };
     }
 
-    /**
-     * One field, looked up inside an address form — or document-wide when there
-     * is no form to scope to.
-     *
-     * The unscoped branch is not a fallback for convenience: on a virtual cart
-     * or a saved shipping address the shipping form does not exist at all, the
-     * picker lives in the payment tile, and the only address form on the page IS
-     * the billing one. Writing document-wide there is the pre-existing behaviour
-     * and the correct one — the form being written is the buyer's own working
-     * form, not a mirror of anything.
-     *
-     * @param {?object} $root jQuery-wrapped address form, or null
-     * @param {string} selector
-     * @returns {object} jQuery set
-     */
     /**
      * The default address form, but only when core is actually using it.
      *
@@ -373,7 +336,7 @@ define([
     }
 
     function scopedField($root, selector) {
-        return $root ? $root.find(selector).first() : $(selector);
+        return $root.find(selector).first();
     }
 
     /**
@@ -386,7 +349,7 @@ define([
      */
     function mirroredFieldHandle($root, field) {
         if (field.resolve) return field.resolve($root);
-        return { $field: scopedField($root, field.selector), select: null, unscoped: !$root };
+        return { $field: scopedField($root, field.selector), select: null };
     }
 
     /**
@@ -502,25 +465,6 @@ define([
     const TELEPHONE_FIELD_SELECTOR = 'input[name="telephone"]';
 
     /**
-     * Address forms an address write can be scoped to, billing/invoice role
-     * first — the role the payment tile writes as (TWO-25461 §1(a.3)).
-     *
-     * Built from the same PRIMARY/SECONDARY selectors the mirror above uses,
-     * plus a bare-id fallback for a third-party checkout that renders one:
-     * there is no `billing-new-address-form` id anywhere in core, which
-     * matches SECONDARY_ADDRESS_ROOT_SELECTOR by `data-form` instead.
-     *
-     * Attribute selectors rather than `#id` throughout: jQuery answers a bare
-     * `#id` through `document.getElementById` and returns AT MOST ONE
-     * element, while core renders one billing form per payment method.
-     */
-    const ADDRESS_FORM_ROOT_SELECTORS = [
-        SECONDARY_ADDRESS_ROOT_SELECTOR,
-        '[id="billing-new-address-form"]',
-        PRIMARY_ADDRESS_ROOT_SELECTOR
-    ];
-
-    /**
      * A value off an address payload, trimmed, with null/undefined coalesced to
      * ''. The API sends '' for a field the registry has nothing for and omits
      * the key entirely on some records, and those two mean the same thing here.
@@ -546,14 +490,15 @@ define([
     }
 
     /**
-     * Find within a scope, or document-wide when there is none.
+     * Find within one address form. Never document-wide: every reader and
+     * writer in this module belongs to exactly one panel's form (TWO-25554).
      *
-     * @param {?object} $root jQuery set to search inside, or null
+     * @param {object} $root jQuery set to search inside
      * @param {string} selector
      * @returns {object} jQuery set
      */
     function scopedFind($root, selector) {
-        return $root ? $root.find(selector) : $(selector);
+        return $root.find(selector);
     }
 
     /**
@@ -600,7 +545,7 @@ define([
      * address-form bookkeeping sees the same event shape a buyer edit produces.
      *
      * @param {Array} fields entries from AUTOFILLED_FIELDS
-     * @param {?object} $root scope, or null for document-wide
+     * @param {object} $root the form to scope to
      * @returns {number} how many fields were cleared
      */
     function retractStaleFields(fields, $root) {
@@ -613,13 +558,9 @@ define([
             // write is scoped to one of them — so the first match is routinely
             // a form this module never wrote to.
             const $set = scopedFind($root, field.selector);
-            // `.eq()` per element where it exists — some test doubles model a
-            // scoped find without it, safely: a SCOPED lookup for one field
-            // name matches at most one node, so treating the whole set as the
-            // element is the same operation there. Only the unscoped
-            // ($root === null) document-wide case can legitimately match
-            // several, and every fixture exercising that one does implement
-            // `.eq()`.
+            // `.eq()` per element where it exists — a scoped lookup for one
+            // field name matches at most one node, so treating the whole set as
+            // the element is the same operation for a double without it.
             const elements = typeof $set.eq === 'function'
                 ? Array.from({ length: $set.length }, function (_, i) { return $set.eq(i); })
                 : $set.length ? [$set] : [];
@@ -675,7 +616,7 @@ define([
      * being written to a field that does not exist and lost.
      *
      * @param {object} address company address or buyer address record
-     * @param {?object} $root scope, or null for document-wide
+     * @param {object} $root the form to scope to
      * @returns {object} field name → value, keyed as the form names them
      */
     function resolveStreetLines(address, $root) {
@@ -816,7 +757,7 @@ define([
      * ONE formatter for every display site — the dropdown row below, the
      * address-step label (renderCompanyIdText() in address-autocomplete.js),
      * the payment tile's own label and the order-intent notice sentence
-     * (displayCompanyId() / resolveCompanyNotice() in gateway_method.js) — so
+     * (tileDisplayCompanyId() / resolveCompanyNotice() in gateway_method.js) — so
      * a surface added later cannot quietly forget the rule. Callers use the
      * EMPTY return to decide whether to render a label/brackets at all, not
      * just what text to put in one.
@@ -870,50 +811,6 @@ define([
             .trim();
     }
 
-    /**
-     * Selectors for the checkout's address-form country `<select>`, in
-     * PRIORITY ORDER, most specific first.
-     *
-     * Two entries only, and the shortness is the point. The first is core's own
-     * shipping address form, which Luma and Amasty both render and which the
-     * address-area picker already reads directly; the second is a deliberate
-     * catch-all for a one-page checkout that supplies its own address markup
-     * (Fire Checkout), where nothing else in the plugin can find the buyer's
-     * country at all.
-     *
-     * Deliberately NOT in the list: `#billing-new-address-form`. Core renders
-     * one billing-address form PER PAYMENT METHOD, so a checkout offering two
-     * Two-family brands has several, all but one untouched and carrying the
-     * store default country — `.first()` would pick arbitrarily between them.
-     * `#co-shipping-form` is not in it either: it is an ANCESTOR of
-     * `#shipping-new-address-form` in core, so it could only ever match the
-     * same node the first entry already does.
-     *
-     * The catch-all can still resolve a select the buyer has not touched (core
-     * renders the new-address form inside a HIDDEN modal for a customer with
-     * saved addresses). That is why the only consumer, countryCode() in
-     * company-capture-component.js, reads this last of all.
-     *
-     * @type {string[]}
-     */
-    const COUNTRY_SELECT_SELECTORS = [
-        '#shipping-new-address-form select[name="country_id"]',
-        'select[name="country_id"]'
-    ];
-
-    /**
-     * The country the buyer currently has selected in the checkout's address
-     * form, lower-cased, read LIVE off the DOM — or '' when no address-form
-     * country select is present or none has a value.
-     *
-     * A DOM read rather than a quote- or customer-data-derived one because it
-     * answers "what has the buyer chosen", which is knowable before any of that
-     * reaches the quote, and knowable on every checkout regardless of which
-     * components a given one-page checkout mounts. It is NOT authoritative on
-     * its own — see the note above on untouched selects.
-     *
-     * @returns {string}
-     */
     /**
      * Who is calling, for Two's unauthenticated browser-facing endpoints. One
      * builder so the call sites cannot drift apart.
@@ -981,9 +878,6 @@ define([
         return { ok: !!parsed.ok, status: parsed.status || 0, body: parsed.body };
     }
 
-    /** A no-op stand-in for a caller of lookupCompanyAddress() with no identity to notify. */
-    const NULL_IDENTITY = { addressNotice: function () {} };
-
     /**
      * Tell the buyer the address did not arrive. Without this the fields stay
      * blank with nothing said, which reads as the picker having done nothing.
@@ -1003,21 +897,20 @@ define([
         identity.addressNotice('');
     }
 
+    /**
+     * The country selected in ONE address form, lower-cased, read live off the
+     * DOM — or '' when that form has no country select or no value in it.
+     *
+     * `$root` is required: a document-wide read answers for whichever form the
+     * page offers first, which is the other panel's as often as not.
+     *
+     * @param {object} $root jQuery-wrapped address form
+     * @returns {string}
+     */
     function currentAddressFormCountry($root) {
-        // A panel with an address form of its own reads THAT form and stops
-        // there: the priority list below is document-wide, so a panel falling
-        // through it runs its registry against the other panel's country.
-        if ($root) {
-            const scoped = scopedField($root, COUNTRY_FIELD.selector).val();
-            return typeof scoped === 'string' ? scoped.toLowerCase() : '';
-        }
-        for (let i = 0; i < COUNTRY_SELECT_SELECTORS.length; i++) {
-            const $select = $(COUNTRY_SELECT_SELECTORS[i]).first();
-            if (!$select.length) continue;
-            const value = $select.val();
-            if (typeof value === 'string' && value) return value.toLowerCase();
-        }
-        return '';
+        if (!$root || !$root.length) return '';
+        const selected = scopedField($root, COUNTRY_FIELD.selector).val();
+        return typeof selected === 'string' ? selected.toLowerCase() : '';
     }
 
     /**
@@ -1095,7 +988,7 @@ define([
      * record that outlives a rebuild. Empty entries are dropped: an empty
      * record is the absence of a write, not a write of ''.
      *
-     * @param {?object} $root jQuery-wrapped address form, or null
+     * @param {object} $root jQuery-wrapped address form
      * @param {object} field entry from MIRRORED_FIELDS
      * @returns {Array<string>}
      */
@@ -1220,21 +1113,11 @@ define([
      * @returns {boolean} whether anything was written
      */
     function writeMirroredField(handle, value, recordAs) {
-        // An UNSCOPED lookup has no presence answer to give: it is used only
-        // where there is no address form to scope to, and jQuery's `.val()` and
-        // `.attr()` are already no-ops on an empty set. Guarding it would change
-        // long-standing behaviour on the one path that cannot tell the
-        // difference. A scoped lookup does know, and a field its form does not
-        // have must not be reported as written.
-        if (!handle.$field.length && !handle.unscoped) return false;
+        // A field this form does not have must not be reported as written.
+        if (!handle.$field.length) return false;
         handle.$field.attr(AUTOFILL_MARKER_ATTR, recordAs);
         handle.$field.val(value);
-        mirrorWriteDepth += 1;
-        try {
-            handle.$field.trigger('change');
-        } finally {
-            mirrorWriteDepth -= 1;
-        }
+        handle.$field.trigger('change');
         return true;
     }
 
@@ -1257,7 +1140,7 @@ define([
      * Clear the autofilled fields of one address form that still hold exactly
      * what the plugin put there, and forget the recording.
      *
-     * @param {?object} $root jQuery-wrapped address form, or null for unscoped
+     * @param {object} $root jQuery-wrapped address form
      * @returns {number} how many fields were cleared
      */
     function revertAddressFormFields($root) {
@@ -1265,7 +1148,7 @@ define([
         MIRRORED_FIELDS.forEach(function (field) {
             if (REVERTABLE_FIELD_NAMES.indexOf(field.name) === -1) return;
             const handle = mirroredFieldHandle($root, field);
-            if ($root && !handle.$field.length) return;
+            if (!handle.$field.length) return;
             const marker = handle.$field.attr(AUTOFILL_MARKER_ATTR);
             const current = trimmedString(
                 handle.select ? selectedOptionText(handle.select) : handle.$field.val() || ''
@@ -1392,13 +1275,7 @@ define([
         HIDDEN_COMPANY_NUMBER_PREFIX: HIDDEN_COMPANY_NUMBER_PREFIX,
         formatCompanyNumber: formatCompanyNumber,
         stripBracketedToken: stripBracketedToken,
-        COUNTRY_SELECT_SELECTORS: COUNTRY_SELECT_SELECTORS,
         currentAddressFormCountry: currentAddressFormCountry,
-
-        /** @see mirrorWriteDepth */
-        isMirrorWriting: function () {
-            return mirrorWriteDepth > 0;
-        },
 
         apiClientParams: apiClientParams,
 
@@ -1518,25 +1395,23 @@ define([
          *
          * @param {object} config brand config subtree
          * @param {object} selectedCompany search result row (needs lookupId)
-         * @param {object} [root] scope for the write — see applyAddress(). Also
-         *        the key the in-flight-request guard is scoped by (TWO-25554):
-         *        two panels calling this with different roots never abort or
-         *        supersede each other.
-         * @param {object} [identity] the calling panel's own identity, for
+         * @param {object} root the calling panel's OWN form, scoping the write
+         *        and keying both the in-flight-request guard and the rate-limit
+         *        suspension. Required: a panel with no form of its own has
+         *        nowhere this may land (TWO-25554).
+         * @param {object} identity the calling panel's own identity, for
          *        announceAddressUnavailable()/withdrawAddressUnavailable().
-         *        Optional: a caller that does not care whether the buyer sees
-         *        the notice (most of this module's own tests) is not made to
-         *        supply one just to satisfy it.
          * @returns {object|null} the jqXHR, or null when gated off / no id
          */
         lookupCompanyAddress: function (config, selectedCompany, root, identity) {
             if (!config.isAddressSearchEnabled) return null;
             if (!selectedCompany || !selectedCompany.lookupId) return null;
+            if (!root || !root.length || !identity) {
+                console.debug({ logger: 'companySearch.lookupCompanyAddress.refused' });
+                return null;
+            }
 
-            const notify = identity || NULL_IDENTITY;
-            // Whether the caller ASKED for a scope, which applyAddress() tells
-            // apart from not passing one at all — see its own refusal.
-            const scoped = arguments.length >= 3;
+            const notify = identity;
             const scope = identity;
             const lookupState = addressLookupState(root);
             const generation = ++lookupState.generation;
@@ -1567,8 +1442,7 @@ define([
                 const envelope = unwrapProxyResponse(raw);
                 const response = envelope.ok ? envelope.body : null;
                 if (response && response.addresses && response.addresses.length) {
-                    if (scoped) self.applyAddress(response.addresses[0], root);
-                    else self.applyAddress(response.addresses[0]);
+                    self.applyAddress(response.addresses[0], root);
                     return;
                 }
                 announceAddressUnavailable(notify);
@@ -1591,42 +1465,6 @@ define([
         SECONDARY_ADDRESS_ROOT_SELECTOR: SECONDARY_ADDRESS_ROOT_SELECTOR,
 
         /**
-         * The form a BILLING/INVOICE-role write belongs in, as a scope for
-         * applyAddress() — or null when this checkout renders no address form
-         * the write could be scoped to.
-         *
-         * A scope is needed because the payment step is not a one-form page:
-         * Luma leaves `#shipping-new-address-form` in the DOM there, and core
-         * renders a billing address form PER PAYMENT METHOD, all carrying the
-         * same field names. An unscoped write reaches every one of them.
-         *
-         * A billing form wins over a shipping one whether or not it is visible —
-         * role beats visibility, and a hidden billing form still belongs to this
-         * buyer's invoice address. Visibility only picks between several forms
-         * matching the SAME selector, which is how the buyer's selected payment
-         * method's form is told from the other methods'.
-         *
-         * The shipping form is the last resort rather than a wrong answer: with
-         * "my billing and shipping address are the same" — core's default — no
-         * billing form is rendered at all and the shipping form IS the invoice
-         * address, which is the sync mechanism §1(a.3) says to read the
-         * billing-role value from on a shipping-first platform.
-         *
-         * @returns {?object} jQuery set of exactly one form, or null
-         */
-        billingRoleFormRoot: function () {
-            for (let i = 0; i < ADDRESS_FORM_ROOT_SELECTORS.length; i++) {
-                const $candidates = $(ADDRESS_FORM_ROOT_SELECTORS[i]);
-                if (!$candidates.length) continue;
-                for (let n = 0; n < $candidates.length; n++) {
-                    if ($candidates.eq(n).is(':visible')) return $candidates.eq(n);
-                }
-                return $candidates.eq(0);
-            }
-            return null;
-        },
-
-        /**
          * @see primaryAddressRoot
          * @returns {boolean} whether the buyer's own shipping form is in play
          */
@@ -1635,27 +1473,18 @@ define([
         },
 
         /**
-         * Write a company or buyer address into a checkout address form.
+         * Write a company or buyer address into ONE address form.
          *
-         * Scoped to `root` when given — the payment-step picker's
-         * sole-trader signup-completion write (TWO-25461 §5) uses this to land
-         * in whichever billing-role form is in play (billingRoleFormRoot()),
-         * regardless of shipping-form state and regardless of any billing
-         * form's sync pin: that write is deliberately final, not a mirror
-         * candidate, so it is NOT recorded via recordMirrorWrites() — an
-         * unrecorded write differs from both the pin's baseline and any mirror
-         * record, which reads as buyer-authored and freezes the form against
-         * being overwritten by a later, unrelated shipping-address sync.
+         * `root` is required — the form the CALLING PANEL owns. A write with no
+         * form of its own to land in is refused rather than falling back to a
+         * page-wide one, which reached the other panel's fields (TWO-25554).
          *
-         * Unscoped, this writes into the buyer's own working address form —
-         * the shipping form when core is rendering one, document-wide when it
-         * is not, see primaryAddressRoot() — and then mirrors it into every
-         * billing form still in sync.
-         *
-         * Each field written also records the value in `AUTOFILL_MARKER_ATTR`,
-         * which is what makes the write REVERSIBLE (revertAutofilledAddress()
-         * below) without ever discarding something the buyer typed, and is
-         * half of what the sync pin reads.
+         * Each field written records its value in `AUTOFILL_MARKER_ATTR`, which
+         * is what makes the write REVERSIBLE (revertAutofilledAddress() below)
+         * without ever discarding something the buyer typed, and is half of
+         * what the sync pin reads. The write is NOT recorded via
+         * recordMirrorWrites(): it is the panel's own final answer rather than a
+         * mirror candidate.
          *
          * There is no address-lookup gate here. `config.isAddressSearchEnabled`
          * gates lookupCompanyAddress() — an ordinary search selection — one
@@ -1663,51 +1492,16 @@ define([
          * where company search is mounted (TWO-25461 §5).
          *
          * @param {object} address company address or buyer address record
-         * @param {object} [root] jQuery set to scope the write to a single
-         *        form, bypassing the shipping→billing mirror entirely
-         * @returns {number} how many billing addresses were synced (always 0
-         *          when `root` scopes the write to a single form)
+         * @param {object} root jQuery set for the calling panel's own form
+         * @returns {number} 0 — no address other than `root` is ever written
          */
         applyAddress: function (address, root) {
             console.debug({ logger: 'companySearch.applyAddress', address });
-            if (root) {
-                writeAddressInto(this, address, root);
+            if (!root || !root.length) {
+                console.debug({ logger: 'companySearch.applyAddress.refused' });
                 return 0;
             }
-            // A caller that ASKED for a scope and came back with nothing gets
-            // no write: the page-wide path below reaches the other panel's form.
-            if (arguments.length > 1) {
-                console.error('companySearch.applyAddress: refused an unscoped write.');
-                return 0;
-            }
-            const $primary = primaryAddressRoot();
-            if ($primary.length) {
-                writeAddressInto(this, address, $primary);
-                return this.mirrorAddressToSecondaryAddresses(address);
-            }
-            // No default address form in use — a virtual cart, or a buyer
-            // checking out against a saved shipping address. The billing form is
-            // then the buyer's OWN working form rather than a mirror of
-            // anything, so it is written directly and NOT judged by the pin;
-            // that is the pre-existing behaviour of a pick made in the payment
-            // tile, which carries its own positional gate for whether autofill
-            // should happen there at all (see the tile's addressLookup()).
-            //
-            // Written PER FORM rather than through one document-wide selector,
-            // which matters twice: the region routing inspects the form's own
-            // option list, so a document-wide decision would apply one form's
-            // answer to all of them; and the writes are recorded per form, so a
-            // later evaluation attributes them instead of reading them as
-            // buyer-authored.
-            const self = this;
-            const roots = secondaryAddressRoots();
-            if (!roots.length) {
-                writeAddressInto(self, address, null);
-                return 0;
-            }
-            roots.forEach(function ($root) {
-                recordMirrorWrites($root, writeAddressInto(self, address, $root));
-            });
+            writeAddressInto(this, address, root);
             return 0;
         },
 
@@ -1742,7 +1536,7 @@ define([
          * applyAddress() on why an omission is not a blank.
          *
          * @param {object} address company address or buyer address record
-         * @param {?object} $root scope, or null for document-wide
+         * @param {object} $root the form to scope to
          * @returns {object} field name → value to write
          */
         resolveAddressValues: function (address, $root) {
@@ -1777,7 +1571,7 @@ define([
          * every pass.
          *
          * @param {object} address company address or buyer address record
-         * @param {?object} $root scope, or null for document-wide
+         * @param {object} $root the form to scope to
          * @param {object} values values resolved so far, for the city append
          * @returns {object} field name → value, empty when the region has no home
          */
@@ -1823,40 +1617,13 @@ define([
         },
 
         /**
-         * Mirror a company address into every billing address form that is
-         * still in sync, skipping every one the buyer has made their own.
+         * Propagate the shipping form's COUNTRY onto every billing address that
+         * is still in sync. The one field that crosses between the two
+         * addresses; company and organisation number belong to their own panel
+         * and never travel (TWO-25554).
          *
-         * @param {object} address company address record from the API
-         * @returns {number} how many billing addresses were written
-         */
-        mirrorAddressToSecondaryAddresses: function (address) {
-            // The country FIRST, and it is not an optimisation. The store's
-            // default country is frequently not the buyer's, so the billing form
-            // can be sitting on a different country from the address about to be
-            // written into it — and the region routing reads that country's own
-            // option list to decide between the state control and the city
-            // append. Mirroring the country first means both forms route the
-            // same region the same way; leaving it meant one form selected a
-            // state while the other appended a state name into its city.
-            this.mirrorFieldsToSecondaryAddresses(['country']);
-            const self = this;
-            let synced = 0;
-            secondaryAddressRoots().forEach(function ($root) {
-                if (secondaryAddressIsPinned($root)) return;
-                recordMirrorWrites($root, writeAddressInto(self, address, $root));
-                synced += 1;
-            });
-            console.debug({ logger: 'companySearch.mirrorAddressToSecondaryAddresses', synced });
-            return synced;
-        },
-
-        /**
-         * Propagate named fields of the DEFAULT address onto every billing
-         * address that is still in sync — the country/company propagation the
-         * two-address model asks for.
-         *
-         * Reads the shipping form live rather than taking values from the
-         * caller, so there is exactly one answer to "what does the default
+         * Reads the shipping form live rather than taking a value from the
+         * caller, so there is exactly one answer to "what does the shipping
          * address say" and it is the one on screen.
          *
          * Writing the country retracts the region record beside it, because
@@ -1864,42 +1631,31 @@ define([
          * data — see clearMirrorWriteRecord() for why leaving the record would
          * pin the address on the next evaluation.
          *
-         * @param {Array<string>} names field names from MIRRORED_FIELD_NAMES
          * @returns {number} how many billing addresses were written
          */
-        mirrorFieldsToSecondaryAddresses: function (names) {
+        mirrorCountryToSecondaryAddresses: function () {
             const $primary = primaryAddressRoot();
             if (!$primary.length) return 0;
-            const fields = MIRRORED_FIELDS.filter(function (field) {
-                return names.indexOf(field.name) !== -1;
-            });
             let synced = 0;
             secondaryAddressRoots().forEach(function ($root) {
                 if (secondaryAddressIsPinned($root)) return;
+                const source = mirroredFieldHandle($primary, COUNTRY_FIELD);
+                const target = mirroredFieldHandle($root, COUNTRY_FIELD);
                 const written = {};
-                fields.forEach(function (field) {
-                    const source = mirroredFieldHandle($primary, field);
-                    const target = mirroredFieldHandle($root, field);
-                    if (!source.$field.length || !target.$field.length) return;
+                if (source.$field.length && target.$field.length) {
                     const value = source.$field.val();
                     const recordAs = source.select
                         ? selectedOptionText(source.select)
                         : trimmedString(value);
-                    if (writeMirroredField(target, value, recordAs)) {
-                        written[field.name] = recordAs;
-                    }
-                });
+                    if (writeMirroredField(target, value, recordAs)) written.country = recordAs;
+                }
                 recordMirrorWrites($root, written);
                 if (Object.prototype.hasOwnProperty.call(written, 'country')) {
                     clearMirrorWriteRecord($root, 'region');
                 }
                 synced += 1;
             });
-            console.debug({
-                logger: 'companySearch.mirrorFieldsToSecondaryAddresses',
-                names,
-                synced
-            });
+            console.debug({ logger: 'companySearch.mirrorCountryToSecondaryAddresses', synced });
             return synced;
         },
 
@@ -1926,13 +1682,10 @@ define([
             if (!$root.length) return;
             const key = secondaryAddressKey($root);
             if (!key || secondaryAddressBaselines.has(key)) return;
-            // Too late to trust what THIS form is holding: the mirror has
-            // already written into it, so what it shows is ours rather than a
-            // store default. Seal an EMPTY baseline instead, so only a
-            // genuinely empty field counts as unanswered. Asked of this form's
-            // own record, never of whether ANY form has one — a sibling billing
-            // form appearing later is pristine, and sealing it empty pinned it
-            // before the buyer had touched it (TWO-25554).
+            // Already written into by the mirror, so what it holds is ours
+            // rather than a store default: seal an EMPTY baseline, so only a
+            // genuinely empty field counts as unanswered. Per form, never
+            // page-wide — a sibling billing form appearing later is pristine.
             if (mirrorWriteRecords.has(key)) {
                 secondaryAddressBaselines.set(key, {});
                 return;
@@ -1979,13 +1732,17 @@ define([
         },
 
         /**
-         * Undo an applyAddress() write, field by field, and forget the
-         * recording.
+         * Undo an applyAddress() write in ONE form, field by field, and forget
+         * the recording.
          *
          * Called when the buyer switches country: an address autofilled from
          * the previous country's registry is not a hint about the new one, it
          * is a wrong address the buyer may well not re-read before placing the
          * order.
+         *
+         * `root` is required — the calling panel's OWN form, and the only one
+         * touched. A page-wide retraction cleared the shipping form's address
+         * fields when the buyer changed their BILLING country (TWO-25554).
          *
          * Only fields still holding EXACTLY what applyAddress() put there are
          * cleared. Anything the buyer has since edited — and anything that was
@@ -1999,44 +1756,28 @@ define([
          * address-form bookkeeping sees the same event shape it does for a
          * buyer edit.
          *
-         * Reaches the billing address too, and is PIN-AWARE there: a pinned
-         * billing address is skipped whole, never field by field. Clearing one
-         * field of it because that field happened to still match would break the
-         * address-wide rule the pin exists to enforce — the buyer owns the whole
-         * address once they have touched any of it, including the parts they
-         * left alone.
-         *
-         * @param {object} [root] the calling panel's own form, reverted ALONE.
-         *        Omitted entirely, this is the address step's own retraction and
-         *        reaches the mirror as described above.
+         * @param {object} root the calling panel's own form
          * @returns {number} how many fields were cleared — for tests, and so a
          *          caller can tell "nothing was ours" from "reverted"
          */
         revertAutofilledAddress: function (root) {
-            if (arguments.length) {
-                if (!root || !root.length) return 0;
-                return revertAddressFormFields(root).length;
+            if (!root || !root.length) {
+                console.debug({ logger: 'companySearch.revertAutofilledAddress.refused' });
+                return 0;
             }
-            const $primary = primaryAddressRoot();
-            let cleared = revertAddressFormFields($primary.length ? $primary : null).length;
-            if ($primary.length) {
-                secondaryAddressRoots().forEach(function ($root) {
-                    if (secondaryAddressIsPinned($root)) return;
-                    // Only the fields actually emptied are retracted. Retracting
-                    // the whole revertable set unconditionally was a real defect:
-                    // a field the retraction declined to clear kept its value and
-                    // lost its record in the same pass, which is exactly the
-                    // "non-empty field, nothing on record" shape the pin reads as
-                    // a buyer edit.
-                    const retracted = revertAddressFormFields($root);
-                    retracted.forEach(function (name) {
-                        clearMirrorWriteRecord($root, name);
-                    });
-                    cleared += retracted.length;
-                });
-            }
-            console.debug({ logger: 'companySearch.revertAutofilledAddress', cleared });
-            return cleared;
+            const retracted = revertAddressFormFields(root);
+            // Retracting only the fields actually emptied: a field the
+            // retraction declined to clear would otherwise keep its value and
+            // lose its record in the same pass, which is the "non-empty field,
+            // nothing on record" shape the pin reads as a buyer edit.
+            retracted.forEach(function (name) {
+                clearMirrorWriteRecord(root, name);
+            });
+            console.debug({
+                logger: 'companySearch.revertAutofilledAddress',
+                cleared: retracted.length
+            });
+            return retracted.length;
         }
 
     };

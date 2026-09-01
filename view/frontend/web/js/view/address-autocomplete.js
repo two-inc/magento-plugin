@@ -46,6 +46,7 @@ define([
     const EVENT_NS = '.twoAddressCompanyId';
 
     return Component.extend({
+        addressFormSelector: '#shipping-new-address-form',
         countrySelector: '#shipping-new-address-form select[name="country_id"]',
         companyNameSelector: '#shipping-new-address-form input[name="company"]',
         companyIdSelector: '#shipping-new-address-form input[name="custom_attributes[company_id]"]',
@@ -140,17 +141,18 @@ define([
                 this.toggleCompanyVisibility();
                 return;
             }
-            companySearch.revertAutofilledAddress();
+            // THIS form alone: a page-wide retraction cleared the other
+            // panel's address fields too (TWO-25554).
+            companySearch.revertAutofilledAddress($(this.addressFormSelector));
             // Clears the name input, the number field, and the published
             // `companyData` section the payment tile reads — every surviving
             // copy of the previous country's company.
             this.setCompanyData();
-            // …then propagate the country the buyer just chose. AFTER the two
-            // clears above, deliberately: both of them run over the billing
-            // address as well, and both consult the sync pin, so a country
-            // written first would be a value they then had to judge as
-            // already-ours mid-sequence.
-            companySearch.mirrorFieldsToSecondaryAddresses(['country']);
+            // …then propagate the country the buyer just chose, AFTER the
+            // clears above: it consults the sync pin, so a country written
+            // first would be a value the pin then had to judge as already-ours
+            // mid-sequence.
+            companySearch.mirrorCountryToSecondaryAddresses();
             this.toggleCompanyVisibility();
         },
         toggleCompanyVisibility: function () {
@@ -191,11 +193,6 @@ define([
         /**
          * Mirror a captured identity onto the address step: the published
          * section, the name input, the `company_id` field, and the label.
-         *
-         * The billing form is deliberately not among them. Each panel owns its
-         * own company field (TWO-25554), so company and organisation number are
-         * never propagated between the two addresses — only the genuine address
-         * fields are (TWO-25461).
          *
          * @param {string} [companyId]
          * @param {string} [companyName]
