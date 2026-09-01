@@ -72,14 +72,11 @@
     /**
      * What `_attach()` puts on the host field to announce the combobox. Left on
      * a field this panel has moved off, it offers a keyboard buyer a listbox
-     * that no longer exists and points `aria-controls` at a removed popover
+     * that is not there and points `aria-controls` at a removed popover
      * (TWO-25554).
      */
     const COMBOBOX_ATTRIBUTES = ['role', 'aria-haspopup', 'aria-controls', 'aria-expanded'];
 
-    /**
-     * @param {?Element} field
-     */
     function stripComboboxAttributes(field) {
         if (!field) return;
         COMBOBOX_ATTRIBUTES.forEach(function (attr) {

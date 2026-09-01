@@ -354,7 +354,7 @@ define([
      * shipping form is the other panel's (TWO-25554). Keyed on the live mount
      * rather than on the selector matching, because core leaves the fieldset in
      * the DOM hidden once "same as shipping" is re-checked, and a hidden field
-     * is not somewhere the buyer can read what was written.
+     * is nowhere the buyer can read what was written.
      *
      * @returns {?object} jQuery set, or null
      */
