@@ -364,41 +364,8 @@ describe('a sole-trader adoption lands on one panel only', () => {
         expect(organisationNumber(other)).toBe('');
     });
 
-    test.each(DIRECTIONS)(
-        'the tile acts on the panel that actually adopted (%s — %s)',
-        (actor, description) => {
-            // `soleTraderOwner()` is the REAL one here: the tile's link is
-            // rendered off the resolved adoption, which either panel can hold.
-            const booted = boot();
-            const renderer = bootRenderer(booted);
-            const acted = [];
-            booted.panels[actor].soleTrader().selectDifferentSoleTrader =
-                function () { acted.push(actor); return 'popup'; };
-            booted.panels[OTHER[actor]].soleTrader().selectDifferentSoleTrader =
-                function () { acted.push(OTHER[actor]); return 'popup'; };
-
-            booted.panels[actor].adoptSoleTrader(BUYERS[actor]);
-            renderer.selectDifferentSoleTrader();
-
-            expect(tagged(description, acted)).toEqual(tagged(description, [actor]));
-        }
-    );
-
-    test('with both panels adopted the BILLING panel owns the link', () => {
-        // The documented precedence, asserted against the real resolver rather
-        // than a stub that answers whatever it was told.
-        const booted = boot();
-        booted.panels.shipping.adoptSoleTrader(BUYERS.shipping);
-        booted.panels.billing.adoptSoleTrader(BUYERS.billing);
-
-        expect(booted.capture.soleTraderOwner()).toBe(booted.panels.billing);
-    });
-
-    test('with neither panel adopted there is no owner', () => {
-        const booted = boot();
-
-        expect(booted.capture.soleTraderOwner()).toBeNull();
-    });
+    // Which panel's own "select a different sole trader" link is rendered, and
+    // whose flow a click on it reaches, is company-panel-chrome.test.js.
 });
 
 describe('a country switch invalidates its own panel\'s company and nothing else', () => {

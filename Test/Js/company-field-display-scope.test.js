@@ -228,7 +228,6 @@ function load() {
         // A distinct billing form is rendered in this fixture, so the billing
         // panel owns the billing role.
         billingRoleIdentity: function () { return billingIdentity; },
-        soleTraderOwner: function () { return null; },
         refreshMount: function () {}
     };
 

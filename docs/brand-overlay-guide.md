@@ -141,9 +141,9 @@ approved" lines rendered inline in the checkout payment tile — as of the
 2026-08-03 ruling (TWO-25326 §7.3), this is the ONLY place the buyer's
 captured company NAME is displayed in the tile; the earlier standalone
 `.two-company-label` element is gone, not relocated. The company NUMBER
-also renders separately, independent of these notices, via the tile's
-`.two-company-id-text` label (2026-08-04 ruling, TWO-25326 §5/§7
-follow-up), mirroring the address step's equivalent label.
+renders separately, independent of these notices, in the
+`.two-company-id-text` label each capture panel paints under its own
+company field (2026-08-04 ruling, TWO-25326 §5/§7 follow-up).
 Both notices are controlled by **one shared on/off switch**, but only the
 APPROVED notice has a wording override. **This is deliberate, not an
 oversight** (2026-08-04 ruling, TWO-25326): the declined/not-available

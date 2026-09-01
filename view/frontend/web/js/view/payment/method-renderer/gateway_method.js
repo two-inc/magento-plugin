@@ -56,7 +56,6 @@ define([
     const identity = companyCapture.identity;
     const capturedName = ko.observable(identity.companyName());
     const capturedId = ko.observable(identity.companyId());
-    const soleTraderAdopted = ko.observable(identity.soleTraderAdopted());
 
     /*
      * The tile's own company input, bound to the identity of the panel MOUNTED
@@ -106,7 +105,6 @@ define([
     identity.subscribe(function () {
         capturedName(identity.companyName());
         capturedId(identity.companyId());
-        soleTraderAdopted(identity.soleTraderAdopted());
         if (onResolvedCompanyChange) onResolvedCompanyChange();
     });
 
@@ -197,7 +195,6 @@ define([
         // picked — which outlives every tile rebuild.
         companyName: capturedName,
         companyId: capturedId,
-        soleTraderAdopted: soleTraderAdopted,
         // The tile field's own bindings — @see tileIdentity.
         tileCompanyName: tileCompanyName,
         tileCompanyId: tileCompanyId,
@@ -383,19 +380,6 @@ define([
          */
         isCompanyNameReadOnly: function () {
             return tileIdentity.isSoleTrader() && !!this.tileCompanyId();
-        },
-        /**
-         * The tile panel's captured organisation number as it may be SHOWN, or
-         * '' when it must not be (an internal `TWO:` value, TWO-25326).
-         *
-         * @returns {string}
-         */
-        tileDisplayCompanyId: function () {
-            return companySearch.formatCompanyNumber(this.tileCompanyId());
-        },
-        /** @returns {boolean} the tile panel has both halves of an identity */
-        isTileCompanyCaptured: function () {
-            return !!(this.tileCompanyName() || '').trim() && !!(this.tileCompanyId() || '').trim();
         },
         /**
          * Whether the tile's own company field is the component's live mount.
@@ -1542,19 +1526,6 @@ define([
                     }
                 });
             });
-        },
-        /**
-         * "Select a different sole trader" — the tile's only sole-trader
-         * affordance. Silent before the component has booted, which is the
-         * state in which no sole trader can have been adopted anyway.
-         */
-        selectDifferentSoleTrader() {
-            // Rendered off the RESOLVED adoption, so it acts on whichever panel
-            // actually adopted (TWO-25554).
-            const owner = companyCapture.soleTraderOwner();
-            const soleTrader = owner && owner.soleTrader();
-            if (!soleTrader) return null;
-            return soleTrader.selectDifferentSoleTrader();
         }
     });
 });

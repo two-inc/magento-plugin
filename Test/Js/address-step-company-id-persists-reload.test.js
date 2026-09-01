@@ -35,14 +35,12 @@
  *
  *  1. Company search is left OFF in these tests, so select2 is never really
  *     bound and search mode is asserted by putting the `select2` data key on
- *     the name input, the same convention as address-company-id.test.js. What
- *     that costs: on a real reload the picker's own bind ALSO calls
- *     `renderCompanyIdText()`, so these tests exercise the company-number
- *     field's own render paths in isolation. That is deliberate — those are the
- *     paths that have to hold when the number resolves after the picker — but
- *     it means a regression that only broke the picker-side render would not
- *     fail here.
- *  2. The saver models `shipping.js`'s change→localStorage step, not its
+ *     the name input, the same convention as address-company-id.test.js.
+ *  2. The number the buyer READS is painted by the capture panel off this
+ *     restored field (company-panel-chrome.test.js); no panel is booted here,
+ *     so what is asserted is the restoration itself — the field, the
+ *     component and the provider.
+ *  3. The saver models `shipping.js`'s change→localStorage step, not its
  *     street-not-empty guard. A real checkout with no street typed yet persists
  *     nothing at all, name included.
  */
@@ -55,7 +53,6 @@ const MODULE = 'view/frontend/web/js/view/address-autocomplete.js';
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 const NAME_SELECTOR = '#shipping-new-address-form input[name="company"]';
 const ID_SELECTOR = '#shipping-new-address-form input[name="custom_attributes[company_id]"]';
-const TEXT_CLASS = 'two-company-id-text';
 const COMPANY_ID_COMPONENT =
     'checkout.steps.shipping-step.shippingAddress.shipping-address-fieldset.company_id';
 /** Where the company-number component's value lives in the provider's data. */
@@ -404,17 +401,9 @@ function pageLoad(storage, options) {
         { document: document, window: window }
     );
     component._super = function () {};
-    // Search mode, asserted the way the sibling tests assert it — and set
-    // BEFORE `initialize()`, because on a reload the picker is bound while the
-    // company-number field's own render paths run, and `renderCompanyIdText()`
-    // deliberately paints nothing outside search mode.
     if (opts.searchMode !== false) $(NAME_SELECTOR).data('select2', {});
     component.initialize();
     return { component: component, $: $, restore: restore, companyIdComponent: companyIdComponent };
-}
-
-function labels() {
-    return document.querySelectorAll('.' + TEXT_CLASS);
 }
 
 describe('TWO-25326 §5: the captured company number survives a page reload', () => {
@@ -427,53 +416,50 @@ describe('TWO-25326 §5: the captured company number survives a page reload', ()
 
         first.component.setCompanyData('919300894', 'Example Trading AS');
 
-        expect(labels()).toHaveLength(1);
         expect(storage[ID_PATH]).toBe('919300894');
         expect(first.companyIdComponent.value()).toBe('919300894');
     });
 
-    test('after a reload the number is still shown, not just the name', () => {
+    test('after a reload the number is back in the form, not just the name', () => {
         const storage = {};
         const first = pageLoad(storage);
         first.component.setCompanyData('919300894', 'Example Trading AS');
         // The name's own persistence is core's, and worked throughout; recorded
         // so the reload below starts from the state the bug was reported in.
         storage.companyName = 'Example Trading AS';
-        expect(labels()).toHaveLength(1);
 
         // Reload: new DOM, new component, new module instance. Only `storage`
         // crosses over.
-        pageLoad(storage);
+        const second = pageLoad(storage);
 
         expect(document.querySelector(NAME_SELECTOR).value).toBe('Example Trading AS');
         expect(document.querySelector(ID_SELECTOR).value).toBe('919300894');
-        expect(labels()).toHaveLength(1);
-        expect(labels()[0].textContent).toBe('919300894');
+        expect(second.companyIdComponent.value()).toBe('919300894');
     });
 
-    test('the number is shown even if the restore lands after the form initialises', () => {
+    test('the number arrives even if the restore lands after the form initialises', () => {
         // Magento's push of the saved shippingAddress object into the provider
         // is not ordered against this component's `$.async` resolves. If it
-        // lands last, every render call has already run against an empty field.
+        // lands last, every check on the resolve has already run against an
+        // empty field.
         const storage = {};
         const first = pageLoad(storage);
         first.component.setCompanyData('919300894', 'Example Trading AS');
         storage.companyName = 'Example Trading AS';
 
         const second = pageLoad(storage, { restoreBeforeInit: false });
-        expect(labels()).toHaveLength(0);
+        expect(document.querySelector(ID_SELECTOR).value).toBe('');
 
         second.restore();
 
-        expect(labels()).toHaveLength(1);
-        expect(labels()[0].textContent).toBe('919300894');
+        expect(document.querySelector(ID_SELECTOR).value).toBe('919300894');
     });
 
-    test('the label reads the component when the input has not caught up yet', () => {
-        // The restore paints from a subscriber on the component's `value`
+    test('the captured read answers from the component when the input has not caught up', () => {
+        // The country check runs from a subscriber on the component's `value`
         // observable, and Knockout's own `value:` binding is another subscriber
         // on it. Which of the two runs first is a Knockout internal, so the
-        // display read must not depend on the input being updated already.
+        // read must not depend on the input being updated already.
         const storage = {};
         const first = pageLoad(storage);
         first.component.setCompanyData('919300894', 'Example Trading AS');
@@ -483,8 +469,7 @@ describe('TWO-25326 §5: the captured company number survives a page reload', ()
         second.restore();
 
         expect(document.querySelector(ID_SELECTOR).value).toBe('');
-        expect(labels()).toHaveLength(1);
-        expect(labels()[0].textContent).toBe('919300894');
+        expect(second.component.capturedCompanyId()).toBe('919300894');
     });
 
     test('a reload after manual entry restores no number, because none was captured', () => {
@@ -502,15 +487,13 @@ describe('TWO-25326 §5: the captured company number survives a page reload', ()
 
         expect(storage[ID_PATH]).toBe('');
         expect(document.querySelector(ID_SELECTOR).value).toBe('');
-        expect(labels()).toHaveLength(0);
     });
 
-    test('the label the component notification paints is the NEW number', () => {
+    test('the input already holds the new number when the component notifies', () => {
         // Ordering inside setCompanyIdValue(). The component write notifies
-        // synchronously and the label renders from that subscriber, and the
-        // render reads the input before the component — so a component-first
-        // write paints the PREVIOUS company's number, and paints a number at all
-        // while clearing.
+        // synchronously and the country check runs from that subscriber reading
+        // the input before the component, so a component-first write would have
+        // it judge the PREVIOUS company's number.
         //
         // Asserted with Knockout's DOM mirror suppressed. With the mirror in
         // place it is registered before the module's own subscriber and updates
@@ -520,19 +503,17 @@ describe('TWO-25326 §5: the captured company number survives a page reload', ()
         const first = pageLoad(storage, { mirrorToDom: false });
         first.component.setCompanyData('919300894', 'Example Trading AS');
 
-        // Registered after the module's subscriber, so it observes the label the
-        // module has just painted rather than racing it.
-        const painted = [];
+        const seen = [];
         first.companyIdComponent.value.subscribe(function (next) {
-            painted.push({ notified: next, label: labels().length ? labels()[0].textContent : null });
+            seen.push({ notified: next, input: document.querySelector(ID_SELECTOR).value });
         });
 
         first.component.setCompanyData('811912312', 'Other Example AS');
         first.component.setCompanyData();
 
-        expect(painted).toEqual([
-            { notified: '811912312', label: '811912312' },
-            { notified: '', label: null }
+        expect(seen).toEqual([
+            { notified: '811912312', input: '811912312' },
+            { notified: '', input: '' }
         ]);
     });
 
@@ -553,7 +534,6 @@ describe('TWO-25326 §5: the captured company number survives a page reload', ()
         pageLoad(storage, { country: 'ES' });
 
         expect(document.querySelector(ID_SELECTOR).value).toBe('');
-        expect(labels()).toHaveLength(0);
         // The discard reaches `checkout-data` as well, so the number does not
         // come back on the load after this one. That persistence is also why a
         // misfire would be unrecoverable, which is why it is asserted.
@@ -581,7 +561,6 @@ describe('TWO-25326 §5: the captured company number survives a page reload', ()
         load.restore();
 
         expect(document.querySelector(ID_SELECTOR).value).toBe('');
-        expect(labels()).toHaveLength(0);
         expect(storage[ID_PATH]).toBe('');
     });
 
@@ -608,7 +587,6 @@ describe('TWO-25326 §5: the captured company number survives a page reload', ()
         load.restore();
 
         expect(load.companyIdComponent.value()).toBe('');
-        expect(labels()).toHaveLength(0);
         expect(storage[ID_PATH]).toBe('');
     });
 
@@ -624,7 +602,6 @@ describe('TWO-25326 §5: the captured company number survives a page reload', ()
         pageLoad(storage, { country: 'ES' });
 
         expect(document.querySelector(ID_SELECTOR).value).toBe('919300894');
-        expect(labels()).toHaveLength(1);
     });
 
     test('re-initialising leaves exactly one subscription, held by the live view', () => {
@@ -633,10 +610,6 @@ describe('TWO-25326 §5: the captured company number survives a page reload', ()
         // the view — so a subscription left in place would stack one per render
         // and the surviving subscriber would be closed over a superseded view.
         //
-        // Asserted on the subscription itself, NOT on the number of labels
-        // rendered: `renderCompanyIdText()` removes existing labels before
-        // appending, so N stacked subscribers still produce exactly one label
-        // and a label count cannot detect stacking at all.
         const storage = {};
         const first = pageLoad(storage);
         first.component.setCompanyData('919300894', 'Example Trading AS');
@@ -649,18 +622,12 @@ describe('TWO-25326 §5: the captured company number survives a page reload', ()
         second.component.initialize();
 
         expect(first.companyIdComponent.subscriberCount()).toBe(1);
-        // And the surviving subscriber is the live view's, not a stale one: only
-        // the live view can see the current document.
-        second.companyIdComponent.value('811912312');
-        expect(labels()).toHaveLength(1);
-        expect(labels()[0].textContent).toBe('811912312');
     });
 
-    test('a restored number paints nothing in manual-entry mode', () => {
-        // Manual entry is name-only capture. This is the branch the sibling
-        // cases cannot reach, because they all capture as a registered company:
-        // a number is sitting in the restored field while the page-level
-        // capture mode says the buyer typed the name themselves.
+    test('a restored number is left in the field in manual-entry mode', () => {
+        // This module restores and never withholds: whether the buyer READS a
+        // number captured under another mode is the capture panel's decision
+        // (company-panel-chrome.test.js).
         const storage = {};
         storage[ID_PATH] = '919300894';
         storage.companyName = 'Hand Typed Ltd';
@@ -668,6 +635,5 @@ describe('TWO-25326 §5: the captured company number survives a page reload', ()
         pageLoad(storage, { searchMode: false, captureMode: 'manual' });
 
         expect(document.querySelector(ID_SELECTOR).value).toBe('919300894');
-        expect(labels()).toHaveLength(0);
     });
 });

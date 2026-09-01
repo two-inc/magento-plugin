@@ -75,6 +75,17 @@
         'renderSignupPrompt'
     ];
 
+    /** style.css keys this label's alignment off the class. */
+    const COMPANY_NUMBER_CLASS = 'two-company-id-text';
+
+    const SOLE_TRADER_LINK_CLASS = 'two-select-different-sole-trader';
+
+    /**
+     * A company number the checkout restored into an address form, under either
+     * host's field naming.
+     */
+    const RESTORED_NUMBER_SELECTOR = 'input[name$="[company_id]"], input[name="company_id"]';
+
     function assertHost(options) {
         HOST_CONTRACT.forEach(function (member) {
             if (typeof options[member] !== 'function') {
@@ -207,6 +218,10 @@
         // address yet, which is what still lets that genuine first resolution
         // through.
         this._lastCountry = this.countryCode();
+        const self = this;
+        this._identity.subscribe(function () {
+            self.renderChrome();
+        });
         this.watchForMountHost();
         this.refreshMount();
         this.refreshSoleTraderAvailability();
@@ -432,11 +447,13 @@
         }
         if (selector === this._boundSelector && this._panel && this._panel.isBound()) {
             this.syncChips();
+            this.renderChrome();
             return;
         }
         this._boundSelector = selector;
         this.mountPanel(selector);
         this.syncChips();
+        this.renderChrome();
     };
 
     /**
@@ -491,6 +508,127 @@
         // A re-render takes the return link with the wrapper, and without it
         // manual entry is a dead end.
         if (this._identity.captureMode() === 'manual') this._panel.releaseField();
+    };
+
+    // ---------------------------------------------------------------- chrome
+
+    /** @returns {?Element} this panel's own bound field, or null with no mount */
+    CompanyCaptureComponent.prototype.fieldNode = function () {
+        if (!this._boundSelector) return null;
+        return document.querySelector(this._boundSelector);
+    };
+
+    /**
+     * The wrapper the panel puts around its own field
+     * (`CompanySearchPanel._ensureWrap()`) — the one element belonging to THIS
+     * panel and nothing else, so no page-wide query can reach another's chrome.
+     *
+     * @returns {?Element}
+     */
+    CompanyCaptureComponent.prototype._chromeHost = function () {
+        const field = this.fieldNode();
+        return (field && field.parentElement) || null;
+    };
+
+    /** Repaint every piece of chrome this panel renders for its own identity. */
+    CompanyCaptureComponent.prototype.renderChrome = function () {
+        this.renderCompanyNumber();
+        this.renderSoleTraderLink();
+    };
+
+    /**
+     * The captured company number as it may be SHOWN, or '' for nothing to
+     * show. Manual entry is name-only capture, so a number shown there would
+     * claim a registry identity the buyer never picked.
+     *
+     * @returns {string}
+     */
+    CompanyCaptureComponent.prototype.displayCompanyNumber = function () {
+        if (this._identity.captureMode() === 'manual') return '';
+        // The one shared display filter, so an internal prefixed identifier is
+        // withheld here too (TWO-25326); a host adapter without it shows no
+        // number rather than one the buyer cannot make sense of.
+        const format = this._options.search && this._options.search.formatCompanyNumber;
+        if (typeof format !== 'function') return '';
+        return format(this._identity.companyId() || this._restoredCompanyNumber());
+    };
+
+    /**
+     * A company number a reload restored into this panel's own form.
+     *
+     * Read rather than written into the identity, which would newly let a
+     * restored company drive order intent.
+     *
+     * @returns {string}
+     */
+    CompanyCaptureComponent.prototype._restoredCompanyNumber = function () {
+        // The tile carries no address fields, so any number reachable from
+        // there belongs to some other panel's form.
+        if (this._boundSelector === this._options.tileFieldSelector) return '';
+        const field = this.fieldNode();
+        if (!field) return '';
+        let node = field.parentElement;
+        while (node) {
+            const found = node.querySelectorAll(RESTORED_NUMBER_SELECTOR);
+            // Exactly one: several under one ancestor means it spans a second
+            // address form, so neither is answerable as this panel's own.
+            if (found.length === 1) return found[0].value || '';
+            node = node.parentElement;
+        }
+        return '';
+    };
+
+    /**
+     * Paint the company number as plain text under this panel's field.
+     *
+     * The caption is an `aria-label`, not visible text: TWO-25326 §7 forbids an
+     * additional visible label, and a bare number with no accessible name is
+     * unreadable to a screen reader.
+     */
+    CompanyCaptureComponent.prototype.renderCompanyNumber = function () {
+        const host = this._chromeHost();
+        if (!host) return;
+        const existing = host.querySelector('.' + COMPANY_NUMBER_CLASS);
+        if (existing) existing.remove();
+        const number = this.displayCompanyNumber();
+        if (!number) return;
+        const label = document.createElement('div');
+        label.className = COMPANY_NUMBER_CLASS;
+        label.setAttribute('aria-label', this.translate('Company Number'));
+        label.textContent = number;
+        host.appendChild(label);
+    };
+
+    /**
+     * "Select a different sole trader" under this panel's field, gated on
+     * adoption rather than capture: a sole trader with no trading name of their
+     * own has no company number, and keying on capture left them no route out
+     * (TWO-25461 §7).
+     */
+    CompanyCaptureComponent.prototype.renderSoleTraderLink = function () {
+        const host = this._chromeHost();
+        if (!host) return;
+        const existing = host.querySelector('.' + SOLE_TRADER_LINK_CLASS);
+        const adopted = this._identity.soleTraderAdopted();
+        if (!adopted) {
+            if (existing) existing.remove();
+            return;
+        }
+        if (existing) return;
+        const self = this;
+        const wrapper = document.createElement('div');
+        wrapper.className = SOLE_TRADER_LINK_CLASS;
+        const link = document.createElement('button');
+        link.type = 'button';
+        link.className = `${SOLE_TRADER_LINK_CLASS}__link`;
+        link.textContent = this.translate('Select a different sole trader');
+        link.addEventListener('click', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            self._soleTrader.selectDifferentSoleTrader();
+        });
+        wrapper.appendChild(link);
+        host.appendChild(wrapper);
     };
 
     // ----------------------------------------------------------------- chips

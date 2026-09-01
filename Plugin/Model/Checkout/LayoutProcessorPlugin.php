@@ -12,6 +12,14 @@ use Two\Gateway\Model\Config\Repository;
 class LayoutProcessorPlugin
 {
     /**
+     * Core's own billing-address component. Every billing address form is one
+     * of these, whichever container it was generated into, so matching on it
+     * is what lets both *Display Billing Address On* settings and every
+     * payment method code be covered without naming any of them.
+     */
+    private const BILLING_ADDRESS_COMPONENT = 'Magento_Checkout/js/view/billing-address';
+
+    /**
      * @var Repository
      */
     private $repository;
@@ -41,11 +49,29 @@ class LayoutProcessorPlugin
         if (!$this->repository->isActive()) {
             return $jsLayout;
         }
-        $jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']['children']
-        ['shippingAddress']['children']['shipping-address-fieldset']['children']['company_id'] = [
+        $shippingFieldset = &$jsLayout['components']['checkout']['children']['steps']['children']
+            ['shipping-step']['children']['shippingAddress']['children']['shipping-address-fieldset']['children'];
+        $shippingFieldset['company_id'] = $this->companyIdField('shippingAddress');
+        $this->moveCountryBeforeCompany($shippingFieldset);
+        unset($shippingFieldset);
+
+        $this->processBillingFieldsets($jsLayout);
+
+        return $jsLayout;
+    }
+
+    /**
+     * The hidden company-number field, for one address form's data scope.
+     *
+     * @param string $scopePrefix the form's own `dataScopePrefix`
+     * @return array<string,mixed>
+     */
+    private function companyIdField(string $scopePrefix): array
+    {
+        return [
             'component' => 'Magento_Ui/js/form/element/abstract',
             'config' => [
-                'customScope' => 'shippingAddress.custom_attributes',
+                'customScope' => $scopePrefix . '.custom_attributes',
                 'customEntry' => null,
                 'template' => 'ui/form/field',
                 'elementTmpl' => 'ui/form/element/input',
@@ -55,7 +81,7 @@ class LayoutProcessorPlugin
                 'options' => [],
                 'id' => 'company-id'
             ],
-            'dataScope' => 'shippingAddress.custom_attributes.company_id',
+            'dataScope' => $scopePrefix . '.custom_attributes.company_id',
             'label' => __('Company Number'),
             'provider' => 'checkoutProvider',
             // Rendered, and disabled until the buyer actually has to supply
@@ -77,8 +103,8 @@ class LayoutProcessorPlugin
             // the input. The field is hidden visually instead, via
             // `additionalClasses` + a CSS rule in
             // view/frontend/web/css/style.css — the DOM node stays present and
-            // its value still submits as
-            // shippingAddress.custom_attributes.company_id. See TWO-25288.
+            // its value still submits under this form's own scope. See
+            // TWO-25288.
             'visible' => true,
             'additionalClasses' => 'two-company-id-hidden',
             'disabled' => true,
@@ -92,15 +118,75 @@ class LayoutProcessorPlugin
             'id' => 'company-id',
             'value' => ''
         ];
+    }
 
-        $this->moveCountryBeforeCompany($jsLayout);
+    /**
+     * Inject the company-number field into, and order country first in, every
+     * billing address form on the payment step.
+     *
+     * Core generates those forms into one of two containers depending on the
+     * *Display Billing Address On* setting — one form per payment method under
+     * `payments-list`, or a single shared one under `afterMethods` — so both
+     * are walked and the forms are recognised by their component rather than
+     * by any path or method code.
+     *
+     * @param array<string,mixed> $jsLayout
+     * @return void
+     */
+    private function processBillingFieldsets(array &$jsLayout)
+    {
+        if (!isset(
+            $jsLayout['components']['checkout']['children']['steps']['children']['billing-step']
+            ['children']['payment']['children']
+        )) {
+            return;
+        }
+        $payment = &$jsLayout['components']['checkout']['children']['steps']['children']['billing-step']
+            ['children']['payment']['children'];
 
-        return $jsLayout;
+        foreach (['payments-list', 'afterMethods'] as $containerName) {
+            if (!isset($payment[$containerName]['children'])
+                || !is_array($payment[$containerName]['children'])
+            ) {
+                continue;
+            }
+            $this->processBillingForms($payment[$containerName]['children']);
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $container the container's own `children`
+     * @return void
+     */
+    private function processBillingForms(array &$container)
+    {
+        foreach ($container as &$node) {
+            if (!is_array($node)
+                || ($node['component'] ?? null) !== self::BILLING_ADDRESS_COMPONENT
+                || !isset($node['dataScopePrefix'])
+                || !is_string($node['dataScopePrefix'])
+                || $node['dataScopePrefix'] === ''
+                || !isset($node['children']['form-fields']['children'])
+                || !is_array($node['children']['form-fields']['children'])
+            ) {
+                continue;
+            }
+            $fieldset = &$node['children']['form-fields']['children'];
+            $fieldset['company_id'] = $this->companyIdField($node['dataScopePrefix']);
+            $this->moveCountryBeforeCompany($fieldset);
+            unset($fieldset);
+        }
+        unset($node);
     }
 
     /**
      * Force `country_id` to render before the native `company` AND `street`
-     * fields on the SHIPPING address step, only when it does not already.
+     * fields of one address fieldset, only when it does not already.
+     *
+     * The country decides which national registry the company search queries,
+     * so it has to be answered before the company field on every address form
+     * the buyer can capture a company in — the shipping step's and each
+     * billing form's alike.
      *
      * `checkout_index_index.xml` declares `country_id`'s sortOrder as a
      * static 50, which DOES win over Magento core's EAV-derived default (90)
@@ -134,26 +220,15 @@ class LayoutProcessorPlugin
      * original position and `min(company, street) - 1`. Only a store that
      * actually reproduces the reported bug gets reordered.
      *
-     * Scoped to the SHIPPING address step only. The payment step's billing
-     * address form (when "same as shipping" is unchecked) is a separate
-     * jsLayout subtree this method does not touch — out of scope for this
-     * fix; the same live-config-dependent ordering issue can in principle
-     * reproduce there too and would need its own follow-up if reported.
+     * A billing fieldset carries no layout-XML sortOrder for `country_id` from
+     * this module at all, so out of the box it inherits the stock EAV order
+     * (country 90, company 60, street 70) and reorders on every store.
      *
-     * @param array $jsLayout
+     * @param array $fieldset the fieldset's own `children`
      * @return void
      */
-    private function moveCountryBeforeCompany(array &$jsLayout)
+    private function moveCountryBeforeCompany(array &$fieldset)
     {
-        if (!isset(
-            $jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']
-            ['children']['shippingAddress']['children']['shipping-address-fieldset']['children']
-        )) {
-            return;
-        }
-        $fieldset = &$jsLayout['components']['checkout']['children']['steps']['children']['shipping-step']
-            ['children']['shippingAddress']['children']['shipping-address-fieldset']['children'];
-
         if (!isset($fieldset['country_id']) || !is_array($fieldset['country_id'])
             || !isset($fieldset['country_id']['sortOrder'])
             || !is_numeric($fieldset['country_id']['sortOrder'])

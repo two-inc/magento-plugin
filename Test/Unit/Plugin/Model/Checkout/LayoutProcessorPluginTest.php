@@ -371,4 +371,242 @@ class LayoutProcessorPluginTest extends TestCase
 
         $this->assertSame(90, $fieldset['country_id']['sortOrder']);
     }
+
+    /** Core's own component, the only thing that identifies a billing form. */
+    private const BILLING_COMPONENT = 'Magento_Checkout/js/view/billing-address';
+
+    /**
+     * One billing address form as core generates it.
+     *
+     * @param string $scopePrefix
+     * @param array<string,mixed> $fields the form's own address fields
+     * @return array<string,mixed>
+     */
+    private function billingForm(string $scopePrefix, array $fields = []): array
+    {
+        return [
+            'component' => self::BILLING_COMPONENT,
+            'dataScopePrefix' => $scopePrefix,
+            'children' => [
+                'form-fields' => [
+                    'children' => $fields ?: ['company' => ['label' => 'Company']],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * A `jsLayout` carrying whichever of the two billing containers the store's
+     * *Display Billing Address On* setting produces.
+     *
+     * @param array<string,mixed> $paymentsList `payments-list` children
+     * @param array<string,mixed> $afterMethods `afterMethods` children
+     * @return array<string,mixed>
+     */
+    private function seededLayoutWithBilling(array $paymentsList = [], array $afterMethods = []): array
+    {
+        $seeded = $this->seededLayout();
+        $payment = [];
+        if ($paymentsList !== []) {
+            $payment['payments-list'] = ['children' => $paymentsList];
+        }
+        if ($afterMethods !== []) {
+            $payment['afterMethods'] = ['children' => $afterMethods];
+        }
+        $seeded['components']['checkout']['children']['steps']['children']['billing-step'] = [
+            'children' => ['payment' => ['children' => $payment]],
+        ];
+
+        return $seeded;
+    }
+
+    /**
+     * One billing form's fields after the plugin has run.
+     *
+     * @param array<string,mixed> $jsLayout
+     * @param string $container
+     * @param string $formName
+     * @return array<string,mixed>
+     */
+    private function billingFields(array $jsLayout, string $container, string $formName): array
+    {
+        return $jsLayout['components']['checkout']['children']['steps']['children']['billing-step']
+            ['children']['payment']['children'][$container]['children'][$formName]
+            ['children']['form-fields']['children'];
+    }
+
+    /**
+     * @param array<string,mixed> $jsLayout
+     * @return array<string,mixed>
+     */
+    private function process(array $jsLayout, bool $isActive = true): array
+    {
+        return $this->plugin($isActive)->afterProcess(
+            $this->createMock(LayoutProcessor::class),
+            $jsLayout
+        );
+    }
+
+    /**
+     * Both containers are walked because which one exists is an admin setting
+     * (*Display Billing Address On*), and a form is matched by its component
+     * rather than by a path or a method code.
+     *
+     * @return array<string,array{0: array<string,mixed>, 1: array<string,mixed>, 2: array<string,string>, 3: string}>
+     */
+    public static function billingContainerProvider(): array
+    {
+        return [
+            [['two_gateway-form' => null], [], ['payments-list' => 'two_gateway-form'], 'a per-method billing form'],
+            [[], ['billing-address-form' => null], ['afterMethods' => 'billing-address-form'], 'the shared billing form'],
+            [['two_gateway-form' => null], ['billing-address-form' => null], ['payments-list' => 'two_gateway-form', 'afterMethods' => 'billing-address-form'], 'both containers at once'],
+            [[], [], [], 'neither container present'],
+        ];
+    }
+
+    /**
+     * @dataProvider billingContainerProvider
+     * @param array<string,mixed> $paymentsList
+     * @param array<string,mixed> $afterMethods
+     * @param array<string,string> $expected container => form name
+     */
+    public function testCompanyNumberFieldIsInjectedIntoEveryBillingForm(
+        array $paymentsList,
+        array $afterMethods,
+        array $expected,
+        string $description
+    ): void {
+        foreach (array_keys($paymentsList) as $name) {
+            $paymentsList[$name] = $this->billingForm('billingAddresstwo_gateway');
+        }
+        foreach (array_keys($afterMethods) as $name) {
+            $afterMethods[$name] = $this->billingForm('billingAddressshared');
+        }
+
+        $jsLayout = $this->process($this->seededLayoutWithBilling($paymentsList, $afterMethods));
+
+        foreach ($expected as $container => $formName) {
+            $fields = $this->billingFields($jsLayout, $container, $formName);
+            $this->assertArrayHasKey('company_id', $fields, $description);
+            // The seeded sibling surviving alongside is what pins the write to
+            // the real form rather than a path the plugin conjured.
+            $this->assertSame(['company', 'company_id'], array_keys($fields), $description);
+        }
+        // The shipping injection is unaffected by the billing walk.
+        $this->assertArrayHasKey('company_id', $this->fieldset($jsLayout), $description);
+    }
+
+    /**
+     * @return array<string,array{0: string, 1: string}>
+     */
+    public static function billingScopeProvider(): array
+    {
+        return [
+            ['billingAddresstwo_gateway', 'a per-method form scope'],
+            ['billingAddressshared', 'the shared form scope'],
+        ];
+    }
+
+    /**
+     * @dataProvider billingScopeProvider
+     */
+    public function testBillingScopesAreDerivedFromTheFormsOwnDataScopePrefix(
+        string $scopePrefix,
+        string $description
+    ): void {
+        $jsLayout = $this->process(
+            $this->seededLayoutWithBilling(['two_gateway-form' => $this->billingForm($scopePrefix)])
+        );
+        $field = $this->billingFields($jsLayout, 'payments-list', 'two_gateway-form')['company_id'];
+
+        $this->assertSame($scopePrefix . '.custom_attributes.company_id', $field['dataScope'], $description);
+        $this->assertSame($scopePrefix . '.custom_attributes', $field['config']['customScope'], $description);
+    }
+
+    /**
+     * Country decides which national registry the company search queries, so it
+     * has to sort before the company field on a billing form too — and unlike
+     * the shipping fieldset, a billing one carries no layout-XML sortOrder from
+     * this module at all, so the stock EAV order reproduces the mis-ordering on
+     * every store.
+     *
+     * @return array<string,array{0: array<string,mixed>, 1: mixed, 2: string}>
+     */
+    public static function billingReorderProvider(): array
+    {
+        return [
+            [['company' => 60, 'street' => 70, 'country_id' => 90], 59, 'stock EAV order — country after company'],
+            [['company' => 20, 'street' => 70, 'country_id' => 50], 19, 'country after company only'],
+            [['company' => 90, 'street' => 30, 'country_id' => 50], 29, 'country after street only'],
+            [['company' => 60, 'street' => 70, 'country_id' => 50], 50, 'country already first — untouched'],
+            [['company' => null, 'street' => null, 'country_id' => 90], 90, 'no numeric anchor — untouched'],
+            [['company' => 60, 'street' => 70, 'country_id' => null], null, 'no numeric country sortOrder — untouched'],
+        ];
+    }
+
+    /**
+     * @dataProvider billingReorderProvider
+     * @param array<string,mixed> $sortOrders
+     * @param mixed $expected
+     */
+    public function testBillingCountrySortsBeforeCompanyAndStreet(
+        array $sortOrders,
+        $expected,
+        string $description
+    ): void {
+        $fields = [];
+        foreach ($sortOrders as $name => $sortOrder) {
+            $fields[$name] = $sortOrder === null ? ['label' => $name] : ['label' => $name, 'sortOrder' => $sortOrder];
+        }
+
+        $jsLayout = $this->process(
+            $this->seededLayoutWithBilling(
+                ['two_gateway-form' => $this->billingForm('billingAddresstwo_gateway', $fields)]
+            )
+        );
+        $country = $this->billingFields($jsLayout, 'payments-list', 'two_gateway-form')['country_id'];
+
+        $this->assertSame($expected, $country['sortOrder'] ?? null, $description);
+    }
+
+    /**
+     * @return array<string,array{0: array<string,mixed>, 1: string}>
+     */
+    public static function untouchedBillingNodeProvider(): array
+    {
+        return [
+            [['component' => 'Magento_Checkout/js/view/payment/list', 'children' => ['form-fields' => ['children' => []]]], 'a non-billing component'],
+            [['component' => self::BILLING_COMPONENT, 'children' => ['form-fields' => ['children' => []]]], 'a billing form with no dataScopePrefix'],
+            [['component' => self::BILLING_COMPONENT, 'dataScopePrefix' => ''], 'an empty dataScopePrefix'],
+            [['component' => self::BILLING_COMPONENT, 'dataScopePrefix' => 'billingAddressshared'], 'a billing form with no form-fields'],
+            ['not-an-array', 'a scalar child'],
+        ];
+    }
+
+    /**
+     * @dataProvider untouchedBillingNodeProvider
+     * @param mixed $node
+     */
+    public function testChildrenThatAreNotUsableBillingFormsAreLeftAlone($node, string $description): void
+    {
+        $seeded = $this->seededLayoutWithBilling(['some-child' => $node]);
+
+        $jsLayout = $this->process($seeded);
+        $processed = $jsLayout['components']['checkout']['children']['steps']['children']['billing-step']
+            ['children']['payment']['children']['payments-list']['children']['some-child'];
+
+        $this->assertSame($node, $processed, $description);
+    }
+
+    public function testNothingIsInjectedIntoBillingWhenThePaymentMethodIsInactive(): void
+    {
+        $seeded = $this->seededLayoutWithBilling(
+            ['two_gateway-form' => $this->billingForm('billingAddresstwo_gateway', [
+                'company' => ['label' => 'Company', 'sortOrder' => 60],
+                'country_id' => ['label' => 'Country', 'sortOrder' => 90],
+            ])]
+        );
+
+        $this->assertSame($seeded, $this->process($seeded, false));
+    }
 }

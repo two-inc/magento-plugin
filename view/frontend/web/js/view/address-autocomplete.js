@@ -5,7 +5,6 @@
 define([
     'jquery',
     'ko',
-    'mage/translate',
     'underscore',
     'Magento_Ui/js/form/form',
     'Magento_Customer/js/customer-data',
@@ -21,7 +20,6 @@ define([
 ], function (
     $,
     ko,
-    $t,
     _,
     Component,
     customerData,
@@ -166,7 +164,7 @@ define([
         },
         /**
          * Mirror a captured identity onto the address step: the published
-         * section, the name input, the `company_id` field, and the label.
+         * section, the name input and the `company_id` field.
          *
          * @param {string} [companyId]
          * @param {string} [companyName]
@@ -179,7 +177,6 @@ define([
             $(this.companyNameSelector).val(companyName);
             this.setCompanyIdValue(companyId);
             this.syncCompanyIdEditable();
-            this.renderCompanyIdText();
         },
         /**
          * Write the captured organisation number so that it SURVIVES A PAGE
@@ -221,10 +218,8 @@ define([
          * pick would announce itself twice.
          *
          * The DOM write goes FIRST. The component write notifies subscribers
-         * synchronously, one of which re-renders the number label off
-         * `capturedCompanyId()`, which reads the DOM before the component — so
-         * writing the component first paints the PREVIOUS company's number for
-         * the rest of the tick, and paints a number at all on the clearing path.
+         * synchronously, and `discardForeignCountryCompanyId()` reads the DOM
+         * ahead of the component — see its own note on termination.
          */
         setCompanyIdValue: function (companyId) {
             $(this.companyIdSelector).val(companyId);
@@ -234,15 +229,14 @@ define([
             }
         },
         /**
-         * Re-paint the number label whenever the company-number component's
-         * value changes underneath us.
+         * Re-check a number arriving in the company-number component underneath
+         * us against the country the form is showing.
          *
          * The one case this is for is a reload: the number is restored into the
          * form by Magento pushing the saved `shippingAddress` object back into
-         * the `checkoutProvider`, and that push is not ordered against either of
-         * this component's `$.async` resolves. If it lands last, both render
-         * calls have already run against an empty field and the buyer sees the
-         * name with no number — the original bug, in a narrower window.
+         * the `checkoutProvider`, and that push is not ordered against this
+         * component's `$.async` resolves. If it lands last, the one-shot check
+         * on the resolve has already run against an empty field.
          *
          * ONE subscription at a time, and it belongs to the CURRENT view. The
          * `company_id` uiRegistry component outlives this view — that is exactly
@@ -251,9 +245,9 @@ define([
          * both retains every superseded view for the life of the page and leaves
          * the live subscriber closed over a stale one. Disposing the previous
          * subscription and taking a fresh one is what keeps those two properties
-         * ("no stacking", "the current view renders") from being in tension. The
-         * handle is stored on the COMPONENT, because the view being replaced is
-         * the thing that cannot be relied on to still be around.
+         * ("no stacking", "the current view is the one checking") from being in
+         * tension. The handle is stored on the COMPONENT, because the view being
+         * replaced is the thing that cannot be relied on to still be around.
          *
          * Deliberately does NOT re-derive editability (`syncCompanyIdEditable`).
          * That derivation reads the number field's own value, and this fires on
@@ -290,7 +284,6 @@ define([
                 // has never seen. Without this the whole country check is dead on
                 // exactly the ordering this subscription exists for.
                 self.discardForeignCountryCompanyId();
-                self.renderCompanyIdText();
             });
         },
         /**
@@ -324,8 +317,7 @@ define([
          * uses, the second pass reads empty from the input AND from the component
          * and returns at the first line. That is the whole of it; no reliance on
          * Knockout suppressing a same-value notification. Reverse those two
-         * writes and termination would rest on that suppression instead, which is
-         * a second reason not to (the first being the stale label).
+         * writes and termination would rest on that suppression instead.
          *
          * Reads the country off the SELECT, which makes this dependent on the
          * select being rendered and holding the restored country by the time the
@@ -340,12 +332,10 @@ define([
          * missing.
          */
         discardForeignCountryCompanyId: function () {
-            // `capturedCompanyId()`, not the input alone. This runs immediately
-            // before the render, off the same notification, and the render reads
-            // the component when the input has not caught up — so an
-            // input-only read here would bail out on exactly the ordering the
-            // render refuses to assume, and the number it declined to check is
-            // the one that then gets painted and left in the provider.
+            // `capturedCompanyId()`, not the input alone: this also runs off the
+            // component's own notification, where the input has not caught up
+            // yet, and an input-only read would leave that number unchecked in
+            // the provider.
             if (!this.capturedCompanyId()) return;
             const capturedCountry = (customerData.get('companyData')() || {}).companyCountry;
             const currentCountry = this.currentCountryCode();
@@ -361,66 +351,6 @@ define([
             this.setCompanyIdValue('');
         },
         /**
-         * Class on the address-step company-number text label. Also the hook
-         * style.css aligns it against the name field's end edge.
-         */
-        companyIdTextClass: 'two-company-id-text',
-        /**
-         * Render the captured company number as PLAIN TEXT under the
-         * company-name field (TWO-25326 §5), replacing whatever was there.
-         *
-         * Not an input, and not a second copy of the hidden
-         * `custom_attributes[company_id]` field: that input still exists and
-         * still submits, but it is display:none'd outright
-         * (`.two-company-id-hidden`) precisely because a visible box implies
-         * the number is typeable, and it is not — an identifier-less company
-         * is refused by Model/Two.php::authorize() rather than hand-filled.
-         *
-         * Three states, and only one of them shows anything:
-         *
-         *  - a captured identity -> the number, right-aligned;
-         *  - nothing captured yet -> nothing (§5: "not visible before a result
-         *    is selected");
-         *  - manual-entry mode -> nothing, ever, whatever the number field
-         *    happens to still hold. Manual entry is name-only capture per the
-         *    three-mode model, so a number rendered here would be claiming a
-         *    registry identity the buyer never picked.
-         *
-         * Keyed on the capture mode rather than on the panel being present: the
-         * page-level component owns the mount and can bind it after a restored
-         * number has already been rendered, with nothing to trigger a repaint.
-         *
-         * Rebuilt from scratch on each call rather than toggled: the label is
-         * a single text node with no state worth preserving, and a `.remove()`
-         * first means the manual-entry and pre-selection cases share the exact
-         * same code path as "hide it".
-         *
-         * The caption is an `aria-label`, not visible text: §7 forbids any
-         * additional visible text label in the address area, but a bare number
-         * with no accessible name is unreadable to a screen reader.
-         */
-        renderCompanyIdText: function () {
-            const $field = $(this.companyNameSelector);
-            if (!$field.length) return;
-            const $control = $field.closest('.control');
-            if (!$control.length) return;
-            $control.find('.' + this.companyIdTextClass).remove();
-            if (identity.captureMode() === 'manual') return;
-            // Through the shared display formatter, so an internal
-            // `TWO:`-prefixed identifier renders NO label at all rather than
-            // a label the buyer cannot make sense of (TWO-25326). Same
-            // helper the dropdown row, the tile label and the order-intent
-            // notice use — see companySearch.formatCompanyNumber().
-            const companyId = companySearch.formatCompanyNumber(this.capturedCompanyId());
-            if (!companyId) return;
-            $control.append(
-                $('<div></div>')
-                    .addClass(this.companyIdTextClass)
-                    .attr('aria-label', $t('Company Number'))
-                    .text(companyId)
-            );
-        },
-        /**
          * The organisation number currently captured, for DISPLAY.
          *
          * The DOM field first, then the UI component. Not an ordering
@@ -432,9 +362,9 @@ define([
          * updated" would be a claim about Knockout's internal subscription
          * order. Reading both removes the claim.
          *
-         * Display only. `needsManualCompanyId()` still reads the DOM alone and
-         * must keep doing so: it derives whether the buyer may TYPE here, and
-         * the value they are mid-way through typing lives in the input.
+         * `needsManualCompanyId()` reads the DOM alone and must keep doing so:
+         * it derives whether the buyer may TYPE here, and the value they are
+         * mid-way through typing lives in the input.
          *
          * @returns {string}
          */
@@ -576,15 +506,11 @@ define([
                     });
                 // A form rendered with an address already on it (returning
                 // customer, or a reload mid-checkout) never passes through
-                // setCompanyData(), so derive once on resolve.
-                // Before the derivation and the label, both of which would
-                // otherwise act on a number belonging to another country.
+                // setCompanyData(), so derive once on resolve — after the
+                // country check, which the derivation would otherwise run
+                // against a number belonging to another country.
                 self.discardForeignCountryCompanyId();
                 self.syncCompanyIdEditable();
-                // …and paint the number label for that same case. A reload
-                // restores the number into this field from the provider, not
-                // through setCompanyData(), so nothing else would render it.
-                self.renderCompanyIdText();
                 self.watchCompanyIdComponent();
             });
             $.async(this.companyNameSelector, function (companyNameField) {

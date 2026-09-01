@@ -17,7 +17,8 @@
  * The separate `custom_attributes[company_id]` INPUT is a different object
  * and stays in the DOM (it still submits) — hidden by CSS, pinned by
  * address-step-company-id-hidden.test.js. This file is about the text label
- * that replaced it visually.
+ * that replaced it visually, and about its shape and position; that the label
+ * belongs to one panel alone is company-panel-chrome.test.js.
  *
  * Backed by a real jsdom tree rather than a recording double: every
  * assertion here is about what is actually in the document and what it says,
@@ -26,142 +27,25 @@
 
 'use strict';
 
-const { loadAmdModule } = require('./amd-harness');
+const $ = require('jquery');
+const {
+    loadAmdModule,
+    loadCompanyCapture,
+    loadCompanySearchPanel,
+    defaultMocks,
+    brandConfigMock,
+    installAsyncSimulation
+} = require('./amd-harness');
 
-const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
-const MODULE = 'view/frontend/web/js/view/address-autocomplete.js';
+const SEARCH = 'view/frontend/web/js/model/company-search.js';
 const NAME_SELECTOR = '#shipping-new-address-form input[name="company"]';
 const ID_SELECTOR =
     '#shipping-new-address-form input[name="custom_attributes[company_id]"]';
 const TEXT_CLASS = 'two-company-id-text';
 
-/** jQuery-lite over real jsdom nodes — only what this component path calls. */
-function makeMiniQuery() {
-    const dataStore = new WeakMap();
+const GLOBALS = { document: document, window: window };
 
-    const api = {
-        get: function (i) {
-            return this.nodes[i];
-        },
-        closest: function (sel) {
-            const out = [];
-            this.nodes.forEach(function (node) {
-                const found = node.closest(sel);
-                if (found && out.indexOf(found) === -1) out.push(found);
-            });
-            return wrap(out);
-        },
-        find: function (sel) {
-            const out = [];
-            this.nodes.forEach(function (node) {
-                Array.prototype.push.apply(out, node.querySelectorAll(sel));
-            });
-            return wrap(out);
-        },
-        append: function (child) {
-            const nodes = child && child.nodes ? child.nodes : [child];
-            const target = this.nodes[0];
-            if (target) {
-                nodes.forEach(function (n) {
-                    target.appendChild(n);
-                });
-            }
-            return this;
-        },
-        remove: function () {
-            this.nodes.forEach(function (node) {
-                if (node.parentNode) node.parentNode.removeChild(node);
-            });
-            return this;
-        },
-        addClass: function (cls) {
-            this.nodes.forEach(function (node) {
-                node.classList.add(cls);
-            });
-            return this;
-        },
-        attr: function (name, value) {
-            if (arguments.length < 2) {
-                return this.nodes.length ? this.nodes[0].getAttribute(name) : undefined;
-            }
-            this.nodes.forEach(function (node) {
-                node.setAttribute(name, value);
-            });
-            return this;
-        },
-        text: function (next) {
-            if (!arguments.length) return this.nodes.length ? this.nodes[0].textContent : '';
-            this.nodes.forEach(function (node) {
-                node.textContent = next;
-            });
-            return this;
-        },
-        val: function (next) {
-            if (!arguments.length) return this.nodes.length ? this.nodes[0].value : undefined;
-            this.nodes.forEach(function (node) {
-                node.value = next;
-            });
-            return this;
-        },
-        prop: function () {
-            return this;
-        },
-        data: function (key, next) {
-            const node = this.nodes[0];
-            if (!node) return undefined;
-            if (!dataStore.has(node)) dataStore.set(node, {});
-            const bag = dataStore.get(node);
-            if (arguments.length < 2) return bag[key];
-            bag[key] = next;
-            return this;
-        },
-        on: function () {
-            return this;
-        },
-        off: function () {
-            return this;
-        },
-        trigger: function () {
-            return this;
-        },
-        show: function () {
-            return this;
-        },
-        hide: function () {
-            return this;
-        }
-    };
-
-    function wrap(nodes) {
-        const set = Object.create(api);
-        set.nodes = nodes;
-        set.length = nodes.length;
-        return set;
-    }
-
-    function fromHtml(html) {
-        const holder = document.createElement('div');
-        holder.innerHTML = html;
-        return Array.prototype.slice.call(holder.children);
-    }
-
-    function $(arg) {
-        if (arg === undefined || arg === null) return wrap([]);
-        if (typeof arg === 'string') {
-            return arg.trim().charAt(0) === '<'
-                ? wrap(fromHtml(arg))
-                : wrap(Array.prototype.slice.call(document.querySelectorAll(arg)));
-        }
-        if (arg.nodes) return arg;
-        if (arg.nodeType) return wrap([arg]);
-        return wrap([]);
-    }
-    $.fn = {};
-    $.extend = Object.assign;
-    $.async = function () {};
-    return $;
-}
-
+/** The shipping panel booted over the real popover and the real search. */
 function load() {
     document.body.innerHTML =
         '<form id="shipping-new-address-form">' +
@@ -175,60 +59,77 @@ function load() {
         '<input name="custom_attributes[company_id]" type="text">' +
         '</div>' +
         '</div>' +
+        '<select name="country_id"><option value="NO" selected>NO</option></select>' +
         '</form>';
 
-    const $ = makeMiniQuery();
-    const identity = loadAmdModule(IDENTITY, {}, { document: document, window: window })();
-    const component = loadAmdModule(
-        MODULE,
-        {
-            jquery: $,
-            'Two_Gateway/js/model/company-capture': {
-                shipping: { identity: function () { return identity; } }
-            },
-            'Magento_Customer/js/customer-data': {
-                set: function () {},
-                get: function () {
-                    return function () {
-                        return {};
-                    };
-                }
-            },
-            'Two_Gateway/js/model/brand-config': {
-                getActiveTwoBrandConfig: function () {
-                    return { isCompanySearchEnabled: false };
-                }
+    installAsyncSimulation($);
+
+    function SoleTraderStub() {
+        this.listenForSignupResult = function () {};
+        this.ensureTokens = function () { return Promise.resolve(true); };
+        this.focusSignupPopup = function () { return false; };
+        this.launchSignup = function () { return null; };
+        this.forgetAdoptions = function () {};
+        this.showSignupPrompt = function () {};
+    }
+
+    const search = loadAmdModule(SEARCH, { jquery: $ }, GLOBALS);
+    search.clearResultCache();
+
+    const capture = loadCompanyCapture({
+        jquery: $,
+        'Magento_Checkout/js/model/quote': Object.assign(
+            {},
+            defaultMocks()['Magento_Checkout/js/model/quote'],
+            {
+                billingAddress: function () { return { countryId: 'NO' }; },
+                isVirtual: function () { return false; }
             }
-        },
-        { document: document, window: window }
-    );
-    return { component: component, $: $, identity: identity };
+        ),
+        'Two_Gateway/js/model/company-search': search,
+        'Two_Gateway/js/model/company-search-panel': loadCompanySearchPanel($, search, GLOBALS),
+        'Two_Gateway/js/model/sole-trader': SoleTraderStub,
+        'Two_Gateway/js/model/brand-config': brandConfigMock({
+            isCompanySearchEnabled: true,
+            isAddressSearchEnabled: false,
+            checkoutApiUrl: 'https://api.example.test',
+            checkoutPageUrl: 'https://checkout.example.test',
+            supportedCompanyTypes: { no: [] }
+        })
+    }, GLOBALS);
+    capture.start();
+
+    return { panel: capture.shipping, identity: capture.shipping.identity() };
 }
 
-/** Put select2 "on" the company-name input, i.e. search mode is active. */
-function activateSearch($) {
-    $(NAME_SELECTOR).data('select2', {});
+/** What the popover does on a result click. */
+function picks(panel, companyId, text) {
+    panel.panel().setDisplayText(text);
+    panel.selectCompany({ text: text, companyId: companyId, lookupId: 'l1' });
 }
 
 function labels() {
     return document.querySelectorAll('.' + TEXT_CLASS);
 }
 
+beforeEach(() => {
+    document.body.innerHTML = '';
+    $(document).off('.twoCompanyCapture');
+    $(document).off('.twoCompanySourceResolver');
+    $(document).off('.twoCompanyCaptureMount');
+});
+
 describe('TWO-25326 §5: the company number is a plain text label, and only after selection', () => {
     test('nothing is rendered before a result has been selected', () => {
-        const { component, $ } = load();
-        activateSearch($);
-
-        component.renderCompanyIdText();
+        load();
 
         expect(labels()).toHaveLength(0);
     });
 
     test('selecting a result renders the number as text under the name field', () => {
-        const { component, $ } = load();
-        activateSearch($);
+        const { panel } = load();
 
-        component.setCompanyData('919300894', 'Example Trading AS');
+        picks(panel, '919300894', 'Example Trading AS');
 
         expect(labels()).toHaveLength(1);
         const label = labels()[0];
@@ -237,19 +138,18 @@ describe('TWO-25326 §5: the company number is a plain text label, and only afte
         // `.control`, after the input. §5 pins the position, not just the
         // existence, because a number rendered somewhere else on the form is
         // exactly the "visible in the address area" defect §7 forbids.
-        const nameControl = document.querySelector('input[name="company"]').closest('.control');
-        expect(label.parentElement).toBe(nameControl);
+        const nameControl = document.querySelector(NAME_SELECTOR).closest('.control');
+        expect(label.closest('.control')).toBe(nameControl);
         expect(
-            label.compareDocumentPosition(document.querySelector('input[name="company"]')) &
+            label.compareDocumentPosition(document.querySelector(NAME_SELECTOR)) &
                 window.Node.DOCUMENT_POSITION_PRECEDING
         ).toBeTruthy();
     });
 
     test('it is not an input, and carries nothing the buyer could type into', () => {
-        const { component, $ } = load();
-        activateSearch($);
+        const { panel } = load();
 
-        component.setCompanyData('919300894', 'Example Trading AS');
+        picks(panel, '919300894', 'Example Trading AS');
 
         const label = labels()[0];
         expect(label.tagName).toBe('DIV');
@@ -263,51 +163,46 @@ describe('TWO-25326 §5: the company number is a plain text label, and only afte
         // §7 forbids an extra VISIBLE caption in the address area, so the
         // caption has to be an accessible one — a bare number with no
         // accessible name is unreadable to a screen reader.
-        const { component, $ } = load();
-        activateSearch($);
+        const { panel } = load();
 
-        component.setCompanyData('919300894', 'Example Trading AS');
+        picks(panel, '919300894', 'Example Trading AS');
 
         expect(labels()[0].getAttribute('aria-label')).toBe('Company Number');
     });
 
     test('a company with no registry identifier renders no label at all', () => {
-        const { component, $ } = load();
-        activateSearch($);
+        const { panel } = load();
 
-        component.setCompanyData('', 'Identifier-less Example AS');
+        picks(panel, '', 'Identifier-less Example AS');
 
         expect(labels()).toHaveLength(0);
     });
 
     test('re-selecting replaces the number rather than stacking a second label', () => {
-        const { component, $ } = load();
-        activateSearch($);
+        const { panel } = load();
 
-        component.setCompanyData('919300894', 'Example Trading AS');
-        component.setCompanyData('811912312', 'Other Example AS');
+        picks(panel, '919300894', 'Example Trading AS');
+        picks(panel, '811912312', 'Other Example AS');
 
         expect(labels()).toHaveLength(1);
         expect(labels()[0].textContent).toBe('811912312');
     });
 
     /**
-     * The manual-entry case, and the reason renderCompanyIdText() decides on
-     * the capture mode rather than only on whether a number is present: the
-     * hidden input can still be holding the previous pick's number at the
-     * moment the buyer switches to typing a name by hand. Rendering it there
-     * would attach a registry identity to a company the buyer typed themselves.
+     * The manual-entry case, and the reason the paint decides on the capture
+     * mode rather than only on whether a number is present: the hidden input
+     * can still be holding the previous pick's number at the moment the buyer
+     * switches to typing a name by hand. Rendering it there would attach a
+     * registry identity to a company the buyer typed themselves.
      */
     test('manual-entry mode shows no number even when one is still in the hidden input', () => {
-        const { component, $, identity } = load();
-        activateSearch($);
-        component.setCompanyData('919300894', 'Example Trading AS');
+        const { panel } = load();
+        picks(panel, '919300894', 'Example Trading AS');
         expect(labels()).toHaveLength(1);
 
-        identity.captureMode('manual');
+        panel.manualEntryMode();
         $(ID_SELECTOR).val('919300894');
-
-        component.renderCompanyIdText();
+        panel.renderChrome();
 
         expect(labels()).toHaveLength(0);
     });
