@@ -84,6 +84,9 @@ function makeCaptureComponent(config) {
                 soleTrader: function () { return null; },
                 identity: function () { return identity; }
             },
+            // No billing panel on this double's checkout, so nothing else
+            // owns the company a billing address carries.
+            billingOwnsCompanyField: function () { return false; },
             refreshMount: function () { calls.refreshMount += 1; }
         }
     };

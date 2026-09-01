@@ -204,7 +204,12 @@ function load(options) {
     const component = loadAmdModule(MODULE, {
         jquery: dom.$,
         'Magento_Customer/js/customer-data': cd.api,
-        'Two_Gateway/js/model/company-capture': { shipping: { identity: function () { return identity; } } },
+        'Two_Gateway/js/model/company-capture': {
+                shipping: { identity: function () { return identity; } },
+                // No billing panel in this fixture, so the shipping step's
+                // company mirror stays the page's only company writer.
+                billingOwnsCompanyField: function () { return false; }
+            },
         'Two_Gateway/js/model/brand-config': {
             // Company search off by default: enableCompanySearch() then
             // early-returns and these tests stay about the company-number

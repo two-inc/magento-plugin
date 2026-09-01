@@ -797,7 +797,14 @@ define([
             if (!telephone) return;
             this.telephone(telephone);
         },
-        updateAddress: function (address) {
+        /**
+         * @param {object} address quote address
+         * @param {object} [options] `{ withCompany: boolean }` — `false` where
+         *        the company this address carries belongs to a panel of its own
+         *        (TWO-25554), leaving the telephone and the PO fields to travel
+         *        from it as they always have
+         */
+        updateAddress: function (address, options) {
             if (!address) return;
             let telephone = (address.telephone || '').replace(' ', '');
             let companyName = address.company;
@@ -822,7 +829,9 @@ define([
                 });
             }
             this.fillTelephone(telephone);
-            this.fillCompanyData({ companyName, companyId });
+            if (!options || options.withCompany !== false) {
+                this.fillCompanyData({ companyName, companyId });
+            }
             if (project) this.project(project);
             if (department) this.department(department);
         },
@@ -840,7 +849,14 @@ define([
         },
         updateBillingAddress: function (billingAddress) {
             console.debug({ logger: 'twoPayment.updateBillingAddress', billingAddress });
-            this.updateAddress(billingAddress);
+            // fillCompanyData() writes the SHIPPING panel's identity, and the
+            // shipping panel repaints its own field from it — so relaying a
+            // billing company through here painted the buyer's billing pick
+            // into the shipping form (TWO-25554). Only the billing panel may
+            // speak for the company on a billing address it owns.
+            this.updateAddress(billingAddress, {
+                withCompany: !companyCapture.billingOwnsCompanyField()
+            });
             this.refreshCompanyMount();
         },
         /**

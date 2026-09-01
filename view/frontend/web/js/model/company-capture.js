@@ -325,6 +325,36 @@ define([
         return companySearch.billingRoleFormRoot();
     }
 
+    /**
+     * The billing panel holds a live mount at the billing form's company
+     * field, so that field's VALUE is its capture and nobody else's.
+     *
+     * The counterpart to shippingWriteRoot() one field further in. That
+     * function stops the shipping panel's ADDRESS writes at the panel
+     * boundary; the two page-level company-field writers that predate
+     * TWO-25554's split have to stop at the same boundary, and neither knew
+     * the boundary existed:
+     *
+     *  - the shipping step mirrors its own company/organization onto every
+     *    billing address (setCompanyData() in view/address-autocomplete.js),
+     *    which was the whole propagation model while billing had no picker;
+     *  - the quote's billing address feeds the SHIPPING identity
+     *    (updateBillingAddress() → fillCompanyData() in the payment
+     *    renderer), which was the same statement read the other way while
+     *    one company served the page.
+     *
+     * Asked of the live mount rather than of the checkbox: the mount is what
+     * makes the field the panel's, and it is already the answer to "is
+     * billing a distinct address" plus "is company search on this checkout
+     * at all" — with the panel unmounted both writers are the only company
+     * writers left and must keep working.
+     *
+     * @returns {boolean}
+     */
+    function billingOwnsCompanyField() {
+        return !!billingComponent.mountSelector();
+    }
+
     shippingComponent = new CompanyCaptureComponent(Object.assign(sharedHostOptions(), {
         identity: shippingIdentity,
         addressFieldSelector: ADDRESS_FIELD_SELECTOR,
@@ -417,6 +447,7 @@ define([
         identity: resolvedIdentity,
         shipping: shippingComponent,
         billing: billingComponent,
+        billingOwnsCompanyField: billingOwnsCompanyField,
         start: function () {
             shippingComponent.start();
             billingComponent.start();
