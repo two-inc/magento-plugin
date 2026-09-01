@@ -428,10 +428,10 @@ describe('the "select a different sole trader" link belongs to its own panel', (
 
 /*
  * TWO-25554: an address-lookup failure is the panel's own, rendered at the
- * panel's own field. It used to travel through the resolved identity into the
- * payment tile, where a shipping failure was displayed only while shipping
- * happened to win and a billing failure told the buyer to "enter it below" a
- * form that was not theirs.
+ * panel's own field. Carried through the resolved identity into the payment
+ * tile instead, a shipping failure reaches the buyer only while shipping
+ * happens to win the resolution, and a billing failure tells them to "enter it
+ * below" a form that is not theirs.
  */
 describe('an address notice is painted under its own panel\'s field', () => {
     const NOTICE = 'We could not fetch this company\'s address. Please enter it below.';
@@ -623,7 +623,7 @@ describe('a panel that MOVES its mount leaves no chrome behind at the old host',
         return Object.assign({ tileInput: tileInput }, booted);
     }
 
-    test('the tile keeps neither the number nor a link to a flow it no longer hosts', async () => {
+    test('the tile keeps neither the number nor a link into a flow it does not host', async () => {
         const { soleTraderCalls } = await movesOffTheTile();
 
         expect(numbersUnder(TILE_FORM)).toEqual([]);

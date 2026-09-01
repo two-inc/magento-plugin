@@ -239,14 +239,12 @@
             },
 
             /**
-             * WHICH COMPANY, and nothing else — for a caller mirroring this
-             * identity onto another one (`company-source-resolver.js`) that
-             * must copy it in a single notify, not one field at a time.
+             * WHICH COMPANY, and nothing else — every other field is the owning
+             * panel's own UI state, rendered at that panel's own field, and a
+             * mirror of it speaks for the wrong form (TWO-25554).
              *
-             * The capture mode and the address notice are the owning PANEL's
-             * own UI state, rendered at its own field by whichever panel holds
-             * them; travelling here they surfaced against the other panel's
-             * form or against no form at all (TWO-25554).
+             * One object rather than per-field reads because the mirror
+             * (`company-source-resolver.js`) must land in a single notify.
              *
              * @returns {object}
              */

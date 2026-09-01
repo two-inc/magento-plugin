@@ -128,12 +128,11 @@ define([
      * The one "same as shipping" checkbox that speaks for the buyer.
      *
      * Core renders one per payment-method renderer, each with its own default,
-     * so a page-wide read is answered by whichever renderer the checkout output
-     * first — an inactive method's box as readily as the active one
-     * (TWO-25554). A single box on the page is unambiguous whatever its id; past
-     * that the active method's own is identified by core's id convention, and a
-     * checkout that renders several and abandons that convention has no
-     * attributable answer, leaving the quote as the honest source.
+     * so a page-wide read is answered by whichever the checkout output first —
+     * an inactive method's box as readily as the active one (TWO-25554). One
+     * box is unambiguous whatever its id; past that the active method's own is
+     * found by core's id convention, and a checkout that renders several and
+     * abandons that convention leaves the quote as the honest source.
      *
      * @returns {?object} jQuery(-shaped) set, or `null` when no box can be
      *          attributed to the active method
@@ -410,7 +409,7 @@ define([
      * shipping form is the other panel's (TWO-25554). Keyed on the live mount
      * rather than on the selector matching, because core leaves the fieldset in
      * the DOM hidden once "same as shipping" is re-checked, and a hidden field
-     * is not somewhere the buyer can read what was written.
+     * is nowhere the buyer can read what was written.
      *
      * @returns {?object} jQuery set, or null
      */
