@@ -392,7 +392,8 @@ const DECLINED_NOTICE_COPY = {
 
 /**
  * The tile: the renderer, the capture component that owns its mount, and the
- * identity singleton both read.
+ * SHIPPING panel's own identity — the one mounted at the tile, and the one
+ * whose mode and adoption the tile's bindings read (TWO-25554).
  *
  * The REAL component, not a stub — every mode transition below is production's
  * own, so a mode that stopped clearing what it clears fails here.
@@ -461,7 +462,7 @@ function loadTile() {
         errorMessages: { remove: function () {} }
     };
 
-    return { renderer, component, identity: component.identity, dom, soleTrader };
+    return { renderer, component, identity: component.shipping.identity(), dom, soleTrader };
 }
 
 /**

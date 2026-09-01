@@ -12,10 +12,11 @@
  * from billing first, falling back to shipping only if billing doesn't
  * present a company number."
  *
- * Never a hybrid of the two: `resolved` is always a live, full mirror of
- * exactly ONE of `shipping`/`billing` — every field, not just the
- * name/number pair — so a downstream reader (order-intent, the tile's own
- * display) sees one coherent identity, the same shape it always has.
+ * Never a hybrid of the two: `resolved` is always a live mirror of exactly ONE
+ * of `shipping`/`billing`, so a downstream reader (order-intent, the tile's own
+ * display) sees one coherent company. What travels is `snapshot()`'s business —
+ * the company fields alone; each panel's own UI state stays with the panel that
+ * renders it.
  *
  * FRAMEWORK-FREE, for the same reason its two inputs are: both checkouts
  * load this file, and Hyvä ships no Knockout.

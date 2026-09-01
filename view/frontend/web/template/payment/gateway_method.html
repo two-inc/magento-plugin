@@ -171,18 +171,6 @@
             data-bind="text: orderIntentErrorNotice"
         ></div>
         <!-- /ko -->
-        <!--
-            The company-address lookup failing is a separate outcome from the
-            order-intent verdict and gets a separate box: the two arrive
-            independently, and the intent answer normally lands second.
-        -->
-        <!-- ko if: isAddressNoticeVisible() -->
-        <div
-            class="two-order-intent-message error"
-            role="alert"
-            data-bind="text: addressNotice"
-        ></div>
-        <!-- /ko -->
         <!-- ko foreach: getRegion('messages') -->
         <!-- ko template: getTemplate() --><!-- /ko -->
         <!--/ko-->

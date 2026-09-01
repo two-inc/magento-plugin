@@ -81,6 +81,15 @@
     const SOLE_TRADER_LINK_CLASS = 'two-select-different-sole-trader';
 
     /**
+     * Why the picked company's address could not be filled in. Styled as the
+     * tile's own notice box (`two-order-intent-message error`) and hooked by
+     * this class alone, so the chrome lookup cannot reach the tile's boxes.
+     */
+    const ADDRESS_NOTICE_CLASS = 'two-company-address-notice';
+
+    const ADDRESS_NOTICE_STYLE_CLASSES = ['two-order-intent-message', 'error'];
+
+    /**
      * A company number the checkout restored into an address form, under either
      * host's field naming.
      */
@@ -600,6 +609,7 @@
     CompanyCaptureComponent.prototype.renderChrome = function () {
         this.renderCompanyNumber();
         this.renderSoleTraderLink();
+        this.renderAddressNotice();
     };
 
     /**
@@ -608,7 +618,7 @@
      */
     CompanyCaptureComponent.prototype._removeChrome = function () {
         const self = this;
-        [COMPANY_NUMBER_CLASS, SOLE_TRADER_LINK_CLASS].forEach(function (className) {
+        [COMPANY_NUMBER_CLASS, SOLE_TRADER_LINK_CLASS, ADDRESS_NOTICE_CLASS].forEach(function (className) {
             const node = self._chromeNode(className);
             if (node) node.remove();
         });
@@ -731,6 +741,36 @@
         // across repaints regardless of which was rendered first.
         const after = this._chromeNode(COMPANY_NUMBER_CLASS) || anchor;
         host.insertBefore(wrapper, after.nextSibling);
+    };
+
+    /**
+     * Why this panel's picked company could not have its address filled in,
+     * under this panel's OWN field.
+     *
+     * At the field rather than in the payment tile because the copy sends the
+     * buyer to the address fields "below" it, and a notice rendered anywhere
+     * but beside the panel that raised it points at the wrong form — or, for a
+     * panel the tile is not mounted on, at no form the buyer can see
+     * (TWO-25554).
+     */
+    CompanyCaptureComponent.prototype.renderAddressNotice = function () {
+        const anchor = this._chromeAnchor();
+        const host = this._chromeHost();
+        if (!anchor || !host) return;
+        const existing = this._chromeNode(ADDRESS_NOTICE_CLASS);
+        if (existing) existing.remove();
+        const notice = this._identity.addressNotice();
+        if (!notice) return;
+        const box = document.createElement('div');
+        box.className = [ADDRESS_NOTICE_CLASS].concat(ADDRESS_NOTICE_STYLE_CLASSES).join(' ');
+        // The lookup answers after the buyer has moved on from the field, so
+        // nothing else would announce the failure to a screen reader.
+        box.setAttribute('role', 'alert');
+        box.textContent = notice;
+        const after = this._chromeNode(SOLE_TRADER_LINK_CLASS)
+            || this._chromeNode(COMPANY_NUMBER_CLASS)
+            || anchor;
+        host.insertBefore(box, after.nextSibling);
     };
 
     // ----------------------------------------------------------------- chips
