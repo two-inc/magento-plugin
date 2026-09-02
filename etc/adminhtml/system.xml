@@ -15,7 +15,7 @@
             TWO-25386 Part 1: unified 5-section admin scheme, same names
             and order as prestashop-plugin and woocommerce-plugin —
             A. General, B. Checkout Fields, C. Payment Terms,
-            D. Order Management, E. Diagnostics.
+            D. Order management, E. Diagnostics.
 
             Pure reorganization: no field's config_path or behavior
             changed here, only which <section>/<group> it renders under
@@ -413,7 +413,7 @@
                 </field>
             </group>
         </section>
-        <!-- D. Order Management -->
+        <!-- D. Order management -->
         <section id="two_order_management" translate="label comment" type="text" sortOrder="50" showInDefault="1"
                  showInWebsite="1" showInStore="1">
             <class>separator-top</class>

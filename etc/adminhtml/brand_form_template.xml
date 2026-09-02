@@ -67,7 +67,7 @@
  * canonical template is the source of truth for what fields exist.
  *
  * TWO-25386 Part 1: unified 5-section admin scheme (A. General,
- * B. Checkout Fields, C. Payment Terms, D. Order Management,
+ * B. Checkout fields, C. Payment terms, D. Order management,
  * E. Diagnostics — same names/order as prestashop-plugin and
  * woocommerce-plugin). `_general` and `_payment` keep their
  * historical suffixes (relabeled); this is what keeps a brand.xml
@@ -505,7 +505,7 @@
                 </field>
             </group>
         </section>
-        <!-- D. Order Management -->
+        <!-- D. Order management -->
         <section id="{{section_prefix}}_order_management" translate="label" type="text" sortOrder="50"
                  showInDefault="1" showInWebsite="1" showInStore="1"
                  brand_code="{{code}}">

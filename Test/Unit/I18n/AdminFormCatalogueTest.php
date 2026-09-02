@@ -25,6 +25,25 @@ class AdminFormCatalogueTest extends TestCase
     ];
 
     /**
+     * Admin copy that reaches the screen through __() rather than a form
+     * definition: checklist values, grid headers, dropdown options,
+     * validation refusals.
+     */
+    private const ADMIN_CODE_DIRS = [
+        'Block/Adminhtml',
+        'view/adminhtml/templates',
+        'Model/AdminNotification',
+        'Model/Config/Comment',
+        'Model/Config/Source',
+        'Model/Config/Backend',
+    ];
+
+    /**
+     * Strings __() is asked for that are not translatable copy.
+     */
+    private const NOT_COPY = ['%1', '…', 'Two'];
+
+    /**
      * Capitalised mid-caption words that are names or initialisms, not Title Case.
      */
     private const PROPER_NOUNS = [
@@ -126,17 +145,65 @@ class AdminFormCatalogueTest extends TestCase
             }
         }
 
+        foreach (self::ADMIN_CODE_DIRS as $dir) {
+            foreach ($this->translateCalls($dir) as $text) {
+                if (in_array($text, self::NOT_COPY, true)) {
+                    continue;
+                }
+                $msgids[$text] = true;
+            }
+        }
+
         $msgids = array_keys($msgids);
 
         // A parse that yielded almost nothing would make the coverage
         // assertion vacuously pass.
         $this->assertGreaterThan(
-            80,
+            150,
             count($msgids),
-            sprintf('Parsed only %d admin captions — the parse is broken.', count($msgids))
+            sprintf('Parsed only %d admin strings — the parse is broken.', count($msgids))
         );
 
         return $msgids;
+    }
+
+    /**
+     * msgids passed to __() under one directory. A msgid may be written as
+     * several concatenated literals; Magento looks up the joined result.
+     *
+     * @return array<int, string>
+     */
+    private function translateCalls(string $dir): array
+    {
+        $literal = '(?:\'(?:[^\'\\\\]|\\\\.)*\'|"(?:[^"\\\\]|\\\\.)*")';
+        $pattern = '/__\(\s*(' . $literal . '(?:\s*\.\s*' . $literal . ')*)/';
+
+        $found = [];
+        $base = dirname(__DIR__, 3) . '/' . $dir;
+        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($base));
+        foreach ($files as $file) {
+            if (!$file->isFile()
+                || !in_array($file->getExtension(), ['php', 'phtml'], true)
+            ) {
+                continue;
+            }
+            $source = (string) file_get_contents($file->getPathname());
+            preg_match_all($pattern, $source, $matches);
+            foreach ($matches[1] as $run) {
+                preg_match_all('/' . $literal . '/', $run, $parts);
+                $text = '';
+                foreach ($parts[0] as $part) {
+                    $quote = $part[0];
+                    $inner = substr($part, 1, -1);
+                    $text .= str_replace(['\\' . $quote, '\\\\'], [$quote, '\\'], $inner);
+                }
+                if (trim($text) !== '') {
+                    $found[] = $text;
+                }
+            }
+        }
+
+        return $found;
     }
 
     /**
