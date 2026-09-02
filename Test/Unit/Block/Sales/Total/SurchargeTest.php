@@ -30,7 +30,7 @@ class SurchargeTest extends TestCase
         $s->setData('base_two_surcharge_amount', self::NET);
         $s->setData('two_surcharge_tax_amount', self::TAX);
         $s->setData('base_two_surcharge_tax_amount', self::TAX);
-        $s->setData('two_surcharge_description', 'Zakelijk op Rekening - 60 dagen');
+        $s->setData('two_surcharge_description', 'Business Invoice - 60 days');
         return $s;
     }
 
@@ -93,7 +93,7 @@ class SurchargeTest extends TestCase
             0.0001,
             'base_value must also be NET'
         );
-        $this->assertSame('Zakelijk op Rekening - 60 dagen', $capture->total->getLabel());
+        $this->assertSame('Business Invoice - 60 days', $capture->total->getLabel());
         $this->assertSame(
             'tax',
             $capture->before,

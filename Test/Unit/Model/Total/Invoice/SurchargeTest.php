@@ -48,7 +48,7 @@ class SurchargeTest extends TestCase
         $order->setData('two_surcharge_tax_amount', self::SURCHARGE_TAX);
         $order->setData('base_two_surcharge_tax_amount', self::SURCHARGE_TAX);
         $order->setData('two_surcharge_tax_rate', self::TAX_RATE);
-        $order->setData('two_surcharge_description', 'Zakelijk op Rekening - 90 dagen');
+        $order->setData('two_surcharge_description', 'Business Invoice - 90 days');
         return $order;
     }
 
@@ -109,7 +109,7 @@ class SurchargeTest extends TestCase
             (float)$invoice->getTwoSurchargeTaxAmount(),
             0.0001
         );
-        $this->assertSame('Zakelijk op Rekening - 90 dagen', $invoice->getTwoSurchargeDescription());
+        $this->assertSame('Business Invoice - 90 days', $invoice->getTwoSurchargeDescription());
     }
 
     /**
