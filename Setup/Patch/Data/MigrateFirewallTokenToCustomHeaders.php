@@ -46,6 +46,11 @@ class MigrateFirewallTokenToCustomHeaders implements DataPatchInterface
      */
     private $cacheTypeList;
 
+    /**
+     * @var array<int, int>|null store id => website id, read once
+     */
+    private $storeWebsites;
+
     public function __construct(
         ModuleDataSetupInterface $moduleDataSetup,
         WriterInterface $configWriter,
@@ -103,27 +108,61 @@ class MigrateFirewallTokenToCustomHeaders implements DataPatchInterface
     }
 
     /**
-     * The flag at the token's own scope, falling back to the default scope it
-     * would otherwise have inherited from.
+     * The flag the retired field pair resolved to beside this token, walked
+     * down the same scope chain config inheritance uses — a store-scoped
+     * token whose flag was only ever ticked on its website must keep it.
      *
      * @param array<int, array<string, mixed>> $rows
      */
     private function browserFlag(array $rows, string $code, string $scope, int $scopeId): bool
     {
-        $default = null;
-        foreach ($rows as $row) {
-            if ($this->keyOf($row) !== self::BROWSER_KEY || $this->codeOf($row) !== $code) {
-                continue;
-            }
-            if ((string)$row['scope'] === $scope && (int)$row['scope_id'] === $scopeId) {
-                return (bool)(int)$row['value'];
-            }
-            if ((string)$row['scope'] === 'default') {
-                $default = (bool)(int)$row['value'];
+        foreach ($this->scopeChain($scope, $scopeId) as [$chainScope, $chainScopeId]) {
+            foreach ($rows as $row) {
+                if ($this->keyOf($row) === self::BROWSER_KEY
+                    && $this->codeOf($row) === $code
+                    && (string)$row['scope'] === $chainScope
+                    && (int)$row['scope_id'] === $chainScopeId
+                ) {
+                    return (bool)(int)$row['value'];
+                }
             }
         }
 
-        return $default ?? false;
+        return false;
+    }
+
+    /**
+     * @return array<int, array{0: string, 1: int}> nearest scope first
+     */
+    private function scopeChain(string $scope, int $scopeId): array
+    {
+        if ($scope === 'stores') {
+            return [['stores', $scopeId], ['websites', $this->websiteOfStore($scopeId)], ['default', 0]];
+        }
+
+        if ($scope === 'websites') {
+            return [['websites', $scopeId], ['default', 0]];
+        }
+
+        return [['default', 0]];
+    }
+
+    private function websiteOfStore(int $storeId): int
+    {
+        if ($this->storeWebsites === null) {
+            $connection = $this->moduleDataSetup->getConnection();
+            $select = $connection->select()
+                ->from($this->moduleDataSetup->getTable('store'), ['store_id', 'website_id']);
+
+            $this->storeWebsites = [];
+            foreach ($connection->fetchAll($select) as $row) {
+                $this->storeWebsites[(int)$row['store_id']] = (int)$row['website_id'];
+            }
+        }
+
+        // The admin website (0) matches no stored override, so an unknown
+        // store falls through to the default scope.
+        return $this->storeWebsites[$storeId] ?? 0;
     }
 
     /**

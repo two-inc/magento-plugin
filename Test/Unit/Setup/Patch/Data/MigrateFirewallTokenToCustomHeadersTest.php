@@ -34,11 +34,13 @@ class MigrateFirewallTokenToCustomHeadersTest extends TestCase
 
     /**
      * @param array<int, array<string, mixed>> $rows
+     * @param array<int, array<string, mixed>> $storeRows
      */
-    private function buildPatch(array $rows): MigrateFirewallTokenToCustomHeaders
+    private function buildPatch(array $rows, array $storeRows = []): MigrateFirewallTokenToCustomHeaders
     {
         $this->connection = new MigrateConnection();
         $this->connection->rows = $rows;
+        $this->connection->storeRows = $storeRows;
 
         $connection = $this->connection;
         $moduleDataSetup = new class ($connection) implements ModuleDataSetupInterface {
@@ -170,7 +172,8 @@ class MigrateFirewallTokenToCustomHeadersTest extends TestCase
         string $description
     ): void {
         $patch = $this->buildPatch(
-            array_merge([self::row('stores', 3, self::TOKEN_PATH, 'store-token')], $flagRows)
+            array_merge([self::row('stores', 3, self::TOKEN_PATH, 'store-token')], $flagRows),
+            [['store_id' => 3, 'website_id' => 2]]
         );
 
         $patch->apply();
@@ -197,6 +200,30 @@ class MigrateFirewallTokenToCustomHeadersTest extends TestCase
                 [self::row('default', 0, self::BROWSER_PATH, '1')],
                 '1',
                 'with no override the store inherited the default scope',
+            ],
+            'the website beats the default' => [
+                [
+                    self::row('default', 0, self::BROWSER_PATH, '0'),
+                    self::row('websites', 2, self::BROWSER_PATH, '1'),
+                ],
+                '1',
+                "the store's own website is the next scope up, not the default",
+            ],
+            'the store beats its website' => [
+                [
+                    self::row('websites', 2, self::BROWSER_PATH, '1'),
+                    self::row('stores', 3, self::BROWSER_PATH, '0'),
+                ],
+                '',
+                'the nearest scope decides',
+            ],
+            'another website is not this one' => [
+                [
+                    self::row('default', 0, self::BROWSER_PATH, '0'),
+                    self::row('websites', 9, self::BROWSER_PATH, '1'),
+                ],
+                '',
+                'a flag on a website this store does not belong to is not inherited',
             ],
         ];
     }
@@ -319,6 +346,9 @@ class MigrateConnection
     /** @var array<int, array<string, mixed>> core_config_data rows to return */
     public $rows = [];
 
+    /** @var array<int, array<string, mixed>> store rows to return */
+    public $storeRows = [];
+
     /** @var string|null */
     public $queriedTable;
 
@@ -341,6 +371,9 @@ class MigrateConnection
      */
     public function fetchAll($select): array
     {
+        if ($select->table === 'prefix_store') {
+            return $this->storeRows;
+        }
         $this->queriedTable = $select->table;
 
         return $this->rows;
