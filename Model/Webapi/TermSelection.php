@@ -14,7 +14,7 @@ use Magento\Quote\Api\CartTotalRepositoryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\TermSelectionInterface;
-use Two\Gateway\Service\Order\SurchargeCalculator;
+use Two\Gateway\Service\Order\TermSurchargePreview;
 use Two\Gateway\Service\RateLimiter;
 
 /**
@@ -57,9 +57,9 @@ class TermSelection implements TermSelectionInterface
     private $configRepository;
 
     /**
-     * @var SurchargeCalculator
+     * @var TermSurchargePreview
      */
-    private $surchargeCalculator;
+    private $termSurchargePreview;
 
     /**
      * @var LogRepository
@@ -76,7 +76,7 @@ class TermSelection implements TermSelectionInterface
         CartRepositoryInterface $cartRepository,
         CartTotalRepositoryInterface $cartTotalRepository,
         ConfigRepository $configRepository,
-        SurchargeCalculator $surchargeCalculator,
+        TermSurchargePreview $termSurchargePreview,
         LogRepository $logRepository,
         RateLimiter $rateLimiter
     ) {
@@ -84,7 +84,7 @@ class TermSelection implements TermSelectionInterface
         $this->cartRepository = $cartRepository;
         $this->cartTotalRepository = $cartTotalRepository;
         $this->configRepository = $configRepository;
-        $this->surchargeCalculator = $surchargeCalculator;
+        $this->termSurchargePreview = $termSurchargePreview;
         $this->logRepository = $logRepository;
         $this->rateLimiter = $rateLimiter;
     }
@@ -150,16 +150,16 @@ class TermSelection implements TermSelectionInterface
             'tax_amount' => $totals->getTaxAmount(),
             'total_segments' => $segments,
             'term_surcharges' => $termSurcharges,
+            'tax_display' => $this->termSurchargePreview->taxDisplay($quote),
         ]];
     }
 
     /**
-     * Compute net surcharges for all available terms.
+     * Compute per-term surcharge previews (net and gross) for all terms.
      */
     private function computeAllTermSurcharges(float $baseAmount, $quote): array
     {
         $storeId = (int)$quote->getStoreId();
-        $terms = $this->configRepository->getAllBuyerTerms($storeId);
         $currency = $quote->getQuoteCurrencyCode()
             ?: $quote->getStore()->getBaseCurrencyCode();
 
@@ -172,30 +172,14 @@ class TermSelection implements TermSelectionInterface
             $country = $shipping->getCountryId();
         }
 
-        $surcharges = [];
-        foreach ($terms as $days) {
-            try {
-                $result = $this->surchargeCalculator->calculate(
-                    $baseAmount,
-                    $days,
-                    $country,
-                    $currency,
-                    $storeId
-                );
-                $surcharges[] = ['days' => $days, 'net' => (float)$result['amount']];
-            } catch (\Exception $e) {
-                // Per-term failure: keep the other terms responsive, but
-                // log loudly so the silent zero doesn't mask a broken
-                // pricing path that will later detonate at checkout when
-                // the buyer actually picks this term.
-                $this->logRepository->addErrorLog(
-                    sprintf('TermSelection webapi: term %d failed', $days),
-                    $e->getMessage()
-                );
-                $surcharges[] = ['days' => $days, 'net' => 0.0];
-            }
-        }
-
-        return $surcharges;
+        return $this->termSurchargePreview->build(
+            $quote,
+            $baseAmount,
+            $this->configRepository->getAllBuyerTerms($storeId),
+            $country,
+            $currency,
+            $storeId,
+            'TermSelection webapi'
+        );
     }
 }

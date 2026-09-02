@@ -19,6 +19,7 @@ use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Service\Order\SurchargeCalculator;
+use Two\Gateway\Service\Order\SurchargeDisplay;
 use Two\Gateway\Service\Order\SurchargeTaxCalculator;
 
 /**
@@ -74,6 +75,11 @@ class Surcharge extends AbstractTotal
     private $merchantMinimumResolver;
 
     /**
+     * @var SurchargeDisplay
+     */
+    private $surchargeDisplay;
+
+    /**
      * @var array<string, true> set of payment-method codes (as keys) that
      *                          engage the surcharge collector. Populated via
      *                          DI; brand overlays append their own code.
@@ -91,6 +97,7 @@ class Surcharge extends AbstractTotal
         MinimumOrderGate $minimumOrderGate,
         MinimumOrderProvider $minimumOrderProvider,
         MerchantMinimumResolver $merchantMinimumResolver,
+        SurchargeDisplay $surchargeDisplay,
         array $allowedMethods = ['two_payment']
     ) {
         $this->checkoutSession = $checkoutSession;
@@ -101,6 +108,7 @@ class Surcharge extends AbstractTotal
         $this->minimumOrderGate = $minimumOrderGate;
         $this->minimumOrderProvider = $minimumOrderProvider;
         $this->merchantMinimumResolver = $merchantMinimumResolver;
+        $this->surchargeDisplay = $surchargeDisplay;
         $this->allowedMethods = array_fill_keys($allowedMethods, true);
         $this->setCode('two_surcharge');
     }
@@ -357,7 +365,6 @@ class Surcharge extends AbstractTotal
         // Read from session: Magento's TotalsReader::fetch() builds fresh Total
         // instances from each collector's fetch() return value, so anything
         // set on $total in collect() is lost by the time we get here.
-        // Returns net amount — surcharge tax is included in the Tax line via setTaxAmount.
         $amount = (float)$this->checkoutSession->getTwoSurchargeAmount();
 
         $this->logRepository->addDebugLog('TotalCollector fetch()', [
@@ -368,15 +375,34 @@ class Surcharge extends AbstractTotal
             return [];
         }
 
+        $tax = (float)$this->checkoutSession->getTwoSurchargeTax();
         $title = $this->checkoutSession->getTwoSurchargeDescription() ?: __('Payment terms fee');
+        $mode = $this->surchargeDisplay->forCart($quote->getStore());
+
+        // TotalsConverter::process() requires title to be a Phrase object
+        // (checks is_object() then calls ->render()); plain strings are
+        // dropped and the client-side segment gets an empty title.
+        if ($mode === SurchargeDisplay::BOTH) {
+            // TotalsReader::fetch() splits a list of coded totals into one
+            // segment each, so "Both" needs no extra collector.
+            return [
+                [
+                    'code' => $this->getCode(),
+                    'title' => __('%1 (Excl. Tax)', (string)$title),
+                    'value' => $amount,
+                ],
+                [
+                    'code' => $this->getCode() . '_incl',
+                    'title' => __('%1 (Incl. Tax)', (string)$title),
+                    'value' => $amount + $tax,
+                ],
+            ];
+        }
 
         return [
             'code' => $this->getCode(),
-            // TotalsConverter::process() requires title to be a Phrase object
-            // (checks is_object() then calls ->render()); plain strings are
-            // dropped and the client-side segment gets an empty title.
             'title' => new \Magento\Framework\Phrase((string)$title),
-            'value' => $amount,
+            'value' => $this->surchargeDisplay->pick($mode, $amount, $tax),
         ];
     }
 

@@ -22,7 +22,7 @@ use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
-use Two\Gateway\Service\Order\SurchargeCalculator;
+use Two\Gateway\Service\Order\TermSurchargePreview;
 use Two\Gateway\Service\RateLimiter;
 
 /**
@@ -157,7 +157,7 @@ class AnonymousRouteRateLimitsTest extends TestCase
             $this->createMock(CartRepositoryInterface::class),
             $this->createMock(CartTotalRepositoryInterface::class),
             $this->createMock(ConfigRepository::class),
-            $this->createMock(SurchargeCalculator::class),
+            $this->createMock(TermSurchargePreview::class),
             $this->createMock(LogRepository::class),
             $limiter
         );
@@ -168,7 +168,7 @@ class AnonymousRouteRateLimitsTest extends TestCase
         return new Surcharges(
             $this->createMock(CheckoutSession::class),
             $this->createMock(ConfigRepository::class),
-            $this->createMock(SurchargeCalculator::class),
+            $this->createMock(TermSurchargePreview::class),
             $this->createMock(LogRepository::class),
             $limiter
         );

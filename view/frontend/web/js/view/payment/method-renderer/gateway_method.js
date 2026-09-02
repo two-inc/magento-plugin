@@ -304,7 +304,7 @@ define([
                 if (terms.length !== 1) {
                     return '';
                 }
-                var surcharges = surchargeModel.termSurcharges();
+                var surcharges = surchargeModel.displayedTermSurcharges();
                 if (!surcharges || !Object.keys(surcharges).length) {
                     return null;
                 }
@@ -315,7 +315,7 @@ define([
                 return '+' + priceUtils.formatPrice(amount, quote.getPriceFormat());
             });
             this.termOptions = ko.pureComputed(function () {
-                var surcharges = surchargeModel.termSurcharges();
+                var surcharges = surchargeModel.displayedTermSurcharges();
                 var isLoading = !surcharges || !Object.keys(surcharges).length;
                 var amounts = terms.map(function (days) {
                     return parseFloat(surcharges[days] || 0);
