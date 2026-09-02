@@ -29,8 +29,8 @@ use Two\Gateway\Service\UrlCookie;
 
 /**
  * These calls are admin- and cron-initiated, so the request carries no store
- * scope. A null store id resolves the DEFAULT scope's API key and firewall
- * token, which on a multi-store install is a different merchant's.
+ * scope. A null store id resolves the DEFAULT scope's API key and custom
+ * headers, which on a multi-store install is a different merchant's.
  */
 class OrderServiceStoreScopeTest extends TestCase
 {

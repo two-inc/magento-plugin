@@ -9,7 +9,7 @@ namespace Two\Gateway\Api\Webapi;
 
 /**
  * Server-side proxy for the company registry lookups, so the merchant API key
- * and firewall token never reach the browser.
+ * and the merchant's custom headers never reach the browser.
  */
 interface CompanyLookupInterface
 {

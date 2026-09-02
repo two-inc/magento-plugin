@@ -62,6 +62,22 @@ class Value extends \Magento\Framework\DataObject
     }
 
     /**
+     * AbstractModel's public load hook dispatches to the protected one every
+     * serialising backend model implements, which is what lets a test drive
+     * the production deserialisation rather than a reimplementation of it.
+     */
+    public function afterLoad()
+    {
+        $this->_afterLoad();
+        return $this;
+    }
+
+    protected function _afterLoad()
+    {
+        return $this;
+    }
+
+    /**
      * The real base class invalidates the config cache here and returns
      * $this. A backend model's own afterSave() ends by delegating to it, so
      * the stub needs it for that override to be callable at all — which is

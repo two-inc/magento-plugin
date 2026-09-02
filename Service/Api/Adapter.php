@@ -112,12 +112,9 @@ class Adapter
                 'Content-Type' => 'application/json',
                 'X-API-Key' => $apiKeyOverride ?? $this->configRepository->getApiKey($storeId),
             ];
-            // Server-side calls always carry the token when one is configured —
-            // the browser toggle governs only the browser's own direct call.
-            $firewallToken = $this->configRepository->getFirewallToken($storeId);
-            if ($firewallToken !== '') {
-                $headers['X-WAF-TOKEN'] = $firewallToken;
-            }
+            // Server-side calls carry every configured header — the per-row
+            // browser tick governs only the browser's own direct call.
+            $headers += $this->configRepository->getCustomHeaders($storeId);
             $call = new ApiCall($method, $url, $headers, $body);
 
             try {

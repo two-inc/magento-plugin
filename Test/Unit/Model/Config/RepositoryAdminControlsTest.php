@@ -27,6 +27,7 @@ class RepositoryAdminControlsTest extends TestCase
     private const CLEAR_ON_UNINSTALL_PATH = 'payment/two_payment/clear_settings_on_uninstall';
     private const DISABLE_SSL_VERIFY_PATH = 'payment/two_payment/disable_ssl_verify';
     private const TRUSTED_PROXIES_PATH = 'payment/two_payment/trusted_proxies';
+    private const CUSTOM_HEADERS_PATH = 'payment/two_payment/custom_headers';
 
     /** @var ScopeConfigInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $scopeConfig;
@@ -155,6 +156,93 @@ class RepositoryAdminControlsTest extends TestCase
             'new lines' => ["10.0.0.1\n10.0.0.2", ['10.0.0.1', '10.0.0.2'], 'one per line'],
             'cidr kept whole' => ['10.0.0.0/8', ['10.0.0.0/8'], 'the mask is part of the entry'],
             'repeats' => ['10.0.0.1, 10.0.0.1', ['10.0.0.1'], 'a repeat is one proxy'],
+        ];
+    }
+
+    /**
+     * Given whatever the custom-header table holds; When the two accessors
+     * read it; Then the server sees every sendable row and the browser only
+     * the ticked ones.
+     *
+     * @dataProvider customHeaderStorage
+     *
+     * @param array<string, string> $expectedAll
+     * @param array<string, string> $expectedBrowser
+     */
+    public function testCustomHeadersSplitByTheBrowserTick(
+        $stored,
+        array $expectedAll,
+        array $expectedBrowser,
+        string $description
+    ): void {
+        $this->scopeConfig->method('getValue')
+            ->with(self::CUSTOM_HEADERS_PATH, ScopeInterface::SCOPE_STORE, null)
+            ->willReturn($stored);
+
+        $this->assertSame($expectedAll, $this->repository->getCustomHeaders(), $description);
+        $this->assertSame($expectedBrowser, $this->repository->getBrowserCustomHeaders(), $description);
+    }
+
+    /**
+     * @return array<string, array{0: mixed, 1: array<string, string>, 2: array<string, string>, 3: string}>
+     */
+    public static function customHeaderStorage(): array
+    {
+        $row = static fn(string $name, string $value, string $flag): array => [
+            'name' => $name,
+            'value' => $value,
+            'send_from_browser' => $flag,
+        ];
+
+        return [
+            'unset' => [null, [], [], 'no table configured is no header'],
+            'blank' => ['', [], [], 'an empty table is no header'],
+            'server only' => [
+                (string)json_encode(['_1' => $row('X-WAF-TOKEN', 'abc', '')]),
+                ['X-WAF-TOKEN' => 'abc'],
+                [],
+                'an unticked header never reaches the browser',
+            ],
+            'ticked' => [
+                (string)json_encode(['_1' => $row('X-WAF-TOKEN', 'abc', '1')]),
+                ['X-WAF-TOKEN' => 'abc'],
+                ['X-WAF-TOKEN' => 'abc'],
+                'a ticked header goes to both',
+            ],
+            'mixed' => [
+                (string)json_encode([
+                    '_1' => $row('X-WAF-TOKEN', 'abc', '1'),
+                    '_2' => $row('X-Gateway', 'edge-1', ''),
+                ]),
+                ['X-WAF-TOKEN' => 'abc', 'X-Gateway' => 'edge-1'],
+                ['X-WAF-TOKEN' => 'abc'],
+                'the tick is per row',
+            ],
+            'zero flag' => [
+                (string)json_encode(['_1' => $row('X-WAF-TOKEN', 'abc', '0')]),
+                ['X-WAF-TOKEN' => 'abc'],
+                [],
+                "a stored '0' is off, not a truthy string",
+            ],
+            'junk' => ['not json', [], [], 'an unreadable value sends nothing'],
+            'unusable name' => [
+                (string)json_encode(['_1' => $row('X Waf', 'abc', '1')]),
+                [],
+                [],
+                'a row that cannot be a header is dropped, however it got stored',
+            ],
+            'reserved name' => [
+                (string)json_encode(['_1' => $row('x-api-key', 'hijacked', '1')]),
+                [],
+                [],
+                'a stored row can never displace a header the extension sets',
+            ],
+            'no value' => [
+                (string)json_encode(['_1' => $row('X-WAF-TOKEN', '', '1')]),
+                [],
+                [],
+                'a valueless header is nothing to send',
+            ],
         ];
     }
 

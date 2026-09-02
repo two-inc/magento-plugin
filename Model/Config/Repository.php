@@ -15,6 +15,7 @@ use Magento\Store\Model\ScopeInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface;
+use Two\Gateway\Model\Config\Backend\CustomHeaders as CustomHeadersBackend;
 use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource;
 use Two\Gateway\Model\Provenance;
 use Two\Gateway\Service\Merchant\SettingsProvider;
@@ -855,17 +856,45 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
-    public function getFirewallToken(?int $storeId = null): string
+    public function getCustomHeaders(?int $storeId = null): array
     {
-        return trim((string)$this->getConfig($this->path('firewall_token'), $storeId));
+        return $this->customHeaders($storeId, false);
     }
 
     /**
      * @inheritDoc
      */
-    public function isFirewallTokenSentFromBrowser(?int $storeId = null): bool
+    public function getBrowserCustomHeaders(?int $storeId = null): array
     {
-        return $this->isSetFlag($this->path('firewall_token_browser'), $storeId);
+        return $this->customHeaders($storeId, true);
+    }
+
+    /**
+     * The admin table refuses an unsendable row at entry, but a stored value
+     * can still arrive from `config:set` or an import, so the same rules are
+     * re-applied here rather than trusted.
+     *
+     * @return array<string, string>
+     */
+    private function customHeaders(?int $storeId, bool $browserOnly): array
+    {
+        $stored = $this->getConfig($this->path('custom_headers'), $storeId);
+        $rows = is_array($stored) ? $stored : CustomHeadersBackend::decode((string)$stored);
+
+        $headers = [];
+        foreach ($rows as $rawRow) {
+            $row = CustomHeadersBackend::normaliseRow($rawRow);
+            if ($row['value'] === '' || !CustomHeadersBackend::isUsableName($row['name'])) {
+                continue;
+            }
+            if ($browserOnly && $row['send_from_browser'] === '') {
+                continue;
+            }
+
+            $headers[$row['name']] = $row['value'];
+        }
+
+        return $headers;
     }
 
     /**

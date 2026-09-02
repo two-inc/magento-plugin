@@ -25,8 +25,7 @@ interface RepositoryInterface
     public const XML_PATH_TITLE = 'payment/two_payment/title';
     public const XML_PATH_MODE = 'payment/two_payment/mode';
     public const XML_PATH_API_KEY = 'payment/two_payment/api_key';
-    public const XML_PATH_FIREWALL_TOKEN = 'payment/two_payment/firewall_token';
-    public const XML_PATH_FIREWALL_TOKEN_BROWSER = 'payment/two_payment/firewall_token_browser';
+    public const XML_PATH_CUSTOM_HEADERS = 'payment/two_payment/custom_headers';
     public const XML_PATH_TRUSTED_PROXIES = 'payment/two_payment/trusted_proxies';
     public const XML_PATH_DISABLE_RATE_LIMIT = 'payment/two_payment/disable_rate_limit';
     public const XML_PATH_FULFILL_TRIGGER = 'payment/two_payment/fulfill_trigger';
@@ -551,22 +550,22 @@ interface RepositoryInterface
     public function isSslVerificationDisabled(?int $storeId = null): bool;
 
     /**
-     * Relayed as the X-WAF-TOKEN header. A coarse network-egress gate, not a
-     * credential — stored and rendered in plain text.
+     * The merchant's own headers, relayed on every server-side call. A coarse
+     * network-egress gate, not credentials — stored and rendered in plain text.
      *
      * @param int|null $storeId
-     * @return string empty when the merchant's network needs no such gate
+     * @return array<string, string> header name => value
      */
-    public function getFirewallToken(?int $storeId = null): string;
+    public function getCustomHeaders(?int $storeId = null): array;
 
     /**
-     * Whether the firewall token is also sent on the one call the browser
-     * still makes directly to the API. Default false.
+     * The subset the merchant also ticked for the one call the browser still
+     * makes directly to the API — and therefore publishes to every buyer.
      *
      * @param int|null $storeId
-     * @return bool
+     * @return array<string, string> header name => value
      */
-    public function isFirewallTokenSentFromBrowser(?int $storeId = null): bool;
+    public function getBrowserCustomHeaders(?int $storeId = null): array;
 
     /**
      * The store's own reverse proxies, load balancers or CDN egress, as IPs or

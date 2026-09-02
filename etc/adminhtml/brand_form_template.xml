@@ -140,13 +140,6 @@
                     </depends>
                     <config_path>payment/{{code}}/api_key</config_path>
                 </field>
-                <field id="firewall_token" translate="label" type="text" sortOrder="52"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Firewall token (optional)</label>
-                    <comment model="Two\Gateway\Model\Config\Comment\FirewallToken"/>
-                    <config_path>payment/{{code}}/firewall_token</config_path>
-                </field>
                 <field id="vendor_site_name" translate="label comment" type="text" sortOrder="57"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
@@ -626,13 +619,14 @@
                     <backend_model>Two\Gateway\Model\Config\Backend\TrustedProxies</backend_model>
                     <config_path>payment/{{code}}/trusted_proxies</config_path>
                 </field>
-                <field id="firewall_token_browser" translate="label" type="select" sortOrder="37"
+                <field id="custom_headers" translate="label" sortOrder="37"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Add firewall token to browser-originated traffic</label>
-                    <comment>Only switch this on if your IT administrator requires the firewall token for calls from the user's browser as well as those from your server. Your firewall token will be published to the buyer's browser and may be read by anyone.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/{{code}}/firewall_token_browser</config_path>
+                    <label>Custom request headers</label>
+                    <comment>Extra HTTP headers sent on every call this store makes to the {{provider}} API, for merchants whose firewall or gateway requires one — a coarse network gate, not a credential. Tick "Also send from browser" only where your IT administrator needs the header on calls from the buyer's browser as well as those from your server: a ticked header is published to the buyer's browser and may be read by anyone.</comment>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\CustomHeaders</frontend_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\CustomHeaders</backend_model>
+                    <config_path>payment/{{code}}/custom_headers</config_path>
                 </field>
                 <field id="disable_rate_limit" translate="label" type="select" sortOrder="40"
                        showInDefault="1" showInWebsite="1" showInStore="1"

@@ -16,52 +16,48 @@ use Two\Gateway\Service\Merchant\ApiKeyStatus;
 
 /**
  * The checkout config subtree is published to every buyer on every checkout
- * render, so the browser toggle is the only thing standing between a
- * configured firewall token and public disclosure.
+ * render, so the per-row browser tick is the only thing standing between a
+ * configured header and public disclosure.
  */
-class ConfigProviderFirewallTokenExposureTest extends TestCase
+class ConfigProviderCustomHeaderExposureTest extends TestCase
 {
-    private const TOKEN = 'waf-token-value';
+    private const SERVER_ONLY_VALUE = 'server-only-header-value';
 
     /**
-     * Given a configured token; When the browser toggle decides; Then the
-     * token reaches the page only with the toggle on.
-     *
-     * @dataProvider browserToggle
+     * Given headers the merchant ticked for the browser; When the checkout
+     * config is built; Then exactly those reach the page.
      */
-    public function testTheBrowserToggleDecidesWhetherTheTokenIsPublished(
-        bool $sentFromBrowser,
-        string $expected,
-        string $description
-    ): void {
-        $config = $this->build($sentFromBrowser)->getConfig();
-
-        $this->assertSame($expected, $config['payment']['two_payment']['firewallToken'], $description);
-    }
-
-    /**
-     * @return array<string, array{0: bool, 1: string, 2: string}>
-     */
-    public static function browserToggle(): array
+    public function testOnlyTheTickedHeadersArePublished(): void
     {
-        return [
-            'browser calls enabled' => [true, self::TOKEN, 'the one browser-direct call needs the header'],
-            'default off' => [false, '', 'the token stays server-side'],
-        ];
+        $ticked = ['X-WAF-TOKEN' => 'waf-token-value'];
+
+        $config = $this->build($ticked)->getConfig();
+
+        $this->assertSame($ticked, $config['payment']['two_payment']['customHeaders']);
+    }
+
+    public function testNoTickedHeadersPublishesAnEmptyMap(): void
+    {
+        $config = $this->build([])->getConfig();
+
+        $this->assertSame([], $config['payment']['two_payment']['customHeaders']);
     }
 
     /**
-     * Not just the one key: nothing else in the published subtree may carry
-     * the token either.
+     * Not just the one key: nothing else in the published subtree may carry a
+     * header the merchant kept server-side.
      */
-    public function testTheTokenAppearsNowhereInThePublishedSubtreeWhenTheToggleIsOff(): void
+    public function testAnUntickedHeaderAppearsNowhereInThePublishedSubtree(): void
     {
-        $config = $this->build(false)->getConfig();
+        $config = $this->build([])->getConfig();
 
-        $this->assertStringNotContainsString(self::TOKEN, (string)json_encode($config));
+        $this->assertStringNotContainsString(self::SERVER_ONLY_VALUE, (string)json_encode($config));
     }
 
-    private function build(bool $sentFromBrowser): ConfigProvider
+    /**
+     * @param array<string, string> $browserHeaders
+     */
+    private function build(array $browserHeaders): ConfigProvider
     {
         $reflection = new \ReflectionClass(ConfigProvider::class);
         $provider = $reflection->newInstanceWithoutConstructor();
@@ -71,8 +67,9 @@ class ConfigProviderFirewallTokenExposureTest extends TestCase
         $configRepository->method('getBrand')->willReturn('');
         $configRepository->method('getBrandVersion')->willReturn('');
         $configRepository->method('getCheckoutPageUrl')->willReturn('https://checkout.example');
-        $configRepository->method('getFirewallToken')->willReturn(self::TOKEN);
-        $configRepository->method('isFirewallTokenSentFromBrowser')->willReturn($sentFromBrowser);
+        $configRepository->method('getCustomHeaders')
+            ->willReturn($browserHeaders + ['X-Internal' => self::SERVER_ONLY_VALUE]);
+        $configRepository->method('getBrowserCustomHeaders')->willReturn($browserHeaders);
 
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
         $brandRegistry->method('getProductName')->willReturn('Acme Pay');

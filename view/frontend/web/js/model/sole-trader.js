@@ -415,9 +415,12 @@
         const headers = { 'two-delegated-authority-token': this.autofillToken };
         // The one call that cannot be proxied: it is authenticated by the
         // buyer's own session cookie on the API's domain, which a server-side
-        // call has no way to present. `firewallToken` is populated only when
-        // the merchant switched the browser toggle on.
-        if (config.firewallToken) headers['X-WAF-TOKEN'] = config.firewallToken;
+        // call has no way to present. `customHeaders` carries only the rows
+        // the merchant ticked for browser-originated traffic.
+        const customHeaders = config.customHeaders || {};
+        Object.keys(customHeaders).forEach((name) => {
+            headers[name] = customHeaders[name];
+        });
         return fetch(URL, {
             credentials: 'include',
             headers: headers

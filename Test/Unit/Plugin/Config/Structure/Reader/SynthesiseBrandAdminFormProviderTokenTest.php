@@ -96,34 +96,25 @@ class SynthesiseBrandAdminFormProviderTokenTest extends TestCase
      * template doesn't already declare) — invisible in the admin UI on
      * every environment, not just uncached.
      */
-    public function testFirewallAndRateLimitFieldsSurviveSynthesis(): void
+    public function testDiagnosticsFieldsSurviveSynthesis(): void
     {
         $dom = $this->renderTemplateForProvider('Two');
         $xpath = new \DOMXPath($dom);
 
-        foreach (
-            [
-                'brandx_general' => ['firewall_token'],
-                'brandx_version' => ['disable_rate_limit', 'firewall_token_browser', 'trusted_proxies'],
-            ] as $sectionId => $fieldIds
-        ) {
-            foreach ($fieldIds as $fieldId) {
-                $node = $xpath->query(
-                    sprintf('//section[@id="%s"]//field[@id="%s"]', $sectionId, $fieldId)
-                )->item(0);
-                self::assertNotNull($node, sprintf('%s must exist in section %s', $fieldId, $sectionId));
-            }
-        }
+        foreach (['custom_headers', 'disable_rate_limit', 'trusted_proxies'] as $fieldId) {
+            $node = $xpath->query(
+                sprintf('//section[@id="brandx_version"]//field[@id="%s"]', $fieldId)
+            )->item(0);
+            self::assertNotNull($node, sprintf('%s must exist in section brandx_version', $fieldId));
 
-        foreach (['firewall_token_browser', 'trusted_proxies'] as $fieldId) {
             $node = $xpath->query(
                 sprintf('//section[@id="brandx_general"]//field[@id="%s"]', $fieldId)
             )->item(0);
-            self::assertNull($node, sprintf('%s must no longer be under General', $fieldId));
+            self::assertNull($node, sprintf('%s must not be under General', $fieldId));
         }
     }
 
-    public function testTrustedProxiesAndFirewallTokenBrowserHelpText(): void
+    public function testTrustedProxiesHelpText(): void
     {
         $dom = $this->renderTemplateForProvider('Two');
         $xpath = new \DOMXPath($dom);
@@ -136,16 +127,49 @@ class SynthesiseBrandAdminFormProviderTokenTest extends TestCase
             . 'separated by commas or new lines. These IP addresses will be exempt from rate limiting.',
             $trustedProxiesComment->textContent
         );
+    }
 
-        $firewallTokenBrowserComment = $xpath->query(
-            '//section[@id="brandx_version"]//field[@id="firewall_token_browser"]/comment'
+    /**
+     * The per-row browser tick publishes a header to every buyer, so the
+     * warning that says so must reach an overlay brand's admin too — and
+     * carry that brand's own name.
+     *
+     * @dataProvider providerNames
+     */
+    public function testCustomHeadersHelpTextCarriesTheDisclosureWarning(string $providerName): void
+    {
+        $dom = $this->renderTemplateForProvider($providerName);
+        $xpath = new \DOMXPath($dom);
+
+        $comment = $xpath->query(
+            '//section[@id="brandx_version"]//field[@id="custom_headers"]/comment'
         )->item(0);
-        self::assertSame(
-            "Only switch this on if your IT administrator requires the firewall token for calls from the user's "
-            . "browser as well as those from your server. Your firewall token will be published to the buyer's "
-            . 'browser and may be read by anyone.',
-            $firewallTokenBrowserComment->textContent
+        self::assertNotNull($comment);
+        self::assertStringContainsString(
+            sprintf('every call this store makes to the %s API', $providerName),
+            $comment->textContent
         );
+        self::assertStringContainsString(
+            "published to the buyer's browser and may be read by anyone",
+            $comment->textContent
+        );
+    }
+
+    /**
+     * A field array renders through its frontend model and stores through its
+     * backend model; losing either in synthesis leaves a broken admin field.
+     */
+    public function testCustomHeadersKeepsItsFrontendAndBackendModels(): void
+    {
+        $dom = $this->renderTemplateForProvider('Two');
+        $xpath = new \DOMXPath($dom);
+
+        foreach (['frontend_model', 'backend_model'] as $node) {
+            $model = $xpath->query(
+                sprintf('//section[@id="brandx_version"]//field[@id="custom_headers"]/%s', $node)
+            )->item(0);
+            self::assertNotNull($model, sprintf('custom_headers must keep its %s', $node));
+        }
     }
 
     /**
@@ -174,13 +198,13 @@ class SynthesiseBrandAdminFormProviderTokenTest extends TestCase
         );
     }
 
-    public function testFirewallTokenLabelIsSentenceCase(): void
+    public function testCustomHeadersLabelIsSentenceCase(): void
     {
         $dom = $this->renderTemplateForProvider('Two');
         $xpath = new \DOMXPath($dom);
 
-        $label = $xpath->query('//section[@id="brandx_general"]//field[@id="firewall_token"]/label')->item(0);
-        self::assertSame('Firewall token (optional)', $label->textContent);
+        $label = $xpath->query('//section[@id="brandx_version"]//field[@id="custom_headers"]/label')->item(0);
+        self::assertSame('Custom request headers', $label->textContent);
     }
 
     /**

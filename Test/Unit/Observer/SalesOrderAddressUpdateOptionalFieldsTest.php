@@ -165,7 +165,7 @@ class SalesOrderAddressUpdateOptionalFieldsTest extends TestCase
         $this->assertSame('/v1/order/remote-order-id', $this->capturedApiCall[0]);
         $this->assertSame('PUT', $this->capturedApiCall[2]);
         // Admin/cron-initiated, so the request carries no scope — a null store
-        // would resolve the default scope's API key and firewall token.
+        // would resolve the default scope's API key and custom headers.
         $this->assertSame(
             self::ORDER_STORE_ID,
             $this->capturedApiCall[3],

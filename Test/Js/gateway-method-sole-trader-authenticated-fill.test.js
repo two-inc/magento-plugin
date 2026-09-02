@@ -46,9 +46,9 @@ const BUYER = {
  * The real flow, reached through Luma's wired capture component, with `fetch`
  * recorded.
  *
- * @param {object} [options] `{ buyer, mode, firewallToken }` — what the buyer
+ * @param {object} [options] `{ buyer, mode, customHeaders }` — what the buyer
  *        endpoint answers with (null for a 404), the capture mode to start in,
- *        and the firewall token the merchant config exposes to the browser
+ *        and the headers the merchant config exposes to the browser
  * @returns {object} `{ flow, rec, identity, handler }`
  */
 function loadFlow(options) {
@@ -81,7 +81,7 @@ function loadFlow(options) {
                 checkoutPageUrl: CHECKOUT_PAGE_URL,
                 checkoutApiUrl: CHECKOUT_API_URL,
                 isCompanySearchEnabled: true,
-                firewallToken: opts.firewallToken || ''
+                customHeaders: opts.customHeaders || {}
             }),
             'Magento_Ui/js/model/messageList': {
                 addErrorMessage: function (message) { rec.errors.push(message); },
@@ -328,18 +328,33 @@ describe('the flight the handshake holds', () => {
 
 // The one call that stays browser-direct: it is authenticated by the buyer's
 // own session cookie on the API's domain, which no server-side call can present.
-describe('the browser-direct buyer lookup and the firewall header', () => {
+describe('the browser-direct buyer lookup and the merchant custom headers', () => {
     test.each([
-        ['waf-token', 'waf-token', 'a token exposed to the browser is sent on the one direct call'],
-        ['', undefined, 'the default off state sends no header, so no token reaches the wire']
-    ])('firewallToken %p sends %p (%s)', async (firewallToken, expected) => {
-        const { rec, handler } = loadFlow({ buyer: BUYER, firewallToken: firewallToken });
+        [
+            { 'X-WAF-TOKEN': 'waf-token' },
+            { 'X-WAF-TOKEN': 'waf-token' },
+            'a header ticked for the browser is sent on the one direct call'
+        ],
+        [
+            { 'X-WAF-TOKEN': 'waf-token', 'X-Gateway': 'edge-1' },
+            { 'X-WAF-TOKEN': 'waf-token', 'X-Gateway': 'edge-1' },
+            'every ticked header is sent, not just the first'
+        ],
+        [
+            {},
+            { 'X-WAF-TOKEN': undefined },
+            'nothing ticked sends no extra header, so no value reaches the wire'
+        ]
+    ])('customHeaders %p sends %p (%s)', async (customHeaders, expected) => {
+        const { rec, handler } = loadFlow({ buyer: BUYER, customHeaders: customHeaders });
 
         handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
         await settle();
 
         const headers = buyerRequests(rec)[0].options.headers;
-        expect(headers['X-WAF-TOKEN']).toBe(expected);
+        Object.keys(expected).forEach((name) => {
+            expect(headers[name]).toBe(expected[name]);
+        });
         expect(headers['two-delegated-authority-token']).toBe('at');
     });
 });
