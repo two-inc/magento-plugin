@@ -335,6 +335,11 @@ class SurchargeTest extends TestCase
         $this->assertSame('two_surcharge', $fetched['code']);
         $this->assertEqualsWithDelta($expected, (float)$fetched['value'], 1e-9);
         $this->assertSame('Payment terms fee - 30 days', (string)$fetched['title']);
+        $this->assertSame(
+            [],
+            array_column($fetched, 'code'),
+            'a single total must not satisfy TotalsReader::convert()\'s list predicate'
+        );
     }
 
     /**
@@ -363,6 +368,11 @@ class SurchargeTest extends TestCase
         $this->assertSame('two_surcharge_incl', $fetched[1]['code']);
         $this->assertEqualsWithDelta(121.0, (float)$fetched[1]['value'], 1e-9);
         $this->assertSame('Payment terms fee - 30 days (Incl. Tax)', (string)$fetched[1]['title']);
+
+        // The predicate Magento\Quote\Model\Quote\TotalsReader::convert()
+        // uses to decide a collector returned a list of totals rather than
+        // one: without it, "Both" collapses into a single mangled segment.
+        $this->assertCount(2, array_column($fetched, 'code'));
     }
 
     public function testFetchEmitsNothingWithoutASurcharge(): void

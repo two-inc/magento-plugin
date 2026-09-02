@@ -158,7 +158,6 @@ class AnonymousRouteRateLimitsTest extends TestCase
             $this->createMock(CartTotalRepositoryInterface::class),
             $this->createMock(ConfigRepository::class),
             $this->createMock(TermSurchargePreview::class),
-            $this->createMock(LogRepository::class),
             $limiter
         );
     }

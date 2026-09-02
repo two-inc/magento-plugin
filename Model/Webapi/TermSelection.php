@@ -12,7 +12,6 @@ use Magento\Framework\Exception\InputException;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\CartTotalRepositoryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\TermSelectionInterface;
 use Two\Gateway\Service\Order\TermSurchargePreview;
 use Two\Gateway\Service\RateLimiter;
@@ -62,11 +61,6 @@ class TermSelection implements TermSelectionInterface
     private $termSurchargePreview;
 
     /**
-     * @var LogRepository
-     */
-    private $logRepository;
-
-    /**
      * @var RateLimiter
      */
     private $rateLimiter;
@@ -77,7 +71,6 @@ class TermSelection implements TermSelectionInterface
         CartTotalRepositoryInterface $cartTotalRepository,
         ConfigRepository $configRepository,
         TermSurchargePreview $termSurchargePreview,
-        LogRepository $logRepository,
         RateLimiter $rateLimiter
     ) {
         $this->checkoutSession = $checkoutSession;
@@ -85,7 +78,6 @@ class TermSelection implements TermSelectionInterface
         $this->cartTotalRepository = $cartTotalRepository;
         $this->configRepository = $configRepository;
         $this->termSurchargePreview = $termSurchargePreview;
-        $this->logRepository = $logRepository;
         $this->rateLimiter = $rateLimiter;
     }
 
