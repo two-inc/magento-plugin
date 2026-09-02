@@ -16,7 +16,7 @@ use Two\Gateway\Api\BrandOverlayRegistryInterface;
  * Hide every vanilla Two_Gateway admin config section (`two_general`,
  * `two_checkout_fields`, `two_payment`, `two_order_management`,
  * `two_version` — TWO-25386's A-E regroup: General/Checkout Fields/
- * Payment Terms/Order Management/Diagnostics; company lookup lives as a
+ * Payment terms/Order management/Diagnostics; company lookup lives as a
  * group inside Checkout Fields, so hiding that section hides it too) when:
  *   - At least one brand overlay (e.g. Overlay_Gateway) is registered, AND
  *   - `two_brand_synthesis/hide_payment_section/enabled` resolves to truthy.

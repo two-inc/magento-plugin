@@ -71,7 +71,7 @@ class Surcharge extends Template
 
         $label = $source->getDataUsingMethod('two_surcharge_description');
         if (!$label) {
-            $label = (string)__('%1 Surcharge', $this->getBrandRegistry()->getProductName());
+            $label = (string)__('%1 surcharge', $this->getBrandRegistry()->getProductName());
         }
 
         // Place the surcharge row directly above the Tax line — the surcharge

@@ -12,7 +12,7 @@ use Two\Gateway\Model\Config\Backend\PaymentTermsCustomDays;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
- * Tests the save-time half of the "Custom Payment Terms (days)"
+ * Tests the save-time half of the "Custom payment terms (days)"
  * genuineness rule (TWO-25498): a custom value that duplicates a
  * merchant-offered term — ticked or not, since SettingsProvider's
  * available-terms set does not carry tick state — is cleared here. The

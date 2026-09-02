@@ -47,7 +47,7 @@
             <xs:element name="surcharge_fixed_max" type="surchargeFixedMaxType" minOccurs="0"/>
             <!--
                 Buyer-surcharge rounding steps offered in the admin
-                "Rounding Step" dropdown (major currency units). Brand
+                "Rounding step" dropdown (major currency units). Brand
                 overlays narrow the parent default set (e.g. to 0.50 /
                 1.00). Omit the element to inherit the parent default
                 set; an empty element is treated as omitted.

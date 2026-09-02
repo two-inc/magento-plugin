@@ -143,7 +143,7 @@ class SynthesiseBrandAdminFormProviderTokenTest extends TestCase
         self::assertSame(
             "Only switch this on if your IT administrator requires the firewall token for calls from the user's "
             . "browser as well as those from your server. Your firewall token will be published to the buyer's "
-            . 'brower and may be read by anyone.',
+            . 'browser and may be read by anyone.',
             $firewallTokenBrowserComment->textContent
         );
     }

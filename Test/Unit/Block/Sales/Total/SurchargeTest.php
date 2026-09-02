@@ -160,7 +160,7 @@ class SurchargeTest extends TestCase
 
         $block->initTotals();
 
-        $this->assertSame($productName . ' Surcharge', $capture->total->getLabel());
+        $this->assertSame($productName . ' surcharge', $capture->total->getLabel());
     }
 
     /**
