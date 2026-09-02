@@ -9,7 +9,7 @@
     <?php $productName = $block->getProductName(); ?>
     <section class="admin__page-section order-view-account-information">
         <div class="admin__page-section-title">
-            <span class="title"><?= $block->escapeHtml(__('%1 Details', $productName)) ?></span>
+            <span class="title"><?= $block->escapeHtml(__('%1 details', $productName)) ?></span>
         </div>
         <div class="admin__page-section-content">
             <div>
@@ -31,7 +31,7 @@
                     <?php if (!empty($fulfillments['refunds'])): ?>
                         <tr>
                             <td>
-                                <strong><?= $block->escapeHtml(__('Credit Note')); ?></strong>
+                                <strong><?= $block->escapeHtml(__('Credit note')); ?></strong>
                             </td>
                             <td>
                                 <?php foreach ($fulfillments['refunds'] ?? [] as $refund) { ?>

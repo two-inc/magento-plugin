@@ -95,12 +95,12 @@
         <section id="two_checkout_fields" translate="label comment" type="text" sortOrder="20" showInDefault="1"
                  showInWebsite="1" showInStore="1">
             <class>separator-top</class>
-            <label>Checkout Fields</label>
+            <label>Checkout fields</label>
             <tab>two_gateway</tab>
             <resource>Magento_Sales::config_sales</resource>
             <group id="display" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                    showInStore="1">
-                <label>Title &amp; Display</label>
+                <label>Title &amp; display</label>
                 <!-- TWO-25386: no <depends> on "active" here — Magento renders each
                      top-level <section> as its own admin page, so a <depends> can
                      only resolve within the section it's declared in (bare id =
@@ -258,7 +258,7 @@
                  two fields are not part of on any platform. -->
             <group id="search" translate="label comment" type="text" sortOrder="40" showInDefault="1" showInWebsite="1"
                    showInStore="1">
-                <label>Company Lookup</label>
+                <label>Company lookup</label>
                 <field id="enable_company_search" translate="label comment" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Enable company search in address entry</label>
@@ -283,12 +283,12 @@
         <section id="two_payment" translate="label comment" type="text" sortOrder="40" showInDefault="1" showInWebsite="1"
                  showInStore="1">
             <class>separator-top</class>
-            <label>Payment Terms</label>
+            <label>Payment terms</label>
             <tab>two_gateway</tab>
             <resource>Magento_Sales::config_sales</resource>
             <group id="payment_terms" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                    showInStore="1">
-                <label>Payment Terms</label>
+                <label>Payment terms</label>
                 <field id="payment_terms_type" translate="label comment" type="select" sortOrder="10" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Payment terms type</label>
@@ -298,7 +298,7 @@
                 </field>
                 <field id="payment_terms" translate="label comment" type="text" sortOrder="20" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Payment Terms</label>
+                    <label>Payment terms</label>
                     <comment>Select the payment term(s) you want to offer.</comment>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\PaymentTermsCheckboxes</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\PaymentTermsCheckboxes</backend_model>
@@ -325,7 +325,7 @@
                 </field>
                 <field id="surcharge_type" translate="label comment" type="select" sortOrder="50" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Surcharge Method</label>
+                    <label>Surcharge method</label>
                     <comment>Select a method to surcharge your customer.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\SurchargeType</source_model>
                     <!-- Backend model guards the "surcharge enabled => tax treatment
@@ -338,27 +338,27 @@
                 </field>
                 <field id="surcharge_differential" translate="label comment" type="select" sortOrder="60" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Surcharge Calculation Basis</label>
+                    <label>Surcharge calculation basis</label>
                     <comment>Total fee charges the configured surcharge for the chosen term. Fee difference charges only the difference versus the default payment term.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\SurchargeCalculationBasis</source_model>
                     <config_path>payment/two_payment/surcharge_differential</config_path>
                 </field>
                 <field id="surcharge_line_description" translate="label comment" type="text" sortOrder="70" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Surcharge Line Description</label>
+                    <label>Surcharge line description</label>
                     <comment><![CDATA[Description shown to the buyer for the surcharge line item. Use <strong>%1</strong> to insert the selected number of days (e.g. "Payment terms fee - %1 days"). If you leave the default, the word <em>days</em> is translated per locale.]]></comment>
                     <config_path>payment/two_payment/surcharge_line_description</config_path>
                 </field>
                 <!-- Per-term surcharge grid (fixed, percentage, limit per term) -->
                 <field id="surcharge_grid" translate="label comment" type="text" sortOrder="80" showInDefault="1"
                        showInWebsite="1" showInStore="1">
-                    <label>Payment Surcharge Configuration</label>
+                    <label>Payment surcharge configuration</label>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeGrid</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\SurchargeGrid</backend_model>
                 </field>
                 <field id="surcharge_rounding_basis" translate="label comment" type="select" sortOrder="90"
                        showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Surcharge Rounding</label>
+                    <label>Surcharge rounding</label>
                     <comment>Snap the buyer surcharge line item to a clean increment. Select None for standard two-decimal amounts.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\RoundingBasis</source_model>
                     <config_path>payment/two_payment/surcharge_rounding_basis</config_path>
@@ -368,7 +368,7 @@
                 </field>
                 <field id="surcharge_rounding_step" translate="label comment" type="select" sortOrder="100"
                        showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Rounding Step</label>
+                    <label>Rounding step</label>
                     <comment><![CDATA[Increment the surcharge is rounded to (e.g. 1 = whole units, 0.50 = nearest half).]]></comment>
                     <source_model>Two\Gateway\Model\Config\Source\RoundingStep</source_model>
                     <config_path>payment/two_payment/surcharge_rounding_step</config_path>
@@ -379,7 +379,7 @@
                 </field>
                 <field id="surcharge_tax_class" translate="label comment" type="select" sortOrder="110"
                        showInDefault="1" showInWebsite="1" showInStore="1">
-                    <label>Surcharge Tax Treatment</label>
+                    <label>Surcharge tax treatment</label>
                     <!-- The never-taxed options this selector used to offer
                          (core "None", and a tax class the plugin provisioned
                          itself) are gone: an untaxed surcharge must be a tax
@@ -400,7 +400,7 @@
                      payment/two_payment/surcharge_tax_rate (no data migration). -->
                 <field id="custom_surcharge_tax_rate" translate="label comment" type="text" sortOrder="120" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Custom Surcharge Tax Rate (%)</label>
+                    <label>Custom surcharge tax rate (%)</label>
                     <comment>Deprecated flat tax rate. Only used with the Custom surcharge tax treatment above.</comment>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\CustomSurchargeTaxRate</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\LocaleDecimal</backend_model>
@@ -417,12 +417,12 @@
         <section id="two_order_management" translate="label comment" type="text" sortOrder="50" showInDefault="1"
                  showInWebsite="1" showInStore="1">
             <class>separator-top</class>
-            <label>Order Management</label>
+            <label>Order management</label>
             <tab>two_gateway</tab>
             <resource>Magento_Sales::config_sales</resource>
             <group id="order_management" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                    showInStore="1">
-                <label>Order Management</label>
+                <label>Order management</label>
                 <field id="fulfill_trigger" translate="label comment" type="select" sortOrder="10" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Fulfilment trigger</label>
@@ -463,7 +463,7 @@
                      list, since this field has no sibling selector. -->
                 <field id="default_shipping_tax_rate" translate="label comment" type="text" sortOrder="50"
                        showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
-                    <label>Default Shipping Tax Rate (%) (deprecated)</label>
+                    <label>Default shipping tax rate (%) (deprecated)</label>
                     <comment>Deprecated flat rate. Only used when default_shipping_tax_class above is unset.</comment>
                     <backend_model>Two\Gateway\Model\Config\Backend\LocaleDecimal</backend_model>
                     <validate>validate-zero-or-greater</validate>
@@ -488,7 +488,7 @@
             <resource>Magento_Sales::config_sales</resource>
             <group id="logging" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                    showInStore="1">
-                <label>Debug &amp; Logging</label>
+                <label>Debug &amp; logging</label>
                 <field id="debug" translate="label comment" type="select" sortOrder="10" showInDefault="1" showInWebsite="1"
                        showInStore="1">
                     <label>Enable debug logging</label>
@@ -509,7 +509,7 @@
             </group>
             <group id="admin_controls" translate="label comment" type="text" sortOrder="20" showInDefault="1" showInWebsite="1"
                    showInStore="1">
-                <label>Admin Controls</label>
+                <label>Admin controls</label>
                 <!-- TWO-25386: module uninstall is Magento's nearest lifecycle
                      event for this; see Setup\Uninstall. -->
                 <field id="clear_settings_on_uninstall" translate="label comment" type="select" sortOrder="20"
@@ -542,7 +542,7 @@
                 <field id="firewall_token_browser" translate="label comment" type="select" sortOrder="37"
                        showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Add firewall token to browser-originated traffic</label>
-                    <comment>Only switch this on if your IT administrator requires the firewall token for calls from the user's browser as well as those from your server. Your firewall token will be published to the buyer's brower and may be read by anyone.</comment>
+                    <comment>Only switch this on if your IT administrator requires the firewall token for calls from the user's browser as well as those from your server. Your firewall token will be published to the buyer's browser and may be read by anyone.</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/two_payment/firewall_token_browser</config_path>
                 </field>
