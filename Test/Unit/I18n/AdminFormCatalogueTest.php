@@ -176,7 +176,10 @@ class AdminFormCatalogueTest extends TestCase
     private function translateCalls(string $dir): array
     {
         $literal = '(?:\'(?:[^\'\\\\]|\\\\.)*\'|"(?:[^"\\\\]|\\\\.)*")';
-        $pattern = '/__\(\s*(' . $literal . '(?:\s*\.\s*' . $literal . ')*)/';
+        // The run must end at the argument boundary, so a msgid built by
+        // concatenating a variable is skipped rather than truncated into a
+        // msgid that exists nowhere.
+        $pattern = '/__\(\s*(' . $literal . '(?:\s*\.\s*' . $literal . ')*)\s*[,)]/';
 
         $found = [];
         $base = dirname(__DIR__, 3) . '/' . $dir;
