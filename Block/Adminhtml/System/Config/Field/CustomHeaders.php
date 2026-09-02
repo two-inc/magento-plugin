@@ -8,6 +8,8 @@ declare(strict_types=1);
 namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 
 use Magento\Config\Block\System\Config\Form\Field\FieldArray\AbstractFieldArray;
+use Magento\Framework\Data\Form\Element\AbstractElement;
+use Two\Gateway\Model\Config\Backend\CustomHeaders as CustomHeadersBackend;
 
 /**
  * The custom outbound HTTP header table: any number of admin-named headers,
@@ -17,11 +19,6 @@ use Magento\Config\Block\System\Config\Form\Field\FieldArray\AbstractFieldArray;
 class CustomHeaders extends AbstractFieldArray
 {
     /**
-     * @var CustomHeaderBrowserCheckbox|null
-     */
-    private $browserCheckbox;
-
-    /**
      * @inheritDoc
      */
     protected function _prepareToRender()
@@ -30,21 +27,29 @@ class CustomHeaders extends AbstractFieldArray
         $this->addColumn('value', ['label' => __('Header value'), 'class' => 'input-text']);
         $this->addColumn('send_from_browser', [
             'label' => __('Also send from browser'),
-            'renderer' => $this->browserCheckbox(),
+            'renderer' => $this->getLayout()->createBlock(CustomHeaderBrowserCheckbox::class),
         ]);
 
         $this->_addAfter = false;
         $this->_addButtonLabel = __('Add header');
     }
 
-    private function browserCheckbox(): CustomHeaderBrowserCheckbox
+    /**
+     * Core runs the backend model's afterLoad() only for a value it read from
+     * the database, so a value locked by `app:config:dump` arrives here as the
+     * raw stored string and would render an empty table.
+     *
+     * @inheritDoc
+     */
+    protected function _getElementHtml(AbstractElement $element)
     {
-        if ($this->browserCheckbox === null) {
-            /** @var CustomHeaderBrowserCheckbox $block */
-            $block = $this->getLayout()->createBlock(CustomHeaderBrowserCheckbox::class);
-            $this->browserCheckbox = $block;
+        if (!is_array($element->getValue())) {
+            $element->setValue(array_map(
+                [CustomHeadersBackend::class, 'normaliseRow'],
+                CustomHeadersBackend::decode((string)$element->getValue())
+            ));
         }
 
-        return $this->browserCheckbox;
+        return parent::_getElementHtml($element);
     }
 }

@@ -132,7 +132,30 @@ class CustomHeadersTest extends TestCase
         return [
             'no name' => [
                 ['_1' => ['name' => '', 'value' => 'abc']],
-                'a header value was given with no header name ("abc")',
+                'row 1 has a value but no header name',
+            ],
+            'no name, later row' => [
+                [
+                    '_1' => ['name' => 'X-Fine', 'value' => 'ok'],
+                    '_2' => ['name' => '', 'value' => 'abc'],
+                ],
+                'row 2 has a value but no header name',
+            ],
+            'carriage return in the value' => [
+                ['_1' => ['name' => 'X-Waf', 'value' => "abc\r\nX-API-Key: forged"]],
+                'the value for "X-Waf" contains a line break',
+            ],
+            'bare newline in the value' => [
+                ['_1' => ['name' => 'X-Waf', 'value' => "abc\nX-API-Key: forged"]],
+                'the value for "X-Waf" contains a line break',
+            ],
+            'null byte in the value' => [
+                ['_1' => ['name' => 'X-Waf', 'value' => "abc\0def"]],
+                'the value for "X-Waf" contains a line break',
+            ],
+            'a value json cannot carry' => [
+                ['_1' => ['name' => 'X-Waf', 'value' => "abc\xB1\x31"]],
+                'the table could not be stored',
             ],
             'no value' => [
                 ['_1' => ['name' => 'X-WAF-TOKEN', 'value' => '']],
@@ -219,6 +242,33 @@ class CustomHeadersTest extends TestCase
     public function testUsableNamesAreTheOnesTheGateAccepts(string $name, bool $expected, string $case): void
     {
         $this->assertSame($expected, CustomHeaders::isUsableName($name), $case);
+    }
+
+    /**
+     * The read path re-applies this, so a value written straight to
+     * core_config_data cannot forge a header either.
+     *
+     * @dataProvider values
+     */
+    public function testSendableValuesAreTheOnesTheGateAccepts(string $value, bool $expected, string $case): void
+    {
+        $this->assertSame($expected, CustomHeaders::isSendableValue($value), $case);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: bool, 2: string}>
+     */
+    public static function values(): array
+    {
+        return [
+            'ordinary' => ['waf-token', true, 'the ordinary case'],
+            'spaces inside' => ['two words', true, 'a header value may contain spaces'],
+            'empty' => ['', false, 'nothing to send'],
+            'crlf' => ["abc\r\nX-API-Key: forged", false, 'would close the header and forge the next'],
+            'lf' => ["abc\nfoo", false, 'a bare newline is enough'],
+            'cr' => ["abc\rfoo", false, 'so is a bare carriage return'],
+            'nul' => ["abc\0foo", false, 'truncates the header in a C string'],
+        ];
     }
 
     /**

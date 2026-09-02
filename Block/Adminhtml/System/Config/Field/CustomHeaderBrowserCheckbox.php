@@ -10,11 +10,8 @@ namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 use Magento\Framework\View\Element\AbstractBlock;
 
 /**
- * The "also send from the browser" tick in one custom-header row.
- *
- * An unticked box posts nothing, which the backend model reads as off; the
- * ticked state of a stored row is applied by array.phtml's own
- * `setValue()` pass over the row's column values, not by a checked attribute.
+ * The "also send from browser" tick in one custom-header row. An unticked box
+ * posts nothing, which the backend model reads as off.
  */
 class CustomHeaderBrowserCheckbox extends AbstractBlock
 {
@@ -24,10 +21,9 @@ class CustomHeaderBrowserCheckbox extends AbstractBlock
     protected function _toHtml()
     {
         // No `admin__control-checkbox` class: the admin theme hides that input
-        // and draws its paired <label> instead, and a grid cell has no label.
-        //
-        // Name and id carry array.phtml's `<%- _id %>` row placeholder, so
-        // neither can be entity-escaped on the way out.
+        // and draws its paired <label>, which a grid cell has not got. Name and
+        // id carry array.phtml's `<%- _id %>` placeholder, so neither can be
+        // entity-escaped.
         return sprintf(
             '<input type="checkbox" value="1" id="%s" name="%s"/>',
             $this->getInputId(),

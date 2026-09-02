@@ -125,6 +125,10 @@ require_once __DIR__ . '/Stubs/AdminAjaxController.php';
 // exercised. Loads after the DataObject stub, which the element extends.
 require_once __DIR__ . '/Stubs/AdminConfigField.php';
 
+// Dynamic-row variant of the same surface, for the custom-header table.
+// Loads after AdminConfigField.php, whose Field class it extends.
+require_once __DIR__ . '/Stubs/AdminFieldArray.php';
+
 // Self-invoice-upload collaborators (Status\History/HistoryFactory,
 // OrderRepositoryInterface, SearchCriteriaBuilder, Pdf\Invoice) for
 // Service/Invoice/UploadService.php and Cron/ProcessInvoiceUploads.php;

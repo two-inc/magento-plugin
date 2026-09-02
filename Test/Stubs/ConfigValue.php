@@ -63,8 +63,7 @@ class Value extends \Magento\Framework\DataObject
 
     /**
      * AbstractModel's public load hook dispatches to the protected one every
-     * serialising backend model implements, which is what lets a test drive
-     * the production deserialisation rather than a reimplementation of it.
+     * serialising backend model implements.
      */
     public function afterLoad()
     {

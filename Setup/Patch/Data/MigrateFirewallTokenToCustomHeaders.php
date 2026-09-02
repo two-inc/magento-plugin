@@ -18,11 +18,9 @@ use Magento\Framework\Setup\Patch\DataPatchInterface;
  * Without this a merchant whose network gates on that header silently stops
  * sending it after upgrade and every call to the API is refused.
  *
- * Brand-agnostic (payment codes come from the rows actually present) and
- * scope-complete (each stored scope/scope_id row migrates at its own scope, so
- * inheritance is unchanged). Idempotent: a re-run finds no retired rows and
- * writes nothing. A scope that already has a custom-header table keeps it —
- * the admin's own list is never overwritten.
+ * Idempotent: a re-run finds no retired rows and writes nothing. A scope that
+ * already has a custom-header table keeps it, so the admin's own list is never
+ * overwritten.
  */
 class MigrateFirewallTokenToCustomHeaders implements DataPatchInterface
 {
@@ -30,6 +28,8 @@ class MigrateFirewallTokenToCustomHeaders implements DataPatchInterface
     private const BROWSER_KEY = 'firewall_token_browser';
     private const HEADERS_KEY = 'custom_headers';
     private const HEADER_NAME = 'X-WAF-TOKEN';
+
+    private const LIKE_PATH = "path LIKE ? ESCAPE '\\\\'";
 
     /**
      * @var ModuleDataSetupInterface
@@ -219,8 +219,16 @@ class MigrateFirewallTokenToCustomHeaders implements DataPatchInterface
     }
 
     /**
-     * Every row this patch reads or rewrites, in one query.
-     *
+     * The brand code is the only wildcard: `payment/%/<key>` with the key's own
+     * underscore escaped, so the pattern cannot widen to a neighbouring field.
+     * Same escaping as Setup\Uninstall.
+     */
+    private static function like(string $key): string
+    {
+        return 'payment/%/' . str_replace(['\\', '_', '%'], ['\\\\', '\\_', '\\%'], $key);
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     private function storedRows(): array
@@ -228,8 +236,8 @@ class MigrateFirewallTokenToCustomHeaders implements DataPatchInterface
         $connection = $this->moduleDataSetup->getConnection();
         $select = $connection->select()
             ->from($this->moduleDataSetup->getTable('core_config_data'), ['scope', 'scope_id', 'path', 'value'])
-            ->where('path LIKE ?', 'payment/%/' . self::TOKEN_KEY . '%')
-            ->orWhere('path LIKE ?', 'payment/%/' . self::HEADERS_KEY);
+            ->where(self::LIKE_PATH, self::like(self::TOKEN_KEY) . '%')
+            ->orWhere(self::LIKE_PATH, self::like(self::HEADERS_KEY));
 
         return $connection->fetchAll($select);
     }

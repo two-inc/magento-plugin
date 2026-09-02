@@ -328,6 +328,25 @@ class MigrateFirewallTokenToCustomHeadersTest extends TestCase
         $this->assertSame('prefix_core_config_data', $this->connection->queriedTable);
     }
 
+    /**
+     * The brand code is the only wildcard. An unescaped `_` in the key would
+     * make `firewall_token` match a neighbouring field name too.
+     */
+    public function testTheQueryMatchesOnlyTheKeysThisPatchOwns(): void
+    {
+        $patch = $this->buildPatch([]);
+
+        $patch->apply();
+
+        $this->assertSame(
+            [
+                ["path LIKE ? ESCAPE '\\\\'", 'payment/%/firewall\_token%'],
+                ["path LIKE ? ESCAPE '\\\\'", 'payment/%/custom\_headers'],
+            ],
+            $this->connection->recordedWheres
+        );
+    }
+
     public function testGetDependenciesAndAliasesAreEmpty(): void
     {
         $patch = $this->buildPatch([]);
@@ -352,6 +371,9 @@ class MigrateConnection
     /** @var string|null */
     public $queriedTable;
 
+    /** @var array<int, array{0: string, 1: mixed}> */
+    public $recordedWheres = [];
+
     public function startSetup(): void
     {
     }
@@ -375,6 +397,7 @@ class MigrateConnection
             return $this->storeRows;
         }
         $this->queriedTable = $select->table;
+        $this->recordedWheres = $select->wheres;
 
         return $this->rows;
     }
@@ -384,6 +407,9 @@ class MigrateSelect
 {
     /** @var string|null */
     public $table;
+
+    /** @var array<int, array{0: string, 1: mixed}> */
+    public $wheres = [];
 
     /**
      * @param string $table
@@ -402,6 +428,8 @@ class MigrateSelect
      */
     public function where($condition, $value = null): self
     {
+        $this->wheres[] = [$condition, $value];
+
         return $this;
     }
 
@@ -411,6 +439,8 @@ class MigrateSelect
      */
     public function orWhere($condition, $value = null): self
     {
+        $this->wheres[] = [$condition, $value];
+
         return $this;
     }
 }

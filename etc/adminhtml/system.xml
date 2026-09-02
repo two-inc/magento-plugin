@@ -531,7 +531,7 @@
                     <backend_model>Two\Gateway\Model\Config\Backend\TrustedProxies</backend_model>
                     <config_path>payment/two_payment/trusted_proxies</config_path>
                 </field>
-                <field id="custom_headers" translate="label comment" sortOrder="37" showInDefault="1"
+                <field id="custom_headers" translate="label comment" type="text" sortOrder="37" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Custom request headers</label>
                     <comment>Extra HTTP headers sent on every call this store makes to the Two API, for merchants whose firewall or gateway requires one — a coarse network gate, not a credential. Tick "Also send from browser" only where your IT administrator needs the header on calls from the buyer's browser as well as those from your server: a ticked header is published to the buyer's browser and may be read by anyone.</comment>

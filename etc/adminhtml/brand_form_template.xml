@@ -619,7 +619,7 @@
                     <backend_model>Two\Gateway\Model\Config\Backend\TrustedProxies</backend_model>
                     <config_path>payment/{{code}}/trusted_proxies</config_path>
                 </field>
-                <field id="custom_headers" translate="label" sortOrder="37"
+                <field id="custom_headers" translate="label" type="text" sortOrder="37"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
                     <label>Custom request headers</label>

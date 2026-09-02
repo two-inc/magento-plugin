@@ -243,6 +243,21 @@ class RepositoryAdminControlsTest extends TestCase
                 [],
                 'a valueless header is nothing to send',
             ],
+            'line break in the value' => [
+                (string)json_encode(['_1' => $row('X-WAF-TOKEN', "abc\r\nX-API-Key: forged", '1')]),
+                [],
+                [],
+                'a stored value that would forge a second header is dropped',
+            ],
+            'the same header in two casings' => [
+                (string)json_encode([
+                    '_1' => $row('X-WAF-TOKEN', 'first', '1'),
+                    '_2' => $row('x-waf-token', 'second', '1'),
+                ]),
+                ['X-WAF-TOKEN' => 'first'],
+                ['X-WAF-TOKEN' => 'first'],
+                'field names are case-insensitive, so the first is the one that wins',
+            ],
         ];
     }
 

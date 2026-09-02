@@ -12,14 +12,9 @@ use Magento\Framework\Exception\LocalizedException;
 
 /**
  * Entry gate and storage format for the admin's custom outbound HTTP header
- * table. Rows are stored as one JSON blob re-keyed `_1`, `_2`, … because
- * AbstractFieldArray renders from a row-keyed array and the POST's own keys
- * are wall-clock timestamps, which would rewrite the whole stored value on
- * every save.
- *
- * A malformed row is refused rather than stored: a header that cannot be sent
- * is one the merchant's firewall never sees, and a silently dropped row looks
- * identical in the admin to one that works.
+ * table. Rows are re-keyed `_1`, `_2`, … on save because AbstractFieldArray
+ * renders from a row-keyed array and the POST's own keys are wall-clock
+ * timestamps, which would rewrite the whole stored value on every save.
  */
 class CustomHeaders extends Value
 {
@@ -29,9 +24,13 @@ class CustomHeaders extends Value
     private const NAME_PATTERN = '/^[A-Za-z0-9!#$%&\'*+\-.^_`|~]+$/';
 
     /**
-     * Names the integration itself sets. Accepting one would let the table
-     * silently replace the API key, the payload's content type or the browser
-     * call's delegated-authority token.
+     * A value carrying one of these would close the header and forge the next
+     * one, reserved names included.
+     */
+    private const VALUE_FORBIDDEN = ["\r", "\n", "\0"];
+
+    /**
+     * Names the integration itself sets.
      */
     private const RESERVED_NAMES = [
         'content-length',
@@ -41,18 +40,29 @@ class CustomHeaders extends Value
         'two-delegated-authority-token',
     ];
 
-    /**
-     * Whether a header field name is well-formed and ours to send.
-     */
     public static function isUsableName(string $name): bool
     {
         return preg_match(self::NAME_PATTERN, $name) === 1
             && !in_array(strtolower($name), self::RESERVED_NAMES, true);
     }
 
+    public static function isSendableValue(string $value): bool
+    {
+        if ($value === '') {
+            return false;
+        }
+
+        foreach (self::VALUE_FORBIDDEN as $forbidden) {
+            if (strpos($value, $forbidden) !== false) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /**
-     * Normalise one stored or posted row to `{name, value, send_from_browser}`
-     * with the flag as `'1'`/`''` — Prototype's setValue() ticks the checkbox
+     * The flag is `'1'`/`''` because Prototype's setValue() ticks the checkbox
      * on any truthy string, and `'0'` is truthy in JavaScript.
      *
      * @param mixed $row
@@ -67,6 +77,21 @@ class CustomHeaders extends Value
             'value' => trim((string)($row['value'] ?? '')),
             'send_from_browser' => empty($row['send_from_browser']) ? '' : '1',
         ];
+    }
+
+    /**
+     * @param string $stored
+     * @return array<mixed>
+     */
+    public static function decode(string $stored): array
+    {
+        if (trim($stored) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($stored, true);
+
+        return is_array($decoded) ? $decoded : [];
     }
 
     /**
@@ -103,21 +128,9 @@ class CustomHeaders extends Value
     }
 
     /**
-     * @param string $stored
-     * @return array<mixed>
-     */
-    public static function decode(string $stored): array
-    {
-        if (trim($stored) === '') {
-            return [];
-        }
-
-        $decoded = json_decode($stored, true);
-
-        return is_array($decoded) ? $decoded : [];
-    }
-
-    /**
+     * A malformed row is refused rather than stored: a header that cannot be
+     * sent looks identical in the admin to one that works.
+     *
      * @param array<mixed> $posted
      * @throws LocalizedException
      */
@@ -127,13 +140,15 @@ class CustomHeaders extends Value
 
         $rows = [];
         $seen = [];
+        $position = 0;
         foreach ($posted as $row) {
+            $position++;
             $row = self::normaliseRow($row);
             if ($row['name'] === '' && $row['value'] === '') {
                 continue;
             }
 
-            $this->assertRowIsSendable($row);
+            $this->assertRowIsSendable($row, $position);
 
             $key = strtolower($row['name']);
             if (isset($seen[$key])) {
@@ -146,18 +161,29 @@ class CustomHeaders extends Value
             $rows['_' . (count($rows) + 1)] = $row;
         }
 
-        return $rows === [] ? '' : (string)json_encode($rows);
+        if ($rows === []) {
+            return '';
+        }
+
+        $encoded = json_encode($rows);
+        if ($encoded === false) {
+            throw new LocalizedException(
+                __('Custom headers: the table could not be stored. Check the values for stray characters.')
+            );
+        }
+
+        return $encoded;
     }
 
     /**
      * @param array{name: string, value: string, send_from_browser: string} $row
      * @throws LocalizedException
      */
-    private function assertRowIsSendable(array $row): void
+    private function assertRowIsSendable(array $row, int $position): void
     {
         if ($row['name'] === '') {
             throw new LocalizedException(
-                __('Custom headers: a header value was given with no header name ("%1").', $row['value'])
+                __('Custom headers: row %1 has a value but no header name.', $position)
             );
         }
 
@@ -176,6 +202,15 @@ class CustomHeaders extends Value
         if (in_array(strtolower($row['name']), self::RESERVED_NAMES, true)) {
             throw new LocalizedException(
                 __('Custom headers: "%1" is set by the extension itself and cannot be overridden.', $row['name'])
+            );
+        }
+
+        if (!self::isSendableValue($row['value'])) {
+            throw new LocalizedException(
+                __(
+                    'Custom headers: the value for "%1" contains a line break, which a header cannot carry.',
+                    $row['name']
+                )
             );
         }
     }

@@ -878,18 +878,28 @@ class Repository implements RepositoryInterface
      */
     private function customHeaders(?int $storeId, bool $browserOnly): array
     {
-        $stored = $this->getConfig($this->path('custom_headers'), $storeId);
-        $rows = is_array($stored) ? $stored : CustomHeadersBackend::decode((string)$stored);
+        $stored = (string)$this->getConfig($this->path('custom_headers'), $storeId);
 
         $headers = [];
-        foreach ($rows as $rawRow) {
+        $seen = [];
+        foreach (CustomHeadersBackend::decode($stored) as $rawRow) {
             $row = CustomHeadersBackend::normaliseRow($rawRow);
-            if ($row['value'] === '' || !CustomHeadersBackend::isUsableName($row['name'])) {
+            if (!CustomHeadersBackend::isUsableName($row['name'])
+                || !CustomHeadersBackend::isSendableValue($row['value'])
+            ) {
                 continue;
             }
             if ($browserOnly && $row['send_from_browser'] === '') {
                 continue;
             }
+
+            // Field names are case-insensitive, so two rows differing only in
+            // case are one header and the first is the one that would win.
+            $key = strtolower($row['name']);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
 
             $headers[$row['name']] = $row['value'];
         }
