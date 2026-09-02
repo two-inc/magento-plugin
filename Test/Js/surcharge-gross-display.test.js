@@ -66,7 +66,7 @@ describe('surcharge model term previews', function () {
     it.each([
         ['excl', { 30: 100, 60: 200 }],
         ['incl', { 30: 121, 60: 242 }],
-        ['both', { 30: 121, 60: 242 }]
+        ['both', { 30: 100, 60: 200 }]
     ])('renders the %s amounts the store asks for', function (mode, expected) {
         const { model, captured } = loadModel();
 

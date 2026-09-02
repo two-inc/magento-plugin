@@ -527,7 +527,7 @@ function makeSurchargeMock() {
         termSurchargesGross: termSurchargesGross,
         taxDisplay: taxDisplay,
         displayedTermSurcharges: function () {
-            return taxDisplay() === 'excl' ? termSurcharges() : termSurchargesGross();
+            return taxDisplay() === 'incl' ? termSurchargesGross() : termSurcharges();
         },
         currencySymbol: '€',
         selectTerm: function () {},
