@@ -518,9 +518,17 @@ function makeComponentMock() {
 }
 
 function makeSurchargeMock() {
+    const termSurcharges = makeObservable({});
+    const termSurchargesGross = makeObservable({});
+    const taxDisplay = makeObservable('excl');
     return {
         selectedTerm: makeObservable(null),
-        termSurcharges: makeObservable({}),
+        termSurcharges: termSurcharges,
+        termSurchargesGross: termSurchargesGross,
+        taxDisplay: taxDisplay,
+        displayedTermSurcharges: function () {
+            return taxDisplay() === 'excl' ? termSurcharges() : termSurchargesGross();
+        },
         currencySymbol: '€',
         selectTerm: function () {},
         fetchSurcharges: function () {}

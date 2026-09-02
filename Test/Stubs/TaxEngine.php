@@ -162,6 +162,48 @@ namespace Magento\Customer\Api\Data {
     }
 }
 
+namespace Magento\Tax\Model {
+    if (!class_exists(Config::class, false)) {
+        /**
+         * The store-wide "Display Prices" switches for the cart and sales
+         * tiers, which decide whether the surcharge is presented net, gross,
+         * or both. Signatures mirror magento/module-tax's Model\Config.
+         */
+        class Config
+        {
+            public function displayCartPricesBoth($store = null)
+            {
+                return false;
+            }
+
+            public function displayCartPricesInclTax($store = null)
+            {
+                return false;
+            }
+
+            public function displayCartPricesExclTax($store = null)
+            {
+                return true;
+            }
+
+            public function displaySalesPricesBoth($store = null)
+            {
+                return false;
+            }
+
+            public function displaySalesPricesInclTax($store = null)
+            {
+                return false;
+            }
+
+            public function displaySalesPricesExclTax($store = null)
+            {
+                return true;
+            }
+        }
+    }
+}
+
 namespace Magento\Framework\Exception {
     if (!class_exists(NoSuchEntityException::class, false)) {
         class NoSuchEntityException extends LocalizedException

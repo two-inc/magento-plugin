@@ -20,6 +20,7 @@ use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Service\Order\SurchargeCalculator;
+use Two\Gateway\Service\Order\SurchargeDisplay;
 use Two\Gateway\Service\Order\SurchargeTaxCalculator;
 
 /**
@@ -61,6 +62,9 @@ class SurchargeTest extends TestCase
     /** @var MerchantMinimumResolver|\PHPUnit\Framework\MockObject\MockObject */
     private $merchantMinimumResolver;
 
+    /** @var SurchargeDisplay|\PHPUnit\Framework\MockObject\MockObject */
+    private $surchargeDisplay;
+
     /** @var Surcharge */
     private $collector;
 
@@ -76,6 +80,12 @@ class SurchargeTest extends TestCase
         $this->minimumOrderGate->method('isSatisfied')->willReturn(true);
         $this->minimumOrderProvider = $this->createMock(MinimumOrderProvider::class);
         $this->merchantMinimumResolver = $this->createMock(MerchantMinimumResolver::class);
+        $this->surchargeDisplay = $this->createMock(SurchargeDisplay::class);
+        $this->surchargeDisplay->method('forCart')->willReturn(SurchargeDisplay::EXCL);
+        $this->surchargeDisplay->method('pick')
+            ->willReturnCallback(static function (string $mode, float $net, float $tax): float {
+                return $mode === SurchargeDisplay::EXCL ? $net : $net + $tax;
+            });
 
         $this->collector = new Surcharge(
             $this->session,
@@ -85,7 +95,8 @@ class SurchargeTest extends TestCase
             $this->createMock(LogRepository::class),
             $this->minimumOrderGate,
             $this->minimumOrderProvider,
-            $this->merchantMinimumResolver
+            $this->merchantMinimumResolver,
+            $this->surchargeDisplay
         );
     }
 
@@ -273,7 +284,8 @@ class SurchargeTest extends TestCase
             $this->createMock(LogRepository::class),
             $this->minimumOrderGate,
             $this->minimumOrderProvider,
-            $this->merchantMinimumResolver
+            $this->merchantMinimumResolver,
+            $this->surchargeDisplay
         );
 
         $this->session->setTwoSurchargeAmount(100.0);
@@ -286,5 +298,90 @@ class SurchargeTest extends TestCase
         $this->assertEqualsWithDelta(1000.0, $total->getGrandTotal(), 1e-9);
         $this->assertEqualsWithDelta(0.0, (float)$this->session->getTwoSurchargeAmount(), 1e-9);
         $this->assertEqualsWithDelta(0.0, (float)$this->session->getTwoSurchargeTax(), 1e-9);
+    }
+    private function collectorDisplaying(string $mode): Surcharge
+    {
+        $display = $this->createMock(SurchargeDisplay::class);
+        $display->method('forCart')->willReturn($mode);
+        $display->method('pick')
+            ->willReturnCallback(static function (string $m, float $net, float $tax): float {
+                return $m === SurchargeDisplay::EXCL ? $net : $net + $tax;
+            });
+
+        return new Surcharge(
+            $this->session,
+            $this->config,
+            $this->surchargeCalculator,
+            $this->taxCalculator,
+            $this->createMock(LogRepository::class),
+            $this->minimumOrderGate,
+            $this->minimumOrderProvider,
+            $this->merchantMinimumResolver,
+            $display
+        );
+    }
+
+    /**
+     * @dataProvider fetchSingleRowModes
+     */
+    public function testFetchSegmentValueFollowsTheStoreTaxDisplay(string $mode, float $expected): void
+    {
+        $this->session->setTwoSurchargeAmount(100.0);
+        $this->session->setTwoSurchargeTax(21.0);
+        $this->session->setTwoSurchargeDescription('Payment terms fee - 30 days');
+
+        $fetched = $this->collectorDisplaying($mode)->fetch($this->makeQuote(), new Total());
+
+        $this->assertSame('two_surcharge', $fetched['code']);
+        $this->assertEqualsWithDelta($expected, (float)$fetched['value'], 1e-9);
+        $this->assertSame('Payment terms fee - 30 days', (string)$fetched['title']);
+        $this->assertSame(
+            [],
+            array_column($fetched, 'code'),
+            'a single total must not satisfy TotalsReader::convert()\'s list predicate'
+        );
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: float}>
+     */
+    public function fetchSingleRowModes(): array
+    {
+        return [
+            'excl shows net' => [SurchargeDisplay::EXCL, 100.0],
+            'incl shows net plus tax' => [SurchargeDisplay::INCL, 121.0],
+        ];
+    }
+
+    public function testFetchEmitsPairedSegmentsInBothMode(): void
+    {
+        $this->session->setTwoSurchargeAmount(100.0);
+        $this->session->setTwoSurchargeTax(21.0);
+        $this->session->setTwoSurchargeDescription('Payment terms fee - 30 days');
+
+        $fetched = $this->collectorDisplaying(SurchargeDisplay::BOTH)->fetch($this->makeQuote(), new Total());
+
+        $this->assertCount(2, $fetched);
+        $this->assertSame('two_surcharge', $fetched[0]['code']);
+        $this->assertEqualsWithDelta(100.0, (float)$fetched[0]['value'], 1e-9);
+        $this->assertSame('Payment terms fee - 30 days (Excl. Tax)', (string)$fetched[0]['title']);
+        $this->assertSame('two_surcharge_incl', $fetched[1]['code']);
+        $this->assertEqualsWithDelta(121.0, (float)$fetched[1]['value'], 1e-9);
+        $this->assertSame('Payment terms fee - 30 days (Incl. Tax)', (string)$fetched[1]['title']);
+
+        // The predicate Magento\Quote\Model\Quote\TotalsReader::convert()
+        // uses to decide a collector returned a list of totals rather than
+        // one: without it, "Both" collapses into a single mangled segment.
+        $this->assertCount(2, array_column($fetched, 'code'));
+    }
+
+    public function testFetchEmitsNothingWithoutASurcharge(): void
+    {
+        $this->session->setTwoSurchargeAmount(0);
+
+        $this->assertSame(
+            [],
+            $this->collectorDisplaying(SurchargeDisplay::INCL)->fetch($this->makeQuote(), new Total())
+        );
     }
 }

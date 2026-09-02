@@ -11,7 +11,7 @@ use Magento\Checkout\Model\Session as CheckoutSession;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\SurchargesInterface;
-use Two\Gateway\Service\Order\SurchargeCalculator;
+use Two\Gateway\Service\Order\TermSurchargePreview;
 use Two\Gateway\Service\RateLimiter;
 
 /**
@@ -45,9 +45,9 @@ class Surcharges implements SurchargesInterface
     private $configRepository;
 
     /**
-     * @var SurchargeCalculator
+     * @var TermSurchargePreview
      */
-    private $surchargeCalculator;
+    private $termSurchargePreview;
 
     /**
      * @var LogRepository
@@ -62,13 +62,13 @@ class Surcharges implements SurchargesInterface
     public function __construct(
         CheckoutSession $checkoutSession,
         ConfigRepository $configRepository,
-        SurchargeCalculator $surchargeCalculator,
+        TermSurchargePreview $termSurchargePreview,
         LogRepository $logRepository,
         RateLimiter $rateLimiter
     ) {
         $this->checkoutSession = $checkoutSession;
         $this->configRepository = $configRepository;
-        $this->surchargeCalculator = $surchargeCalculator;
+        $this->termSurchargePreview = $termSurchargePreview;
         $this->logRepository = $logRepository;
         $this->rateLimiter = $rateLimiter;
     }
@@ -117,11 +117,12 @@ class Surcharges implements SurchargesInterface
                 // rather than [] so the frontend chips render zero
                 // values instead of staying in loader state — the
                 // legitimate full-discount user can still pick a term.
-                $emptySurcharges = [];
-                foreach ($this->configRepository->getAllBuyerTerms($storeId) as $days) {
-                    $emptySurcharges[] = ['days' => (int)$days, 'net' => 0.0];
-                }
-                return (string)json_encode(['term_surcharges' => $emptySurcharges]);
+                return (string)json_encode([
+                    'term_surcharges' => $this->termSurchargePreview->zeroed(
+                        $this->configRepository->getAllBuyerTerms($storeId)
+                    ),
+                    'tax_display' => $this->termSurchargePreview->taxDisplay($quote),
+                ]);
             }
 
             $currency = $quote->getQuoteCurrencyCode()
@@ -136,31 +137,20 @@ class Surcharges implements SurchargesInterface
                 $country = $shipping->getCountryId();
             }
 
-            $surcharges = [];
-            foreach ($this->configRepository->getAllBuyerTerms($storeId) as $days) {
-                try {
-                    $result = $this->surchargeCalculator->calculate(
-                        $basis,
-                        $days,
-                        $country,
-                        $currency,
-                        $storeId
-                    );
-                    $surcharges[] = ['days' => (int)$days, 'net' => (float)$result['amount']];
-                } catch (\Exception $e) {
-                    // Per-term failure: keep the other terms responsive, but
-                    // log loudly so the silent zero doesn't mask a broken
-                    // pricing path that will later detonate at checkout when
-                    // the buyer actually picks this term.
-                    $this->logRepository->addErrorLog(
-                        sprintf('Surcharges webapi: term %d failed', $days),
-                        $e->getMessage()
-                    );
-                    $surcharges[] = ['days' => (int)$days, 'net' => 0.0];
-                }
-            }
+            $surcharges = $this->termSurchargePreview->build(
+                $quote,
+                $basis,
+                $this->configRepository->getAllBuyerTerms($storeId),
+                $country,
+                $currency,
+                $storeId,
+                'Surcharges webapi'
+            );
 
-            return (string)json_encode(['term_surcharges' => $surcharges]);
+            return (string)json_encode([
+                'term_surcharges' => $surcharges,
+                'tax_display' => $this->termSurchargePreview->taxDisplay($quote),
+            ]);
         } catch (\Exception $e) {
             // Don't 500 — frontend treats empty as "stay in loader state".
             $this->logRepository->addErrorLog('Surcharges webapi', $e->getMessage());

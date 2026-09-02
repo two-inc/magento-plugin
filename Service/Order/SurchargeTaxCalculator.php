@@ -156,6 +156,9 @@ class SurchargeTaxCalculator
         int $taxClassId,
         int $storeId
     ): array {
+        $shipping = $shippingAssignment->getShipping();
+        $shippingAddress = $shipping !== null ? $shipping->getAddress() : null;
+
         // $round=true on both passes — core's Tax collector
         // (Magento\Tax\Model\Sales\Total\Quote\Tax::getQuoteTaxDetails)
         // always calls calculateTax() with the default $round=true for
@@ -163,12 +166,12 @@ class SurchargeTaxCalculator
         // 6dp rounding below is then a no-op safety net that only caps
         // precision at the API wire contract.
         $taxDetails = $this->taxCalculation->calculateTax(
-            $this->buildQuoteDetails($quote, $shippingAssignment, $netAmount, $taxClassId),
+            $this->buildQuoteDetails($quote, $shippingAddress, $netAmount, $taxClassId),
             $storeId,
             true
         );
         $baseTaxDetails = $this->taxCalculation->calculateTax(
-            $this->buildQuoteDetails($quote, $shippingAssignment, $baseNetAmount, $taxClassId),
+            $this->buildQuoteDetails($quote, $shippingAddress, $baseNetAmount, $taxClassId),
             $storeId,
             true
         );
@@ -191,6 +194,29 @@ class SurchargeTaxCalculator
             'base_tax_amount' => round($baseTaxAmount, 6),
             'tax_rate' => $taxRate,
         ];
+    }
+
+    /**
+     * The destination-aware surcharge tax rate for a quote, with no amount
+     * to attribute it to. Used by the term-preview endpoints, which need one
+     * rate to turn each candidate term's net into a gross — the rate is the
+     * same for every term, so the engine runs once per request.
+     *
+     * Reads the quote's own shipping address rather than a shipping
+     * assignment: those endpoints run outside the collectTotals() pipeline
+     * that supplies one.
+     *
+     * @throws LocalizedException when an engine pass omits the surcharge item
+     */
+    public function resolveRateForQuote(Quote $quote, int $taxClassId, int $storeId): float
+    {
+        $taxDetails = $this->taxCalculation->calculateTax(
+            $this->buildQuoteDetails($quote, $quote->getShippingAddress(), 100.0, $taxClassId),
+            $storeId,
+            true
+        );
+
+        return $this->extractSurchargeItemTax($taxDetails, 'quote')[1];
     }
 
     /**
@@ -231,9 +257,12 @@ class SurchargeTaxCalculator
      * Build the QuoteDetails submission, mirroring core's
      * CommonTaxCollector::prepareQuoteDetails() + getShippingDataObject().
      */
+    /**
+     * @param QuoteAddress|null $shippingAddress
+     */
     private function buildQuoteDetails(
         Quote $quote,
-        ShippingAssignmentInterface $shippingAssignment,
+        $shippingAddress,
         float $amount,
         int $taxClassId
     ) {
@@ -248,9 +277,6 @@ class SurchargeTaxCalculator
                     ->setType(TaxClassKeyInterface::TYPE_ID)
                     ->setValue($taxClassId)
             );
-
-        $shipping = $shippingAssignment->getShipping();
-        $shippingAddress = $shipping !== null ? $shipping->getAddress() : null;
 
         $quoteDetails = $this->quoteDetailsFactory->create();
         $quoteDetails->setBillingAddress($this->mapAddress($quote->getBillingAddress()));
