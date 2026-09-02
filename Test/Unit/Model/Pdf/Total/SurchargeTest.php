@@ -23,7 +23,7 @@ class SurchargeTest extends TestCase
         $source = new Order();
         $source->setData('two_surcharge_amount', 23.99);
         $source->setData('two_surcharge_tax_amount', 5.16);
-        $source->setData('two_surcharge_description', 'Zakelijk op Rekening - 60 dagen');
+        $source->setData('two_surcharge_description', 'Business Invoice - 60 days');
 
         $orderFmt = new class {
             public function formatPriceTxt($v)
@@ -66,6 +66,6 @@ class SurchargeTest extends TestCase
             $rows[0]['amount'],
             'PDF surcharge row must show NET (23.99), not gross (29.15)'
         );
-        $this->assertSame('Zakelijk op Rekening - 60 dagen:', $rows[0]['label']);
+        $this->assertSame('Business Invoice - 60 days:', $rows[0]['label']);
     }
 }

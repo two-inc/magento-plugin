@@ -47,7 +47,7 @@ class SurchargeTest extends TestCase
         $order->setData('two_surcharge_refunded', 0.0);
         $order->setData('base_two_surcharge_refunded', 0.0);
         $order->setData('two_surcharge_tax_rate', self::TAX_RATE);
-        $order->setData('two_surcharge_description', 'Zakelijk op Rekening - 90 dagen');
+        $order->setData('two_surcharge_description', 'Business Invoice - 90 days');
         $order->setData('subtotal', self::SUBTOTAL);
         $order->setData('base_to_order_rate', 1.0);
         return $order;
@@ -113,7 +113,7 @@ class SurchargeTest extends TestCase
             0.0001
         );
         $this->assertSame(
-            'Zakelijk op Rekening - 90 dagen',
+            'Business Invoice - 90 days',
             $creditmemo->getTwoSurchargeDescription()
         );
     }

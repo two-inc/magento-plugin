@@ -68,9 +68,9 @@ class InfoTest extends TestCase
             ],
             'admin, order id present, ABN brand' => [
                 Area::AREA_ADMINHTML,
-                'ABN AMRO Zakelijk op Rekening',
+                'Business Invoice',
                 'ord_456',
-                ['ABN AMRO Zakelijk op Rekening order id' => 'ord_456'],
+                ['Business Invoice order id' => 'ord_456'],
                 'overlay brand must get its own label with no code change',
             ],
             'admin, no order id yet' => [
