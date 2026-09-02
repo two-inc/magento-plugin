@@ -211,13 +211,13 @@ define([
         },
 
         /**
-         * The per-term map the chips must render: net when the store shows
-         * net prices at checkout, gross otherwise. A chip is one compact
-         * value, so 'both' shows gross — the excl/incl pair belongs to the
-         * order-summary rows, which have the room for two lines.
+         * The per-term map the chips must render: gross only when the store
+         * shows gross-only prices at checkout ('incl'); net for 'excl' and
+         * for 'both' — a chip is one compact value and has no room for the
+         * excl/incl pair, which belongs to the order-summary rows instead.
          */
         displayedTermSurcharges: function () {
-            return taxDisplay() === 'excl' ? termSurcharges() : termSurchargesGross();
+            return taxDisplay() === 'incl' ? termSurchargesGross() : termSurcharges();
         },
 
         /**
