@@ -8,14 +8,16 @@
  *
  * Mutation-resistance notes:
  *
- *  - the silent-adoption cases assert the popup count is ZERO, not merely that
- *    a name landed, so adopting AND falling through to the popup fails;
+ *  - the first silent-adoption case asserts the popup count is ZERO rather
+ *    than only that a name landed, so adopting AND falling through to the
+ *    popup fails; the cases after it read one written field each;
  *  - the fall-through popup is asserted in the SAME TICK as the click, with
  *    nothing awaited between them, so anything reintroduced between the click
  *    and the open — a mint, a lookup, a promise hop — fails;
- *  - every case pins the lookup COUNT, so a click that asks again, a gesture
- *    that stops asking at boot, and a "select a different sole trader" routed
- *    through the held record are all distinguishable from the popup opening;
+ *  - wherever an unasked question would look like a missing answer, the case
+ *    pins the lookup COUNT too: a click that asks again, a boot that stops
+ *    asking, a re-arm that never fires, and a "select a different sole trader"
+ *    routed through the held record are each caught by the count alone;
  *  - the usable-record rule is driven with a real nameless buyer rather than by
  *    asserting a predicate exists;
  *  - supersession is driven with a second, distinguishable record, so a held
