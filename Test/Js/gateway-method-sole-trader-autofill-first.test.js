@@ -344,20 +344,22 @@ describe('anything less than a usable record falls through to the popup', () => 
 
 describe('"select a different sole trader" never consults the held record', () => {
     test('the link opens the popup even though the held record would answer', async () => {
-        const { rec } = await startStack({ buyer: BUYER });
+        const { flow, identity, rec } = await startStack({ buyer: BUYER });
 
         await clickSoleTrader();
-        const lookupsAfterAdoption = rec.lookups;
         expect(differentTraderLink()).not.toBeNull();
+        // Held directly: an adoption spends the answer, so this is the only
+        // way to put one in front of the link the buyer is about to click.
+        flow._autofillBuyer = OTHER_TRADER;
 
         differentTraderLink().click();
         await settle();
 
-        // The count, not just the popup: routing this link through the held
-        // record would still open a popup whenever the lookup had missed.
-        expect(rec.lookups).toBe(lookupsAfterAdoption);
         expect(rec.opened).toHaveLength(1);
         expect(new URL(rec.opened[0].url).searchParams.get('autoselect')).toBe('false');
+        // Routing the link through the answer would hand back a trader the
+        // buyer asked to replace.
+        expect(identity.companyName()).toBe(BUYER.company_name);
     });
 
     test('the flow entry point itself makes no lookup', async () => {

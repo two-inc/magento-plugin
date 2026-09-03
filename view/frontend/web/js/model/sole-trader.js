@@ -80,8 +80,8 @@
      * Whether an autofill record carries enough to adopt without the popup.
      *
      * Keyed on the name because that is the identity `adoptSoleTrader()` writes
-     * authoritatively: adopting a nameless record blanks the company field and
-     * leaves no route forward (TWO-25461), which is worse than the popup.
+     * authoritatively: adopting a nameless record blanks the company field,
+     * which is worse than the popup.
      *
      * @param {object} buyer `/autofill/v1/buyer/current` record
      * @returns {boolean}
