@@ -319,7 +319,7 @@
 "Custom headers: ""%1"" is listed more than once. Give each header one row.","Egendefinerte headere: ""%1"" er oppført mer enn én gang. Gi hver header én rad."
 "Custom headers: ""%1"" has no value. Give it one, or remove the row.","Egendefinerte headere: ""%1"" har ingen verdi. Gi den en verdi, eller fjern raden."
 "Custom headers: row %1 has a value but no header name.","Egendefinerte headere: rad %1 har en verdi, men ikke noe headernavn."
-"Custom headers: the value for ""%1"" contains a line break, which a header cannot carry.","Egendefinerte headere: verdien for ""%1"" inneholder et linjeskift, som en header ikke kan inneholde."
+"Custom headers: the value for ""%1"" may only contain printable ASCII characters — no line breaks, control characters, or non-ASCII text.","Egendefinerte headere: verdien for ""%1"" kan bare inneholde skrivbare ASCII-tegn – ingen linjeskift, kontrolltegn eller tekst utenfor ASCII."
 "Custom headers: the table could not be stored. Check the values for stray characters.","Egendefinerte headere: tabellen kunne ikke lagres. Sjekk verdiene for uønskede tegn."
 "Custom headers: ""%1"" is not a valid HTTP header name.","Egendefinerte headere: ""%1"" er ikke et gyldig HTTP-headernavn."
 "Custom headers: ""%1"" is set by the extension itself and cannot be overridden.","Egendefinerte headere: ""%1"" settes av selve utvidelsen og kan ikke overstyres."

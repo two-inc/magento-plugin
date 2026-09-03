@@ -315,7 +315,7 @@
 "Custom headers: ""%1"" is listed more than once. Give each header one row.","Aangepaste headers: ""%1"" staat meer dan één keer in de lijst. Geef elke header één rij."
 "Custom headers: ""%1"" has no value. Give it one, or remove the row.","Aangepaste headers: ""%1"" heeft geen waarde. Geef er een waarde aan of verwijder de rij."
 "Custom headers: row %1 has a value but no header name.","Aangepaste headers: rij %1 heeft een waarde maar geen headernaam."
-"Custom headers: the value for ""%1"" contains a line break, which a header cannot carry.","Aangepaste headers: de waarde voor ""%1"" bevat een regeleinde, wat een header niet kan bevatten."
+"Custom headers: the value for ""%1"" may only contain printable ASCII characters — no line breaks, control characters, or non-ASCII text.","Aangepaste headers: de waarde voor ""%1"" mag alleen afdrukbare ASCII-tekens bevatten — geen regeleinden, controletekens of niet-ASCII-tekst."
 "Custom headers: the table could not be stored. Check the values for stray characters.","Aangepaste headers: de tabel kon niet worden opgeslagen. Controleer de waarden op ongewenste tekens."
 "Custom headers: ""%1"" is not a valid HTTP header name.","Aangepaste headers: ""%1"" is geen geldige HTTP-headernaam."
 "Custom headers: ""%1"" is set by the extension itself and cannot be overridden.","Aangepaste headers: ""%1"" wordt door de extensie zelf ingesteld en kan niet worden overschreven."

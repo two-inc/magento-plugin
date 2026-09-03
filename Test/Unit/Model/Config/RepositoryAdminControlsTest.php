@@ -237,6 +237,24 @@ class RepositoryAdminControlsTest extends TestCase
                 [],
                 'a stored row can never displace a header the extension sets',
             ],
+            'a name reserved for the browser call' => [
+                (string)json_encode(['_1' => $row('Accept', 'text/html', '1')]),
+                [],
+                [],
+                'the browser call sets Accept itself, so a row naming it is dropped here too',
+            ],
+            'a proxy-identity name' => [
+                (string)json_encode(['_1' => $row('X-Forwarded-For', '10.0.0.1', '')]),
+                [],
+                [],
+                'the merchant cannot restate the caller identity the rate limiter trusts',
+            ],
+            'non-ASCII value' => [
+                (string)json_encode(['_1' => $row('X-Waf', 'caf' . chr(0xC3) . chr(0xA9), '1')]),
+                [],
+                [],
+                'a stored value outside printable ASCII is dropped rather than put on the wire',
+            ],
             'no value' => [
                 (string)json_encode(['_1' => $row('X-WAF-TOKEN', '', '1')]),
                 [],

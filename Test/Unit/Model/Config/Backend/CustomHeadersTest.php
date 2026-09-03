@@ -90,10 +90,15 @@ class CustomHeadersTest extends TestCase
                 ],
                 'stored keys are positional, so an unchanged table stores an unchanged value',
             ],
-            'surrounding whitespace is trimmed' => [
-                ['_1' => ['name' => '  X-WAF-TOKEN ', 'value' => " abc\n"]],
+            'surrounding spaces and tabs are trimmed' => [
+                ['_1' => ['name' => '  X-WAF-TOKEN ', 'value' => "\tabc "]],
                 ['_1' => ['name' => 'X-WAF-TOKEN', 'value' => 'abc', 'send_from_browser' => '']],
                 'a pasted value carries whitespace a header cannot',
+            ],
+            'the printable ASCII boundaries' => [
+                ['_1' => ['name' => 'X-Waf', 'value' => 'a b~c!']],
+                ['_1' => ['name' => 'X-Waf', 'value' => 'a b~c!', 'send_from_browser' => '']],
+                'space and tilde are the first and last characters the rule allows',
             ],
             'the grid always posts its empty marker' => [
                 ['__empty' => ''],
@@ -143,19 +148,35 @@ class CustomHeadersTest extends TestCase
             ],
             'carriage return in the value' => [
                 ['_1' => ['name' => 'X-Waf', 'value' => "abc\r\nX-API-Key: forged"]],
-                'the value for "X-Waf" contains a line break',
+                'may only contain printable ASCII characters',
             ],
             'bare newline in the value' => [
                 ['_1' => ['name' => 'X-Waf', 'value' => "abc\nX-API-Key: forged"]],
-                'the value for "X-Waf" contains a line break',
+                'may only contain printable ASCII characters',
             ],
             'null byte in the value' => [
                 ['_1' => ['name' => 'X-Waf', 'value' => "abc\0def"]],
-                'the value for "X-Waf" contains a line break',
+                'may only contain printable ASCII characters',
             ],
-            'a value json cannot carry' => [
+            'non-ASCII bytes' => [
                 ['_1' => ['name' => 'X-Waf', 'value' => "abc\xB1\x31"]],
-                'the table could not be stored',
+                'may only contain printable ASCII characters',
+            ],
+            'accented text' => [
+                ['_1' => ['name' => 'X-Waf', 'value' => 'café']],
+                'may only contain printable ASCII characters',
+            ],
+            'an interior tab' => [
+                ['_1' => ['name' => 'X-Waf', 'value' => "abc\tdef"]],
+                'may only contain printable ASCII characters',
+            ],
+            'a trailing newline is refused, not stripped' => [
+                ['_1' => ['name' => 'X-Waf', 'value' => "abc\n"]],
+                'may only contain printable ASCII characters',
+            ],
+            'the delete control character' => [
+                ['_1' => ['name' => 'X-Waf', 'value' => "abc\x7Fdef"]],
+                'may only contain printable ASCII characters',
             ],
             'no value' => [
                 ['_1' => ['name' => 'X-WAF-TOKEN', 'value' => '']],
@@ -237,6 +258,72 @@ class CustomHeadersTest extends TestCase
     }
 
     /**
+     * Given a name the extension sets itself, or a proxy-identity header;
+     * When the admin lists it, however cased; Then the save is refused.
+     *
+     * @dataProvider reservedNames
+     */
+    public function testAReservedNameIsRefusedWhateverItsCasing(string $name): void
+    {
+        foreach ([$name, strtoupper($name), ucwords($name, '-')] as $cased) {
+            $this->assertFalse(
+                CustomHeaders::isUsableName($cased),
+                sprintf('%s must be reserved', $cased)
+            );
+
+            try {
+                $this->save(['_1' => ['name' => $cased, 'value' => 'anything']]);
+                $this->fail(sprintf('%s must be refused at save', $cased));
+            } catch (LocalizedException $e) {
+                $this->assertStringContainsString('is set by the extension itself', $e->getMessage());
+            }
+        }
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function reservedNames(): array
+    {
+        $names = [
+            'host',
+            'content-type',
+            'content-length',
+            'accept',
+            'accept-language',
+            'x-api-key',
+            'two-delegated-authority-token',
+            'x-forwarded-for',
+            'x-real-ip',
+        ];
+
+        return array_combine($names, array_map(static fn(string $name) => [$name], $names));
+    }
+
+    /**
+     * A name near a reserved one is still the admin's to use.
+     *
+     * @dataProvider namesNearAReservedOne
+     */
+    public function testANameMerelyResemblingAReservedOneIsAccepted(string $name): void
+    {
+        $this->assertTrue(CustomHeaders::isUsableName($name));
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function namesNearAReservedOne(): array
+    {
+        return [
+            'prefixed' => ['X-Accept'],
+            'suffixed' => ['accept-charset'],
+            'the WAF token the retired field used' => ['X-WAF-TOKEN'],
+            'a merchant gateway name' => ['X-Gateway-Id'],
+        ];
+    }
+
+    /**
      * @dataProvider names
      */
     public function testUsableNamesAreTheOnesTheGateAccepts(string $name, bool $expected, string $case): void
@@ -263,11 +350,21 @@ class CustomHeadersTest extends TestCase
         return [
             'ordinary' => ['waf-token', true, 'the ordinary case'],
             'spaces inside' => ['two words', true, 'a header value may contain spaces'],
+            'punctuation' => ['a=b; c="d", e/f?g&h', true, 'printable ASCII is printable ASCII'],
+            'first allowed character' => [' x', true, 'space is 0x20, the low boundary'],
+            'last allowed character' => ['~', true, 'tilde is 0x7E, the high boundary'],
             'empty' => ['', false, 'nothing to send'],
             'crlf' => ["abc\r\nX-API-Key: forged", false, 'would close the header and forge the next'],
             'lf' => ["abc\nfoo", false, 'a bare newline is enough'],
+            'trailing lf' => ["abc\n", false, 'the byte a regex anchored on $ would have let through'],
             'cr' => ["abc\rfoo", false, 'so is a bare carriage return'],
             'nul' => ["abc\0foo", false, 'truncates the header in a C string'],
+            'tab' => ["abc\tfoo", false, 'a control character, however harmless it looks'],
+            'vertical tab' => ["abc\x0Bfoo", false, 'still a control character'],
+            'escape' => ["abc\x1Bfoo", false, 'terminal escape, a log-injection sink'],
+            'delete' => ["abc\x7Ffoo", false, '0x7F is above the printable range'],
+            'high byte' => ["abc\xB1", false, 'non-ASCII is encoding-ambiguous on the wire'],
+            'accented text' => ['café', false, 'valid UTF-8 is still not ASCII'],
         ];
     }
 

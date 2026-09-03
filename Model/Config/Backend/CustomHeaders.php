@@ -24,19 +24,25 @@ class CustomHeaders extends Value
     private const NAME_PATTERN = '/^[A-Za-z0-9!#$%&\'*+\-.^_`|~]+$/';
 
     /**
-     * A value carrying one of these would close the header and forge the next.
+     * Printable ASCII only. `\z` rather than `$`, which would let a trailing
+     * newline through — the response-splitting byte this exists to refuse.
      */
-    private const VALUE_FORBIDDEN = ["\r", "\n", "\0"];
+    private const VALUE_PATTERN = '/^[\x20-\x7E]+\z/';
 
     /**
-     * Names the integration itself sets.
+     * Names the integration sets itself, plus the proxy-identity headers a
+     * merchant must not be able to restate from here.
      */
     private const RESERVED_NAMES = [
-        'content-length',
-        'content-type',
         'host',
+        'content-type',
+        'content-length',
+        'accept',
+        'accept-language',
         'x-api-key',
         'two-delegated-authority-token',
+        'x-forwarded-for',
+        'x-real-ip',
     ];
 
     public static function isUsableName(string $name): bool
@@ -47,17 +53,7 @@ class CustomHeaders extends Value
 
     public static function isSendableValue(string $value): bool
     {
-        if ($value === '') {
-            return false;
-        }
-
-        foreach (self::VALUE_FORBIDDEN as $forbidden) {
-            if (strpos($value, $forbidden) !== false) {
-                return false;
-            }
-        }
-
-        return true;
+        return preg_match(self::VALUE_PATTERN, $value) === 1;
     }
 
     /**
@@ -73,7 +69,9 @@ class CustomHeaders extends Value
 
         return [
             'name' => trim((string)($row['name'] ?? '')),
-            'value' => trim((string)($row['value'] ?? '')),
+            // Spaces and tabs only: a stray control byte has to survive to be
+            // refused by name rather than silently stripped here.
+            'value' => trim((string)($row['value'] ?? ''), " \t"),
             'send_from_browser' => empty($row['send_from_browser']) ? '' : '1',
         ];
     }
@@ -207,7 +205,8 @@ class CustomHeaders extends Value
         if (!self::isSendableValue($row['value'])) {
             throw new LocalizedException(
                 __(
-                    'Custom headers: the value for "%1" contains a line break, which a header cannot carry.',
+                    'Custom headers: the value for "%1" may only contain printable ASCII characters — no '
+                    . 'line breaks, control characters, or non-ASCII text.',
                     $row['name']
                 )
             );

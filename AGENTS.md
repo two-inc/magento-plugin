@@ -178,12 +178,13 @@ deliberately does not carry, all silent:
     stop sending the header at upgrade and every API call is refused.
     Needs a release note, not a code fix — check for this first if a
     merchant reports refusals straight after upgrade.
--   **A token containing CR/LF or NUL.** The retired field had no
-    validation and sent the raw bytes, which was a header-injection sink.
-    The table refuses it at entry and drops it on read, so the migration
-    writes no row for it.
--   **A token PHP cannot JSON-encode** (invalid UTF-8). The storage format
-    cannot hold it.
+-   **A token outside printable ASCII** (`^[\x20-\x7E]+\z`). The retired
+    field had no validation and sent the raw bytes: CR/LF was a
+    response-splitting sink, control characters a log-injection one, and
+    non-ASCII is ambiguous on the wire. The table refuses such a value at
+    entry and drops it on read, so the migration writes no row for it.
+    The pattern ends `\z`, not `$` — `$` matches before a final newline
+    and would let exactly the worst byte through.
 
 In the last two, a scope that would otherwise INHERIT a header instead
 gets an empty table rather than being skipped — an empty table is how
