@@ -130,28 +130,22 @@ class SynthesiseBrandAdminFormProviderTokenTest extends TestCase
     }
 
     /**
-     * The per-row browser tick publishes a header to every buyer, so the
-     * warning that says so must reach an overlay brand's admin too — and
-     * carry that brand's own name.
-     *
-     * @dataProvider providerNames
+     * The help text resolves the brand at render time through a comment model,
+     * so one catalogue row translates it for every overlay brand. Losing the
+     * model attribute in synthesis would leave the field with no help at all.
      */
-    public function testCustomHeadersHelpTextCarriesTheDisclosureWarning(string $providerName): void
+    public function testCustomHeadersHelpTextComesFromItsCommentModel(): void
     {
-        $dom = $this->renderTemplateForProvider($providerName);
+        $dom = $this->renderTemplateForProvider('Two');
         $xpath = new \DOMXPath($dom);
 
         $comment = $xpath->query(
             '//section[@id="brandx_version"]//field[@id="custom_headers"]/comment'
         )->item(0);
         self::assertNotNull($comment);
-        self::assertStringContainsString(
-            sprintf('every call this store makes to the %s API', $providerName),
-            $comment->textContent
-        );
-        self::assertStringContainsString(
-            "published to the buyer's browser and may be read by anyone",
-            $comment->textContent
+        self::assertSame(
+            'Two\\Gateway\\Model\\Config\\Comment\\CustomHeaders',
+            $comment->getAttribute('model')
         );
     }
 

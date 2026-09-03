@@ -163,6 +163,40 @@ dead end above: reselecting the term brings its cell back into the grid,
 where it can be cleared. The scan runs before the write loop so a refusal
 leaves nothing half-applied.
 
+## The custom-header table: what its migration cannot carry
+
+`custom_headers` (Diagnostics → Admin controls) replaced the single
+`firewall_token` field and its browser toggle.
+`Setup\Patch\Data\MigrateFirewallTokenToCustomHeaders` carries a stored
+token over as one `X-WAF-TOKEN` row, resolving both retired fields down
+the scope chain at every scope either of them touched. Three cases it
+deliberately does not carry, all silent:
+
+-   **A token locked into `app/etc/config.php` by `app:config:dump`.**
+    The patch reads `core_config_data`; a dumped value is not there and a
+    data patch must not rewrite the merchant's config file. Those stores
+    stop sending the header at upgrade and every API call is refused.
+    Needs a release note, not a code fix — check for this first if a
+    merchant reports refusals straight after upgrade.
+-   **A token containing CR/LF or NUL.** The retired field had no
+    validation and sent the raw bytes, which was a header-injection sink.
+    The table refuses it at entry and drops it on read, so the migration
+    writes no row for it.
+-   **A token PHP cannot JSON-encode** (invalid UTF-8). The storage format
+    cannot hold it.
+
+In the last two, a scope that would otherwise INHERIT a header instead
+gets an empty table rather than being skipped — an empty table is how
+"this scope sends nothing" survives as an override, and skipping would
+silently start it sending an ancestor's header (published to buyers if
+that ancestor is ticked). That is why `encodeFor()` distinguishes `''`
+from `false`; collapsing the two reintroduces the bug.
+
+**A browser-ticked header must already be allowed by the API on
+browser-originated calls**, or the one direct call the browser makes
+fails CORS preflight and the sole-trader autofill silently finds no
+buyer. The field help says so; nothing enforces it.
+
 ## An optional constructor argument is NOT autowired
 
 A constructor parameter with a default of `null` is left at its default by
