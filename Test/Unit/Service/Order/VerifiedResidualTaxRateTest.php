@@ -203,13 +203,48 @@ class VerifiedResidualTaxRateTest extends TestCase
         $this->assertNull($result);
     }
 
-    public function testInvoiceEntityCannotUseThisTierEvenWithATaxedResidual(): void
+    /**
+     * Only the order carries the appliedTaxes extension attribute, so an
+     * invoice or credit memo is resolved to its own order and reads the rate
+     * from there. A residual on either is a share of the same order-level fee
+     * at the same rate, which is what makes the refund/capture payloads
+     * reconcile it as generically as placement does.
+     *
+     * @dataProvider entityProvider
+     */
+    public function testEveryEntityReachesTheOrdersAppliedRates(string $entityType, string $description): void
     {
-        // Invoice/Creditmemo don't carry the appliedTaxes extension
-        // attribute Magento populates from the quote — only Order does —
-        // so a taxed residual on those entities still falls through to
-        // the "log and refuse" branch, exactly as before this tier
-        // existed. This is a known, accepted gap, not a bug here.
+        $this->logRepository->expects($this->never())->method('addErrorLog');
+
+        $order = $this->orderWithAppliedTaxes([$this->appliedTaxObject(20.0)]);
+        $entity = $this->wrapOrder($order, $entityType);
+
+        $lineItems = [
+            $this->productLine('100.00', '20.00'),
+        ];
+
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, $entity, 112.00, 22.00);
+
+        $this->assertNotNull($result, $description);
+        $this->assertSame('10.00', $result['net_amount'], $description);
+        $this->assertSame('2.00', $result['tax_amount'], $description);
+        $this->assertSame('0.200000', $result['tax_rate'], $description);
+    }
+
+    public static function entityProvider(): array
+    {
+        return [
+            ['order', 'order reads its own applied rates'],
+            ['invoice', 'invoice resolves to its order'],
+            ['creditmemo', 'creditmemo resolves to its order'],
+        ];
+    }
+
+    /**
+     * @dataProvider orderlessEntityProvider
+     */
+    public function testAnEntityWithNoOrderStillRefusesToGuess(string $entityType, string $description): void
+    {
         $this->logRepository->expects($this->once())
             ->method('addErrorLog')
             ->with('UnreconciledOtherCharges', $this->isType('string'));
@@ -217,10 +252,108 @@ class VerifiedResidualTaxRateTest extends TestCase
         $lineItems = [
             $this->productLine('100.00', '20.00'),
         ];
-        $invoice = new OrderModel\Invoice();
+        $entity = $this->wrapOrder(null, $entityType);
 
-        $result = $this->orderService->getOtherChargesLineItem($lineItems, $invoice, 112.00, 22.00);
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, $entity, 112.00, 22.00);
+
+        $this->assertNull($result, $description);
+    }
+
+    public static function orderlessEntityProvider(): array
+    {
+        return [
+            ['invoice', 'invoice with no order'],
+            ['creditmemo', 'creditmemo with no order'],
+            ['foreign', 'an entity type this path does not serve'],
+        ];
+    }
+
+    /**
+     * The admin invoice and credit-memo controllers load the order through
+     * OrderFactory, which never populates the applied_taxes extension
+     * attribute — so the persisted tax rows are the only source there, and a
+     * taxed fee is unrefundable without this fallback.
+     *
+     * @dataProvider persistedRateEntityProvider
+     */
+    public function testAPersistedTaxRowSuppliesTheRateWhenTheAttributeIsEmpty(
+        string $entityType,
+        string $description
+    ): void {
+        $this->logRepository->expects($this->never())->method('addErrorLog');
+
+        $order = new OrderModel();
+        $order->setData('id', 42);
+        $this->givenPersistedAppliedTaxPercent(42, 20.0);
+
+        $lineItems = [$this->productLine('100.00', '20.00')];
+
+        $result = $this->orderService->getOtherChargesLineItem(
+            $lineItems,
+            $this->wrapOrder($order, $entityType),
+            112.00,
+            22.00
+        );
+
+        $this->assertNotNull($result, $description);
+        $this->assertSame('10.00', $result['net_amount'], $description);
+        $this->assertSame('2.00', $result['tax_amount'], $description);
+        $this->assertSame('0.200000', $result['tax_rate'], $description);
+    }
+
+    public static function persistedRateEntityProvider(): array
+    {
+        return [
+            ['order', 'order with no extension attribute'],
+            ['invoice', 'invoice, as the admin invoice screen loads it'],
+            ['creditmemo', 'creditmemo, as the admin refund screen loads it'],
+        ];
+    }
+
+    public function testAnOrderWithNeitherSourceStillRefusesToGuess(): void
+    {
+        $this->logRepository->expects($this->once())
+            ->method('addErrorLog')
+            ->with('UnreconciledOtherCharges', $this->isType('string'));
+
+        $order = new OrderModel();
+        $order->setData('id', 42);
+        $this->givenPersistedAppliedTaxPercent(42, null);
+
+        $lineItems = [$this->productLine('100.00', '20.00')];
+
+        $result = $this->orderService->getOtherChargesLineItem($lineItems, $order, 112.00, 22.00);
 
         $this->assertNull($result);
+    }
+
+    private function givenPersistedAppliedTaxPercent(int $orderId, ?float $percent): void
+    {
+        $applied = $percent === null ? [] : [$this->appliedTaxObject($percent)];
+        $details = $this->createMock(\Magento\Tax\Api\Data\OrderTaxDetailsInterface::class);
+        $details->method('getAppliedTaxes')->willReturn($applied);
+        $management = $this->createMock(\Magento\Tax\Api\OrderTaxManagementInterface::class);
+        $management->method('getOrderTaxDetails')->with($orderId)->willReturn($details);
+
+        $property = new \ReflectionProperty(Order::class, 'orderTaxManagement');
+        $property->setValue($this->orderService, $management);
+    }
+
+    /**
+     * @param OrderModel|null $order
+     * @return mixed
+     */
+    private function wrapOrder($order, string $entityType)
+    {
+        switch ($entityType) {
+            case 'order':
+                return $order;
+            case 'invoice':
+                return (new OrderModel\Invoice())->setOrder($order);
+            case 'creditmemo':
+                return (new OrderModel\Creditmemo())->setOrder($order);
+            default:
+                return new \stdClass();
+        }
     }
 }

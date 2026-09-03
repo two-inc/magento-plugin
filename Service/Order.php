@@ -1127,8 +1127,10 @@ abstract class Order
      * not invented.
      *
      * Only Order carries this extension attribute (populated from the
-     * quote it was converted from) — Invoice/Creditmemo don't, so this
-     * can't help reconcile a residual on those entities.
+     * quote it was converted from). An Invoice or Creditmemo residual is a
+     * share of the same order-level fee, taxed at the same order-level
+     * rate, so those entities are resolved to their own order and read the
+     * rate from there.
      *
      * Each applied-tax entry's shape depends on exactly when it's read:
      * right after ToOrderConverter::afterConvert() it's a plain array
@@ -1157,12 +1159,12 @@ abstract class Order
      */
     private function findVerifiedResidualTaxRate($entity, float $residualNet, float $residualTax, float $epsilon): ?float
     {
-        if (!$entity instanceof OrderModel) {
+        $order = $this->resolveOrder($entity);
+        if (!$order) {
             return null;
         }
 
-        $extensionAttributes = $entity->getExtensionAttributes();
-        $appliedTaxes = $extensionAttributes ? $extensionAttributes->getAppliedTaxes() : null;
+        $appliedTaxes = $this->getOrderAppliedTaxes($order);
         if (!$appliedTaxes) {
             return null;
         }
@@ -1183,6 +1185,63 @@ abstract class Order
             if (abs($impliedTax - $residualTax) <= $epsilon) {
                 return (float)$percent;
             }
+        }
+
+        return null;
+    }
+
+    /**
+     * The rates Magento's own tax engine applied to this order, from whichever
+     * of its two homes is populated.
+     *
+     * The `applied_taxes` extension attribute only exists on an order the
+     * quote-to-order conversion built (placement) or that came back through
+     * OrderRepositoryInterface. The admin invoice and credit-memo controllers
+     * load via OrderFactory instead, so there it is empty and the persisted
+     * tax rows are the only source — the same two-source read
+     * getDeclaredShippingTaxPercent() already does, and for the same reason.
+     *
+     * @param OrderModel $order
+     * @return iterable
+     */
+    private function getOrderAppliedTaxes(OrderModel $order): iterable
+    {
+        $extensionAttributes = $order->getExtensionAttributes();
+        $appliedTaxes = $extensionAttributes ? $extensionAttributes->getAppliedTaxes() : null;
+        if ($appliedTaxes) {
+            return $appliedTaxes;
+        }
+
+        $orderId = (int)$order->getId();
+        if ($orderId <= 0) {
+            return [];
+        }
+
+        try {
+            return $this->orderTaxManagement->getOrderTaxDetails($orderId)->getAppliedTaxes() ?? [];
+        } catch (Exception $exception) {
+            // Nothing declared, so the caller's refuse path owns the decision.
+            return [];
+        }
+    }
+
+    /**
+     * The order carrying the order-level facts for any of the three
+     * entities the compose services reconcile.
+     *
+     * @param OrderModel|OrderModel\Invoice|OrderModel\Creditmemo $entity
+     * @return OrderModel|null
+     */
+    private function resolveOrder($entity): ?OrderModel
+    {
+        if ($entity instanceof OrderModel) {
+            return $entity;
+        }
+
+        if ($entity instanceof OrderModel\Invoice || $entity instanceof OrderModel\Creditmemo) {
+            $order = $entity->getOrder();
+
+            return $order instanceof OrderModel ? $order : null;
         }
 
         return null;

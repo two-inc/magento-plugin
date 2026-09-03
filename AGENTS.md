@@ -234,10 +234,6 @@ combined rates and a discounted base all put the quotient on a rate no tax
 rule declares, and Two validates the declared rate against the line's own
 amounts.
 
-(`Service\Fee\Provider\AmastyExtraFee` derives its own rate this way, but
-that provider requires a persisted order id and never runs from the
-validated placement path — see the DI section below.)
-
 Product lines read `tax_percent` off the item. Shipping has no such column,
 so `getTaxRateShipping()` reads the shipping-typed entry out of the order's
 `item_applied_taxes` extension attribute and sums its applied taxes, falling
@@ -262,6 +258,19 @@ the "Unit Price" tax algorithm (which rounds per unit and sums) and a small
 fraction-of-net term, and a discounted line may reconcile against
 `net + discount` as well as `net`, because "Before Discount" tax calculation
 taxes the undiscounted base.
+
+## An unitemized fee is reconciled per entity, and refundable
+
+`findVerifiedResidualTaxRate()` reconciles a taxed residual against the rates
+Magento's own tax engine applied, so a fee extension that registers its tax
+normally needs no `FeeLineProviderInterface`. It resolves an invoice or credit
+memo to its own order and reads the rates there: the residual on either is a
+share of the same order-level fee at the same rate. It reads them from the
+order's `applied_taxes` extension attribute or, when that is empty, from the
+persisted tax rows — the admin invoice and credit-memo controllers load the
+order through `OrderFactory`, which never populates the attribute, so without
+the second source a taxed fee stays unrefundable on exactly the screen the
+merchant uses.
 
 ## DI registration scope for Structure / Config Reader plugins
 
