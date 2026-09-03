@@ -433,8 +433,8 @@ describe('an adoption supersedes the held record', () => {
     });
 });
 
-describe('a country change re-arms the lookup', () => {
-    test('a change before any country was recorded still retires the answer', async () => {
+describe('a country change does not retire the held buyer answer', () => {
+    test('a change before any country was recorded still keeps the answer', async () => {
         const { component, identity, rec } = await startStack({
             buyer: BUYER,
             laterBuyer: OTHER_TRADER
@@ -447,11 +447,13 @@ describe('a country change re-arms the lookup', () => {
         await settle();
         await clickSoleTrader();
 
-        expect(rec.lookups).toBe(2);
-        expect(identity.companyName()).toBe(OTHER_TRADER.company_name);
+        // The buyer's own session is unrelated to which country the form now
+        // targets, so no second lookup fires and the first answer is adopted.
+        expect(rec.lookups).toBe(1);
+        expect(identity.companyName()).toBe(BUYER.company_name);
     });
 
-    test('the new country is looked up afresh and the retired record is not adopted', async () => {
+    test('a genuine country change reuses the held answer rather than asking again', async () => {
         const { component, identity, rec } = await startStack({
             buyer: BUYER,
             laterBuyer: OTHER_TRADER
@@ -459,13 +461,13 @@ describe('a country change re-arms the lookup', () => {
 
         component.onCountryChanged('no');
         await settle();
-        expect(rec.lookups).toBe(2);
+        expect(rec.lookups).toBe(1);
         expect(rec.reverts).toBeGreaterThan(0);
 
         await clickSoleTrader();
 
-        expect(identity.companyName()).toBe(OTHER_TRADER.company_name);
-        expect(rec.applied).toEqual([OTHER_TRADER.billing_address]);
+        expect(identity.companyName()).toBe(BUYER.company_name);
+        expect(rec.applied).toEqual([BUYER.billing_address]);
         expect(rec.opened).toEqual([]);
     });
 });
