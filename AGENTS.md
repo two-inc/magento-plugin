@@ -184,11 +184,12 @@ deliberately does not carry, both silent:
     raw bytes: CR/LF was a response-splitting sink, control characters a
     log-injection one, and non-ASCII is ambiguous on the wire. The pattern
     ends `\z`, not `$` — `$` matches before a final newline and would let
-    exactly the worst byte through. Surrounding whitespace and control
-    bytes are a different case: `resolvePair()` trims them and carries the
-    token, because legacy data gets the benefit of the doubt where an
-    unattended patch has no admin to warn. Only an interior offender is
-    dropped.
+    exactly the worst byte through. An offender the value merely *ends* or
+    *starts* with is a different case: `resolvePair()` trims PHP's default
+    charlist (`" \t\n\r\0\x0B"`) and carries the token, because legacy data
+    gets the benefit of the doubt where an unattended patch has no admin to
+    warn. Any other stray byte — `\x1B`, `\x1F`, `\x7F`, anything high —
+    is dropped wherever it sits, since `trim()` does not reach it.
 
     A scope that would otherwise INHERIT a header gets an empty table
     rather than being skipped — an empty table is how "this scope sends

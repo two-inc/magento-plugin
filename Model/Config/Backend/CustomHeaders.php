@@ -163,7 +163,7 @@ class CustomHeaders extends Value
         }
 
         // Unreachable while every value is printable ASCII, and kept so that
-        // loosening that rule cannot silently store an empty table instead.
+        // loosening that rule surfaces as a named admin error, not a TypeError.
         $encoded = json_encode($rows);
         if ($encoded === false) {
             throw new LocalizedException(
