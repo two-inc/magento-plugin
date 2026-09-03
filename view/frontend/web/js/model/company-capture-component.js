@@ -323,6 +323,9 @@
             this._identity.clear();
             this._options.revertAutofilledAddress();
             this._soleTrader.forgetAdoptions();
+            // A lookup for the country just left must not be handed back to a
+            // later click, which would re-adopt what this call reverted.
+            this._soleTraderLaunch = null;
             if (wasSoleTrader) this.registeredMode();
         }
         this.refreshSoleTraderAvailability(country);
@@ -958,27 +961,28 @@
         // the popup down. It closes when they return to checkout and settle
         // somewhere other than this control.
         this.syncChips();
-        // Held for the whole lookup: the chip stays clickable until a popup
-        // exists, and a second click that raced the first one opened a popup
-        // only to have the first close it and open another.
+        // One launch at a time: the chip stays clickable until a popup exists.
         if (this._soleTraderLaunch) return this._soleTraderLaunch;
         const self = this;
         function fallThrough() {
-            // Not while the buyer has moved on: the mode they left is not the
-            // one to raise a signup for.
-            if (!self._identity.isSoleTrader()) return null;
+            // An identity settled while the lookup was out — by the buyer
+            // leaving the mode, or by the handshake adopting one — is not
+            // something to raise a signup over.
+            if (!self._identity.isSoleTrader() || self._identity.soleTraderAdopted()) return null;
             return self._soleTrader.launchSignup();
         }
         this._soleTraderLaunch = this._soleTrader.autofillSoleTrader()
             .then(
                 function (adopted) { return adopted ? null : fallThrough(); },
-                // Nothing consumes this promise, so an adoption that threw
-                // would otherwise leave the buyer with no popup and no
-                // explanation.
+                // Nothing consumes this promise, so silence here is invisible.
                 fallThrough
             )
             .finally(function () {
                 self._soleTraderLaunch = null;
+            })
+            .catch(function () {
+                self._soleTrader.showSignupError();
+                return null;
             });
         return this._soleTraderLaunch;
     };

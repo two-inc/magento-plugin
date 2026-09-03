@@ -234,11 +234,9 @@
     /**
      * Open the hosted signup.
      *
-     * Synchronous from top to bottom, so the only thing between a click and
-     * `window.open()` is the autofill lookup the first launch waits on. That
-     * lookup spends the click's own turn, leaving the open to ride transient
-     * activation; where a browser grants none, `launchSignup()`'s on-page link
-     * is the route through.
+     * On a first launch the autofill lookup sits between the click and this
+     * call, so the open is outside the click's own turn; `launchSignup()`'s
+     * on-page link is the route through where a browser refuses it.
      *
      * At most one popup is ever live: a prior one still open is CLOSED rather
      * than left running, so it cannot later post a stale ACCEPTED that would
@@ -320,9 +318,8 @@
      * Skipped without tokens rather than minting here: the caller falls through
      * to the popup, and `launchSignup()` owns the no-token case.
      *
-     * At most one lookup per entry into sole-trader mode. Re-entry is what
-     * re-arms it, so the retry after a blocked popup goes straight to the
-     * popup the buyer is retrying rather than asking again.
+     * At most one lookup per entry into the mode, so the retry after a blocked
+     * popup goes to the popup rather than asking again. Re-entry re-arms it.
      *
      * @returns {Promise<boolean>} whether an identity was adopted
      */
