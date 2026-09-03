@@ -59,7 +59,7 @@ const HIDDEN_CLASS = 'two-hidden';
 function load(options) {
     const opts = options || {};
     const search = { aborts: 0, lookups: [] };
-    const soleTrader = { launches: [], prefetched: 0 };
+    const soleTrader = { launches: [] };
 
     const companySearchMock = Object.assign(
         {},
@@ -84,7 +84,7 @@ function load(options) {
 
     const SoleTraderStub = function () {
         this.listenForSignupResult = function () {};
-        this.prefetchBuyer = function () { soleTrader.prefetched += 1; return Promise.resolve(null); };
+        this.prefetchBuyer = function () { return Promise.resolve(null); };
         this.focusSignupPopup = function () { return false; };
         this.autofilledSoleTrader = function () { return null; };
         this.launchSignup = function (o) { soleTrader.launches.push(o || null); return {}; };

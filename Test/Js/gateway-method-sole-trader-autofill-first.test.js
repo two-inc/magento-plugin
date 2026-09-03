@@ -469,6 +469,53 @@ describe('leaving the mode keeps the answer the session still stands behind', ()
         expect(rec.opened).toHaveLength(1);
         expect(rec.lookups).toBe(1);
     });
+
+    test.each([
+        ['registeredMode', 'back to company search'],
+        ['manualEntryMode', 'to manual entry']
+    ])('an answer landing after the buyer left via %s is adopted on re-entry (%s)', async (leave) => {
+        const { component, identity, rec } = await startStack({
+            buyer: BUYER,
+            holdLookup: true
+        });
+        await clickSoleTrader();
+
+        component[leave]();
+        rec.releaseLookup();
+        await settle();
+        await clickSoleTrader();
+
+        // A guard that discarded the answer for arriving out of the mode is
+        // the shape this flow carried before the lookup moved off the click.
+        expect(identity.companyName()).toBe(BUYER.company_name);
+        expect(rec.opened).toHaveLength(1);
+    });
+});
+
+describe('a spent answer is replaced, not left absent', () => {
+    test.each([
+        ['registeredMode', 'back to company search'],
+        ['manualEntryMode', 'to manual entry']
+    ])('adopting then leaving via %s still adopts on re-entry (%s)', async (leave) => {
+        const { component, identity, rec } = await startStack({
+            buyer: BUYER,
+            laterBuyer: OTHER_TRADER
+        });
+
+        await clickSoleTrader();
+        expect(identity.companyName()).toBe(BUYER.company_name);
+
+        component[leave]();
+        await settle();
+        await clickSoleTrader();
+
+        // The adoption spends the answer, and only this exit re-arms the
+        // lookup — without it the chip falls to the popup with an empty field
+        // and the buyer is never looked up again for the life of the page.
+        expect(rec.lookups).toBe(2);
+        expect(identity.companyName()).toBe(OTHER_TRADER.company_name);
+        expect(rec.opened).toEqual([]);
+    });
 });
 
 describe('the click never waits on a mint', () => {

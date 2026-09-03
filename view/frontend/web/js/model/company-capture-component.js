@@ -988,6 +988,14 @@
         // buyer's own edits survive.
         this._options.revertAutofilledAddress();
         this._soleTrader.forgetAdoptions();
+        // An answer already adopted is spent, and leaving the mode is the only
+        // point on this route that can arm another lookup. One still held is
+        // left alone: the session stands behind it either way, and re-running
+        // would only risk the next click landing ahead of the answer.
+        if (!this._soleTrader.autofilledSoleTrader() && this._identity.soleTraderAvailable()) {
+            this._soleTrader.forgetAutofilledBuyer();
+            this._soleTrader.prefetchBuyer();
+        }
         return true;
     };
 
