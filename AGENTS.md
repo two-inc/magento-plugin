@@ -189,9 +189,9 @@ an import cannot bypass any of them:
     before a final newline and would let exactly the worst byte through.
     A value is trimmed of spaces and tabs ONLY, so a stray control byte
     survives to be named rather than silently stripped.
--   **19 header names are reserved**, matched case-insensitively and
+-   **21 header names are reserved**, matched case-insensitively and
     exactly (a prefix like `X-Upgrade-Path` is the merchant's to use).
-    Four groups: names the integration sets itself (`host`,
+    Five groups: names the integration sets itself (`host`,
     `content-type`, `content-length`, `accept`, `accept-language`,
     `x-api-key`, `two-delegated-authority-token`); the proxy identity the
     checkout rate limiter resolves callers through (`x-forwarded-for`,
@@ -199,8 +199,10 @@ an import cannot bypass any of them:
     handling rather than request content so a value here malforms the call
     (`connection`, `keep-alive`, `proxy-authenticate`,
     `proxy-authorization`, `te`, `trailer`, `transfer-encoding`,
-    `upgrade`); and the generic credential carriers (`authorization`,
-    `cookie`).
+    `upgrade`); transport negotiation the HTTP client owns, where a
+    merchant value breaks every response parse or the request handshake
+    (`accept-encoding`, `expect`); and the generic credential carriers
+    (`authorization`, `cookie`).
 
 `Service\Api\Adapter` case-folds when merging, so a differently-cased row
 cannot add a second conflicting `X-API-Key` even if one were stored.

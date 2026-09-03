@@ -249,6 +249,18 @@ class RepositoryAdminControlsTest extends TestCase
                 [],
                 'the merchant cannot restate the caller identity the rate limiter trusts',
             ],
+            'a content coding name' => [
+                (string)json_encode(['_1' => $row('Accept-Encoding', 'gzip', '1')]),
+                [],
+                [],
+                'a stored row cannot make the API answer in a coding nothing decodes',
+            ],
+            'a name that changes request handling' => [
+                (string)json_encode(['_1' => $row('Expect', '100-continue', '')]),
+                [],
+                [],
+                'the table cannot renegotiate the request protocol',
+            ],
             'non-ASCII value' => [
                 (string)json_encode(['_1' => $row('X-Waf', 'caf' . chr(0xC3) . chr(0xA9), '1')]),
                 [],
