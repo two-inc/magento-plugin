@@ -21,7 +21,7 @@
 
 'use strict';
 
-const { loadAmdModule, defaultMocks } = require('./amd-harness');
+const { loadAmdModule, defaultMocks, quoteAddress } = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
 
@@ -71,13 +71,12 @@ function loadRenderer() {
 
     const quote = {
         getTotals: function () { return function () { return totals; }; },
-        billingAddress: function () {
-            return {
-                countryId: 'NO',
-                firstname: 'Ola',
-                lastname: 'Nordmann'
-            };
-        },
+        shippingAddress: quoteAddress(),
+        billingAddress: quoteAddress({
+            countryId: 'NO',
+            firstname: 'Ola',
+            lastname: 'Nordmann'
+        }),
         getItems: function () {
             return [
                 {

@@ -24,7 +24,13 @@
 
 'use strict';
 
-const { loadAmdModule, defaultMocks, loadCompanyCapture, brandConfigMock } = require('./amd-harness');
+const {
+    loadAmdModule,
+    defaultMocks,
+    loadCompanyCapture,
+    brandConfigMock,
+    quoteAddress
+} = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
@@ -190,7 +196,7 @@ function loadRenderer() {
 
     const companySearch = loadAmdModule(SEARCH, { jquery: dom.$ });
     const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
-        billingAddress: function () { return { countryId: 'GB' }; }
+        billingAddress: quoteAddress({ countryId: 'GB' })
     });
     const shared = {
         jquery: dom.$,
@@ -343,7 +349,7 @@ describe('a company picked on the shipping step reaches the payment step', () =>
         const billingAddress = observable(address);
         const shippingAddress = observable(address);
         const intents = [];
-        const renderer = loadAmdModule(RENDERER, {
+        const mocks = {
             jquery: dom.$,
             'Two_Gateway/js/model/company-identity': identity,
             'Magento_Customer/js/customer-data': {
@@ -366,13 +372,20 @@ describe('a company picked on the shipping step reaches the payment step', () =>
                 shippingMethod: observable({ carrier_code: 'freeshipping' }),
                 isVirtual: () => false
             }
-        });
+        };
+        // The same capture instance the renderer reads, so a spec can see WHICH
+        // panel's identity a seed landed on — the resolved observables alone
+        // read the same either way whenever the other panel holds no number.
+        const capture = loadCompanyCapture(mocks);
+        const renderer = loadAmdModule(RENDERER, Object.assign({}, mocks, {
+            'Two_Gateway/js/model/company-capture': capture
+        }));
         renderer.isOrderIntentEnabled = true;
         renderer.placeOrderIntent = function () {
             intents.push(renderer.companyId());
             return { always: () => ({ done: () => ({ fail: () => {} }) }) };
         };
-        return { renderer, sections, dom, billingAddress, shippingAddress, intents };
+        return { renderer, sections, dom, billingAddress, shippingAddress, intents, capture };
     }
 
     test('the companyData subscription clears the previous company id', () => {
@@ -472,26 +485,48 @@ describe('a company picked on the shipping step reaches the payment step', () =>
     });
 
     test('the same company on the BILLING address alone still seeds the billing role', () => {
-        // No billing panel is mounted on this checkout, so billing is not a
-        // distinct address and the shipping identity is the only capture the
+        // The quote's own key, matching its shipping address: billing is not a
+        // distinct address, so the shipping identity is the only capture the
         // resolver reads — which is what the resolved observables show
-        // (TWO-25554). Where the billing panel IS mounted the seed stops there:
-        // company-capture-billing-panel.test.js.
-        const { renderer, billingAddress } = loadWithSections({});
+        // (TWO-25554).
+        const { renderer, billingAddress, capture } = loadWithSections({});
 
         renderer.fillCustomerData();
 
         billingAddress({
-            getCacheKey: () => 'k3',
+            getCacheKey: () => 'k',
             countryId: 'GB',
             telephone: '+47 123 45 678',
             company: 'Billing Example Ltd',
             customAttributes: [{ attribute_code: 'company_id', value: '87654321' }]
         });
 
+        expect(capture.shipping.identity().companyId()).toBe('87654321');
+        expect(capture.billing.identity().companyId()).toBe('');
         expect(renderer.companyName()).toBe('Billing Example Ltd');
         expect(renderer.companyId()).toBe('87654321');
         expect(renderer.telephone()).toBe('+47123 45 678');
+    });
+
+    test('a DISTINCT billing address seeds the BILLING panel, and resolves from it', () => {
+        // Its own key, so the quote holds two addresses. The seed lands on the
+        // billing identity and the resolver reads that same identity, so the
+        // company reaches the tile instead of being stranded (TWO-25554).
+        const { renderer, billingAddress, capture } = loadWithSections({});
+
+        renderer.fillCustomerData();
+
+        billingAddress({
+            getCacheKey: () => 'billing-of-its-own',
+            countryId: 'GB',
+            company: 'Distinct Billing Ltd',
+            customAttributes: [{ attribute_code: 'company_id', value: '11223344' }]
+        });
+
+        expect(capture.billing.identity().companyId()).toBe('11223344');
+        expect(capture.shipping.identity().companyId()).toBe('');
+        expect(renderer.companyName()).toBe('Distinct Billing Ltd');
+        expect(renderer.companyId()).toBe('11223344');
     });
 });
 

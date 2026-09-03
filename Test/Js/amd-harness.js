@@ -84,8 +84,11 @@ function defaultMocks() {
         'domReady!': null,
         'Magento_Checkout/js/view/payment/default': Component,
         'Magento_Checkout/js/model/quote': {
-            shippingAddress: makeObservable({}),
-            billingAddress: makeObservable({}),
+            // One cache key for both: the quote is what answers "is billing a
+            // distinct address", so a double with no key at all cannot model
+            // either answer. Same key means billing IS shipping.
+            shippingAddress: quoteAddress(),
+            billingAddress: quoteAddress(),
             getTotals: function () { return makeObservable({}); },
             getQuoteId: function () { return null; },
             paymentMethod: makeObservable(null),
@@ -308,6 +311,36 @@ function makeKnockoutMock() {
         applyBindings: function () {},
         bindingHandlers: {}
     };
+}
+
+/** The cache key both default quote addresses answer with: billing IS shipping. */
+const ONE_ADDRESS_KEY = 'one-address';
+
+/**
+ * A quote address observable of the shape `company-capture.js` reads it in: a
+ * cache key it can be compared with the other address on, and a `subscribe` the
+ * predicate's invalidation is wired to. A double supplying neither cannot model
+ * "is billing a distinct address" at all, and throws where production asks.
+ *
+ * @param {object} [fields] address fields the spec itself needs
+ * @param {string} [cacheKey] defaults to the key shippingAddress also answers
+ * @returns {function} Knockout-shaped observable
+ */
+function quoteAddress(fields, cacheKey) {
+    return makeObservable(quoteAddressValue(fields, cacheKey));
+}
+
+/**
+ * The value inside a quoteAddress() observable, for a spec that writes a NEW
+ * address into one mid-test.
+ *
+ * @param {object} [fields] address fields the spec itself needs
+ * @param {string} [cacheKey] defaults to the key shippingAddress also answers
+ * @returns {object}
+ */
+function quoteAddressValue(fields, cacheKey) {
+    const key = cacheKey || ONE_ADDRESS_KEY;
+    return Object.assign({ getCacheKey: function () { return key; } }, fields || {});
 }
 
 function makeObservable(initial) {
@@ -854,6 +887,9 @@ function tagged(description, value) {
 
 module.exports = {
     tagged: tagged,
+    quoteAddress: quoteAddress,
+    quoteAddressValue: quoteAddressValue,
+    makeObservable: makeObservable,
     dispatchNative: dispatchNative,
     isProxyRoute: isProxyRoute,
     HARNESS_BASE_URL: HARNESS_BASE_URL,

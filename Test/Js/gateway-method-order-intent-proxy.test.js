@@ -9,7 +9,13 @@
 'use strict';
 
 const jq = require('jquery');
-const { loadAmdModule, defaultMocks, proxyEnvelope, HARNESS_BASE_URL } = require('./amd-harness');
+const {
+    loadAmdModule,
+    defaultMocks,
+    proxyEnvelope,
+    HARNESS_BASE_URL,
+    quoteAddress
+} = require('./amd-harness');
 
 const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
 // The module's own last-resort copy, and a server message deliberately UNLIKE
@@ -45,9 +51,8 @@ function loadRenderer() {
     };
     const quote = {
         getTotals: function () { return function () { return totals; }; },
-        billingAddress: function () {
-            return { countryId: 'NO', firstname: 'Ola', lastname: 'Nordmann' };
-        },
+        shippingAddress: quoteAddress(),
+        billingAddress: quoteAddress({ countryId: 'NO', firstname: 'Ola', lastname: 'Nordmann' }),
         getItems: function () { return []; }
     };
 

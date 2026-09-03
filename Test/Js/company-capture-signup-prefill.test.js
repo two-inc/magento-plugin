@@ -11,7 +11,25 @@
 'use strict';
 
 const $ = require('jquery');
-const { loadCompanyCapture, brandConfigMock, defaultMocks } = require('./amd-harness');
+const {
+    loadCompanyCapture,
+    brandConfigMock,
+    defaultMocks,
+    quoteAddress,
+    makeObservable
+} = require('./amd-harness');
+
+/**
+ * The quote's billing address as an observable carrying a cache key, so the
+ * capture adapter can compare it with the shipping address the default quote
+ * double also holds.
+ *
+ * @param {?object} address what the spec wants the quote to hold
+ * @returns {function} Knockout-shaped observable
+ */
+function quoteObservable(address) {
+    return address === null ? makeObservable(null) : quoteAddress(address);
+}
 
 /**
  * @returns {object} the shipping panel — signupPrefill() carries the company of
@@ -28,7 +46,7 @@ function load(billingAddress, guestEmail) {
             {},
             defaultMocks()['Magento_Checkout/js/model/quote'],
             {
-                billingAddress: function () { return billingAddress; },
+                billingAddress: quoteObservable(billingAddress),
                 guestEmail: guestEmail
             }
         )
@@ -49,7 +67,7 @@ function loadBoth(billingAddress) {
         'Magento_Checkout/js/model/quote': Object.assign(
             {},
             defaultMocks()['Magento_Checkout/js/model/quote'],
-            { billingAddress: function () { return billingAddress; } }
+            { billingAddress: quoteObservable(billingAddress) }
         )
     });
     return capture;

@@ -33,7 +33,9 @@ const {
     defaultMocks,
     loadCompanyCapture,
     brandConfigMock,
-    tagged
+    tagged,
+    quoteAddress,
+    makeObservable
 } = require('./amd-harness');
 
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
@@ -90,9 +92,9 @@ function load(options) {
 
     const billing = 'billingCountry' in opts ? opts.billingCountry : null;
     const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
-        billingAddress: function () {
-            return billing === null ? null : { countryId: billing };
-        },
+        billingAddress: billing === null
+            ? makeObservable(null)
+            : quoteAddress({ countryId: billing }),
         isVirtual: function () { return !!opts.isVirtual; }
     });
 

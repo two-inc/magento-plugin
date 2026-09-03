@@ -21,7 +21,8 @@ const {
     isProxyRoute,
     proxyEnvelope,
     HARNESS_BASE_URL,
-    tagged
+    tagged,
+    quoteAddress
 } = require('./amd-harness');
 
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
@@ -365,7 +366,7 @@ function loadMountedComponent(configOverride, present) {
         'Magento_Checkout/js/model/quote': Object.assign(
             {},
             defaultMocks()['Magento_Checkout/js/model/quote'],
-            { billingAddress: function () { return { countryId: 'GB' }; } }
+            { billingAddress: quoteAddress({ countryId: 'GB' }) }
         )
     }).shipping;
     component.start();

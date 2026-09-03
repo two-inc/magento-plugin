@@ -37,7 +37,9 @@ const {
     defaultMocks,
     loadCompanySearchPanel,
     dispatchNative,
-    brandConfigMock
+    brandConfigMock,
+    quoteAddress,
+    makeObservable
 } = require('./amd-harness');
 
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
@@ -89,9 +91,10 @@ function makeEnv(options) {
     };
 
     const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
-        billingAddress: function () {
-            return 'billingAddress' in opts ? opts.billingAddress : { countryId: 'GB' };
-        },
+        billingAddress: (function () {
+            const address = 'billingAddress' in opts ? opts.billingAddress : { countryId: 'GB' };
+            return address ? quoteAddress(address) : makeObservable(address);
+        })(),
         getQuoteId: function () { return 'cart-1'; },
         isVirtual: function () { return false; }
     });

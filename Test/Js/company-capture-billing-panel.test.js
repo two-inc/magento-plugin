@@ -14,7 +14,9 @@ const {
     loadAmdModule,
     loadCompanyCapture,
     defaultMocks,
-    brandConfigMock
+    brandConfigMock,
+    quoteAddress,
+    quoteAddressValue
 } = require('./amd-harness');
 
 const ADDRESS_FORM = '#shipping-new-address-form';
@@ -23,6 +25,10 @@ const ADDRESS_COUNTRY = `${ADDRESS_FORM} select[name="country_id"]`;
 const BILLING_FORM = '[data-form="billing-new-address"]';
 const BILLING_FIELD = `${BILLING_FORM} input[name="company"]`;
 const BILLING_COUNTRY = `${BILLING_FORM} select[name="country_id"]`;
+const BILLING_TOGGLE = 'input[name="billing-address-same-as-shipping"]';
+
+/** The cache key that makes the quote's billing address its own, not shipping's. */
+const DISTINCT_BILLING_KEY = 'billing-of-its-own';
 
 /**
  * A minimal jQuery-shaped double over a fixed set of named nodes, each with a
@@ -45,6 +51,7 @@ function makeDom() {
         let visible = true;
         let exists = true;
         let value = '';
+        const props = {};
         const delegated = [];
         const n = {
             get length() {
@@ -57,6 +64,11 @@ function makeDom() {
             },
             is: function (expr) {
                 return expr === ':visible' ? visible : false;
+            },
+            prop: function (name, next) {
+                if (arguments.length < 2) return props[name];
+                props[name] = next;
+                return n;
             },
             filter: function () {
                 return visible ? n : { length: 0 };
@@ -84,6 +96,9 @@ function makeDom() {
             _setExists: function (v) {
                 exists = v;
             },
+            _setProp: function (name, v) {
+                props[name] = v;
+            },
             _fireDelegated: function (event, selector) {
                 delegated
                     .filter(function (d) { return d.event === event && d.selector === selector; })
@@ -110,6 +125,9 @@ function makeDom() {
         setExists: function (selector, value) {
             node(selector)._setExists(value);
         },
+        setChecked: function (selector, value) {
+            node(selector)._setProp('checked', value);
+        },
         setCountry: function (selector, value) {
             node(selector).val(value);
         },
@@ -130,20 +148,29 @@ function makeDom() {
 
 /**
  * @param {object} [overrides] merged over the standard mocks
- * @returns {object} `{ capture, dom }`
+ * @returns {object} `{ capture, dom, quote }` — the quote's two addresses share
+ *          a cache key, so billing starts as shipping, matching the checked
+ *          checkbox and the absent billing form below
  */
 function load(overrides) {
     const dom = makeDom();
     // Absent until made visible — matches core rendering no billing form at
     // all under "same as shipping" (checked, the default).
     dom.setVisible(BILLING_FIELD, false);
+    dom.setChecked(BILLING_TOGGLE, true);
     dom.setCountry(ADDRESS_COUNTRY, 'no');
     dom.setCountry(BILLING_COUNTRY, 'gb');
+
+    const quote = Object.assign({}, defaultMocks()['Magento_Checkout/js/model/quote'], {
+        shippingAddress: quoteAddress(),
+        billingAddress: quoteAddress()
+    });
 
     const capture = loadCompanyCapture(
         Object.assign(
             {
                 jquery: dom.$,
+                'Magento_Checkout/js/model/quote': quote,
                 'Two_Gateway/js/model/brand-config': brandConfigMock({
                     isCompanySearchEnabled: true,
                     checkoutApiUrl: 'https://api.example.test',
@@ -154,7 +181,20 @@ function load(overrides) {
         ),
         { document: document, window: window }
     );
-    return { capture: capture, dom: dom };
+    return { capture: capture, dom: dom, quote: quote };
+}
+
+/**
+ * The buyer unchecks "my billing address is the same as shipping", core renders
+ * the billing fieldset, and the quote takes on a second address.
+ *
+ * @param {object} dom
+ * @param {object} quote
+ */
+function billingBecomesDistinct(dom, quote) {
+    dom.setChecked(BILLING_TOGGLE, false);
+    dom.setVisible(BILLING_FIELD, true);
+    quote.billingAddress(quoteAddressValue({}, DISTINCT_BILLING_KEY));
 }
 
 describe('the billing panel only ever mounts at its own field', () => {
@@ -166,8 +206,8 @@ describe('the billing panel only ever mounts at its own field', () => {
     });
 
     test('visible (unchecked): billing mounts at its own field', () => {
-        const { capture, dom } = load();
-        dom.setVisible(BILLING_FIELD, true);
+        const { capture, dom, quote } = load();
+        billingBecomesDistinct(dom, quote);
         capture.billing.start();
 
         expect(capture.billing.mountSelector()).toBe(BILLING_FIELD);
@@ -176,8 +216,8 @@ describe('the billing panel only ever mounts at its own field', () => {
     test('present but hidden (re-checked after being unchecked): billing does not mount', () => {
         // TWO-25461's own finding, reused here: core can leave the billing
         // form in the DOM hidden rather than removing it.
-        const { capture, dom } = load();
-        dom.setVisible(BILLING_FIELD, true);
+        const { capture, dom, quote } = load();
+        billingBecomesDistinct(dom, quote);
         capture.billing.start();
         expect(capture.billing.mountSelector()).toBe(BILLING_FIELD);
 
@@ -190,8 +230,8 @@ describe('the billing panel only ever mounts at its own field', () => {
 
 describe('each panel reads ONLY its own address form\'s country — never a shared one', () => {
     test('billing reads the billing form\'s country, not shipping\'s, even though they differ', () => {
-        const { capture, dom } = load();
-        dom.setVisible(BILLING_FIELD, true);
+        const { capture, dom, quote } = load();
+        billingBecomesDistinct(dom, quote);
         capture.billing.start();
 
         expect(capture.billing.countryCode()).toBe('gb');
@@ -199,8 +239,8 @@ describe('each panel reads ONLY its own address form\'s country — never a shar
     });
 
     test('a shipping country change does not move billing\'s answer, and vice versa', () => {
-        const { capture, dom } = load();
-        dom.setVisible(BILLING_FIELD, true);
+        const { capture, dom, quote } = load();
+        billingBecomesDistinct(dom, quote);
         capture.shipping.start();
         capture.billing.start();
 
@@ -224,10 +264,26 @@ describe('each panel reads ONLY its own address form\'s country — never a shar
     });
 });
 
+describe('billingRoleIdentity() follows billingIsDistinct(), not the presence of a panel', () => {
+    test('a quote holding no billing address at all leaves shipping in the billing role', () => {
+        const { capture, dom, quote } = load();
+        dom.setVisible(BILLING_FIELD, true);
+        dom.setChecked(BILLING_TOGGLE, false);
+        capture.shipping.start();
+        capture.billing.start();
+        capture.shipping.selectCompany({ text: 'Shipping Co', companyId: '111', lookupId: 'l1' });
+        capture.billing.selectCompany({ text: 'Billing Co', companyId: '222', lookupId: 'l2' });
+
+        quote.billingAddress(null);
+
+        expect(capture.billingRoleIdentity().companyId()).toBe('111');
+    });
+});
+
 describe('the two panels\' captures are independent — a pick on one never reaches the other', () => {
     test('a registered pick on shipping leaves billing\'s own identity untouched', () => {
-        const { capture, dom } = load();
-        dom.setVisible(BILLING_FIELD, true);
+        const { capture, dom, quote } = load();
+        billingBecomesDistinct(dom, quote);
         capture.shipping.start();
         capture.billing.start();
 
@@ -238,8 +294,8 @@ describe('the two panels\' captures are independent — a pick on one never reac
     });
 
     test('a registered pick on billing leaves shipping\'s own identity untouched', () => {
-        const { capture, dom } = load();
-        dom.setVisible(BILLING_FIELD, true);
+        const { capture, dom, quote } = load();
+        billingBecomesDistinct(dom, quote);
         capture.shipping.start();
         capture.billing.start();
 
@@ -262,13 +318,13 @@ describe('the resolved identity, end to end, follows the resolution rule live', 
     });
 
     test('billing distinct with a number: the resolved identity switches to billing\'s pick', () => {
-        const { capture, dom } = load();
+        const { capture, dom, quote } = load();
         capture.shipping.start();
         capture.billing.start();
         capture.shipping.selectCompany({ text: 'Shipping Co', companyId: '111', lookupId: 'l1' });
         expect(capture.identity.companyId()).toBe('111');
 
-        dom.setVisible(BILLING_FIELD, true);
+        billingBecomesDistinct(dom, quote);
         capture.billing.refreshMount();
         capture.billing.selectCompany({ text: 'Billing Co', companyId: '222', lookupId: 'l2' });
 
@@ -276,8 +332,8 @@ describe('the resolved identity, end to end, follows the resolution rule live', 
     });
 
     test('billing distinct but manual entry: the resolved identity falls back to shipping', () => {
-        const { capture, dom } = load();
-        dom.setVisible(BILLING_FIELD, true);
+        const { capture, dom, quote } = load();
+        billingBecomesDistinct(dom, quote);
         capture.shipping.start();
         capture.billing.start();
         capture.shipping.selectCompany({ text: 'Shipping Co', companyId: '111', lookupId: 'l1' });
@@ -328,7 +384,7 @@ describe('a checkbox toggle mid-checkout supersedes the order-intent already in 
     }
 
     test('unchecking mid-flow starts a fresh order-intent for billing\'s company, and the old company\'s stale response is dropped', () => {
-        const { capture, dom } = load();
+        const { capture, dom, quote } = load();
         capture.shipping.start();
         capture.billing.start();
 
@@ -342,7 +398,7 @@ describe('a checkbox toggle mid-checkout supersedes the order-intent already in 
         expect(requests[0].companyId).toBe('111');
 
         // Billing becomes distinct, with its own company, mid-checkout.
-        dom.setVisible(BILLING_FIELD, true);
+        billingBecomesDistinct(dom, quote);
         capture.billing.refreshMount();
         capture.billing.selectCompany({ text: 'Billing Co', companyId: '222', lookupId: 'l2' });
 
@@ -463,20 +519,20 @@ describe('the "same as shipping" checkbox toggle re-checks both panels\' mounts'
     // every call and would read as mounted even when refreshMount() was
     // never re-driven at all (the exact vacuous read this pins against).
     test('billing mounts once revealed, even though its field already existed hidden at boot', () => {
-        const { capture, dom } = load();
+        const { capture, dom, quote } = load();
         capture.start();
         expect(capture.billing.panel()).toBeNull();
 
-        dom.setVisible(BILLING_FIELD, true);
+        billingBecomesDistinct(dom, quote);
         dom.fireChange(BILLING_TOGGLE);
 
         expect(capture.billing.panel()).not.toBeNull();
     });
 
     test('unmounts again once re-hidden, same as an explicit refreshMount() already does', () => {
-        const { capture, dom } = load();
+        const { capture, dom, quote } = load();
         capture.start();
-        dom.setVisible(BILLING_FIELD, true);
+        billingBecomesDistinct(dom, quote);
         dom.fireChange(BILLING_TOGGLE);
         expect(capture.billing.panel()).not.toBeNull();
 
@@ -495,9 +551,10 @@ describe('the "same as shipping" checkbox toggle re-checks both panels\' mounts'
  * otherwise — the only capture the resolver reads then, so seeding the billing
  * panel discards a saved company the buyer may not be able to re-search.
  *
- * Distinctness is the live DOM answer, so a checkout whose billing fieldset is
- * away at the moment the quote notifies seeds shipping. The "same as shipping"
- * checkbox is what retires billing's own capture, and it is exercised here.
+ * Distinctness is the buyer's checkbox and the quote's own two addresses, so a
+ * checkout whose billing fieldset is away at the moment the quote notifies still
+ * seeds billing. The checkbox is what retires billing's own capture, and it is
+ * exercised here.
  */
 describe('the quote\'s billing address seeds the panel owning the billing role', () => {
     const RENDERER = 'view/frontend/web/js/view/payment/method-renderer/gateway_method.js';
@@ -522,10 +579,10 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
      * `capture.start()` — the checkbox listener that retires a stale billing
      * capture is wired there, so a per-component boot pins nothing about it.
      */
-    function billingPicks(capture, dom, company) {
-        dom.setVisible(BILLING_FIELD, true);
-        capture.start();
-        capture.billing.selectCompany({ text: company, companyId: '222', lookupId: 'l2' });
+    function billingPicks(booted, company) {
+        billingBecomesDistinct(booted.dom, booted.quote);
+        booted.capture.start();
+        booted.capture.billing.selectCompany({ text: company, companyId: '222', lookupId: 'l2' });
     }
 
     /** What Fire's re-render (or a page that has not rendered one yet) leaves. */
@@ -534,18 +591,30 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
         expect(capture.billing.mountSelector()).toBe('');
     }
 
-    function billingQuoteAddress(company) {
-        return {
+    /**
+     * The address the quote notifies with. Also put ON the quote, which is what
+     * the predicate reads — an address handed to the renderer that the quote
+     * does not hold is a state no checkout reaches.
+     *
+     * @param {object} booted
+     * @param {string} company
+     * @returns {object} quote address
+     */
+    function quoteNotifiesBilling(booted, company) {
+        const address = quoteAddressValue({
             company: company,
             telephone: '+47 123 45 678',
             customAttributes: [{ attribute_code: 'company_id', value: '222' }]
-        };
+        }, booted.quote.billingAddress().getCacheKey());
+        booted.quote.billingAddress(address);
+        return address;
     }
 
     /** Core's own checkbox, re-checked: billing is shipping again. */
-    function sameAsShippingAgain(capture, dom) {
-        dom.setVisible(BILLING_FIELD, false);
-        dom.fireChange('input[name="billing-address-same-as-shipping"]');
+    function sameAsShippingAgain(booted) {
+        booted.dom.setVisible(BILLING_FIELD, false);
+        booted.dom.setChecked(BILLING_TOGGLE, true);
+        booted.dom.fireChange(BILLING_TOGGLE);
     }
 
     /**
@@ -561,25 +630,86 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
             });
     }
 
-    test('through the quote\'s billing address, with the fieldset away it seeds SHIPPING', () => {
-        const { capture, dom } = load();
-        billingPicks(capture, dom, 'Billing Co');
+    test('with the fieldset transiently away, a distinct billing address still seeds BILLING', async () => {
+        // A third-party re-render takes the fieldset away for a moment while
+        // neither the checkbox nor the quote has changed; routing on what is on
+        // screen puts billing's company in the shipping panel's own field
+        // (TWO-25554).
+        const booted = load();
+        billingPicks(booted, 'Billing Co');
+        const { capture, dom } = booted;
         const renderer = loadRenderer(capture, dom);
         billingFieldsetAway(dom, capture);
 
-        renderer.updateBillingAddress(billingQuoteAddress('Billing Co'));
+        renderer.updateBillingAddress(quoteNotifiesBilling(booted, 'Saved Billing Co'));
+        await flushCapture();
 
-        expect(capture.shipping.identity().companyName()).toBe('Billing Co');
+        expect(capture.billing.identity().companyName()).toBe('Saved Billing Co');
+        expect(capture.billing.identity().companyId()).toBe('222');
+        expect(capture.shipping.identity().companyName()).toBe('');
+        expect(capture.shipping.identity().companyId()).toBe('');
+    });
+
+    test('with the fieldset transiently away the resolver still reads BILLING', async () => {
+        // The seed and the resolver answer off ONE predicate, so the identity
+        // the seed lands on is the identity downstream reads. Split, this is the
+        // shape that stranded the company on a panel nobody reads.
+        const booted = load();
+        billingPicks(booted, 'Billing Co');
+        const { capture, dom } = booted;
+        const renderer = loadRenderer(capture, dom);
+        billingFieldsetAway(dom, capture);
+
+        renderer.updateBillingAddress(quoteNotifiesBilling(booted, 'Saved Billing Co'));
+        await flushCapture();
+
+        expect(capture.identity.companyName()).toBe('Saved Billing Co');
+        expect(capture.identity.companyId()).toBe('222');
+    });
+
+    test('a returning buyer with no billing company field is still offered the saved company', async () => {
+        // A saved distinct billing address on a checkout that renders no billing
+        // company field at all: the seed lands on billing and the resolver reads
+        // billing, so the tile and order-intent see the company (TWO-25554).
+        const booted = load();
+        const { capture, dom, quote } = booted;
+        dom.setChecked(BILLING_TOGGLE, false);
+        dom.setExists(BILLING_FIELD, false);
+        quote.billingAddress(quoteAddressValue({}, DISTINCT_BILLING_KEY));
+        capture.start();
+        expect(capture.billing.mountSelector()).toBe('');
+        const renderer = loadRenderer(capture, dom);
+
+        renderer.updateBillingAddress(quoteNotifiesBilling(booted, 'Saved Billing Co'));
+        await flushCapture();
+
+        expect(capture.identity.companyName()).toBe('Saved Billing Co');
+        expect(capture.identity.companyId()).toBe('222');
+        expect(capture.shipping.identity().companyName()).toBe('');
+    });
+
+    test('a billing address the quote says IS the shipping address seeds SHIPPING', () => {
+        const booted = load();
+        billingPicks(booted, 'Billing Co');
+        const { capture, dom, quote } = booted;
+        const renderer = loadRenderer(capture, dom);
+        billingFieldsetAway(dom, capture);
+        quote.billingAddress(quoteAddressValue());
+
+        renderer.updateBillingAddress(quoteNotifiesBilling(booted, 'Saved Co'));
+
+        expect(capture.shipping.identity().companyName()).toBe('Saved Co');
         expect(capture.shipping.identity().companyId()).toBe('222');
     });
 
     test('re-checking "same as shipping" retires the billing panel\'s own capture', async () => {
-        const { capture, dom } = load();
-        billingPicks(capture, dom, 'Billing Co');
+        const booted = load();
+        billingPicks(booted, 'Billing Co');
+        const { capture } = booted;
         capture.billing.identity().soleTraderAdopted(true);
         capture.billing.identity().captureMode('soletrader');
 
-        sameAsShippingAgain(capture, dom);
+        sameAsShippingAgain(booted);
 
         // Synchronously, in the checkbox handler itself. A later availability
         // resolution retires an adoption too, for its own reason, and asserting
@@ -594,18 +724,35 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
         expect(capture.billing.identity().soleTraderAdopted()).toBe(false);
     });
 
+    test('the checkbox retires the capture before the quote has dropped its second address', () => {
+        // The checkbox is the buyer saying so, and core updates the quote after
+        // it. Reading the quote alone leaves the retired panel still winning the
+        // resolution for as long as that lag lasts.
+        const booted = load();
+        billingPicks(booted, 'Billing Co');
+        const { capture, quote } = booted;
+        expect(capture.identity.companyName()).toBe('Billing Co');
+
+        sameAsShippingAgain(booted);
+
+        expect(quote.billingAddress().getCacheKey()).toBe(DISTINCT_BILLING_KEY);
+        expect(capture.identity.companyName()).toBe('');
+    });
+
     test('after that re-check the returning buyer\'s saved company seeds SHIPPING, not billing', () => {
         // A saved shipping address carries the company as a custom attribute
         // and reaches the panels only through the quote's billing address. A
         // billing capture still standing after the re-check routes that seed to
         // a panel the resolver does not read, and the tile and order-intent
         // then show nothing at all.
-        const { capture, dom } = load();
-        billingPicks(capture, dom, 'Billing Co');
+        const booted = load();
+        billingPicks(booted, 'Billing Co');
+        const { capture, dom, quote } = booted;
         const renderer = loadRenderer(capture, dom);
-        sameAsShippingAgain(capture, dom);
+        sameAsShippingAgain(booted);
+        quote.billingAddress(quoteAddressValue());
 
-        renderer.updateBillingAddress(billingQuoteAddress('Saved Shipping Co'));
+        renderer.updateBillingAddress(quoteNotifiesBilling(booted, 'Saved Shipping Co'));
 
         expect(capture.shipping.identity().companyName()).toBe('Saved Shipping Co');
         expect(capture.shipping.identity().companyId()).toBe('222');
@@ -617,8 +764,9 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
         // view/address-autocomplete.js, off the SHIPPING identity — so a row in
         // it is the shipping step's by construction, and is how a reload
         // restores it.
-        const { capture, dom } = load();
-        billingPicks(capture, dom, 'Billing Co');
+        const booted = load();
+        billingPicks(booted, 'Billing Co');
+        const { capture, dom } = booted;
         const renderer = loadRenderer(capture, dom);
         billingFieldsetAway(dom, capture);
 
@@ -632,12 +780,13 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
     });
 
     test('the telephone on that same billing address still travels', () => {
-        const { capture, dom } = load();
-        billingPicks(capture, dom, 'Billing Co');
+        const booted = load();
+        billingPicks(booted, 'Billing Co');
+        const { capture, dom } = booted;
         const renderer = loadRenderer(capture, dom);
         billingFieldsetAway(dom, capture);
 
-        renderer.updateBillingAddress(billingQuoteAddress('Billing Co'));
+        renderer.updateBillingAddress(quoteNotifiesBilling(booted, 'Billing Co'));
 
         expect(renderer.telephone()).toBe('+47123 45 678');
     });
@@ -646,12 +795,13 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
         // Billing is not a distinct address here, so the shipping identity is
         // the only capture the resolver reads: seeding the billing panel would
         // discard a saved company the buyer cannot re-search (TWO-25554).
-        const { capture, dom } = load();
+        const booted = load();
+        const { capture, dom } = booted;
         capture.shipping.start();
         capture.billing.start();
         const renderer = loadRenderer(capture, dom);
 
-        renderer.updateBillingAddress(billingQuoteAddress('Some Other Co'));
+        renderer.updateBillingAddress(quoteNotifiesBilling(booted, 'Some Other Co'));
 
         expect(capture.shipping.identity().companyName()).toBe('Some Other Co');
         expect(capture.shipping.identity().companyId()).toBe('222');
@@ -661,8 +811,9 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
     test('the shipping step\'s own company still restores from the section while a billing panel is mounted', () => {
         // The section is how a reload restores the shipping company, and a
         // buyer with a distinct billing address must not lose that.
-        const { capture, dom } = load();
-        billingPicks(capture, dom, 'Billing Co');
+        const booted = load();
+        billingPicks(booted, 'Billing Co');
+        const { capture, dom } = booted;
         const renderer = loadRenderer(capture, dom);
 
         renderer.applyCompanyData({ companyName: 'Shipping Co', companyId: '111' });
@@ -725,8 +876,8 @@ describe('a resolved-company change starts a check WITHOUT writing the shipping 
     }
 
     test('a billing-only pick leaves the shipping identity empty', () => {
-        const { capture, dom } = load();
-        dom.setVisible(BILLING_FIELD, true);
+        const { capture, dom, quote } = load();
+        billingBecomesDistinct(dom, quote);
         capture.shipping.start();
         capture.billing.start();
         loadRendererWithIntent(capture, dom);
@@ -739,8 +890,8 @@ describe('a resolved-company change starts a check WITHOUT writing the shipping 
     });
 
     test('and still starts the check for the company that actually resolved', () => {
-        const { capture, dom } = load();
-        dom.setVisible(BILLING_FIELD, true);
+        const { capture, dom, quote } = load();
+        billingBecomesDistinct(dom, quote);
         capture.shipping.start();
         capture.billing.start();
         const { requests } = loadRendererWithIntent(capture, dom);
