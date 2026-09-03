@@ -17,7 +17,6 @@
 const $ = require('jquery');
 const { loadCompanyCapture, brandConfigMock, defaultMocks } = require('./amd-harness');
 
-
 const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
 const CHECKOUT_API_URL = 'https://api.example';
 const BUYER_ENDPOINT = '/autofill/v1/buyer/current';

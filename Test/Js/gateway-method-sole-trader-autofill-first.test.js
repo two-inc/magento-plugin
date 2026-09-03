@@ -503,6 +503,20 @@ describe('an adoption that throws still leaves the buyer a route forward', () =>
         flow.stopPopupCloseWatcher();
 
         expect(identity.isBusy()).toBe(false);
+        // The popup is the route forward, so there is nothing to apologise for.
+        expect(rec.errors).toEqual([]);
+    });
+
+    test('a throw out of the launch itself is surfaced, not swallowed', async () => {
+        const { component, flow, rec } = await startStack();
+        flow.launchSignup = function () { throw new Error('prefill read failed'); };
+
+        await clickSoleTrader();
+
+        expect(rec.opened).toEqual([]);
+        expect(rec.errors).toHaveLength(1);
+        // The chip has to stay usable: a wedged launch slot would strand it.
+        expect(component.soleTraderMode()).not.toBeNull();
     });
 });
 

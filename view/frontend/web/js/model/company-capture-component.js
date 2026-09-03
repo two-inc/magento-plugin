@@ -974,7 +974,7 @@
         this._soleTraderLaunch = this._soleTrader.autofillSoleTrader()
             .then(
                 function (adopted) { return adopted ? null : fallThrough(); },
-                // Nothing consumes this promise, so silence here is invisible.
+                // A lookup that failed is a lookup that found nobody.
                 fallThrough
             )
             .finally(function () {
