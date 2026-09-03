@@ -286,6 +286,7 @@ class CustomHeadersTest extends TestCase
     public static function reservedNames(): array
     {
         $names = [
+            // Set by the integration itself.
             'host',
             'content-type',
             'content-length',
@@ -293,8 +294,21 @@ class CustomHeadersTest extends TestCase
             'accept-language',
             'x-api-key',
             'two-delegated-authority-token',
+            // Proxy identity the rate limiter resolves callers through.
             'x-forwarded-for',
             'x-real-ip',
+            // RFC 7230 hop-by-hop: connection handling, not request content.
+            'connection',
+            'keep-alive',
+            'proxy-authenticate',
+            'proxy-authorization',
+            'te',
+            'trailer',
+            'transfer-encoding',
+            'upgrade',
+            // Generic credential carriers.
+            'authorization',
+            'cookie',
         ];
 
         return array_combine($names, array_map(static fn(string $name) => [$name], $names));
@@ -320,6 +334,9 @@ class CustomHeadersTest extends TestCase
             'suffixed' => ['accept-charset'],
             'the WAF token the retired field used' => ['X-WAF-TOKEN'],
             'a merchant gateway name' => ['X-Gateway-Id'],
+            'longer than a short reserved name' => ['tenant'],
+            'a hop-by-hop lookalike' => ['X-Upgrade-Path'],
+            'an authorization lookalike' => ['X-Authorization-Scheme'],
         ];
     }
 

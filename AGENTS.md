@@ -163,40 +163,46 @@ dead end above: reselecting the term brings its cell back into the grid,
 where it can be cleared. The scan runs before the write loop so a refusal
 leaves nothing half-applied.
 
-## The custom-header table: what its migration cannot carry
+## The custom-header table
 
-`custom_headers` (Diagnostics → Admin controls) replaced the single
-`firewall_token` field and its browser toggle.
-`Setup\Patch\Data\MigrateFirewallTokenToCustomHeaders` carries a stored
-token over as one `X-WAF-TOKEN` row, resolving both retired fields down
-the scope chain at every scope either of them touched. Two cases it
-deliberately does not carry, both silent:
+`custom_headers` (Diagnostics → Admin controls) lets the merchant send any
+number of named HTTP headers on calls to the Two API, each with its own
+"also send from browser" tick. It replaced a single `firewall_token` field
+plus a browser toggle.
 
--   **A token locked into `app/etc/config.php` by `app:config:dump`.**
-    The patch reads `core_config_data`; a dumped value is not there, and a
-    data patch must not rewrite the merchant's config file. Those stores
-    stop sending the header at upgrade and every API call is refused.
-    Needs a release note, not a code fix — check for this first if a
-    merchant reports refusals straight after upgrade. Such a scope is not
-    a candidate at all, so it gets no row of any kind.
--   **A token offending inside the value** against printable ASCII
-    (`^[\x20-\x7E]+\z`). The retired field had no validation and sent the
-    raw bytes: CR/LF was a response-splitting sink, control characters a
-    log-injection one, and non-ASCII is ambiguous on the wire. The pattern
-    ends `\z`, not `$` — `$` matches before a final newline and would let
-    exactly the worst byte through. An offender the value merely *ends* or
-    *starts* with is a different case: `resolvePair()` trims PHP's default
-    charlist (`" \t\n\r\0\x0B"`) and carries the token, because legacy data
-    gets the benefit of the doubt where an unattended patch has no admin to
-    warn. Any other stray byte — `\x1B`, `\x1F`, `\x7F`, anything high —
-    is dropped wherever it sits, since `trim()` does not reach it.
+**There is deliberately no data patch.** Those fields never reached `main`
+on any platform — only `staging` — so no merchant ever had one configured
+in production and there is nothing to carry over. ABN-490 shipped a
+migration first and then deleted it; do not add one back on the assumption
+that stored values exist.
 
-    A scope that would otherwise INHERIT a header gets an empty table
-    rather than being skipped — an empty table is how "this scope sends
-    nothing" survives as an override, and skipping would silently start it
-    sending an ancestor's header (published to buyers if that ancestor is
-    ticked). That is why `encodeFor()` distinguishes `''` from `false`;
-    collapsing the two reintroduces the bug.
+`Model\Config\Backend\CustomHeaders` is the entry gate and owns the stored
+format. Two rules there, both re-applied on the read path in
+`Model\Config\Repository` so a value from `config:set` or an import cannot
+bypass them:
+
+-   **Values are printable ASCII** (`^[\x20-\x7E]+\z`), refused at save
+    with a message naming the rule. CR/LF is a response-splitting sink,
+    other control characters a log-injection one, and non-ASCII is
+    ambiguous on the wire. The pattern ends `\z`, not `$` — `$` matches
+    before a final newline and would let exactly the worst byte through.
+    A value is trimmed of spaces and tabs ONLY, so a stray control byte
+    survives to be named rather than silently stripped.
+-   **19 header names are reserved**, matched case-insensitively and
+    exactly (a prefix like `X-Upgrade-Path` is the merchant's to use).
+    Four groups: names the integration sets itself (`host`,
+    `content-type`, `content-length`, `accept`, `accept-language`,
+    `x-api-key`, `two-delegated-authority-token`); the proxy identity the
+    checkout rate limiter resolves callers through (`x-forwarded-for`,
+    `x-real-ip`); RFC 7230 hop-by-hop headers, which govern connection
+    handling rather than request content so a value here malforms the call
+    (`connection`, `keep-alive`, `proxy-authenticate`,
+    `proxy-authorization`, `te`, `trailer`, `transfer-encoding`,
+    `upgrade`); and the generic credential carriers (`authorization`,
+    `cookie`).
+
+`Service\Api\Adapter` case-folds when merging, so a differently-cased row
+cannot add a second conflicting `X-API-Key` even if one were stored.
 
 **A browser-ticked header must already be allowed by the API on
 browser-originated calls**, or the one direct call the browser makes

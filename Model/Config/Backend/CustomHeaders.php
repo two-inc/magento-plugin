@@ -30,8 +30,10 @@ class CustomHeaders extends Value
     private const VALUE_PATTERN = '/^[\x20-\x7E]+\z/';
 
     /**
-     * Names the integration sets itself, plus the proxy-identity headers a
-     * merchant must not be able to restate from here.
+     * Names the integration sets itself, the proxy-identity headers a merchant
+     * must not restate from here, RFC 7230 hop-by-hop headers (which govern
+     * connection handling rather than the request, so a value here would
+     * malform the call), and the generic credential carriers.
      */
     private const RESERVED_NAMES = [
         'host',
@@ -43,6 +45,16 @@ class CustomHeaders extends Value
         'two-delegated-authority-token',
         'x-forwarded-for',
         'x-real-ip',
+        'connection',
+        'keep-alive',
+        'proxy-authenticate',
+        'proxy-authorization',
+        'te',
+        'trailer',
+        'transfer-encoding',
+        'upgrade',
+        'authorization',
+        'cookie',
     ];
 
     public static function isUsableName(string $name): bool
