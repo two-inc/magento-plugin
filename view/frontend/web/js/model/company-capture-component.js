@@ -324,10 +324,9 @@
             this._soleTrader.forgetAdoptions();
             if (wasSoleTrader) this.registeredMode();
         }
-        // Outside the guard above: the mount observer can resolve availability,
-        // and so hold an answer, while `_lastCountry` is still empty, and that
-        // answer belongs to the registry the buyer is leaving either way.
-        this._soleTrader.forgetAutofilledBuyer();
+        // The held buyer answer comes from the session cookie, not the
+        // registry the form currently targets, so a country change does not
+        // retire it.
         this.refreshSoleTraderAvailability(country);
     };
 
