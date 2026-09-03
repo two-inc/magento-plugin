@@ -72,25 +72,15 @@ class MigrateFirewallTokenToCustomHeaders implements DataPatchInterface
         foreach ($this->candidateScopes($rows) as [$code, $scope, $scopeId]) {
             $chain = $this->scopeChain($scope, $scopeId);
             $resolved = $this->resolvePair($rows, $code, $chain);
+            $inherited = $this->resolvePair($rows, $code, array_slice($chain, 1));
 
             // A scope resolving to what it would inherit anyway needs no row of
             // its own: writing one would turn inheritance into an override.
-            if ($resolved['token'] === '' || $resolved === $this->resolvePair($rows, $code, array_slice($chain, 1))) {
+            if ($resolved === $inherited || $this->hasCustomHeaders($rows, $code, $scope, $scopeId)) {
                 continue;
             }
 
-            if ($this->hasCustomHeaders($rows, $code, $scope, $scopeId)) {
-                continue;
-            }
-
-            // A token the new table cannot carry is left behind rather than
-            // written: the read path would drop it anyway, and a stored row
-            // the entry gate refuses makes the whole section unsavable over
-            // something the admin never typed.
-            $encoded = CustomHeadersBackend::isSendableValue($resolved['token'])
-                ? json_encode($this->singleRow($resolved['token'], $resolved['browser']))
-                : false;
-
+            $encoded = $this->encodeFor($resolved, $inherited);
             if ($encoded !== false) {
                 $this->configWriter->save($this->path($code, self::HEADERS_KEY), $encoded, $scope, $scopeId);
             }
@@ -110,6 +100,29 @@ class MigrateFirewallTokenToCustomHeaders implements DataPatchInterface
         $this->moduleDataSetup->getConnection()->endSetup();
 
         return $this;
+    }
+
+    /**
+     * The table this scope should store, or false to leave it inheriting.
+     *
+     * A token the new table cannot carry is not written: the read path would
+     * drop it anyway, and a stored row the entry gate refuses would make the
+     * whole section unsavable over something the admin never typed. Where the
+     * scope would otherwise inherit a header it is blanked rather than skipped
+     * — an empty table is how "this scope sends nothing" survives as an
+     * override, which is what the retired blank token said.
+     *
+     * @param array{token: string, browser: bool} $resolved
+     * @param array{token: string, browser: bool} $inherited
+     * @return string|false
+     */
+    private function encodeFor(array $resolved, array $inherited)
+    {
+        if (CustomHeadersBackend::isSendableValue($resolved['token'])) {
+            return json_encode($this->singleRow($resolved['token'], $resolved['browser']));
+        }
+
+        return CustomHeadersBackend::isSendableValue($inherited['token']) ? '' : false;
     }
 
     /**

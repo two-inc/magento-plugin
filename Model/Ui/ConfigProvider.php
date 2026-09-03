@@ -225,8 +225,6 @@ class ConfigProvider implements ConfigProviderInterface
                     'orderIntentConfig' => $orderIntentConfig,
                     'isCompanySearchEnabled' => $this->configRepository->isCompanySearchEnabled(),
                     'isAddressSearchEnabled' => $this->configRepository->isAddressSearchEnabled(),
-                    // Only the rows the merchant ticked reach the browser; the
-                    // rest never leave the server.
                     'customHeaders' => $this->configRepository->getBrowserCustomHeaders(),
                     // Warm-start seed for the renderer's per-country
                     // supported-company-types memo: the quote's current

@@ -369,6 +369,69 @@ class MigrateFirewallTokenToCustomHeadersTest extends TestCase
     }
 
     /**
+     * Given a scope the merchant had blanked, under an ancestor that carries a
+     * token; When the patch runs; Then that scope keeps sending nothing — an
+     * empty table is the override that says so, and skipping it would let the
+     * ancestor's header through, published to buyers if the ancestor is ticked.
+     *
+     * @dataProvider blankedOverrides
+     */
+    public function testABlankedScopeDoesNotStartInheritingTheAncestorsHeader(
+        string $override,
+        string $description
+    ): void {
+        $patch = $this->buildPatch(
+            [
+                self::row('default', 0, self::TOKEN_PATH, 'waf-token'),
+                self::row('default', 0, self::BROWSER_PATH, '1'),
+                self::row('stores', 3, self::TOKEN_PATH, $override),
+            ],
+            [['store_id' => 3, 'website_id' => 2]]
+        );
+
+        $patch->apply();
+
+        $this->assertSame(
+            [
+                [self::HEADERS_PATH, 'default', 0, '{"_1":{"name":"X-WAF-TOKEN","value":"waf-token","send_from_browser":"1"}}'],
+                [self::HEADERS_PATH, 'stores', 3, ''],
+            ],
+            array_map(static fn(array $save) => [$save[0], $save[2], $save[3], (string)$save[1]], $this->saves),
+            $description
+        );
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function blankedOverrides(): array
+    {
+        return [
+            'blank' => ['', 'the merchant cleared it for this store'],
+            'whitespace' => ['   ', 'a whitespace-only override says the same thing'],
+            'unsendable' => ["abc\r\nfoo", 'the read path would drop it, so the scope sends nothing either way'],
+        ];
+    }
+
+    /**
+     * A blanked scope with nothing to inherit needs no row at all.
+     */
+    public function testABlankedScopeUnderNoAncestorTokenGetsNoRow(): void
+    {
+        $patch = $this->buildPatch(
+            [
+                self::row('stores', 3, self::TOKEN_PATH, ''),
+                self::row('stores', 3, self::BROWSER_PATH, '1'),
+            ],
+            [['store_id' => 3, 'website_id' => 2]]
+        );
+
+        $patch->apply();
+
+        $this->assertSame([], $this->saves);
+    }
+
+    /**
      * The mirror of the case above: a scope resolving to exactly what it
      * inherits gets no row, because writing one would convert inheritance
      * into an override the admin never made.
