@@ -26,6 +26,7 @@ use Magento\Sales\Model\Order\Item as OrderItem;
 use Magento\Store\Model\App\Emulation;
 use Magento\Tax\Api\OrderTaxManagementInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
+use Magento\Tax\Model\ResourceModel\Sales\Order\Tax\CollectionFactory as OrderTaxCollectionFactory;
 use Magento\Tax\Model\Sales\Total\Quote\CommonTaxCollector;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -110,6 +111,11 @@ abstract class Order
     private $taxCalculation;
 
     /**
+     * @var OrderTaxCollectionFactory
+     */
+    private $orderTaxCollectionFactory;
+
+    /**
      * Order constructor.
      *
      * @param Image $imageHelper
@@ -122,6 +128,7 @@ abstract class Order
      * @param FeeLineProviderPool $feeLineProviderPool
      * @param OrderTaxManagementInterface $orderTaxManagement
      * @param TaxCalculation $taxCalculation
+     * @param OrderTaxCollectionFactory $orderTaxCollectionFactory
      */
     public function __construct(
         Image $imageHelper,
@@ -133,7 +140,8 @@ abstract class Order
         LogRepository $logRepository,
         FeeLineProviderPool $feeLineProviderPool,
         OrderTaxManagementInterface $orderTaxManagement,
-        TaxCalculation $taxCalculation
+        TaxCalculation $taxCalculation,
+        OrderTaxCollectionFactory $orderTaxCollectionFactory
     ) {
         $this->imageHelper = $imageHelper;
         $this->configRepository = $configRepository;
@@ -145,6 +153,8 @@ abstract class Order
         $this->feeLineProviderPool = $feeLineProviderPool;
         $this->orderTaxManagement = $orderTaxManagement;
         $this->taxCalculation = $taxCalculation;
+        $this->orderTaxCollectionFactory = $orderTaxCollectionFactory;
+        $this->orderTaxCollectionFactory = $orderTaxCollectionFactory;
     }
 
     /**
@@ -1191,15 +1201,24 @@ abstract class Order
     }
 
     /**
-     * The rates Magento's own tax engine applied to this order, from whichever
-     * of its two homes is populated.
+     * Every rate Magento's own tax engine applied to this order, merged from
+     * all three places it records them:
      *
-     * The `applied_taxes` extension attribute only exists on an order the
-     * quote-to-order conversion built (placement) or that came back through
-     * OrderRepositoryInterface. The admin invoice and credit-memo controllers
-     * load via OrderFactory instead, so there it is empty and the persisted
-     * tax rows are the only source — the same two-source read
-     * getDeclaredShippingTaxPercent() already does, and for the same reason.
+     * 1. The `applied_taxes` extension attribute — populated during
+     *    quote-to-order conversion, so at PLACEMENT time (before the order is
+     *    saved and has an id) it is the only source that exists. The admin
+     *    invoice and credit-memo controllers load via OrderFactory, which
+     *    never populates it.
+     * 2. The item-level tax rows, via OrderTaxManagementInterface.
+     * 3. The order-level tax rows, where a rate applied at address/total level
+     *    lands — a fee contributed by a total collector with no taxable item
+     *    row of its own is recorded here and nowhere else.
+     *
+     * Merged rather than first-non-empty: an order can carry its products'
+     * rate in the item rows and a differently-taxed fee's rate only in the
+     * order-level rows, so a non-empty item-level set must not shadow them.
+     * Duplicate rates across sources are harmless — the caller takes the
+     * first that reconciles.
      *
      * @param OrderModel $order
      * @return iterable
@@ -1207,22 +1226,33 @@ abstract class Order
     private function getOrderAppliedTaxes(OrderModel $order): iterable
     {
         $extensionAttributes = $order->getExtensionAttributes();
-        $appliedTaxes = $extensionAttributes ? $extensionAttributes->getAppliedTaxes() : null;
-        if ($appliedTaxes) {
-            return $appliedTaxes;
+        $appliedTaxes = [];
+        foreach (($extensionAttributes ? $extensionAttributes->getAppliedTaxes() : null) ?: [] as $appliedTax) {
+            $appliedTaxes[] = $appliedTax;
         }
 
         $orderId = (int)$order->getId();
         if ($orderId <= 0) {
-            return [];
+            return $appliedTaxes;
         }
 
         try {
-            return $this->orderTaxManagement->getOrderTaxDetails($orderId)->getAppliedTaxes() ?? [];
+            foreach ($this->orderTaxManagement->getOrderTaxDetails($orderId)->getAppliedTaxes() ?? [] as $itemTax) {
+                $appliedTaxes[] = $itemTax;
+            }
         } catch (Exception $exception) {
             // Nothing declared, so the caller's refuse path owns the decision.
-            return [];
         }
+
+        try {
+            foreach ($this->orderTaxCollectionFactory->create()->loadByOrder($order) as $orderTax) {
+                $appliedTaxes[] = $orderTax;
+            }
+        } catch (Exception $exception) {
+            // As above.
+        }
+
+        return $appliedTaxes;
     }
 
     /**

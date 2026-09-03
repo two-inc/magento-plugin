@@ -53,6 +53,33 @@ namespace Magento\Tax\Api {
     }
 }
 
+namespace Magento\Tax\Model\ResourceModel\Sales\Order\Tax {
+    if (!class_exists(Collection::class, false)) {
+        class Collection implements \IteratorAggregate
+        {
+            public function loadByOrder($order)
+            {
+                return $this;
+            }
+
+            public function getIterator(): \Traversable
+            {
+                return new \ArrayIterator([]);
+            }
+        }
+    }
+
+    if (!class_exists(CollectionFactory::class, false)) {
+        class CollectionFactory
+        {
+            public function create()
+            {
+                return new Collection();
+            }
+        }
+    }
+}
+
 namespace Magento\Tax\Model\Sales\Total\Quote {
     if (!class_exists(CommonTaxCollector::class, false)) {
         class CommonTaxCollector
