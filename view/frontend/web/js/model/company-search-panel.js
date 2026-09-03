@@ -70,6 +70,21 @@
     const HIDDEN_CLASS = 'two-hidden';
 
     /**
+     * What `_attach()` puts on the host field to announce the combobox. Left on
+     * a field this panel has moved off, it offers a keyboard buyer a listbox
+     * that is not there and points `aria-controls` at a removed popover
+     * (TWO-25554).
+     */
+    const COMBOBOX_ATTRIBUTES = ['role', 'aria-haspopup', 'aria-controls', 'aria-expanded'];
+
+    function stripComboboxAttributes(field) {
+        if (!field) return;
+        COMBOBOX_ATTRIBUTES.forEach(function (attr) {
+            field.removeAttribute(attr);
+        });
+    }
+
+    /**
      * Every member the injected `search` API must carry. Checked at
      * construction because a host that supplies a partial one fails silently:
      * a missing `abortActiveRequest` throws inside a close, a missing
@@ -315,6 +330,7 @@
             // wrapper is a second anchor: the sole-trader fallback note then
             // renders against a host the buyer has left.
             this._releaseWrap(previous);
+            stripComboboxAttributes(previous);
             // Fresh identity, so a search issued by the node this call replaces
             // resolves into a token nothing is listening for.
             this._token = {};
@@ -954,9 +970,7 @@
         this.close();
         if (this._field) {
             this._unbind(this._field);
-            ['role', 'aria-haspopup', 'aria-controls', 'aria-expanded'].forEach(function (attr) {
-                this._field.removeAttribute(attr);
-            }, this);
+            stripComboboxAttributes(this._field);
         }
         this.renderBackToSearchLink();
     };
@@ -1080,9 +1094,7 @@
         this.search.abortActiveRequest(this._token);
         this.removeBackToSearchLink();
         this._releaseWrap(this._field);
-        ['role', 'aria-haspopup', 'aria-controls', 'aria-expanded'].forEach(function (attr) {
-            if (this._field) this._field.removeAttribute(attr);
-        }, this);
+        stripComboboxAttributes(this._field);
         this._field = null;
         this._panel = null;
         this._query = null;

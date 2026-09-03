@@ -390,10 +390,12 @@
 }
 
 /*
- * Persistent "order intent approved" notice, rendered inline inside the
- * payment tile (see view/frontend/web/template/payment/gateway_method.html).
- * Replaces the transient checkout message-region treatment, which checkout
- * cleared on every update.
+ * The module's persistent inline notice box — the order-intent outcomes in the
+ * payment tile (view/frontend/web/template/payment/gateway_method.html) and a
+ * capture panel's own address-lookup failure beside its field
+ * (`.two-company-address-notice`, company-capture-component.js). Replaces the
+ * transient checkout message-region treatment, which checkout cleared on every
+ * update.
  *
  * Deliberately low-key: this is reassurance, not a call to action, and it
  * sits directly under the term chips. Brand overlays that ship their own

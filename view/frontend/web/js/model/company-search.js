@@ -43,8 +43,9 @@ define([
 
     /**
      * Epoch ms before which no registry call is issued, keyed by the calling
-     * PANEL: a 429 one panel earns must not silence the other's searching or
-     * put an "address unavailable" notice on its identity (TWO-25554).
+     * panel's IDENTITY: a 429 one panel earns must not silence the other's
+     * searching or put an "address unavailable" notice on its identity
+     * (TWO-25554).
      *
      * @see RATE_LIMIT_BACKOFF_MS
      */
@@ -111,29 +112,28 @@ define([
     }
 
     /**
-     * What applyAddress() last wrote into ONE address form, field name → value,
-     * keyed by that form's own element exactly as addressLookupState() is.
+     * What applyAddress() last wrote for ONE panel, field name → value.
      *
      * The DOM markers are the primary record and this is their survivor: a
      * checkout rebuilding an address fieldset destroys every attribute on it,
      * and a country switch after such a rebuild still has to retract the
      * previous country's address rather than leave it standing (TWO-25554).
      *
-     * Per FORM, and read only for the form the calling panel passed in, so
-     * neither panel can reach the other's recording through it.
+     * Keyed on the calling panel's IDENTITY: unreachable from the other panel,
+     * and it survives a one-step checkout replacing the payment-methods
+     * subtree the billing form lives in.
      */
     const addressWriteRecords = new WeakMap();
 
     /**
-     * @param {object} root jQuery-wrapped address form
-     * @returns {object} that form's live record, created empty on first use
+     * @param {object} identity the calling panel's own identity
+     * @returns {object} that panel's live record, created empty on first use
      */
-    function addressWriteRecord(root) {
-        const key = firstElement(root) || root;
-        let record = addressWriteRecords.get(key);
+    function addressWriteRecord(identity) {
+        let record = addressWriteRecords.get(identity);
         if (!record) {
             record = {};
-            addressWriteRecords.set(key, record);
+            addressWriteRecords.set(identity, record);
         }
         return record;
     }
@@ -602,8 +602,10 @@ define([
      * @param {object} address company address or buyer address record
      * @param {?object} $root jQuery set to scope every field read and write
      *        to; document-wide when null
+     * @param {object} identity the calling panel's own identity, keying the
+     *        recording
      */
-    function writeAddressInto(self, address, $root) {
+    function writeAddressInto(self, address, $root, identity) {
         const values = self.resolveAddressValues(address, $root);
         const names = Object.keys(values);
         // What the marker attribute records for each written field — the
@@ -629,7 +631,7 @@ define([
         // Replaced wholesale rather than merged: a field this payload says
         // nothing about is retracted below, so a recording for it would outlive
         // the value it describes.
-        const record = addressWriteRecord($root);
+        const record = addressWriteRecord(identity);
         Object.keys(record).forEach(function (name) { delete record[name]; });
         Object.assign(record, recordAs);
         retractStaleFields(
@@ -792,7 +794,20 @@ define([
         );
     }
 
-    /** The clear half of announceAddressUnavailable(). */
+    /**
+     * Tell the buyer the address had nowhere to land. Its own wording, because
+     * the sibling notice above asks them to enter it below and this fires
+     * precisely when there is no form below to enter it into.
+     *
+     * @param {object} identity the CALLING panel's own identity
+     */
+    function announceAddressUndeliverable(identity) {
+        identity.addressNotice(
+            $t('We could not fill in this company\'s address on this page.')
+        );
+    }
+
+    /** The clear half of both announcements above. */
     function withdrawAddressUnavailable(identity) {
         identity.addressNotice('');
     }
@@ -849,10 +864,11 @@ define([
      * what the plugin put there, and forget the recording.
      *
      * @param {object} $root jQuery-wrapped address form
+     * @param {object} identity the calling panel's own identity
      * @returns {Array<string>} the names of the fields cleared
      */
-    function revertAddressFormFields($root) {
-        const record = addressWriteRecord($root);
+    function revertAddressFormFields($root, identity) {
+        const record = addressWriteRecord(identity);
         const cleared = [];
         REVERTABLE_FIELDS.forEach(function (field) {
             const handle = revertableFieldHandle($root, field);
@@ -976,8 +992,8 @@ define([
         apiClientParams: apiClientParams,
         unwrapProxyResponse: unwrapProxyResponse,
 
-        /** @see announceAddressUnavailable */
-        announceAddressUnavailable: announceAddressUnavailable,
+        /** @see announceAddressUndeliverable */
+        announceAddressUndeliverable: announceAddressUndeliverable,
 
         /**
          * Run one company search and hand back rows the panel can render.
@@ -999,8 +1015,8 @@ define([
          * @param {object} options.token bind identity, so an abort raised
          *        against a torn-down panel cannot cancel the live one's search
          * @param {object} options.scope the calling panel's rate-limit scope.
-         *        Required: falling back to the bind token scoped the backoff to
-         *        a token a re-render replaces, i.e. to no backoff at all
+         *        Required, and never the bind token: a re-render replaces that
+         *        token, so a backoff scoped to one is never observed
          *        (TWO-25554).
          * @returns {Promise<{items: Array, unavailable: boolean, aborted: boolean}>}
          */
@@ -1114,7 +1130,7 @@ define([
             if (!root || !root.length || !identity) {
                 // A picked company that fills nothing in, with nothing said,
                 // reads as the picker having done nothing.
-                if (identity) announceAddressUnavailable(identity);
+                if (identity) announceAddressUndeliverable(identity);
                 console.debug({ logger: 'companySearch.lookupCompanyAddress.refused' });
                 return null;
             }
@@ -1150,7 +1166,7 @@ define([
                 const envelope = unwrapProxyResponse(raw);
                 const response = envelope.ok ? envelope.body : null;
                 if (response && response.addresses && response.addresses.length) {
-                    self.applyAddress(response.addresses[0], root);
+                    self.applyAddress(response.addresses[0], root, identity);
                     return;
                 }
                 announceAddressUnavailable(notify);
@@ -1198,15 +1214,17 @@ define([
          *
          * @param {object} address company address or buyer address record
          * @param {object} root jQuery set for the calling panel's own form
+         * @param {object} identity the calling panel's own identity, keying the
+         *        recording a later revert reads
          * @returns {number} 0 — no address other than `root` is ever written
          */
-        applyAddress: function (address, root) {
+        applyAddress: function (address, root, identity) {
             console.debug({ logger: 'companySearch.applyAddress', address });
-            if (!root || !root.length) {
+            if (!root || !root.length || !identity) {
                 console.debug({ logger: 'companySearch.applyAddress.refused' });
                 return 0;
             }
-            writeAddressInto(this, address, root);
+            writeAddressInto(this, address, root, identity);
             return 0;
         },
 
@@ -1347,15 +1365,17 @@ define([
          * buyer edit.
          *
          * @param {object} root the calling panel's own form
+         * @param {object} identity the calling panel's own identity, keying the
+         *        recording this reads
          * @returns {number} how many fields were cleared — for tests, and so a
          *          caller can tell "nothing was ours" from "reverted"
          */
-        revertAutofilledAddress: function (root) {
-            if (!root || !root.length) {
+        revertAutofilledAddress: function (root, identity) {
+            if (!root || !root.length || !identity) {
                 console.debug({ logger: 'companySearch.revertAutofilledAddress.refused' });
                 return 0;
             }
-            const retracted = revertAddressFormFields(root);
+            const retracted = revertAddressFormFields(root, identity);
             console.debug({
                 logger: 'companySearch.revertAutofilledAddress',
                 cleared: retracted.length

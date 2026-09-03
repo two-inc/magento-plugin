@@ -469,7 +469,17 @@ describe('a tile-mounted shipping panel and the one address form there is (TWO-2
      * rendered, so the shipping panel falls to the tile and the page's single
      * address form is the only destination a write could have.
      */
-    const OWN_MARKUP_CHECKOUT = [TILE_FIELD_SELECTOR, 'input[name="street[0]"]'];
+    const OWN_MARKUP_CHECKOUT = [
+        TILE_FIELD_SELECTOR,
+        'input[name="street[0]"]',
+        'input[name="city"]'
+    ];
+
+    /**
+     * The same checkout where the container around the street line holds no
+     * city — a themed row rather than the address form.
+     */
+    const STREET_ROW_ONLY = [TILE_FIELD_SELECTOR, 'input[name="street[0]"]'];
 
     /** The same checkout with no address form at all — a virtual cart. */
     const TILE_ALONE = [TILE_FIELD_SELECTOR];
@@ -491,6 +501,23 @@ describe('a tile-mounted shipping panel and the one address form there is (TWO-2
         expect(identity.addressNotice()).toBe('');
     });
 
+    test('a container holding the street line alone is not that form', async () => {
+        // `closest()` answers with the NEAREST container, so a themed row around
+        // the street line qualifies on the street test alone — and a write
+        // scoped there fills in a street and nothing else (TWO-25554).
+        const { component, identity, recorder, pick } = loadMountedComponent(null, STREET_ROW_ONLY);
+        expect(component.mountSelector()).toBe(TILE_FIELD_SELECTOR);
+
+        await pick('example', SEARCH_RESPONSE);
+        await new Promise(function (resolve) { setTimeout(resolve, 0); });
+        await new Promise(function (resolve) { setTimeout(resolve, 0); });
+
+        expect(lookupIds(recorder)).toEqual([]);
+        expect(recorder.written).toHaveLength(0);
+        expect(identity.addressNotice())
+            .toBe('We could not fill in this company\'s address on this page.');
+    });
+
     test('with no address form at all the write is refused, and the buyer is told', async () => {
         // Refused, not guessed at — and NOT silently: the buyer gets neither an
         // address nor a reason for its absence otherwise.
@@ -502,17 +529,24 @@ describe('a tile-mounted shipping panel and the one address form there is (TWO-2
         expect(identity.companyId()).toBe('12345678');
         expect(lookupIds(recorder)).toEqual([]);
         expect(recorder.written).toHaveLength(0);
-        expect(identity.addressNotice()).not.toBe('');
+        // Its own copy: there is no form below to enter the address into, so
+        // the fetch-failed notice would send the buyer nowhere.
+        expect(identity.addressNotice())
+            .toBe('We could not fill in this company\'s address on this page.');
     });
 
     test.each([
         [
-            function (search, root, identity) { return search.applyAddress({ city: 'X' }, root); },
+            function (search, root, identity) {
+                return search.applyAddress({ city: 'X' }, root, identity);
+            },
             0,
             'applyAddress refuses'
         ],
         [
-            function (search, root) { return search.revertAutofilledAddress(root); },
+            function (search, root, identity) {
+                return search.revertAutofilledAddress(root, identity);
+            },
             0,
             'revertAutofilledAddress refuses'
         ],

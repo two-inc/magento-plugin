@@ -74,6 +74,9 @@ define([
     /** @see soleAddressForm — the element kinds a checkout wraps one in. */
     const ADDRESS_FORM_CONTAINER_SELECTOR = 'form, fieldset, [data-form]';
 
+    /** @see soleAddressForm — the second field that makes one a whole address. */
+    const ADDRESS_CITY_SELECTOR = 'input[name="city"]';
+
     const brandCode = brandConfig.getActiveTwoBrandCode();
     const config = brandCode ? brandConfig(brandCode) : null;
 
@@ -297,9 +300,14 @@ define([
     function soleAddressForm() {
         if ($(ADDRESS_FORM_ROOT).length || $(BILLING_FORM_ROOT).length) return null;
         const $streets = $(ADDRESS_STREET_SELECTOR);
-        if ($streets.length !== 1 || typeof $streets.closest !== 'function') return null;
+        if ($streets.length !== 1) return null;
+        // `closest()` answers with the NEAREST container, which on a themed
+        // checkout is often a row holding the street line alone — a write scoped
+        // there fills in a street and nothing else. The city is what makes the
+        // container the whole address form.
         const $form = $streets.closest(ADDRESS_FORM_CONTAINER_SELECTOR);
-        return $form.length === 1 ? $form : null;
+        if (!$form.length) return null;
+        return $form.find(ADDRESS_CITY_SELECTOR).length ? $form : null;
     }
 
     /**
@@ -325,14 +333,45 @@ define([
     }
 
     /**
-     * The same destination, telling the buyer when there is none: a pick that
-     * fills nothing in and says nothing reads as the picker having done nothing.
+     * shippingWriteRoot(), and a notice on the shipping identity when there is
+     * none — a pick that fills nothing in and says nothing reads to the buyer
+     * as the picker having done nothing (TWO-25461 §5).
      *
      * @returns {?object} jQuery set, or null
      */
     function shippingWriteTarget() {
         const root = shippingWriteRoot();
-        if (!root) companySearch.announceAddressUnavailable(shippingIdentity);
+        if (!root) companySearch.announceAddressUndeliverable(shippingIdentity);
+        return root;
+    }
+
+    /**
+     * Where the BILLING panel's own writes land, or `null` when there is no
+     * destination for them.
+     *
+     * Its own form and only ever its own form: it has no tile fallback and the
+     * shipping form is the other panel's (TWO-25554). Keyed on the live mount
+     * rather than on the selector matching, because core leaves the fieldset in
+     * the DOM hidden once "same as shipping" is re-checked, and a hidden field
+     * is nowhere the buyer can read what was written.
+     *
+     * @returns {?object} jQuery set, or null
+     */
+    function billingWriteRoot() {
+        if (billingComponent.mountSelector() !== BILLING_FIELD_SELECTOR) return null;
+        const $root = $(BILLING_FORM_ROOT);
+        return $root.length ? $root : null;
+    }
+
+    /**
+     * billingWriteRoot(), and a notice on the billing identity when there is
+     * none — shippingWriteTarget()'s counterpart, for the same reason.
+     *
+     * @returns {?object} jQuery set, or null
+     */
+    function billingWriteTarget() {
+        const root = billingWriteRoot();
+        if (!root) companySearch.announceAddressUndeliverable(billingIdentity);
         return root;
     }
 
@@ -368,10 +407,10 @@ define([
             );
         },
         revertAutofilledAddress: function () {
-            companySearch.revertAutofilledAddress(shippingWriteRoot());
+            companySearch.revertAutofilledAddress(shippingWriteRoot(), shippingIdentity);
         },
         applyBuyerAddress: function (source) {
-            companySearch.applyAddress(source, shippingWriteTarget());
+            companySearch.applyAddress(source, shippingWriteTarget(), shippingIdentity);
         },
         applyTelephone: function (phoneNumber) {
             companySearch.applyTelephone(phoneNumber, shippingWriteTarget());
@@ -405,18 +444,18 @@ define([
             companySearch.lookupCompanyAddress(
                 billingComponent.config(),
                 selectedItem,
-                $(BILLING_FORM_ROOT),
+                billingWriteRoot(),
                 billingIdentity
             );
         },
         revertAutofilledAddress: function () {
-            companySearch.revertAutofilledAddress($(BILLING_FORM_ROOT));
+            companySearch.revertAutofilledAddress(billingWriteRoot(), billingIdentity);
         },
         applyBuyerAddress: function (source) {
-            companySearch.applyAddress(source, $(BILLING_FORM_ROOT));
+            companySearch.applyAddress(source, billingWriteTarget(), billingIdentity);
         },
         applyTelephone: function (phoneNumber) {
-            companySearch.applyTelephone(phoneNumber, $(BILLING_FORM_ROOT));
+            companySearch.applyTelephone(phoneNumber, billingWriteTarget());
         },
         getFallbackCountry: function () {
             return companySearch.currentAddressFormCountry($(BILLING_FORM_ROOT));

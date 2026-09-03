@@ -307,6 +307,7 @@
 "Invalid company lookup request.","Ongeldige aanvraag voor bedrijfsgegevens."
 "This order is too large to send for approval.","Deze bestelling is te groot om ter goedkeuring te versturen."
 "We could not fetch this company's address. Please enter it below.","We konden het adres van dit bedrijf niet ophalen. Voer het hieronder in."
+"We could not fill in this company's address on this page.","We could not fill in this company's address on this page."
 "Trusted proxies","Vertrouwde proxy's"
 "Trusted proxies: ""%1"" is not a valid IP address or CIDR range.","Vertrouwde proxy's: ""%1"" is geen geldig IP-adres of CIDR-bereik."
 "Disable checkout rate limiting","Snelheidsbeperking in de afrekening uitschakelen"

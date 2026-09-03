@@ -113,6 +113,12 @@ function makeDom() {
         setCountry: function (selector, value) {
             node(selector).val(value);
         },
+        // The unmounted fallback read goes through `$root.find(...)` rather
+        // than the flat country selector, which the stub answers with a node
+        // of its own.
+        setFormCountry: function (rootSelector, value) {
+            node(rootSelector).find('select[name="country_id"]').val(value);
+        },
         // `document` is jsdom's real global, passed as an extraGlobal — the
         // stub's own `$(document)` resolves it to the same node every time
         // via `String(document)`, exactly as company-capture.js's own calls do.
@@ -203,6 +209,18 @@ describe('each panel reads ONLY its own address form\'s country — never a shar
 
         dom.setCountry(BILLING_COUNTRY, 'dk');
         expect(capture.shipping.countryCode()).toBe('se');
+    });
+
+    test('unmounted, billing falls back to its OWN form and not the shipping form', () => {
+        // Unmounted there is no adjacent select to read, and with no country on
+        // the quote either the live form read is the only answer left.
+        const { capture, dom } = load();
+        dom.setFormCountry(BILLING_FORM, 'dk');
+        dom.setFormCountry(ADDRESS_FORM, 'se');
+        capture.billing.start();
+
+        expect(capture.billing.mountSelector()).toBe('');
+        expect(capture.billing.countryCode()).toBe('dk');
     });
 });
 
@@ -530,6 +548,19 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
         dom.fireChange('input[name="billing-address-same-as-shipping"]');
     }
 
+    /**
+     * Two macrotasks. `watchCapturedIdentity` publishes on `setTimeout(0)`, so a
+     * denial made before it has run denies a propagation that had not happened.
+     *
+     * @returns {Promise}
+     */
+    function flushCapture() {
+        return new Promise(function (resolve) { setTimeout(resolve, 0); })
+            .then(function () {
+                return new Promise(function (resolve) { setTimeout(resolve, 0); });
+            });
+    }
+
     test('through the quote\'s billing address, with the fieldset away it seeds SHIPPING', () => {
         const { capture, dom } = load();
         billingPicks(capture, dom, 'Billing Co');
@@ -542,14 +573,25 @@ describe('the quote\'s billing address seeds the panel owning the billing role',
         expect(capture.shipping.identity().companyId()).toBe('222');
     });
 
-    test('re-checking "same as shipping" retires the billing panel\'s own capture', () => {
+    test('re-checking "same as shipping" retires the billing panel\'s own capture', async () => {
         const { capture, dom } = load();
         billingPicks(capture, dom, 'Billing Co');
+        capture.billing.identity().soleTraderAdopted(true);
+        capture.billing.identity().captureMode('soletrader');
 
         sameAsShippingAgain(capture, dom);
 
+        // Synchronously, in the checkbox handler itself. A later availability
+        // resolution retires an adoption too, for its own reason, and asserting
+        // only after that would pin nothing about the retirement.
         expect(capture.billing.identity().companyName()).toBe('');
         expect(capture.billing.identity().companyId()).toBe('');
+        expect(capture.billing.identity().soleTraderAdopted()).toBe(false);
+        expect(capture.billing.identity().captureMode()).toBe('registered');
+
+        await flushCapture();
+        expect(capture.billing.identity().companyName()).toBe('');
+        expect(capture.billing.identity().soleTraderAdopted()).toBe(false);
     });
 
     test('after that re-check the returning buyer\'s saved company seeds SHIPPING, not billing', () => {

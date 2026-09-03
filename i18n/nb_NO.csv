@@ -311,6 +311,7 @@
 "Invalid company lookup request.","Ugyldig forespørsel om firmaoppslag."
 "This order is too large to send for approval.","Denne ordren er for stor til å sendes til godkjenning."
 "We could not fetch this company's address. Please enter it below.","Vi klarte ikke å hente adressen til dette selskapet. Skriv den inn nedenfor."
+"We could not fill in this company's address on this page.","We could not fill in this company's address on this page."
 "Trusted proxies","Klarerte proxyer"
 "Trusted proxies: ""%1"" is not a valid IP address or CIDR range.","Klarerte proxyer: ""%1"" er ikke en gyldig IP-adresse eller et gyldig CIDR-område."
 "Disable checkout rate limiting","Slå av hastighetsbegrensning i kassen"

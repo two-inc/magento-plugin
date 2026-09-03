@@ -77,9 +77,9 @@ define([
      */
     const tileMountRevision = ko.observable(0);
 
-    // Bumped from inside the component's own re-point, so the tile stops
-    // rendering a second company field on every event that moves the mount and
-    // not only on the ones a caller remembers to report (TWO-25554).
+    // Bumped from inside the component's own re-point: one control per field
+    // has to hold for every event that moves the mount, not only the ones a
+    // caller remembers to report (TWO-25554).
     companyCapture.shipping.subscribeMount(function () {
         tileMountRevision(tileMountRevision() + 1);
     });
@@ -466,15 +466,6 @@ define([
          */
         isOrderIntentErrorNoticeVisible: function () {
             return !!(this.orderIntentErrorNotice && this.orderIntentErrorNotice());
-        },
-        /**
-         * Same guard, for the company-address lookup failure — not one of the
-         * order-intent notices, see initOrderIntentApprovedNotice().
-         *
-         * @returns {boolean}
-         */
-        isAddressNoticeVisible: function () {
-            return !!(this.addressNotice && this.addressNotice());
         },
         /**
          * Blank all three order-intent outcome notices.
@@ -1165,10 +1156,6 @@ define([
             // processOrderIntent*Response() re-sets afterwards; a company
             // edited by hand in the input clears both notices and leaves
             // them cleared, which is the correct fail-closed outcome.
-            // Its OWN box, not the intent-error one: the credit check normally
-            // answers after the address lookup, and clearOrderIntentNotices()
-            // would blank an address failure the buyer still has to act on.
-            this.addressNotice = identity.addressNotice;
 
             var self = this;
             /**

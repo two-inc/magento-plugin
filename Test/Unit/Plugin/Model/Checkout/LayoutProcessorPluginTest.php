@@ -663,6 +663,22 @@ class LayoutProcessorPluginTest extends TestCase
             [['component' => self::BILLING_COMPONENT, 'children' => ['form-fields' => ['children' => []]]], 'a billing form with no dataScopePrefix'],
             [['component' => self::BILLING_COMPONENT, 'dataScopePrefix' => ''], 'an empty dataScopePrefix'],
             [['component' => self::BILLING_COMPONENT, 'dataScopePrefix' => 'billingAddressshared'], 'a billing form with no form-fields'],
+            [
+                [
+                    'component' => 'Vendor_Module/js/view/some-fieldset',
+                    'dataScopePrefix' => 'shippingAddress',
+                    'children' => ['form-fields' => ['children' => ['city' => ['label' => 'City']]]],
+                ],
+                'a fieldset whose scope is not a billing one, complete in every other respect',
+            ],
+            [
+                [
+                    'component' => self::BILLING_COMPONENT,
+                    'dataScopePrefix' => '',
+                    'children' => ['form-fields' => ['children' => ['city' => ['label' => 'City']]]],
+                ],
+                'core\'s own component with no scope to bind a number to',
+            ],
             ['not-an-array', 'a scalar child'],
         ];
     }

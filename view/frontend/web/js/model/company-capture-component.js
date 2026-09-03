@@ -81,6 +81,15 @@
     const SOLE_TRADER_LINK_CLASS = 'two-select-different-sole-trader';
 
     /**
+     * Why the picked company's address could not be filled in. Styled as the
+     * tile's own notice box (`two-order-intent-message error`) and hooked by
+     * this class alone, so the chrome lookup cannot reach the tile's boxes.
+     */
+    const ADDRESS_NOTICE_CLASS = 'two-company-address-notice';
+
+    const ADDRESS_NOTICE_STYLE_CLASSES = ['two-order-intent-message', 'error'];
+
+    /**
      * A company number the checkout restored into an address form, under either
      * host's field naming.
      */
@@ -113,7 +122,7 @@
      *        `refreshMount()` off its own re-render hook instead.
      * @param {string} options.addressFieldSelector the address step's company
      *        field.
-     * @param {string} options.addressFormRootSelector the form that field
+     * @param {string} [options.addressFormRootSelector] the form that field
      *        belongs to — the one `addressFieldSelector` is built from. Bounds
      *        every DOM read this panel makes, so absent it reads nothing.
      * @param {string} options.tileFieldSelector the payment tile's company
@@ -307,10 +316,13 @@
             // A search still on the wire would answer for the country the buyer
             // just left and repopulate what this call is clearing.
             if (this._panel) this._panel.abortActiveRequest();
+            // Read before the retirement, which resets the mode itself: the
+            // panel still has to be handed back as a search trigger.
+            const wasSoleTrader = this._identity.isSoleTrader();
             this._identity.clear();
             this._options.revertAutofilledAddress();
             this._soleTrader.forgetAdoptions();
-            if (this._identity.isSoleTrader()) this.registeredMode();
+            if (wasSoleTrader) this.registeredMode();
         }
         this.refreshSoleTraderAvailability(country);
     };
@@ -444,11 +456,15 @@
     CompanyCaptureComponent.prototype.refreshMount = function () {
         const selector = this.mountSelector();
         const previous = this._boundSelector;
+        // While the OLD selector is still bound — every chrome lookup goes
+        // through the bound field, so the host being left is unreachable once
+        // `_boundSelector` moves, and its number and sole-trader link would
+        // stand alongside the new host's (TWO-25554).
+        if (previous !== selector) this._removeChrome();
         if (!selector) {
             // Neither host is on the page any more. Forgetting where the control
             // was is what stops `adjacentCountry()` answering for a form that has
             // gone, and lets the next host that appears mount cleanly.
-            this.removeChrome();
             this._boundSelector = null;
             if (this._panel) this._panel.unmount();
             if (previous !== null) this._notifyMount();
@@ -459,7 +475,6 @@
             this.renderChrome();
             return;
         }
-        if (previous !== selector) this.removeChrome();
         this._boundSelector = selector;
         this.mountPanel(selector);
         this.syncChips();
@@ -590,24 +605,23 @@
         }) || null;
     };
 
-    /**
-     * Clear this panel's chrome from the mount it is bound to.
-     *
-     * Chrome sits outside the wrapper, so releasing the wrapper leaves it
-     * standing: a mount that moves would strand a company number and a
-     * sole-trader link in the form the buyer has been taken off.
-     */
-    CompanyCaptureComponent.prototype.removeChrome = function () {
-        [COMPANY_NUMBER_CLASS, SOLE_TRADER_LINK_CLASS].forEach(function (className) {
-            const node = this._chromeNode(className);
-            if (node) node.remove();
-        }, this);
-    };
-
     /** Repaint every piece of chrome this panel renders for its own identity. */
     CompanyCaptureComponent.prototype.renderChrome = function () {
         this.renderCompanyNumber();
         this.renderSoleTraderLink();
+        this.renderAddressNotice();
+    };
+
+    /**
+     * Take this panel's chrome back off the page. A SIBLING of the wrapper, so
+     * `unmount()` leaves it standing over a torn-down flow (TWO-25554).
+     */
+    CompanyCaptureComponent.prototype._removeChrome = function () {
+        const self = this;
+        [COMPANY_NUMBER_CLASS, SOLE_TRADER_LINK_CLASS, ADDRESS_NOTICE_CLASS].forEach(function (className) {
+            const node = self._chromeNode(className);
+            if (node) node.remove();
+        });
     };
 
     /**
@@ -727,6 +741,36 @@
         // across repaints regardless of which was rendered first.
         const after = this._chromeNode(COMPANY_NUMBER_CLASS) || anchor;
         host.insertBefore(wrapper, after.nextSibling);
+    };
+
+    /**
+     * Why this panel's picked company could not have its address filled in,
+     * under this panel's OWN field.
+     *
+     * At the field rather than in the payment tile because the copy sends the
+     * buyer to the address fields "below" it, and a notice rendered anywhere
+     * but beside the panel that raised it points at the wrong form — or, for a
+     * panel the tile is not mounted on, at no form the buyer can see
+     * (TWO-25554).
+     */
+    CompanyCaptureComponent.prototype.renderAddressNotice = function () {
+        const anchor = this._chromeAnchor();
+        const host = this._chromeHost();
+        if (!anchor || !host) return;
+        const existing = this._chromeNode(ADDRESS_NOTICE_CLASS);
+        if (existing) existing.remove();
+        const notice = this._identity.addressNotice();
+        if (!notice) return;
+        const box = document.createElement('div');
+        box.className = [ADDRESS_NOTICE_CLASS].concat(ADDRESS_NOTICE_STYLE_CLASSES).join(' ');
+        // The lookup answers after the buyer has moved on from the field, so
+        // nothing else would announce the failure to a screen reader.
+        box.setAttribute('role', 'alert');
+        box.textContent = notice;
+        const after = this._chromeNode(SOLE_TRADER_LINK_CLASS)
+            || this._chromeNode(COMPANY_NUMBER_CLASS)
+            || anchor;
+        host.insertBefore(box, after.nextSibling);
     };
 
     // ----------------------------------------------------------------- chips

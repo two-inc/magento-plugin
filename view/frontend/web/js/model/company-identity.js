@@ -199,12 +199,27 @@
                 notify();
             },
 
-            /** Abandon both halves — a country change invalidates the registry. */
+            /**
+             * Retire the whole capture. The mode and the adoption go with the
+             * name/number pair: a retired capture left in sole-trader mode
+             * remounts the panel over an empty identity, and the resolver reads
+             * an adoption as a company number (TWO-25554).
+             *
+             * `soleTraderAvailable` is a property of the country rather than of
+             * the capture, and stays.
+             */
             clear: function () {
-                if (!state.companyName && !state.companyId && !state.companyIdSource) return;
+                if (!state.companyName && !state.companyId && !state.companyIdSource
+                    && !state.soleTraderAdopted && !state.addressNotice
+                    && state.captureMode === 'registered') {
+                    return;
+                }
                 state.companyName = '';
                 state.companyId = '';
                 state.companyIdSource = '';
+                state.soleTraderAdopted = false;
+                state.addressNotice = '';
+                state.captureMode = 'registered';
                 notify();
             },
 
@@ -224,14 +239,21 @@
             },
 
             /**
-             * Every field, as one plain object — for a caller mirroring this
-             * identity onto another one (`company-source-resolver.js`) that
-             * must copy the whole thing in a single notify, not one per field.
+             * WHICH COMPANY, and nothing else — every other field is the owning
+             * panel's own UI state, rendered at that panel's own field, and a
+             * mirror of it speaks for the wrong form (TWO-25554).
+             *
+             * One object rather than per-field reads because the mirror
+             * (`company-source-resolver.js`) must land in a single notify.
              *
              * @returns {object}
              */
             snapshot: function () {
-                return Object.assign({}, state);
+                return {
+                    companyName: state.companyName,
+                    companyId: state.companyId,
+                    companyIdSource: state.companyIdSource
+                };
             },
 
             /**

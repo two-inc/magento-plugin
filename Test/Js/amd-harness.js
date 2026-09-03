@@ -160,8 +160,8 @@ function defaultMocks() {
             // above: a spec that cares about what the write or the revert
             // actually does loads the real module.
             revertAutofilledAddress: function () { return 0; },
-            announceAddressUnavailable: function (identity) {
-                identity.addressNotice('address unavailable');
+            announceAddressUndeliverable: function (identity) {
+                identity.addressNotice('address undeliverable');
             },
             hasPrimaryAddressForm: function () { return true; },
             isDegradedResponse: function () { return false; },
@@ -202,7 +202,11 @@ function defaultMocks() {
             // No DOM in the inert default: a spec that wants the live
             // address-form country read has to supply the real module (or its
             // own double) the same way it already does for the search itself.
-            currentAddressFormCountry: function () { return ''; },
+            // DELEGATED: it is a pure read of the `$root` it is handed, and
+            // WHICH root each panel hands it is the invariant specs assert.
+            currentAddressFormCountry: function ($root) {
+                return realCompanySearch().currentAddressFormCountry($root);
+            },
             // NOT inert — company-capture.js builds the billing panel's own
             // mount selectors from it, so a mock returning undefined would
             // exercise selectors production never uses.
@@ -266,6 +270,17 @@ function defaultMocks() {
 let evaluatingComputed = null;
 
 function makeKnockoutMock() {
+    /**
+     * A computed over a live read, close enough to model the caching that makes
+     * a missing notification observable — and no closer. Three divergences from
+     * real Knockout, all of which a spec must not lean on: the dependency set
+     * only ever grows, `makeObservable` notifies on every write whether or not
+     * the value changed, so a re-publish can come from an observable the
+     * computed no longer reads; and there is no re-entrancy guard.
+     *
+     * @param {function} fn
+     * @returns {function} the computed's value accessor
+     */
     function computed(fn) {
         const out = makeObservable(undefined);
         const dependencies = [];
