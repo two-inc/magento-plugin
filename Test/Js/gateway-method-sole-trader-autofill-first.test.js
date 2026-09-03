@@ -56,7 +56,7 @@ const BUYER = {
  */
 function makeEnv(options) {
     const opts = options || {};
-    const rec = { opened: [], lookups: 0, tokenMints: 0, errors: [], applied: [], phones: [] };
+    const rec = { opened: [], lookups: 0, tokenMints: 0, errors: [] };
 
     const fakeWindow = {
         open: function (url) {
@@ -114,11 +114,12 @@ function makeEnv(options) {
             if (url.indexOf(BUYER_ENDPOINT) !== -1) {
                 rec.lookups += 1;
                 if (opts.failLookup) return Promise.reject(new Error('offline'));
-                if (!opts.buyer) return Promise.resolve({ ok: false, status: 404 });
-                return Promise.resolve({
-                    ok: true,
-                    json: function () { return Promise.resolve(opts.buyer); }
-                });
+                const answer = opts.buyer
+                    ? { ok: true, json: function () { return Promise.resolve(opts.buyer); } }
+                    : { ok: false, status: 404 };
+                if (!opts.deferLookup) return Promise.resolve(answer);
+                // Held open so a test can act on the checkout mid-flight.
+                return new Promise((resolve) => { rec.releaseLookup = () => resolve(answer); });
             }
             return Promise.resolve({ ok: false, status: 404 });
         }
@@ -293,6 +294,70 @@ describe('"select a different sole trader" never consults autofill', () => {
     });
 });
 
+describe('a lookup still in flight cannot overwrite what the buyer does next', () => {
+    test.each([
+        ['registeredMode', 'registered'],
+        ['manualEntryMode', 'manual']
+    ])('leaving for %s mid-lookup adopts nothing when it lands', async (leave, mode) => {
+        const { component, identity, rec } = await startStack({ buyer: BUYER, deferLookup: true });
+        await clickSoleTrader();
+        expect(rec.lookups).toBe(1);
+
+        component[leave]();
+        rec.releaseLookup();
+        await settle();
+
+        expect(identity.captureMode()).toBe(mode);
+        expect(identity.companyName()).toBe('');
+        expect(identity.soleTraderAdopted()).toBe(false);
+        // The mode the buyer left is not one to raise a signup for either.
+        expect(rec.opened).toEqual([]);
+    });
+
+    test('the checkout is not left busy by a lookup that adopted nothing', async () => {
+        const { component, identity, rec } = await startStack({ buyer: BUYER, deferLookup: true });
+        await clickSoleTrader();
+
+        component.registeredMode();
+        rec.releaseLookup();
+        await settle();
+
+        expect(identity.isBusy()).toBe(false);
+    });
+
+    test('a double click makes one lookup and opens one popup', async () => {
+        const { rec } = await startStack();
+
+        chip('soletrader').click();
+        chip('soletrader').click();
+        await settle();
+
+        expect(rec.lookups).toBe(1);
+        expect(rec.opened).toHaveLength(1);
+    });
+
+    test('re-clicking after the fall-through popup does not ask autofill again', async () => {
+        const { rec } = await startStack();
+
+        await clickSoleTrader();
+        expect(rec.lookups).toBe(1);
+
+        await clickSoleTrader();
+
+        expect(rec.lookups).toBe(1);
+    });
+
+    test('leaving and re-entering the mode does ask again', async () => {
+        const { component, rec } = await startStack();
+
+        await clickSoleTrader();
+        component.registeredMode();
+        await clickSoleTrader();
+
+        expect(rec.lookups).toBe(2);
+    });
+});
+
 describe('the click never waits on a mint', () => {
     test('no token request goes out on the click', async () => {
         const { rec } = await startStack({ buyer: BUYER });
@@ -308,9 +373,11 @@ describe('the click never waits on a mint', () => {
         const { component, flow, rec } = await startStack({ buyer: BUYER });
         flow.delegationToken = '';
         flow.autofillToken = '';
-
         await component.soleTraderMode();
 
         expect(rec.lookups).toBe(0);
+        // No tokens means no popup either, so the on-page link is the way back.
+        expect(rec.opened).toEqual([]);
+        expect(document.querySelector('.two-sole-trader-note')).not.toBeNull();
     });
 });

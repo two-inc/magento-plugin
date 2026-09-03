@@ -170,6 +170,7 @@
         this._identity = options.identity;
         this._panel = null;
         this._soleTrader = null;
+        this._soleTraderLaunch = null;
         /** Selector the panel is currently bound at, so a re-point is a no-op when nothing moved. */
         this._boundSelector = null;
         /** Availability answers per lower-cased ISO country, for the page's lifetime. */
@@ -360,8 +361,8 @@
                 self.registeredMode();
             }
             if (available) {
-                // Minted as soon as the option exists, never at click time:
-                // window.open() behind an await is blocker bait.
+                // Minted as soon as the option exists, so the click spends its
+                // one round trip on the autofill lookup and not on a mint.
                 self._soleTrader.ensureTokens();
             }
             self.syncChips();
@@ -957,10 +958,29 @@
         // the popup down. It closes when they return to checkout and settle
         // somewhere other than this control.
         this.syncChips();
+        // Held for the whole lookup: the chip stays clickable until a popup
+        // exists, and a second click that raced the first one opened a popup
+        // only to have the first close it and open another.
+        if (this._soleTraderLaunch) return this._soleTraderLaunch;
         const self = this;
-        return this._soleTrader.autofillSoleTrader().then(function (adopted) {
-            return adopted ? null : self._soleTrader.launchSignup();
-        });
+        function fallThrough() {
+            // Not while the buyer has moved on: the mode they left is not the
+            // one to raise a signup for.
+            if (!self._identity.isSoleTrader()) return null;
+            return self._soleTrader.launchSignup();
+        }
+        this._soleTraderLaunch = this._soleTrader.autofillSoleTrader()
+            .then(
+                function (adopted) { return adopted ? null : fallThrough(); },
+                // Nothing consumes this promise, so an adoption that threw
+                // would otherwise leave the buyer with no popup and no
+                // explanation.
+                fallThrough
+            )
+            .finally(function () {
+                self._soleTraderLaunch = null;
+            });
+        return this._soleTraderLaunch;
     };
 
     /**

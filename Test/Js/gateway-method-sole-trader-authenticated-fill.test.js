@@ -15,9 +15,8 @@
 'use strict';
 
 const $ = require('jquery');
-const { loadAmdModule, loadCompanyCapture, brandConfigMock, defaultMocks } = require('./amd-harness');
+const { loadCompanyCapture, brandConfigMock, defaultMocks } = require('./amd-harness');
 
-const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
 
 const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
 const CHECKOUT_API_URL = 'https://api.example';

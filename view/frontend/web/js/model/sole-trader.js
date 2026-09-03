@@ -111,6 +111,7 @@
         // the instant it posts, and that lookup is the authority from then on.
         this._signupConfirming = false;
         this._blockedSignupOptions = null;
+        this._autofillAttempted = false;
         /**
          * Sole-trader identities whose registered address has already been
          * written into this page's checkout, so a replay does not overwrite a
@@ -170,10 +171,10 @@
     };
 
     /**
-     * Have tokens ready BEFORE the buyer clicks anything, so the click
-     * handler's `window.open()` runs inside the gesture that triggered it.
-     * Called the moment the billing country is known to support sole traders —
-     * WooCommerce mints at the same point, for the same reason.
+     * Have tokens ready BEFORE the buyer clicks anything, so no mint stands
+     * between the click and the autofill lookup it triggers. Called the moment
+     * the billing country is known to support sole traders — WooCommerce mints
+     * at the same point, for the same reason.
      *
      * @returns {Promise<boolean>}
      */
@@ -233,9 +234,11 @@
     /**
      * Open the hosted signup.
      *
-     * Synchronous from top to bottom, with no await anywhere between the click
-     * and `window.open()` — that is what keeps the popup inside a user gesture
-     * a blocker will allow.
+     * Synchronous from top to bottom, so the only thing between a click and
+     * `window.open()` is the autofill lookup the first launch waits on. That
+     * lookup spends the click's own turn, leaving the open to ride transient
+     * activation; where a browser grants none, `launchSignup()`'s on-page link
+     * is the route through.
      *
      * At most one popup is ever live: a prior one still open is CLOSED rather
      * than left running, so it cannot later post a stale ACCEPTED that would
@@ -317,20 +320,30 @@
      * Skipped without tokens rather than minting here: the caller falls through
      * to the popup, and `launchSignup()` owns the no-token case.
      *
+     * At most one lookup per entry into sole-trader mode. Re-entry is what
+     * re-arms it, so the retry after a blocked popup goes straight to the
+     * popup the buyer is retrying rather than asking again.
+     *
      * @returns {Promise<boolean>} whether an identity was adopted
      */
     SoleTrader.prototype.autofillSoleTrader = function () {
-        if (!this.hasSignupTokens()) return Promise.resolve(false);
-        this.identity().beginFlight();
+        if (!this.hasSignupTokens() || this._autofillAttempted) return Promise.resolve(false);
+        this._autofillAttempted = true;
+        const identity = this.identity();
+        identity.beginFlight();
         return this.fetchBuyer()
             .then((buyer) => {
+                // The buyer can leave the mode, or settle an identity inside
+                // it, while the lookup is out; adopting on a stale answer
+                // overwrites whatever they chose instead.
+                if (!identity.isSoleTrader() || identity.soleTraderAdopted()) return false;
                 if (!isUsableSoleTrader(buyer)) return false;
                 this.adoptBuyer(buyer);
                 return true;
             })
             .finally(() => {
                 // Settled after the write, matching the handshake's ordering.
-                this.identity().settleFlight();
+                identity.settleFlight();
             });
     };
 
@@ -434,6 +447,7 @@
     /** Re-arm the once-per-identity address guard. */
     SoleTrader.prototype.forgetAdoptions = function () {
         this._adoptedIds.clear();
+        this._autofillAttempted = false;
     };
 
     /**
