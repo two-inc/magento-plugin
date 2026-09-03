@@ -302,7 +302,7 @@ stops matching and the field reappears for that brand.
 An overlay's `suppressed_fields` entry for it needs its path updated from
 `general/general/…` to `version/admin_controls/…`.
 
-**ABN-490 retired two fields.** `firewall_token` (under `general/general`)
+**Two fields were retired.** `firewall_token` (under `general/general`)
 and `firewall_token_browser` (under `version/admin_controls`) are replaced
 by `custom_headers`, a header table under `version/admin_controls`. A
 `suppressed_fields` entry naming either retired field matches nothing and
