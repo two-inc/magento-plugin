@@ -170,7 +170,6 @@
         this._identity = options.identity;
         this._panel = null;
         this._soleTrader = null;
-        this._soleTraderLaunch = null;
         /** Selector the panel is currently bound at, so a re-point is a no-op when nothing moved. */
         this._boundSelector = null;
         /** Availability answers per lower-cased ISO country, for the page's lifetime. */
@@ -323,9 +322,6 @@
             this._identity.clear();
             this._options.revertAutofilledAddress();
             this._soleTrader.forgetAdoptions();
-            // A lookup for the country just left must not be handed back to a
-            // later click, which would re-adopt what this call reverted.
-            this._soleTraderLaunch = null;
             if (wasSoleTrader) this.registeredMode();
         }
         this.refreshSoleTraderAvailability(country);
@@ -364,9 +360,9 @@
                 self.registeredMode();
             }
             if (available) {
-                // Minted as soon as the option exists, so the click spends its
-                // one round trip on the autofill lookup and not on a mint.
-                self._soleTrader.ensureTokens();
+                // Both as soon as the option exists, never at click time:
+                // the click has to decide on an answer it already holds.
+                self._soleTrader.prefetchBuyer();
             }
             self.syncChips();
             return available;
@@ -935,10 +931,14 @@
     };
 
     /**
-     * Sole trader — the buyer's own Two session first, the hosted signup only
-     * when that identifies nobody usable (TWO-40).
+     * Sole trader — the identity the buyer's own Two session already carries,
+     * and the hosted signup only when it carries none (TWO-40).
      *
-     * @returns {Window|null|Promise<Window|null>} the popup where one opened
+     * Synchronous from top to bottom: the lookup ran when the tokens were
+     * minted, so the answer is already in hand and the popup opens inside the
+     * click a blocker will allow.
+     *
+     * @returns {Window|null} the popup where one opened
      */
     CompanyCaptureComponent.prototype.soleTraderMode = function () {
         // The one gesture that means "the popup is what I want": clicking this
@@ -961,30 +961,10 @@
         // the popup down. It closes when they return to checkout and settle
         // somewhere other than this control.
         this.syncChips();
-        // One launch at a time: the chip stays clickable until a popup exists.
-        if (this._soleTraderLaunch) return this._soleTraderLaunch;
-        const self = this;
-        function fallThrough() {
-            // An identity settled while the lookup was out — by the buyer
-            // leaving the mode, or by the handshake adopting one — is not
-            // something to raise a signup over.
-            if (!self._identity.isSoleTrader() || self._identity.soleTraderAdopted()) return null;
-            return self._soleTrader.launchSignup();
-        }
-        this._soleTraderLaunch = this._soleTrader.autofillSoleTrader()
-            .then(
-                function (adopted) { return adopted ? null : fallThrough(); },
-                // A lookup that failed is a lookup that found nobody.
-                fallThrough
-            )
-            .finally(function () {
-                self._soleTraderLaunch = null;
-            })
-            .catch(function () {
-                self._soleTrader.showSignupError();
-                return null;
-            });
-        return this._soleTraderLaunch;
+        const buyer = this._soleTrader.autofilledSoleTrader();
+        if (!buyer) return this._soleTrader.launchSignup();
+        this._soleTrader.adoptBuyer(buyer);
+        return null;
     };
 
     /**

@@ -729,7 +729,7 @@ function mount() {
     const companySearch = loadCompanySearch();
     const SoleTraderStub = function () {
         this.listenForSignupResult = function () {};
-        this.ensureTokens = function () { return Promise.resolve(true); };
+        this.prefetchBuyer = function () { return Promise.resolve(null); };
         this.focusSignupPopup = function () { return false; };
         this.launchSignup = function () { return {}; };
         this.forgetAdoptions = function () {};

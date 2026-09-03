@@ -244,17 +244,16 @@ describe('the tokens are minted on availability, never on the click', () => {
         expect(flow.hasSignupTokens()).toBe(false);
     });
 
-    test('the chip click mints no tokens — only the buyer lookup goes out, and the popup follows it', async () => {
+    test('the buyer lookup goes out on availability, and the chip click spends no round trip at all', async () => {
         const { rec } = await startStack();
         const mintsBeforeClick = rec.tokenMints;
         const fetchesBeforeClick = rec.fetched.length;
+        expect(rec.fetched).toContainEqual(expect.stringContaining('/autofill/v1/buyer/current'));
 
         chip('soletrader').click();
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(rec.fetched.slice(fetchesBeforeClick)).toEqual([
-            expect.stringContaining('/autofill/v1/buyer/current')
-        ]);
+        expect(rec.fetched.slice(fetchesBeforeClick)).toEqual([]);
         expect(rec.tokenMints).toBe(mintsBeforeClick);
         expect(rec.opened).toHaveLength(1);
     });

@@ -110,7 +110,7 @@ function load(options) {
     installAsyncSimulation($);
     $.async.reset();
     const panels = [];
-    const soleTrader = { instances: 0, listeners: 0, ensured: 0 };
+    const soleTrader = { instances: 0, listeners: 0, prefetched: 0 };
 
     const companySearchMock = Object.assign(
         {},
@@ -152,7 +152,7 @@ function load(options) {
     const SoleTraderStub = function () {
         soleTrader.instances += 1;
         this.listenForSignupResult = function () { soleTrader.listeners += 1; };
-        this.ensureTokens = function () { soleTrader.ensured += 1; return Promise.resolve(true); };
+        this.prefetchBuyer = function () { soleTrader.prefetched += 1; return Promise.resolve(null); };
         this.focusSignupPopup = function () { return false; };
         this.launchSignup = function () { return {}; };
         this.forgetAdoptions = function () {};

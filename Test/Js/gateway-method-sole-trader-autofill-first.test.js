@@ -2,22 +2,24 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-40 — the sole-trader chip consults the buyer's own Two session before it
- * reaches for the hosted signup, so a buyer Two already knows never sees the
- * popup.
+ * TWO-40 — the buyer's own Two session is looked up as soon as sole trader is
+ * on offer, and the chip then decides on the answer it already holds: adopt it
+ * silently, or open the hosted signup inside the click itself.
  *
  * Mutation-resistance notes:
  *
  *  - the silent-adoption cases assert the popup count is ZERO, not merely that
- *    a name landed, so falling through to the popup as well as adopting fails;
- *  - every fall-through case asserts the lookup DID go out before the popup
- *    opened, so deleting the autofill call and passing on the popup assertions
- *    alone is not green;
- *  - "select a different sole trader" is pinned on the lookup COUNT, not just
- *    on the popup opening: routing that link through the autofill check would
- *    still open a popup on a 404, and only the count catches it;
+ *    a name landed, so adopting AND falling through to the popup fails;
+ *  - the fall-through popup is asserted in the SAME TICK as the click, with
+ *    nothing awaited between them, so anything reintroduced between the click
+ *    and the open — a mint, a lookup, a promise hop — fails;
+ *  - every case pins the lookup COUNT, so a click that asks again, a gesture
+ *    that stops asking at boot, and a "select a different sole trader" routed
+ *    through the held record are all distinguishable from the popup opening;
  *  - the usable-record rule is driven with a real nameless buyer rather than by
- *    asserting a predicate exists.
+ *    asserting a predicate exists;
+ *  - supersession is driven with a second, distinguishable record, so a held
+ *    answer re-adopted over the identity that won is visible in the field.
  */
 
 'use strict';
@@ -62,10 +64,11 @@ const OTHER_TRADER = {
 const POPUP = { popup: 'the tracked signup window', closed: false, close: function () {} };
 
 /**
- * @param {object} [options] `{ buyer, laterBuyer, failLookup, deferLookup }` —
- *        the record the buyer endpoint answers with (omit for a 404), a
- *        different record for every lookup after the first, or a transport
- *        failure
+ * @param {object} [options] `{ buyer, laterBuyer, failLookup, hangLookup,
+ *        companyTypes }` — the record the buyer endpoint answers with (omit for
+ *        a 404), a different record for every lookup after the first, a
+ *        transport failure, a lookup that never lands, or the registry's
+ *        per-country company types
  * @returns {object} `{ rec, mocks, globals }`
  */
 function makeEnv(options) {
@@ -112,7 +115,8 @@ function makeEnv(options) {
             checkoutPageUrl: CHECKOUT_PAGE_URL,
             checkoutApiUrl: CHECKOUT_API_URL,
             isCompanySearchEnabled: true,
-            supportedCompanyTypes: { gb: ['SOLE_TRADER'], no: ['SOLE_TRADER'] }
+            supportedCompanyTypes: opts.companyTypes
+                || { gb: ['SOLE_TRADER'], no: ['SOLE_TRADER'] }
         }),
         'Magento_Ui/js/model/messageList': {
             addErrorMessage: function (message) { rec.errors.push(message); },
@@ -140,14 +144,11 @@ function makeEnv(options) {
             if (url.indexOf(BUYER_ENDPOINT) !== -1) {
                 rec.lookups += 1;
                 if (opts.failLookup) return Promise.reject(new Error('offline'));
+                if (opts.hangLookup) return new Promise(function () {});
                 const record = rec.lookups > 1 && opts.laterBuyer ? opts.laterBuyer : opts.buyer;
-                const answer = record
+                return Promise.resolve(record
                     ? { ok: true, json: function () { return Promise.resolve(record); } }
-                    : { ok: false, status: 404 };
-                // The first lookup only: a handshake or a second click fired
-                // mid-flight needs its own lookup to be able to answer.
-                if (!opts.deferLookup || rec.lookups > 1) return Promise.resolve(answer);
-                return new Promise((resolve) => { rec.releaseLookup = () => resolve(answer); });
+                    : { ok: false, status: 404 });
             }
             return Promise.resolve({ ok: false, status: 404 });
         }
@@ -179,7 +180,7 @@ async function startStack(options) {
     });
     const component = loadCompanyCapture(mocks, env.globals).shipping;
     component.start();
-    // Lets the seeded availability answer and the mint it triggers settle.
+    // Lets the seeded availability answer, the mint and the lookup settle.
     await settle();
     return {
         component: component,
@@ -201,7 +202,7 @@ function chip(mode) {
     return node;
 }
 
-/** Click the sole-trader chip and let the autofill round trip settle. */
+/** Click the sole-trader chip and let any write it triggers settle. */
 async function clickSoleTrader() {
     chip('soletrader').click();
     await settle();
@@ -222,8 +223,25 @@ beforeEach(() => {
     document.body.innerHTML = '';
 });
 
+describe('the lookup runs on availability, ahead of any click', () => {
+    test('booting a sole-trader country looks the buyer up with no chip clicked', async () => {
+        const { flow, rec } = await startStack({ buyer: BUYER });
+
+        expect(rec.lookups).toBe(1);
+        expect(rec.opened).toEqual([]);
+        expect(flow.autofilledSoleTrader()).toEqual(BUYER);
+    });
+
+    test('a country whose registry offers no sole trader looks nobody up', async () => {
+        const { rec } = await startStack({ buyer: BUYER, companyTypes: { gb: ['LIMITED_COMPANY'] } });
+
+        expect(rec.tokenMints).toBe(0);
+        expect(rec.lookups).toBe(0);
+    });
+});
+
 describe('a session Two already knows skips the popup', () => {
-    test('the chip adopts the autofilled sole trader and opens no popup', async () => {
+    test('the chip adopts the held record and opens no popup', async () => {
         const { identity, rec } = await startStack({ buyer: BUYER });
 
         await clickSoleTrader();
@@ -274,6 +292,7 @@ describe('anything less than a usable record falls through to the popup', () => 
     test.each([
         [{}, 'the session identifies no buyer at all'],
         [{ failLookup: true }, 'the lookup fails in transport'],
+        [{ hangLookup: true }, 'the lookup has not landed when the buyer clicks'],
         [
             { buyer: { email: 'nameless@example.com', organization_number: '111' } },
             'the record carries no company name, which would blank the field'
@@ -285,14 +304,18 @@ describe('anything less than a usable record falls through to the popup', () => 
     ])('%p -> the popup opens (%s)', async (options) => {
         const { identity, rec } = await startStack(options);
 
-        await clickSoleTrader();
-
-        // The lookup went out FIRST: a deleted autofill call opens the popup
-        // too, and only the count tells the two apart.
-        expect(rec.lookups).toBe(1);
+        // Same tick as the click, nothing awaited: a popup a blocker allows is
+        // one opened inside the gesture, and only this ordering pins that.
+        chip('soletrader').click();
         expect(rec.opened).toHaveLength(1);
         expect(rec.opened[0].url).toContain(`${CHECKOUT_PAGE_URL}/soletrader/signup`);
+
+        await settle();
+        expect(rec.lookups).toBe(1);
         expect(identity.soleTraderAdopted()).toBe(false);
+        expect(identity.companyName()).toBe('');
+        expect(rec.applied).toEqual([]);
+        expect(rec.phones).toEqual([]);
     });
 
     test('the fall-through popup carries no autoselect param, as a first launch', async () => {
@@ -302,10 +325,21 @@ describe('anything less than a usable record falls through to the popup', () => 
 
         expect(new URL(rec.opened[0].url).searchParams.get('autoselect')).toBeNull();
     });
+
+    test('a fall-through click leaves nothing busy once its popup is gone', async () => {
+        const { flow, identity } = await startStack();
+
+        await clickSoleTrader();
+        // The open popup holds a flight of its own, so releasing that is what
+        // exposes whether anything else was left outstanding.
+        flow.stopPopupCloseWatcher();
+
+        expect(identity.isBusy()).toBe(false);
+    });
 });
 
-describe('"select a different sole trader" never consults autofill', () => {
-    test('the link opens the popup even though autofill would answer', async () => {
+describe('"select a different sole trader" never consults the held record', () => {
+    test('the link opens the popup even though the held record would answer', async () => {
         const { rec } = await startStack({ buyer: BUYER });
 
         await clickSoleTrader();
@@ -315,8 +349,8 @@ describe('"select a different sole trader" never consults autofill', () => {
         differentTraderLink().click();
         await settle();
 
-        // The count, not just the popup: routing this link through the autofill
-        // check would still open a popup whenever the lookup missed.
+        // The count, not just the popup: routing this link through the held
+        // record would still open a popup whenever the lookup had missed.
         expect(rec.lookups).toBe(lookupsAfterAdoption);
         expect(rec.opened).toHaveLength(1);
         expect(new URL(rec.opened[0].url).searchParams.get('autoselect')).toBe('false');
@@ -324,16 +358,17 @@ describe('"select a different sole trader" never consults autofill', () => {
 
     test('the flow entry point itself makes no lookup', async () => {
         const { flow, rec } = await startStack({ buyer: BUYER });
+        const lookupsAtBoot = rec.lookups;
 
         flow.selectDifferentSoleTrader();
         await settle();
 
-        expect(rec.lookups).toBe(0);
+        expect(rec.lookups).toBe(lookupsAtBoot);
         expect(rec.opened).toHaveLength(1);
     });
 
     test('re-clicking the chip once adopted goes straight to the popup too', async () => {
-        const { rec } = await startStack({ buyer: BUYER });
+        const { identity, rec } = await startStack({ buyer: BUYER });
 
         await clickSoleTrader();
         const lookupsAfterAdoption = rec.lookups;
@@ -343,180 +378,64 @@ describe('"select a different sole trader" never consults autofill', () => {
         expect(rec.lookups).toBe(lookupsAfterAdoption);
         expect(rec.opened).toHaveLength(1);
         expect(new URL(rec.opened[0].url).searchParams.get('autoselect')).toBe('false');
+        expect(identity.companyName()).toBe(BUYER.company_name);
+    });
+
+    test('re-clicking after the fall-through popup asks nobody again', async () => {
+        const { rec } = await startStack();
+
+        await clickSoleTrader();
+        await clickSoleTrader();
+
+        expect(rec.lookups).toBe(1);
     });
 });
 
-describe('a lookup still in flight cannot overwrite what the buyer does next', () => {
-    test.each([
-        ['registeredMode', 'registered'],
-        ['manualEntryMode', 'manual']
-    ])('leaving for %s mid-lookup adopts nothing when it lands', async (leave, mode) => {
-        const { component, identity, rec } = await startStack({ buyer: BUYER, deferLookup: true });
-        await clickSoleTrader();
-        expect(rec.lookups).toBe(1);
+describe('an adoption supersedes the held record', () => {
+    test('the record is dropped as it is adopted, so nothing can re-adopt it', async () => {
+        const { flow } = await startStack({ buyer: BUYER });
+        expect(flow.autofilledSoleTrader()).toEqual(BUYER);
 
-        component[leave]();
-        rec.releaseLookup();
-        await settle();
+        flow.adoptBuyer(BUYER);
 
-        expect(identity.captureMode()).toBe(mode);
-        expect(identity.companyName()).toBe('');
-        expect(identity.soleTraderAdopted()).toBe(false);
-        // The damage a stale adopt does is the buyer's ADDRESS and phone, not
-        // just the name: those go out on the order under the wrong trader.
-        expect(rec.applied).toEqual([]);
-        expect(rec.phones).toEqual([]);
-        // The mode the buyer left is not one to raise a signup for either.
-        expect(rec.opened).toEqual([]);
+        expect(flow.autofilledSoleTrader()).toBeNull();
     });
 
-    test.each([
-        ['registeredMode', 'back to company search'],
-        ['manualEntryMode', 'to manual entry']
-    ])('the checkout is not left busy by a lookup rejected on leaving %s (%s)', async (leave) => {
-        const { component, identity, rec } = await startStack({ buyer: BUYER, deferLookup: true });
+    test('a handshake identity is what the checkout is left holding', async () => {
+        const { flow, identity, rec } = await startStack({ laterBuyer: OTHER_TRADER });
         await clickSoleTrader();
-
-        component[leave]();
-        rec.releaseLookup();
-        await settle();
-
-        expect(identity.isBusy()).toBe(false);
-    });
-
-    test('an identity the handshake adopts mid-lookup survives the lookup landing', async () => {
-        const { flow, identity, rec } = await startStack({
-            buyer: BUYER,
-            laterBuyer: OTHER_TRADER,
-            deferLookup: true
-        });
-        await clickSoleTrader();
-        // Set directly: opening one would also arm the close watcher, whose own
-        // flight would mask the handshake's.
+        // The fall-through popup's own watcher flight is released first, so
+        // what is left outstanding at the end is the handshake's alone.
+        flow.stopPopupCloseWatcher();
         flow._popupWindow = POPUP;
 
         messageHandler(rec)({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
         await settle();
-        expect(identity.companyName()).toBe(OTHER_TRADER.company_name);
-
-        rec.releaseLookup();
-        await settle();
 
         expect(identity.companyName()).toBe(OTHER_TRADER.company_name);
         expect(identity.companyId()).toBe(OTHER_TRADER.organization_number);
-        expect(rec.opened).toEqual([]);
+        expect(flow.autofilledSoleTrader()).toBeNull();
         expect(identity.isBusy()).toBe(false);
-    });
-
-    test('a country change mid-lookup adopts nothing and leaves the revert standing', async () => {
-        const { component, identity, rec } = await startStack({ buyer: BUYER, deferLookup: true });
-        await clickSoleTrader();
-
-        component.onCountryChanged('no');
-        const revertsAfterChange = rec.reverts;
-        rec.releaseLookup();
-        await settle();
-
-        expect(identity.soleTraderAdopted()).toBe(false);
-        expect(identity.companyName()).toBe('');
-        expect(revertsAfterChange).toBeGreaterThan(0);
-        expect(rec.applied).toEqual([]);
-        expect(rec.phones).toEqual([]);
-        expect(rec.opened).toEqual([]);
-    });
-
-    test('a click after a country change starts a fresh lookup', async () => {
-        const { component, rec } = await startStack({ buyer: BUYER, deferLookup: true });
-        await clickSoleTrader();
-
-        component.onCountryChanged('no');
-        await clickSoleTrader();
-
-        // The lookup for the country just left is not handed back to this
-        // click, which would re-adopt what the change reverted.
-        expect(rec.lookups).toBe(2);
-    });
-
-    test('a double click makes one lookup and opens one popup', async () => {
-        const { rec } = await startStack();
-
-        chip('soletrader').click();
-        chip('soletrader').click();
-        await settle();
-
-        expect(rec.lookups).toBe(1);
-        expect(rec.opened).toHaveLength(1);
-    });
-
-    test('a second click a turn later still rides the first lookup', async () => {
-        const { rec } = await startStack({ deferLookup: true });
-
-        chip('soletrader').click();
-        await settle();
-        chip('soletrader').click();
-        await settle();
-        expect(rec.lookups).toBe(1);
-
-        rec.releaseLookup();
-        await settle();
-
-        expect(rec.opened).toHaveLength(1);
-    });
-
-    test('re-clicking after the fall-through popup does not ask autofill again', async () => {
-        const { rec } = await startStack();
-
-        await clickSoleTrader();
-        expect(rec.lookups).toBe(1);
-
-        await clickSoleTrader();
-
-        expect(rec.lookups).toBe(1);
-    });
-
-    test.each([
-        ['registeredMode', 'the buyer goes back to company search'],
-        ['manualEntryMode', 'the buyer switches to manual entry'],
-        ['abandonSoleTrader', 'the popup closed having captured nothing']
-    ])('leaving via %s and re-entering does ask again (%s)', async (leave) => {
-        const { component, rec } = await startStack();
-
-        await clickSoleTrader();
-        component[leave]();
-        await component.soleTraderMode();
-        await settle();
-
-        expect(rec.lookups).toBe(2);
     });
 });
 
-describe('an adoption that throws still leaves the buyer a route forward', () => {
-    test('the popup opens and the throwing lookup leaks no flight', async () => {
-        const { component, flow, identity, rec } = await startStack({ buyer: BUYER });
-        component.adoptSoleTrader = function () { throw new Error('panel write failed'); };
+describe('a country change re-arms the lookup', () => {
+    test('the new country is looked up afresh and the retired record is not adopted', async () => {
+        const { component, identity, rec } = await startStack({
+            buyer: BUYER,
+            laterBuyer: OTHER_TRADER
+        });
 
-        await clickSoleTrader();
-        expect(rec.opened).toHaveLength(1);
-
-        // The open popup holds a flight of its own, so releasing that is what
-        // exposes whether the lookup's was settled.
-        flow.stopPopupCloseWatcher();
-
-        expect(identity.isBusy()).toBe(false);
-        // The popup is the route forward, so there is nothing to apologise for.
-        expect(rec.errors).toEqual([]);
-    });
-
-    test('a throw out of the launch itself is surfaced, not swallowed', async () => {
-        const { component, flow, rec } = await startStack();
-        flow.launchSignup = function () { throw new Error('prefill read failed'); };
+        component.onCountryChanged('no');
+        await settle();
+        expect(rec.lookups).toBe(2);
+        expect(rec.reverts).toBeGreaterThan(0);
 
         await clickSoleTrader();
 
+        expect(identity.companyName()).toBe(OTHER_TRADER.company_name);
+        expect(rec.applied).toEqual([OTHER_TRADER.billing_address]);
         expect(rec.opened).toEqual([]);
-        expect(rec.errors).toHaveLength(1);
-        // The chip has to stay usable: a wedged launch slot would strand it.
-        expect(component.soleTraderMode()).not.toBeNull();
     });
 });
 
@@ -531,14 +450,14 @@ describe('the click never waits on a mint', () => {
         expect(rec.tokenMints).toBe(mintsBeforeClick);
     });
 
-    test('without tokens the chip skips the lookup rather than minting inside the click', async () => {
-        const { component, flow, rec } = await startStack({ buyer: BUYER });
+    test('without tokens there is no popup either, so the on-page link is the way back', async () => {
+        const { component, flow, rec } = await startStack();
         flow.delegationToken = '';
         flow.autofillToken = '';
-        await component.soleTraderMode();
 
-        expect(rec.lookups).toBe(0);
-        // No tokens means no popup either, so the on-page link is the way back.
+        component.soleTraderMode();
+
+        expect(rec.lookups).toBe(1);
         expect(rec.opened).toEqual([]);
         expect(document.querySelector('.two-sole-trader-note')).not.toBeNull();
     });

@@ -111,7 +111,8 @@
         // the instant it posts, and that lookup is the authority from then on.
         this._signupConfirming = false;
         this._blockedSignupOptions = null;
-        this._autofillAttempted = false;
+        this._prefetch = null;
+        this._autofillBuyer = null;
         /**
          * Sole-trader identities whose registered address has already been
          * written into this page's checkout, so a replay does not overwrite a
@@ -171,10 +172,11 @@
     };
 
     /**
-     * Have tokens ready BEFORE the buyer clicks anything, so no mint stands
-     * between the click and the autofill lookup it triggers. Called the moment
-     * the billing country is known to support sole traders — WooCommerce mints
-     * at the same point, for the same reason.
+     * Have tokens ready BEFORE the buyer clicks anything, so the click handler's
+     * `window.open()` runs inside the gesture that triggered it, and so the
+     * autofill lookup they authorise has landed by then. Called the moment the
+     * billing country is known to support sole traders — WooCommerce mints at
+     * the same point, for the same reason.
      *
      * @returns {Promise<boolean>}
      */
@@ -234,9 +236,9 @@
     /**
      * Open the hosted signup.
      *
-     * On a first launch the autofill lookup sits between the click and this
-     * call, so the open is outside the click's own turn; `launchSignup()`'s
-     * on-page link is the route through where a browser refuses it.
+     * Synchronous from top to bottom, with no await anywhere between the click
+     * and `window.open()` — that is what keeps the popup inside a user gesture
+     * a blocker will allow.
      *
      * At most one popup is ever live: a prior one still open is CLOSED rather
      * than left running, so it cannot later post a stale ACCEPTED that would
@@ -312,36 +314,37 @@
     };
 
     /**
-     * Adopt the sole trader the buyer's Two session already identifies, so a
-     * buyer Two already knows never sees the signup popup (TWO-40).
+     * Look the buyer's Two session up ahead of any click, so a buyer Two
+     * already knows never sees the signup popup (TWO-40).
      *
-     * Skipped without tokens rather than minting here: the caller falls through
-     * to the popup, and `launchSignup()` owns the no-token case.
+     * Runs where the tokens are minted rather than inside the click: the
+     * lookup needs the autofill token, and a click that had to wait for either
+     * could not open a popup a blocker would allow. Idempotent, and the answer
+     * is held until something supersedes it.
      *
-     * At most one lookup per entry into the mode, so the retry after a blocked
-     * popup goes to the popup rather than asking again. Re-entry re-arms it.
-     *
-     * @returns {Promise<boolean>} whether an identity was adopted
+     * @returns {Promise<?object>} the usable record, or null for nobody
      */
-    SoleTrader.prototype.autofillSoleTrader = function () {
-        if (!this.hasSignupTokens() || this._autofillAttempted) return Promise.resolve(false);
-        this._autofillAttempted = true;
-        const identity = this.identity();
-        identity.beginFlight();
-        return this.fetchBuyer()
+    SoleTrader.prototype.prefetchBuyer = function () {
+        if (this._prefetch) return this._prefetch;
+        this._prefetch = this.ensureTokens()
+            .then((minted) => (minted ? this.fetchBuyer() : null))
             .then((buyer) => {
-                // The buyer can leave the mode, or settle an identity inside
-                // it, while the lookup is out; adopting on a stale answer
-                // overwrites whatever they chose instead.
-                if (!identity.isSoleTrader() || identity.soleTraderAdopted()) return false;
-                if (!isUsableSoleTrader(buyer)) return false;
-                this.adoptBuyer(buyer);
-                return true;
+                this._autofillBuyer = isUsableSoleTrader(buyer) ? buyer : null;
+                return this._autofillBuyer;
             })
-            .finally(() => {
-                // Settled after the write, matching the handshake's ordering.
-                identity.settleFlight();
-            });
+            .catch(() => null);
+        return this._prefetch;
+    };
+
+    /**
+     * The sole trader this session already identifies, if the lookup has landed
+     * and found one. Synchronous, so the click that reads it can still open a
+     * popup inside its own gesture when the answer is nobody.
+     *
+     * @returns {?object} `/autofill/v1/buyer/current` record
+     */
+    SoleTrader.prototype.autofilledSoleTrader = function () {
+        return this._autofillBuyer || null;
     };
 
     /**
@@ -444,7 +447,10 @@
     /** Re-arm the once-per-identity address guard. */
     SoleTrader.prototype.forgetAdoptions = function () {
         this._adoptedIds.clear();
-        this._autofillAttempted = false;
+        // The held answer belongs to the country and flow just retired; the
+        // availability refresh that follows arms a fresh lookup.
+        this._prefetch = null;
+        this._autofillBuyer = null;
     };
 
     /**
@@ -499,6 +505,9 @@
      */
     SoleTrader.prototype.adoptBuyer = function (buyer) {
         if (!buyer || typeof buyer !== 'object') return;
+        // Any adoption supersedes the held answer, so a later click cannot
+        // re-adopt it over the identity that won.
+        this._autofillBuyer = null;
         this._component.adoptSoleTrader(buyer);
         const key = soleTraderIdentityKey(buyer);
         if (key && this._adoptedIds.has(key)) {
