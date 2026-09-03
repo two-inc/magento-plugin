@@ -157,6 +157,27 @@ class CustomHeadersTest extends TestCase
         $this->assertStringNotContainsString('admin__control-checkbox', $cell, 'that class hides the input');
     }
 
+    /**
+     * Core resolves a frontend model through the layout as a singleton, so one
+     * block instance renders every field naming it — at two scopes on one
+     * page, or across brands.
+     */
+    public function testASecondFieldRenderedByTheSameBlockShowsItsOwnRows(): void
+    {
+        $block = $this->block();
+
+        $this->render($block, '{"_1":{"name":"X-First","value":"one","send_from_browser":""}}');
+        $this->assertSame('X-First', $block->getArrayRows()['_1']->getData('name'));
+
+        $this->render($block, '{"_1":{"name":"X-Second","value":"two","send_from_browser":""}}');
+
+        $this->assertSame(
+            'X-Second',
+            $block->getArrayRows()['_1']->getData('name'),
+            'the first field\'s rows must not be cached into the second'
+        );
+    }
+
     public function testTheBrowserTickIsRenderedByItsOwnBlock(): void
     {
         $block = $this->block();

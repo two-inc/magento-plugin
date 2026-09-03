@@ -623,7 +623,7 @@
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
                     <label>Custom request headers</label>
-                    <comment>Extra HTTP headers sent on every call this store makes to the {{provider}} API, for merchants whose firewall or gateway requires one — a coarse network gate, not a credential. Tick "Also send from browser" only where your IT administrator needs the header on calls from the buyer's browser as well as those from your server: a ticked header is published to the buyer's browser and may be read by anyone.</comment>
+                    <comment>Extra HTTP headers sent on every call this store makes to the {{provider}} API, for merchants whose firewall or gateway requires one — a coarse network gate, not a credential. Tick "Also send from browser" only where your IT administrator needs the header on calls from the buyer's browser as well as those from your server: a ticked header is published to the buyer's browser and may be read by anyone. Check with support before ticking one — the browser's own direct call is refused unless {{provider}} already allows that header name on it.</comment>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\CustomHeaders</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\CustomHeaders</backend_model>
                     <config_path>payment/{{code}}/custom_headers</config_path>

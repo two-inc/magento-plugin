@@ -63,7 +63,8 @@ class Value extends \Magento\Framework\DataObject
 
     /**
      * AbstractModel's public load hook dispatches to the protected one every
-     * serialising backend model implements.
+     * serialising backend model implements. Its updateStoredData() is out of
+     * scope: nothing here reads getOldValue()/isValueChanged().
      */
     public function afterLoad()
     {

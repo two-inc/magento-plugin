@@ -113,8 +113,15 @@ class Adapter
                 'X-API-Key' => $apiKeyOverride ?? $this->configRepository->getApiKey($storeId),
             ];
             // Server-side calls carry every configured header — the per-row
-            // browser tick governs only the browser's own direct call.
-            $headers += $this->configRepository->getCustomHeaders($storeId);
+            // browser tick governs only the browser's own direct call. Field
+            // names are case-insensitive, so the collision check has to be too
+            // or a second, conflicting X-API-Key goes on the wire.
+            $ours = array_change_key_case($headers, CASE_LOWER);
+            foreach ($this->configRepository->getCustomHeaders($storeId) as $name => $value) {
+                if (!isset($ours[strtolower($name)])) {
+                    $headers[$name] = $value;
+                }
+            }
             $call = new ApiCall($method, $url, $headers, $body);
 
             try {

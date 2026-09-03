@@ -24,8 +24,7 @@ class CustomHeaders extends Value
     private const NAME_PATTERN = '/^[A-Za-z0-9!#$%&\'*+\-.^_`|~]+$/';
 
     /**
-     * A value carrying one of these would close the header and forge the next
-     * one, reserved names included.
+     * A value carrying one of these would close the header and forge the next.
      */
     private const VALUE_FORBIDDEN = ["\r", "\n", "\0"];
 

@@ -11,11 +11,6 @@ use Magento\Config\Block\System\Config\Form\Field\FieldArray\AbstractFieldArray;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Two\Gateway\Model\Config\Backend\CustomHeaders as CustomHeadersBackend;
 
-/**
- * The custom outbound HTTP header table: any number of admin-named headers,
- * each optionally also sent on the one call the browser makes directly to the
- * API.
- */
 class CustomHeaders extends AbstractFieldArray
 {
     /**

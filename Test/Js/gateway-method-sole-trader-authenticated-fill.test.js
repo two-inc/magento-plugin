@@ -344,6 +344,11 @@ describe('the browser-direct buyer lookup and the merchant custom headers', () =
             {},
             { 'X-WAF-TOKEN': undefined },
             'nothing ticked sends no extra header, so no value reaches the wire'
+        ],
+        [
+            { 'two-delegated-authority-token': 'forged' },
+            { 'two-delegated-authority-token': 'at' },
+            'no configured row can displace the token this call is authenticated by'
         ]
     ])('customHeaders %p sends %p (%s)', async (customHeaders, expected) => {
         const { rec, handler } = loadFlow({ buyer: BUYER, customHeaders: customHeaders });

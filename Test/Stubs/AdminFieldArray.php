@@ -51,6 +51,9 @@ namespace Magento\Config\Block\System\Config\Form\Field\FieldArray {
             /** @var bool */
             protected $_isPreparedToRender = false;
 
+            /** @var array|null */
+            private $_arrayRowsCache;
+
             /** @var mixed the layout double a test injects with setLayout() */
             private $layout;
 
@@ -115,6 +118,9 @@ namespace Magento\Config\Block\System\Config\Form\Field\FieldArray {
 
             public function getArrayRows()
             {
+                if (null !== $this->_arrayRowsCache) {
+                    return $this->_arrayRowsCache;
+                }
                 $result = [];
                 $element = $this->getElement();
                 if ($element->getValue() && is_array($element->getValue())) {
@@ -130,8 +136,9 @@ namespace Magento\Config\Block\System\Config\Form\Field\FieldArray {
                         $this->_prepareArrayRow($result[$rowId]);
                     }
                 }
+                $this->_arrayRowsCache = $result;
 
-                return $result;
+                return $this->_arrayRowsCache;
             }
 
             protected function _prepareArrayRow(DataObject $row)
@@ -182,13 +189,18 @@ namespace Magento\Config\Block\System\Config\Form\Field\FieldArray {
             protected function _getElementHtml(AbstractElement $element)
             {
                 $this->setElement($element);
+                $html = $this->_toHtml();
+                // Core resets here, the block being a layout singleton shared
+                // by every field that names it as its frontend model.
+                $this->_arrayRowsCache = null;
 
-                return $this->_toHtml();
+                return $html;
             }
 
             /**
              * The real one renders array.phtml. Preparing the columns is the
              * part a subclass contributes, so that is what the stub keeps.
+             * The rendered rows are read back through getArrayRows().
              */
             protected function _toHtml()
             {

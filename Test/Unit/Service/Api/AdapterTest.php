@@ -407,6 +407,11 @@ class AdapterTest extends TestCase
                 ['X-API-Key' => 'test-key'],
                 'a stored row can never displace a header the extension sets',
             ],
+            'whatever the casing' => [
+                ['x-api-key' => 'hijacked'],
+                ['X-API-Key' => 'test-key', 'x-api-key' => null],
+                'field names are case-insensitive, so a second one is a conflict not a new header',
+            ],
         ];
     }
 

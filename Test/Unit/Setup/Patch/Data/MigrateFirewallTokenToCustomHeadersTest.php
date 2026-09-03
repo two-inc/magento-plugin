@@ -262,21 +262,57 @@ class MigrateFirewallTokenToCustomHeadersTest extends TestCase
         );
     }
 
-    public function testABlankTokenIsDroppedRatherThanMigratedAsAnEmptyHeader(): void
+    /**
+     * Given a token the new table could not carry; When the patch runs; Then
+     * nothing is written — a stored row the entry gate refuses would make the
+     * whole payment section unsavable over something the admin never typed.
+     *
+     * @dataProvider uncarriableTokens
+     */
+    public function testATokenTheTableCannotCarryIsNotWritten(string $token, string $description): void
     {
         $patch = $this->buildPatch([
-            self::row('default', 0, self::TOKEN_PATH, '   '),
+            self::row('default', 0, self::TOKEN_PATH, $token),
             self::row('default', 0, self::BROWSER_PATH, '1'),
         ]);
 
         $patch->apply();
 
-        $this->assertSame([], $this->saves);
+        $this->assertSame([], $this->saves, $description);
         $this->assertSame(
             [[self::TOKEN_PATH, 'default', 0], [self::BROWSER_PATH, 'default', 0]],
             $this->deletes,
             'the retired rows still go, there is just nothing to carry over'
         );
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function uncarriableTokens(): array
+    {
+        return [
+            'blank' => ['   ', 'nothing was configured'],
+            'carriage return' => ["abc\r\nX-API-Key: forged", 'would forge a second header'],
+            'newline' => ["abc\nfoo", 'a bare newline is enough'],
+            'null byte' => ["abc\0foo", 'truncates the header'],
+            'not utf-8' => ["abc\xB1\x31", 'json cannot encode it, so it would store as nothing at all'],
+        ];
+    }
+
+    public function testAStoreMissingFromTheStoreTableFallsBackToTheDefaultScope(): void
+    {
+        $patch = $this->buildPatch(
+            [
+                self::row('stores', 3, self::TOKEN_PATH, 'store-token'),
+                self::row('default', 0, self::BROWSER_PATH, '1'),
+            ],
+            []
+        );
+
+        $patch->apply();
+
+        $this->assertSame('1', self::decodeOnlySave($this->saves)['_1']['send_from_browser']);
     }
 
     public function testAnExistingTableAtTheSameScopeIsNeverOverwritten(): void

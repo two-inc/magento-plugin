@@ -412,15 +412,17 @@
         const config = this._component.config();
         const params = new URLSearchParams(this.host().apiClientParams(config)).toString();
         const URL = `${config.checkoutApiUrl}/autofill/v1/buyer/current${params ? `?${params}` : ''}`;
-        const headers = { 'two-delegated-authority-token': this.autofillToken };
         // The one call that cannot be proxied: it is authenticated by the
         // buyer's own session cookie on the API's domain, which a server-side
         // call has no way to present. `customHeaders` carries only the rows
-        // the merchant ticked for browser-originated traffic.
+        // the merchant ticked for browser-originated traffic, and goes on
+        // first so no row of theirs can displace the token below.
+        const headers = {};
         const customHeaders = config.customHeaders || {};
         Object.keys(customHeaders).forEach((name) => {
             headers[name] = customHeaders[name];
         });
+        headers['two-delegated-authority-token'] = this.autofillToken;
         return fetch(URL, {
             credentials: 'include',
             headers: headers

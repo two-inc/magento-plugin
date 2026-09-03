@@ -894,7 +894,7 @@ class Repository implements RepositoryInterface
             }
 
             // Field names are case-insensitive, so two rows differing only in
-            // case are one header and the first is the one that would win.
+            // case name one header and only one row is kept.
             $key = strtolower($row['name']);
             if (isset($seen[$key])) {
                 continue;

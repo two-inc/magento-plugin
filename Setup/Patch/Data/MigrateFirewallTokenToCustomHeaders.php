@@ -11,16 +11,13 @@ use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\App\Config\Storage\WriterInterface;
 use Magento\Framework\Setup\ModuleDataSetupInterface;
 use Magento\Framework\Setup\Patch\DataPatchInterface;
+use Two\Gateway\Model\Config\Backend\CustomHeaders as CustomHeadersBackend;
 
 /**
  * ABN-490: carries a configured firewall token onto the custom-header table
  * that replaced it, as one `X-WAF-TOKEN` row, then deletes the retired rows.
  * Without this a merchant whose network gates on that header silently stops
  * sending it after upgrade and every call to the API is refused.
- *
- * Idempotent: a re-run finds no retired rows and writes nothing. A scope that
- * already has a custom-header table keeps it, so the admin's own list is never
- * overwritten.
  */
 class MigrateFirewallTokenToCustomHeaders implements DataPatchInterface
 {
@@ -29,6 +26,7 @@ class MigrateFirewallTokenToCustomHeaders implements DataPatchInterface
     private const HEADERS_KEY = 'custom_headers';
     private const HEADER_NAME = 'X-WAF-TOKEN';
 
+    /** Doubled twice over: once for PHP, once for MySQL's own LIKE parser. */
     private const LIKE_PATH = "path LIKE ? ESCAPE '\\\\'";
 
     /**
@@ -81,13 +79,20 @@ class MigrateFirewallTokenToCustomHeaders implements DataPatchInterface
             $scope = (string)$row['scope'];
             $scopeId = (int)$row['scope_id'];
 
-            if ($token !== '' && !$this->hasCustomHeaders($rows, $code, $scope, $scopeId)) {
-                $this->configWriter->save(
-                    $this->path($code, self::HEADERS_KEY),
-                    $this->encodeSingleRow($token, $this->browserFlag($rows, $code, $scope, $scopeId)),
-                    $scope,
-                    $scopeId
-                );
+            if ($this->hasCustomHeaders($rows, $code, $scope, $scopeId)) {
+                continue;
+            }
+
+            // A token the new table cannot carry is left behind rather than
+            // written: the read path would drop it anyway, and a stored row
+            // the entry gate refuses makes the whole section unsavable over
+            // something the admin never typed.
+            $encoded = CustomHeadersBackend::isSendableValue($token)
+                ? json_encode($this->singleRow($token, $this->browserFlag($rows, $code, $scope, $scopeId)))
+                : false;
+
+            if ($encoded !== false) {
+                $this->configWriter->save($this->path($code, self::HEADERS_KEY), $encoded, $scope, $scopeId);
             }
         }
 
@@ -184,15 +189,18 @@ class MigrateFirewallTokenToCustomHeaders implements DataPatchInterface
         return false;
     }
 
-    private function encodeSingleRow(string $token, bool $sendFromBrowser): string
+    /**
+     * @return array<string, array<string, string>>
+     */
+    private function singleRow(string $token, bool $sendFromBrowser): array
     {
-        return (string)json_encode([
+        return [
             '_1' => [
                 'name' => self::HEADER_NAME,
                 'value' => $token,
                 'send_from_browser' => $sendFromBrowser ? '1' : '',
             ],
-        ]);
+        ];
     }
 
     /**
