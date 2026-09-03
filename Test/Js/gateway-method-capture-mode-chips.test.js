@@ -105,7 +105,7 @@ function load(options) {
                 isCompanySearchEnabled: opts.isCompanySearchEnabled !== false,
                 checkoutApiUrl: 'https://api.example',
                 checkoutPageUrl: 'https://checkout.example',
-                supportedCompanyTypes: { gb: ['SOLE_TRADER'] }
+                supportedCompanyTypes: {}
             }),
             'Two_Gateway/js/model/company-search': companySearchMock
         },

@@ -344,22 +344,28 @@ describe('anything less than a usable record falls through to the popup', () => 
 
 describe('"select a different sole trader" never consults the held record', () => {
     test('the link opens the popup even though the held record would answer', async () => {
-        const { flow, identity, rec } = await startStack({ buyer: BUYER });
+        const { flow, identity, rec } = await startStack({
+            buyer: BUYER,
+            laterBuyer: OTHER_TRADER
+        });
 
         await clickSoleTrader();
         expect(differentTraderLink()).not.toBeNull();
-        // Held directly: an adoption spends the answer, so this is the only
-        // way to put one in front of the link the buyer is about to click.
-        flow._autofillBuyer = OTHER_TRADER;
+        // The adoption spent the boot answer, so arm another to sit in front
+        // of the link the buyer is about to click.
+        flow.forgetAutofilledBuyer();
+        await flow.prefetchBuyer();
+        const lookupsWithAnswerHeld = rec.lookups;
 
         differentTraderLink().click();
         await settle();
 
         expect(rec.opened).toHaveLength(1);
         expect(new URL(rec.opened[0].url).searchParams.get('autoselect')).toBe('false');
-        // Routing the link through the answer would hand back a trader the
-        // buyer asked to replace.
+        // Neither adopting the answer, which would hand back a trader the
+        // buyer asked to replace, nor going looking for one.
         expect(identity.companyName()).toBe(BUYER.company_name);
+        expect(rec.lookups).toBe(lookupsWithAnswerHeld);
     });
 
     test('the flow entry point itself makes no lookup', async () => {
