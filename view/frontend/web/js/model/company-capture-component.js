@@ -324,6 +324,10 @@
             this._soleTrader.forgetAdoptions();
             if (wasSoleTrader) this.registeredMode();
         }
+        // Outside the guard above: the mount observer can resolve availability,
+        // and so hold an answer, while `_lastCountry` is still empty, and that
+        // answer belongs to the registry the buyer is leaving either way.
+        this._soleTrader.forgetAutofilledBuyer();
         this.refreshSoleTraderAvailability(country);
     };
 
@@ -331,7 +335,8 @@
 
     /**
      * Resolve whether the billing country's registry offers sole traders, and
-     * mint signup tokens up front if it does.
+     * if it does, mint signup tokens and look the buyer's own session up, both
+     * up front.
      *
      * Successful answers — including the legitimate empty list, meaning
      * business-only — are memoised per country. Errors resolve to no
@@ -360,9 +365,9 @@
                 self.registeredMode();
             }
             if (available) {
-                // Minted as soon as the option exists, never at click time:
-                // window.open() behind an await is blocker bait.
-                self._soleTrader.ensureTokens();
+                // Never at click time: the click has to decide on an
+                // answer it already holds.
+                self._soleTrader.prefetchBuyer();
             }
             self.syncChips();
             return available;
@@ -931,30 +936,40 @@
     };
 
     /**
-     * Sole trader — always the hosted signup, opened synchronously inside the
-     * click so a popup blocker allows it.
+     * Sole trader — the identity the buyer's own Two session already carries,
+     * and the hosted signup only when it carries none (TWO-40).
+     *
+     * Synchronous from top to bottom: the lookup ran when the tokens were
+     * minted, so the answer is already in hand and the popup opens inside the
+     * click a blocker will allow.
+     *
+     * @returns {Window|null} the popup where one opened
      */
     CompanyCaptureComponent.prototype.soleTraderMode = function () {
         // The one gesture that means "the popup is what I want": clicking this
         // chip returns focus to the page, which otherwise takes the popup down.
         // Raise it rather than replacing it with a second signup.
         if (this._soleTrader.focusSignupPopup()) return null;
-        const wasAdopted = this._identity.isSoleTrader() && this._identity.soleTraderAdopted();
-        if (!wasAdopted) {
-            this._identity.captureMode('soletrader');
-            this._identity.clearNumber();
-            // The popover stays OPEN behind the signup popup, so the chips stay
-            // on screen and the buyer can click Sole trader again to raise the
-            // popup rather than having to reach it through the company field —
-            // which would itself read as "focus is back on checkout" and take
-            // the popup down. It closes when they return to checkout and settle
-            // somewhere other than this control.
-            this.syncChips();
-        }
         // Re-clicking once adopted is the same re-signup the "select a different
         // sole trader" link launches: offer a choice rather than hand back what
-        // is already on screen.
-        return this._soleTrader.launchSignup(wasAdopted ? { autoselect: false } : undefined);
+        // is already on screen — so it skips autofill for the same reason that
+        // link does.
+        if (this._identity.isSoleTrader() && this._identity.soleTraderAdopted()) {
+            return this._soleTrader.launchSignup({ autoselect: false });
+        }
+        this._identity.captureMode('soletrader');
+        this._identity.clearNumber();
+        // The popover stays OPEN behind the signup popup, so the chips stay
+        // on screen and the buyer can click Sole trader again to raise the
+        // popup rather than having to reach it through the company field —
+        // which would itself read as "focus is back on checkout" and take
+        // the popup down. It closes when they return to checkout and settle
+        // somewhere other than this control.
+        this.syncChips();
+        const buyer = this._soleTrader.autofilledSoleTrader();
+        if (!buyer) return this._soleTrader.launchSignup();
+        this._soleTrader.adoptBuyer(buyer);
+        return null;
     };
 
     /**
@@ -976,6 +991,12 @@
         // buyer's own edits survive.
         this._options.revertAutofilledAddress();
         this._soleTrader.forgetAdoptions();
+        // An adopted answer is spent; one still held is left alone — the
+        // session stands behind it either way.
+        if (!this._soleTrader.autofilledSoleTrader() && this._identity.soleTraderAvailable()) {
+            this._soleTrader.forgetAutofilledBuyer();
+            this._soleTrader.prefetchBuyer();
+        }
         return true;
     };
 

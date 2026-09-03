@@ -17,9 +17,11 @@
  *    no chip clicked, so moving it into the click handler fails rather than
  *    reading as green;
  *  - the click assertion runs in the SAME TICK as the click, with no await
- *    between: an `await` introduced anywhere on the launch path leaves the
- *    popup unopened at the assertion, which is exactly what a popup blocker
- *    would do;
+ *    between: anything reintroduced between the click and `window.open()`
+ *    leaves the popup unopened at the assertion, which is exactly what a popup
+ *    blocker would do;
+ *  - the click's own round trips are asserted exhaustively, so a mint or a
+ *    lookup moved onto the launch path fails rather than reading as green;
  *  - the country param is read back off the URL under a component whose own
  *    `countryCode()` throws, so sourcing it from the DOM-fed value fails;
  *  - the busy flag and the abandon callback are read after driving the real
@@ -70,6 +72,7 @@ function makeEnv(options) {
         cleared: [],
         errors: [],
         messageListeners: [],
+        fetched: [],
         adopted: [],
         abandons: [],
         tokenMints: 0,
@@ -131,6 +134,7 @@ function makeEnv(options) {
         },
         clearInterval: function (id) { rec.cleared.push(id); },
         fetch: function (requestUrl) {
+            rec.fetched.push(String(requestUrl));
             if (String(requestUrl).indexOf('get-tokens') !== -1) {
                 rec.tokenMints += 1;
                 return Promise.resolve({
@@ -244,15 +248,18 @@ describe('the tokens are minted on availability, never on the click', () => {
         expect(flow.hasSignupTokens()).toBe(false);
     });
 
-    test('the chip click opens the popup in its own tick, with no round trip first', async () => {
+    test('the buyer lookup goes out on availability, and the chip click spends no round trip at all', async () => {
         const { rec } = await startStack();
         const mintsBeforeClick = rec.tokenMints;
+        const fetchesBeforeClick = rec.fetched.length;
+        expect(rec.fetched).toContainEqual(expect.stringContaining('/autofill/v1/buyer/current'));
 
         chip('soletrader').click();
 
-        // Read in the same tick as the click: an await anywhere on the launch
-        // path leaves this empty, which is what a popup blocker sees too.
+        // Read in the same tick as the click: anything reintroduced between
+        // the two leaves this empty, which is what a popup blocker sees too.
         expect(rec.opened).toHaveLength(1);
+        expect(rec.fetched.slice(fetchesBeforeClick)).toEqual([]);
         expect(rec.tokenMints).toBe(mintsBeforeClick);
     });
 });

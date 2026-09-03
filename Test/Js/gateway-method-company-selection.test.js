@@ -150,10 +150,11 @@ function makeDom() {
 
 function SoleTraderStub() {
     this.listenForSignupResult = function () {};
-    this.ensureTokens = function () { return Promise.resolve(true); };
+    this.prefetchBuyer = function () { return Promise.resolve(null); };
     this.focusSignupPopup = function () { return false; };
     this.launchSignup = function () { return null; };
     this.forgetAdoptions = function () {};
+    this.forgetAutofilledBuyer = function () {};
 }
 
 const BRAND_CONFIG = {

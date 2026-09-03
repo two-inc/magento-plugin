@@ -3,31 +3,19 @@
  * See COPYING.txt for license details.
  *
  * TWO-25503 — the `postMessage` handshake the hosted signup finishes on, and
- * the one buyer lookup it is allowed to make.
+ * the buyer lookup it makes.
  *
  * `/autofill/v1/buyer/current` answers with whatever buyer the Two cookie
- * identifies. Reading it BEFORE the buyer has authenticated is a cookie probe:
- * it would let a checkout adopt an identity nobody on this page proved they
- * hold. So the flow has exactly one caller — the ACCEPTED branch of the
- * handshake, after the hosted flow has verified the buyer server-side — and
- * that is pinned both behaviourally and in the source, because reinstating a
- * passive probe is invisible to every fixture that drives the handshake.
- *
- * Post-authentication the email that authenticated IS the identity: the
- * checkout's own contact field has no say in it. Re-gating on a match there
- * discarded an authenticated buyer and left the company field permanently
- * blank with no route forward (TWO-25461).
+ * identifies, and that email IS the identity: the checkout's own contact field
+ * has no say in it. Re-gating on a match there discarded an authenticated
+ * buyer and left the company field permanently blank with no route forward
+ * (TWO-25461).
  */
 
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
 const $ = require('jquery');
-const { loadAmdModule, loadCompanyCapture, brandConfigMock, defaultMocks } = require('./amd-harness');
-
-const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
-const SOLE_TRADER = 'view/frontend/web/js/model/sole-trader.js';
+const { loadCompanyCapture, brandConfigMock, defaultMocks } = require('./amd-harness');
 
 const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
 const CHECKOUT_API_URL = 'https://api.example';
@@ -148,31 +136,7 @@ beforeEach(() => {
     document.body.innerHTML = '';
 });
 
-describe('the buyer lookup happens only after authentication', () => {
-    test('the flow has exactly one fetchBuyer call site, in the ACCEPTED branch', () => {
-        // A reinstated passive probe is invisible to every behavioural fixture
-        // here: it would auto-adopt a cookie identity with no handshake at all
-        // and leave the handshake cases green. Pinning the call sites is what
-        // catches that.
-        const src = fs.readFileSync(path.resolve(__dirname, '..', '..', SOLE_TRADER), 'utf8');
-        // Guard against a rename silently emptying the check below.
-        expect(src).toContain('SoleTrader.prototype.fetchBuyer = function ()');
-
-        const callSites = src.split('\n').filter((line) => /this\.fetchBuyer\(/.test(line));
-        expect(callSites).toHaveLength(1);
-        expect(src).toContain("if (event.data !== 'ACCEPTED')");
-    });
-
-    test('booting the flow and launching signup probes no buyer', async () => {
-        const { flow, rec } = loadFlow({ buyer: BUYER });
-
-        await flow.ensureTokens();
-        flow.launchSignup();
-        await settle();
-
-        expect(buyerRequests(rec)).toEqual([]);
-    });
-
+describe('how the buyer lookup goes out', () => {
     test('the lookup goes out under the autofill token, with cookies', async () => {
         const { rec, handler } = loadFlow({ buyer: BUYER });
 
