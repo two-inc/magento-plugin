@@ -1226,6 +1226,50 @@ abstract class Order
     }
 
     /**
+     * The gross and tax of every line composition itemizes, for callers that
+     * need the order's known amounts rather than its payload.
+     *
+     * One entry per line so getOtherChargesLineItem()'s count-scaled epsilon
+     * matches what composition sees. Amounts come from the same accessors, so
+     * the two cannot disagree; unlike getLineItemsOrder() this loads no
+     * products, and so cannot drop an item whose product has been deleted —
+     * which would turn that item's own value into a phantom residual.
+     *
+     * @param OrderModel $order
+     * @return array
+     * @throws LocalizedException
+     */
+    public function getKnownLineAmountsOrder(OrderModel $order): array
+    {
+        $amounts = [];
+        foreach ($order->getAllVisibleItems() as $item) {
+            $amounts[] = [
+                'gross_amount' => $this->roundAmt($this->getGrossAmountItem($item)),
+                'tax_amount' => $this->roundAmt($this->getTaxAmountItem($item)),
+            ];
+        }
+
+        if (!$order->getIsVirtual() && $order->getShippingAmount() > 0) {
+            // Not getShippingLineOrder(): resolving the RATE can throw.
+            $amounts[] = [
+                'gross_amount' => $this->roundAmt($this->getGrossAmountShipping($order)),
+                'tax_amount' => $this->roundAmt($this->getTaxAmountShipping($order)),
+            ];
+        }
+
+        $surchargeNet = (float)$order->getTwoSurchargeAmount();
+        if ($surchargeNet > 0) {
+            $surchargeTax = (float)$order->getTwoSurchargeTaxAmount();
+            $amounts[] = [
+                'gross_amount' => $this->roundAmt($surchargeNet + $surchargeTax),
+                'tax_amount' => $this->roundAmt($surchargeTax),
+            ];
+        }
+
+        return $amounts;
+    }
+
+    /**
      * The order carrying the order-level facts for any of the three
      * entities the compose services reconcile.
      *

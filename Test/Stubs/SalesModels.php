@@ -147,8 +147,30 @@ namespace Magento\Sales\Model;
 use Two\Gateway\Test\Stubs\AbstractSalesModelStub;
 
 if (!class_exists(Order::class, false)) {
-    // The order is untyped in the collectors; a plain data bag suffices.
     class Order extends AbstractSalesModelStub
     {
+        /** @var iterable|false */
+        private $creditmemos = false;
+
+        /**
+         * Real Magento reads its own loaded collection here, not a data key,
+         * and returns false on an order with no id.
+         *
+         * @return iterable|false
+         */
+        public function getCreditmemosCollection()
+        {
+            return $this->creditmemos;
+        }
+
+        /**
+         * @param iterable|false $creditmemos
+         * @return self
+         */
+        public function setCreditmemosCollection($creditmemos): self
+        {
+            $this->creditmemos = $creditmemos;
+            return $this;
+        }
     }
 }
