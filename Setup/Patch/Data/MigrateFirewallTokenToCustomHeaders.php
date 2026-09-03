@@ -69,15 +69,15 @@ class MigrateFirewallTokenToCustomHeaders implements DataPatchInterface
         $rows = $this->storedRows();
         $touched = false;
 
-        foreach ($rows as $row) {
-            if ($this->keyOf($row) !== self::TOKEN_KEY) {
+        foreach ($this->candidateScopes($rows) as [$code, $scope, $scopeId]) {
+            $chain = $this->scopeChain($scope, $scopeId);
+            $resolved = $this->resolvePair($rows, $code, $chain);
+
+            // A scope resolving to what it would inherit anyway needs no row of
+            // its own: writing one would turn inheritance into an override.
+            if ($resolved['token'] === '' || $resolved === $this->resolvePair($rows, $code, array_slice($chain, 1))) {
                 continue;
             }
-
-            $token = trim((string)$row['value']);
-            $code = $this->codeOf($row);
-            $scope = (string)$row['scope'];
-            $scopeId = (int)$row['scope_id'];
 
             if ($this->hasCustomHeaders($rows, $code, $scope, $scopeId)) {
                 continue;
@@ -87,8 +87,8 @@ class MigrateFirewallTokenToCustomHeaders implements DataPatchInterface
             // written: the read path would drop it anyway, and a stored row
             // the entry gate refuses makes the whole section unsavable over
             // something the admin never typed.
-            $encoded = CustomHeadersBackend::isSendableValue($token)
-                ? json_encode($this->singleRow($token, $this->browserFlag($rows, $code, $scope, $scopeId)))
+            $encoded = CustomHeadersBackend::isSendableValue($resolved['token'])
+                ? json_encode($this->singleRow($resolved['token'], $resolved['browser']))
                 : false;
 
             if ($encoded !== false) {
@@ -113,27 +113,64 @@ class MigrateFirewallTokenToCustomHeaders implements DataPatchInterface
     }
 
     /**
-     * The flag the retired field pair resolved to beside this token, walked
-     * down the same scope chain config inheritance uses — a store-scoped
-     * token whose flag was only ever ticked on its website must keep it.
+     * Every scope that could resolve differently from its parent — the two
+     * retired fields were independently scopeable, so a tick could sit at a
+     * narrower scope than the token it applied to.
      *
      * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array{0: string, 1: string, 2: int}>
      */
-    private function browserFlag(array $rows, string $code, string $scope, int $scopeId): bool
+    private function candidateScopes(array $rows): array
     {
-        foreach ($this->scopeChain($scope, $scopeId) as [$chainScope, $chainScopeId]) {
+        $scopes = [];
+        foreach ($rows as $row) {
+            if (!in_array($this->keyOf($row), [self::TOKEN_KEY, self::BROWSER_KEY], true)) {
+                continue;
+            }
+
+            $candidate = [$this->codeOf($row), (string)$row['scope'], (int)$row['scope_id']];
+            $scopes[implode('/', $candidate)] = $candidate;
+        }
+
+        return array_values($scopes);
+    }
+
+    /**
+     * What the retired field pair resolved to at one scope, each field walked
+     * down the chain config inheritance uses.
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @param array<int, array{0: string, 1: int}> $chain
+     * @return array{token: string, browser: bool}
+     */
+    private function resolvePair(array $rows, string $code, array $chain): array
+    {
+        return [
+            'token' => trim((string)$this->resolve($rows, $code, self::TOKEN_KEY, $chain)),
+            'browser' => (bool)(int)$this->resolve($rows, $code, self::BROWSER_KEY, $chain),
+        ];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @param array<int, array{0: string, 1: int}> $chain
+     * @return string|null null when no scope in the chain stores the key
+     */
+    private function resolve(array $rows, string $code, string $key, array $chain): ?string
+    {
+        foreach ($chain as [$chainScope, $chainScopeId]) {
             foreach ($rows as $row) {
-                if ($this->keyOf($row) === self::BROWSER_KEY
+                if ($this->keyOf($row) === $key
                     && $this->codeOf($row) === $code
                     && (string)$row['scope'] === $chainScope
                     && (int)$row['scope_id'] === $chainScopeId
                 ) {
-                    return (bool)(int)$row['value'];
+                    return (string)$row['value'];
                 }
             }
         }
 
-        return false;
+        return null;
     }
 
     /**

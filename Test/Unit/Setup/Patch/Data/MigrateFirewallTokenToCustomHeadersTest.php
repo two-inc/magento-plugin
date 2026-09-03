@@ -326,6 +326,70 @@ class MigrateFirewallTokenToCustomHeadersTest extends TestCase
         $patch->apply();
 
         $this->assertSame([], $this->saves, "the admin's own list is authoritative");
+        $this->assertSame(
+            [[self::TOKEN_PATH, 'default', 0]],
+            $this->deletes,
+            'the retired row still goes, whether or not it was carried over'
+        );
+    }
+
+    /**
+     * Given a browser tick stored at a NARROWER scope than the token it
+     * applied to; When the patch runs; Then that scope keeps the tick — the
+     * two retired fields were independently scopeable, so resolving the flag
+     * only upward from the token would drop it.
+     */
+    public function testATickAtANarrowerScopeThanTheTokenSurvives(): void
+    {
+        $patch = $this->buildPatch(
+            [
+                self::row('default', 0, self::TOKEN_PATH, 'waf-token'),
+                self::row('stores', 3, self::BROWSER_PATH, '1'),
+            ],
+            [['store_id' => 3, 'website_id' => 2]]
+        );
+
+        $patch->apply();
+
+        $this->assertSame(
+            [
+                [self::HEADERS_PATH, 'default', 0, ''],
+                [self::HEADERS_PATH, 'stores', 3, '1'],
+            ],
+            array_map(
+                static fn(array $save) => [
+                    $save[0],
+                    $save[2],
+                    $save[3],
+                    json_decode((string)$save[1], true)['_1']['send_from_browser'],
+                ],
+                $this->saves
+            )
+        );
+    }
+
+    /**
+     * The mirror of the case above: a scope resolving to exactly what it
+     * inherits gets no row, because writing one would convert inheritance
+     * into an override the admin never made.
+     */
+    public function testAScopeResolvingToWhatItInheritsGetsNoRowOfItsOwn(): void
+    {
+        $patch = $this->buildPatch(
+            [
+                self::row('default', 0, self::TOKEN_PATH, 'waf-token'),
+                self::row('default', 0, self::BROWSER_PATH, '1'),
+                self::row('stores', 3, self::BROWSER_PATH, '1'),
+            ],
+            [['store_id' => 3, 'website_id' => 2]]
+        );
+
+        $patch->apply();
+
+        $this->assertSame(
+            [[self::HEADERS_PATH, 'default', 0]],
+            array_map(static fn(array $save) => [$save[0], $save[2], $save[3]], $this->saves)
+        );
     }
 
     public function testRerunAfterMigrationChangesNothing(): void
