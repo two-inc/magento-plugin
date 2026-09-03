@@ -169,29 +169,33 @@ leaves nothing half-applied.
 `firewall_token` field and its browser toggle.
 `Setup\Patch\Data\MigrateFirewallTokenToCustomHeaders` carries a stored
 token over as one `X-WAF-TOKEN` row, resolving both retired fields down
-the scope chain at every scope either of them touched. Three cases it
-deliberately does not carry, all silent:
+the scope chain at every scope either of them touched. Two cases it
+deliberately does not carry, both silent:
 
 -   **A token locked into `app/etc/config.php` by `app:config:dump`.**
-    The patch reads `core_config_data`; a dumped value is not there and a
+    The patch reads `core_config_data`; a dumped value is not there, and a
     data patch must not rewrite the merchant's config file. Those stores
     stop sending the header at upgrade and every API call is refused.
     Needs a release note, not a code fix — check for this first if a
-    merchant reports refusals straight after upgrade.
--   **A token outside printable ASCII** (`^[\x20-\x7E]+\z`). The retired
-    field had no validation and sent the raw bytes: CR/LF was a
-    response-splitting sink, control characters a log-injection one, and
-    non-ASCII is ambiguous on the wire. The table refuses such a value at
-    entry and drops it on read, so the migration writes no row for it.
-    The pattern ends `\z`, not `$` — `$` matches before a final newline
-    and would let exactly the worst byte through.
+    merchant reports refusals straight after upgrade. Such a scope is not
+    a candidate at all, so it gets no row of any kind.
+-   **A token offending inside the value** against printable ASCII
+    (`^[\x20-\x7E]+\z`). The retired field had no validation and sent the
+    raw bytes: CR/LF was a response-splitting sink, control characters a
+    log-injection one, and non-ASCII is ambiguous on the wire. The pattern
+    ends `\z`, not `$` — `$` matches before a final newline and would let
+    exactly the worst byte through. Surrounding whitespace and control
+    bytes are a different case: `resolvePair()` trims them and carries the
+    token, because legacy data gets the benefit of the doubt where an
+    unattended patch has no admin to warn. Only an interior offender is
+    dropped.
 
-In the last two, a scope that would otherwise INHERIT a header instead
-gets an empty table rather than being skipped — an empty table is how
-"this scope sends nothing" survives as an override, and skipping would
-silently start it sending an ancestor's header (published to buyers if
-that ancestor is ticked). That is why `encodeFor()` distinguishes `''`
-from `false`; collapsing the two reintroduces the bug.
+    A scope that would otherwise INHERIT a header gets an empty table
+    rather than being skipped — an empty table is how "this scope sends
+    nothing" survives as an override, and skipping would silently start it
+    sending an ancestor's header (published to buyers if that ancestor is
+    ticked). That is why `encodeFor()` distinguishes `''` from `false`;
+    collapsing the two reintroduces the bug.
 
 **A browser-ticked header must already be allowed by the API on
 browser-originated calls**, or the one direct call the browser makes

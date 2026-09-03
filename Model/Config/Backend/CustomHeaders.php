@@ -162,6 +162,8 @@ class CustomHeaders extends Value
             return '';
         }
 
+        // Unreachable while every value is printable ASCII, and kept so that
+        // loosening that rule cannot silently store an empty table instead.
         $encoded = json_encode($rows);
         if ($encoded === false) {
             throw new LocalizedException(

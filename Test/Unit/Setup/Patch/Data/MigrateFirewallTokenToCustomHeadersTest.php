@@ -296,7 +296,39 @@ class MigrateFirewallTokenToCustomHeadersTest extends TestCase
             'carriage return' => ["abc\r\nX-API-Key: forged", 'would forge a second header'],
             'newline' => ["abc\nfoo", 'a bare newline is enough'],
             'null byte' => ["abc\0foo", 'truncates the header'],
-            'not utf-8' => ["abc\xB1\x31", 'json cannot encode it, so it would store as nothing at all'],
+            'not utf-8' => ["abc\xB1\x31", 'a byte outside printable ASCII cannot go on the wire'],
+        ];
+    }
+
+    /**
+     * Given a legacy token whose only offending bytes surround it; When the
+     * patch runs; Then it is tidied and carried. An unattended patch has no
+     * admin to warn, and the trimmed value is the header the store was
+     * actually sending — only an interior offender is dropped.
+     *
+     * @dataProvider surroundingOffenders
+     */
+    public function testALegacyTokenOffendingOnlyAtItsEdgesIsTidiedAndCarried(
+        string $stored,
+        string $description
+    ): void {
+        $patch = $this->buildPatch([self::row('default', 0, self::TOKEN_PATH, $stored)]);
+
+        $patch->apply();
+
+        $this->assertSame('waf-token', self::decodeOnlySave($this->saves)['_1']['value'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public static function surroundingOffenders(): array
+    {
+        return [
+            'trailing newline' => ["waf-token\n", 'the byte the admin gate refuses outright'],
+            'leading carriage return' => ["\rwaf-token", 'same class, other end'],
+            'trailing null' => ["waf-token\0", 'trim strips NUL too'],
+            'surrounding spaces' => ['  waf-token  ', 'the ordinary paste'],
         ];
     }
 
@@ -410,7 +442,7 @@ class MigrateFirewallTokenToCustomHeadersTest extends TestCase
             'blank' => ['', 'the merchant cleared it for this store'],
             'whitespace' => ['   ', 'a whitespace-only override says the same thing'],
             'unsendable' => ["abc\r\nfoo", 'the read path would drop it, so the scope sends nothing either way'],
-            'not utf-8' => ["abc\xB1\x31", 'json cannot encode it, so there is no row to write for this scope'],
+            'not utf-8' => ["abc\xB1\x31", 'a byte outside printable ASCII cannot go on the wire'],
         ];
     }
 

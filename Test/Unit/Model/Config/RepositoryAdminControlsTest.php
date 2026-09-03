@@ -241,7 +241,7 @@ class RepositoryAdminControlsTest extends TestCase
                 (string)json_encode(['_1' => $row('Accept', 'text/html', '1')]),
                 [],
                 [],
-                'the browser call sets Accept itself, so a row naming it is dropped here too',
+                'content negotiation on the browser-direct call is not the table\'s to restate',
             ],
             'a proxy-identity name' => [
                 (string)json_encode(['_1' => $row('X-Forwarded-For', '10.0.0.1', '')]),

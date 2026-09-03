@@ -361,6 +361,7 @@ class CustomHeadersTest extends TestCase
             'nul' => ["abc\0foo", false, 'truncates the header in a C string'],
             'tab' => ["abc\tfoo", false, 'a control character, however harmless it looks'],
             'vertical tab' => ["abc\x0Bfoo", false, 'still a control character'],
+            'unit separator' => ["abc\x1Ffoo", false, '0x1F is the byte below the low boundary'],
             'escape' => ["abc\x1Bfoo", false, 'terminal escape, a log-injection sink'],
             'delete' => ["abc\x7Ffoo", false, '0x7F is above the printable range'],
             'high byte' => ["abc\xB1", false, 'non-ASCII is encoding-ambiguous on the wire'],
