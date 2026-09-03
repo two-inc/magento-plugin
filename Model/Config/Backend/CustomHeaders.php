@@ -33,7 +33,9 @@ class CustomHeaders extends Value
      * Names the integration sets itself, the proxy-identity headers a merchant
      * must not restate from here, RFC 7230 hop-by-hop headers (which govern
      * connection handling rather than the request, so a value here would
-     * malform the call), and the generic credential carriers.
+     * malform the call), the transport negotiation headers the HTTP client has
+     * to own for a response to stay parseable, and the generic credential
+     * carriers.
      */
     private const RESERVED_NAMES = [
         'host',
@@ -53,6 +55,8 @@ class CustomHeaders extends Value
         'trailer',
         'transfer-encoding',
         'upgrade',
+        'accept-encoding',
+        'expect',
         'authorization',
         'cookie',
     ];

@@ -214,6 +214,14 @@ class CustomHeadersTest extends TestCase
                 ['_1' => ['name' => 'Cookie', 'value' => 'session=abc']],
                 '"Cookie" is a reserved header name',
             ],
+            'a content coding the client never asks to decode' => [
+                ['_1' => ['name' => 'Accept-Encoding', 'value' => 'gzip']],
+                '"Accept-Encoding" is a reserved header name',
+            ],
+            'a name that changes how the request itself is handled' => [
+                ['_1' => ['name' => 'Expect', 'value' => '100-continue']],
+                '"Expect" is a reserved header name',
+            ],
             'the same header twice' => [
                 [
                     '_1' => ['name' => 'X-WAF-TOKEN', 'value' => 'abc'],
@@ -314,6 +322,9 @@ class CustomHeadersTest extends TestCase
             'trailer',
             'transfer-encoding',
             'upgrade',
+            // Transport negotiation the HTTP client owns.
+            'accept-encoding',
+            'expect',
             // Generic credential carriers.
             'authorization',
             'cookie',
