@@ -341,7 +341,7 @@ describe('clicking a chip performs the real transition', () => {
         expect(document.querySelector('.two-company-dropdown__query')).not.toBeNull();
     });
 
-    test('the sole-trader chip enters the mode, launches signup and leaves the panel up', async () => {
+    test('the sole-trader chip enters the mode, launches signup and leaves the panel up', () => {
         mountTileField();
         const { component, identity, soleTrader } = load();
         component.start();
@@ -358,7 +358,7 @@ describe('clicking a chip performs the real transition', () => {
         expect(chip('soletrader')).not.toBeNull();
     });
 
-    test('sole-trader mode hides the query row, which answers for nothing there', async () => {
+    test('sole-trader mode hides the query row, which answers for nothing there', () => {
         mountTileField();
         const { component } = load();
         component.start();
@@ -486,7 +486,7 @@ describe('an adopted sole trader is shown in the company field', () => {
         expect(changes).toBe(1);
     });
 
-    test('the popover closes once the signup has answered', async () => {
+    test('the popover closes once the signup has answered', () => {
         mountTileField();
         const { component } = load();
         component.start();

@@ -173,10 +173,9 @@
 
     /**
      * Have tokens ready BEFORE the buyer clicks anything, so the click handler's
-     * `window.open()` runs inside the gesture that triggered it, and so the
-     * autofill lookup they authorise has landed by then. Called the moment the
-     * billing country is known to support sole traders — WooCommerce mints at
-     * the same point, for the same reason.
+     * `window.open()` runs inside the gesture that triggered it. Called the
+     * moment the billing country is known to support sole traders — WooCommerce
+     * mints at the same point, for the same reason.
      *
      * @returns {Promise<boolean>}
      */
@@ -454,9 +453,10 @@
     };
 
     /**
-     * Drop the held autofill answer and re-arm the lookup. For a country
-     * change, whose registry the held record no longer belongs to — NOT for
-     * leaving the mode, which does not change who the session identifies.
+     * Drop the held autofill answer and re-arm the lookup — for a country
+     * change, whose registry the record no longer belongs to, and for leaving
+     * the mode once the answer has been spent on an adoption. An answer still
+     * held survives both: the session stands behind it either way.
      */
     SoleTrader.prototype.forgetAutofilledBuyer = function () {
         this._prefetch = null;

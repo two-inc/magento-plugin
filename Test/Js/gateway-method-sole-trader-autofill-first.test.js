@@ -489,6 +489,9 @@ describe('leaving the mode keeps the answer the session still stands behind', ()
         // the shape this flow carried before the lookup moved off the click.
         expect(identity.companyName()).toBe(BUYER.company_name);
         expect(rec.opened).toHaveLength(1);
+        // Leaving with nothing held re-arms, so the answer that lands is the
+        // second lookup's and the first is the one the buyer clicked past.
+        expect(rec.lookups).toBe(2);
     });
 });
 
