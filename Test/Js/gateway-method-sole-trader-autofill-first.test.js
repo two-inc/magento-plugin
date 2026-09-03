@@ -10,7 +10,7 @@
  *
  *  - the first silent-adoption case asserts the popup count is ZERO rather
  *    than only that a name landed, so adopting AND falling through to the
- *    popup fails; the cases after it read one written field each;
+ *    popup fails;
  *  - the fall-through popup is asserted in the SAME TICK as the click, with
  *    nothing awaited between them, so anything reintroduced between the click
  *    and the open — a mint, a lookup, a promise hop — fails;
