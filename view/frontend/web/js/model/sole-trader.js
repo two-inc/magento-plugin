@@ -415,8 +415,9 @@
         // The one call that cannot be proxied: it is authenticated by the
         // buyer's own session cookie on the API's domain, which a server-side
         // call has no way to present. `customHeaders` carries only the rows
-        // the merchant ticked for browser-originated traffic, and goes on
-        // first so no row of theirs can displace the token below.
+        // the merchant ticked for browser-originated traffic; the token's own
+        // name is refused case-insensitively at entry and on read, so no row
+        // can carry it.
         const headers = {};
         const customHeaders = config.customHeaders || {};
         Object.keys(customHeaders).forEach((name) => {

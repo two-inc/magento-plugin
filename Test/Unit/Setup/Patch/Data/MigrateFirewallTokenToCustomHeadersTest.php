@@ -410,6 +410,7 @@ class MigrateFirewallTokenToCustomHeadersTest extends TestCase
             'blank' => ['', 'the merchant cleared it for this store'],
             'whitespace' => ['   ', 'a whitespace-only override says the same thing'],
             'unsendable' => ["abc\r\nfoo", 'the read path would drop it, so the scope sends nothing either way'],
+            'not utf-8' => ["abc\xB1\x31", 'json cannot encode it, so there is no row to write for this scope'],
         ];
     }
 

@@ -105,12 +105,9 @@ class MigrateFirewallTokenToCustomHeaders implements DataPatchInterface
     /**
      * The table this scope should store, or false to leave it inheriting.
      *
-     * A token the new table cannot carry is not written: the read path would
-     * drop it anyway, and a stored row the entry gate refuses would make the
-     * whole section unsavable over something the admin never typed. Where the
-     * scope would otherwise inherit a header it is blanked rather than skipped
-     * — an empty table is how "this scope sends nothing" survives as an
-     * override, which is what the retired blank token said.
+     * A token the table cannot carry falls through to the blank: an empty
+     * table is how "this scope sends nothing" survives as an override, and
+     * skipping would let an ancestor's header through instead.
      *
      * @param array{token: string, browser: bool} $resolved
      * @param array{token: string, browser: bool} $inherited
@@ -119,7 +116,10 @@ class MigrateFirewallTokenToCustomHeaders implements DataPatchInterface
     private function encodeFor(array $resolved, array $inherited)
     {
         if (CustomHeadersBackend::isSendableValue($resolved['token'])) {
-            return json_encode($this->singleRow($resolved['token'], $resolved['browser']));
+            $encoded = json_encode($this->singleRow($resolved['token'], $resolved['browser']));
+            if ($encoded !== false) {
+                return $encoded;
+            }
         }
 
         return CustomHeadersBackend::isSendableValue($inherited['token']) ? '' : false;

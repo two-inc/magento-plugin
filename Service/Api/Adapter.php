@@ -112,10 +112,10 @@ class Adapter
                 'Content-Type' => 'application/json',
                 'X-API-Key' => $apiKeyOverride ?? $this->configRepository->getApiKey($storeId),
             ];
-            // Every configured header goes on a server-side call; the per-row
-            // browser tick governs only the browser's own direct call.
-            // Case-folded because a differently-cased X-API-Key is a conflict
-            // rather than a second header.
+            // The per-row browser tick governs only the browser's own direct
+            // call, so a server-side call carries every configured header.
+            // Case-folded: a differently-cased X-API-Key is a conflict, not a
+            // second header.
             $ours = array_change_key_case($headers, CASE_LOWER);
             foreach ($this->configRepository->getCustomHeaders($storeId) as $name => $value) {
                 if (!isset($ours[strtolower($name)])) {
