@@ -86,6 +86,7 @@ function load(options) {
         this.listenForSignupResult = function () {};
         this.ensureTokens = function () { soleTrader.ensured += 1; return Promise.resolve(true); };
         this.focusSignupPopup = function () { return false; };
+        this.autofillSoleTrader = function () { return Promise.resolve(false); };
         this.launchSignup = function (o) { soleTrader.launches.push(o || null); return {}; };
         this.forgetAdoptions = function () {};
     };
@@ -103,7 +104,7 @@ function load(options) {
                 isCompanySearchEnabled: opts.isCompanySearchEnabled !== false,
                 checkoutApiUrl: 'https://api.example',
                 checkoutPageUrl: 'https://checkout.example',
-                supportedCompanyTypes: {}
+                supportedCompanyTypes: { gb: ['SOLE_TRADER'] }
             }),
             'Two_Gateway/js/model/company-search': companySearchMock
         },
@@ -339,13 +340,14 @@ describe('clicking a chip performs the real transition', () => {
         expect(document.querySelector('.two-company-dropdown__query')).not.toBeNull();
     });
 
-    test('the sole-trader chip enters the mode, launches signup and leaves the panel up', () => {
+    test('the sole-trader chip enters the mode, launches signup and leaves the panel up', async () => {
         mountTileField();
         const { component, identity, soleTrader } = load();
         component.start();
         chip('registered').click();
 
         chip('soletrader').click();
+        await new Promise((resolve) => { setTimeout(resolve, 0); });
 
         expect(identity.captureMode()).toBe('soletrader');
         expect(soleTrader.launches).toHaveLength(1);
@@ -356,13 +358,14 @@ describe('clicking a chip performs the real transition', () => {
         expect(chip('soletrader')).not.toBeNull();
     });
 
-    test('sole-trader mode hides the query row, which answers for nothing there', () => {
+    test('sole-trader mode hides the query row, which answers for nothing there', async () => {
         mountTileField();
         const { component } = load();
         component.start();
         chip('registered').click();
 
         chip('soletrader').click();
+        await new Promise((resolve) => { setTimeout(resolve, 0); });
 
         const row = dropdown().querySelector('.two-company-dropdown__search');
         expect(row.classList.contains('two-hidden')).toBe(true);
@@ -484,12 +487,13 @@ describe('an adopted sole trader is shown in the company field', () => {
         expect(changes).toBe(1);
     });
 
-    test('the popover closes once the signup has answered', () => {
+    test('the popover closes once the signup has answered', async () => {
         mountTileField();
         const { component } = load();
         component.start();
         chip('registered').click();
         chip('soletrader').click();
+        await new Promise((resolve) => { setTimeout(resolve, 0); });
         expect(dropdown().hasAttribute('hidden')).toBe(false);
 
         component.adoptSoleTrader({

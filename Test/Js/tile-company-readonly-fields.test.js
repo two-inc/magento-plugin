@@ -406,6 +406,7 @@ function loadTile() {
         this.listenForSignupResult = function () {};
         this.ensureTokens = function () { return Promise.resolve(true); };
         this.focusSignupPopup = function () { return false; };
+        this.autofillSoleTrader = function () { return Promise.resolve(false); };
         this.launchSignup = function (options) {
             soleTrader.launches.push(options || null);
             return null;

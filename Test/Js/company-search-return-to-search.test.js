@@ -62,6 +62,7 @@ function mount() {
         this.listenForSignupResult = function () {};
         this.ensureTokens = function () { return Promise.resolve(true); };
         this.focusSignupPopup = function () { return false; };
+        this.autofillSoleTrader = function () { return Promise.resolve(false); };
         this.launchSignup = function () { return {}; };
         this.forgetAdoptions = function () {};
     };

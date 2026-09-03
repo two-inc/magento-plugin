@@ -129,6 +129,7 @@ function boot(options) {
         this.listenForSignupResult = function () {};
         this.ensureTokens = function () { return Promise.resolve(true); };
         this.focusSignupPopup = function () { return false; };
+        this.autofillSoleTrader = function () { return Promise.resolve(false); };
         this.launchSignup = function () { return null; };
         this.forgetAdoptions = function () {};
         this.showSignupPrompt = function () {};

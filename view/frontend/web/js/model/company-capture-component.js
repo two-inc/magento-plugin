@@ -931,30 +931,36 @@
     };
 
     /**
-     * Sole trader — always the hosted signup, opened synchronously inside the
-     * click so a popup blocker allows it.
+     * Sole trader — the buyer's own Two session first, the hosted signup only
+     * when that identifies nobody usable (TWO-40).
+     *
+     * @returns {Window|null|Promise<Window|null>} the popup where one opened
      */
     CompanyCaptureComponent.prototype.soleTraderMode = function () {
         // The one gesture that means "the popup is what I want": clicking this
         // chip returns focus to the page, which otherwise takes the popup down.
         // Raise it rather than replacing it with a second signup.
         if (this._soleTrader.focusSignupPopup()) return null;
-        const wasAdopted = this._identity.isSoleTrader() && this._identity.soleTraderAdopted();
-        if (!wasAdopted) {
-            this._identity.captureMode('soletrader');
-            this._identity.clearNumber();
-            // The popover stays OPEN behind the signup popup, so the chips stay
-            // on screen and the buyer can click Sole trader again to raise the
-            // popup rather than having to reach it through the company field —
-            // which would itself read as "focus is back on checkout" and take
-            // the popup down. It closes when they return to checkout and settle
-            // somewhere other than this control.
-            this.syncChips();
-        }
         // Re-clicking once adopted is the same re-signup the "select a different
         // sole trader" link launches: offer a choice rather than hand back what
-        // is already on screen.
-        return this._soleTrader.launchSignup(wasAdopted ? { autoselect: false } : undefined);
+        // is already on screen — so it skips autofill for the same reason that
+        // link does.
+        if (this._identity.isSoleTrader() && this._identity.soleTraderAdopted()) {
+            return this._soleTrader.launchSignup({ autoselect: false });
+        }
+        this._identity.captureMode('soletrader');
+        this._identity.clearNumber();
+        // The popover stays OPEN behind the signup popup, so the chips stay
+        // on screen and the buyer can click Sole trader again to raise the
+        // popup rather than having to reach it through the company field —
+        // which would itself read as "focus is back on checkout" and take
+        // the popup down. It closes when they return to checkout and settle
+        // somewhere other than this control.
+        this.syncChips();
+        const self = this;
+        return this._soleTrader.autofillSoleTrader().then(function (adopted) {
+            return adopted ? null : self._soleTrader.launchSignup();
+        });
     };
 
     /**

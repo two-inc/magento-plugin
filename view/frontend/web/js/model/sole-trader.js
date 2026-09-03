@@ -77,6 +77,21 @@
     }
 
     /**
+     * Whether an autofill record carries enough to adopt without the popup.
+     *
+     * Keyed on the name because that is the identity `adoptSoleTrader()` writes
+     * authoritatively: adopting a nameless record blanks the company field and
+     * leaves no route forward (TWO-25461), which is worse than the popup.
+     *
+     * @param {object} buyer `/autofill/v1/buyer/current` record
+     * @returns {boolean}
+     */
+    function isUsableSoleTrader(buyer) {
+        if (!buyer || typeof buyer !== 'object') return false;
+        return !!String(buyer.company_name || '').trim();
+    }
+
+    /**
      * @param {object} component the company-capture component this flow serves.
      *        Supplies `config()`, `identity()`, `host()`, `adoptSoleTrader()`,
      *        `abandonSoleTrader()`.
@@ -296,6 +311,30 @@
     };
 
     /**
+     * Adopt the sole trader the buyer's Two session already identifies, so a
+     * buyer Two already knows never sees the signup popup (TWO-40).
+     *
+     * Skipped without tokens rather than minting here: the caller falls through
+     * to the popup, and `launchSignup()` owns the no-token case.
+     *
+     * @returns {Promise<boolean>} whether an identity was adopted
+     */
+    SoleTrader.prototype.autofillSoleTrader = function () {
+        if (!this.hasSignupTokens()) return Promise.resolve(false);
+        this.identity().beginFlight();
+        return this.fetchBuyer()
+            .then((buyer) => {
+                if (!isUsableSoleTrader(buyer)) return false;
+                this.adoptBuyer(buyer);
+                return true;
+            })
+            .finally(() => {
+                // Settled after the write, matching the handshake's ordering.
+                this.identity().settleFlight();
+            });
+    };
+
+    /**
      * Hold the busy state while the popup is open, and hand the checkout back
      * to company search if the buyer closes it having captured nothing.
      *
@@ -398,15 +437,14 @@
     };
 
     /**
-     * Read the buyer the popup has just authenticated.
+     * Read the buyer the Two session identifies.
      *
-     * Reached only from the ACCEPTED handshake, so the buyer has proved this
-     * identity server-side and the email it authenticated with IS the identity
-     * — the order's contact field has no say in it. Re-gating on a match there
-     * discarded an authenticated buyer and left the company field permanently
-     * blank with no route forward (TWO-25461).
+     * That session's email IS the identity — the order's contact field has no
+     * say in it. Re-gating on a match there discarded an authenticated buyer
+     * and left the company field permanently blank with no route forward
+     * (TWO-25461).
      *
-     * @returns {Promise<object|null>}
+     * @returns {Promise<object|null>} null for no buyer and for any failure
      */
     SoleTrader.prototype.fetchBuyer = function () {
         const config = this._component.config();

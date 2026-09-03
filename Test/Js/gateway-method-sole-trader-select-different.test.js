@@ -200,6 +200,7 @@ describe('a re-signup offers a choice rather than the identity on screen', () =>
         const { rec } = await startStack();
 
         chip('soletrader').click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(rec.opened).toHaveLength(1);
         expect(autoselectOf(rec.opened[0])).toBeNull();
