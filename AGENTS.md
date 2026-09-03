@@ -172,14 +172,15 @@ plus a browser toggle.
 
 **There is deliberately no data patch.** Those fields never reached `main`
 on any platform — only `staging` — so no merchant ever had one configured
-in production and there is nothing to carry over. ABN-490 shipped a
-migration first and then deleted it; do not add one back on the assumption
-that stored values exist.
+in production and there is nothing to carry over. Do not add one on the
+assumption that stored values exist.
 
 `Model\Config\Backend\CustomHeaders` is the entry gate and owns the stored
-format. Two rules there, both re-applied on the read path in
-`Model\Config\Repository` so a value from `config:set` or an import cannot
-bypass them:
+format. It refuses an empty name, an empty value, a duplicate name, and a
+name outside the RFC 7230 token charset. Two further rules are worth
+spelling out, and every rule below plus the name charset is re-applied on
+the read path in `Model\Config\Repository`, so a value from `config:set` or
+an import cannot bypass any of them:
 
 -   **Values are printable ASCII** (`^[\x20-\x7E]+\z`), refused at save
     with a message naming the rule. CR/LF is a response-splitting sink,

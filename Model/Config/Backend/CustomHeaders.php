@@ -212,7 +212,7 @@ class CustomHeaders extends Value
 
         if (in_array(strtolower($row['name']), self::RESERVED_NAMES, true)) {
             throw new LocalizedException(
-                __('Custom headers: "%1" is set by the extension itself and cannot be overridden.', $row['name'])
+                __('Custom headers: "%1" is a reserved header name and cannot be sent from this table.', $row['name'])
             );
         }
 

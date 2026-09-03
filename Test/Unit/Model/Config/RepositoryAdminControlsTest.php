@@ -16,7 +16,7 @@ use Two\Gateway\Model\Provenance;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
- * TWO-25386: config accessors for the 7 admin controls.
+ * TWO-25386: config accessors for the admin controls.
  */
 class RepositoryAdminControlsTest extends TestCase
 {

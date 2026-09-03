@@ -196,15 +196,23 @@ class CustomHeadersTest extends TestCase
             ],
             'the API key header' => [
                 ['_1' => ['name' => 'x-api-key', 'value' => 'abc']],
-                '"x-api-key" is set by the extension itself',
+                '"x-api-key" is a reserved header name',
             ],
             'the content type, whatever the casing' => [
                 ['_1' => ['name' => 'Content-Type', 'value' => 'text/plain']],
-                '"Content-Type" is set by the extension itself',
+                '"Content-Type" is a reserved header name',
             ],
             'the browser call\'s own token' => [
                 ['_1' => ['name' => 'two-delegated-authority-token', 'value' => 'abc']],
-                'is set by the extension itself',
+                'is a reserved header name',
+            ],
+            'a hop-by-hop header the plugin never sets' => [
+                ['_1' => ['name' => 'Transfer-Encoding', 'value' => 'chunked']],
+                '"Transfer-Encoding" is a reserved header name',
+            ],
+            'a credential carrier the plugin never sets' => [
+                ['_1' => ['name' => 'Cookie', 'value' => 'session=abc']],
+                '"Cookie" is a reserved header name',
             ],
             'the same header twice' => [
                 [
@@ -275,7 +283,7 @@ class CustomHeadersTest extends TestCase
                 $this->save(['_1' => ['name' => $cased, 'value' => 'anything']]);
                 $this->fail(sprintf('%s must be refused at save', $cased));
             } catch (LocalizedException $e) {
-                $this->assertStringContainsString('is set by the extension itself', $e->getMessage());
+                $this->assertStringContainsString('is a reserved header name', $e->getMessage());
             }
         }
     }
