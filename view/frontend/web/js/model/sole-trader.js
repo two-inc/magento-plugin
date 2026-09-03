@@ -113,6 +113,7 @@
         this._blockedSignupOptions = null;
         this._prefetch = null;
         this._autofillBuyer = null;
+        this._autofillGeneration = 0;
         /**
          * Sole-trader identities whose registered address has already been
          * written into this page's checkout, so a replay does not overwrite a
@@ -330,9 +331,14 @@
      */
     SoleTrader.prototype.prefetchBuyer = function () {
         if (this._prefetch) return this._prefetch;
+        const generation = this._autofillGeneration;
         this._prefetch = this.ensureTokens()
             .then((minted) => (minted ? this.fetchBuyer() : null))
             .then((buyer) => {
+                // A lookup superseded while it was out is not an answer: a
+                // signup or a country change since has already decided who
+                // the checkout holds.
+                if (generation !== this._autofillGeneration) return null;
                 this._autofillBuyer = isUsableSoleTrader(buyer) ? buyer : null;
                 return this._autofillBuyer;
             });
@@ -453,12 +459,11 @@
     };
 
     /**
-     * Drop the held autofill answer and re-arm the lookup — for a country
-     * change, whose registry the record no longer belongs to, and for leaving
-     * the mode once the answer has been spent on an adoption. An answer still
-     * held survives both: the session stands behind it either way.
+     * Retire the held answer, in flight or already in hand. The caller owns
+     * re-arming the lookup.
      */
     SoleTrader.prototype.forgetAutofilledBuyer = function () {
+        this._autofillGeneration += 1;
         this._prefetch = null;
         this._autofillBuyer = null;
     };
@@ -515,8 +520,9 @@
      */
     SoleTrader.prototype.adoptBuyer = function (buyer) {
         if (!buyer || typeof buyer !== 'object') return;
-        // Any adoption supersedes the held answer, so a later click cannot
-        // re-adopt it over the identity that won.
+        // Any adoption supersedes the held answer, in flight or already in
+        // hand, so a later click cannot re-adopt it over the identity that won.
+        this._autofillGeneration += 1;
         this._autofillBuyer = null;
         this._component.adoptSoleTrader(buyer);
         const key = soleTraderIdentityKey(buyer);

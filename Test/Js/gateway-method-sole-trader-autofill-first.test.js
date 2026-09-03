@@ -149,8 +149,9 @@ function makeEnv(options) {
                 const answer = record
                     ? { ok: true, json: function () { return Promise.resolve(record); } }
                     : { ok: false, status: 404 };
-                if (!opts.holdLookup) return Promise.resolve(answer);
-                // Held so a test can click before the answer has landed.
+                // The FIRST lookup only: a later one has to be able to answer
+                // while the held one is still out.
+                if (!opts.holdLookup || rec.lookups > 1) return Promise.resolve(answer);
                 return new Promise((resolve) => { rec.releaseLookup = () => resolve(answer); });
             }
             return Promise.resolve({ ok: false, status: 404 });
@@ -490,25 +491,56 @@ describe('leaving the mode keeps the answer the session still stands behind', ()
     test.each([
         ['registeredMode', 'back to company search'],
         ['manualEntryMode', 'to manual entry']
-    ])('an answer landing after the buyer left via %s is adopted on re-entry (%s)', async (leave) => {
+    ])('the lookup in flight when the buyer left via %s is retired for a fresh one (%s)', async (leave) => {
         const { component, identity, rec } = await startStack({
             buyer: BUYER,
+            laterBuyer: OTHER_TRADER,
             holdLookup: true
         });
         await clickSoleTrader();
+        expect(rec.opened).toHaveLength(1);
 
         component[leave]();
+        await settle();
         rec.releaseLookup();
         await settle();
         await clickSoleTrader();
 
-        // A guard that discarded the answer for arriving out of the mode is
-        // the shape this flow carried before the lookup moved off the click.
-        expect(identity.companyName()).toBe(BUYER.company_name);
-        expect(rec.opened).toHaveLength(1);
-        // Leaving with nothing held re-arms, so the answer that lands is the
-        // second lookup's and the first is the one the buyer clicked past.
         expect(rec.lookups).toBe(2);
+        // The retired lookup never writes: what the buyer gets is the answer
+        // armed after they left, not the one they clicked past.
+        expect(identity.companyName()).toBe(OTHER_TRADER.company_name);
+        expect(rec.opened).toHaveLength(1);
+    });
+});
+
+describe('a lookup in flight cannot resurrect a replaced identity', () => {
+    test('a boot answer landing after the signup adopted another is discarded', async () => {
+        const { component, flow, identity, rec } = await startStack({
+            buyer: BUYER,
+            laterBuyer: OTHER_TRADER,
+            holdLookup: true
+        });
+        await clickSoleTrader();
+        // Set directly: opening one would arm the close watcher, whose own
+        // flight would mask the handshake's.
+        flow._popupWindow = POPUP;
+
+        // The buyer enrols as somebody else while the boot lookup is still out.
+        messageHandler(rec)({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+        await settle();
+        rec.releaseLookup();
+        await settle();
+
+        expect(identity.companyName()).toBe(OTHER_TRADER.company_name);
+        expect(flow.autofilledSoleTrader()).toBeNull();
+
+        component.registeredMode();
+        await settle();
+        await clickSoleTrader();
+
+        // The trader the signup replaced must not come back on a later click.
+        expect(identity.companyName()).not.toBe(BUYER.company_name);
     });
 });
 
