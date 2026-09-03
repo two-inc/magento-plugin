@@ -88,6 +88,7 @@ function load(options) {
         this.focusSignupPopup = function () { return false; };
         this.launchSignup = function () { return null; };
         this.forgetAdoptions = function () { panel.adoptionsForgotten = true; };
+        this.forgetAutofilledBuyer = function () {};
     }
 
     const billing = 'billingCountry' in opts ? opts.billingCountry : null;

@@ -89,6 +89,7 @@ function load(options) {
         this.autofilledSoleTrader = function () { return null; };
         this.launchSignup = function (o) { soleTrader.launches.push(o || null); return {}; };
         this.forgetAdoptions = function () {};
+        this.forgetAutofilledBuyer = function () {};
     };
 
     const component = loadCompanyCapture(
@@ -347,7 +348,6 @@ describe('clicking a chip performs the real transition', () => {
         chip('registered').click();
 
         chip('soletrader').click();
-        await new Promise((resolve) => { setTimeout(resolve, 0); });
 
         expect(identity.captureMode()).toBe('soletrader');
         expect(soleTrader.launches).toHaveLength(1);
@@ -365,7 +365,6 @@ describe('clicking a chip performs the real transition', () => {
         chip('registered').click();
 
         chip('soletrader').click();
-        await new Promise((resolve) => { setTimeout(resolve, 0); });
 
         const row = dropdown().querySelector('.two-company-dropdown__search');
         expect(row.classList.contains('two-hidden')).toBe(true);
@@ -493,7 +492,6 @@ describe('an adopted sole trader is shown in the company field', () => {
         component.start();
         chip('registered').click();
         chip('soletrader').click();
-        await new Promise((resolve) => { setTimeout(resolve, 0); });
         expect(dropdown().hasAttribute('hidden')).toBe(false);
 
         component.adoptSoleTrader({

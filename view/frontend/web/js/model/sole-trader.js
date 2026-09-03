@@ -322,6 +322,11 @@
      * could not open a popup a blocker would allow. Idempotent, and the answer
      * is held until something supersedes it.
      *
+     * The answer is never revalidated, so a buyer who signs out of Two in
+     * another tab mid-checkout is still offered the trader it found. Accepted:
+     * "Select a different sole trader" is the way off it, and the order is
+     * authorised against the session, not against this record.
+     *
      * @returns {Promise<?object>} the usable record, or null for nobody
      */
     SoleTrader.prototype.prefetchBuyer = function () {
@@ -331,8 +336,7 @@
             .then((buyer) => {
                 this._autofillBuyer = isUsableSoleTrader(buyer) ? buyer : null;
                 return this._autofillBuyer;
-            })
-            .catch(() => null);
+            });
         return this._prefetch;
     };
 
@@ -447,8 +451,14 @@
     /** Re-arm the once-per-identity address guard. */
     SoleTrader.prototype.forgetAdoptions = function () {
         this._adoptedIds.clear();
-        // The held answer belongs to the country and flow just retired; the
-        // availability refresh that follows arms a fresh lookup.
+    };
+
+    /**
+     * Drop the held autofill answer and re-arm the lookup. For a country
+     * change, whose registry the held record no longer belongs to — NOT for
+     * leaving the mode, which does not change who the session identifies.
+     */
+    SoleTrader.prototype.forgetAutofilledBuyer = function () {
         this._prefetch = null;
         this._autofillBuyer = null;
     };

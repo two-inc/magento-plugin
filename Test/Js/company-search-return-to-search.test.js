@@ -65,6 +65,7 @@ function mount() {
         this.autofilledSoleTrader = function () { return null; };
         this.launchSignup = function () { return {}; };
         this.forgetAdoptions = function () {};
+        this.forgetAutofilledBuyer = function () {};
     };
     const companySearch = Object.assign(
         {},

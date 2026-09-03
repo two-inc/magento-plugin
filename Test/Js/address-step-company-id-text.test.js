@@ -71,6 +71,7 @@ function load() {
         this.focusSignupPopup = function () { return false; };
         this.launchSignup = function () { return null; };
         this.forgetAdoptions = function () {};
+        this.forgetAutofilledBuyer = function () {};
         this.showSignupPrompt = function () {};
     }
 

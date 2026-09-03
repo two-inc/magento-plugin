@@ -322,6 +322,7 @@
             this._identity.clear();
             this._options.revertAutofilledAddress();
             this._soleTrader.forgetAdoptions();
+            this._soleTrader.forgetAutofilledBuyer();
             if (wasSoleTrader) this.registeredMode();
         }
         this.refreshSoleTraderAvailability(country);
@@ -331,7 +332,8 @@
 
     /**
      * Resolve whether the billing country's registry offers sole traders, and
-     * mint signup tokens up front if it does.
+     * if it does, mint signup tokens and look the buyer's own session up, both
+     * up front.
      *
      * Successful answers — including the legitimate empty list, meaning
      * business-only — are memoised per country. Errors resolve to no
@@ -360,8 +362,8 @@
                 self.registeredMode();
             }
             if (available) {
-                // Both as soon as the option exists, never at click time:
-                // the click has to decide on an answer it already holds.
+                // Never at click time: the click has to decide on an
+                // answer it already holds.
                 self._soleTrader.prefetchBuyer();
             }
             self.syncChips();

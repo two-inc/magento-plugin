@@ -377,6 +377,7 @@ function loadCaptureComponent(options) {
         this.focusSignupPopup = function () { return false; };
         this.launchSignup = function () { return null; };
         this.forgetAdoptions = function () { calls.forgotten += 1; };
+        this.forgetAutofilledBuyer = function () {};
     }
 
     const billing = 'billingCountry' in opts ? opts.billingCountry : 'GB';

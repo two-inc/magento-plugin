@@ -65,10 +65,10 @@ const POPUP = { popup: 'the tracked signup window', closed: false, close: functi
 
 /**
  * @param {object} [options] `{ buyer, laterBuyer, failLookup, hangLookup,
- *        companyTypes }` — the record the buyer endpoint answers with (omit for
- *        a 404), a different record for every lookup after the first, a
- *        transport failure, a lookup that never lands, or the registry's
- *        per-country company types
+ *        holdLookup, companyTypes }` — the record the buyer endpoint answers
+ *        with (omit for a 404), a different record for every lookup after the
+ *        first, a transport failure, a lookup that never lands, one held until
+ *        `rec.releaseLookup()`, or the registry's per-country company types
  * @returns {object} `{ rec, mocks, globals }`
  */
 function makeEnv(options) {
@@ -146,9 +146,12 @@ function makeEnv(options) {
                 if (opts.failLookup) return Promise.reject(new Error('offline'));
                 if (opts.hangLookup) return new Promise(function () {});
                 const record = rec.lookups > 1 && opts.laterBuyer ? opts.laterBuyer : opts.buyer;
-                return Promise.resolve(record
+                const answer = record
                     ? { ok: true, json: function () { return Promise.resolve(record); } }
-                    : { ok: false, status: 404 });
+                    : { ok: false, status: 404 };
+                if (!opts.holdLookup) return Promise.resolve(answer);
+                // Held so a test can click before the answer has landed.
+                return new Promise((resolve) => { rec.releaseLookup = () => resolve(answer); });
             }
             return Promise.resolve({ ok: false, status: 404 });
         }
@@ -436,6 +439,35 @@ describe('a country change re-arms the lookup', () => {
         expect(identity.companyName()).toBe(OTHER_TRADER.company_name);
         expect(rec.applied).toEqual([OTHER_TRADER.billing_address]);
         expect(rec.opened).toEqual([]);
+    });
+});
+
+describe('leaving the mode keeps the answer the session still stands behind', () => {
+    test.each([
+        ['registeredMode', 'back to company search'],
+        ['manualEntryMode', 'to manual entry'],
+        ['abandonSoleTrader', 'by closing the popup with nothing captured']
+    ])('an answer already held survives the buyer leaving via %s (%s)', async (leave) => {
+        // The buyer clicks before the lookup lands, so they get the popup;
+        // the answer arrives while they are still in the mode, and only then
+        // do they leave it.
+        const { component, identity, rec } = await startStack({
+            buyer: BUYER,
+            holdLookup: true
+        });
+        await clickSoleTrader();
+        expect(rec.opened).toHaveLength(1);
+
+        rec.releaseLookup();
+        await settle();
+        component[leave]();
+        await clickSoleTrader();
+
+        // Leaving the mode says nothing about who the session identifies, so
+        // discarding the answer here turned the feature off for the whole page.
+        expect(identity.companyName()).toBe(BUYER.company_name);
+        expect(rec.opened).toHaveLength(1);
+        expect(rec.lookups).toBe(1);
     });
 });
 

@@ -16,8 +16,12 @@
  *  - the mint is asserted to have happened with the popup count still zero and
  *    no chip clicked, so moving it into the click handler fails rather than
  *    reading as green;
- *  - the click's own round trips are asserted exhaustively, so a mint moved
- *    onto the launch path fails rather than reading as green;
+ *  - the click assertion runs in the SAME TICK as the click, with no await
+ *    between: anything reintroduced between the click and `window.open()`
+ *    leaves the popup unopened at the assertion, which is exactly what a popup
+ *    blocker would do;
+ *  - the click's own round trips are asserted exhaustively, so a mint or a
+ *    lookup moved onto the launch path fails rather than reading as green;
  *  - the country param is read back off the URL under a component whose own
  *    `countryCode()` throws, so sourcing it from the DOM-fed value fails;
  *  - the busy flag and the abandon callback are read after driving the real
@@ -251,11 +255,12 @@ describe('the tokens are minted on availability, never on the click', () => {
         expect(rec.fetched).toContainEqual(expect.stringContaining('/autofill/v1/buyer/current'));
 
         chip('soletrader').click();
-        await new Promise((resolve) => setTimeout(resolve, 0));
 
+        // Read in the same tick as the click: anything reintroduced between
+        // the two leaves this empty, which is what a popup blocker sees too.
+        expect(rec.opened).toHaveLength(1);
         expect(rec.fetched.slice(fetchesBeforeClick)).toEqual([]);
         expect(rec.tokenMints).toBe(mintsBeforeClick);
-        expect(rec.opened).toHaveLength(1);
     });
 });
 
@@ -381,7 +386,6 @@ describe('a blocked popup falls back to the on-page link', () => {
         rec.blocked = true;
 
         chip('soletrader').click();
-        await new Promise((resolve) => setTimeout(resolve, 0));
 
         const note = document.querySelector('.two-sole-trader-note');
         expect(note).not.toBeNull();

@@ -132,6 +132,7 @@ function boot(options) {
         this.autofilledSoleTrader = function () { return null; };
         this.launchSignup = function () { return null; };
         this.forgetAdoptions = function () {};
+        this.forgetAutofilledBuyer = function () {};
         this.showSignupPrompt = function () {};
         this.selectDifferentSoleTrader = function () {
             soleTraderCalls.push(component);

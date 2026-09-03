@@ -156,6 +156,7 @@ function load(options) {
         this.focusSignupPopup = function () { return false; };
         this.launchSignup = function () { return {}; };
         this.forgetAdoptions = function () {};
+        this.forgetAutofilledBuyer = function () {};
     };
 
     const component = loadCompanyCapture(

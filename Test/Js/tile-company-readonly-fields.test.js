@@ -412,6 +412,7 @@ function loadTile() {
             return null;
         };
         this.forgetAdoptions = function () {};
+        this.forgetAutofilledBuyer = function () {};
         this.selectDifferentSoleTrader = function () { return 'relaunched'; };
     }
 
