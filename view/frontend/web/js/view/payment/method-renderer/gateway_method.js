@@ -1435,7 +1435,7 @@ define([
             console.debug({ logger: 'twoPayment.placeOrderIntent', orderIntentRequestBody });
 
             // Proxied through the plugin's own backend so the merchant API
-            // key and any configured firewall token stay server-side; the
+            // key and any configured custom headers stay server-side; the
             // merchant identity in the body is replaced there too.
             const deferred = $.Deferred();
             $.ajax({

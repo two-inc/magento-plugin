@@ -333,24 +333,27 @@ class AdapterTest extends TestCase
     }
 
     /**
-     * Given a configured (or blank) firewall token; When any server-side call
-     * runs; Then the header is present only when a token is configured.
+     * Given the merchant's configured headers; When any server-side call runs;
+     * Then every one of them is on the wire, ticked for the browser or not.
      *
-     * @dataProvider firewallTokens
+     * @dataProvider customHeaderSets
+     *
+     * @param array<string, string> $configured
+     * @param array<string, string|null> $expected
      */
-    public function testTheFirewallHeaderIsSentOnServerSideCallsWheneverATokenIsConfigured(
-        string $configured,
-        ?string $expectedHeader,
+    public function testEveryConfiguredHeaderIsSentOnServerSideCalls(
+        array $configured,
+        array $expected,
         string $description
     ): void {
         $configRepository = $this->createMock(ConfigRepository::class);
         $configRepository->method('getCheckoutApiUrl')->willReturn('https://api.two.inc');
         $configRepository->method('addVersionDataInURL')->willReturnArgument(0);
         $configRepository->method('getApiKey')->willReturn('test-key');
-        $configRepository->method('getFirewallToken')->willReturn($configured);
-        // Never consulted here: the browser toggle governs the browser's own
+        $configRepository->method('getCustomHeaders')->willReturn($configured);
+        // Never consulted here: the browser tick governs the browser's own
         // direct call, not this one.
-        $configRepository->expects($this->never())->method('isFirewallTokenSentFromBrowser');
+        $configRepository->expects($this->never())->method('getBrowserCustomHeaders');
 
         $this->curl->method('getStatus')->willReturn(200);
         $this->curl->method('getBody')->willReturn('{"id":"abc"}');
@@ -372,18 +375,43 @@ class AdapterTest extends TestCase
         );
         $adapter->execute('/v1/order', ['amount' => 100]);
 
-        $this->assertSame($expectedHeader, $headers['X-WAF-TOKEN'] ?? null, $description);
+        foreach ($expected as $name => $value) {
+            $this->assertSame($value, $headers[$name] ?? null, $description);
+        }
         $this->assertSame('test-key', $headers['X-API-Key'], 'the API key is unaffected');
     }
 
     /**
-     * @return array<string, array{0: string, 1: string|null, 2: string}>
+     * @return array<string, array{0: array<string, string>, 1: array<string, string|null>, 2: string}>
      */
-    public static function firewallTokens(): array
+    public static function customHeaderSets(): array
     {
         return [
-            'configured' => ['waf-token', 'waf-token', 'a configured token is relayed'],
-            'blank' => ['', null, 'no token configured sends no header at all'],
+            'one header' => [
+                ['X-WAF-TOKEN' => 'waf-token'],
+                ['X-WAF-TOKEN' => 'waf-token'],
+                'a configured header is relayed',
+            ],
+            'several headers' => [
+                ['X-WAF-TOKEN' => 'waf-token', 'X-Gateway' => 'edge-1'],
+                ['X-WAF-TOKEN' => 'waf-token', 'X-Gateway' => 'edge-1'],
+                'every row is relayed, not just the first',
+            ],
+            'none configured' => [
+                [],
+                ['X-WAF-TOKEN' => null],
+                'no headers configured sends no extra header at all',
+            ],
+            'the extension owns its own headers' => [
+                ['X-API-Key' => 'hijacked'],
+                ['X-API-Key' => 'test-key'],
+                'a stored row can never displace a header the extension sets',
+            ],
+            'whatever the casing' => [
+                ['x-api-key' => 'hijacked'],
+                ['X-API-Key' => 'test-key', 'x-api-key' => null],
+                'field names are case-insensitive, so a second one is a conflict not a new header',
+            ],
         ];
     }
 

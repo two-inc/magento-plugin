@@ -9,7 +9,7 @@ namespace Two\Gateway\Api\Webapi;
 
 /**
  * Server-side proxy for the order-intent check, so the merchant API key and
- * firewall token never reach the browser.
+ * the merchant's custom headers never reach the browser.
  */
 interface OrderIntentInterface
 {

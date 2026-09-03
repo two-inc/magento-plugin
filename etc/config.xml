@@ -34,8 +34,7 @@
                 <enable_project>1</enable_project>
                 <enable_po_number>1</enable_po_number>
                 <vendor_site_name/>
-                <firewall_token/>
-                <firewall_token_browser>0</firewall_token_browser>
+                <custom_headers/>
                 <trusted_proxies/>
                 <disable_rate_limit>0</disable_rate_limit>
                 <subtitle/>

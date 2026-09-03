@@ -63,7 +63,7 @@ class ProxiedRegistryCallsTest extends TestCase
         $this->configRepository->method('getApiKey')->willReturnCallback(
             static fn(?int $storeId = null) => $storeId === null ? 'merchant-key' : 'store-' . $storeId . '-key'
         );
-        $this->configRepository->method('getFirewallToken')->willReturn('waf-token');
+        $this->configRepository->method('getCustomHeaders')->willReturn(['X-WAF-TOKEN' => 'waf-token']);
     }
 
     private function stageUpstream(int $status, string $body): void

@@ -738,7 +738,7 @@ define([
      * POST to one of the plugin's own registry-proxy routes.
      *
      * Registry calls run server-side so the merchant API key authenticates
-     * them and a configured firewall token can be attached — neither ever
+     * them and the merchant's custom headers can be attached — neither ever
      * reaches the browser.
      *
      * @param {string} path storefront-relative REST path

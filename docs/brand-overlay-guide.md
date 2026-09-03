@@ -297,12 +297,16 @@ Any `suppressed_fields` entry targeting one of those fields by its old
 `section_suffix` segment updated to match, or the suppression silently
 stops matching and the field reappears for that brand.
 
-`trusted_proxies` and `firewall_token_browser` now live under
-`{section_prefix}_version` (group `admin_controls`) instead of
-`{section_prefix}_general` (group `general`). An overlay's
-`suppressed_fields` entry for either needs its path updated from
-`general/general/…` to `version/admin_controls/…`. `firewall_token`
-itself is unaffected — it stays under `general/general`.
+`trusted_proxies` lives under `{section_prefix}_version` (group
+`admin_controls`) instead of `{section_prefix}_general` (group `general`).
+An overlay's `suppressed_fields` entry for it needs its path updated from
+`general/general/…` to `version/admin_controls/…`.
+
+**ABN-490 retired two fields.** `firewall_token` (under `general/general`)
+and `firewall_token_browser` (under `version/admin_controls`) are replaced
+by `custom_headers`, a header table under `version/admin_controls`. A
+`suppressed_fields` entry naming either retired field matches nothing and
+should suppress `version/admin_controls/custom_headers` instead.
 
 ## Worked example: adding a brand-driven field
 

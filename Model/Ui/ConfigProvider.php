@@ -225,12 +225,7 @@ class ConfigProvider implements ConfigProviderInterface
                     'orderIntentConfig' => $orderIntentConfig,
                     'isCompanySearchEnabled' => $this->configRepository->isCompanySearchEnabled(),
                     'isAddressSearchEnabled' => $this->configRepository->isAddressSearchEnabled(),
-                    // Only reaches the browser when the merchant's firewall
-                    // demands it there too; otherwise the token never leaves
-                    // the server.
-                    'firewallToken' => $this->configRepository->isFirewallTokenSentFromBrowser()
-                        ? $this->configRepository->getFirewallToken()
-                        : '',
+                    'customHeaders' => $this->configRepository->getBrowserCustomHeaders(),
                     // Warm-start seed for the renderer's per-country
                     // supported-company-types memo: the quote's current
                     // billing country resolved server-side (the merchant
