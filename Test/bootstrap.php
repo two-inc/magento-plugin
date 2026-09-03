@@ -109,6 +109,9 @@ if (!interface_exists(\Magento\Tax\Api\TaxCalculationInterface::class, false)) {
 if (!class_exists(\Magento\Quote\Model\Quote\Address\Total::class, false)) {
     require_once __DIR__ . '/Stubs/QuoteTotals.php';
 }
+// Creditmemo total-collection surface (AbstractTotal descending from
+// DataObject) — loads after the DataObject stub it extends.
+require_once __DIR__ . '/Stubs/SalesTotals.php';
 // Config backend-model base class (Model/Config/Backend/* beforeSave
 // validation) — extends the DataObject stub, so loads after it.
 if (!class_exists(\Magento\Framework\App\Config\Value::class, false)) {

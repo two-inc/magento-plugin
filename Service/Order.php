@@ -1127,8 +1127,10 @@ abstract class Order
      * not invented.
      *
      * Only Order carries this extension attribute (populated from the
-     * quote it was converted from) — Invoice/Creditmemo don't, so this
-     * can't help reconcile a residual on those entities.
+     * quote it was converted from). An Invoice or Creditmemo residual is a
+     * share of the same order-level fee, taxed at the same order-level
+     * rate, so those entities are resolved to their own order and read the
+     * rate from there.
      *
      * Each applied-tax entry's shape depends on exactly when it's read:
      * right after ToOrderConverter::afterConvert() it's a plain array
@@ -1157,12 +1159,12 @@ abstract class Order
      */
     private function findVerifiedResidualTaxRate($entity, float $residualNet, float $residualTax, float $epsilon): ?float
     {
-        if (!$entity instanceof OrderModel) {
+        $order = $this->resolveOrder($entity);
+        if (!$order) {
             return null;
         }
 
-        $extensionAttributes = $entity->getExtensionAttributes();
-        $appliedTaxes = $extensionAttributes ? $extensionAttributes->getAppliedTaxes() : null;
+        $appliedTaxes = $this->getOrderAppliedTaxes($order);
         if (!$appliedTaxes) {
             return null;
         }
@@ -1183,6 +1185,107 @@ abstract class Order
             if (abs($impliedTax - $residualTax) <= $epsilon) {
                 return (float)$percent;
             }
+        }
+
+        return null;
+    }
+
+    /**
+     * The rates Magento's own tax engine applied to this order, from whichever
+     * of its two homes is populated.
+     *
+     * The `applied_taxes` extension attribute only exists on an order the
+     * quote-to-order conversion built (placement) or that came back through
+     * OrderRepositoryInterface. The admin invoice and credit-memo controllers
+     * load via OrderFactory instead, so there it is empty and the persisted
+     * tax rows are the only source — the same two-source read
+     * getDeclaredShippingTaxPercent() already does, and for the same reason.
+     *
+     * @param OrderModel $order
+     * @return iterable
+     */
+    private function getOrderAppliedTaxes(OrderModel $order): iterable
+    {
+        $extensionAttributes = $order->getExtensionAttributes();
+        $appliedTaxes = $extensionAttributes ? $extensionAttributes->getAppliedTaxes() : null;
+        if ($appliedTaxes) {
+            return $appliedTaxes;
+        }
+
+        $orderId = (int)$order->getId();
+        if ($orderId <= 0) {
+            return [];
+        }
+
+        try {
+            return $this->orderTaxManagement->getOrderTaxDetails($orderId)->getAppliedTaxes() ?? [];
+        } catch (Exception $exception) {
+            // Nothing declared, so the caller's refuse path owns the decision.
+            return [];
+        }
+    }
+
+    /**
+     * The gross and tax of every line composition itemizes, for callers that
+     * need the order's known amounts rather than its payload.
+     *
+     * One entry per line so getOtherChargesLineItem()'s count-scaled epsilon
+     * matches what composition sees. Amounts come from the same accessors, so
+     * the two cannot disagree; unlike getLineItemsOrder() this loads no
+     * products, and so cannot drop an item whose product has been deleted —
+     * which would turn that item's own value into a phantom residual.
+     *
+     * @param OrderModel $order
+     * @return array
+     * @throws LocalizedException
+     */
+    public function getKnownLineAmountsOrder(OrderModel $order): array
+    {
+        $amounts = [];
+        foreach ($order->getAllVisibleItems() as $item) {
+            $amounts[] = [
+                'gross_amount' => $this->roundAmt($this->getGrossAmountItem($item)),
+                'tax_amount' => $this->roundAmt($this->getTaxAmountItem($item)),
+            ];
+        }
+
+        if (!$order->getIsVirtual() && $order->getShippingAmount() > 0) {
+            // Not getShippingLineOrder(): resolving the RATE can throw.
+            $amounts[] = [
+                'gross_amount' => $this->roundAmt($this->getGrossAmountShipping($order)),
+                'tax_amount' => $this->roundAmt($this->getTaxAmountShipping($order)),
+            ];
+        }
+
+        $surchargeNet = (float)$order->getTwoSurchargeAmount();
+        if ($surchargeNet > 0) {
+            $surchargeTax = (float)$order->getTwoSurchargeTaxAmount();
+            $amounts[] = [
+                'gross_amount' => $this->roundAmt($surchargeNet + $surchargeTax),
+                'tax_amount' => $this->roundAmt($surchargeTax),
+            ];
+        }
+
+        return $amounts;
+    }
+
+    /**
+     * The order carrying the order-level facts for any of the three
+     * entities the compose services reconcile.
+     *
+     * @param OrderModel|OrderModel\Invoice|OrderModel\Creditmemo $entity
+     * @return OrderModel|null
+     */
+    private function resolveOrder($entity): ?OrderModel
+    {
+        if ($entity instanceof OrderModel) {
+            return $entity;
+        }
+
+        if ($entity instanceof OrderModel\Invoice || $entity instanceof OrderModel\Creditmemo) {
+            $order = $entity->getOrder();
+
+            return $order instanceof OrderModel ? $order : null;
         }
 
         return null;

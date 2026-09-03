@@ -57,7 +57,11 @@
             "two_surcharge_tax_amount": true,
             "base_two_surcharge_tax_amount": true,
             "two_surcharge_description": true,
-            "two_surcharge_tax_rate": true
+            "two_surcharge_tax_rate": true,
+            "two_other_charges_amount": true,
+            "base_two_other_charges_amount": true,
+            "two_other_charges_tax_amount": true,
+            "base_two_other_charges_tax_amount": true
         }
     },
     "sales_order_grid": {

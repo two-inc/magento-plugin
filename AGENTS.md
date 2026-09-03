@@ -234,10 +234,6 @@ combined rates and a discounted base all put the quotient on a rate no tax
 rule declares, and Two validates the declared rate against the line's own
 amounts.
 
-(`Service\Fee\Provider\AmastyExtraFee` derives its own rate this way, but
-that provider requires a persisted order id and never runs from the
-validated placement path — see the DI section below.)
-
 Product lines read `tax_percent` off the item. Shipping has no such column,
 so `getTaxRateShipping()` reads the shipping-typed entry out of the order's
 `item_applied_taxes` extension attribute and sums its applied taxes, falling
@@ -262,6 +258,97 @@ the "Unit Price" tax algorithm (which rounds per unit and sums) and a small
 fraction-of-net term, and a discounted line may reconcile against
 `net + discount` as well as `net`, because "Before Discount" tax calculation
 taxes the undiscounted base.
+
+## An unitemized fee is reconciled per entity, and refundable
+
+`findVerifiedResidualTaxRate()` reconciles a taxed residual against the rates
+Magento's own tax engine applied, so a fee extension that registers its tax
+normally needs no `FeeLineProviderInterface`. It resolves an invoice or credit
+memo to its own order and reads the rates there: the residual on either is a
+share of the same order-level fee at the same rate. It reads them from the
+order's `applied_taxes` extension attribute or, when that is empty, from the
+persisted tax rows — the admin invoice and credit-memo controllers load the
+order through `OrderFactory`, which never populates the attribute, so without
+the second source a taxed fee stays unrefundable on exactly the screen the
+merchant uses.
+
+Reconciling the refund payload is not enough on its own, because a fee that
+reaches the grand total through a totals collector rather than a quote item
+never reaches the credit memo at all — the refund totals omit it and the
+merchant cannot refund it. `Model\Total\Creditmemo\OtherCharges` prorates the
+order's residual onto the credit memo by refunded subtotal share, and
+`Block\Sales\Total\OtherCharges` renders it as "Other charges".
+
+Both take the residual from `Service\Order\OtherChargesResolver`, which runs
+the composition path's own `getOtherChargesLineItem()` over
+`getKnownLineAmountsOrder()` plus any registered provider's fee lines — the
+same reconciliation `reconcileOtherCharges()` performs. None of it names an
+extension: the residual is defined by what the grand total exceeds, never by
+whose fee it is. The collector is gated on the order being a
+Two order — by payment-method INSTANCE, since a brand overlay's
+`GenericPaymentMethod` extends `Two` under its own per-brand code — because a
+store-wide fee extension applies to every order and this module has no
+business moving anyone else's refund total.
+
+`getKnownLineAmountsOrder()` counts what composition *should* itemize, which
+is deliberately not identical to what it actually emits. Two known
+divergences: it counts an item whose product no longer loads, where
+`getLineItemsOrder()` drops it and the dropped item's own value would read as
+an unitemized fee and be refunded as one; and it reads the surcharge only
+from the order columns, where `ComposeOrder::execute()` still falls back to
+the checkout session. It also loads no products, which a totals collector
+re-run on every credit-memo render cannot afford, and it avoids
+`getShippingLineOrder()`, because resolving the shipping tax rate queries the
+tax engine and throws when none is declared.
+
+**The fee's VAT is not already on the credit memo.** Core's
+`Creditmemo\Total\Tax` builds the tax up from item `tax_invoiced` plus
+shipping tax, then treats the order's allowance two different ways: a `min()`
+ceiling on a partial memo, but a straight assignment on the last one (and only
+when shipping is not partially refunded). So a fee belonging to no item and no
+shipping is in `tax_amount` already on that last memo and absent on every
+other. This is the one place it diverges from the sibling
+`Creditmemo\Surcharge` collector, which *assumes* core's native proration
+already granted its own VAT — an assumption that holds on the last memo and
+fails on a partial one.
+
+How much core granted THIS fee is read the way `ComposeRefund` reads it — the
+memo's tax less the tax of every line composition itemizes (items, shipping,
+surcharge), in ORDER currency, where the payload evaluates its residual —
+never from the tax headroom, which can be zero for reasons unrelated to the
+fee, and never in base currency, which desyncs the two on a converted order.
+
+**Every ceiling is applied by solving the NET, at the fee's own rate.** There
+are three: the proration share (less what earlier memos took), the tax
+allowance, and `validateForRefund()`'s base grand-total ceiling. Clamping a
+net and a VAT that were chosen separately cannot preserve a rate — scaling
+two legs while the already-granted VAT stays fixed changes the quotient — and
+a fee declared at any other rate is refused by `ComposeRefund` while the
+grand total still carries the money. So the net is solved as the minimum
+those ceilings allow and the VAT follows from it: `taxDelta = rate × net −
+granted`. A smaller share refunded at the exact rate beats the whole share at
+a wrong one. Entitlement is cumulative — `feeNet × (refunded subtotal share
+including this memo) − already refunded` — so a share an earlier memo could
+not take is recovered by a later one rather than stranded, and the last memo
+lands on the whole charge exactly with no rounding residue. The one exception
+is the stranding case below.
+
+Three cases defer rather than pay out, all logging `OtherChargesDeferred`. A
+NEGATIVE granted amount means some other total's tax is missing from the
+memo — on a partial memo of a surcharged order core omits the surcharge VAT
+that `ComposeRefund` declares in its surcharge line — and adding it here
+would refund another total's VAT under this fee's name and at a rate that is
+not this fee's. A granted amount larger than `rate × net` cannot be reduced,
+since the collector only ever adds tax. And no ceiling leaving any room at
+all resolves the net to zero.
+
+**Known gap: a surcharged order refunded across two or more partial memos
+strands the fee permanently**, rather than deferring it to a memo that can
+state it. Memo 1 defers on the negative granted amount; the last memo's
+granted then contains the surcharge VAT memo 1 never booked, so it defers
+again. No money is misstated — this is the pre-existing behaviour for that
+configuration — and the root cause is `Creditmemo\Surcharge`'s tax-delta
+assumption above, not this collector.
 
 ## DI registration scope for Structure / Config Reader plugins
 
