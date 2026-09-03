@@ -439,6 +439,38 @@ class AdapterTest extends TestCase
     }
 
     /**
+     * Given the merchant's configured headers; When the pre-auth API-key
+     * verification call runs with an unsaved candidate key; Then it carries
+     * them too — the firewall those headers clear does not exempt the one
+     * call made before the key is known to work.
+     *
+     * @dataProvider apiKeySources
+     */
+    public function testTheApiKeyVerificationCallCarriesTheConfiguredHeaders(
+        ?string $override,
+        string $expectedKey,
+        string $description
+    ): void {
+        $this->configRepository->method('getCustomHeaders')
+            ->willReturn(['X-WAF-TOKEN' => 'waf-token', 'X-Gateway' => 'edge-1']);
+        $this->curl->method('getStatus')->willReturn(200);
+        $this->curl->method('getBody')->willReturn('{"id":"abc"}');
+
+        $headers = [];
+        $this->curl->method('addHeader')->willReturnCallback(
+            function ($name, $value) use (&$headers) {
+                $headers[$name] = $value;
+            }
+        );
+
+        $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET', null, $override);
+
+        $this->assertSame('waf-token', $headers['X-WAF-TOKEN'] ?? null, $description);
+        $this->assertSame('edge-1', $headers['X-Gateway'] ?? null, $description);
+        $this->assertSame($expectedKey, $headers['X-API-Key'], $description);
+    }
+
+    /**
      * @return array<string, array{0: string|null, 1: string, 2: string}>
      */
     public static function apiKeySources(): array
