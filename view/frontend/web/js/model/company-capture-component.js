@@ -322,9 +322,12 @@
             this._identity.clear();
             this._options.revertAutofilledAddress();
             this._soleTrader.forgetAdoptions();
-            this._soleTrader.forgetAutofilledBuyer();
             if (wasSoleTrader) this.registeredMode();
         }
+        // Outside the guard above: the mount observer can resolve availability,
+        // and so hold an answer, while `_lastCountry` is still empty, and that
+        // answer belongs to the registry the buyer is leaving either way.
+        this._soleTrader.forgetAutofilledBuyer();
         this.refreshSoleTraderAvailability(country);
     };
 
@@ -992,7 +995,7 @@
         // point on this route that can arm another lookup. One still held is
         // left alone: the session stands behind it either way, and re-running
         // would only risk the next click landing ahead of the answer.
-        if (!this._soleTrader.autofilledSoleTrader()) {
+        if (!this._soleTrader.autofilledSoleTrader() && this._identity.soleTraderAvailable()) {
             this._soleTrader.forgetAutofilledBuyer();
             this._soleTrader.prefetchBuyer();
         }

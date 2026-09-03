@@ -423,6 +423,23 @@ describe('an adoption supersedes the held record', () => {
 });
 
 describe('a country change re-arms the lookup', () => {
+    test('a change before any country was recorded still retires the answer', async () => {
+        const { component, identity, rec } = await startStack({
+            buyer: BUYER,
+            laterBuyer: OTHER_TRADER
+        });
+        // The sidebar boot: the mount observer resolves availability, and so
+        // holds an answer, before any address form has given up a country.
+        component._lastCountry = '';
+
+        component.onCountryChanged('no');
+        await settle();
+        await clickSoleTrader();
+
+        expect(rec.lookups).toBe(2);
+        expect(identity.companyName()).toBe(OTHER_TRADER.company_name);
+    });
+
     test('the new country is looked up afresh and the retired record is not adopted', async () => {
         const { component, identity, rec } = await startStack({
             buyer: BUYER,
@@ -496,6 +513,21 @@ describe('leaving the mode keeps the answer the session still stands behind', ()
 });
 
 describe('a spent answer is replaced, not left absent', () => {
+    test('a country that stopped offering sole traders arms no lookup on the way out', async () => {
+        const { component, identity, rec } = await startStack({ buyer: BUYER });
+        await clickSoleTrader();
+        const lookupsAfterAdoption = rec.lookups;
+        // The shape refreshSoleTraderAvailability leaves behind: availability
+        // already false, the mode not yet retired.
+        identity.soleTraderAvailable(false);
+
+        component.registeredMode();
+        await settle();
+
+        // An answer held here belongs to a registry no chip can reach.
+        expect(rec.lookups).toBe(lookupsAfterAdoption);
+    });
+
     test.each([
         ['registeredMode', 'back to company search'],
         ['manualEntryMode', 'to manual entry']
