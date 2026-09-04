@@ -69,7 +69,12 @@ function loadFlow(options) {
                 checkoutPageUrl: CHECKOUT_PAGE_URL,
                 checkoutApiUrl: CHECKOUT_API_URL,
                 isCompanySearchEnabled: true,
-                customHeaders: opts.customHeaders || {}
+                customHeaders: opts.customHeaders || {},
+                // This suite drives the handshake directly and is not about
+                // the boot-time mint gate (TWO-25547) — restricted to nothing
+                // so start() itself makes no request, leaving every request
+                // below attributable to the handshake alone.
+                soleTraderCountryRestriction: []
             }),
             'Magento_Ui/js/model/messageList': {
                 addErrorMessage: function (message) { rec.errors.push(message); },

@@ -60,7 +60,7 @@ const POPUP_CLOSE_POLL_MS = 300;
  * 30-minute token refresh and a 300ms popup-close poll, and driving their
  * callbacks by hand is what lets a test assert which one it ticked.
  *
- * @param {object} [options] `{ billingAddress, companyTypes }`
+ * @param {object} [options] `{ billingAddress, companyTypes, soleTraderCountryRestriction }`
  * @returns {object} `{ rec, identity, mocks, globals }`
  */
 function makeEnv(options) {
@@ -115,7 +115,8 @@ function makeEnv(options) {
             checkoutPageUrl: CHECKOUT_PAGE_URL,
             checkoutApiUrl: CHECKOUT_API_URL,
             isCompanySearchEnabled: true,
-            supportedCompanyTypes: opts.companyTypes || { gb: ['SOLE_TRADER'] }
+            supportedCompanyTypes: opts.companyTypes || { gb: ['SOLE_TRADER'] },
+            soleTraderCountryRestriction: opts.soleTraderCountryRestriction
         }),
         'Magento_Ui/js/model/messageList': {
             addErrorMessage: function (message) { rec.errors.push(message); },
@@ -241,8 +242,15 @@ describe('the tokens are minted on availability, never on the click', () => {
         expect(rec.opened).toEqual([]);
     });
 
-    test('a country whose registry offers no sole trader mints nothing', async () => {
-        const { flow, rec } = await startStack({ companyTypes: { gb: ['LIMITED_COMPANY'] } });
+    test('a merchant restricted to a country the registry has no sole trader for mints nothing', async () => {
+        // TWO-25547: the gate is the merchant's OWN restriction, never the
+        // selected country's per-country availability — 'gb' still answers
+        // LIMITED_COMPANY only, which used to be read as "don't mint" and no
+        // longer is.
+        const { flow, rec } = await startStack({
+            companyTypes: { gb: ['LIMITED_COMPANY'] },
+            soleTraderCountryRestriction: ['ES']
+        });
 
         expect(rec.tokenMints).toBe(0);
         expect(flow.hasSignupTokens()).toBe(false);

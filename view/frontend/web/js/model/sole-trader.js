@@ -174,9 +174,10 @@
 
     /**
      * Have tokens ready BEFORE the buyer clicks anything, so the click handler's
-     * `window.open()` runs inside the gesture that triggered it. Called the
-     * moment the billing country is known to support sole traders — WooCommerce
-     * mints at the same point, for the same reason.
+     * `window.open()` runs inside the gesture that triggered it. Called once
+     * `CompanyCaptureComponent.resolveMintGate()` resolves true (TWO-25547) —
+     * a merchant-level answer, decoupled from whichever country is currently
+     * selected in the checkout form.
      *
      * @returns {Promise<boolean>}
      */
