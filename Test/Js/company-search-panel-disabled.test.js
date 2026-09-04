@@ -24,35 +24,42 @@ function panelIsOpen() {
     return !!node && !node.hasAttribute('hidden');
 }
 
-function setup() {
+/**
+ * @param {string} [mode] answer `getSelectedMode()` gives; mutate the
+ *        returned object's `.mode` to change it mid-test
+ * @returns {object} `{ panel, state }`
+ */
+function setup(mode) {
     document.body.innerHTML = '<div class="control"><input id="company_name" type="text"></div>';
     const companySearch = loadAmdModule(MODEL_PATH, { jquery: $ }, GLOBALS);
     const CompanySearchPanel = loadCompanySearchPanel($, companySearch, GLOBALS);
+    const state = { mode: mode || '' };
     const panel = new CompanySearchPanel({
         fieldSelector: FIELD,
         config: BASE_CONFIG,
-        getCountryCode: function () { return 'gb'; }
+        getCountryCode: function () { return 'gb'; },
+        getSelectedMode: function () { return state.mode; }
     });
     panel.bind();
-    return panel;
+    return { panel: panel, state: state };
 }
 
 describe('setDisabled', () => {
     test('sets the native disabled flag on the field', () => {
-        const panel = setup();
+        const { panel } = setup();
         panel.setDisabled(true);
         expect(document.querySelector(FIELD).disabled).toBe(true);
     });
 
     test('clears the native disabled flag on the field', () => {
-        const panel = setup();
+        const { panel } = setup();
         panel.setDisabled(true);
         panel.setDisabled(false);
         expect(document.querySelector(FIELD).disabled).toBe(false);
     });
 
     test('closes an open panel when disabled', () => {
-        const panel = setup();
+        const { panel } = setup();
         panel.open();
         expect(panelIsOpen()).toBe(true);
 
@@ -62,7 +69,7 @@ describe('setDisabled', () => {
     });
 
     test('leaves a closed panel closed when disabled', () => {
-        const panel = setup();
+        const { panel } = setup();
         panel.setDisabled(true);
         expect(panelIsOpen()).toBe(false);
     });
@@ -70,14 +77,14 @@ describe('setDisabled', () => {
 
 describe('open() while disabled', () => {
     test('a call to open() is refused while disabled', () => {
-        const panel = setup();
+        const { panel } = setup();
         panel.setDisabled(true);
         panel.open();
         expect(panelIsOpen()).toBe(false);
     });
 
     test('open() works again once re-enabled', () => {
-        const panel = setup();
+        const { panel } = setup();
         panel.setDisabled(true);
         panel.setDisabled(false);
         panel.open();
@@ -87,7 +94,7 @@ describe('open() while disabled', () => {
 
 describe('the disabled flag survives a rebind', () => {
     test('a fresh field node inherits the flag on _attach()', () => {
-        const panel = setup();
+        const { panel } = setup();
         panel.setDisabled(true);
 
         // A checkout re-render replaces the field node the way core's own
@@ -101,5 +108,37 @@ describe('the disabled flag survives a rebind', () => {
 
         expect(document.querySelector(FIELD).disabled).toBe(true);
         expect(wrap).not.toBeNull();
+    });
+});
+
+describe('manual entry never reaches the registry search, so the gate never disables it', () => {
+    test('the field stays typeable in manual mode even while the gate is disabled', () => {
+        const { panel } = setup('manual');
+        panel.setDisabled(true);
+        expect(document.querySelector(FIELD).disabled).toBe(false);
+    });
+
+    test('releaseField() (entering manual mode) re-enables a field the gate had disabled', () => {
+        const { panel, state } = setup('registered');
+        panel.setDisabled(true);
+        expect(document.querySelector(FIELD).disabled).toBe(true);
+
+        state.mode = 'manual';
+        panel.releaseField();
+
+        expect(document.querySelector(FIELD).disabled).toBe(false);
+    });
+
+    test('reclaimField() (leaving manual mode) re-applies the gate', () => {
+        const { panel, state } = setup('registered');
+        panel.setDisabled(true);
+        state.mode = 'manual';
+        panel.releaseField();
+        expect(document.querySelector(FIELD).disabled).toBe(false);
+
+        state.mode = 'registered';
+        panel.reclaimField();
+
+        expect(document.querySelector(FIELD).disabled).toBe(true);
     });
 });

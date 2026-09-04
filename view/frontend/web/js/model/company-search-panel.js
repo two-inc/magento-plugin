@@ -340,7 +340,7 @@
         this._field = field;
         // A re-render/rebind can hand back a fresh field node that has not
         // inherited the previous one's `disabled` state.
-        field.disabled = this._disabled;
+        this._applyDisabledState();
 
         this._buildPanel(this._ensureWrap(field));
         this.syncChips();
@@ -722,8 +722,20 @@
      */
     CompanySearchPanel.prototype.setDisabled = function (disabled) {
         this._disabled = !!disabled;
-        if (this._field) this._field.disabled = this._disabled;
+        this._applyDisabledState();
         if (this._disabled && this._open) this.close();
+    };
+
+    /**
+     * Write `_disabled` onto the field, EXCEPT in manual entry: `releaseField()`
+     * hands the field over as a plain typeable input that never reaches the
+     * registry search this flag gates, so disabling it there would block a
+     * buyer's own typed name over a country the search does not cover — a
+     * mode that was never going to search in the first place.
+     */
+    CompanySearchPanel.prototype._applyDisabledState = function () {
+        if (!this._field) return;
+        this._field.disabled = this._disabled && this.getSelectedMode() !== 'manual';
     };
 
     // ----------------------------------------------------------------- search
@@ -994,6 +1006,10 @@
             this._unbind(this._field);
             stripComboboxAttributes(this._field);
         }
+        // A field left disabled by an unsupported-country search gate was
+        // never going to search in manual entry either — re-evaluate now
+        // getSelectedMode() reads 'manual'.
+        this._applyDisabledState();
         this.renderBackToSearchLink();
     };
 
