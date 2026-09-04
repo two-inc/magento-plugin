@@ -21,9 +21,12 @@
  * prompt — arrives through `host`, which the capture component assembles from
  * its own options.
  *
- * Owns the delegation/autofill token pair and its refresh, the hosted signup
- * popup and the watcher that notices the buyer closing it, and the
- * `postMessage` handshake enrolment finishes on.
+ * Owns the hosted signup popup, the watcher that notices the buyer closing it,
+ * and the `postMessage` handshake enrolment finishes on.
+ *
+ * Does NOT own the token pair or the buyer lookup. Those are
+ * `sole-trader-session.js` — one per checkout page, started on reaching
+ * checkout rather than on this flow being constructed (TWO-25547).
  *
  * Does NOT own the identity it produces. Adoption calls back into the
  * component, which routes every write through one path — the same division
@@ -35,17 +38,12 @@
     'use strict';
 
     if (typeof define === 'function' && define.amd) {
-        define([], factory);
+        define(['Two_Gateway/js/model/sole-trader-session'], factory);
     } else {
-        root.TwoSoleTrader = factory();
+        root.TwoSoleTrader = factory(root.TwoSoleTraderSession);
     }
-}(typeof self !== 'undefined' ? self : this, function () {
+}(typeof self !== 'undefined' ? self : this, function (SoleTraderSession) {
     'use strict';
-
-    // WooCommerce's `scheduleTokenRefresh` and PrestaShop's
-    // `_TOKEN_REFRESH_INTERVAL_MS` both use this. A buyer who sits on checkout
-    // past expiry would otherwise find the signup URL rejected.
-    const TOKEN_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 
     // There is no event for "the popup went away", so the opener polls.
     const POPUP_CLOSE_POLL_MS = 300;
@@ -77,31 +75,16 @@
     }
 
     /**
-     * Whether an autofill record carries enough to adopt without the popup.
-     *
-     * Keyed on the name because that is the identity `adoptSoleTrader()` writes
-     * authoritatively: adopting a nameless record blanks the company field,
-     * which is worse than the popup.
-     *
-     * @param {object} buyer `/autofill/v1/buyer/current` record
-     * @returns {boolean}
-     */
-    function isUsableSoleTrader(buyer) {
-        if (!buyer || typeof buyer !== 'object') return false;
-        return !!String(buyer.company_name || '').trim();
-    }
-
-    /**
      * @param {object} component the company-capture component this flow serves.
      *        Supplies `config()`, `identity()`, `host()`, `adoptSoleTrader()`,
      *        `abandonSoleTrader()`.
      */
     function SoleTrader(component) {
         this._component = component;
-        this.delegationToken = '';
-        this.autofillToken = '';
-        this._mintChain = null;
-        this._tokenRefreshId = null;
+        // Injected where the checkout owns one, so every capture component on
+        // the page shares the one token pair and the one buyer answer.
+        this._session = component.host().soleTraderSession
+            || new SoleTraderSession(component.host());
         this._popupWindow = null;
         this._popupCloseWatcherId = null;
         this._messageHandler = null;
@@ -111,9 +94,6 @@
         // the instant it posts, and that lookup is the authority from then on.
         this._signupConfirming = false;
         this._blockedSignupOptions = null;
-        this._prefetch = null;
-        this._autofillBuyer = null;
-        this._autofillGeneration = 0;
         /**
          * Sole-trader identities whose registered address has already been
          * written into this page's checkout, so a replay does not overwrite a
@@ -132,91 +112,43 @@
         return this._component.identity();
     };
 
-    SoleTrader.prototype.getTokens = function () {
-        const URL = this.host().tokensUrl();
-        return fetch(URL, {
-            method: 'POST',
-            headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cartId: this.host().quoteId() })
-        })
-            .then((response) => {
-                if (!response.ok) throw new Error(`Error response from ${URL}.`);
-                return response.json();
-            })
-            // The REST controller answers with a single-element list.
-            .then((json) => (Array.isArray(json) ? json[0] : json))
-            .catch((error) => {
-                console.error({ logger: 'twoPayment.getTokens', error });
-                throw error;
-            });
+    /** @returns {object} the page's token/autofill session */
+    SoleTrader.prototype.session = function () {
+        return this._session;
     };
 
-    // Both tokens are minted together and neither is optional in the signup
-    // URL — an empty one produces a link the hosted flow rejects.
+    // The token pair stays readable and writable on the flow: it is the flow
+    // that spends it, in the signup URL.
+    ['delegationToken', 'autofillToken'].forEach(function (token) {
+        Object.defineProperty(SoleTrader.prototype, token, {
+            get: function () { return this._session[token]; },
+            set: function (value) { this._session[token] = value; },
+            enumerable: true
+        });
+    });
+
     SoleTrader.prototype.hasSignupTokens = function () {
-        return !!(this.delegationToken && this.autofillToken);
+        return this._session.hasSignupTokens();
     };
 
-    /**
-     * Mint a fresh pair, replacing whatever is held.
-     *
-     * @returns {Promise<boolean>} whether the mint produced usable tokens
-     */
     SoleTrader.prototype.mintTokens = function () {
-        return this.getTokens()
-            .then((json) => {
-                this.delegationToken = (json && json.delegation_token) || '';
-                this.autofillToken = (json && json.autofill_token) || '';
-                return this.hasSignupTokens();
-            })
-            .catch(() => false);
+        return this._session.mintTokens();
     };
 
-    /**
-     * Have tokens ready BEFORE the buyer clicks anything, so the click handler's
-     * `window.open()` runs inside the gesture that triggered it. Called
-     * unconditionally as soon as checkout is reached (TWO-25547) — Bifrost's
-     * registry coverage is global, so there is no country or merchant gate to
-     * wait on.
-     *
-     * @returns {Promise<boolean>}
-     */
     SoleTrader.prototype.ensureTokens = function () {
-        if (this.hasSignupTokens()) {
-            this.startTokenRefresh();
-            return Promise.resolve(true);
-        }
-        if (this._mintChain) return this._mintChain;
-        this._mintChain = this.mintTokens()
-            .then((minted) => {
-                if (minted) this.startTokenRefresh();
-                return minted;
-            })
-            .finally(() => {
-                this._mintChain = null;
-            });
-        return this._mintChain;
+        return this._session.ensureTokens();
     };
 
     SoleTrader.prototype.startTokenRefresh = function () {
-        if (this._tokenRefreshId) return;
-        this._tokenRefreshId = setInterval(() => this.refreshTokens(), TOKEN_REFRESH_INTERVAL_MS);
+        this._session.startTokenRefresh();
     };
 
     SoleTrader.prototype.stopTokenRefresh = function () {
-        if (!this._tokenRefreshId) return;
-        clearInterval(this._tokenRefreshId);
-        this._tokenRefreshId = null;
+        this._session.stopTokenRefresh();
     };
 
-    /**
-     * One refresh tick. Skipped while any round trip is outstanding — the
-     * tokens a popup was launched with must stay valid for the flow it is
-     * running, and that flight's own completion leaves them fresh anyway.
-     */
     SoleTrader.prototype.refreshTokens = function () {
-        if (this.identity().isBusy()) return;
-        return this.mintTokens();
+        return this._session.refreshTokens();
     };
 
     /**
@@ -331,19 +263,7 @@
      * @returns {Promise<?object>} the usable record, or null for nobody
      */
     SoleTrader.prototype.prefetchBuyer = function () {
-        if (this._prefetch) return this._prefetch;
-        const generation = this._autofillGeneration;
-        this._prefetch = this.ensureTokens()
-            .then((minted) => (minted ? this.fetchBuyer() : null))
-            .then((buyer) => {
-                // A lookup superseded while it was out is not an answer: a
-                // signup or a country change since has already decided who
-                // the checkout holds.
-                if (generation !== this._autofillGeneration) return null;
-                this._autofillBuyer = isUsableSoleTrader(buyer) ? buyer : null;
-                return this._autofillBuyer;
-            });
-        return this._prefetch;
+        return this._session.prefetchBuyer();
     };
 
     /**
@@ -354,7 +274,7 @@
      * @returns {?object} `/autofill/v1/buyer/current` record
      */
     SoleTrader.prototype.autofilledSoleTrader = function () {
-        return this._autofillBuyer || null;
+        return this._session.autofilledSoleTrader();
     };
 
     /**
@@ -464,44 +384,11 @@
      * re-arming the lookup.
      */
     SoleTrader.prototype.forgetAutofilledBuyer = function () {
-        this._autofillGeneration += 1;
-        this._prefetch = null;
-        this._autofillBuyer = null;
+        this._session.forgetAutofilledBuyer();
     };
 
-    /**
-     * Read the buyer the Two session identifies.
-     *
-     * That session's email IS the identity — the order's contact field has no
-     * say in it. Re-gating on a match there discarded an authenticated buyer
-     * and left the company field permanently blank with no route forward
-     * (TWO-25461).
-     *
-     * @returns {Promise<object|null>} null for no buyer and for any failure
-     */
     SoleTrader.prototype.fetchBuyer = function () {
-        const config = this._component.config();
-        const params = new URLSearchParams(this.host().apiClientParams(config)).toString();
-        const URL = `${config.checkoutApiUrl}/autofill/v1/buyer/current${params ? `?${params}` : ''}`;
-        // The one call that cannot be proxied: it is authenticated by the
-        // buyer's own session cookie on the API's domain, which a server-side
-        // call has no way to present.
-        const headers = {};
-        const customHeaders = config.customHeaders || {};
-        Object.keys(customHeaders).forEach((name) => {
-            headers[name] = customHeaders[name];
-        });
-        headers['two-delegated-authority-token'] = this.autofillToken;
-        return fetch(URL, {
-            credentials: 'include',
-            headers: headers
-        })
-            .then((response) => {
-                if (response.ok) return response.json();
-                if (response.status === 404) return null;
-                throw new Error(`Error response from ${URL}.`);
-            })
-            .catch(() => null);
+        return this._session.fetchBuyer();
     };
 
     /**
@@ -523,8 +410,7 @@
         if (!buyer || typeof buyer !== 'object') return;
         // Any adoption supersedes the held answer, in flight or already in
         // hand, so a later click cannot re-adopt it over the identity that won.
-        this._autofillGeneration += 1;
-        this._autofillBuyer = null;
+        this._session.supersedeAutofilledBuyer();
         this._component.adoptSoleTrader(buyer);
         const key = soleTraderIdentityKey(buyer);
         if (key && this._adoptedIds.has(key)) {

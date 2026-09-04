@@ -23,7 +23,8 @@ define([
     'Two_Gateway/js/model/company-search-panel',
     'Two_Gateway/js/model/company-capture-component',
     'Two_Gateway/js/model/company-source-resolver',
-    'Two_Gateway/js/model/sole-trader'
+    'Two_Gateway/js/model/sole-trader',
+    'Two_Gateway/js/model/sole-trader-session'
 ], function (
     $,
     quote,
@@ -36,7 +37,8 @@ define([
     CompanySearchPanel,
     CompanyCaptureComponent,
     CompanySourceResolver,
-    SoleTrader
+    SoleTrader,
+    SoleTraderSession
 ) {
     'use strict';
 
@@ -91,6 +93,23 @@ define([
     const billingIdentity = createCompanyIdentity();
     /** The identity every downstream consumer (order-intent, the tile) reads. */
     const resolvedIdentity = createCompanyIdentity();
+
+    /** One token pair and one buyer answer for the page, shared by both panels. */
+    const soleTraderSession = new SoleTraderSession({
+        config: config,
+        tokensUrl: function () {
+            return url.build('rest/V1/two/get-tokens');
+        },
+        quoteId: function () {
+            return quote.getQuoteId();
+        },
+        apiClientParams: function (companyConfig) {
+            return companySearch.apiClientParams(companyConfig);
+        },
+        isBusy: function () {
+            return shippingIdentity.isBusy() || billingIdentity.isBusy();
+        }
+    });
 
     /**
      * Present AND visible — never merely present. Core leaves the billing form
@@ -252,6 +271,7 @@ define([
             config: config,
             Panel: CompanySearchPanel,
             SoleTraderFlow: SoleTrader,
+            soleTraderSession: soleTraderSession,
             search: companySearch,
             translate: $t,
             observe: function (selector, onNode) {
@@ -566,6 +586,14 @@ define([
          */
         billingRoleIdentity: function () {
             return billingIsDistinct() ? billingIdentity : shippingIdentity;
+        },
+        /**
+         * Mint the signup tokens and look the buyer up. Deliberately not part
+         * of start() — it waits on no mount, country or payment method
+         * (TWO-25547).
+         */
+        prefetchSoleTrader: function () {
+            return soleTraderSession.start();
         },
         start: function () {
             shippingComponent.start();

@@ -33,6 +33,7 @@ const JS_FILES = [
     'view/frontend/web/js/model/company-identity.js',
     'view/frontend/web/js/model/company-search-panel.js',
     'view/frontend/web/js/model/sole-trader.js',
+    'view/frontend/web/js/model/sole-trader-session.js',
     'view/frontend/web/js/model/new-customer-address-mixin.js',
     'view/frontend/web/js/model/surcharge.js',
     'view/frontend/web/js/view/address-autocomplete.js',

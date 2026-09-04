@@ -33,6 +33,10 @@ define([
         initialize: function () {
             this._super();
 
+            // Before anything that can mount, resolve a country or throw:
+            // reaching checkout is the whole trigger (TWO-25547).
+            companyCapture.prefetchSoleTrader();
+
             companyCapture.start();
 
             // Both of these change which host node exists: an address switching
