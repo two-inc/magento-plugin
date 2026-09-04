@@ -61,6 +61,7 @@ class AnonymousRouteRateLimitsTest extends TestCase
             'POST /V1/two/select-term' => ['select-term', 'term selection'],
             'POST /V1/two/company-search' => ['company-search', 'registry search'],
             'POST /V1/two/company' => ['company', 'registry detail'],
+            'GET /V1/two/supported-countries' => ['supported-countries', 'registry-coverage lookup'],
             'POST /V1/two/order-intent' => ['order-intent', 'order intent'],
             'GET /V1/two/surcharges' => ['surcharges', 'surcharge read'],
         ];
@@ -109,6 +110,9 @@ class AnonymousRouteRateLimitsTest extends TestCase
                 return;
             case 'company':
                 $this->companyLookup($limiter)->get('lookup-1');
+                return;
+            case 'supported-countries':
+                $this->companyLookup($limiter)->supportedCountries();
                 return;
             case 'order-intent':
                 (new OrderIntent(
