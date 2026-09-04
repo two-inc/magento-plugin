@@ -1241,7 +1241,7 @@ abstract class Order
                 $appliedTaxes[] = $orderTax;
             }
         } catch (Exception $exception) {
-            // Likewise: an empty result is the caller's to refuse.
+            // An unreadable source is not a refusal; the others still count.
         }
 
         return $appliedTaxes;
