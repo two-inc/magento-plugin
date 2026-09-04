@@ -154,7 +154,6 @@ abstract class Order
         $this->orderTaxManagement = $orderTaxManagement;
         $this->taxCalculation = $taxCalculation;
         $this->orderTaxCollectionFactory = $orderTaxCollectionFactory;
-        $this->orderTaxCollectionFactory = $orderTaxCollectionFactory;
     }
 
     /**
@@ -1201,24 +1200,16 @@ abstract class Order
     }
 
     /**
-     * Every rate Magento's own tax engine applied to this order, merged from
-     * all three places it records them:
+     * Every rate Magento's own tax engine applied to this order.
      *
-     * 1. The `applied_taxes` extension attribute — populated during
-     *    quote-to-order conversion, so at PLACEMENT time (before the order is
-     *    saved and has an id) it is the only source that exists. The admin
-     *    invoice and credit-memo controllers load via OrderFactory, which
-     *    never populates it.
-     * 2. The item-level tax rows, via OrderTaxManagementInterface.
-     * 3. The order-level tax rows, where a rate applied at address/total level
-     *    lands — a fee contributed by a total collector with no taxable item
-     *    row of its own is recorded here and nowhere else.
+     * A fee contributed by a total collector has no taxable item row, so its
+     * rate lands only in the order-level tax rows — the item-level table the
+     * tax management API aggregates cannot see it.
      *
-     * Merged rather than first-non-empty: an order can carry its products'
-     * rate in the item rows and a differently-taxed fee's rate only in the
-     * order-level rows, so a non-empty item-level set must not shadow them.
-     * Duplicate rates across sources are harmless — the caller takes the
-     * first that reconciles.
+     * Merged rather than first-non-empty: an order carrying its products'
+     * rate in the item rows must not shadow a differently-taxed fee's rate in
+     * the order-level rows. Only the extension attribute exists at placement,
+     * before the order has an id.
      *
      * @param OrderModel $order
      * @return iterable
