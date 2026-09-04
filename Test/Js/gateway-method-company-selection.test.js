@@ -188,6 +188,7 @@ function loadRenderer() {
         this.getField = function () { return dom.$(TILE_FIELD_SELECTOR); };
         this.close = function () {};
         this.syncChips = function () {};
+        this.setDisabled = function () {};
         this.setDisplayText = function () {};
         this.releaseField = function () {};
         this.reclaimField = function () {};

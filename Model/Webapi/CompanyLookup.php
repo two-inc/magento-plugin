@@ -24,6 +24,9 @@ class CompanyLookup implements CompanyLookupInterface
     /** One detail fetch per row the buyer picks. */
     private const DETAIL_LIMIT_PER_MINUTE = 30;
 
+    /** Fetched once per page load and memoised client-side. */
+    private const SUPPORTED_COUNTRIES_LIMIT_PER_MINUTE = 30;
+
     private const WINDOW_SECONDS = 60;
 
     /** Longer than any registry name; anything past it is not a search term. */
@@ -99,6 +102,25 @@ class CompanyLookup implements CompanyLookupInterface
         }
 
         return $this->envelope($this->adapter->executeWithStatus($endpoint, [], 'GET', $this->quoteStoreId()));
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function supportedCountries(): string
+    {
+        $this->rateLimiter->assertWithinLimit(
+            'two_company_supported_countries',
+            self::SUPPORTED_COUNTRIES_LIMIT_PER_MINUTE,
+            self::WINDOW_SECONDS
+        );
+
+        return $this->envelope($this->adapter->executeWithStatus(
+            self::SUPPORTED_COUNTRIES_ENDPOINT,
+            [],
+            'GET',
+            $this->quoteStoreId()
+        ));
     }
 
     /**

@@ -30,6 +30,12 @@
             <resource ref="anonymous"/>
         </resources>
     </route>
+    <route url="/V1/two/supported-countries" method="GET">
+        <service class="Two\Gateway\Api\Webapi\CompanyLookupInterface" method="supportedCountries"/>
+        <resources>
+            <resource ref="anonymous"/>
+        </resources>
+    </route>
     <route url="/V1/two/order-intent" method="POST">
         <service class="Two\Gateway\Api\Webapi\OrderIntentInterface" method="place"/>
         <resources>

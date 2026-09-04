@@ -235,6 +235,7 @@ function defaultMocks() {
             CompanySearchPanelMock.prototype.reclaimField = function () {};
             CompanySearchPanelMock.prototype.abortActiveRequest = function () { return false; };
             CompanySearchPanelMock.prototype.isBound = function () { return false; };
+            CompanySearchPanelMock.prototype.setDisabled = function () {};
             CompanySearchPanelMock.prototype.getField = function () { return this._field || {}; };
             CompanySearchPanelMock.prototype.getBindToken = function () { return null; };
             return CompanySearchPanelMock;

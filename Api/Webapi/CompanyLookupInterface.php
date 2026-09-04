@@ -15,6 +15,8 @@ interface CompanyLookupInterface
 {
     public const SEARCH_ENDPOINT = '/companies/v2/company';
 
+    public const SUPPORTED_COUNTRIES_ENDPOINT = '/companies/v2/supported-countries';
+
     /** Upper bound on rows a single search may ask the registry for. */
     public const SEARCH_LIMIT = 50;
 
@@ -40,4 +42,16 @@ interface CompanyLookupInterface
      * @return string JSON-encoded {ok: bool, status: int, body: object}
      */
     public function get(string $lookupId): string;
+
+    /**
+     * The countries the registry search covers, so a host can grey the
+     * control out on one it does not.
+     *
+     * Anonymous route — guest checkout requires it.
+     *
+     * @api
+     *
+     * @return string JSON-encoded {ok: bool, status: int, body: object}
+     */
+    public function supportedCountries(): string;
 }

@@ -176,6 +176,9 @@
         this._supportedCompanyTypes = {};
         /** Country -> the request currently on the wire for it. */
         this._typesInFlight = {};
+        /** The countries the registry search covers, fetched once for the page's lifetime. */
+        this._supportedSearchCountries = null;
+        this._searchCountriesInFlight = null;
         this._lastCountry = '';
         this._started = false;
         /** Selectors with a manual-edit MutationObserver already registered. */
@@ -239,6 +242,7 @@
         this.watchForMountHost();
         this.refreshMount();
         this.refreshSoleTraderAvailability();
+        this.refreshCompanySearchAvailability();
         // Unconditional and decoupled from whichever country is currently
         // selected (TWO-25547): Bifrost's registry coverage is global, not
         // merchant-scoped, so there is nothing to gate on — mint and look the
@@ -333,6 +337,7 @@
         // registry the form currently targets, so a country change does not
         // retire it.
         this.refreshSoleTraderAvailability(country);
+        this.refreshCompanySearchAvailability(country);
     };
 
     // ----------------------------------------------------------- availability
@@ -418,6 +423,67 @@
                 delete self._typesInFlight[key];
             });
         return this._typesInFlight[key];
+    };
+
+    /**
+     * Grey the search control out on a billing country the registry search
+     * does not cover, rather than let the buyer search and fail. Fails OPEN:
+     * a host with no `supportedCountriesUrl` wired up, or an errored fetch,
+     * leaves the control enabled everywhere.
+     *
+     * @param {string} [observedCountry] see onCountryChanged()
+     * @returns {Promise<boolean>}
+     */
+    CompanyCaptureComponent.prototype.refreshCompanySearchAvailability = function (observedCountry) {
+        const self = this;
+        return this.getSupportedSearchCountries().then(function (result) {
+            const country = String(observedCountry || self.countryCode() || '').toUpperCase();
+            const available = !result.known || result.countries.indexOf(country) !== -1;
+            if (self._panel) self._panel.setDisabled(!available);
+            return available;
+        });
+    };
+
+    /**
+     * The registry's own supported-countries answer, via the plugin's
+     * server-side relay. Global, so fetched once and memoised for the page's
+     * lifetime rather than per country.
+     *
+     * @returns {Promise<{known: boolean, countries: string[]}>} `known: false`
+     *          on any fetch/parse error — never memoised that way, so the
+     *          next call retries.
+     */
+    CompanyCaptureComponent.prototype.getSupportedSearchCountries = function () {
+        const self = this;
+        if (this._supportedSearchCountries) return Promise.resolve(this._supportedSearchCountries);
+        if (typeof this._options.supportedCountriesUrl !== 'function') {
+            return Promise.resolve({ known: false, countries: [] });
+        }
+        if (this._searchCountriesInFlight) return this._searchCountriesInFlight;
+        const URL = this._options.supportedCountriesUrl();
+        this._searchCountriesInFlight = fetch(URL, { headers: { Accept: 'application/json' } })
+            .then(function (response) {
+                if (!response.ok) throw new Error(`Error response from ${URL}.`);
+                return response.json();
+            })
+            .then(function (envelope) {
+                const countries = envelope && envelope.ok && envelope.body && envelope.body.supported_countries;
+                if (!Array.isArray(countries)) throw new Error(`Malformed response from ${URL}.`);
+                const result = {
+                    known: true,
+                    countries: countries.map(function (country) { return String(country).toUpperCase(); })
+                };
+                self._supportedSearchCountries = result;
+                return result;
+            })
+            .catch(function (error) {
+                console.error({ logger: 'twoPayment.getSupportedSearchCountries', error });
+                return { known: false, countries: [] };
+            })
+            .finally(function () {
+                self._searchCountriesInFlight = null;
+            });
+        return this._searchCountriesInFlight;
     };
 
     // ------------------------------------------------------------- the mount
