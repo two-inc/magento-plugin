@@ -232,8 +232,8 @@ beforeEach(() => {
     document.body.innerHTML = '';
 });
 
-describe('the tokens are minted on availability, never on the click', () => {
-    test('booting a sole-trader country mints without a chip being clicked', async () => {
+describe('the tokens are minted unconditionally at boot, never on the click', () => {
+    test('booting mints without a chip being clicked', async () => {
         const { flow, rec } = await startStack();
 
         expect(rec.tokenMints).toBe(1);
@@ -241,11 +241,14 @@ describe('the tokens are minted on availability, never on the click', () => {
         expect(rec.opened).toEqual([]);
     });
 
-    test('a country whose registry offers no sole trader mints nothing', async () => {
+    test('a country the registry has no sole trader for is still minted for (TWO-25547)', async () => {
+        // Unconditional, decoupled even from the selected country's OWN
+        // per-country availability — the chip stays hidden for 'gb' here,
+        // but the mint fires regardless.
         const { flow, rec } = await startStack({ companyTypes: { gb: ['LIMITED_COMPANY'] } });
 
-        expect(rec.tokenMints).toBe(0);
-        expect(flow.hasSignupTokens()).toBe(false);
+        expect(rec.tokenMints).toBe(1);
+        expect(flow.hasSignupTokens()).toBe(true);
     });
 
     test('the buyer lookup goes out on availability, and the chip click spends no round trip at all', async () => {

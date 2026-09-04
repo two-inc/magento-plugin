@@ -229,8 +229,8 @@ beforeEach(() => {
     document.body.innerHTML = '';
 });
 
-describe('the lookup runs on availability, ahead of any click', () => {
-    test('booting a sole-trader country looks the buyer up with no chip clicked', async () => {
+describe('the lookup runs unconditionally at boot, ahead of any click', () => {
+    test('booting looks the buyer up with no chip clicked', async () => {
         const { flow, rec } = await startStack({ buyer: BUYER });
 
         expect(rec.lookups).toBe(1);
@@ -238,11 +238,14 @@ describe('the lookup runs on availability, ahead of any click', () => {
         expect(flow.autofilledSoleTrader()).toEqual(BUYER);
     });
 
-    test('a country whose registry offers no sole trader looks nobody up', async () => {
+    test('a country the registry has no sole trader for is still looked up (TWO-25547)', async () => {
+        // Unconditional, decoupled even from the selected country's OWN
+        // per-country availability — the chip stays hidden for 'gb' here,
+        // but the mint and lookup fire regardless.
         const { rec } = await startStack({ buyer: BUYER, companyTypes: { gb: ['LIMITED_COMPANY'] } });
 
-        expect(rec.tokenMints).toBe(0);
-        expect(rec.lookups).toBe(0);
+        expect(rec.tokenMints).toBe(1);
+        expect(rec.lookups).toBe(1);
     });
 });
 
@@ -557,21 +560,6 @@ describe('a lookup in flight cannot resurrect a replaced identity', () => {
 });
 
 describe('a spent answer is replaced, not left absent', () => {
-    test('a country that stopped offering sole traders arms no lookup on the way out', async () => {
-        const { component, identity, rec } = await startStack({ buyer: BUYER });
-        await clickSoleTrader();
-        const lookupsAfterAdoption = rec.lookups;
-        // The shape refreshSoleTraderAvailability leaves behind: availability
-        // already false, the mode not yet retired.
-        identity.soleTraderAvailable(false);
-
-        component.registeredMode();
-        await settle();
-
-        // An answer held here belongs to a registry no chip can reach.
-        expect(rec.lookups).toBe(lookupsAfterAdoption);
-    });
-
     test.each([
         ['registeredMode', 'back to company search'],
         ['manualEntryMode', 'to manual entry']

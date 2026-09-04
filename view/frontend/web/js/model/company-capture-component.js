@@ -239,6 +239,11 @@
         this.watchForMountHost();
         this.refreshMount();
         this.refreshSoleTraderAvailability();
+        // Unconditional and decoupled from whichever country is currently
+        // selected (TWO-25547): Bifrost's registry coverage is global, not
+        // merchant-scoped, so there is nothing to gate on — mint and look the
+        // buyer up as soon as checkout is reached, full stop.
+        this._soleTrader.prefetchBuyer();
     };
 
     /**
@@ -363,11 +368,9 @@
             if (!available && self._identity.isSoleTrader()) {
                 self.registeredMode();
             }
-            if (available) {
-                // Never at click time: the click has to decide on an
-                // answer it already holds.
-                self._soleTrader.prefetchBuyer();
-            }
+            // Minting itself is unconditional, from start() alone (TWO-25547)
+            // — this per-country answer only ever decides the chip's own
+            // visibility.
             self.syncChips();
             return available;
         });
@@ -992,7 +995,7 @@
         this._soleTrader.forgetAdoptions();
         // An adopted answer is spent; one still held is left alone — the
         // session stands behind it either way.
-        if (!this._soleTrader.autofilledSoleTrader() && this._identity.soleTraderAvailable()) {
+        if (!this._soleTrader.autofilledSoleTrader()) {
             this._soleTrader.forgetAutofilledBuyer();
             this._soleTrader.prefetchBuyer();
         }
