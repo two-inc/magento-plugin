@@ -1202,14 +1202,15 @@ abstract class Order
     /**
      * Every rate Magento's own tax engine applied to this order.
      *
-     * A fee contributed by a total collector has no taxable item row, so its
-     * rate lands only in the order-level tax rows — the item-level table the
-     * tax management API aggregates cannot see it.
+     * The extension attribute is the only source at placement, before the
+     * order has an id; the admin invoice and credit-memo controllers load
+     * through OrderFactory, which never populates it. A fee contributed by a
+     * total collector has no taxable item row, so its rate lands only in the
+     * order-level rows.
      *
-     * Merged rather than first-non-empty: an order carrying its products'
-     * rate in the item rows must not shadow a differently-taxed fee's rate in
-     * the order-level rows. Only the extension attribute exists at placement,
-     * before the order has an id.
+     * All sources are read, not the first populated one: an order carrying
+     * its products' rate in the item rows must not shadow a differently-taxed
+     * fee's rate in the order-level rows.
      *
      * @param OrderModel $order
      * @return iterable
@@ -1232,7 +1233,7 @@ abstract class Order
                 $appliedTaxes[] = $itemTax;
             }
         } catch (Exception $exception) {
-            // Nothing declared, so the caller's refuse path owns the decision.
+            // An unreadable source is not a refusal; the others still count.
         }
 
         try {
@@ -1240,7 +1241,7 @@ abstract class Order
                 $appliedTaxes[] = $orderTax;
             }
         } catch (Exception $exception) {
-            // As above.
+            // Likewise: an empty result is the caller's to refuse.
         }
 
         return $appliedTaxes;

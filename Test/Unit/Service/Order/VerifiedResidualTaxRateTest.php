@@ -350,15 +350,14 @@ class VerifiedResidualTaxRateTest extends TestCase
         $details = $this->createMock(\Magento\Tax\Api\Data\OrderTaxDetailsInterface::class);
         $details->method('getAppliedTaxes')->willReturn($asObjects($itemLevelPercents));
         $management = $this->createMock(\Magento\Tax\Api\OrderTaxManagementInterface::class);
-        $management->method('getOrderTaxDetails')->willReturn($details);
+        $management->method('getOrderTaxDetails')->with($orderId)->willReturn($details);
         $this->setOrderServiceProperty('orderTaxManagement', $management);
 
         $collection = $this->createMock(TaxCollection::class);
         $collection->method('loadByOrder')->willReturn($collection);
         $collection->method('getIterator')->willReturn(new \ArrayIterator($asObjects($orderLevelPercents)));
         $factory = $this->createMock(TaxCollectionFactory::class);
-        // An order with no id has no persisted rows to read, and asking for
-        // them at placement time would be a query per composed order.
+        // Placement must not cost a query per composed order.
         $factory->expects($orderId > 0 ? $this->atLeastOnce() : $this->never())
             ->method('create')
             ->willReturn($collection);
