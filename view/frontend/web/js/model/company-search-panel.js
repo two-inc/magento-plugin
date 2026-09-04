@@ -185,6 +185,8 @@
         this._listeners = [];
         /** Pending focus-out close, re-armed by the next focusout, dropped on teardown. */
         this._closeTimerId = null;
+        /** @see setDisabled */
+        this._disabled = false;
     }
 
     // ------------------------------------------------------------- DOM helpers
@@ -336,6 +338,9 @@
             this._token = {};
         }
         this._field = field;
+        // A re-render/rebind can hand back a fresh field node that has not
+        // inherited the previous one's `disabled` state.
+        this._applyDisabledState();
 
         this._buildPanel(this._ensureWrap(field));
         this.syncChips();
@@ -651,6 +656,9 @@
      * at a search box nothing put the caret in.
      */
     CompanySearchPanel.prototype.open = function () {
+        // Defense in depth: a native `disabled` field cannot itself receive
+        // the focus/keydown/mousedown that would otherwise reach here.
+        if (this._disabled) return;
         if (!this._panel) return;
         const wasOpen = this._open;
         this._open = true;
@@ -702,6 +710,32 @@
     /** @returns {boolean} whether the panel is currently open */
     CompanySearchPanel.prototype.isOpen = function () {
         return this._open;
+    };
+
+    /**
+     * Grey the field out (or restore it) without hiding it — a country the
+     * registry search does not cover still needs the buyer's eventual
+     * company name to reach the address form, so the field itself must stay
+     * visible, just inert.
+     *
+     * @param {boolean} disabled
+     */
+    CompanySearchPanel.prototype.setDisabled = function (disabled) {
+        this._disabled = !!disabled;
+        this._applyDisabledState();
+        if (this._disabled && this._open) this.close();
+    };
+
+    /**
+     * Write `_disabled` onto the field, EXCEPT in manual entry: `releaseField()`
+     * hands the field over as a plain typeable input that never reaches the
+     * registry search this flag gates, so disabling it there would block a
+     * buyer's own typed name over a country the search does not cover — a
+     * mode that was never going to search in the first place.
+     */
+    CompanySearchPanel.prototype._applyDisabledState = function () {
+        if (!this._field) return;
+        this._field.disabled = this._disabled && this.getSelectedMode() !== 'manual';
     };
 
     // ----------------------------------------------------------------- search
@@ -972,6 +1006,10 @@
             this._unbind(this._field);
             stripComboboxAttributes(this._field);
         }
+        // A field left disabled by an unsupported-country search gate was
+        // never going to search in manual entry either — re-evaluate now
+        // getSelectedMode() reads 'manual'.
+        this._applyDisabledState();
         this.renderBackToSearchLink();
     };
 

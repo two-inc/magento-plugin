@@ -77,6 +77,7 @@ function load(options) {
         this.getField = function () { return $(); };
         this.close = function () {};
         this.syncChips = function () {};
+        this.setDisabled = function () {};
         this.setDisplayText = function () {};
         this.releaseField = function () {};
         this.reclaimField = function () {};

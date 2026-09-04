@@ -253,6 +253,7 @@ describe('entering manual entry', () => {
         PanelStub.prototype.reclaimField = function () {};
         PanelStub.prototype.close = function () {};
         PanelStub.prototype.syncChips = function () {};
+        PanelStub.prototype.setDisabled = function () {};
         PanelStub.prototype.setDisplayText = function () {};
         PanelStub.prototype.isBound = function () { return calls.indexOf('bind') !== -1; };
         PanelStub.prototype.getField = function () { return $(); };

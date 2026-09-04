@@ -268,6 +268,9 @@ define([
             supportedCompanyTypesUrl: function (country) {
                 return url.build(`rest/V1/two/supported-company-types/${encodeURIComponent(country)}`);
             },
+            supportedCountriesUrl: function () {
+                return url.build('rest/V1/two/supported-countries');
+            },
             clearField: function (selector) {
                 // `change`, not just `val('')`: Knockout's `value:` binding reads the
                 // DOM on change only, so without it the buyer sees an empty box while
