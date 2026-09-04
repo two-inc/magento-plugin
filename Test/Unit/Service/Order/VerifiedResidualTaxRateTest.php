@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Service\Order;
 
 use Magento\Sales\Model\Order as OrderModel;
+use Magento\Tax\Model\ResourceModel\Sales\Order\Tax\Collection as TaxCollection;
+use Magento\Tax\Model\ResourceModel\Sales\Order\Tax\CollectionFactory as TaxCollectionFactory;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Order;
@@ -329,14 +331,115 @@ class VerifiedResidualTaxRateTest extends TestCase
 
     private function givenPersistedAppliedTaxPercent(int $orderId, ?float $percent): void
     {
-        $applied = $percent === null ? [] : [$this->appliedTaxObject($percent)];
+        $this->givenPersistedAppliedTaxPercents($orderId, $percent === null ? [] : [$percent], []);
+    }
+
+    /**
+     * @param float[] $itemLevelPercents
+     * @param float[] $orderLevelPercents
+     */
+    private function givenPersistedAppliedTaxPercents(
+        int $orderId,
+        array $itemLevelPercents,
+        array $orderLevelPercents
+    ): void {
+        $asObjects = function (array $percents): array {
+            return array_map([$this, 'appliedTaxObject'], $percents);
+        };
+
         $details = $this->createMock(\Magento\Tax\Api\Data\OrderTaxDetailsInterface::class);
-        $details->method('getAppliedTaxes')->willReturn($applied);
+        $details->method('getAppliedTaxes')->willReturn($asObjects($itemLevelPercents));
         $management = $this->createMock(\Magento\Tax\Api\OrderTaxManagementInterface::class);
         $management->method('getOrderTaxDetails')->with($orderId)->willReturn($details);
+        $this->setOrderServiceProperty('orderTaxManagement', $management);
 
-        $property = new \ReflectionProperty(Order::class, 'orderTaxManagement');
-        $property->setValue($this->orderService, $management);
+        $collection = $this->createMock(TaxCollection::class);
+        $collection->method('loadByOrder')->willReturn($collection);
+        $collection->method('getIterator')->willReturn(new \ArrayIterator($asObjects($orderLevelPercents)));
+        $factory = $this->createMock(TaxCollectionFactory::class);
+        // Placement must not cost a query per composed order.
+        $factory->expects($orderId > 0 ? $this->atLeastOnce() : $this->never())
+            ->method('create')
+            ->willReturn($collection);
+        $this->setOrderServiceProperty('orderTaxCollectionFactory', $factory);
+    }
+
+    private function setOrderServiceProperty(string $name, object $value): void
+    {
+        $property = new \ReflectionProperty(Order::class, $name);
+        $property->setValue($this->orderService, $value);
+    }
+
+    /**
+     * Magento records the rates it applied in three places, and which of them
+     * holds a given rate depends on how that amount was taxed: a fee applied
+     * at address/total level lands only in the order-level rows, never in the
+     * item-level ones.
+     *
+     * @dataProvider taxSourceProvider
+     */
+    public function testTheRateIsReadFromWhicheverSourceHoldsIt(
+        int $orderId,
+        array $extensionAttributePercents,
+        array $itemLevelPercents,
+        array $orderLevelPercents,
+        ?string $expectedTaxRate,
+        string $description
+    ): void {
+        $order = $extensionAttributePercents
+            ? $this->orderWithAppliedTaxes(array_map([$this, 'appliedTaxObject'], $extensionAttributePercents))
+            : new OrderModel();
+        if ($orderId > 0) {
+            $order->setData('id', $orderId);
+        }
+        $this->givenPersistedAppliedTaxPercents($orderId, $itemLevelPercents, $orderLevelPercents);
+
+        $this->logRepository->expects($expectedTaxRate === null ? $this->once() : $this->never())
+            ->method('addErrorLog');
+
+        $result = $this->orderService->getOtherChargesLineItem(
+            [$this->productLine('100.00', '20.00')],
+            $order,
+            112.00,
+            22.00
+        );
+
+        if ($expectedTaxRate === null) {
+            $this->assertNull($result, $description);
+            return;
+        }
+
+        $this->assertNotNull($result, $description);
+        $this->assertSame('10.00', $result['net_amount'], $description);
+        $this->assertSame('2.00', $result['tax_amount'], $description);
+        $this->assertSame($expectedTaxRate, $result['tax_rate'], $description);
+    }
+
+    /** @return array<string, array{int, array, array, array, ?string, string}> */
+    public static function taxSourceProvider(): array
+    {
+        return [
+            'order-level row, no item-level rows' => [
+                42, [], [], [20.0], '0.200000',
+                'a fee taxed at address level has no item row, so only the order-level row carries its rate',
+            ],
+            'order-level row alongside non-reconciling item-level rows' => [
+                42, [], [9.0], [20.0], '0.200000',
+                'a non-empty item-level set must not shadow the order-level rows',
+            ],
+            'item-level row only' => [
+                42, [], [20.0], [], '0.200000',
+                'the item-level rows still supply the rate on their own',
+            ],
+            'extension attribute at placement time' => [
+                0, [20.0], [], [], '0.200000',
+                'placement reads the extension attribute and touches no persisted rows',
+            ],
+            'no source holds a reconciling rate' => [
+                42, [], [9.0], [5.0], null,
+                'nothing explains the residual, so it is refused rather than guessed',
+            ],
+        ];
     }
 
     /**

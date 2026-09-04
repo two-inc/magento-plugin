@@ -265,12 +265,16 @@ taxes the undiscounted base.
 Magento's own tax engine applied, so a fee extension that registers its tax
 normally needs no `FeeLineProviderInterface`. It resolves an invoice or credit
 memo to its own order and reads the rates there: the residual on either is a
-share of the same order-level fee at the same rate. It reads them from the
-order's `applied_taxes` extension attribute or, when that is empty, from the
-persisted tax rows — the admin invoice and credit-memo controllers load the
-order through `OrderFactory`, which never populates the attribute, so without
-the second source a taxed fee stays unrefundable on exactly the screen the
-merchant uses.
+share of the same order-level fee at the same rate. It reads every rate the
+order records: the `applied_taxes` extension attribute, the item-level tax
+rows, and the order-level tax rows. All three are read rather than the first
+one that is populated, because an order can carry its products' rate in the
+item rows and a differently-taxed fee's rate only at order level. The admin
+invoice and credit-memo controllers load the order through `OrderFactory`,
+which never populates the attribute, and a fee contributed by a totals
+collector has no taxable item row of its own, so without both persisted
+sources a taxed fee stays unrefundable on exactly the screen the merchant
+uses.
 
 Reconciling the refund payload is not enough on its own, because a fee that
 reaches the grand total through a totals collector rather than a quote item
