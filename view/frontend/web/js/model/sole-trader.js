@@ -174,10 +174,10 @@
 
     /**
      * Have tokens ready BEFORE the buyer clicks anything, so the click handler's
-     * `window.open()` runs inside the gesture that triggered it. Called once
-     * `CompanyCaptureComponent.resolveMintGate()` resolves true (TWO-25547) —
-     * a merchant-level answer, decoupled from whichever country is currently
-     * selected in the checkout form.
+     * `window.open()` runs inside the gesture that triggered it. Called
+     * unconditionally as soon as checkout is reached (TWO-25547) — Bifrost's
+     * registry coverage is global, so there is no country or merchant gate to
+     * wait on.
      *
      * @returns {Promise<boolean>}
      */

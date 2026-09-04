@@ -2,21 +2,20 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25547 — the merchant-level mint gate: whether tokens are minted and the
- * buyer's own session looked up is the intersection of the merchant's own
- * buyer-country restriction (`soleTraderCountryRestriction`, off
- * `GET /v1/merchant`'s `supported_buyer_countries`) and the registry's
- * sole-trader-supported countries, resolved ONCE at `start()` — never from
- * whichever country the buyer currently has selected in the checkout form.
+ * TWO-25547 — the sole-trader mint and buyer lookup fire unconditionally as
+ * soon as checkout is reached, decoupled from whichever country the buyer
+ * currently has selected in the checkout form. Bifrost's registry coverage
+ * is global, not merchant-scoped, so there is nothing to gate the mint on —
+ * only the sole-trader CHIP's own visibility (`soleTraderAvailable`) stays
+ * per-country.
  *
  * Mutation-resistance notes:
- *  - every case pins the mint COUNT (`prefetchCalls`), not just a boolean, so
- *    a gate that resolves correctly but still mints (or skips minting)
- *    reads as a failure;
+ *  - the mint is pinned by COUNT (`prefetchCalls`), not a boolean, so a mint
+ *    reintroduced twice — once at boot, once on the first country resolution
+ *    — reads as a failure;
  *  - the decoupling case drives a REAL country change after boot and asserts
- *    the count does not move, which is the exact defect this replaces —
- *    asserting the gate's return value alone would not catch a re-mint
- *    reintroduced elsewhere.
+ *    the count does not move a second time, which is the exact defect this
+ *    replaces.
  */
 
 'use strict';
@@ -32,13 +31,11 @@ function flush() {
 
 /**
  * A complete host bound to a fixed selected country ('gb') that never
- * changes on its own — only `onCountryChanged()` moves it — so the gate
- * cases can drive a country change explicitly and check nothing about the
- * mint decision moves with it.
+ * changes on its own — only `onCountryChanged()` moves it.
  *
- * @param {object} config the brand config subtree: `soleTraderCountryRestriction`
- *        plus a `supportedCompanyTypes` seed answering every country the
- *        case cares about, so no case depends on a live fetch.
+ * @param {object} config the brand config subtree; `supportedCompanyTypes`
+ *        seeds every country a case cares about, so no case depends on a
+ *        live fetch.
  * @returns {object} `{ Controller, host, prefetchCalls }`
  */
 function makeHost(config) {
@@ -83,53 +80,39 @@ function makeHost(config) {
     return { Controller: Controller, host: host, prefetchCalls: prefetchCalls };
 }
 
-describe('the merchant-level mint gate resolves once, off the merchant alone', () => {
-    test.each([
-        [
-            undefined,
-            { gb: ['LIMITED_COMPANY'] },
-            true,
-            'absent restriction: unrestricted, mints unconditionally regardless of the selected country\'s own registry answer'
-        ],
-        [
-            [],
-            { gb: ['SOLE_TRADER'] },
-            false,
-            'explicit empty restriction: the merchant accepts no buyer country, so nothing to mint for'
-        ],
-        [
-            ['NO', 'SE'],
-            { no: ['SOLE_TRADER'], se: ['LIMITED_COMPANY'] },
-            true,
-            'restricted list intersects the registry\'s sole-trader countries via NO: mints'
-        ],
-        [
-            ['ES', 'FR'],
-            { es: ['LIMITED_COMPANY'], fr: ['LIMITED_COMPANY'] },
-            false,
-            'restricted list has no intersection with the registry\'s sole-trader countries: does not mint'
-        ]
-    ])('restriction=%p -> mints=%p (%s)', async (restriction, registryTypes, expectMint) => {
+describe('the mint fires unconditionally, once, at start()', () => {
+    test('mints even for a country the registry has no sole trader for', async () => {
         const { Controller, host, prefetchCalls } = makeHost({
             isCompanySearchEnabled: false,
-            soleTraderCountryRestriction: restriction,
-            supportedCompanyTypes: registryTypes
+            supportedCompanyTypes: { gb: ['LIMITED_COMPANY'] }
         });
         const component = new Controller(host);
 
         component.start();
         await flush();
 
-        expect(prefetchCalls.length).toBe(expectMint ? 1 : 0);
-        expect(component._mintGateValue).toBe(expectMint);
+        expect(prefetchCalls.length).toBe(1);
+    });
+
+    test('a second start() mints nothing a second time', async () => {
+        const { Controller, host, prefetchCalls } = makeHost({
+            isCompanySearchEnabled: false,
+            supportedCompanyTypes: { gb: ['SOLE_TRADER'] }
+        });
+        const component = new Controller(host);
+
+        component.start();
+        component.start();
+        await flush();
+
+        expect(prefetchCalls.length).toBe(1);
     });
 });
 
-describe('the gate never re-runs on a country change', () => {
-    test('a country change after boot mints nothing a second time, either direction', async () => {
+describe('the mint never re-fires on a country change', () => {
+    test('neither direction of a country change mints a second time', async () => {
         const { Controller, host, prefetchCalls } = makeHost({
             isCompanySearchEnabled: false,
-            soleTraderCountryRestriction: ['NO'],
             supportedCompanyTypes: { no: ['SOLE_TRADER'], es: ['LIMITED_COMPANY'], gb: ['LIMITED_COMPANY'] }
         });
         const component = new Controller(host);
@@ -138,35 +121,11 @@ describe('the gate never re-runs on a country change', () => {
         await flush();
         expect(prefetchCalls.length).toBe(1);
 
-        // Neither direction — into a country the registry has no sole trader
-        // for, nor back to one it does — moves the gate again. It was
-        // resolved once, off the merchant's OWN restriction, at boot.
         component.onCountryChanged('es');
         await flush();
         component.onCountryChanged('no');
         await flush();
 
         expect(prefetchCalls.length).toBe(1);
-    });
-
-    test('a merchant gated to nothing mints nothing however the country changes', async () => {
-        const { Controller, host, prefetchCalls } = makeHost({
-            isCompanySearchEnabled: false,
-            soleTraderCountryRestriction: [],
-            supportedCompanyTypes: { no: ['SOLE_TRADER'], gb: ['SOLE_TRADER'] }
-        });
-        const component = new Controller(host);
-
-        component.start();
-        await flush();
-        expect(prefetchCalls.length).toBe(0);
-
-        // Both countries genuinely support sole traders in the registry —
-        // proving this stays at zero because of the merchant's OWN gate,
-        // not because the registry happened to answer no everywhere.
-        component.onCountryChanged('no');
-        await flush();
-
-        expect(prefetchCalls.length).toBe(0);
     });
 });

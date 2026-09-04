@@ -16,7 +16,6 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\UrlCookie;
 use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
-use Two\Gateway\Service\Merchant\RecordProvider;
 use Two\Gateway\Model\Two;
 
 /**
@@ -112,11 +111,6 @@ class ConfigProvider implements ConfigProviderInterface
     private $supportedCompanyTypes;
 
     /**
-     * @var RecordProvider
-     */
-    private $recordProvider;
-
-    /**
      * @param string $code Payment-method code (overlay-specific). Defaults
      *                     to the Two-branded value for backward
      *                     compatibility with installs that don't override.
@@ -130,7 +124,6 @@ class ConfigProvider implements ConfigProviderInterface
         CheckoutSession $checkoutSession,
         StoreManagerInterface $storeManager,
         SupportedCompanyTypes $supportedCompanyTypes,
-        RecordProvider $recordProvider,
         ?string $code = null
     ) {
         $this->configRepository = $configRepository;
@@ -141,7 +134,6 @@ class ConfigProvider implements ConfigProviderInterface
         $this->checkoutSession = $checkoutSession;
         $this->storeManager = $storeManager;
         $this->supportedCompanyTypes = $supportedCompanyTypes;
-        $this->recordProvider = $recordProvider;
         $this->code = $code ?? $brandRegistry->getCode();
     }
 
@@ -167,33 +159,6 @@ class ConfigProvider implements ConfigProviderInterface
                 (int)$quote->getStoreId() ?: null
             ),
         ];
-    }
-
-    /**
-     * The merchant's buyer-country restriction — TWO-25547's
-     * `supported_buyer_countries` off `GET /v1/merchant` — collapsed to what
-     * the renderer's mint gate needs: null for unrestricted (the field is
-     * genuinely absent, meaning the merchant's buyer-country gate is
-     * Unleash-disabled) or an explicit array (empty means the merchant
-     * accepts no buyer country at all and non-empty is the enforced list).
-     *
-     * A merchant record that could not be fetched at all also resolves to
-     * null — failing OPEN rather than blocking the sole-trader mint on an
-     * unrelated API blip, same fail-soft stance as SupportedCompanyTypes.
-     *
-     * @return string[]|null
-     */
-    private function getSoleTraderCountryRestriction(): ?array
-    {
-        $record = $this->recordProvider->getRecord();
-        if ($record === null || !array_key_exists('supported_buyer_countries', $record)) {
-            return null;
-        }
-        $countries = $record['supported_buyer_countries'];
-        if (!is_array($countries)) {
-            return null;
-        }
-        return array_values(array_map('strtoupper', array_filter($countries, 'is_string')));
     }
 
     /**
@@ -268,10 +233,6 @@ class ConfigProvider implements ConfigProviderInterface
                     // are fetched live via GET /V1/two/supported-company-types
                     // as the buyer edits the billing address.
                     'supportedCompanyTypes' => $this->getSupportedCompanyTypesSeed(),
-                    // The mint-gate input the renderer's SoleTrader flow
-                    // resolves ONCE at boot, decoupled from whichever
-                    // country is currently selected in the checkout form.
-                    'soleTraderCountryRestriction' => $this->getSoleTraderCountryRestriction(),
                     'isDepartmentFieldEnabled' => $this->configRepository->isDepartmentEnabled(),
                     'isProjectFieldEnabled' => $this->configRepository->isProjectEnabled(),
                     'isOrderNoteFieldEnabled' => $this->configRepository->isOrderNoteEnabled(),

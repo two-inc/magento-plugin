@@ -118,8 +118,7 @@ function makeEnv(options) {
             checkoutApiUrl: CHECKOUT_API_URL,
             isCompanySearchEnabled: true,
             supportedCompanyTypes: opts.companyTypes
-                || { gb: ['SOLE_TRADER'], no: ['SOLE_TRADER'] },
-            soleTraderCountryRestriction: opts.soleTraderCountryRestriction
+                || { gb: ['SOLE_TRADER'], no: ['SOLE_TRADER'] }
         }),
         'Magento_Ui/js/model/messageList': {
             addErrorMessage: function (message) { rec.errors.push(message); },
@@ -230,8 +229,8 @@ beforeEach(() => {
     document.body.innerHTML = '';
 });
 
-describe('the lookup runs on availability, ahead of any click', () => {
-    test('booting a sole-trader country looks the buyer up with no chip clicked', async () => {
+describe('the lookup runs unconditionally at boot, ahead of any click', () => {
+    test('booting looks the buyer up with no chip clicked', async () => {
         const { flow, rec } = await startStack({ buyer: BUYER });
 
         expect(rec.lookups).toBe(1);
@@ -239,19 +238,14 @@ describe('the lookup runs on availability, ahead of any click', () => {
         expect(flow.autofilledSoleTrader()).toEqual(BUYER);
     });
 
-    test('a merchant restricted to a country the registry has no sole trader for looks nobody up', async () => {
-        // TWO-25547: the mint gate is the merchant's OWN restriction, never the
-        // selected country's per-country availability — 'gb' still answers
-        // LIMITED_COMPANY only, which used to be read as "don't mint" and no
-        // longer is.
-        const { rec } = await startStack({
-            buyer: BUYER,
-            companyTypes: { gb: ['LIMITED_COMPANY'] },
-            soleTraderCountryRestriction: ['ES']
-        });
+    test('a country the registry has no sole trader for is still looked up (TWO-25547)', async () => {
+        // Unconditional, decoupled even from the selected country's OWN
+        // per-country availability — the chip stays hidden for 'gb' here,
+        // but the mint and lookup fire regardless.
+        const { rec } = await startStack({ buyer: BUYER, companyTypes: { gb: ['LIMITED_COMPANY'] } });
 
-        expect(rec.tokenMints).toBe(0);
-        expect(rec.lookups).toBe(0);
+        expect(rec.tokenMints).toBe(1);
+        expect(rec.lookups).toBe(1);
     });
 });
 
@@ -566,25 +560,6 @@ describe('a lookup in flight cannot resurrect a replaced identity', () => {
 });
 
 describe('a spent answer is replaced, not left absent', () => {
-    test('a merchant-level gate that forbids sole trader arms no lookup on the way out', async () => {
-        // TWO-25547: the re-arm on leaving the mode reads the merchant-level
-        // gate resolved at boot, not the selected country's own availability —
-        // which used to flap this per country change and no longer can.
-        const { component, rec } = await startStack({
-            buyer: BUYER,
-            soleTraderCountryRestriction: []
-        });
-        // No boot mint: the click falls straight through to the popup, with
-        // nobody looked up.
-        await clickSoleTrader();
-        expect(rec.lookups).toBe(0);
-
-        component.registeredMode();
-        await settle();
-
-        expect(rec.lookups).toBe(0);
-    });
-
     test.each([
         ['registeredMode', 'back to company search'],
         ['manualEntryMode', 'to manual entry']

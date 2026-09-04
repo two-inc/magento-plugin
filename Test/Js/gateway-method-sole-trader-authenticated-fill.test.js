@@ -37,9 +37,9 @@ const BUYER = {
  * @param {object} [options] `{ buyer, mode, customHeaders }` — what the buyer
  *        endpoint answers with (null for a 404), the capture mode to start in,
  *        and the headers the merchant config exposes to the browser
- * @returns {object} `{ flow, rec, identity, handler }`
+ * @returns {Promise<object>} `{ flow, rec, identity, handler }`
  */
-function loadFlow(options) {
+async function loadFlow(options) {
     const opts = options || {};
     const rec = {
         requests: [],
@@ -69,12 +69,7 @@ function loadFlow(options) {
                 checkoutPageUrl: CHECKOUT_PAGE_URL,
                 checkoutApiUrl: CHECKOUT_API_URL,
                 isCompanySearchEnabled: true,
-                customHeaders: opts.customHeaders || {},
-                // This suite drives the handshake directly and is not about
-                // the boot-time mint gate (TWO-25547) — restricted to nothing
-                // so start() itself makes no request, leaving every request
-                // below attributable to the handshake alone.
-                soleTraderCountryRestriction: []
+                customHeaders: opts.customHeaders || {}
             }),
             'Magento_Ui/js/model/messageList': {
                 addErrorMessage: function (message) { rec.errors.push(message); },
@@ -106,6 +101,11 @@ function loadFlow(options) {
         }
     ).shipping;
     component.start();
+    // TWO-25547: start() itself mints and looks the buyer up unconditionally
+    // now — let that settle and clear the recorder, so every request a case
+    // below asserts on is the one IT caused, not boot's own.
+    await settle();
+    rec.requests.length = 0;
     const identity = component.identity();
     identity.captureMode('mode' in opts ? opts.mode : 'soletrader');
 
@@ -143,7 +143,7 @@ beforeEach(() => {
 
 describe('how the buyer lookup goes out', () => {
     test('the lookup goes out under the autofill token, with cookies', async () => {
-        const { rec, handler } = loadFlow({ buyer: BUYER });
+        const { rec, handler } = await loadFlow({ buyer: BUYER });
 
         handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
         await settle();
@@ -182,7 +182,7 @@ describe('which messages the handshake acts on', () => {
             'a foreign origin is ignored'
         ]
     ])('%p -> %p (%s)', async (event, expected) => {
-        const { rec, handler } = loadFlow({ buyer: BUYER });
+        const { rec, handler } = await loadFlow({ buyer: BUYER });
 
         handler(event);
         await settle();
@@ -195,7 +195,7 @@ describe('which messages the handshake acts on', () => {
     });
 
     test('an ACCEPTED message outside sole-trader mode adopts nothing', async () => {
-        const { rec, handler } = loadFlow({ buyer: BUYER, mode: 'registered' });
+        const { rec, handler } = await loadFlow({ buyer: BUYER, mode: 'registered' });
 
         handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
         await settle();
@@ -204,8 +204,8 @@ describe('which messages the handshake acts on', () => {
         expect(buyerRequests(rec)).toEqual([]);
     });
 
-    test('the listener is bound once however often it is armed', () => {
-        const { flow, rec } = loadFlow({ buyer: BUYER });
+    test('the listener is bound once however often it is armed', async () => {
+        const { flow, rec } = await loadFlow({ buyer: BUYER });
 
         flow.listenForSignupResult();
         flow.listenForSignupResult();
@@ -222,7 +222,7 @@ describe('what an authenticated buyer produces', () => {
             'a buyer with no email at all is adopted — the handshake is the proof'
         ]
     ])('%p (%s)', async (buyer) => {
-        const { rec, identity, handler } = loadFlow({ buyer: buyer });
+        const { rec, identity, handler } = await loadFlow({ buyer: buyer });
 
         handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
         await settle();
@@ -234,7 +234,7 @@ describe('what an authenticated buyer produces', () => {
     });
 
     test('an ACCEPTED message the lookup cannot answer surfaces an error and fills nothing', async () => {
-        const { rec, identity, handler } = loadFlow({ buyer: null });
+        const { rec, identity, handler } = await loadFlow({ buyer: null });
 
         handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
         await settle();
@@ -245,7 +245,7 @@ describe('what an authenticated buyer produces', () => {
     });
 
     test('a replayed ACCEPTED lands on the same identity rather than clobbering it', async () => {
-        const { rec, identity, handler } = loadFlow({ buyer: BUYER });
+        const { rec, identity, handler } = await loadFlow({ buyer: BUYER });
 
         handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
         handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
@@ -261,7 +261,7 @@ describe('the flight the handshake holds', () => {
         // The popup can close the instant it posts, well before the identity is
         // in the form; settling on the response would let the close watcher
         // read a completed signup as an abandoned one.
-        const { rec, identity, handler } = loadFlow({ buyer: BUYER });
+        const { rec, identity, handler } = await loadFlow({ buyer: BUYER });
 
         handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
         expect(identity.isBusy()).toBe(true);
@@ -273,7 +273,7 @@ describe('the flight the handshake holds', () => {
     });
 
     test('is settled even when the lookup answers with no buyer', async () => {
-        const { identity, handler } = loadFlow({ buyer: null });
+        const { identity, handler } = await loadFlow({ buyer: null });
 
         handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
         await settle();
@@ -282,7 +282,7 @@ describe('the flight the handshake holds', () => {
     });
 
     test('a closing popup does not abandon the signup while the lookup is confirming', async () => {
-        const { flow, rec, handler } = loadFlow({ buyer: BUYER });
+        const { flow, rec, handler } = await loadFlow({ buyer: BUYER });
 
         handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
         expect(flow._signupConfirming).toBe(true);
@@ -320,7 +320,7 @@ describe('the browser-direct buyer lookup and the merchant custom headers', () =
             'no configured row can displace the token this call is authenticated by'
         ]
     ])('customHeaders %p sends %p (%s)', async (customHeaders, expected) => {
-        const { rec, handler } = loadFlow({ buyer: BUYER, customHeaders: customHeaders });
+        const { rec, handler } = await loadFlow({ buyer: BUYER, customHeaders: customHeaders });
 
         handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
         await settle();

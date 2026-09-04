@@ -60,7 +60,7 @@ const POPUP_CLOSE_POLL_MS = 300;
  * 30-minute token refresh and a 300ms popup-close poll, and driving their
  * callbacks by hand is what lets a test assert which one it ticked.
  *
- * @param {object} [options] `{ billingAddress, companyTypes, soleTraderCountryRestriction }`
+ * @param {object} [options] `{ billingAddress, companyTypes }`
  * @returns {object} `{ rec, identity, mocks, globals }`
  */
 function makeEnv(options) {
@@ -115,8 +115,7 @@ function makeEnv(options) {
             checkoutPageUrl: CHECKOUT_PAGE_URL,
             checkoutApiUrl: CHECKOUT_API_URL,
             isCompanySearchEnabled: true,
-            supportedCompanyTypes: opts.companyTypes || { gb: ['SOLE_TRADER'] },
-            soleTraderCountryRestriction: opts.soleTraderCountryRestriction
+            supportedCompanyTypes: opts.companyTypes || { gb: ['SOLE_TRADER'] }
         }),
         'Magento_Ui/js/model/messageList': {
             addErrorMessage: function (message) { rec.errors.push(message); },
@@ -233,8 +232,8 @@ beforeEach(() => {
     document.body.innerHTML = '';
 });
 
-describe('the tokens are minted on availability, never on the click', () => {
-    test('booting a sole-trader country mints without a chip being clicked', async () => {
+describe('the tokens are minted unconditionally at boot, never on the click', () => {
+    test('booting mints without a chip being clicked', async () => {
         const { flow, rec } = await startStack();
 
         expect(rec.tokenMints).toBe(1);
@@ -242,18 +241,14 @@ describe('the tokens are minted on availability, never on the click', () => {
         expect(rec.opened).toEqual([]);
     });
 
-    test('a merchant restricted to a country the registry has no sole trader for mints nothing', async () => {
-        // TWO-25547: the gate is the merchant's OWN restriction, never the
-        // selected country's per-country availability — 'gb' still answers
-        // LIMITED_COMPANY only, which used to be read as "don't mint" and no
-        // longer is.
-        const { flow, rec } = await startStack({
-            companyTypes: { gb: ['LIMITED_COMPANY'] },
-            soleTraderCountryRestriction: ['ES']
-        });
+    test('a country the registry has no sole trader for is still minted for (TWO-25547)', async () => {
+        // Unconditional, decoupled even from the selected country's OWN
+        // per-country availability — the chip stays hidden for 'gb' here,
+        // but the mint fires regardless.
+        const { flow, rec } = await startStack({ companyTypes: { gb: ['LIMITED_COMPANY'] } });
 
-        expect(rec.tokenMints).toBe(0);
-        expect(flow.hasSignupTokens()).toBe(false);
+        expect(rec.tokenMints).toBe(1);
+        expect(flow.hasSignupTokens()).toBe(true);
     });
 
     test('the buyer lookup goes out on availability, and the chip click spends no round trip at all', async () => {

@@ -182,13 +182,6 @@
         this._manualWatchedSelectors = {};
         /** @see subscribeMount */
         this._mountSubs = [];
-        /**
-         * The merchant-level mint gate's answer, resolved once by
-         * `resolveMintGate()` and never re-evaluated on a country change.
-         * `null` until it resolves — read as "don't re-arm yet" rather than
-         * "don't mint" by anything gated on it.
-         */
-        this._mintGateValue = null;
 
         this.translate = options.translate || function (text) { return text; };
         this.observe = options.observe || null;
@@ -246,45 +239,11 @@
         this.watchForMountHost();
         this.refreshMount();
         this.refreshSoleTraderAvailability();
-        // Merchant-level, evaluated once here — never re-run on a country
-        // change, which is the defect this replaces (TWO-25547).
-        this.resolveMintGate().then(function (shouldMint) {
-            self._mintGateValue = shouldMint;
-            if (shouldMint) self._soleTrader.prefetchBuyer();
-        });
-    };
-
-    /**
-     * Whether tokens should be minted and the buyer's own session looked up:
-     * the intersection of the merchant's own buyer-country restriction and
-     * the registry's sole-trader-supported countries is non-empty.
-     *
-     * Resolved from the MERCHANT's configured restriction alone — never from
-     * `countryCode()`/`adjacentCountry()`, which answer for whatever the
-     * buyer currently has selected. That selected-country read is the defect
-     * this exists to remove (TWO-25547): mint-or-not must not flap as the
-     * buyer edits the address form.
-     *
-     * No restriction (`soleTraderCountryRestriction` absent) means the
-     * merchant accepts every country the registry supports at all, so the
-     * intersection is the registry's own sole-trader set — non-empty for as
-     * long as the feature exists, with no live check needed. An explicit
-     * empty restriction means the merchant accepts no buyer country, so
-     * there is nothing to mint for. A specific list mints only if the
-     * registry supports sole traders in at least one of THOSE countries.
-     *
-     * @returns {Promise<boolean>}
-     */
-    CompanyCaptureComponent.prototype.resolveMintGate = function () {
-        const restriction = this._config && this._config.soleTraderCountryRestriction;
-        if (restriction === undefined || restriction === null) return Promise.resolve(true);
-        if (!Array.isArray(restriction) || restriction.length === 0) return Promise.resolve(false);
-        const self = this;
-        return Promise.all(restriction.map(function (country) {
-            return self.getSupportedCompanyTypes(String(country).toLowerCase());
-        })).then(function (answers) {
-            return answers.some(function (types) { return types.indexOf('SOLE_TRADER') !== -1; });
-        });
+        // Unconditional and decoupled from whichever country is currently
+        // selected (TWO-25547): Bifrost's registry coverage is global, not
+        // merchant-scoped, so there is nothing to gate on — mint and look the
+        // buyer up as soon as checkout is reached, full stop.
+        this._soleTrader.prefetchBuyer();
     };
 
     /**
@@ -409,8 +368,9 @@
             if (!available && self._identity.isSoleTrader()) {
                 self.registeredMode();
             }
-            // Minting is driven by resolveMintGate() alone (TWO-25547) — this
-            // per-country answer only ever decides the chip's own visibility.
+            // Minting itself is unconditional, from start() alone (TWO-25547)
+            // — this per-country answer only ever decides the chip's own
+            // visibility.
             self.syncChips();
             return available;
         });
@@ -1034,10 +994,8 @@
         this._options.revertAutofilledAddress();
         this._soleTrader.forgetAdoptions();
         // An adopted answer is spent; one still held is left alone — the
-        // session stands behind it either way. Re-armed off the merchant-level
-        // gate, not the selected country's own availability (TWO-25547) — the
-        // gate is fixed for the page's life, so this never flaps with it.
-        if (!this._soleTrader.autofilledSoleTrader() && this._mintGateValue) {
+        // session stands behind it either way.
+        if (!this._soleTrader.autofilledSoleTrader()) {
             this._soleTrader.forgetAutofilledBuyer();
             this._soleTrader.prefetchBuyer();
         }
