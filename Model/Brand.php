@@ -34,10 +34,6 @@ class Brand implements BrandRegistryInterface
     private $productName;
     /** @var string */
     private $checkoutUrlTemplate;
-    /** @var int[] */
-    private $availablePaymentTerms;
-    /** @var array{amount: float, currency: string}|null */
-    private $surchargeFixedMax;
     /** @var string */
     private $signUpUrl;
     /** @var string */
@@ -47,17 +43,11 @@ class Brand implements BrandRegistryInterface
     /** @var string */
     private $checkoutSubtitle;
 
-    /**
-     * @param int[] $availablePaymentTerms
-     * @param array{amount: float, currency: string}|null $surchargeFixedMax
-     */
     public function __construct(
         string $provider,
         string $providerFullName,
         string $productName,
         string $checkoutUrlTemplate,
-        array $availablePaymentTerms,
-        ?array $surchargeFixedMax = null,
         string $signUpUrl = '',
         string $documentationUrl = '',
         string $brandTag = '',
@@ -67,8 +57,6 @@ class Brand implements BrandRegistryInterface
         $this->providerFullName = $providerFullName;
         $this->productName = $productName;
         $this->checkoutUrlTemplate = $checkoutUrlTemplate;
-        $this->availablePaymentTerms = $availablePaymentTerms;
-        $this->surchargeFixedMax = $surchargeFixedMax;
         $this->signUpUrl = $signUpUrl;
         $this->documentationUrl = $documentationUrl;
         $this->brandTag = $brandTag;
@@ -95,16 +83,6 @@ class Brand implements BrandRegistryInterface
         return $this->checkoutUrlTemplate;
     }
 
-    public function getAvailablePaymentTerms(): array
-    {
-        return $this->availablePaymentTerms;
-    }
-
-    public function getSurchargeFixedMax(): ?array
-    {
-        return $this->surchargeFixedMax;
-    }
-
     /**
      * @deprecated 2.0.0 See note on getCode().
      */
@@ -115,6 +93,32 @@ class Brand implements BrandRegistryInterface
             . 'BrandRegistryInterface via DescriptorBackedBrandRegistry instead. '
             . 'Surcharge rounding steps now come from brand.xml '
             . '`<surcharge_rounding_steps>` via ActiveBrandResolver.'
+        );
+    }
+
+    /**
+     * @deprecated 2.0.0 See note on getCode().
+     */
+    public function isIntentApprovedNoticeEnabled(): bool
+    {
+        throw new \LogicException(
+            'Two\\Gateway\\Model\\Brand is deprecated; consume '
+            . 'BrandRegistryInterface via DescriptorBackedBrandRegistry instead. '
+            . 'The intent-approved notice on/off switch now comes from brand.xml '
+            . '`<intent_approved_notice_enabled>` via ActiveBrandResolver.'
+        );
+    }
+
+    /**
+     * @deprecated 2.0.0 See note on getCode().
+     */
+    public function getIntentApprovedNotice(): ?string
+    {
+        throw new \LogicException(
+            'Two\\Gateway\\Model\\Brand is deprecated; consume '
+            . 'BrandRegistryInterface via DescriptorBackedBrandRegistry instead. '
+            . 'The intent-approved notice override now comes from brand.xml '
+            . '`<intent_approved_notice>` via ActiveBrandResolver.'
         );
     }
 
@@ -140,7 +144,7 @@ class Brand implements BrandRegistryInterface
 
     /**
      * @deprecated 2.0.0 This class is the virtualType base for the
-     *             legacy `AbnBrand` DI rebinding. After the brand-aware
+     *             legacy `OverlayBrand` DI rebinding. After the brand-aware
      *             runtime-resolution work landed (Two\Gateway\Brand\
      *             DescriptorBackedBrandRegistry wired as the
      *             BrandRegistryInterface preference), nothing consumes

@@ -22,8 +22,8 @@ $surchargeType = $block->getSurchargeType();
 $currencyCode = $block->getBaseCurrencyCode();
 $columns = ['fixed', 'percentage', 'limit'];
 $columnLabels = [
-    'fixed' => __('Fixed Amount'),
-    'percentage' => __('Percentage'),
+    'fixed' => __('Fixed amount'),
+    'percentage' => __('Percent of fee'),
     'limit' => __('Limit'),
 ];
 ?>
@@ -103,6 +103,15 @@ $columnLabels = [
                         if ($max !== null && $max !== '') {
                             $validateRules[] = '"validate-number-range":"0-' . (int)$max . '"';
                         }
+                        // A limit of exactly 0 is refused (TWO-25289). The
+                        // authority is the backend model; this is the same
+                        // refusal in the browser so the admin sees it before
+                        // a round trip. The rule is registered in
+                        // surcharge-grid.js and is locale-aware, unlike
+                        // Magento's own validate-greater-than-zero.
+                        if ($col === 'limit') {
+                            $validateRules[] = '"validate-two-nonzero-limit":true';
+                        }
                         ?>
                         <td class="surcharge-grid__<?= $col ?>">
                             <input type="text"
@@ -129,27 +138,53 @@ $columnLabels = [
 
     <?php
     $fl = $block->getFixedLimitLabel();
-    $pl = $block->getPercentageLimitLabel();
     $limitSentence = __(
         'Enter a limit amount (in %1) if you do not want to charge your customer more than a specific amount. Leave the limit field empty if you don\'t want to impose a limit amount.',
         $block->getBaseCurrencySymbol()
     );
+    // Zero is NOT the way to express "no fee on this term" — the grid
+    // refuses it, in the browser and again on save. Say so here, next to
+    // the instruction that invites it.
+    $limitZeroSentence = __(
+        'A limit of 0 is not allowed. To charge nothing on a term, set the fixed amount and the'
+        . ' percentage for that term to 0 instead.'
+    );
+    // Only stated for fixed_and_percentage, because that is the only mode
+    // where the distinction is load-bearing: the limit is applied to the
+    // summed fee, so it can wipe the fixed amount as well as the
+    // percentage. Nothing else in the grid conveys that.
+    $limitWholeFeeSentence = __(
+        'The limit applies to the whole fee: the percentage and the fixed amount together, not'
+        . ' the percentage alone.'
+    );
     ?>
     <p class="note surcharge-grid__helper-text surcharge-grid__helper-text--fixed" style="display:none">
         <span>
-            <?= $block->escapeHtml(__('Enter the amount you want to charge your customer. Max %1.', $fl)) ?>
+            <?= $block->escapeHtml(__('Enter the amount you want to charge your customer.')) ?>
+            <?php if ($fl !== ''): ?>
+                <?= $block->escapeHtml(__('Max %1.', $fl)) ?>
+            <?php endif; ?>
         </span>
     </p>
     <p class="note surcharge-grid__helper-text surcharge-grid__helper-text--percentage" style="display:none">
         <span>
-            <?= $block->escapeHtml(__('Enter the percentage of the fee you want to charge your customer. Max: %1.', $pl)) ?>
+            <?= $block->escapeHtml(__(
+                'Enter the percentage of the fee\'s cost to you that you want the surcharge to recover.'
+                . ' 100% means the fee no longer reduces your revenue at all.'
+            )) ?>
             <?= $block->escapeHtml($limitSentence) ?>
+            <?= $block->escapeHtml($limitZeroSentence) ?>
         </span>
     </p>
     <p class="note surcharge-grid__helper-text surcharge-grid__helper-text--fixed_and_percentage" style="display:none">
         <span>
-            <?= $block->escapeHtml(__('Enter the amount and percentage of the fee you want to charge your customer. Max %1 / %2.', $fl, $pl)) ?>
+            <?= $block->escapeHtml(__(
+                'Enter the amount and percentage of the fee charged to you that you want to offset with a'
+                . ' surcharge. Max 100%.'
+            )) ?>
             <?= $block->escapeHtml($limitSentence) ?>
+            <?= $block->escapeHtml($limitWholeFeeSentence) ?>
+            <?= $block->escapeHtml($limitZeroSentence) ?>
         </span>
     </p>
 

@@ -29,6 +29,16 @@
                 sortOrder="10"/>
     </type>
     <!--
+        Hides the deprecated default_shipping_tax_rate field unless a
+        value is already stored — see
+        Two\Gateway\Plugin\Config\Structure\HideDeprecatedShippingTaxRateField.
+    -->
+    <type name="Magento\Config\Model\Config\Structure\Element\Field">
+        <plugin name="two-hide-deprecated-shipping-tax-rate-field"
+                type="Two\Gateway\Plugin\Config\Structure\HideDeprecatedShippingTaxRateField"
+                sortOrder="10"/>
+    </type>
+    <!--
         SynthesiseBrandAdminForm is registered globally in etc/di.xml,
         not here. CLI commands (bin/magento config:set, app:config:import,
         deploy:mode:set, etc.) populate the adminhtml-scoped structure
@@ -37,6 +47,13 @@
         etc/adminhtml/di.xml. Registering the plugin here meant CLI-driven
         cache writes never invoked synthesis; the cache then served the
         un-synthesised result to subsequent admin web requests and the
-        ABN admin tab disappeared (ABN-415).
+        brand-overlay admin tab disappeared.
     -->
+    <type name="Magento\Framework\Notification\MessageList">
+        <arguments>
+            <argument name="messages" xsi:type="array">
+                <item name="twoGatewayTrustedProxiesUnset" xsi:type="string">Two\Gateway\Model\AdminNotification\TrustedProxiesMessage</item>
+            </argument>
+        </arguments>
+    </type>
 </config>

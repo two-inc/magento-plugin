@@ -10,6 +10,7 @@ namespace Two\Gateway\Model;
 use Exception;
 use Magento\Framework\Api\AttributeValueFactory;
 use Magento\Framework\Api\ExtensionAttributesFactory;
+use Magento\Config\Model\ResourceModel\Config\Data\CollectionFactory as ConfigDataCollectionFactory;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Data\Collection\AbstractDb;
@@ -31,11 +32,17 @@ use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
+use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
+use Two\Gateway\Service\Order\LifecycleEventDispatcher;
+use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
+use Two\Gateway\Service\Order\SurchargeCalculator;
 use Two\Gateway\Service\UrlCookie;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 
@@ -54,6 +61,7 @@ class Two extends AbstractMethod
      */
     public $request;
     protected $_code = self::CODE;
+    protected $_infoBlockType = \Two\Gateway\Block\Payment\Info::class;
     /**
      * @var bool
      */
@@ -130,6 +138,41 @@ class Two extends AbstractMethod
      * @var MinimumOrderProvider
      */
     private $minimumOrderProvider;
+    /**
+     * @var MerchantMinimumResolver
+     */
+    private $merchantMinimumResolver;
+    /**
+     * @var ConfigDataCollectionFactory
+     */
+    private $configDataCollectionFactory;
+    /**
+     * @var ApiKeyStatus
+     */
+    private $apiKeyStatus;
+    /**
+     * @var SurchargeCalculator
+     */
+    private $surchargeCalculator;
+    /**
+     * @var LifecycleEventDispatcher
+     */
+    private $lifecycleEvents;
+    /**
+     * @var BuyerCountryResolver
+     */
+    private $buyerCountryResolver;
+    /**
+     * @var SupportedCountriesProvider
+     */
+    private $supportedCountriesProvider;
+    /**
+     * Per-store memo for isAmastyCheckoutStore(); isAvailable() fires many
+     * times per page and the detection reads config + core_config_data.
+     *
+     * @var array<int, bool>
+     */
+    private $amastyCheckoutStore = [];
 
     /**
      * Two constructor.
@@ -153,6 +196,13 @@ class Two extends AbstractMethod
      * @param LogRepository $logRepository
      * @param MinimumOrderGate $minimumOrderGate
      * @param MinimumOrderProvider $minimumOrderProvider
+     * @param MerchantMinimumResolver $merchantMinimumResolver
+     * @param ConfigDataCollectionFactory $configDataCollectionFactory
+     * @param ApiKeyStatus $apiKeyStatus
+     * @param SurchargeCalculator $surchargeCalculator
+     * @param LifecycleEventDispatcher $lifecycleEvents
+     * @param BuyerCountryResolver $buyerCountryResolver
+     * @param SupportedCountriesProvider $supportedCountriesProvider
      * @param AbstractResource|null $resource
      * @param AbstractDb|null $resourceCollection
      * @param array $data
@@ -179,6 +229,13 @@ class Two extends AbstractMethod
         LogRepository $logRepository,
         MinimumOrderGate $minimumOrderGate,
         MinimumOrderProvider $minimumOrderProvider,
+        MerchantMinimumResolver $merchantMinimumResolver,
+        ConfigDataCollectionFactory $configDataCollectionFactory,
+        ApiKeyStatus $apiKeyStatus,
+        SurchargeCalculator $surchargeCalculator,
+        LifecycleEventDispatcher $lifecycleEvents,
+        BuyerCountryResolver $buyerCountryResolver,
+        SupportedCountriesProvider $supportedCountriesProvider,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -209,6 +266,13 @@ class Two extends AbstractMethod
         $this->logRepository = $logRepository;
         $this->minimumOrderGate = $minimumOrderGate;
         $this->minimumOrderProvider = $minimumOrderProvider;
+        $this->merchantMinimumResolver = $merchantMinimumResolver;
+        $this->configDataCollectionFactory = $configDataCollectionFactory;
+        $this->apiKeyStatus = $apiKeyStatus;
+        $this->surchargeCalculator = $surchargeCalculator;
+        $this->lifecycleEvents = $lifecycleEvents;
+        $this->buyerCountryResolver = $buyerCountryResolver;
+        $this->supportedCountriesProvider = $supportedCountriesProvider;
     }
 
     /**
@@ -224,10 +288,13 @@ class Two extends AbstractMethod
     public function authorize(InfoInterface $payment, $amount)
     {
         $order = $payment->getOrder();
+        $this->assertOrderMeetsMinimum($order);
+        $this->assertSurchargeResolvable($order);
+        $this->assertBuyerCountrySupported($order);
+        $additionalInformation = $payment->getAdditionalInformation();
+        $this->assertOrganizationNumberPresent($additionalInformation);
         $this->urlCookie->delete();
         $orderReference = (string)rand();
-
-        $additionalInformation = $payment->getAdditionalInformation();
 
         $payload = $this->compositeOrder->execute(
             $order,
@@ -236,7 +303,7 @@ class Two extends AbstractMethod
         );
 
         // Create order
-        $response = $this->apiAdapter->execute('/v1/order', $payload);
+        $response = $this->apiAdapter->execute('/v1/order', $payload, 'POST', (int)$order->getStoreId());
         $error = $this->getErrorFromResponse($response);
         if ($error) {
             throw new LocalizedException($error);
@@ -268,14 +335,16 @@ class Two extends AbstractMethod
                 );
             }
             if ($declinedOnMinimum && $minimumOrder !== null) {
-                $display = $this->minimumOrderGate->getMinimumForDisplay($minimumOrder, $orderCurrency, $storeId);
+                // Display-only decline hint: an unconvertible rate just falls
+                // back to the generic message, so log fail-open (debug).
+                $display = $this->minimumOrderGate->getMinimumForDisplay(
+                    $minimumOrder,
+                    $orderCurrency,
+                    $storeId,
+                    failClosedOnUnconvertible: false
+                );
                 if ($display !== null) {
-                    throw new LocalizedException(__(
-                        'Invoice purchase with %1 is not available for this order. Minimum order value is %2 %3 tax.',
-                        $this->brandRegistry->getProductName(),
-                        $order->getOrderCurrency()->formatTxt($display['amount']),
-                        $display['basis'] === 'gross' ? __('including') : __('excluding')
-                    ));
+                    throw new LocalizedException($this->minimumOrderMessage($display, $order));
                 }
             }
             throw new LocalizedException(
@@ -316,6 +385,12 @@ class Two extends AbstractMethod
             $paymentUrl .= $separator . http_build_query($brandParams);
         }
         $this->urlCookie->set($paymentUrl);
+        $this->lifecycleEvents->dispatchCreated($order, [
+            'order_reference' => $orderReference,
+            'state' => $response['state'] ?? null,
+            'status' => $response['status'] ?? null,
+            'external_order_status' => $response['external_order_status'] ?? null,
+        ]);
         return $this;
     }
 
@@ -497,7 +572,12 @@ class Two extends AbstractMethod
         $order = $payment->getOrder();
         try {
             $twoOrderId = $order->getTwoOrderId();
-            $response = $this->apiAdapter->execute('/v1/order/' . $order->getTwoOrderId() . '/cancel');
+            $response = $this->apiAdapter->execute(
+                '/v1/order/' . $order->getTwoOrderId() . '/cancel',
+                [],
+                'POST',
+                (int)$order->getStoreId()
+            );
             if ($response) {
                 $error = $this->getErrorFromResponse($response);
                 $comment = __(
@@ -513,6 +593,7 @@ class Two extends AbstractMethod
                     $order->getStatus(),
                     __('%1 order has been marked as cancelled', $this->brandRegistry->getProductName())
                 );
+                $this->lifecycleEvents->dispatchCancelled($order);
             }
 
             $this->orderRepository->save($order);
@@ -569,7 +650,12 @@ class Two extends AbstractMethod
                         'partial' => $this->composeCapture->execute($createdInvoice),
                     ];
                 }
-                $response = $this->apiAdapter->execute('/v1/order/' . $twoOrderId . '/fulfillments', $payload);
+                $response = $this->apiAdapter->execute(
+                    '/v1/order/' . $twoOrderId . '/fulfillments',
+                    $payload,
+                    'POST',
+                    (int)$order->getStoreId()
+                );
                 $error = $this->getErrorFromResponse($response);
 
                 if ($error) {
@@ -636,6 +722,10 @@ class Two extends AbstractMethod
         }
 
         $this->addStatusToOrderHistory($order, $comment->render());
+        $this->lifecycleEvents->dispatchCompleted($order, [
+            'fulfilled_order_id' => $response['fulfilled_order']['id'] ?? null,
+            'partial' => !empty($response['remained_order']),
+        ]);
     }
 
     /**
@@ -677,7 +767,9 @@ class Two extends AbstractMethod
         );
         $response = $this->apiAdapter->execute(
             "/v1/order/" . $twoOrderId . "/refund",
-            $payload
+            $payload,
+            'POST',
+            (int)$order->getStoreId()
         );
 
         $error = $this->getErrorFromResponse($response);
@@ -706,6 +798,10 @@ class Two extends AbstractMethod
             $response['refund_no']
         );
         $order->addStatusToHistory($order->getStatus(), $comment->render())->save();
+        $this->lifecycleEvents->dispatchRefunded($order, [
+            'refund_no' => $response['refund_no'] ?? null,
+            'amount' => $response['amount'],
+        ]);
         return $this;
     }
 
@@ -740,33 +836,480 @@ class Two extends AbstractMethod
             return false;
         }
         // Platform minimum-order constraint (the API-resolved tuple from
-        // GET /v1/merchant - the same value checkout-api enforces at order
+        // GET /v1/merchant - the same value the API enforces at order
         // create/intent) plus the merchant's own optional minimum (admin
         // setting in the STORE BASE currency; validated on save to meet or
         // exceed the platform floor converted to that currency).
         $storeId = null;
-        if ($quote instanceof \Magento\Quote\Model\Quote && $quote->getStoreId() !== null) {
-            $storeId = (int)$quote->getStoreId();
-        }
-        $platformMinimum = $this->minimumOrderProvider->getMinimum($storeId);
-        $merchantMinimum = null;
+        $store = null;
         if ($quote instanceof \Magento\Quote\Model\Quote) {
-            $merchantValue = (float)$this->getConfigData('merchant_minimum_order');
-            if ($merchantValue > 0) {
-                $store = $quote->getStore();
-                $currency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
-                if ($currency !== '') {
-                    $merchantBasis = (string)$this->getConfigData('merchant_minimum_order_basis');
-                    $merchantMinimum = [
-                        'amount' => $merchantValue,
-                        'currency' => $currency,
-                        'basis' => in_array($merchantBasis, ['net', 'gross'], true)
-                            ? $merchantBasis
-                            : ($platformMinimum['basis'] ?? 'gross'),
-                    ];
-                }
+            $store = $quote->getStore();
+            if ($quote->getStoreId() !== null) {
+                $storeId = (int)$quote->getStoreId();
             }
         }
+        // A configured api_key is not the same thing as a WORKING one. Unless
+        // the stored key currently verifies, the method must not be offered —
+        // for ANY reason it fails to verify (rejected key, service 5xx, the
+        // API unreachable), because a buyer selecting a method whose
+        // integration cannot be confirmed gets a failure at placement instead
+        // of at selection. The check is cached (see ApiKeyStatus), so this
+        // costs no HTTP round-trip per render.
+        //
+        // Placed BEFORE the Amasty bypass below deliberately: that bypass
+        // returns true unconditionally to defer the *minimum-order* gate to
+        // the client, and it must not also defer this one — there is no
+        // client-side equivalent, and an unverified key is not something a
+        // later total recalculation can turn into a working integration.
+        if (!$this->apiKeyStatus->isVerified($storeId)) {
+            // Withdrawing the method is invisible to the merchant, so record
+            // why. Category and HTTP status only, never a response body —
+            // being unable to tell "wrong key" from "service down" is the
+            // exact gap this change closes on the admin page, and it must not
+            // reappear here.
+            $status = $this->apiKeyStatus->getStatus($storeId);
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: API key verification failed', $this->_code),
+                ['status' => $status['status'], 'http_status' => $status['code']]
+            );
+            return false;
+        }
+        // TWO-25503: an FX rate the surcharge needs but cannot get makes THIS
+        // method unofferable, nothing more. It used to throw out of
+        // SurchargeCalculator::convertAmount() inside the totals collector, so
+        // every collectTotals() with the method already selected errored the
+        // whole checkout. Withdraw the method here instead. The gate is only
+        // as strong as the currency it can resolve: with no concrete quote or
+        // no currency code it cannot judge, and offers the method — which is
+        // why assertSurchargeResolvable() re-checks at placement, where the
+        // order's own currency is available. An unresolvable rate therefore
+        // fails at submit rather than at render, never silently.
+        //
+        // Placed BEFORE the Amasty bypass for the same reason the api-key check
+        // is: the bypass defers only the MINIMUM-ORDER gate to the client, and
+        // there is no client-side equivalent of this one.
+        if (!$this->isSurchargeResolvable($quote, $storeId)) {
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: surcharge FX rate unavailable', $this->_code),
+                []
+            );
+            return false;
+        }
+        // Judged on the billing-first country, not core's shipping-for-physical-quote choice.
+        $buyerCountry = $this->buyerCountryResolver->resolve($quote);
+        // Core's admin gate cannot judge an empty country, so only the merchant
+        // restriction speaks there — and a restricted one withholds.
+        $countryAllowed = $buyerCountry === ''
+            ? $this->supportedCountriesProvider->isAllowed('', $storeId)
+            : $this->canUseForCountry($buyerCountry);
+        if (!$countryAllowed) {
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: buyer country not supported', $this->_code),
+                [
+                    'country' => $buyerCountry,
+                    'restriction' => $this->supportedCountriesProvider->getState($storeId),
+                ]
+            );
+            return false;
+        }
+        // Amasty OneStepCheckout persists the buyer's shipping method to the
+        // server quote only at order placement, so at checkout-render time the
+        // server quote is blind to the live shipping choice and this gate would
+        // judge a stale total (a dearer shipping that crosses the minimum never
+        // registers server-side). On an Amasty store view we therefore OFFER the
+        // method unconditionally here and gate its visibility client-side
+        // against the live total (see Model\Ui\ConfigProvider + the renderer).
+        // Enforcement is not waived, only deferred: authorize() re-checks the
+        // finalised order total (shipping now known) against BOTH the platform
+        // and merchant minimums fail-closed at placement, and the API
+        // independently enforces the platform floor. isAmastyCheckoutStore()
+        // requires an explicit admin override, not Amasty's inherited config.xml
+        // default, so the bypass cannot leak onto other checkouts.
+        if ($this->isAmastyCheckoutStore($store, $storeId)) {
+            return true;
+        }
+        $platformMinimum = $this->minimumOrderProvider->getMinimum($storeId);
+        $merchantMinimum = $store !== null
+            ? $this->buildMerchantMinimum((string)$store->getBaseCurrencyCode(), $platformMinimum, $storeId)
+            : null;
         return $this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum);
+    }
+
+    /**
+     * @inheritDoc
+     *
+     * TWO-40: the merchant's server-supplied allowlist is ANDed with core's admin-configured one.
+     */
+    public function canUseForCountry($country)
+    {
+        if (!parent::canUseForCountry($country)) {
+            return false;
+        }
+        $storeId = $this->getStore();
+        return $this->supportedCountriesProvider->isAllowed(
+            (string)$country,
+            is_numeric($storeId) ? (int)$storeId : null
+        );
+    }
+
+    /**
+     * The client-side visibility inputs for the Two method on a quote: the
+     * active minimum-order constraints (platform + merchant, the same pair
+     * isAvailable() enforces) projected into the quote's DISPLAY currency so
+     * the renderer only has to compare — no rule/FX logic client-side — plus
+     * whether any active minimum could NOT be projected (missing FX rate).
+     *
+     * On `unresolved`, the renderer must HIDE the method rather than show it
+     * for want of a number. This mirrors MinimumOrderGate's split fail policy:
+     * only an unprojectable PLATFORM floor sets `unresolved` (fail closed — the
+     * client gate must not fail open where the server gate fails closed). An
+     * unprojectable MERCHANT minimum fails open instead: its bar is simply
+     * omitted from `minimums` — we cannot show that number, but a local
+     * preference must not hide the whole method.
+     *
+     * @return array{minimums: array<int, array{amount: float, basis: string}>, unresolved: bool}
+     */
+    public function getMinimumOrderVisibility(?CartInterface $quote): array
+    {
+        $empty = ['minimums' => [], 'unresolved' => false];
+        if (!$quote instanceof \Magento\Quote\Model\Quote) {
+            return $empty;
+        }
+        $storeId = $quote->getStoreId() !== null ? (int)$quote->getStoreId() : null;
+        $store = $quote->getStore();
+        $baseCurrency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
+        // An unresolvable display currency ('') is NOT short-circuited: it
+        // flows into each per-minimum projection below, exactly like
+        // assertOrderMeetsMinimum(), so the split fail policy applies —
+        // an active platform floor fails closed (unresolved = hide), while
+        // a merchant minimum alone fails open (method stays visible).
+        $displayCurrency = (string)($quote->getQuoteCurrencyCode() ?: $baseCurrency);
+
+        $minimums = [];
+        $unresolved = false;
+        $platform = $this->minimumOrderProvider->getMinimum($storeId);
+        if ($platform !== null) {
+            $shown = $this->minimumOrderGate->getMinimumForDisplay(
+                $platform,
+                $displayCurrency,
+                $storeId,
+                failClosedOnUnconvertible: true
+            );
+            if ($shown === null) {
+                // Unprojectable platform floor: fail closed (hide the method).
+                $unresolved = true;
+            } else {
+                $minimums[] = $shown;
+            }
+        }
+        $merchant = $this->buildMerchantMinimum($baseCurrency, $platform, $storeId);
+        if ($merchant !== null) {
+            $shown = $this->minimumOrderGate->getMinimumForDisplay(
+                $merchant,
+                $displayCurrency,
+                $storeId,
+                failClosedOnUnconvertible: false
+            );
+            if ($shown !== null) {
+                $minimums[] = $shown;
+            }
+            // Unprojectable merchant minimum: fail open — omit its bar rather
+            // than hide the method over a local preference (see docblock).
+        }
+
+        return ['minimums' => $minimums, 'unresolved' => $unresolved];
+    }
+
+    /**
+     * The merchant's own optional minimum-order tuple, in the store BASE
+     * currency, or null when unset (<= 0) or the base currency is unknown.
+     * Delegates to MerchantMinimumResolver — the single source of truth
+     * shared by isAvailable()'s server gate, getMinimumOrderVisibility()'s
+     * client-display projection, the authorize() placement backstop, and
+     * Total\Surcharge's totals-recollect gate: they MUST agree on the
+     * constraint. `$this->_code` is this instance's bound payment-method
+     * code (the resolver is parameterized by code so it can also serve
+     * Total\Surcharge, which is not bound to a single method instance).
+     *
+     * @param string $baseCurrency Store base currency the merchant amount is denominated in.
+     * @param array<string, mixed>|null $platform Platform minimum, for basis fallback only.
+     * @param int|null $storeId Scope for the admin config reads.
+     * @return array{amount: float, currency: string, basis: string}|null
+     */
+    private function buildMerchantMinimum(string $baseCurrency, ?array $platform, ?int $storeId = null): ?array
+    {
+        return $this->merchantMinimumResolver->resolve($this->_code, $baseCurrency, $platform, $storeId);
+    }
+
+    /**
+     * Fail-closed server backstop: reject a finalised order below the platform
+     * or merchant minimum at placement. A normal buyer never reaches this — the
+     * checkout renderer's client-side gate (and isAvailable() on non-Amasty
+     * checkouts) already hides the method below the minimum. It catches the
+     * paths that evade the client gate: JS disabled, direct API calls, or a
+     * total that dropped after the method was selected. It is also the SOLE
+     * server enforcer of the MERCHANT minimum on Amasty, where isAvailable() is
+     * bypassed and the order total (with shipping) is only complete here at
+     * placement; the API independently enforces the platform floor but
+     * never receives the merchant's own admin minimum.
+     *
+     * Split fail policy on an unprojectable minimum (missing FX rate), the
+     * same split the gate and the client-display projection apply: only the
+     * PLATFORM floor fails CLOSED (reject the order — the floor is a platform
+     * guarantee and must never be waived for want of a rate). The MERCHANT
+     * minimum fails OPEN: an unprojectable merchant bar is skipped and the
+     * order proceeds — a local preference must not block placement over a
+     * missing rate. When a minimum IS projectable, a below-minimum order is
+     * rejected for both.
+     *
+     * @throws LocalizedException when the finalised order is below a
+     *     projectable minimum, or when the platform floor cannot be projected.
+     */
+    private function assertOrderMeetsMinimum(Order $order): void
+    {
+        $storeId = $order->getStoreId() !== null ? (int)$order->getStoreId() : null;
+        $orderCurrency = (string)$order->getOrderCurrencyCode();
+        $store = $order->getStore();
+        $baseCurrency = $store !== null ? (string)$store->getBaseCurrencyCode() : '';
+
+        // Project each minimum into the order currency once, then compare —
+        // the same projection the client-display gate uses, so enforce and
+        // display cannot disagree.
+        $displays = [];
+        $platform = $this->minimumOrderProvider->getMinimum($storeId);
+        if ($platform !== null) {
+            $display = $this->minimumOrderGate->getMinimumForDisplay(
+                $platform,
+                $orderCurrency,
+                $storeId,
+                failClosedOnUnconvertible: true
+            );
+            if ($display === null) {
+                // Unprojectable platform floor: fail CLOSED and reject, never
+                // delegate to the fail-soft isBelowMinimum(), which would let
+                // a below-minimum order through on the one path (Amasty + JS
+                // bypass) where this is the sole enforcer.
+                throw new LocalizedException(
+                    __('Invoice purchase with %1 is not available for this order.', $this->brandRegistry->getProductName())
+                );
+            }
+            $displays[] = $display;
+        }
+        $merchant = $this->buildMerchantMinimum($baseCurrency, $platform, $storeId);
+        if ($merchant !== null) {
+            $display = $this->minimumOrderGate->getMinimumForDisplay(
+                $merchant,
+                $orderCurrency,
+                $storeId,
+                failClosedOnUnconvertible: false
+            );
+            if ($display !== null) {
+                $displays[] = $display;
+            }
+            // Unprojectable merchant minimum: fail open — skip this bar and
+            // let the order proceed (see docblock).
+        }
+
+        foreach ($displays as $display) {
+            $orderValue = $display['basis'] === 'gross'
+                ? (float)$order->getGrandTotal()
+                : (float)$order->getGrandTotal() - (float)$order->getTaxAmount();
+            // +epsilon mirrors the gate/client >= at currency precision.
+            if ($orderValue + 0.0001 < $display['amount']) {
+                throw new LocalizedException($this->minimumOrderMessage($display, $order));
+            }
+        }
+    }
+
+    /**
+     * Whether the surcharge for a quote's currency can be priced at all —
+     * see SurchargeCalculator::isSurchargeResolvable(). True when there is no
+     * currency to judge by; assertSurchargeResolvable() is the backstop.
+     */
+    private function isSurchargeResolvable(?CartInterface $quote, ?int $storeId): bool
+    {
+        if (!$quote instanceof \Magento\Quote\Model\Quote) {
+            return true;
+        }
+        $store = $quote->getStore();
+        $currency = (string)($quote->getQuoteCurrencyCode()
+            ?: ($store !== null ? $store->getBaseCurrencyCode() : ''));
+        if ($currency === '') {
+            return true;
+        }
+        return $this->surchargeCalculator->isSurchargeResolvable($currency, $storeId);
+    }
+
+    /**
+     * Placement backstop for the same FX gate isAvailable() applies. A hidden
+     * method can still be submitted (JS disabled, direct API call, a rate that
+     * disappeared after selection), and letting that through would place the
+     * order with the surcharge silently zeroed — the merchant's fee lost with
+     * no line item and no error. Refuse instead, with the same message an
+     * unavailable method gives.
+     *
+     * @throws LocalizedException when no FX rate is available for the surcharge
+     */
+    private function assertSurchargeResolvable(Order $order): void
+    {
+        $storeId = $order->getStoreId() !== null ? (int)$order->getStoreId() : null;
+        $store = $order->getStore();
+        $currency = (string)($order->getOrderCurrencyCode()
+            ?: ($store !== null ? $store->getBaseCurrencyCode() : ''));
+        if ($currency === '') {
+            return;
+        }
+        if (!$this->surchargeCalculator->isSurchargeResolvable($currency, $storeId)) {
+            throw new LocalizedException(
+                __('Invoice purchase with %1 is not available for this order.', $this->brandRegistry->getProductName())
+            );
+        }
+    }
+
+    /**
+     * Placement backstop for the merchant's server-supplied allowlist, which a
+     * hidden method can still be submitted past (JS disabled, direct API call,
+     * an address changed after selection). Core's own
+     * allowspecific/specificcountry gate is not re-checked here: it is scoped
+     * to the method's own store, which canUseForCountry() reads off the
+     * registry rather than off the order being placed.
+     *
+     * @throws LocalizedException when the allowlist does not admit the order's
+     *     country, or the merchant restricts and no country resolves
+     */
+    private function assertBuyerCountrySupported(Order $order): void
+    {
+        $storeId = $order->getStoreId() !== null ? (int)$order->getStoreId() : null;
+        $buyerCountry = $this->buyerCountryResolver->resolveFromOrder($order);
+        if ($this->supportedCountriesProvider->isAllowed($buyerCountry, $storeId)) {
+            return;
+        }
+
+        $status = $this->apiKeyStatus->getStatus($storeId);
+        $this->logRepository->addLog(
+            sprintf('%s refused an order: buyer country not supported', $this->_code),
+            [
+                'merchant_id' => $status['merchant']['id'] ?? null,
+                'country' => $buyerCountry,
+                'restriction' => $this->supportedCountriesProvider->getState($storeId),
+            ]
+        );
+
+        throw new LocalizedException(
+            __('Invoice purchase with %1 is not available for this order.', $this->brandRegistry->getProductName())
+        );
+    }
+
+    /**
+     * Server-side floor for the buyer's company number.
+     *
+     * Until now the only thing stopping a placement with an empty company
+     * number was a client-side validator on the checkout field, so any
+     * checkout that does not render that field — or any client that skips
+     * it — reached the API with an empty value and was refused only after
+     * placement had begun. This guard declines before the order request is
+     * built, on the one path every storefront's placement runs through, so
+     * no checkout variant can diverge from another.
+     *
+     * Whitespace counts as empty: a space-only value is not a company
+     * number, so it is refused. The trim serves that decision only — the
+     * guard normalises nothing. A padded but non-empty number clears the
+     * guard and is sent downstream exactly as the checkout submitted it,
+     * padding included.
+     *
+     * @param array $additionalInformation payment additional information as
+     *     submitted by the checkout
+     * @throws LocalizedException when no company number was supplied
+     */
+    private function assertOrganizationNumberPresent(array $additionalInformation): void
+    {
+        $companyId = $additionalInformation['companyId'] ?? '';
+
+        if (!is_scalar($companyId) || trim((string)$companyId) === '') {
+            $message = __(
+                'Invoice purchase with %1 requires a company number. Please add your company details and try again.',
+                $this->brandRegistry->getProductName()
+            );
+            throw new LocalizedException($message);
+        }
+    }
+
+    /**
+     * Buyer-facing "below minimum order value" message for a display-currency
+     * minimum tuple. Shared by the authorize() backstop and the API-decline
+     * interpretation so both surface the same wording.
+     *
+     * @param array{amount: float, basis: string} $displayMinimum
+     */
+    private function minimumOrderMessage(array $displayMinimum, Order $order): Phrase
+    {
+        return __(
+            'Invoice purchase with %1 is not available for this order. Minimum order value is %2 %3 tax.',
+            $this->brandRegistry->getProductName(),
+            $order->getOrderCurrency()->formatTxt($displayMinimum['amount']),
+            $displayMinimum['basis'] === 'gross' ? __('including') : __('excluding')
+        );
+    }
+
+    /**
+     * Whether this store view runs Amasty OneStepCheckout as a DELIBERATE,
+     * admin-set choice — the signal that isAvailable()'s server min gate must
+     * be deferred to the client gate + authorize() backstop (see isAvailable()).
+     *
+     * We cannot simply read amasty_checkout/general/enabled via ScopeConfig:
+     * Amasty ships that flag as enabled=1 in config.xml, so on every store view
+     * where an admin never touched the setting it reads true by inheritance and
+     * the bypass would leak onto Luma / Hyva / Fire checkouts, silently
+     * disabling their (working, shipping-aware) server gate. We therefore
+     * require BOTH the effective flag to be on AND an explicit core_config_data
+     * override enabling it in this store's scope chain — proof an admin
+     * configured Amasty, not merely inherited the packaged default. Memoised
+     * per store; isAvailable() fires repeatedly per page.
+     */
+    private function isAmastyCheckoutStore(?\Magento\Store\Api\Data\StoreInterface $store, ?int $storeId): bool
+    {
+        if ($store === null || $storeId === null) {
+            return false;
+        }
+        if (isset($this->amastyCheckoutStore[$storeId])) {
+            return $this->amastyCheckoutStore[$storeId];
+        }
+        $enabled = $this->_scopeConfig->isSetFlag(
+            'amasty_checkout/general/enabled',
+            \Magento\Store\Model\ScopeInterface::SCOPE_STORE,
+            $storeId
+        ) && $this->hasAmastyConfigOverride($store);
+        $this->amastyCheckoutStore[$storeId] = $enabled;
+        return $enabled;
+    }
+
+    /**
+     * Whether an explicit core_config_data row enables Amasty OSC anywhere in
+     * this store's scope chain (default, its website, or the store view) — i.e.
+     * an admin set the value, as opposed to inheriting Amasty's config.xml
+     * packaged default. A store-scoped disable is already reflected by the
+     * effective isSetFlag() check in the caller, so any truthy override in the
+     * chain proves deliberate intent.
+     */
+    private function hasAmastyConfigOverride(\Magento\Store\Api\Data\StoreInterface $store): bool
+    {
+        $collection = $this->configDataCollectionFactory->create();
+        $collection->addFieldToFilter('path', 'amasty_checkout/general/enabled');
+        foreach ($collection as $row) {
+            if (!(bool)$row->getValue()) {
+                continue;
+            }
+            $scope = (string)$row->getScope();
+            $scopeId = (int)$row->getScopeId();
+            if ($scope === ScopeConfigInterface::SCOPE_TYPE_DEFAULT
+                || ($scope === \Magento\Store\Model\ScopeInterface::SCOPE_WEBSITES
+                    && $scopeId === (int)$store->getWebsiteId())
+                || ($scope === \Magento\Store\Model\ScopeInterface::SCOPE_STORES
+                    && $scopeId === (int)$store->getId())
+            ) {
+                return true;
+            }
+        }
+        return false;
     }
 }

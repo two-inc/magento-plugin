@@ -4,45 +4,66 @@
  */
 define([
     'jquery',
-    'mage/translate',
+    'ko',
     'underscore',
     'Magento_Ui/js/form/form',
     'Magento_Customer/js/customer-data',
     'Magento_Checkout/js/model/step-navigator',
     'uiRegistry',
-    'Two_Gateway/js/model/brand-config'
-], function ($, $t, _, Component, customerData, stepNavigator, uiRegistry, brandConfig) {
+    'Two_Gateway/js/model/company-capture',
+    'Two_Gateway/js/model/company-search',
+    // `$.async`, used below — it decorates jQuery as a side effect and takes no
+    // factory parameter, hence LAST in the list. Declared rather than relied on
+    // transitively: it only resolved because a knockout bootstrap dependency
+    // happens to pull it in, which is an ordering this file does not control.
+    'Magento_Ui/js/lib/view/utils/async'
+], function (
+    $,
+    ko,
+    _,
+    Component,
+    customerData,
+    stepNavigator,
+    uiRegistry,
+    companyCapture,
+    companySearch
+) {
     'use strict';
 
-    // Resolve the active Two-family brand subtree so overlays
-    // (acme_payment, …) get their own checkoutApiUrl /
-    // isCompanySearchEnabled / companySearchLimit instead of falling
-    // through to an empty object when the vanilla `two_payment` key
-    // isn't present.
-    const config = brandConfig.getActiveTwoBrandConfig();
+    // This module owns the ADDRESS STEP's own company field specifically
+    // (TWO-25554) — the shipping panel's identity, never the resolved one:
+    // publishCompanyData() below feeds the customerData section the
+    // shipping-step search has always driven, and reading the resolved
+    // identity here would let a billing-panel pick masquerade as a
+    // shipping-step one the moment billing became authoritative.
+    const identity = companyCapture.shipping.identity();
+
+    // Our own event namespace, separate from the panel's: its teardown paths
+    // clear their own namespace off the company-name input, and the
+    // company-number handlers below have to survive that.
+    const EVENT_NS = '.twoAddressCompanyId';
 
     return Component.extend({
+        addressFormSelector: '#shipping-new-address-form',
         countrySelector: '#shipping-new-address-form select[name="country_id"]',
         companyNameSelector: '#shipping-new-address-form input[name="company"]',
-        companyNameLabel: 'div[name="shippingAddress.company"] label',
         companyIdSelector: '#shipping-new-address-form input[name="custom_attributes[company_id]"]',
         shippingTelephoneSelector: '#shipping-new-address-form input[name="telephone"]',
-        companyNamePlaceholder: $t('Enter company name to search'),
-        enterDetailsManuallyText: $t('Enter details manually'),
-        enterDetailsManuallyButton: '#shipping_enter_details_manually',
-        searchForCompanyText: $t('Search for company'),
-        searchForCompanyButton: '#shipping_search_for_company',
         initialize: function () {
             let self = this;
             this._super();
 
             $.async(this.countrySelector, function (countrySelector) {
                 self.toggleCompanyVisibility();
-                $(countrySelector).on('change', function () {
-                    self.toggleCompanyVisibility();
-                });
+                self._lastCountryCode = self.currentCountryCode();
+                $(countrySelector)
+                    .off('change' + EVENT_NS)
+                    .on('change' + EVENT_NS, function () {
+                        self.onCountryChanged();
+                    });
             });
-            this.enableCompanySearch();
+            this.watchCapturedIdentity();
+            this.enableManualCompanyId();
             const setTwoTelephone = (e) => customerData.set('shippingTelephone', e.target.value);
             $.async(self.shippingTelephoneSelector, function (telephoneSelector) {
                 $(telephoneSelector).on('change keyup', setTwoTelephone);
@@ -50,8 +71,64 @@ define([
                 customerData.set('shippingTelephone', telephone);
             });
         },
+        /**
+         * The address form's currently selected country, lower-cased, or ''
+         * when the select is absent or has no value.
+         *
+         * Guarded rather than `.val().toLowerCase()`: jQuery's `.val()` on an
+         * empty set is `undefined`, and this runs from a `$.async` callback
+         * whose node can be replaced by a re-render between resolve and call.
+         *
+         * @returns {string}
+         */
+        currentCountryCode: function () {
+            const value = $(this.countrySelector).val();
+            return typeof value === 'string' ? value.toLowerCase() : '';
+        },
+        /**
+         * The buyer changed the address country mid-checkout (TWO-24867).
+         *
+         * Everything the company search produced belongs to the country it was
+         * searched in: the company itself, its organisation number, and the
+         * address autofilled from the registry entry. None of it describes the
+         * new country, and none of it is re-derivable — so a switch has to
+         * retract it rather than leave it on screen looking chosen.
+         *
+         * The concrete failure this closes is not cosmetic. `companyData` is a
+         * localStorage customer-data section and the payment tile credit-checks
+         * whatever is in it, so a GB organisation number survived a switch to
+         * ES and was submitted under an ES billing address — refused upstream,
+         * and surfaced to the buyer as a generic failure with nothing on screen
+         * explaining which field was wrong.
+         *
+         * The picker is not touched here at all: it belongs to the page-level
+         * capture component, which watches the same select and re-resolves the
+         * country per request.
+         */
+        onCountryChanged: function () {
+            const countryCode = this.currentCountryCode();
+            const previous = this._lastCountryCode;
+            this._lastCountryCode = countryCode;
+            // `change` also fires for a re-render that re-selects the same
+            // country, and Magento fires it once as the form initialises. Only
+            // an actual change is a reason to discard a company — doing this on
+            // a no-op would blank a returning customer's prefilled address the
+            // moment their form loads.
+            if (previous === countryCode) {
+                this.toggleCompanyVisibility();
+                return;
+            }
+            // THIS form alone — the other panel's fields are never touched
+            // (TWO-25554).
+            companySearch.revertAutofilledAddress($(this.addressFormSelector), identity);
+            // Clears the name input, the number field, and the published
+            // `companyData` section the payment tile reads — every surviving
+            // copy of the previous country's company.
+            this.setCompanyData();
+            this.toggleCompanyVisibility();
+        },
         toggleCompanyVisibility: function () {
-            const countryCode = $(this.countrySelector).val().toLowerCase();
+            const countryCode = this.currentCountryCode();
             customerData.set('countryCode', countryCode);
             let field = $(this.companyNameSelector).closest('.field');
             field.show();
@@ -59,147 +136,452 @@ define([
                 return (style || '') + 'width: 100% !important;';
             });
         },
+        /**
+         * THE single writer of the `companyData` customer-data section.
+         *
+         * Its own method so that every path which has to publish — a registry
+         * pick, the manual-entry row, and the company-number field the
+         * buyer types into — shares one call site. The payment step treats a
+         * change NOTIFICATION on this section as an act of selection, and that
+         * reading is only sound while the section has exactly one writer.
+         */
+        publishCompanyData: function (companyId, companyName) {
+            customerData.set('companyData', {
+                companyId: companyId,
+                companyName: companyName,
+                // The country this company was captured in (TWO-24867).
+                //
+                // `companyData` is a localStorage section, so it outlives the
+                // page and the order: a buyer who searched a GB company, left,
+                // and came back to a checkout now sitting on an ES address
+                // would otherwise have the GB organisation number read back and
+                // credit-checked under ES. The in-page country-change reset
+                // cannot reach that case — nothing changed in THIS page — so
+                // the record has to say which country it belongs to and the
+                // reader has to check.
+                companyCountry: this.currentCountryCode()
+            });
+        },
+        /**
+         * Mirror a captured identity onto the address step: the published
+         * section, the name input and the `company_id` field.
+         *
+         * @param {string} [companyId]
+         * @param {string} [companyName]
+         */
         setCompanyData: function (companyId = '', companyName = '') {
             console.debug({ logger: 'addressAutocomplete.setCompanyData', companyId, companyName });
-            customerData.set('companyData', { companyId, companyName });
-            $('.select2-selection__rendered').text(companyName);
+            this._appliedCompanyId = companyId;
+            this._appliedCompanyName = companyName;
+            this.publishCompanyData(companyId, companyName);
             $(this.companyNameSelector).val(companyName);
+            this.setCompanyIdValue(companyId);
+            this.syncCompanyIdEditable();
+        },
+        /**
+         * Write the captured organisation number so that it SURVIVES A PAGE
+         * RELOAD, which a `$(…).val()` write on its own does not.
+         *
+         * The asymmetry this closes: after picking a company, a reload kept the
+         * name on the form and lost the number. Nothing about the number was
+         * being forgotten deliberately — it never reached the store the name
+         * reaches.
+         *
+         * Magento persists the address form by listening for changes on the
+         * `checkoutProvider`'s `shippingAddress` data
+         * (`Magento_Checkout/js/view/shipping.js` → `checkoutData
+         * .setShippingAddressFromData`), writes them to the `checkout-data`
+         * localStorage section, and on the next load pushes the whole saved
+         * object — `custom_attributes` included — back into the provider before
+         * the fields render. So the provider is the persistence boundary, and
+         * only a value the provider has SEEN is restored.
+         *
+         * The company NAME crosses that boundary for free: the panel fires a
+         * `change` on the input when a result is picked, `ui/form/
+         * element/input`'s `value:` binding reads the DOM on `change`, and the
+         * element's `value` observable is two-way linked to its provider path.
+         * The company NUMBER had no such route — it is written by us, not by a
+         * widget, and a jQuery `.val()` write raises no event Knockout listens
+         * for. The provider therefore never learned the number, nothing was
+         * saved, and there was nothing to restore.
+         *
+         * Writing through the component is what publishes to the provider; the
+         * DOM write is kept for the same reason `setCompanyIdDisabled()` keeps
+         * one — `uiRegistry.get()` yields nothing if this runs before the
+         * component registers, and `needsManualCompanyId()` reads the field's
+         * value straight off the DOM in the same tick.
+         *
+         * Deliberately NOT done by triggering `change` on the input instead:
+         * that would also fire our own change handler, which republishes the
+         * `companyData` customer-data section — and the payment step reads a
+         * change NOTIFICATION on that section as an act of selection, so every
+         * pick would announce itself twice.
+         *
+         * The DOM write goes FIRST. The component write notifies subscribers
+         * synchronously, and `discardForeignCountryCompanyId()` reads the DOM
+         * ahead of the component — see its own note on termination.
+         */
+        setCompanyIdValue: function (companyId) {
             $(this.companyIdSelector).val(companyId);
+            const component = uiRegistry.get(this.companyIdComponent);
+            if (component && typeof component.value === 'function') {
+                component.value(companyId);
+            }
         },
-        setAddressData: function (address) {
-            console.debug({ logger: 'addressAutocomplete.setAddressData', address });
-            $('input[name="city"]').val(address.city);
-            $('input[name="postcode"]').val(address.postal_code);
-            $('input[name="street[0]"]').val(address.street_address);
-            $('input[name="city"], input[name="postcode"], input[name="street[0]"]').trigger(
-                'change'
-            );
-        },
-        addressLookup: function (selectedCompany, countryCode) {
+        /**
+         * Re-check a number arriving in the company-number component underneath
+         * us against the country the form is showing.
+         *
+         * The one case this is for is a reload: the number is restored into the
+         * form by Magento pushing the saved `shippingAddress` object back into
+         * the `checkoutProvider`, and that push is not ordered against this
+         * component's `$.async` resolves. If it lands last, the one-shot check
+         * on the resolve has already run against an empty field.
+         *
+         * ONE subscription at a time, and it belongs to the CURRENT view. The
+         * `company_id` uiRegistry component outlives this view — that is exactly
+         * why `$.async` refires on a re-render while `uiRegistry.get()` keeps
+         * returning the same object — so a subscription simply left in place
+         * both retains every superseded view for the life of the page and leaves
+         * the live subscriber closed over a stale one. Disposing the previous
+         * subscription and taking a fresh one is what keeps those two properties
+         * ("no stacking", "the current view is the one checking") from being in
+         * tension. The handle is stored on the COMPONENT, because the view being
+         * replaced is the thing that cannot be relied on to still be around.
+         *
+         * Deliberately does NOT re-derive editability (`syncCompanyIdEditable`).
+         * That derivation reads the number field's own value, and this fires on
+         * the buyer's own `change` too — so re-deriving here would disable the
+         * field the moment they blurred it, which is the exact footgun the
+         * derivation's own docblock warns against. The cost is that a number
+         * restored LATE leaves the field enabled when it should be disabled;
+         * that is invisible today because the field is CSS-hidden
+         * unconditionally, and it is the lesser of the two.
+         *
+         * Same reason this fires on a buyer's own edit at all: Knockout's
+         * `value:` binding writes the observable on `change`. A hand-typed number
+         * therefore gets country-checked against the stamp of the PREVIOUS,
+         * searched company. Also unreachable while the field is CSS-hidden, and
+         * recorded here rather than guarded because the guard's own subject —
+         * a number restored from a previous visit — is the only thing that
+         * reaches it today.
+         */
+        watchCompanyIdComponent: function () {
+            const component = uiRegistry.get(this.companyIdComponent);
+            if (!component || typeof component.value !== 'function') return;
+            if (typeof component.value.subscribe !== 'function') return;
+            if (
+                component._twoCompanyIdSubscription &&
+                typeof component._twoCompanyIdSubscription.dispose === 'function'
+            ) {
+                component._twoCompanyIdSubscription.dispose();
+            }
             const self = this;
-            const addressResponse = $.ajax({
-                dataType: 'json',
-                url: `${config.checkoutApiUrl}/companies/v2/company/${selectedCompany.lookupId}`
+            component._twoCompanyIdSubscription = component.value.subscribe(function () {
+                // Guard BEFORE render, and on this path specifically: the
+                // one-shot guard on the `$.async` resolve runs while the field is
+                // still empty, so a number restored late is a number the guard
+                // has never seen. Without this the whole country check is dead on
+                // exactly the ordering this subscription exists for.
+                self.discardForeignCountryCompanyId();
             });
-            addressResponse.done(function (response) {
-                // Use new address lookup by default
-                if (response.addresses) {
-                    self.setAddressData(response.addresses[0]);
+        },
+        /**
+         * Discard a restored organisation number that belongs to a different
+         * country from the one the form is now showing (TWO-24867).
+         *
+         * The number now persists in `checkout-data` and is restored into the
+         * form on the next load — which is the point of this fix — but that
+         * saved blob carries no record of the country it was captured in, while
+         * the `companyData` customer-data section does. Left unchecked, a GB
+         * organisation number could be restored onto a checkout sitting on an ES
+         * address and credit-checked there: refused upstream, and surfaced to
+         * the buyer as a generic failure with nothing on screen explaining it.
+         * `onCountryChanged` cannot reach this case, because nothing changed in
+         * THIS page.
+         *
+         * Fails OPEN on a missing stamp, matching the same guard on the payment
+         * step: records written before the stamp existed carry no country, and
+         * treating "unstamped" as "wrong country" would drop a legitimate
+         * company on the first load after an upgrade.
+         *
+         * Clears the number only, never the name. A name with no identifier is
+         * an understood state — the payment step routes it to
+         * `selectCompanyWithoutIdentifier()` and the order is refused
+         * server-side — whereas a name silently blanked on load looks like data
+         * loss.
+         *
+         * Re-entrant by construction and terminating: the clear runs through
+         * `setCompanyIdValue()`, which notifies the component subscribers, one of
+         * which calls this again — and under the input-first order that method
+         * uses, the second pass reads empty from the input AND from the component
+         * and returns at the first line. That is the whole of it; no reliance on
+         * Knockout suppressing a same-value notification. Reverse those two
+         * writes and termination would rest on that suppression instead.
+         *
+         * Reads the country off the SELECT, which makes this dependent on the
+         * select being rendered and holding the restored country by the time the
+         * number arrives. Two things hold that up rather than one, so it is
+         * stated rather than assumed: `country_id` is forced to sort before
+         * `company`/`street` (LayoutProcessorPlugin::moveCountryBeforeCompany,
+         * for unrelated reasons) while this field sorts at 65, and an absent or
+         * empty select fails open below. If a store ever did present the store
+         * default here before the restore landed, this would discard a VALID
+         * number persistently — the clear reaches `checkout-data` — so that
+         * ordering is the thing to check first if a valid number ever goes
+         * missing.
+         */
+        discardForeignCountryCompanyId: function () {
+            // `capturedCompanyId()`, not the input alone: this also runs off the
+            // component's own notification, where the input has not caught up
+            // yet, and an input-only read would leave that number unchecked in
+            // the provider.
+            if (!this.capturedCompanyId()) return;
+            const capturedCountry = (customerData.get('companyData')() || {}).companyCountry;
+            const currentCountry = this.currentCountryCode();
+            if (!capturedCountry || !currentCountry) return;
+            if (String(capturedCountry).toLowerCase() === String(currentCountry).toLowerCase()) {
+                return;
+            }
+            console.debug({
+                logger: 'addressAutocomplete.discardForeignCountryCompanyId',
+                capturedCountry,
+                currentCountry
+            });
+            this.setCompanyIdValue('');
+        },
+        /**
+         * The organisation number currently captured, for DISPLAY.
+         *
+         * The DOM field first, then the UI component. Not an ordering
+         * preference — the two are written together by setCompanyIdValue() and
+         * agree — but an ordering that needs no assumption about which of them
+         * a reload populates first. On the restore path Knockout's `value:`
+         * binding copies the component's value into the input, and this is read
+         * from a subscriber on that same observable, so "the DOM is already
+         * updated" would be a claim about Knockout's internal subscription
+         * order. Reading both removes the claim.
+         *
+         * `needsManualCompanyId()` reads the DOM alone and must keep doing so:
+         * it derives whether the buyer may TYPE here, and the value they are
+         * mid-way through typing lives in the input.
+         *
+         * @returns {string}
+         */
+        capturedCompanyId: function () {
+            const fromDom = $(this.companyIdSelector).val();
+            if (fromDom) return fromDom;
+            const component = uiRegistry.get(this.companyIdComponent);
+            if (component && typeof component.value === 'function') {
+                const value = component.value();
+                return value == null ? '' : String(value);
+            }
+            return '';
+        },
+        /**
+         * True while the popover owns the company-name input, i.e. while every
+         * company that comes into play arrives through setCompanyData() rather
+         * than the buyer's own typing.
+         *
+         * Read from the capture mode, not from the field: manual entry leaves
+         * the panel in place and only stops it opening, so its presence alone
+         * no longer answers this.
+         */
+        isCompanySearchActive: function () {
+            const $field = $(this.companyNameSelector);
+            if (!$field.length) return false;
+            return identity.captureMode() !== 'manual';
+        },
+        /**
+         * The company name currently in play. While the picker owns the input,
+         * the published section is preferred: setCompanyData() writes the name
+         * to both, so the two agree and the section is the one the picker's own
+         * chrome cannot get in front of. Once the buyer has switched to manual
+         * entry the input wins — that is the one state in which their typing is
+         * the sole record of the name, because nothing publishes it per
+         * keystroke.
+         */
+        currentCompanyName: function () {
+            const published = (customerData.get('companyData')() || {}).companyName || '';
+            if (this.isCompanySearchActive()) {
+                return published;
+            }
+            return $(this.companyNameSelector).val() || published;
+        },
+        /**
+         * The buyer has to supply the company number by hand exactly when a
+         * company is in play but no registry identifier came with it.
+         *
+         * This is now the ONLY place that derivation exists — but read that as
+         * "the only surviving copy of the code", NOT as "the surviving route for
+         * the buyer". The payment tile used to apply the same derivation to its
+         * own company-number field; TWO-25288 made that field read-only in every
+         * mode. This step's field is no route either: it is CSS-hidden
+         * unconditionally (`.two-company-id-hidden`), so the derivation still
+         * runs and still gates a field nobody can see. Nothing in the plugin
+         * currently lets a buyer hand-type an organisation number; an
+         * identifier-less company is refused by Model/Two.php::authorize().
+         */
+        needsManualCompanyId: function () {
+            return !!this.currentCompanyName() && !$(this.companyIdSelector).val();
+        },
+        /**
+         * uiRegistry name of the layout node the company-number input belongs
+         * to — the `company_id` child of the shipping-address fieldset declared
+         * in Plugin/Model/Checkout/LayoutProcessorPlugin.php. uiRegistry names
+         * are the layout's own `children` path with the `children` links
+         * dropped.
+         */
+        companyIdComponent:
+            'checkout.steps.shipping-step.shippingAddress.shipping-address-fieldset.company_id',
+        /**
+         * Set the company-number field's disabled state through the UI
+         * component, not only the DOM.
+         *
+         * The layout declares `disabled` as a component property and
+         * `ui/form/element/input` binds it inside a compound `attr: {...}`
+         * binding alongside `error`, `required` and friends. Knockout
+         * re-evaluates that whole binding when ANY observable it reads changes,
+         * so a raw `prop('disabled', …)` write survives only until the next
+         * such re-evaluation, which then reinstates the component's stale
+         * value. The component is therefore the authoritative one.
+         *
+         * The DOM write is kept as well, and deliberately: `uiRegistry.get()`
+         * yields nothing if this runs before the component registers, and the
+         * derivation below reads the field's own value off the DOM, so the two
+         * have to be written together to stay consistent within a tick.
+         */
+        setCompanyIdDisabled: function (isDisabled) {
+            const component = uiRegistry.get(this.companyIdComponent);
+            if (component && typeof component.disabled === 'function') {
+                component.disabled(isDisabled);
+            }
+            $(this.companyIdSelector).prop('disabled', isDisabled);
+        },
+        /**
+         * Company search owns `company_id` while it can fill it: the number
+         * arrives with the picked company, so an editable field would only let
+         * the buyer contradict the registry.
+         *
+         * Deliberately NOT called from the company-number field's own change
+         * handler, nor from the company-name one. The derivation reads the
+         * number field's value, so re-deriving after the buyer has typed into
+         * it would disable the field they are still using. Only the paths that
+         * learn a number from the registry — setCompanyData(), and the one-shot
+         * derivation on a pre-filled form — may disable.
+         */
+        syncCompanyIdEditable: function () {
+            this.setCompanyIdDisabled(!this.needsManualCompanyId());
+        },
+        /**
+         * Enable-only half of the derivation, for events that can reveal a
+         * company with no number behind it but can never establish that a
+         * number came from the registry.
+         */
+        enableCompanyIdIfNeeded: function () {
+            if (this.needsManualCompanyId()) {
+                this.setCompanyIdDisabled(false);
+            }
+        },
+        /**
+         * Make the company-number field usable: publish what the buyer types
+         * into it, and enable it once a manually-typed company name appears.
+         *
+         * `change`, never `keyup`: the payment step fires an order intent as
+         * soon as it holds both a company name and a number, so publishing per
+         * keystroke would fire one credit-check request per character. The
+         * telephone handler above can afford `keyup` because nothing downstream
+         * of it calls out.
+         */
+        enableManualCompanyId: function () {
+            const self = this;
+            $.async(this.companyIdSelector, function (companyIdField) {
+                $(companyIdField)
+                    .off('change' + EVENT_NS)
+                    .on('change' + EVENT_NS, function () {
+                        self.publishCompanyData(
+                            $(self.companyIdSelector).val() || '',
+                            self.currentCompanyName()
+                        );
+                    });
+                // A form rendered with an address already on it (returning
+                // customer, or a reload mid-checkout) never passes through
+                // setCompanyData(), so derive once on resolve — after the
+                // country check, which the derivation would otherwise run
+                // against a number belonging to another country.
+                self.discardForeignCountryCompanyId();
+                self.syncCompanyIdEditable();
+                self.watchCompanyIdComponent();
+            });
+            $.async(this.companyNameSelector, function (companyNameField) {
+                // Only meaningful after the manual-entry row has destroyed
+                // the widget: until then the buyer cannot type here at all and
+                // picks arrive through setCompanyData(). ENABLES only — the
+                // buyer may come back to edit the name after typing a number,
+                // and the full derivation reads that number, so re-deriving
+                // here would disable the field and lock them out of what they
+                // just typed. Nothing published either: the manually typed NAME
+                // reaches the payment step through the quote's billing address,
+                // and publishing per keystroke would fire order intents.
+                $(companyNameField)
+                    .off('input' + EVENT_NS)
+                    .on('input' + EVENT_NS, function () {
+                        if (self.isCompanySearchActive()) return;
+                        self.enableCompanyIdIfNeeded();
+                    });
+            });
+        },
+        /**
+         * Follow the page-level captured identity: this step no longer owns a
+         * picker, but it still owns the `company_id` field, its persistence
+         * through the checkoutProvider, and the `companyData` section.
+         *
+         * Deferred by one turn so that the name and the number — separate
+         * observables, written back to back — are published together rather
+         * than as a name under the previous company's number.
+         */
+        watchCapturedIdentity: function () {
+            const self = this;
+            // One live watcher, belonging to the CURRENT view: the identity
+            // singleton outlives every re-render of this step, so a watcher
+            // left in place would keep a superseded view painting the form.
+            if (
+                identity._addressStepWatcher &&
+                typeof identity._addressStepWatcher.dispose === 'function'
+            ) {
+                identity._addressStepWatcher.dispose();
+            }
+            let scheduled = false;
+            let watcher = null;
+            const publish = function () {
+                scheduled = false;
+                // The timer outlives dispose(), and this view may already have
+                // been superseded — writing from here would paint a form the
+                // buyer is no longer looking at.
+                if (identity._addressStepWatcher !== watcher) return;
+                // Manual entry is the buyer's own typing, published by the
+                // company-number field's own change handler, so nothing is
+                // mirrored for it here.
+                const manual = identity.captureMode() === 'manual';
+                const companyId = manual ? '' : identity.companyId();
+                const companyName = manual ? '' : identity.companyName();
+                if (
+                    companyId === self._appliedCompanyId &&
+                    companyName === self._appliedCompanyName
+                ) {
+                    return;
                 }
+                self.setCompanyData(companyId, companyName);
+            };
+            watcher = identity.subscribe(function () {
+                // Deferred by one turn so that the name and the number — written
+                // back to back — are published together rather than as a name
+                // under the previous company's number.
+                if (scheduled) return;
+                scheduled = true;
+                setTimeout(publish, 0);
             });
-        },
-        enableCompanySearch: function () {
-            if (!config.isCompanySearchEnabled) return;
-            const self = this;
-            require(['Two_Gateway/select2-4.1.0/js/select2.min'], function () {
-                $.async(self.companyNameSelector, function (companyNameField) {
-                    $(companyNameField)
-                        .select2({
-                            minimumInputLength: 3,
-                            width: '100%',
-                            escapeMarkup: function (markup) {
-                                return markup;
-                            },
-                            templateResult: function (data) {
-                                return data.html;
-                            },
-                            templateSelection: function (data) {
-                                return data.text || self.companyNamePlaceholder;
-                            },
-                            ajax: {
-                                dataType: 'json',
-                                delay: 400,
-                                url: function (params) {
-                                    const queryParams = new URLSearchParams({
-                                        country: $(self.countrySelector).val()?.toUpperCase(),
-                                        limit: config.companySearchLimit,
-                                        offset:
-                                            ((params.page || 1) - 1) * config.companySearchLimit,
-                                        q: unescape(params.term)
-                                    });
-                                    return `${
-                                        config.checkoutApiUrl
-                                    }/companies/v2/company?${queryParams.toString()}`;
-                                },
-                                processResults: function (response, params) {
-                                    const items = [];
-                                    for (let i = 0; i < response.items.length; i++) {
-                                        const item = response.items[i];
-                                        items.push({
-                                            id: item.name,
-                                            text: item.name,
-                                            html: `${item.highlight} (${item.national_identifier.id})`,
-                                            companyId: item.national_identifier.id,
-                                            lookupId: item.lookup_id
-                                        });
-                                    }
-                                    return {
-                                        results: items,
-                                        pagination: {
-                                            more: false
-                                        }
-                                    };
-                                },
-                                data: function () {
-                                    return {};
-                                }
-                            }
-                        })
-                        .on('select2:open', function () {
-                            if ($(self.enterDetailsManuallyButton).length == 0) {
-                                $('.select2-results')
-                                    .parent()
-                                    .append(
-                                        `<div id="shipping_enter_details_manually" class="enter_details_manually" title="${self.enterDetailsManuallyText}">` +
-                                            `<span>${self.enterDetailsManuallyText}</span>` +
-                                            '</div>'
-                                    );
-                                $(self.enterDetailsManuallyButton).on('click', function (e) {
-                                    self.setCompanyData();
-                                    $(self.companyNameSelector).select2('destroy');
-                                    $(self.companyNameSelector).attr('type', 'text');
-                                    $(self.companyNameSelector).val('');
-                                    $(self.searchForCompanyButton).show();
-                                });
-                            }
-                            document.querySelector('.select2-search__field').focus();
-                        })
-                        .on('select2:select', function (e) {
-                            const selectedItem = e.params.data;
-                            $('.select2-selection__rendered').text(selectedItem.id);
-                            self.setCompanyData(selectedItem.companyId, selectedItem.text);
-                            if (config.isAddressSearchEnabled) {
-                                const countryCode = $(self.countrySelector).val()?.toLowerCase();
-                                self.addressLookup(selectedItem, countryCode);
-                            }
-                        });
-                    // Set initial placeholder text for the company search
-                    if (!$(self.companyNameSelector).val()) {
-                        $(self.companyNameSelector)
-                            .closest('.field')
-                            .find('.select2-selection__rendered')
-                            .text(self.companyNamePlaceholder);
-                    }
-                    if ($(self.companyNameSelector).val()) {
-                        // pre-fill on checkout render
-                        $('.select2-selection__rendered').text($(self.companyNameSelector).val());
-                    }
-                    if ($(self.searchForCompanyButton).length == 0) {
-                        $(self.companyNameSelector)
-                            .closest('.field')
-                            .append(
-                                `<div id="shipping_search_for_company" class="search_for_company" title="${self.searchForCompanyText}">` +
-                                    `<span>${self.searchForCompanyText}</span>` +
-                                    '</div>'
-                            );
-                        $(self.searchForCompanyButton).on('click', function (e) {
-                            self.enableCompanySearch();
-                            $(self.searchForCompanyButton).hide();
-                        });
-                    }
-                    $(self.searchForCompanyButton).hide();
-                });
-            });
+            identity._addressStepWatcher = watcher;
         }
     });
 });

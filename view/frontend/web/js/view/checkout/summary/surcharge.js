@@ -2,7 +2,9 @@
  * Order summary line for the Two payment terms surcharge.
  *
  * Reads from the 'two_surcharge' totals segment produced by the
- * server-side Total Collector. No client-side calculation needed.
+ * server-side Total Collector. No client-side calculation needed —
+ * net or gross is already decided there from tax/cart_display/price,
+ * and "Both" arrives as a second 'two_surcharge_incl' segment.
  */
 define([
     'Magento_Checkout/js/view/summary/abstract-total',
@@ -37,6 +39,22 @@ define([
 
         getTitle: function () {
             var segment = totals.getSegment('two_surcharge');
+            return (segment && segment.title) || '';
+        },
+
+        hasInclTaxRow: function () {
+            var segment = totals.getSegment('two_surcharge_incl');
+            return !!(segment && parseFloat(segment.value) > 0);
+        },
+
+        getInclTaxValue: function () {
+            var segment = totals.getSegment('two_surcharge_incl');
+            var amount = segment ? parseFloat(segment.value) : 0;
+            return this.getFormattedPrice(amount);
+        },
+
+        getInclTaxTitle: function () {
+            var segment = totals.getSegment('two_surcharge_incl');
             return (segment && segment.title) || '';
         }
     });

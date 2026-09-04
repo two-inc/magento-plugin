@@ -22,7 +22,7 @@ use Magento\Framework\Setup\SchemaSetupInterface;
  *     Without this, Magento's persistent cache backends (Redis,
  *     file) keep serving rendered output that pre-dates the plugin
  *     update, which is the cross-deployment-path manifestation of
- *     ABN-415's bug class.
+ *     the admin-tab-vanishes bug class.
  *
  *   - opcache_reset() is called best-effort. In CLI it only clears
  *     the CLI process's opcache (mostly cosmetic), but it does no

@@ -33,6 +33,64 @@ export async function availableMethods(page: Page): Promise<string[]> {
     );
 }
 
+// The quote's current shipping charge, for confirming a rate change landed.
+async function shippingAmount(page: Page): Promise<number> {
+    return page.evaluate(
+        () =>
+            new Promise<number>((resolve) => {
+                (window as any).require(['Magento_Checkout/js/model/quote'], (q: any) => {
+                    // totals() can be momentarily null mid-recalc — exactly the
+                    // window we poll in; NaN keeps the caller polling.
+                    const t = q.totals();
+                    resolve(t ? Number(t.shipping_amount) : NaN);
+                });
+            })
+    );
+}
+
+// Whether the checkout has reached the payment step, per Magento's own
+// step-navigator (the authority the checkout renders from).
+async function onPaymentStep(page: Page): Promise<boolean> {
+    return page.evaluate(
+        () =>
+            new Promise<boolean>((resolve) => {
+                (window as any).require(
+                    ['Magento_Checkout/js/model/step-navigator'],
+                    (nav: any) => {
+                        resolve(
+                            (nav.steps() || []).some(
+                                (s: any) => s.code === 'payment' && s.isVisible()
+                            )
+                        );
+                    }
+                );
+            })
+    );
+}
+
+// Advance the Luma checkout from the shipping step to the payment step.
+//
+// This is a required step of the journey, not a convenience: on a non-virtual
+// quote Magento leaves `checkoutConfig.paymentMethods` empty on page load and
+// only populates payment-service from the shipping-information POST that this
+// button triggers. Reading availableMethods() while still on the shipping step
+// therefore returns [] no matter what the store offers.
+export async function goToPaymentStep(page: Page) {
+    if (await onPaymentStep(page)) {
+        return;
+    }
+    await waitIdle(page);
+    const next = page.locator(
+        '#shipping-method-buttons-container button[data-role="opc-continue"]'
+    );
+    await expect(next).toBeEnabled({ timeout: 20_000 });
+    await next.click();
+    // The step flips on the shipping-information response, a network round trip
+    // after the click, so poll the navigator rather than reading it once.
+    await expect.poll(() => onPaymentStep(page), { timeout: 30_000 }).toBe(true);
+    await waitIdle(page);
+}
+
 // Native click on the shipping radio — Playwright's .check()/.click() on the
 // styled input doesn't fire Magento's shipping-change handler that recalculates
 // totals, so wait for the radio to load, then drive it in-page like a real click.
@@ -44,6 +102,16 @@ export async function selectShipping(page: Page, kind: 'freeshipping' | 'flatrat
     await expect(radio).toBeVisible({ timeout: 20_000 });
     await radio.evaluate((el) => (el as HTMLInputElement).click());
     await waitIdle(page);
+    // waitIdle only clears the loading-mask; the totals recalc lands a beat later
+    // via a knockout observable, so a grand_total read here can catch the stale
+    // pre-recalc value (flaky on slow CI runners). Poll until shipping_amount
+    // reflects the chosen rate — non-zero for flat, zero for free — before
+    // returning, so any following total read is settled.
+    if (kind === 'flatrate') {
+        await expect.poll(() => shippingAmount(page), { timeout: 20_000 }).toBeGreaterThan(0);
+    } else {
+        await expect.poll(() => shippingAmount(page), { timeout: 20_000 }).toBe(0);
+    }
 }
 
 export async function addToCart(page: Page) {
@@ -58,6 +126,38 @@ export async function addToCart(page: Page) {
     ]);
 }
 
+// The company control the address step renders. Scoped to the wrapper the
+// popover is built inside, because the payment tile hosts a second one.
+export const COMPANY_FIELD = '#shipping-new-address-form input[name="company"]';
+
+function companyWrap(page: Page, fieldSelector = COMPANY_FIELD) {
+    return page.locator(fieldSelector).locator('xpath=ancestor::*[contains(@class,"two-company-field-wrap")][1]');
+}
+
+// Open the popover, search, and take the first hit.
+export async function selectCompany(page: Page, query = COMPANY_QUERY, fieldSelector = COMPANY_FIELD) {
+    const wrap = companyWrap(page, fieldSelector);
+    const panel = wrap.locator('.two-company-dropdown');
+
+    await page.locator(fieldSelector).first().click();
+    // The panel carries `hidden` while closed, so visibility is the open state.
+    await expect(panel).toBeVisible({ timeout: 15_000 });
+
+    await panel.locator('input.two-company-dropdown__query').fill(query);
+
+    const firstRow = panel.locator('.two-company-dropdown__row').first();
+    await expect(firstRow).toBeVisible({ timeout: 15_000 });
+    const rowText = ((await firstRow.textContent()) || '').trim();
+    await firstRow.click();
+
+    await expect(panel).toBeHidden({ timeout: 10_000 });
+    const captured = await page.locator(fieldSelector).first().inputValue();
+    expect(captured.length).toBeGreaterThan(0);
+    // The row renders the name plus the registry identifier, the field only the
+    // name — so containment, not equality.
+    expect(rowText).toContain(captured);
+}
+
 export async function fillCheckout(page: Page) {
     await page.goto('/checkout', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#customer-email')).toBeVisible({ timeout: 30_000 });
@@ -69,11 +169,7 @@ export async function fillCheckout(page: Page) {
     await fill(page, '[name="postcode"]', '1082 PP');
     await fill(page, '[name="telephone"]', '+442071234567');
     await page.locator('[name="country_id"]').first().selectOption(COUNTRY);
-    await page.locator('.select2-selection').first().click();
-    await page.locator('.select2-search__field').first().fill(COMPANY_QUERY);
-    const firstResult = page.locator('.select2-results__option').first();
-    await expect(firstResult).toBeVisible({ timeout: 15_000 });
-    await firstResult.click();
+    await selectCompany(page);
     await expect(page.locator('[name="city"]').first()).toHaveValue(/.+/, { timeout: 15_000 });
     await waitIdle(page);
 }

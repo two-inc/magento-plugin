@@ -1,6 +1,6 @@
 <div
     class="payment-method two-payment-method"
-    data-bind="css: {'_active': (getCode() == isChecked())}"
+    data-bind="css: {'_active': (getCode() == isChecked())}, visible: isTwoVisible"
 >
     <div class="payment-method-title field choice">
         <div class="payment-option-title-container">
@@ -15,6 +15,12 @@
             <div class="two-title-block">
                 <span class="two-payment-title" data-bind="text: getTitle()"></span>
                 <div class="two-payment-subtitle" data-bind="html: twoSubtitleHtml"></div>
+                <a
+                    class="two-about-link"
+                    target="_blank"
+                    rel="noopener"
+                    data-bind="visible: showWhatIsTwo, attr: {href: aboutLinkUrl}, text: aboutLinkText"
+                ></a>
             </div>
             <div class="two-payment-shield"></div>
         </div>
@@ -28,13 +34,17 @@
             </label>
             <div class="two-term-chips__container">
                 <!-- ko foreach: termOptions -->
-                <button type="button"
-                        class="two-term-chip"
-                        data-bind="click: function() { $parent.selectTerm(days) },
-                                   css: { 'two-term-chip--selected': days === $parent.selectedTerm() }">
+                <button
+                    type="button"
+                    class="two-term-chip"
+                    data-bind="click: function() { $parent.selectTerm(days) },
+                                   css: { 'two-term-chip--selected': days === $parent.selectedTerm() }"
+                >
                     <span class="two-term-chip__days" data-bind="text: daysLabel"></span>
                     <!-- ko if: isLoading -->
-                    <span class="two-term-chip__loading" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
+                    <span class="two-term-chip__loading" aria-hidden="true"
+                        ><span>.</span><span>.</span><span>.</span></span
+                    >
                     <!-- /ko -->
                     <!-- ko if: !isLoading && surchargeLabel -->
                     <span class="two-term-chip__surcharge" data-bind="text: surchargeLabel"></span>
@@ -50,71 +60,117 @@
                 <span class="two-term-chip two-term-chip--single">
                     <span class="two-term-chip__days" data-bind="text: singleTermLabel"></span>
                     <!-- ko if: singleTermSurchargeLabel() === null -->
-                    <span class="two-term-chip__loading" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
+                    <span class="two-term-chip__loading" aria-hidden="true"
+                        ><span>.</span><span>.</span><span>.</span></span
+                    >
                     <!-- /ko -->
                     <!-- ko if: singleTermSurchargeLabel() -->
-                    <span class="two-term-chip__surcharge" data-bind="text: singleTermSurchargeLabel"></span>
+                    <span
+                        class="two-term-chip__surcharge"
+                        data-bind="text: singleTermSurchargeLabel"
+                    ></span>
                     <!-- /ko -->
                 </span>
             </div>
         </div>
         <!-- /ko -->
-        <!-- ko if: showModeTab -->
-        <!-- ko ifnot: showSoleTrader -->
-        <div class="mode_selector" data-element="popup-message">
-            <span class="mode_item" data-element="selected-element">
-                <!-- ko i18n: 'Registered Organisation' --><!-- /ko -->
-            </span>
+        <!--
+            TWO-25326 §7.3 (2026-08-03 ruling): the standalone
+            `.two-company-label` text that used to sit here is REMOVED, not
+            supplemented. The captured company NAME is now shown ONLY
+            inside the order-intent notice sentence itself — see
+            ConfigProvider::getOrderIntentApprovedNotice() /
+            getOrderIntentDeclinedNotice() for the copy templates and
+            resolveCompanyNotice() in gateway_method.js for the substitution.
+            A company captured with no intent outcome yet showing renders
+            neither notice below and therefore displays the company NAME
+            nowhere in the tile — that follows from "the notice is the
+            only display surface for the name" and is the ruling, not an
+            oversight. The company NUMBER is a separate surface (2026-08-04
+            ruling, §5/§7 follow-up), rendered by each capture panel under
+            its own company field — see renderCompanyNumber() in
+            view/frontend/web/js/model/company-capture-component.js.
+
+            Persistent inline notices, inside the payment tile next to the
+            term chips. Each is emitted only when its own observable is
+            non-empty, so a brand that suppresses the intent message
+            entirely (<intent_approved_notice_enabled>false</…> in
+            brand.xml) yields no element at all rather than an empty
+            wrapper — both notices share that one suppression switch, see
+            ConfigProvider. Class names match the PrestaShop / WooCommerce
+            surfaces so the four platforms stay greppable; `declined` is a
+            new modifier alongside the existing `approved` one.
+        -->
+        <!--
+            Order-intent spinner, TILE-LOCAL by requirement (TWO-25326): a
+            spinner shown while an order-intent check is in flight must be
+            scoped inside the payment tile and must never be a page-covering
+            overlay. This replaces the `fullScreenLoader` that check used to
+            raise — see orderIntentInProgress in gateway_method.js for why the
+            observable behind it is module-scope and shared, and style.css for
+            the figure (the same 16x16 asset the company-search field spinner
+            uses).
+
+            `ko if:`, not `visible:`, and that is an accessibility choice
+            rather than a stylistic one: a `role="status"` region that is
+            merely un-hidden announces nothing on most screen readers, while one
+            INSERTED into the document does. There is no race to lose by it —
+            bindings are applied before any order-intent request can start.
+
+            TWO-25326 (2026-08-05, four-platform convergence): the spinner is
+            no longer text-less. All four plugins now show the SAME spokes
+            figure next to the SAME sentence, "Checking availability" — Luma
+            and WooCommerce previously showed a wordless figure and PrestaShop
+            and Hyva showed two different sentences. The visible text is what
+            names the region, so the figure carries `aria-hidden` and there is
+            no `aria-label` any more: a labelled `role="status"` wrapping
+            visible text is announced twice.
+        -->
+        <!-- ko if: orderIntentInProgress() -->
+        <div class="two-order-intent-loading" role="status">
+            <span class="two-order-intent-spinner" aria-hidden="true"></span>
             <span
-                class="mode_item"
-                data-element="click-element"
-                data-bind="event: { click: () => soleTraderMode() }"
-            >
-                <!-- ko i18n: 'Sole Trader' --><!-- /ko -->
-            </span>
+                class="two-order-intent-loading__text"
+                data-bind="i18n: 'Checking availability'"
+            ></span>
         </div>
         <!-- /ko -->
-
-        <!-- ko if: showSoleTrader -->
-        <div class="mode_selector" data-element="popup-message">
-            <span
-                class="mode_item"
-                data-element="click-element"
-                data-bind="event: { click: () => registeredOrganisationMode() }"
-            >
-                <!-- ko i18n: 'Registered Organisation' --><!-- /ko -->
-            </span>
-            <span class="mode_item" data-element="selected-element">
-                <!-- ko i18n: 'Sole Trader' --><!-- /ko -->
-            </span>
-        </div>
-
-        <!-- ko if: showPopupMessage -->
-        <div class="sole_trader_note" data-element="sole-trader">
-            <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke-width="1.5"
-                stroke="currentColor"
-            >
-                <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0M3.124 7.5A8.969 8.969 0 015.292 3m13.416 0a8.969 8.969 0 012.168 4.5"
-                />
-            </svg>
-            <div class="popup_message" data-element="popup-message">
-                <span data-element="click-element" data-bind="event: { click: () => openIframe() }">
-                    <!-- ko i18n: 'Click here to log in or sign up as a Sole Trader.' --><!-- /ko -->
-                </span>
-            </div>
-            <span class="overlay" data-bind="event: { click: () => { hideIframe() } } "></span>
-        </div>
+        <!-- ko if: isOrderIntentApprovedNoticeVisible() -->
+        <div
+            class="two-order-intent-message approved"
+            role="status"
+            data-bind="text: orderIntentApprovedNotice"
+        ></div>
         <!-- /ko -->
+        <!-- ko if: isOrderIntentDeclinedNoticeVisible() -->
+        <div
+            class="two-order-intent-message declined"
+            role="status"
+            data-bind="text: orderIntentDeclinedNotice"
+        ></div>
         <!-- /ko -->
-        <!-- /ko -->
+        <!--
+            TWO-25326 (2026-08-05, four-platform convergence): the THIRD
+            outcome of an order-intent check — it errored — now renders in the
+            same bordered box as approval and decline, instead of only as a
+            checkout toast that the next checkout update wipes. PrestaShop is
+            the reference: it shows all three outcomes in one container and
+            drops the approved/declined colour for the error case, so this
+            modifier is deliberately the box's neutral palette rather than
+            Magento's `.message-error`.
 
+            Not gated on the brand's intent-message suppression switch, unlike
+            the two above: an error is not the intent verdict a brand can
+            choose not to state, it is the buyer's only sign that the check did
+            not happen.
+        -->
+        <!-- ko if: isOrderIntentErrorNoticeVisible() -->
+        <div
+            class="two-order-intent-message error"
+            role="alert"
+            data-bind="text: orderIntentErrorNotice"
+        ></div>
+        <!-- /ko -->
         <!-- ko foreach: getRegion('messages') -->
         <!-- ko template: getTemplate() --><!-- /ko -->
         <!--/ko-->
@@ -137,44 +193,69 @@
                 class="fieldset payment method"
                 data-bind='attr: {id: "payment_form_" + getCode()}'
             >
-                <div class="field field-text required">
+                <!--
+                    One of the two hosts the page-level company-capture
+                    component anchors its popover at; the address step is the
+                    other. `visible:`, not `if:` — the component resolves its
+                    mount by this node's presence in the DOM, and `if:` would
+                    destroy and rebuild it underneath a live panel.
+                -->
+                <div
+                    class="field field-text required"
+                    data-bind="visible: isTileCompanyFieldVisible()"
+                >
                     <label for="company_name" class="label">
                         <span><!-- ko i18n: 'Company Name'--><!-- /ko --></span>
                     </label>
-                    <div class="control">
+                    <div class="control two-sole-trader-field-control">
+                        <!--
+                            `readonly` is BOUND, not static: a static one would
+                            brick manual entry, where the buyer must be able to
+                            type a name by hand.
+
+                            `required` is bound to the same condition as the
+                            wrapper's `visible:` because `visible` only sets
+                            `display:none` — native HTML5 constraint validation
+                            still blocks submission on a required field that is
+                            not rendered, silently. TWO-25503.
+                        -->
                         <input
                             type="text"
                             id="company_name"
                             name="payment[company_name]"
-                            required="true"
                             data-bind='
                             attr: {
-                                title: $t("Company Name")
+                                title: $t("Company Name"),
+                                readonly: isCompanyNameReadOnly(),
+                                required: isTileCompanyFieldVisible()
                             },
-                            value: companyName'
+                            value: tileCompanyName'
                             class="input-text"
                         />
+                        <!--
+                            In-flight spinner for the sole-trader round trips
+                            (TWO-25461 §7). Inside this field's own `.control`
+                            (see `.two-sole-trader-field-control` in style.css
+                            for the `position: relative` that anchors it), not a
+                            separate overlay.
+                        -->
+                        <span
+                            class="two-sole-trader-prefetch-spinner"
+                            aria-hidden="true"
+                            data-bind="visible: tileSoleTraderBusy"
+                        ></span>
                     </div>
                 </div>
-                <div class="field field-text required">
-                    <label for="company_id" class="label">
-                        <span><!-- ko i18n: 'Company Number'--><!-- /ko --></span>
-                    </label>
-                    <div class="control">
-                        <input
-                            type="text"
-                            id="company_id"
-                            name="payment[company_id]"
-                            required="true"
-                            data-bind='
-                            attr: {
-                                title: $t("Company Number")
-                            },
-                            value: companyId'
-                            class="input-text"
-                        />
-                    </div>
-                </div>
+                <!--
+                    Optional buyer fields. ORDER IS LOAD-BEARING: this markup
+                    order is what the buyer sees, and it must match the admin
+                    pane sequence declared in etc/adminhtml/system.xml and
+                    etc/adminhtml/brand_form_template.xml (the latter's
+                    sortOrder is the one that actually orders the pane — see
+                    the note in that file): invoice email, purchase order
+                    number, project, department, and the order note LAST.
+                    TWO-25263.
+                -->
                 <div class="field field-text" data-bind="visible: isInvoiceEmailsEnabled">
                     <label for="invoice_emails" class="label">
                         <span data-bind="i18n: 'Invoice email address'"></span>
@@ -183,7 +264,24 @@
                         <input
                             type="text"
                             id="invoice_emails"
-                            data-bind="value: invoiceEmails, event: { change: validateEmails }"
+                            data-bind="value: invoiceEmails, event: { change: validateEmails },
+                            attr: {title: displayTooltips ? $t('Invoice email address') : ''}"
+                            class="input-text"
+                        />
+                    </div>
+                </div>
+                <div class="field field-text" data-bind="visible: isPONumberFieldEnabled">
+                    <label for="two_po_number" class="label">
+                        <span><!-- ko i18n: 'PO Number'--><!-- /ko --></span>
+                    </label>
+                    <div class="control">
+                        <input
+                            type="text"
+                            id="two_po_number"
+                            name="payment[poNumber]"
+                            data-bind='
+                            attr: {title: displayTooltips ? $t("PO Number") : ""},
+                            value: poNumber'
                             class="input-text"
                         />
                     </div>
@@ -198,7 +296,7 @@
                             id="two_project"
                             name="payment[project]"
                             data-bind='
-                            attr: {title: $t("Project")},
+                            attr: {title: displayTooltips ? $t("Project") : ""},
                             value: project'
                             class="input-text"
                         />
@@ -214,7 +312,7 @@
                             id="two_department"
                             name="payment[department]"
                             data-bind='
-                            attr: {title: $t("Department")},
+                            attr: {title: displayTooltips ? $t("Department") : ""},
                             value: department'
                             class="input-text"
                         />
@@ -230,24 +328,8 @@
                             id="two_order_note"
                             name="payment[orderNote]"
                             data-bind='
-                            attr: {title: $t("Order Note")},
+                            attr: {title: displayTooltips ? $t("Order Note") : ""},
                             value: orderNote'
-                            class="input-text"
-                        />
-                    </div>
-                </div>
-                <div class="field field-text" data-bind="visible: isPONumberFieldEnabled">
-                    <label for="two_po_number" class="label">
-                        <span><!-- ko i18n: 'PO Number'--><!-- /ko --></span>
-                    </label>
-                    <div class="control">
-                        <input
-                            type="text"
-                            id="two_po_number"
-                            name="payment[poNumber]"
-                            data-bind='
-                            attr: {title: $t("PO Number")},
-                            value: poNumber'
                             class="input-text"
                         />
                     </div>

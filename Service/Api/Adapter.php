@@ -7,7 +7,6 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Service\Api;
 
-use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\HTTP\Client\Curl;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use Throwable;
@@ -66,32 +65,62 @@ class Adapter
      * @param array $payload
      * @param string $method
      * @param int|null $storeId Optional store scope for API key resolution (default: default scope)
+     * @param string|null $apiKeyOverride Key to authenticate with instead of the stored one, for
+     *        verifying a candidate key that has not been saved yet
+     * @param string|null $modeOverride Environment to call instead of the stored one, for verifying
+     *        a candidate key against a mode submitted in the same admin save
      * @return array
      */
     public function execute(
         string $endpoint,
         array $payload = [],
         string $method = 'POST',
-        ?int $storeId = null
+        ?int $storeId = null,
+        ?string $apiKeyOverride = null,
+        ?string $modeOverride = null
+    ): array {
+        return $this->executeWithStatus($endpoint, $payload, $method, $storeId, $apiKeyOverride, $modeOverride)['body'];
+    }
+
+    /**
+     * Same call as execute(), keeping the upstream HTTP status, which the
+     * proxy routes relay as their pass/fail verdict. Status 0 means no HTTP
+     * exchange completed at all.
+     *
+     * @see self::execute() for the parameters
+     * @return array{status: int, body: array}
+     */
+    public function executeWithStatus(
+        string $endpoint,
+        array $payload = [],
+        string $method = 'POST',
+        ?int $storeId = null,
+        ?string $apiKeyOverride = null,
+        ?string $modeOverride = null
     ): array {
         try {
             $this->logRepository->addDebugLog(sprintf('API call: %s %s', $method, $endpoint), $payload);
-            $mode = $storeId !== null ? $this->configRepository->getMode($storeId) : null;
+            $mode = $modeOverride
+                ?: ($storeId !== null ? $this->configRepository->getMode($storeId) : null);
             $url = $this->configRepository->addVersionDataInURL(
                 sprintf('%s%s', $this->configRepository->getCheckoutApiUrl($mode), $endpoint)
             );
             $body = ($method == "POST" || $method == "PUT")
                 ? (empty($payload) ? '' : (string)json_encode($payload))
                 : '';
-            $call = new ApiCall(
-                $method,
-                $url,
-                [
-                    'Content-Type' => 'application/json',
-                    'X-API-Key' => $this->configRepository->getApiKey($storeId),
-                ],
-                $body
-            );
+            $headers = [
+                'Content-Type' => 'application/json',
+                'X-API-Key' => $apiKeyOverride ?? $this->configRepository->getApiKey($storeId),
+            ];
+            // Case-folded: a differently-cased X-API-Key is a conflict, not
+            // a second header.
+            $ours = array_change_key_case($headers, CASE_LOWER);
+            foreach ($this->configRepository->getCustomHeaders($storeId) as $name => $value) {
+                if (!isset($ours[strtolower($name)])) {
+                    $headers[$name] = $value;
+                }
+            }
+            $call = new ApiCall($method, $url, $headers, $body);
 
             try {
                 $call = $this->apiTranslator->translateRequest($call);
@@ -104,8 +133,17 @@ class Adapter
                 $curl->addHeader($name, $value);
             }
             $curl->setOption(CURLOPT_RETURNTRANSFER, true);
-            $curl->setOption(CURLOPT_SSL_VERIFYHOST, 0);
-            $curl->setOption(CURLOPT_SSL_VERIFYPEER, 0);
+            // TWO-25386: TLS verification is ON by default (secure). Only the
+            // "Disable SSL verification" debug toggle turns it off, for stores
+            // behind a corporate proxy that terminates TLS with its own
+            // certificate. Previously this was unconditionally disabled here.
+            if ($this->configRepository->isSslVerificationDisabled($storeId)) {
+                $curl->setOption(CURLOPT_SSL_VERIFYHOST, 0);
+                $curl->setOption(CURLOPT_SSL_VERIFYPEER, 0);
+            } else {
+                $curl->setOption(CURLOPT_SSL_VERIFYHOST, 2);
+                $curl->setOption(CURLOPT_SSL_VERIFYPEER, true);
+            }
             $curl->setOption(CURLOPT_TIMEOUT, 60);
 
             if ($call->method == "POST" || $call->method == "PUT") {
@@ -147,7 +185,7 @@ class Adapter
                     sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
                     $decoded
                 );
-                return $decoded;
+                return ['status' => $result->status, 'body' => $decoded];
             } else {
                 if ($body) {
                     $decoded = json_decode($body, true) ?: [];
@@ -156,21 +194,49 @@ class Adapter
                         sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
                         $decoded
                     );
-                    return $decoded;
+                    return ['status' => $result->status, 'body' => $decoded];
                 } else {
                     $this->logRepository->addDebugLog(
                         sprintf('API response %s %s (status: %s)', $method, $endpoint, $result->status),
                         'Invalid API response.'
                     );
-                    throw new LocalizedException(
-                        __('Invalid API response from %1.', $this->brandRegistry->getProductName())
-                    );
+                    // This used to throw a LocalizedException, which this
+                    // method's own catch-all immediately converted into
+                    // exactly the array below minus `http_status` — the
+                    // throw never escaped execute(). Returning directly
+                    // keeps that same shape while preserving the real HTTP
+                    // status, which the catch-all discarded. Callers that
+                    // categorise failures (Service\Merchant\ApiKeyStatus)
+                    // need it: without a status, an empty-bodied 5xx is
+                    // indistinguishable from a transport failure, and a
+                    // service outage would be reported to the merchant as
+                    // "unreachable" instead of "the service errored".
+                    return [
+                        'status' => $result->status,
+                        'body' => [
+                            'error_code' => 400,
+                            'http_status' => $result->status,
+                            'error_message' => (string)__(
+                                'Invalid API response from %1.',
+                                $this->brandRegistry->getProductName()
+                            ),
+                        ],
+                    ];
                 }
             }
         } catch (Throwable $exception) {
+            // Logged here because the anonymous proxy routes replace this body:
+            // the transport detail is for the merchant's log, not the caller.
+            $this->logRepository->addErrorLog(
+                sprintf('[api-transport-failure] endpoint=%s method=%s', $endpoint, $method),
+                $exception->getMessage()
+            );
             return [
-                'error_code' => 400,
-                'error_message' => $exception->getMessage(),
+                'status' => 0,
+                'body' => [
+                    'error_code' => 400,
+                    'error_message' => $exception->getMessage(),
+                ],
             ];
         }
     }
@@ -189,10 +255,13 @@ class Adapter
             null
         );
         return [
-            'error_code' => 502,
-            'http_status' => 502,
-            'error_source' => 'api_translator',
-            'error_message' => 'Translator failure',
+            'status' => 502,
+            'body' => [
+                'error_code' => 502,
+                'http_status' => 502,
+                'error_source' => 'api_translator',
+                'error_message' => 'Translator failure',
+            ],
         ];
     }
 }

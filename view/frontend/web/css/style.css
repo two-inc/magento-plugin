@@ -94,7 +94,6 @@
     font-weight: 500;
 }
 
-
 .terms-container {
     margin-top: 1.5rem;
     padding: 1rem;
@@ -107,56 +106,15 @@
     padding: 1rem !important;
 }
 
-.enter_details_manually {
-    cursor: pointer;
-    color: var(--color-blue2);
-    padding: 5px;
-}
 
-.search_for_company {
-    text-align: right;
-    cursor: pointer;
-    padding-top: 5px;
-    color: var(--color-blue2);
-    right: 4px;
-}
 
 .two-payment-method {
     display: list-item;
 }
 
-.mode_selector {
-    display: flex;
-    justify-content: center;
-    gap: 12px;
-    margin-bottom: 20px;
-    padding: 12px 6px;
-    border-bottom: 1px solid var(--color-gray89);
-    color: var(--color-brownie-vanilla);
-}
-
-.mode_selector .mode_item {
-    text-decoration: none;
-    text-underline-offset: 2px;
-    text-align: center;
-    padding: 5px 10px;
-    border-radius: 5px;
-    border: 1px solid var(--color-gray89);
-}
-
-.mode_selector [data-element='click-element'] {
-    color: var(--color-blue2);
-    background-color: var(--color-white);
-    cursor: pointer;
-}
-
-.mode_selector [data-element='selected-element'] {
-    color: var(--color-white);
-    background-color: var(--color-blue2);
-}
 
 /* Sole trader part */
-.sole_trader_note {
+.two-sole-trader-note {
     display: flex;
     justify-content: flex-end;
     gap: 12px;
@@ -167,12 +125,7 @@
     color: var(--color-brownie-vanilla);
 }
 
-.sole_trader_note svg {
-    width: 20px;
-    height: 20px;
-}
-
-.sole_trader_note [data-element='click-element'] {
+.two-sole-trader-note__link {
     color: var(--color-blue2);
     text-decoration: underline;
     text-underline-offset: 2px;
@@ -181,69 +134,6 @@
 
 [data-element='error-message'] {
     margin-bottom: 24px !important;
-}
-
-.popup_message [data-element='click-element'] {
-    color: var(--color-blue2);
-    text-decoration: underline;
-    text-underline-offset: 2px;
-    cursor: pointer;
-}
-
-.sole_trader_note .iframe-parent {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    z-index: 50;
-    transform: translate(-50%, -200%);
-
-    width: calc(90% - 40px);
-    height: calc(90% - 40px);
-    max-width: 1280px;
-    max-height: 1024px;
-    padding: 20px;
-
-    border-radius: 8px;
-    border: 1px solid var(--color-gray89);
-    background-color: var(--color-white);
-    box-shadow:
-        0 4px 6px -1px rgb(0 0 0 / 0.1),
-        0 2px 4px -2px rgb(0 0 0 / 0.1);
-
-    transition: 0.65s;
-}
-
-.sole_trader_note iframe {
-    width: 100%;
-    height: 100%;
-    border: 0;
-}
-
-.sole_trader_note .overlay {
-    position: fixed;
-    right: 0;
-    top: 0;
-    z-index: 49;
-
-    display: block;
-    height: 100%;
-    width: 100%;
-
-    opacity: 0;
-    visibility: hidden;
-    background-color: rgba(0, 0, 0, 0.7);
-
-    transition: 0.65s;
-    cursor: pointer;
-}
-
-.sole_trader_note.show .iframe-parent {
-    transform: translate(-50%, -50%);
-}
-
-.sole_trader_note.show .overlay {
-    opacity: 1;
-    visibility: visible;
 }
 
 /* Payment term chips */
@@ -259,8 +149,8 @@
 }
 
 /*
- * Chip colour palette matches the `.mode_item` toggle elsewhere on the
- * checkout page (Registered Organisation / Sole Trader): solid Two-brand
+ * Chip colour palette matches the `.two-company-mode-chip` toggle elsewhere on the
+ * checkout page (the company-capture mode options): solid Two-brand
  * blue (`--color-blue2`) for the selected state, white fill with blue
  * text for unselected. Brand overlays that ship a different palette
  * (e.g. a brand overlay's palette) override these rules from their own
@@ -276,7 +166,10 @@
     background: var(--color-white);
     color: var(--color-blue2);
     cursor: pointer;
-    transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+    transition:
+        border-color 0.15s ease,
+        background-color 0.15s ease,
+        color 0.15s ease;
     min-width: 80px;
     font-family: inherit;
     position: relative;
@@ -335,13 +228,117 @@
     animation: two-term-chip-dot 1.4s infinite ease-in-out both;
 }
 
-.two-term-chip__loading > span:nth-child(2) { animation-delay: 0.2s; }
-.two-term-chip__loading > span:nth-child(3) { animation-delay: 0.4s; }
+.two-term-chip__loading > span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+.two-term-chip__loading > span:nth-child(3) {
+    animation-delay: 0.4s;
+}
 
 @keyframes two-term-chip-dot {
-    0%, 80%, 100% { opacity: 0.2; }
-    40%          { opacity: 1; }
+    0%,
+    80%,
+    100% {
+        opacity: 0.2;
+    }
+    40% {
+        opacity: 1;
+    }
 }
+
+
+/*
+ * Order-intent spinner, TILE-LOCAL (TWO-25326).
+ *
+ * Deliberately NOT `position: absolute` like the company-search field spinner
+ * above: that one is pinned inside a specific input's `.control`, whereas this
+ * one is a row in the tile's normal flow, next to the order-intent notices. In
+ * flow it needs no positioned ancestor, which is what keeps it working
+ * unchanged across the themes that restyle the tile (Amasty, Fire Checkout)
+ * without any of them having to opt in.
+ *
+ * Same 16x16 `loader.gif` as the field spinner, same `../images/` reasoning —
+ * see the comment on `.two-company-dropdown__spinner`.
+ */
+.two-order-intent-spinner {
+    display: inline-block;
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    background-image: url("../images/loader.gif");
+    background-repeat: no-repeat;
+    background-position: left center;
+    background-size: 16px 16px;
+}
+
+/*
+ * The row the spinner now sits in, with the "Checking availability" sentence
+ * beside it (TWO-25326, 2026-08-05 four-platform convergence — all four
+ * plugins show the same figure and the same sentence). The row owns the
+ * vertical margin the spinner used to carry itself, so the figure and the text
+ * cannot drift apart when a theme restyles either one.
+ */
+.two-order-intent-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+}
+
+.two-order-intent-loading__text {
+    color: #495057;
+    font-size: 1.3rem;
+    line-height: 1.4;
+}
+
+/*
+ * Anchors the in-field sole-trader lookup spinner below (TWO-25461 §7) — the
+ * same role `.two-company-dropdown__search` plays for the search spinner.
+ */
+.two-sole-trader-field-control {
+    position: relative;
+}
+
+/*
+ * In-flight spinner for the sole-trader lookup round trip. Same 16x16
+ * `loader.gif` and absolute-inside-the-field positioning as
+ * `.two-company-dropdown__spinner` — kept as its own flat class rather than
+ * reused verbatim, since that one's selector must stay untouched for overlay
+ * stylesheets (see its comment).
+ */
+.two-sole-trader-prefetch-spinner {
+    position: absolute;
+    top: calc(50% - 8px);
+    right: 12px;
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    pointer-events: none;
+    background-image: url("../images/loader.gif");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 16px 16px;
+}
+
+/*
+ * "Select a different sole trader" link (TWO-25461 §7) — a plain text-link
+ * button, same visual weight as the tile's other secondary affordances.
+ */
+.two-select-different-sole-trader {
+    margin-top: 6px;
+}
+
+.two-select-different-sole-trader__link {
+    background: none;
+    border: none;
+    padding: 0;
+    color: #1979c3;
+    font-size: 1.3rem;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+
 
 .two-term-chip--single {
     border-color: var(--color-blue2);
@@ -362,18 +359,377 @@
     opacity: 1;
 }
 
-/* Theme specific css for fire checkout on select2 */
-.firecheckout .select2-container {
-    width: 100% !important;
+/*
+ * Theme specific css for fire checkout on the payment term chips.
+ *
+ * Fire Checkout's own stylesheet (Swissup_Firecheckout/css/firecheckout-light.css)
+ * lays out every field inside the payment tile as a label/control row:
+ *
+ *   .firecheckout .payment-method-content div.field       { display: inline-block; width: 100% }
+ *   .firecheckout .payment-method-content div.field > .label { float: left; width: auto }
+ *
+ * The floated label leaves the chip container beside it rather than under it.
+ * Making the field a column flex container puts the container back below the
+ * label, and float has no effect on a flex item so the label unfloats too.
+ *
+ * The selector has to carry `.payment-method-content div.field` as well: Fire's
+ * rule scores 0-3-1, so the shorter `.firecheckout .two-term-chips` (0-2-0) that
+ * this replaces lost on specificity and never applied. Adding the chip class on
+ * top of Fire's own selector scores 0-4-1 and wins without `!important`.
+ *
+ * Everything here stays inside `.firecheckout`, so Luma and Hyva are untouched.
+ */
+.firecheckout .payment-method-content div.field.two-term-chips {
+    display: flex;
+    flex-direction: column;
 }
 
-.firecheckout .select2-container--default .select2-selection--single {
-    background-color: inherit !important;
-    border: 2px solid #f2f5f7;
-    border-radius: 3px;
-    height: 50px;
-    padding: 1em 0em;
-    box-sizing: border-box;
-    transition: all 100ms ease-in-out;
+/* Reordered above the company field, the select is alone on its row at content width. */
+.firecheckout [data-form="billing-new-address"] .field select[name="country_id"] {
     width: 100%;
+}
+
+/*
+ * The module's persistent inline notice box — the order-intent outcomes in the
+ * payment tile (view/frontend/web/template/payment/gateway_method.html) and a
+ * capture panel's own address-lookup failure beside its field
+ * (`.two-company-address-notice`, company-capture-component.js). Replaces the
+ * transient checkout message-region treatment, which checkout cleared on every
+ * update.
+ *
+ * Deliberately low-key: this is reassurance, not a call to action, and it
+ * sits directly under the term chips. Brand overlays that ship their own
+ * palette override these rules from their own style.css, which loads after
+ * this one.
+ */
+.two-order-intent-message {
+    margin: 0 0 1.5em;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+    background: #fff;
+    color: #495057;
+    font-size: 1.3rem;
+    line-height: 1.4;
+}
+
+/*
+ * TWO-25326 (2026-08-05, four-platform convergence): the palette is now the
+ * SEMANTIC one PrestaShop already uses — success green for an approval, danger
+ * red for a decline, and the box's own neutral colours for an error — rather
+ * than this module's brand blue for approval and a warm red for decline. The
+ * point of the change is that a buyer meeting two of the four plugins reads
+ * the same colour for the same outcome; the flat background (no gradient, no
+ * shadow) is Luma's rendering of it.
+ */
+.two-order-intent-message.approved {
+    border-color: #28a745;
+    background: #d4edda;
+    color: #155724;
+}
+
+/*
+ * TWO-25326 §7.3 (2026-08-03 ruling): the "not approved" counterpart to
+ * `.approved` above, added when the standalone company label was removed
+ * and its name/number folded into this sentence instead. Recoloured
+ * 2026-08-05 to PrestaShop's danger red for cross-platform convergence
+ * (see the note on `.approved`); it is still this box's own styling and
+ * not Magento's `.message-error`, because a business decline is not an
+ * error the buyer caused.
+ */
+.two-order-intent-message.declined {
+    border-color: #dc3545;
+    background: #f8d7da;
+    color: #721c24;
+}
+
+/*
+ * The check itself failed (TWO-25326, 2026-08-05). Same container, and
+ * deliberately the base neutral palette rather than a third colour: matching
+ * PrestaShop, which strips its approved/declined classes for this case. The
+ * rule exists explicitly, with nothing but the base values in it, so the
+ * error state is greppable next to its siblings and a later edit to the base
+ * cannot silently repaint it.
+ */
+.two-order-intent-message.error {
+    border-color: #e9ecef;
+    background: #fff;
+    color: #495057;
+}
+
+/*
+ * The company-NAME input's read-only affordance. `readonly` is bound and true
+ * in sole-trader mode only (see gateway_method.html), and `readonly` alone
+ * renders identically to a normal input in most themes — an input the buyer
+ * cannot type into but which looks like they can is worse than either state
+ * on its own.
+ *
+ * Scoped to this module's own form rather than written as a bare
+ * `input[readonly]`: this stylesheet is loaded for the whole storefront and
+ * an unscoped rule would repaint every read-only input on the page, none of
+ * which this module owns.
+ */
+#two_gateway_form input.input-text[readonly] {
+    background-color: #f5f5f5;
+    color: #666666;
+    cursor: default;
+}
+
+/*
+ * TWO-25288. The address-step "Company Number" field (injected by
+ * Plugin/Model/Checkout/LayoutProcessorPlugin.php) stays in the UI-registry
+ * render tree — `visible: true` — because
+ * view/frontend/web/js/view/address-autocomplete.js resolves it through
+ * `uiRegistry.get()`. It is hidden purely visually here, so the DOM node and
+ * its value stay intact and still submit as
+ * shippingAddress.custom_attributes.company_id.
+ */
+.two-company-id-hidden,
+.fieldset .field.two-company-id-hidden {
+    display: none !important;
+}
+
+/*
+ * TWO-25326 §5, 2026-08-04 ruling, Bug B. `text-align: end` rather than
+ * `right` so it follows the writing direction on RTL store views; this block
+ * spans the input's containing box, so its end edge lines up exactly.
+ */
+.two-company-id-text {
+    display: block;
+    text-align: end;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    color: #666666;
+    font-size: 12px;
+    word-break: break-word;
+}
+
+/* Ours, not the theme's: a bare `.hidden` is defined by Luma but not by every
+   one-page checkout, and a chip that fails to hide offers a mode the buyer's
+   country cannot serve. */
+.two-hidden {
+    display: none !important;
+}
+
+/*
+ * The company-capture popover (TWO-25503).
+ *
+ * One anchored panel holding the query field, the results and the mode chips.
+ * Absolutely positioned so opening it never reflows the address form behind it
+ * — the chips are inside it, so nothing of this control occupies the form's
+ * flow while it is closed.
+ */
+.two-company-field-wrap {
+    display: block;
+    position: relative;
+}
+
+.two-company-dropdown {
+    position: absolute;
+    z-index: 100;
+    top: 100%;
+    left: 0;
+    right: 0;
+    /*
+     * A single clamped `width`, not `min-width` — CSS2.1 min-width always
+     * wins over max-width, so the two together would make the viewport clamp
+     * a no-op below a 512px viewport. `left`/`right` still make the panel
+     * fill the field on any field wide enough (Luma); below 480px the box
+     * model drops `left` to honour this `width`, so the panel overhangs the
+     * field instead of truncating every result to a few characters. 480px
+     * covers realistic company names without excessive overhang; the
+     * `calc(100vw - 32px)` side of the clamp keeps that width off the edges
+     * of a phone-width screen.
+     */
+    width: min(480px, calc(100vw - 32px));
+    box-sizing: border-box;
+    padding: 8px;
+    border: 1px solid var(--color-gray89);
+    border-radius: 3px;
+    background: var(--color-white);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.two-company-dropdown[hidden] {
+    display: none;
+}
+
+/* Anchors the spinner inside the query field. */
+.two-company-dropdown__search {
+    position: relative;
+}
+
+.two-company-dropdown__search.two-hidden {
+    display: none;
+}
+
+/*
+ * The way out of manual entry, below the company field and aligned to its
+ * right-hand edge. In normal block flow, never overlapping the field.
+ */
+.two-company-search-back {
+    display: block;
+    margin-left: auto;
+    padding: 5px 2px 0;
+    border: none;
+    background: none;
+    color: var(--color-blue2);
+    font: inherit;
+    cursor: pointer;
+    text-transform: none !important;
+}
+
+.two-company-dropdown__query {
+    box-sizing: border-box;
+    width: 100%;
+    /* Room for the spinner, which overlays the field's right-hand end. */
+    padding-right: 34px;
+    /* Luma themes routinely uppercase form text broadly enough to catch this,
+       and their own rule is as routinely `!important`. */
+    text-transform: none !important;
+    text-overflow: ellipsis;
+}
+
+/* Firefox clips the placeholder from the input's own `text-overflow`; Chrome and
+   Safari only honour it on the pseudo-element, so both are declared. */
+.two-company-dropdown__query::placeholder {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/*
+ * A `background-image` on a childless element rather than an `<img>`: a
+ * stylesheet `url()` resolves relative to the published stylesheet, where an
+ * `<img>` would need a resolved URL plumbed through Magento's asset helper
+ * into the markup. Static content deploy puts `css/` and `images/` side by
+ * side under this module's directory. Fixed 16px because the asset is natively
+ * 16x16 and scaling it up only blurs it.
+ *
+ * Shown only while a search is actually on the wire, via a modifier on the
+ * element itself rather than a parent state class: overlay stylesheets hook
+ * this indicator with flat single-class rules and win only on load order at
+ * equal specificity, so a descendant selector here would silently outscore
+ * them with nothing in CI to notice.
+ */
+.two-company-dropdown__spinner {
+    display: none;
+    position: absolute;
+    top: calc(50% - 8px);
+    right: 12px;
+    width: 16px;
+    height: 16px;
+    pointer-events: none;
+    background-image: url("../images/loader.gif");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 16px 16px;
+}
+
+.two-company-dropdown__spinner--active {
+    display: inline-block;
+}
+
+/*
+ * The scroll lives on the results host, not on the rows, so the chips below it
+ * stay outside the scroll container and reachable without scrolling past up to
+ * 50 results.
+ */
+.two-company-dropdown__results {
+    max-height: 240px;
+    overflow-y: auto;
+    margin-top: 8px;
+}
+
+/*
+ * Ellipsised on one line, matching PrestaShop's rows — wrapping a row instead
+ * gives the scroll container a horizontal scrollbar as well as a vertical one.
+ */
+.two-company-dropdown__row {
+    padding: 6px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-transform: none !important;
+}
+
+/*
+ * The API marks the matched substring with `mark`, whose UA default is a yellow
+ * highlighter. No theme in either checkout resets it.
+ */
+.two-company-dropdown__row mark {
+    background: transparent;
+    color: inherit;
+}
+
+.two-company-dropdown__row:hover,
+.two-company-dropdown__row--active {
+    background-color: #f5f5f5;
+}
+
+/* Too-short, or no matches. */
+.two-company-dropdown__message {
+    padding: 6px 8px;
+    color: var(--color-brownie-vanilla);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+/*
+ * The search being DOWN, which is a different answer from "your company is not
+ * here" (TWO-25326) and must not read like it.
+ */
+.two-company-dropdown__message--unavailable {
+    border-radius: 3px;
+    background: #fdf0d5;
+    color: #6f4900;
+}
+
+/*
+ * The mode chips, inside the panel and after the results — the tab order the
+ * DOM already describes, and the reason the panel exists in this shape at all.
+ */
+.two-company-mode-chips {
+    display: flex;
+    justify-content: center;
+    /* Three peer options no longer fit one line in a narrow tile. */
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--color-gray89);
+}
+
+/*
+ * Sized to PrestaShop's chips. Left at the theme's own font size and intrinsic
+ * width, two chips no longer fit a row inside a field-width panel, so each
+ * lands on a line of its own — the stacked column TWO-40 explicitly designed
+ * against.
+ */
+.two-company-mode-chip {
+    flex: 1 1 auto;
+    min-width: 84px;
+    font-size: 13px;
+    line-height: 1.3;
+    word-break: break-word;
+    text-align: center;
+    padding: 5px 10px;
+    border-radius: 5px;
+    border: 1px solid var(--color-gray89);
+    color: var(--color-blue2);
+    background-color: var(--color-white);
+    cursor: pointer;
+    font-family: inherit;
+    text-transform: none !important;
+}
+
+.two-company-mode-chip--selected {
+    color: var(--color-white);
+    background-color: var(--color-blue2);
+}
+
+.two-company-mode-chip.two-hidden {
+    display: none;
 }

@@ -85,29 +85,51 @@ class MerchantMinimumOrder implements CommentInterface
             $platformMinimum['currency']
         );
 
-        $minimumDisplay = $nativeDisplay;
-        if ($baseCurrency !== '' && $baseCurrency !== $platformMinimum['currency']) {
-            $rate = $this->ratesProvider->getRate(
-                $platformMinimum['currency'],
-                $baseCurrency,
-                $store !== null ? (int)$store->getId() : null
+        $basisWord = $platformMinimum['basis'] === 'gross' ? __('including') : __('excluding');
+
+        if ($baseCurrency === '' || $baseCurrency === $platformMinimum['currency']) {
+            return (string)__(
+                'Platform minimum %1, %2 tax. A value here is interpreted in the store base currency on the tax basis selected below and must be at least this.',
+                $nativeDisplay,
+                $basisWord
             );
-            if ($rate !== null && $rate > 0) {
-                $floorDisplay = $this->priceCurrency->format(
-                    round($platformMinimum['amount'] * $rate, 2),
-                    false,
-                    2,
-                    $store,
-                    $baseCurrency
-                );
-                $minimumDisplay = sprintf('%s (%s)', $floorDisplay, $nativeDisplay);
-            }
         }
+
+        $rate = $this->ratesProvider->getRate(
+            $platformMinimum['currency'],
+            $baseCurrency,
+            $store !== null ? (int)$store->getId() : null
+        );
+
+        // TWO-25503: with no rate for the pair the platform floor can only be
+        // shown in ITS currency, which the field is not interpreted in. Saying
+        // "must be at least this" against a figure in another currency reads as
+        // a number the merchant can type, so name the gap instead — the save-time
+        // validation cannot compare the two either.
+        if ($rate === null || $rate <= 0) {
+            return (string)__(
+                'Platform minimum %1, %2 tax. A value here is interpreted in %3 on the tax basis selected below,'
+                . ' and no exchange rate for %4 to %3 is currently available, so the two cannot be compared.'
+                . ' Configure the rate under Stores > Currency Rates.',
+                $nativeDisplay,
+                $basisWord,
+                $baseCurrency,
+                $platformMinimum['currency']
+            );
+        }
+
+        $floorDisplay = $this->priceCurrency->format(
+            round($platformMinimum['amount'] * $rate, 2),
+            false,
+            2,
+            $store,
+            $baseCurrency
+        );
 
         return (string)__(
             'Platform minimum %1, %2 tax. A value here is interpreted in the store base currency on the tax basis selected below and must be at least this.',
-            $minimumDisplay,
-            $platformMinimum['basis'] === 'gross' ? __('including') : __('excluding')
+            sprintf('%s (%s)', $floorDisplay, $nativeDisplay),
+            $basisWord
         );
     }
 

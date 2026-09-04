@@ -47,6 +47,7 @@ class InternationalTelephone implements DataPatchInterface
 
         $eavSetup = $this->eavSetupFactory->create(['setup' => $this->moduleDataSetup]);
 
+        // Deprecated: two_telephone attribute removed by RemoveInternationalTelephone patch, see TWO-24868
         $eavSetup->addAttribute(
             'customer_address',
             'two_telephone',

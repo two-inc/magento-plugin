@@ -34,6 +34,10 @@ define([
     var selectedTerm = ko.observable(config.selectedPaymentTerm || config.defaultPaymentTerm || 0);
     // Empty by default — template renders loader until the latest loadFees() resolves.
     var termSurcharges = ko.observable({});
+    var termSurchargesGross = ko.observable({});
+    // 'excl' | 'incl' | 'both', mirroring tax/cart_display/price. Server-
+    // supplied on every surcharge response; 'excl' until the first answers.
+    var taxDisplay = ko.observable('excl');
     var isUpdating = ko.observable(false);
 
     // Fetch sequence guard. Magento fires quote.getTotals() once on bootstrap
@@ -51,6 +55,23 @@ define([
     // total + every segment's code/value/title — and skip the fetch when
     // the snapshot matches the previous one.
     var lastTotalsSnapshot = null;
+
+    /**
+     * Both maps are replaced together so a chip can never pair one term's net
+     * with another response's gross.
+     *
+     * @param {Array} items per-term entries from either surcharge endpoint
+     */
+    function applyTermSurcharges(items) {
+        var net = {};
+        var gross = {};
+        items.forEach(function (item) {
+            net[item.days] = item.net;
+            gross[item.days] = typeof item.gross === 'number' ? item.gross : item.net;
+        });
+        termSurcharges(net);
+        termSurchargesGross(gross);
+    }
 
     /**
      * Build a deterministic snapshot of the totals payload covering every
@@ -138,12 +159,11 @@ define([
                 console.warn('Two_Gateway: surcharges response not parseable', e);
                 return;
             }
+            if (data && data.tax_display) {
+                taxDisplay(data.tax_display);
+            }
             if (data && Array.isArray(data.term_surcharges) && data.term_surcharges.length) {
-                var updated = {};
-                data.term_surcharges.forEach(function (item) {
-                    updated[item.days] = item.net;
-                });
-                termSurcharges(updated);
+                applyTermSurcharges(data.term_surcharges);
             }
         }).fail(function (xhr, status, err) {
             console.warn('Two_Gateway: surcharges fetch failed', status, err);
@@ -178,14 +198,26 @@ define([
         selectedTerm: selectedTerm,
         isUpdating: isUpdating,
         termSurcharges: termSurcharges,
+        termSurchargesGross: termSurchargesGross,
+        taxDisplay: taxDisplay,
         currencySymbol: config.currencySymbol || '',
 
         /**
          * Get the surcharge for the current term (for chip labels).
          */
         getAmount: function () {
-            var surcharges = termSurcharges();
+            var surcharges = this.displayedTermSurcharges();
             return parseFloat(surcharges[selectedTerm()] || 0);
+        },
+
+        /**
+         * The per-term map the chips must render: gross only when the store
+         * shows gross-only prices at checkout ('incl'); net for 'excl' and
+         * for 'both' — a chip is one compact value and has no room for the
+         * excl/incl pair, which belongs to the order-summary rows instead.
+         */
+        displayedTermSurcharges: function () {
+            return taxDisplay() === 'incl' ? termSurchargesGross() : termSurcharges();
         },
 
         /**
@@ -240,15 +272,14 @@ define([
                     }
                 }
 
+                if (data && data.tax_display) {
+                    taxDisplay(data.tax_display);
+                }
                 if (data && data.term_surcharges) {
-                    var updated = {};
-                    data.term_surcharges.forEach(function (item) {
-                        updated[item.days] = item.net;
-                    });
                     // Bump fetchSeq so any in-flight loadFees can't clobber
                     // the authoritative values returned by /select-term.
                     fetchSeq++;
-                    termSurcharges(updated);
+                    applyTermSurcharges(data.term_surcharges);
                 }
             }).always(function () {
                 isUpdating(false);

@@ -12,16 +12,30 @@ use Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck;
  */
 $status = $block->getApiKeyStatus();
 ?>
-<div>
-    <span><?= $block->escapeHtml($status['message']); ?></span>
-    <span class="api-key-status-icon <?= $block->escapeHtmlAttr('api-key-' . $status['status']); ?>"></span>
-    <?php if (isset($status['error'])): ?>
-        <span class="api-key-error-message"><?= $block->escapeHtml($status['error']); ?></span>
-    <?php endif; ?>
-    <?php if (!empty($status['merchant_id'])): ?>
-        <div style="margin-top: 8px; color: #666; font-size: 13px;">
-            <strong><?= $block->escapeHtml(__('Merchant ID:')); ?></strong>
-            <?= $block->escapeHtml($status['merchant_id']); ?><?php if (!empty($status['merchant_short_name'])): ?> &middot; <?= $block->escapeHtml($status['merchant_short_name']); ?><?php endif; ?>
-        </div>
-    <?php endif; ?>
+<div class="two-api-key-verify"
+     data-verify-url="<?= $block->escapeHtmlAttr($block->getVerifyUrl()); ?>"
+     data-field-id="<?= $block->escapeHtmlAttr($block->getApiKeyFieldId()); ?>"
+     data-scope="<?= $block->escapeHtmlAttr($block->getScope()); ?>"
+     data-scope-id="<?= (int)$block->getScopeId(); ?>">
+    <span class="two-api-key-verify__input-wrap">
+        <?= /* @noEscape */ $block->getInputHtml(); ?>
+        <span class="two-api-key-verify__icon api-key-status-icon <?= $block->escapeHtmlAttr('api-key-' . $status['status']); ?>"></span>
+    </span>
+    <div class="two-api-key-verify__status">
+        <span class="two-api-key-verify__message"><?= $block->escapeHtml($status['message']); ?></span>
+        <?php
+        // No raw upstream response body is rendered here. It used to be
+        // echoed alongside the message, which put an API error payload in
+        // front of a merchant while telling them, wrongly, that their key
+        // was invalid. getApiKeyStatus() now carries a category-specific
+        // message (and, where an HTTP exchange completed, its status code)
+        // which is the whole of what an admin can act on.
+        ?>
+        <?php if (!empty($status['merchant_id'])): ?>
+            <div style="margin-top: 8px; color: #666; font-size: 13px;">
+                <strong><?= $block->escapeHtml(__('Merchant ID:')); ?></strong>
+                <?= $block->escapeHtml($status['merchant_id']); ?><?php if (!empty($status['merchant_short_name'])): ?> &middot; <?= $block->escapeHtml($status['merchant_short_name']); ?><?php endif; ?>
+            </div>
+        <?php endif; ?>
+    </div>
 </div>

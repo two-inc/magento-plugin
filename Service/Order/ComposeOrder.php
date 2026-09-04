@@ -10,12 +10,18 @@ namespace Two\Gateway\Service\Order;
 use Magento\Catalog\Helper\Image;
 use Magento\Catalog\Model\ResourceModel\Category\CollectionFactory as CategoryCollection;
 use Magento\Checkout\Model\Session as CheckoutSession;
+use Magento\Framework\Exception\InputException;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Url;
 use Magento\Sales\Api\OrderItemRepositoryInterface;
 use Magento\Sales\Model\Order;
 use Magento\Store\Model\App\Emulation;
+use Magento\Tax\Api\OrderTaxManagementInterface;
+use Magento\Tax\Model\Calculation as TaxCalculation;
+use Magento\Tax\Model\ResourceModel\Sales\Order\Tax\CollectionFactory as OrderTaxCollectionFactory;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Service\Fee\FeeLineProviderPool;
 use Two\Gateway\Service\Order as OrderService;
 
 /**
@@ -35,9 +41,26 @@ class ComposeOrder extends OrderService
         OrderItemRepositoryInterface $orderItemRepository,
         Emulation $appEmulation,
         Url $url,
-        CheckoutSession $checkoutSession
+        LogRepository $logRepository,
+        CheckoutSession $checkoutSession,
+        FeeLineProviderPool $feeLineProviderPool,
+        OrderTaxManagementInterface $orderTaxManagement,
+        TaxCalculation $taxCalculation,
+        OrderTaxCollectionFactory $orderTaxCollectionFactory
     ) {
-        parent::__construct($imageHelper, $configRepository, $categoryCollectionFactory, $orderItemRepository, $appEmulation, $url);
+        parent::__construct(
+            $imageHelper,
+            $configRepository,
+            $categoryCollectionFactory,
+            $orderItemRepository,
+            $appEmulation,
+            $url,
+            $logRepository,
+            $feeLineProviderPool,
+            $orderTaxManagement,
+            $taxCalculation,
+            $orderTaxCollectionFactory
+        );
         $this->checkoutSession = $checkoutSession;
     }
 
@@ -108,14 +131,22 @@ class ComposeOrder extends OrderService
         $taxTotal = (float)$order->getTaxAmount();
         $netTotal = $grossTotal - $taxTotal;
 
-        // Compose the final payload for the API call
+        // Reconcile any known third-party fee (via a registered
+        // FeeLineProviderInterface) and, failing that, any genuinely
+        // untaxed residual. See Order::reconcileOtherCharges() docblock.
+        $lineItems = $this->reconcileOtherCharges($lineItems, $order, $grossTotal, $taxTotal);
+
+        // Last gate before the amounts go on the wire: every line's declared
+        // tax has to follow from its own declared rate and net.
+        $this->validateTaxReconciliation($lineItems);
+
+        // Compose the final payload for the API call. Fields that may
+        // legitimately be blank are NOT listed here — they go through the
+        // omit-when-blank list below.
         $payload = [
             'billing_address' => $this->getAddress($order, $additionalData, 'billing'),
             'shipping_address' => $this->getAddress($order, $additionalData, 'shipping'),
             'buyer' => $this->getBuyer($order, $additionalData),
-            'buyer_department' => $additionalData['department'] ?? '',
-            'buyer_project' => $additionalData['project'] ?? '',
-            'buyer_purchase_order_number' => $additionalData['poNumber'] ?? '',
             'currency' => $order->getOrderCurrencyCode(),
             'discount_amount' => $this->roundAmt($this->getDiscountAmountItem($order)),
             'gross_amount' => $this->roundAmt($grossTotal),
@@ -136,23 +167,67 @@ class ComposeOrder extends OrderService
                     'two/payment/cancel',
                     ['_two_order_reference' => base64_encode($orderReference)]
                 ),
-                'merchant_edit_order_url' => '',
+                // merchant_edit_order_url is deliberately absent: the plugin
+                // exposes no merchant-side edit-order route, so there is no
+                // URL to put here.
                 'merchant_order_verification_failed_url' => $this->url->getUrl(
                     'two/payment/verificationfailed',
                     ['_two_order_reference' => base64_encode($orderReference)]
                 ),
             ],
-            'order_note' => $additionalData['orderNote'] ?? ''
         ];
 
-        // Add invoice_details and required placeholders only if invoiceEmails are present
+        // TWO-25386: these fields are optional and are omitted rather than sent
+        // blank. Two different reasons, both real.
+        //
+        // vendor_name is the one that cannot be blank while the key is present:
+        // a blank admin setting sent as '' had the order rejected and nothing
+        // created at all, and that rejection is why this ticket exists.
+        //
+        // The other four never caused a rejection. They are omitted because of
+        // what an omitted key means to a later order edit; the field
+        // constraints and the edit-merge semantics behind that are recorded on
+        // TWO-25386. The decision here is that a value nobody set is left out
+        // of the request entirely. Concretely, composing them blank meant an
+        // admin order-address edit sent buyer_purchase_order_number and
+        // order_note blank (buyer_department and buyer_project were forwarded
+        // from the stored additional_information, so those two survived).
+        //
+        // An explicit list of what to omit when blank, never a blanket
+        // empty-strip over $payload: merchant_confirmation_url and the amount
+        // fields have to survive regardless of their value.
+        $optionalFields = [
+            'buyer_department' => $additionalData['department'] ?? '',
+            'buyer_project' => $additionalData['project'] ?? '',
+            'buyer_purchase_order_number' => $additionalData['poNumber'] ?? '',
+            'order_note' => $additionalData['orderNote'] ?? '',
+            'vendor_name' => $this->configRepository->getVendorSiteName($storeId),
+        ];
+        foreach ($optionalFields as $key => $value) {
+            // $additionalData comes straight from the checkout request, and the
+            // observer that stores it only checks that the top level is an
+            // array — so a crafted request can leave an array sitting in one of
+            // these values. Casting that to string raises a warning, which
+            // developer mode turns into a failed order placement, so drop
+            // anything that is not a scalar instead.
+            if (!is_scalar($value)) {
+                continue;
+            }
+            // Compare as string rather than using empty(), so a legitimate
+            // '0' department/project reference is still sent.
+            if ((string)$value !== '') {
+                $payload[$key] = (string)$value;
+            }
+        }
+
+        // Add invoice_details only if invoiceEmails are present. The payment
+        // reference fields are left out for one reason: the plugin has no value
+        // to put in them, and they are defaulted when the key is absent. Their
+        // constraints are recorded on TWO-25386.
         if (!empty($additionalData['invoiceEmails'])) {
-            $invoiceDetails = [
+            $payload['invoice_details'] = [
                 'invoice_emails' => explode(',', $additionalData['invoiceEmails']),
-                'payment_reference_message' => '',
-                'payment_reference_ocr' => ''
             ];
-            $payload['invoice_details'] = $invoiceDetails;
         }
 
         return $payload;
@@ -161,16 +236,67 @@ class ComposeOrder extends OrderService
 
     /**
      * Get the buyer's selected term from checkout, validated against configured terms.
+     *
+     * A term the buyer picked but the merchant no longer offers is refused,
+     * not quietly swapped for the default (TWO-25503): the buyer agreed to
+     * pay on a specific term, and placing the order on a different one is a
+     * changed contract they never saw. Same check and same failure mode as
+     * the chip-click endpoint (Model\Webapi\TermSelection).
+     *
+     * No selection at all is a different case — the checkout simply never
+     * sent one, so the default term applies.
+     *
+     * The term is also cross-checked against the one the SURCHARGE was
+     * priced on. Two independent sources reach placement: the payload's term
+     * comes from `additionalData`, while Model\Total\Surcharge prices the fee
+     * off the session term that `/select-term` writes. A `/select-term` call
+     * that failed mid-flow leaves them disagreeing, and the order would then
+     * be placed on one term carrying the other one's fee. Only enforced when
+     * the session actually holds a term — a cleared session (multi-tab
+     * logout, GC) has nothing to compare and must not fail a valid order.
+     *
+     * @throws InputException when the selected term is unavailable, not
+     *                        numeric, or disagrees with the priced term
      */
     private function getSelectedTermDays(array $additionalData, ?int $storeId = null): int
     {
-        $selected = (int)($additionalData['selectedTerm'] ?? 0);
-        $allowedTerms = $this->configRepository->getAllBuyerTerms($storeId);
-
-        if ($selected > 0 && in_array($selected, $allowedTerms, true)) {
-            return $selected;
+        $raw = $additionalData['selectedTerm'] ?? null;
+        if ($raw !== null && $raw !== '' && !is_numeric($raw)) {
+            // A non-numeric term casts to 0 and silently takes the default —
+            // a changed contract, so refuse it like an unavailable one.
+            $this->logRepository->addErrorLog(
+                'NonNumericPaymentTerm',
+                sprintf('Selected payment term is not numeric for store %d.', (int)$storeId)
+            );
+            throw new InputException(__('Selected payment term is not available.'));
         }
-        return $this->configRepository->getDefaultPaymentTerm($storeId);
+
+        $selected = (int)$raw;
+        if ($selected > 0 && !$this->configRepository->isBuyerTermAvailable($selected, $storeId)) {
+            $this->logRepository->addErrorLog(
+                'UnavailablePaymentTerm',
+                sprintf('Selected payment term %d is not offered for store %d.', $selected, (int)$storeId)
+            );
+            throw new InputException(__('Selected payment term is not available.'));
+        }
+
+        $resolved = $selected > 0 ? $selected : $this->configRepository->getDefaultPaymentTerm($storeId);
+
+        $pricedTerm = (int)$this->checkoutSession->getTwoSelectedTerm();
+        if ($pricedTerm > 0 && $pricedTerm !== $resolved) {
+            $this->logRepository->addErrorLog(
+                'PaymentTermMismatch',
+                sprintf(
+                    'Order composes term %d but the surcharge was priced on term %d for store %d.',
+                    $resolved,
+                    $pricedTerm,
+                    (int)$storeId
+                )
+            );
+            throw new InputException(__('Selected payment term is not available.'));
+        }
+
+        return $resolved;
     }
 
     /**

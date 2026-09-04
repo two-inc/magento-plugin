@@ -22,13 +22,28 @@
  *
  *   code             Brand payment-method code, e.g. "two_payment".
  *                    Used in CCD config_path values.
- *   section_prefix   Short brand prefix, e.g. "two", "abn". Used
+ *   section_prefix   Short brand prefix, e.g. "two", "overlay". Used
  *                    for tab id (`{prefix}_gateway`) and section
- *                    ids (`{prefix}_general`/`_payment`/`_search`/
- *                    `_version`).
- *   provider         Short brand name. Currently unused at the
- *                    admin-XML level but reserved for label
- *                    interpolation in follow-ups.
+ *                    ids (`{prefix}_general`/`_checkout_fields`/
+ *                    `_payment`/`_order_management`/`_version`).
+ *   provider         Short brand name (Descriptor::getProvider()), e.g.
+ *                    "Two", or a partner overlay's own name. Interpolated
+ *                    into a handful of admin <comment>/<label> strings
+ *                    below that would otherwise hardcode "Two" for every
+ *                    brand (TWO-25386 follow-up). Values come from
+ *                    etc/brand.xml (install-time, trusted). A brand name
+ *                    containing an XML control character would corrupt
+ *                    this template same as any other token.
+ *   provider_cdata   Same value as `provider`, substituted RAW (no
+ *                    entity-escaping). Used only inside the
+ *                    "Disable SSL verification" comment below, which is
+ *                    a CDATA section — CDATA content is never
+ *                    entity-decoded, so the entity-escaped `provider`
+ *                    substitution would bake literal "&amp;" etc. into
+ *                    that one caption for a provider name containing
+ *                    "&", "<", ">", "'" or '"'. Do not reuse this token
+ *                    outside a CDATA block: a raw provider name CAN
+ *                    corrupt plain XML text/attribute content.
  *   tab_label        Admin Configuration tab label.
  *   tab_css_class    CSS class on the admin tab `<li>`. Some brands
  *                    use values that contain double hyphens (BEM
@@ -50,6 +65,28 @@
  * the canonical body produced by this template; overlay scalars win
  * per-field. Overlays cannot ADD controls via this mechanism — the
  * canonical template is the source of truth for what fields exist.
+ *
+ * TWO-25386 Part 1: unified 5-section admin scheme (A. General,
+ * B. Checkout fields, C. Payment terms, D. Order management,
+ * E. Diagnostics — same names/order as prestashop-plugin and
+ * woocommerce-plugin). `_general` and `_payment` keep their
+ * historical suffixes (relabeled); this is what keeps a brand.xml
+ * `<suppressed_fields>` entry of the form `general/…` or
+ * `payment/payment_terms/…` matching unchanged. `_checkout_fields`
+ * and `_order_management` are new suffixes for content split out of
+ * the old `_payment` section — an overlay that suppressed a field
+ * which moved into one of those two (title, subtitle, sort_order,
+ * country availability, minimum order, order intent, fulfilment
+ * trigger/status, tax subtotals) needs its `suppressed_fields` path
+ * updated to match.
+ *
+ * Follow-up: the standalone "Company Lookup" section (`_search`) was
+ * folded into `_checkout_fields` as its own `search` group, appended
+ * last. An overlay's `suppressed_fields` entry for
+ * `search/search/enable_company_search` or
+ * `search/search/enable_address_search` needs its `section_suffix`
+ * segment updated from `search` to `checkout_fields` — the group id
+ * (`search`) is unchanged.
  */
 -->
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -59,6 +96,7 @@
              class="{{tab_css_class}}" sortOrder="{{tab_sort_order}}">
             <label>{{tab_label}}</label>
         </tab>
+        <!-- A. General -->
         <section id="{{section_prefix}}_general" translate="label" type="text" sortOrder="10"
                  showInDefault="1" showInWebsite="1" showInStore="1"
                  brand_code="{{code}}">
@@ -70,6 +108,14 @@
                    showInDefault="1" showInWebsite="1" showInStore="1"
                    brand_code="{{code}}">
                 <label>General</label>
+                <field id="active" translate="label" type="select" sortOrder="5"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Enable payment method</label>
+                    <comment>Activates this plugin as a payment option in the checkout page</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/active</config_path>
+                </field>
                 <field id="mode" translate="label" type="select" sortOrder="35"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        brand_code="{{code}}">
@@ -86,255 +132,79 @@
                        brand_code="{{code}}">
                     <label>API key</label>
                     <comment>API key for sandbox environment is available on your merchant portal (however please reach out to integration@two.inc for access to production keys).</comment>
-                    <backend_model>Magento\Config\Model\Config\Backend\Encrypted</backend_model>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck</frontend_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\ApiKey</backend_model>
                     <validate>required-entry</validate>
                     <depends>
                         <field id="active">1</field>
                     </depends>
                     <config_path>payment/{{code}}/api_key</config_path>
                 </field>
-                <field id="api_key_check" translate="label" type="button" sortOrder="55"
+                <field id="vendor_site_name" translate="label comment" type="text" sortOrder="57"
                        showInDefault="1" showInWebsite="1" showInStore="1"
-                       brand_code="{{code}}">
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\ApiKeyCheck</frontend_model>
-                </field>
-                <field id="debug" translate="label" type="select" sortOrder="60"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       brand_code="{{code}}">
-                    <label>Debug mode</label>
-                    <comment>The debug mode enables writing to the error logs below. Debug mode should only be enabled when the sandbox environment is active</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/{{code}}/debug</config_path>
-                </field>
-                <field id="debug_button" translate="label" type="button" sortOrder="70"
-                       showInDefault="1" showInWebsite="0" showInStore="0"
-                       brand_code="{{code}}">
-                    <label/>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Button\DebugCheck</frontend_model>
-                </field>
-                <field id="error_button" translate="label" type="button" sortOrder="80"
-                       showInDefault="1" showInWebsite="0" showInStore="0"
-                       brand_code="{{code}}">
-                    <label/>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Button\ErrorCheck</frontend_model>
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Vendor name (optional)</label>
+                    <comment>If this store represents one of several vendor sites sharing the same {{provider}} merchant account, enter a name here to identify this specific site/vendor. It is sent as the "vendor_name" field on every order {{provider}} receives from this store, and is not shown to buyers. Leave blank if you only run a single site.</comment>
+                    <config_path>payment/{{code}}/vendor_site_name</config_path>
                 </field>
             </group>
         </section>
-        <section id="{{section_prefix}}_payment" translate="label" type="text" sortOrder="20"
+        <!-- B. Checkout Fields -->
+        <section id="{{section_prefix}}_checkout_fields" translate="label" type="text" sortOrder="20"
                  showInDefault="1" showInWebsite="1" showInStore="1"
                  brand_code="{{code}}">
             <class>separator-top</class>
-            <label>Payment</label>
+            <label>Checkout fields</label>
             <tab>{{section_prefix}}_gateway</tab>
             <resource>{{admin_resource}}</resource>
-            <group id="payment_method" translate="label" type="text" sortOrder="10"
+            <group id="display" translate="label" type="text" sortOrder="10"
                    showInDefault="1" showInWebsite="1" showInStore="1"
                    brand_code="{{code}}">
-                <label>Payment Method</label>
-                <field id="active" translate="label" type="select" sortOrder="10"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Enable Payment Method</label>
-                    <comment>Activates this plugin as a payment option in the checkout page</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/{{code}}/active</config_path>
-                </field>
-                <field id="title" translate="label" type="text" sortOrder="20"
+                <label>Title &amp; display</label>
+                <!-- TWO-25386: no <depends> on "active" here — see the matching
+                     comment in system.xml. Each top-level <section> is its own
+                     admin page; "active" now lives in {{section_prefix}}_general,
+                     a different page, so the dependency could never fire. -->
+                <field id="title" translate="label" type="text" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
                     <label>Title</label>
                     <comment>Descriptive title which gives the buyer a better understanding of this payment method</comment>
                     <validate>required-entry</validate>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
                     <config_path>payment/{{code}}/title</config_path>
                 </field>
-                <field id="merchant_minimum_order" translate="label" type="text" sortOrder="25"
+                <field id="subtitle" translate="label comment" type="text" sortOrder="20"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Minimum Order Value</label>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\MinimumOrderValue</frontend_model>
-                    <backend_model>Two\Gateway\Model\Config\Backend\MerchantMinimumOrder</backend_model>
-                    <comment model="Two\Gateway\Model\Config\Comment\MerchantMinimumOrder"/>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
-                    <config_path>payment/{{code}}/merchant_minimum_order</config_path>
+                    <label>Subtitle</label>
+                    <comment>Optional line shown beneath the title at checkout (e.g. "Buy now, pay later"). Leave blank to use the default. Can be set per store view.</comment>
+                    <config_path>payment/{{code}}/subtitle</config_path>
                 </field>
-                <field id="merchant_minimum_order_basis" translate="label comment" type="select" sortOrder="26"
+                <field id="sort_order" translate="label comment" type="text" sortOrder="30"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Minimum Order Value Tax Basis</label>
-                    <comment>Whether the basket is compared against the minimum including or excluding tax</comment>
-                    <source_model>Two\Gateway\Model\Config\Source\MinimumOrderBasis</source_model>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
-                    <config_path>payment/{{code}}/merchant_minimum_order_basis</config_path>
+                    <label>Sort order</label>
+                    <comment>Controls the position of this payment method relative to other payment methods at checkout. Lower numbers appear first. Default is empty (no specific order).</comment>
+                    <config_path>payment/{{code}}/sort_order</config_path>
                 </field>
             </group>
-            <group id="checkout_fields" translate="label" type="text" sortOrder="20"
+            <group id="availability" translate="label" type="text" sortOrder="20"
                    showInDefault="1" showInWebsite="1" showInStore="1"
                    brand_code="{{code}}">
-                <label>Checkout Fields</label>
-                <field id="enable_department" translate="label" type="select" sortOrder="10"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Add Department Field</label>
-                    <comment>Optional field which enables the buyer to register the department the purchase is connected to. The information is eventually displayed on the invoice.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/{{code}}/enable_department</config_path>
-                </field>
-                <field id="enable_order_note" translate="label" type="select" sortOrder="20"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Add Order Note Field</label>
-                    <comment>Optional field which enables the buyer to register a note to the merchant. The information is eventually displayed on the invoice.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/{{code}}/enable_order_note</config_path>
-                </field>
-                <field id="enable_project" translate="label" type="select" sortOrder="30"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Add Project Field</label>
-                    <comment>Optional field which enables the buyer to register the project the purchase is connected to. The information is eventually displayed on the invoice.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/{{code}}/enable_project</config_path>
-                </field>
-                <field id="enable_po_number" translate="label" type="select" sortOrder="40"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Add PO Number Field</label>
-                    <comment>Optional field which enables the buyer to register their purchase order number.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/{{code}}/enable_po_number</config_path>
-                </field>
-                <field id="enable_invoice_emails" translate="label" type="select" sortOrder="50"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Enable Invoice Emails</label>
-                    <comment>Let your buyer input additional emails to forward the invoice to on order fulfilment.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/{{code}}/enable_invoice_emails</config_path>
-                </field>
-            </group>
-            <group id="payment_terms" translate="label" type="text" sortOrder="25"
-                   showInDefault="1" showInWebsite="1" showInStore="1"
-                   brand_code="{{code}}">
-                <label>Payment Terms</label>
-                <field id="payment_terms" translate="label comment" type="text" sortOrder="10"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Payment Terms</label>
-                    <comment>Select the payment term(s) you want to offer.</comment>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\PaymentTermsCheckboxes</frontend_model>
-                    <backend_model>Two\Gateway\Model\Config\Backend\PaymentTermsCheckboxes</backend_model>
-                    <config_path>payment/{{code}}/payment_terms</config_path>
-                </field>
-                <field id="payment_terms_duration_days" translate="label comment" type="text" sortOrder="20"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Custom Payment Term (days)</label>
-                    <comment>Optional. Enter a custom number of days to offer alongside the selected terms above.</comment>
-                    <validate>validate-digits validate-zero-or-greater</validate>
-                    <config_path>payment/{{code}}/payment_terms_duration_days</config_path>
-                </field>
-                <field id="payment_terms_type" translate="label comment" type="select" sortOrder="30"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Payment Terms Type</label>
-                    <comment><![CDATA[<strong>Standard:</strong> Payment due after a fixed number of days from fulfilment.<br/><strong>End of Month:</strong> Payment due at the end of month plus additional days from fulfilment.]]></comment>
-                    <source_model>Two\Gateway\Model\Config\Source\PaymentTermsType</source_model>
-                    <config_path>payment/{{code}}/payment_terms_type</config_path>
-                </field>
-                <field id="default_payment_term" translate="label comment" type="select" sortOrder="40"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Default Payment Term</label>
-                    <comment>Select the payment term that will be automatically selected for your customer.</comment>
-                    <source_model>Two\Gateway\Model\Config\Source\AvailablePaymentTerms</source_model>
-                    <config_path>payment/{{code}}/default_payment_term</config_path>
-                </field>
-                <field id="surcharge_type" translate="label comment" type="select" sortOrder="50"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Surcharge Method</label>
-                    <comment>Select a method to surcharge your customer.</comment>
-                    <source_model>Two\Gateway\Model\Config\Source\SurchargeType</source_model>
-                    <config_path>payment/{{code}}/surcharge_type</config_path>
-                </field>
-                <field id="surcharge_differential" translate="label" type="select" sortOrder="60"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Surcharge Calculation Basis</label>
-                    <source_model>Two\Gateway\Model\Config\Source\SurchargeCalculationBasis</source_model>
-                    <config_path>payment/{{code}}/surcharge_differential</config_path>
-                </field>
-                <field id="surcharge_line_description" translate="label comment" type="text" sortOrder="70"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Surcharge Line Description</label>
-                    <comment><![CDATA[Description shown to the buyer for the surcharge line item. Use <strong>%1</strong> to insert the selected number of days (e.g. "Payment terms fee - %1 days"). If you leave the default, the word <em>days</em> is translated per locale.]]></comment>
-                    <config_path>payment/{{code}}/surcharge_line_description</config_path>
-                </field>
-                <field id="surcharge_tax_rate" translate="label" type="text" sortOrder="90"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Surcharge Tax Rate (%)</label>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeTaxRate</frontend_model>
-                    <backend_model>Two\Gateway\Model\Config\Backend\LocaleDecimal</backend_model>
-                    <validate>validate-zero-or-greater</validate>
-                    <config_path>payment/{{code}}/surcharge_tax_rate</config_path>
-                </field>
-                <field id="surcharge_grid" translate="label" type="text" sortOrder="100"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       brand_code="{{code}}">
-                    <label>Payment Surcharge Configuration</label>
-                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeGrid</frontend_model>
-                    <backend_model>Two\Gateway\Model\Config\Backend\SurchargeGrid</backend_model>
-                </field>
-                <field id="surcharge_rounding_basis" translate="label comment" type="select" sortOrder="110"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Surcharge Rounding</label>
-                    <comment>Snap the buyer surcharge line item to a clean increment. Select None for standard two-decimal amounts.</comment>
-                    <source_model>Two\Gateway\Model\Config\Source\RoundingBasis</source_model>
-                    <config_path>payment/{{code}}/surcharge_rounding_basis</config_path>
-                    <depends>
-                        <field id="surcharge_type" separator=",">percentage,fixed_and_percentage</field>
-                    </depends>
-                </field>
-                <field id="surcharge_rounding_step" translate="label comment" type="select" sortOrder="120"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Rounding Step</label>
-                    <comment><![CDATA[Increment the surcharge is rounded to (e.g. 1 = whole units, 0.50 = nearest half).]]></comment>
-                    <source_model>Two\Gateway\Model\Config\Source\RoundingStep</source_model>
-                    <config_path>payment/{{code}}/surcharge_rounding_step</config_path>
-                    <depends>
-                        <field id="surcharge_type" separator=",">percentage,fixed_and_percentage</field>
-                        <field id="surcharge_rounding_basis" separator=",">up,down,standard</field>
-                    </depends>
-                </field>
-            </group>
-            <group id="advanced" translate="label" type="text" sortOrder="30"
-                   showInDefault="1" showInWebsite="1" showInStore="1"
-                   brand_code="{{code}}">
-                <label>Advanced</label>
-                <field id="sallowspecific" translate="label comment" type="select" sortOrder="5"
+                <label>Availability</label>
+                <field id="sallowspecific" translate="label comment" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="0"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Country Availability</label>
+                    <label>Country availability</label>
                     <comment>Choose whether to enable this payment method for all allowed countries or only specific ones.</comment>
                     <frontend_class>shipping-applicable-country</frontend_class>
                     <source_model>Magento\Shipping\Model\Config\Source\Allspecificcountries</source_model>
                     <config_path>payment/{{code}}/allowspecific</config_path>
                 </field>
-                <field id="specificcountry" translate="label comment" type="multiselect" sortOrder="6"
+                <field id="specificcountry" translate="label comment" type="multiselect" sortOrder="20"
                        showInDefault="1" showInWebsite="1" showInStore="0"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Allowed Countries</label>
+                    <label>Allowed countries</label>
                     <comment>Select the countries where this payment method should be available.</comment>
                     <source_model>Magento\Directory\Model\Config\Source\Country</source_model>
                     <can_be_empty>1</can_be_empty>
@@ -343,10 +213,307 @@
                     </depends>
                     <config_path>payment/{{code}}/specificcountry</config_path>
                 </field>
+                <field id="merchant_minimum_order" translate="label" type="text" sortOrder="30"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Minimum order value</label>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\MinimumOrderValue</frontend_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\MerchantMinimumOrder</backend_model>
+                    <comment model="Two\Gateway\Model\Config\Comment\MerchantMinimumOrder"/>
+                    <config_path>payment/{{code}}/merchant_minimum_order</config_path>
+                </field>
+                <field id="merchant_minimum_order_basis" translate="label comment" type="select" sortOrder="40"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Minimum order value tax basis</label>
+                    <comment>Whether the basket is compared against the minimum including or excluding tax</comment>
+                    <source_model>Two\Gateway\Model\Config\Source\MinimumOrderBasis</source_model>
+                    <config_path>payment/{{code}}/merchant_minimum_order_basis</config_path>
+                </field>
+                <field id="enable_order_intent" translate="label" type="select" sortOrder="50"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Enable order intent</label>
+                    <comment>Perform a check during checkout to inform the buyer whether an order is likely to be accepted before being placed (recommended).</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/enable_order_intent</config_path>
+                </field>
+            </group>
+            <group id="checkout_fields" translate="label" type="text" sortOrder="30"
+                   showInDefault="1" showInWebsite="1" showInStore="1"
+                   brand_code="{{code}}">
+                <label>Checkout fields</label>
+                <!--
+                    ORDER IS LOAD-BEARING: invoice email, purchase order
+                    number, project, department, order note LAST. This is the
+                    canonical cross-plugin order shared with prestashop-plugin
+                    and woocommerce-plugin. TWO-25263.
+
+                    THE sortOrder VALUES IN THIS FILE ARE WHAT ORDER THE ADMIN
+                    PANE. Not system.xml's — renumbering that file alone moves
+                    nothing. (The exception is when synthesis is skipped
+                    entirely: if this template cannot be read, no brands load,
+                    or a brand fails to render, the plugin returns Magento's
+                    result untouched and system.xml's own order is what shows.
+                    See the error paths in SynthesiseBrandAdminForm. Keeping
+                    the two files identical, as below, makes that moot.)
+
+                    Two_Gateway's SynthesiseBrandAdminForm is an
+                    `afterRead` plugin on Magento's config Structure\Reader: it
+                    builds this section from this template (running it through
+                    Magento's own Converter, whose Sorting mapper orders the
+                    fields by the sortOrder set HERE), then deep-merges the
+                    static system.xml section over the result. That merge
+                    overwrites scalar attributes from system.xml — sortOrder
+                    included, so the numbers you READ in the merged structure
+                    are system.xml's — but it does not re-sort, because the
+                    sorting already happened. It also decides which fields
+                    exist at all: a field system.xml declares and this template
+                    does not is dropped.
+
+                    Practically: keep the sortOrder sequence here and in
+                    system.xml identical, and keep both files' document order
+                    matching it too so they stay readable.
+                    Test/Unit/Config/CheckoutFieldOrderTest asserts both axes
+                    in both files, which is what stops them drifting apart.
+                -->
+                <field id="enable_invoice_emails" translate="label" type="select" sortOrder="10"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Show invoice email field</label>
+                    <comment>Let your buyer input additional emails to forward the invoice to on order fulfilment.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/enable_invoice_emails</config_path>
+                </field>
+                <field id="enable_po_number" translate="label" type="select" sortOrder="20"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Show PO number field</label>
+                    <comment>Optional field which enables the buyer to register their purchase order number.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/enable_po_number</config_path>
+                </field>
+                <field id="enable_project" translate="label" type="select" sortOrder="30"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Show project field</label>
+                    <comment>Optional field which enables the buyer to register the project the purchase is connected to. The information is eventually displayed on the invoice.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/enable_project</config_path>
+                </field>
+                <field id="enable_department" translate="label" type="select" sortOrder="40"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Show department field</label>
+                    <comment>Optional field which enables the buyer to register the department the purchase is connected to. The information is eventually displayed on the invoice.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/enable_department</config_path>
+                </field>
+                <field id="enable_order_note" translate="label" type="select" sortOrder="50"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Show order note field</label>
+                    <comment>Optional field which enables the buyer to register a note to the merchant. The information is eventually displayed on the invoice.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/enable_order_note</config_path>
+                </field>
+                <field id="show_about_link" translate="label comment" type="select" sortOrder="60"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Show "What is {{provider}}" link</label>
+                    <comment>Show a link at checkout explaining {{provider}}'s buy-now-pay-later offering to the buyer.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/show_about_link</config_path>
+                </field>
+                <field id="display_tooltips" translate="label comment" type="select" sortOrder="70"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Display input tooltips</label>
+                    <comment>Show a hover tooltip with the field label on the optional checkout field inputs above.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/display_tooltips</config_path>
+                </field>
+            </group>
+            <!-- TWO-25386 follow-up: former standalone "Company Lookup"
+                 section folded into this section as its own group, appended
+                 last — see the matching comment in system.xml for why it is
+                 a sibling group rather than merged into checkout_fields. -->
+            <group id="search" translate="label" type="text" sortOrder="40"
+                   showInDefault="1" showInWebsite="1" showInStore="1"
+                   brand_code="{{code}}">
+                <label>Company lookup</label>
+                <field id="enable_company_search" translate="label comment" type="select" sortOrder="10"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Enable company search in address entry</label>
+                    <comment>When enabled, the buyer may search for their company within the address entry section of the checkout. Otherwise, company search will be visible within the payment method.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/enable_company_search</config_path>
+                </field>
+                <field id="enable_address_search" translate="label comment" type="select" sortOrder="20"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Autofill company address</label>
+                    <comment>Autocomplete address based on selected country and company. Unavailable while company search is not in the address entry section — with search relocated to the payment method there is no address step left for it to fill.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\AddressSearchToggle</backend_model>
+                    <depends>
+                        <field id="enable_company_search">1</field>
+                    </depends>
+                    <config_path>payment/{{code}}/enable_address_search</config_path>
+                </field>
+            </group>
+        </section>
+        <!-- C. Payment Terms -->
+        <section id="{{section_prefix}}_payment" translate="label" type="text" sortOrder="40"
+                 showInDefault="1" showInWebsite="1" showInStore="1"
+                 brand_code="{{code}}">
+            <class>separator-top</class>
+            <label>Payment terms</label>
+            <tab>{{section_prefix}}_gateway</tab>
+            <resource>{{admin_resource}}</resource>
+            <group id="payment_terms" translate="label" type="text" sortOrder="10"
+                   showInDefault="1" showInWebsite="1" showInStore="1"
+                   brand_code="{{code}}">
+                <label>Payment terms</label>
+                <field id="payment_terms_type" translate="label comment" type="select" sortOrder="10"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Payment terms type</label>
+                    <comment><![CDATA[<strong>Standard:</strong> Payment due after a fixed number of days from fulfilment.<br/><strong>End of Month:</strong> Payment due at the end of month plus additional days from fulfilment.]]></comment>
+                    <source_model>Two\Gateway\Model\Config\Source\PaymentTermsType</source_model>
+                    <config_path>payment/{{code}}/payment_terms_type</config_path>
+                </field>
+                <field id="payment_terms" translate="label comment" type="text" sortOrder="20"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Payment terms</label>
+                    <comment>Select the payment term(s) you want to offer.</comment>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\PaymentTermsCheckboxes</frontend_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\PaymentTermsCheckboxes</backend_model>
+                    <config_path>payment/{{code}}/payment_terms</config_path>
+                </field>
+                <field id="payment_terms_duration_days" translate="label comment" type="text" sortOrder="30"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Custom payment terms (days)</label>
+                    <comment>Optional. Enter a custom number of days to offer alongside the selected terms above.</comment>
+                    <validate>validate-digits validate-zero-or-greater</validate>
+                    <!-- Clears itself on save when it duplicates a merchant-offered
+                         term (ticked or not) — see PaymentTermsCustomDays and the
+                         matching fold-in on PaymentTermsCheckboxes. TWO-25498. -->
+                    <backend_model>Two\Gateway\Model\Config\Backend\PaymentTermsCustomDays</backend_model>
+                    <config_path>payment/{{code}}/payment_terms_duration_days</config_path>
+                </field>
+                <field id="default_payment_term" translate="label comment" type="select" sortOrder="40"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Default payment terms</label>
+                    <comment>Select the payment term that will be automatically selected for your customer.</comment>
+                    <source_model>Two\Gateway\Model\Config\Source\AvailablePaymentTerms</source_model>
+                    <config_path>payment/{{code}}/default_payment_term</config_path>
+                </field>
+                <field id="surcharge_type" translate="label comment" type="select" sortOrder="50"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Surcharge method</label>
+                    <comment>Select a method to surcharge your customer.</comment>
+                    <source_model>Two\Gateway\Model\Config\Source\SurchargeType</source_model>
+                    <config_path>payment/{{code}}/surcharge_type</config_path>
+                </field>
+                <field id="surcharge_differential" translate="label comment" type="select" sortOrder="60"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Surcharge calculation basis</label>
+                    <comment>Total fee charges the configured surcharge for the chosen term. Fee difference charges only the difference versus the default payment term.</comment>
+                    <source_model>Two\Gateway\Model\Config\Source\SurchargeCalculationBasis</source_model>
+                    <config_path>payment/{{code}}/surcharge_differential</config_path>
+                </field>
+                <field id="surcharge_line_description" translate="label comment" type="text" sortOrder="70"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Surcharge line description</label>
+                    <comment><![CDATA[Description shown to the buyer for the surcharge line item. Use <strong>%1</strong> to insert the selected number of days (e.g. "Payment terms fee - %1 days"). If you leave the default, the word <em>days</em> is translated per locale.]]></comment>
+                    <config_path>payment/{{code}}/surcharge_line_description</config_path>
+                </field>
+                <field id="surcharge_grid" translate="label" type="text" sortOrder="80"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       brand_code="{{code}}">
+                    <label>Payment surcharge configuration</label>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeGrid</frontend_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\SurchargeGrid</backend_model>
+                </field>
+                <field id="surcharge_rounding_basis" translate="label comment" type="select" sortOrder="90"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Surcharge rounding</label>
+                    <comment>Snap the buyer surcharge line item to a clean increment. Select None for standard two-decimal amounts.</comment>
+                    <source_model>Two\Gateway\Model\Config\Source\RoundingBasis</source_model>
+                    <config_path>payment/{{code}}/surcharge_rounding_basis</config_path>
+                    <depends>
+                        <field id="surcharge_type" separator=",">percentage,fixed_and_percentage</field>
+                    </depends>
+                </field>
+                <field id="surcharge_rounding_step" translate="label comment" type="select" sortOrder="100"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Rounding step</label>
+                    <comment><![CDATA[Increment the surcharge is rounded to (e.g. 1 = whole units, 0.50 = nearest half).]]></comment>
+                    <source_model>Two\Gateway\Model\Config\Source\RoundingStep</source_model>
+                    <config_path>payment/{{code}}/surcharge_rounding_step</config_path>
+                    <depends>
+                        <field id="surcharge_type" separator=",">percentage,fixed_and_percentage</field>
+                        <field id="surcharge_rounding_basis" separator=",">up,down,standard</field>
+                    </depends>
+                </field>
+                <field id="surcharge_tax_class" translate="label comment" type="select" sortOrder="110"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       brand_code="{{code}}">
+                    <label>Surcharge tax treatment</label>
+                    <comment>Product Tax Class applied to the surcharge. Country, region and combined rates resolve exactly as they do for a product. To leave the surcharge untaxed, create a Tax Rule with a 0% rate and select its Product Tax Class here.</comment>
+                    <source_model>Two\Gateway\Model\Config\Source\SurchargeTaxClass</source_model>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\SurchargeTaxClass</frontend_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\SurchargeTaxClass</backend_model>
+                    <config_path>payment/{{code}}/surcharge_tax_class</config_path>
+                </field>
+                <!-- Deprecated: initial attempt at tax support, superseded by the
+                     tax-rule-based Surcharge tax treatment selector above. Retained
+                     only for pre-existing merchants (the "Custom" treatment is only
+                     offered when a value already exists). Field id renamed at the
+                     code level only - the persisted config key deliberately stays
+                     payment/<code>/surcharge_tax_rate (no data migration). -->
+                <field id="custom_surcharge_tax_rate" translate="label comment" type="text" sortOrder="120"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Custom surcharge tax rate (%)</label>
+                    <comment>Deprecated flat tax rate. Only used with the Custom surcharge tax treatment above.</comment>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\CustomSurchargeTaxRate</frontend_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\LocaleDecimal</backend_model>
+                    <validate>validate-zero-or-greater</validate>
+                    <config_path>payment/{{code}}/surcharge_tax_rate</config_path>
+                    <depends>
+                        <field id="surcharge_tax_class">custom</field>
+                        <field id="surcharge_type" separator=",">percentage,fixed,fixed_and_percentage</field>
+                    </depends>
+                </field>
+            </group>
+        </section>
+        <!-- D. Order management -->
+        <section id="{{section_prefix}}_order_management" translate="label" type="text" sortOrder="50"
+                 showInDefault="1" showInWebsite="1" showInStore="1"
+                 brand_code="{{code}}">
+            <class>separator-top</class>
+            <label>Order management</label>
+            <tab>{{section_prefix}}_gateway</tab>
+            <resource>{{admin_resource}}</resource>
+            <group id="order_management" translate="label" type="text" sortOrder="10"
+                   showInDefault="1" showInWebsite="1" showInStore="1"
+                   brand_code="{{code}}">
+                <label>Order management</label>
                 <field id="fulfill_trigger" translate="label" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Fulfilment Trigger</label>
+                    <label>Fulfilment trigger</label>
                     <comment>Fulfilment can be triggered by either initializing shipping or creating an invoice in the Magento admin</comment>
                     <source_model>Two\Gateway\Model\Config\Source\FulfillTrigger</source_model>
                     <config_path>payment/{{code}}/fulfill_trigger</config_path>
@@ -354,83 +521,123 @@
                 <field id="fulfill_order_status" translate="label" type="multiselect" sortOrder="20"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Fulfilment Order Status</label>
-                    <comment>If fulfilment trigger is On Completion, select one or more order statuses which can trigger fulfilment.</comment>
+                    <label>Fulfilment order status</label>
+                    <comment model="Two\Gateway\Model\Config\Comment\FulfillOrderStatus"/>
                     <source_model>Two\Gateway\Model\Config\Source\FulfillOrderStatus</source_model>
                     <depends>
                         <field id="fulfill_trigger">complete</field>
                     </depends>
                     <config_path>payment/{{code}}/fulfill_order_status</config_path>
                 </field>
-                <field id="enable_order_intent" translate="label" type="select" sortOrder="30"
+                <field id="enable_tax_subtotals" translate="label" type="select" sortOrder="30"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Enable Order Intent</label>
-                    <comment>Perform a check during checkout to inform the buyer whether an order is likely to be accepted before being placed (recommended).</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <config_path>payment/{{code}}/enable_order_intent</config_path>
-                </field>
-                <field id="enable_tax_subtotals" translate="label" type="select" sortOrder="40"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Enable Tax Subtotals</label>
+                    <label>Validate tax subtotals</label>
                     <comment>Add optional tax_subtotals metadata to order creation payload to enforce additional validation (recommended).</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
                     <config_path>payment/{{code}}/enable_tax_subtotals</config_path>
                 </field>
-                <field id="sort_order" translate="label comment" type="text" sortOrder="70"
+                <field id="default_shipping_tax_class" translate="label comment" type="select" sortOrder="40"
                        showInDefault="1" showInWebsite="1" showInStore="1"
                        canRestore="1" brand_code="{{code}}">
-                    <label>Sort Order</label>
-                    <comment>Controls the position of this payment method relative to other payment methods at checkout. Lower numbers appear first. Default is empty (no specific order).</comment>
-                    <config_path>payment/{{code}}/sort_order</config_path>
+                    <label>Default shipping tax class</label>
+                    <comment>Only used when a shipping method charges tax but Magento declares no rate for it. The rate is resolved through this Product Tax Class against the order's shipping destination, the same way a product's tax is resolved. Leave unselected to refuse such orders instead of assuming a rate.</comment>
+                    <source_model>Magento\Tax\Model\TaxClass\Source\Product</source_model>
+                    <config_path>payment/{{code}}/default_shipping_tax_class</config_path>
+                </field>
+                <!-- DEPRECATED: hidden unless a value is already stored — see
+                     the matching comment in system.xml. -->
+                <field id="default_shipping_tax_rate" translate="label" type="text" sortOrder="50"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Default shipping tax rate (%) (deprecated)</label>
+                    <comment>Deprecated flat rate. Only used when default_shipping_tax_class above is unset.</comment>
+                    <backend_model>Two\Gateway\Model\Config\Backend\LocaleDecimal</backend_model>
+                    <validate>validate-zero-or-greater</validate>
+                    <config_path>payment/{{code}}/default_shipping_tax_rate</config_path>
                 </field>
             </group>
         </section>
-        <section id="{{section_prefix}}_search" translate="label" type="text" sortOrder="30"
+        <!-- E. Diagnostics -->
+        <section id="{{section_prefix}}_version" translate="label" type="text" sortOrder="60"
                  showInDefault="1" showInWebsite="1" showInStore="1"
                  brand_code="{{code}}">
             <class>separator-top</class>
-            <label>Search</label>
+            <label>Diagnostics</label>
             <tab>{{section_prefix}}_gateway</tab>
             <resource>{{admin_resource}}</resource>
-            <group id="search" translate="label" type="text" sortOrder="10"
+            <group id="logging" translate="label" type="text" sortOrder="10"
                    showInDefault="1" showInWebsite="1" showInStore="1"
                    brand_code="{{code}}">
-                <label>Search</label>
-                <field id="enable_company_search" translate="label" type="select" sortOrder="10"
+                <label>Debug &amp; logging</label>
+                <field id="debug" translate="label" type="select" sortOrder="10"
                        showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Enable Company Search</label>
-                    <comment>Adds a searchable company name input field on shipping details page where the buyer can select their company from a dropdown menu.</comment>
+                       brand_code="{{code}}">
+                    <label>Enable debug logging</label>
+                    <comment>The debug mode enables writing to the error logs below. Debug mode should only be enabled when the sandbox environment is active</comment>
                     <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <depends>
-                        <field id="active">1</field>
-                    </depends>
-                    <config_path>payment/{{code}}/enable_company_search</config_path>
+                    <config_path>payment/{{code}}/debug</config_path>
                 </field>
-                <field id="enable_address_search" translate="label" type="select" sortOrder="20"
-                       showInDefault="1" showInWebsite="1" showInStore="1"
-                       canRestore="1" brand_code="{{code}}">
-                    <label>Enable Address Search</label>
-                    <comment>Autocomplete address based on selected country and company.</comment>
-                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
-                    <depends>
-                        <field id="active">1</field>
-                        <field id="enable_company_search">1</field>
-                    </depends>
-                    <config_path>payment/{{code}}/enable_address_search</config_path>
+                <field id="debug_button" translate="label" type="button" sortOrder="20"
+                       showInDefault="1" showInWebsite="0" showInStore="0"
+                       brand_code="{{code}}">
+                    <label/>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Button\DebugCheck</frontend_model>
+                </field>
+                <field id="error_button" translate="label" type="button" sortOrder="30"
+                       showInDefault="1" showInWebsite="0" showInStore="0"
+                       brand_code="{{code}}">
+                    <label/>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Button\ErrorCheck</frontend_model>
                 </field>
             </group>
-        </section>
-        <section id="{{section_prefix}}_version" translate="label" type="text" sortOrder="100"
-                 showInDefault="1" showInWebsite="1" showInStore="1"
-                 brand_code="{{code}}">
-            <class>separator-top</class>
-            <label>Version</label>
-            <tab>{{section_prefix}}_gateway</tab>
-            <resource>{{admin_resource}}</resource>
-            <group id="general" translate="label" type="text" sortOrder="10"
+            <group id="admin_controls" translate="label" type="text" sortOrder="20"
+                   showInDefault="1" showInWebsite="1" showInStore="1"
+                   brand_code="{{code}}">
+                <label>Admin controls</label>
+                <field id="clear_settings_on_uninstall" translate="label comment" type="select" sortOrder="20"
+                       showInDefault="1" showInWebsite="0" showInStore="0"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Clear settings on module uninstall</label>
+                    <comment>When this module is uninstalled (bin/magento module:uninstall), delete its stored configuration instead of leaving it behind.</comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/clear_settings_on_uninstall</config_path>
+                </field>
+                <field id="disable_ssl_verify" translate="label comment" type="select" sortOrder="30"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Disable SSL verification</label>
+                    <comment><![CDATA[<strong>WARNING: unsafe for production.</strong> Skips TLS certificate verification on outbound calls to the {{provider_cdata}} API. Only enable this if this store sits behind a corporate proxy that terminates TLS with its own certificate. Leave this Off everywhere else.]]></comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/disable_ssl_verify</config_path>
+                </field>
+                <field id="trusted_proxies" translate="label" type="textarea" sortOrder="35"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Trusted proxies</label>
+                    <comment>Addresses of your own reverse proxies, load balancers or CDN egress, as IPs or CIDR ranges, separated by commas or new lines. These IP addresses will be exempt from rate limiting.</comment>
+                    <backend_model>Two\Gateway\Model\Config\Backend\TrustedProxies</backend_model>
+                    <config_path>payment/{{code}}/trusted_proxies</config_path>
+                </field>
+                <field id="custom_headers" translate="label" type="text" sortOrder="37"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Custom request headers</label>
+                    <comment model="Two\Gateway\Model\Config\Comment\CustomHeaders"/>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\CustomHeaders</frontend_model>
+                    <backend_model>Two\Gateway\Model\Config\Backend\CustomHeaders</backend_model>
+                    <config_path>payment/{{code}}/custom_headers</config_path>
+                </field>
+                <field id="disable_rate_limit" translate="label" type="select" sortOrder="40"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       canRestore="1" brand_code="{{code}}">
+                    <label>Disable checkout rate limiting</label>
+                    <comment><![CDATA[Removes the per-caller ceiling on the company-lookup and order-intent routes. The ceiling is on by default. <strong>If this store sits behind a CDN, load balancer or reverse proxy and <em>Trusted proxies</em> above is empty, every buyer arrives as that one address and shares a single ceiling — buyers are then refused mid-checkout with a too-many-requests message.</strong> The fix is to fill in <strong>Trusted proxies</strong>, which lets the ceiling tell buyers apart; switch this On only as a stopgap while you get that list, and back Off afterwards.]]></comment>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <config_path>payment/{{code}}/disable_rate_limit</config_path>
+                </field>
+            </group>
+            <group id="general" translate="label" type="text" sortOrder="30"
                    showInDefault="1" showInWebsite="1" showInStore="1"
                    brand_code="{{code}}">
                 <label>Version</label>
@@ -439,6 +646,17 @@
                        brand_code="{{code}}">
                     <label/>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\Version</frontend_model>
+                </field>
+            </group>
+            <group id="health" translate="label" type="text" sortOrder="40"
+                   showInDefault="1" showInWebsite="1" showInStore="1"
+                   brand_code="{{code}}">
+                <label>Health</label>
+                <field id="health_checklist" translate="label" type="button" sortOrder="10"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       brand_code="{{code}}">
+                    <label>Health checklist</label>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\HealthChecklist</frontend_model>
                 </field>
             </group>
         </section>

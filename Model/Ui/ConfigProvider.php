@@ -14,7 +14,8 @@ use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\UrlCookie;
-use Two\Gateway\Service\Api\Adapter;
+use Two\Gateway\Service\Api\SupportedCompanyTypes;
+use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Model\Two;
 
 /**
@@ -34,6 +35,40 @@ use Two\Gateway\Model\Two;
  */
 class ConfigProvider implements ConfigProviderInterface
 {
+    /**
+     * Placeholder the renderer substitutes the buyer's company name into.
+     *
+     * The company name is only ever known client-side (the renderer's
+     * `companyName` observable, populated by company search or manual
+     * entry), so the %2 argument cannot be resolved here. Passing this
+     * sentinel rather than leaving %2 dangling keeps both placeholders in
+     * the msgid, so translators see the full sentence shape and the
+     * translated string round-trips through Magento's Phrase renderer
+     * unchanged.
+     */
+    public const COMPANY_NAME_TOKEN = '{{companyName}}';
+
+    /**
+     * Same sentinel mechanism as COMPANY_NAME_TOKEN, for the organisation
+     * number (TWO-25326 §7.3: the tile's ONLY company display is now this
+     * sentence, so the number has to be substitutable into it same as the
+     * name).
+     */
+    public const COMPANY_NUMBER_TOKEN = '{{companyNumber}}';
+
+    /**
+     * Buyer-facing "What is Two?" explainer link target (TWO-25386). Kept
+     * as a plain constant here rather than threaded through
+     * BrandRegistryInterface — a single marketing URL did not seem worth
+     * the blast radius of a new brand.xml tag across the descriptor,
+     * loader, XSD and every implementation. A brand overlay only supplies
+     * DATA (its own etc/brand.xml), so it has no subclassing point to
+     * override this constant from; a brand overlay that needs a different
+     * link would need this threaded through BrandRegistryInterface after
+     * all — revisit then, rather than pre-building it now on spec.
+     */
+    public const ABOUT_URL = 'https://www.two.inc/what-is-two';
+
     /** @var string */
     private $code;
 
@@ -51,9 +86,9 @@ class ConfigProvider implements ConfigProviderInterface
     private $two;
 
     /**
-     * @var Adapter
+     * @var ApiKeyStatus
      */
-    private $adapter;
+    private $apiKeyStatus;
 
     /**
      * @var AssetRepository
@@ -71,6 +106,11 @@ class ConfigProvider implements ConfigProviderInterface
     private $storeManager;
 
     /**
+     * @var SupportedCompanyTypes
+     */
+    private $supportedCompanyTypes;
+
+    /**
      * @param string $code Payment-method code (overlay-specific). Defaults
      *                     to the Two-branded value for backward
      *                     compatibility with installs that don't override.
@@ -78,21 +118,47 @@ class ConfigProvider implements ConfigProviderInterface
     public function __construct(
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
-        Adapter $adapter,
+        ApiKeyStatus $apiKeyStatus,
         Two $two,
         AssetRepository $assetRepository,
         CheckoutSession $checkoutSession,
         StoreManagerInterface $storeManager,
+        SupportedCompanyTypes $supportedCompanyTypes,
         ?string $code = null
     ) {
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
-        $this->adapter = $adapter;
+        $this->apiKeyStatus = $apiKeyStatus;
         $this->two = $two;
         $this->assetRepository = $assetRepository;
         $this->checkoutSession = $checkoutSession;
         $this->storeManager = $storeManager;
+        $this->supportedCompanyTypes = $supportedCompanyTypes;
         $this->code = $code ?? $brandRegistry->getCode();
+    }
+
+    /**
+     * Registry answer for the quote's current billing country, keyed by
+     * lowercased ISO code — the renderer's warm-start memo entry. Empty
+     * when the quote has no billing country yet; fail-soft (the service
+     * resolves registry errors to an empty type list, which the renderer
+     * treats as business-only checkout).
+     *
+     * @return array<string,string[]>
+     */
+    private function getSupportedCompanyTypesSeed(): array
+    {
+        $quote = $this->checkoutSession->getQuote();
+        $country = (string)$quote->getBillingAddress()->getCountryId();
+        if ($country === '') {
+            return [];
+        }
+        return [
+            strtolower($country) => $this->supportedCompanyTypes->getForCountry(
+                $country,
+                (int)$quote->getStoreId() ?: null
+            ),
+        ];
     }
 
     /**
@@ -102,10 +168,36 @@ class ConfigProvider implements ConfigProviderInterface
      */
     public function getConfig(): array
     {
-        $merchant = null;
-        if ($this->configRepository->getApiKey()) {
-            $merchant = $this->adapter->execute('/v1/merchant/verify_api_key', [], 'GET');
+        // No config subtree at all unless the stored API key currently
+        // verifies. This is the gate the company-search control sits behind:
+        // `js/model/brand-config.js::getActiveTwoBrandCode()` identifies the
+        // active Two-family brand by scanning
+        // `window.checkoutConfig.payment` for a subtree carrying a truthy
+        // `redirectUrlCookieCode`, and its consumers — the address block's
+        // company-search widget (`js/view/address-autocomplete.js`) and the
+        // payment-method renderer — mount only when that resolves. Emitting
+        // nothing therefore withholds company search as well as the tile,
+        // matching the sibling plugins, where the equivalent client-side
+        // bootstrap object is withheld on a verification failure.
+        //
+        // The check is the same one Two::isAvailable() makes, and cached
+        // (see ApiKeyStatus), so this no longer costs a live HTTP round-trip
+        // on every checkout render as it did when the verify call was made
+        // inline here.
+        //
+        // No store id is passed, matching every other configRepository read
+        // in this method: ConfigRepository resolves a null store id through
+        // ScopeInterface::SCOPE_STORE, i.e. the current store. On a checkout
+        // render that is the quote's store, which is the id
+        // Two::isAvailable() resolves from the quote and passes explicitly —
+        // so both surfaces judge the same store's key and agree. They would
+        // only diverge if this provider were evaluated outside the store
+        // whose quote is being rendered, which checkout does not do.
+        $apiKeyStatus = $this->apiKeyStatus->getStatus();
+        if ($apiKeyStatus['status'] !== ApiKeyStatus::OK) {
+            return [];
         }
+        $merchant = $apiKeyStatus['merchant'];
         $orderIntentConfig = [
             'extensionPlatformName' => $this->configRepository->getExtensionPlatformName(),
             'extensionDBVersion' => $this->configRepository->getExtensionDBVersion(),
@@ -118,6 +210,7 @@ class ConfigProvider implements ConfigProviderInterface
         $paymentTerms = __("payment terms");
         $brandParams = $this->buildBrandQueryString();
         $paymentTermsLink = $this->configRepository->getCheckoutPageUrl() . '/terms' . $brandParams;
+        $minimumOrder = $this->two->getMinimumOrderVisibility($this->checkoutSession->getQuote());
 
         return [
             'payment' => [
@@ -132,8 +225,14 @@ class ConfigProvider implements ConfigProviderInterface
                     'orderIntentConfig' => $orderIntentConfig,
                     'isCompanySearchEnabled' => $this->configRepository->isCompanySearchEnabled(),
                     'isAddressSearchEnabled' => $this->configRepository->isAddressSearchEnabled(),
-                    'companySearchLimit' => 50,
-                    'supportedCountryCodes' => ['no', 'gb', 'se', 'nl'],
+                    'customHeaders' => $this->configRepository->getBrowserCustomHeaders(),
+                    // Warm-start seed for the renderer's per-country
+                    // supported-company-types memo: the quote's current
+                    // billing country resolved server-side (the merchant
+                    // API key never reaches the browser). Other countries
+                    // are fetched live via GET /V1/two/supported-company-types
+                    // as the buyer edits the billing address.
+                    'supportedCompanyTypes' => $this->getSupportedCompanyTypesSeed(),
                     'isDepartmentFieldEnabled' => $this->configRepository->isDepartmentEnabled(),
                     'isProjectFieldEnabled' => $this->configRepository->isProjectEnabled(),
                     'isOrderNoteFieldEnabled' => $this->configRepository->isOrderNoteEnabled(),
@@ -143,23 +242,61 @@ class ConfigProvider implements ConfigProviderInterface
                     'selectedPaymentTerm' => (int)$this->checkoutSession->getTwoSelectedTerm()
                         ?: $this->configRepository->getDefaultPaymentTerm(),
                     'currencySymbol' => $this->getCurrencySymbol(),
+                    // Server-resolved minimum-order constraints in the display
+                    // currency, for the renderer's client-side visibility gate
+                    // (hide below min; on Amasty, where isAvailable offers the
+                    // method unconditionally, this also drives showing above it).
+                    // minimumOrderUnresolved is true when an active minimum could
+                    // not be projected into the display currency (missing FX
+                    // rate) → the renderer hides, matching the server gate's
+                    // fail-closed stance rather than failing open.
+                    'minimumOrder' => $minimumOrder['minimums'],
+                    'minimumOrderUnresolved' => $minimumOrder['unresolved'],
                     'subtitleHtml' => $this->getSubtitleHtml(),
+                    'showAboutLink' => $this->configRepository->isAboutLinkEnabled(),
+                    'aboutLinkUrl' => self::ABOUT_URL,
+                    'aboutLinkText' => (string)__('What is %1?', $this->brandRegistry->getProductName()),
+                    'displayTooltips' => $this->configRepository->isDisplayTooltipsEnabled(),
                     'surchargeDescription' => $this->configRepository->getSurchargeLineDescription(),
                     'isPaymentTermsEnabled' => true,
-                    'orderIntentApprovedMessage' => __(
-                        'Your invoice purchase with %1 is likely to be accepted subject to additional checks.',
-                        $this->brandRegistry->getProductName()
-                    ),
-                    'orderIntentDeclinedMessage' => __(
-                        'Your invoice purchase with %1 has been declined.',
-                        $this->brandRegistry->getProductName()
-                    ),
+                    // null ⇒ the brand suppressed the notice; the renderer
+                    // emits no element at all. Replaces the former
+                    // `orderIntentApprovedMessage`, which the renderer fed to
+                    // the KO `messages` region — a surface checkout clears on
+                    // every update, so the notice was effectively invisible.
+                    'orderIntentApprovedNotice' => $this->getOrderIntentApprovedNotice(),
+                    'orderIntentDeclinedNotice' => $this->getOrderIntentDeclinedNotice(),
+                    // The former `orderIntentDeclinedMessage` toast (a plain
+                    // "declined" string, fed to the renderer's message
+                    // region) is removed — the 2026-08-03 ruling replaced it
+                    // with the persistent `orderIntentDeclinedNotice` above.
+                    // Found dead in adversarial review, 2026-08-04: a comment
+                    // here once claimed it was kept for the generic HTTP/
+                    // technical-failure path, but
+                    // processOrderIntentErrorResponse() has only ever used
+                    // `generalErrorMessage` for that — this key was assigned
+                    // once on the renderer and never read.
                     'generalErrorMessage' => __(
                         'Something went wrong with your request to %1. %2',
                         $this->brandRegistry->getProductName(),
                         $tryAgainLater
                     ),
+                    // TWO-25326 §6a: the Two method stays selectable with a
+                    // manual (name-only, no organisation number) capture —
+                    // it is blocked at submit instead, matching the WC/PS/
+                    // Hyvä pattern rather than Magento's previous silent
+                    // no-op (no block, no message, no order).
+                    'companyRequiredMessage' => __(
+                        'Please select your company before paying with %1.',
+                        $this->brandRegistry->getProductName()
+                    ),
                     'invalidEmailListMessage' => __('Please ensure that your invoice email address list only contains valid email addresses separated by commas.'),
+                    // TWO-25503: shown when the term selected at render time is
+                    // no longer among the terms the server offers at submit —
+                    // see the renderer's isSelectedTermStillAvailable().
+                    'termUnavailableMessage' => __(
+                        'The payment terms you selected are no longer available. Please select your payment terms again.'
+                    ),
                     'paymentTermsMessage' => __(
                         'I accept the %1 and authorize %2 to process my data automatically.',
                         sprintf('<a href="%s" target="_blank">%s</a>', $paymentTermsLink, $paymentTerms),
@@ -177,6 +314,122 @@ class ConfigProvider implements ConfigProviderInterface
     }
 
     /**
+     * Resolve the buyer-facing "order intent approved" notice for the
+     * storefront renderer.
+     *
+     * Returns null when the active brand suppressed the notice — the
+     * renderer then emits no DOM element at all, rather than an empty
+     * wrapper. Otherwise returns both resolved copy variants plus the
+     * token the renderer substitutes the company name into:
+     *
+     *   withCompany    — company name known (the normal case; an order
+     *                    intent is only placed once the buyer's company
+     *                    is resolved)
+     *   withoutCompany — defensive fallback
+     *
+     * Suppression is driven by the brand's
+     * <intent_approved_notice_enabled> switch. The copy override
+     * <intent_approved_notice> is wording only: non-empty replaces the
+     * company-known variant, absent/empty leaves the platform default.
+     * See BrandRegistryInterface for both contracts.
+     *
+     * TWO-25326 2026-08-03 ruling, §7.3: this is the ONLY place the
+     * captured company NAME is displayed in the payment tile — the
+     * standalone `.two-company-label` text (§7, pre-ruling) is removed, not
+     * supplemented. Default wording is the literal ticket copy, with the
+     * company number substituted the same way the company name always was.
+     * The company NUMBER also renders separately, notice-independent, via
+     * the tile's `.two-company-id-text` label (TWO-25326 2026-08-04 ruling,
+     * §5/§7 follow-up) — see gateway_method.html.
+     *
+     * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
+     */
+    private function getOrderIntentApprovedNotice(): ?array
+    {
+        if (!$this->brandRegistry->isIntentApprovedNoticeEnabled()) {
+            return null;
+        }
+
+        $override = $this->brandRegistry->getIntentApprovedNotice();
+
+        $productName = $this->brandRegistry->getProductName();
+
+        // The default is spelled as a literal __() argument, not routed
+        // through a variable, so `i18n:collect-phrases` and the overlay
+        // repos' i18n audit can both still see it. The override branch
+        // takes a variable by necessity — a brand's own copy is its own
+        // module's msgid and lives in that module's i18n CSV. %3 (company
+        // number) is a new argument as of the 2026-08-03 ruling; an
+        // existing override string that only references %1/%2 keeps
+        // working unchanged, and one that wants the number can add %3.
+        $withCompany = $override === null
+            ? __(
+                'This order by %2 (%3) is likely to be accepted by %1',
+                $productName,
+                self::COMPANY_NAME_TOKEN,
+                self::COMPANY_NUMBER_TOKEN
+            )
+            : __($override, $productName, self::COMPANY_NAME_TOKEN, self::COMPANY_NUMBER_TOKEN);
+
+        return [
+            'withCompany' => (string)$withCompany,
+            'withoutCompany' => (string)__(
+                'This order is likely to be accepted by %1',
+                $productName
+            ),
+            'companyNameToken' => self::COMPANY_NAME_TOKEN,
+            'companyNumberToken' => self::COMPANY_NUMBER_TOKEN,
+        ];
+    }
+
+    /**
+     * Resolve the buyer-facing "order intent NOT approved" notice — the
+     * §7.3 counterpart to getOrderIntentApprovedNotice() above, added by the
+     * 2026-08-03 ruling. Same shape, same suppression switch (a brand that
+     * turns the notice off gets neither variant — TWO-25326 §7.2 treats
+     * "the intent message" as one on/off unit, approved or declined), and a
+     * SEPARATE copy override so a brand with its own approved wording is not
+     * forced to also take the vanilla declined wording (§7.4).
+     *
+     * This is the "not approved" business outcome only (a clean response
+     * with `approved: false`) — a technical/HTTP failure is a different
+     * surface, `generalErrorMessage`, handled by
+     * processOrderIntentErrorResponse() in gateway_method.js.
+     *
+     * Deliberately NOT brand-overridable (2026-08-04 ruling, TWO-25326):
+     * unlike getOrderIntentApprovedNotice() above, there is no copy-override
+     * hook here and there must never be one — every brand renders this exact
+     * platform default copy. See BrandRegistryInterface for the contract.
+     *
+     * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
+     */
+    private function getOrderIntentDeclinedNotice(): ?array
+    {
+        if (!$this->brandRegistry->isIntentApprovedNoticeEnabled()) {
+            return null;
+        }
+
+        $productName = $this->brandRegistry->getProductName();
+
+        $withCompany = __(
+            '%1 is not available for this order by %2 (%3)',
+            $productName,
+            self::COMPANY_NAME_TOKEN,
+            self::COMPANY_NUMBER_TOKEN
+        );
+
+        return [
+            'withCompany' => (string)$withCompany,
+            'withoutCompany' => (string)__(
+                '%1 is not available for this order',
+                $productName
+            ),
+            'companyNameToken' => self::COMPANY_NAME_TOKEN,
+            'companyNumberToken' => self::COMPANY_NUMBER_TOKEN,
+        ];
+    }
+
+    /**
      * Get the currency symbol for the current store's display currency.
      */
     private function getCurrencySymbol(): string
@@ -190,17 +443,30 @@ class ConfigProvider implements ConfigProviderInterface
     }
 
     /**
-     * Resolve the brand's checkout subtitle for the storefront renderer.
+     * Resolve the checkout subtitle for the storefront renderer.
      *
-     * The string is brand data (BrandRegistryInterface::getCheckoutSubtitle,
-     * sourced from brand.xml). The vanilla Two brand returns '' → no
-     * subtitle. We only pass a non-empty key to the translator, so an
-     * unmapped locale falls back to the (brand-owned) source key rather
-     * than ever leaking a vanilla key. May contain HTML (e.g. a link);
-     * the KO template binds it via `html:`.
+     * TWO-25386: a store-view-scoped admin override takes priority when
+     * set. It is merchant-entered free text, so it is HTML-escaped
+     * here rather than treated as a translation source key — unlike the
+     * brand default below, it must never be passed to __().
+     *
+     * Falling back, the string is brand data
+     * (BrandRegistryInterface::getCheckoutSubtitle, sourced from
+     * brand.xml). The vanilla Two brand returns '' → no subtitle. We only
+     * pass a non-empty key to the translator, so an unmapped locale falls
+     * back to the (brand-owned) source key rather than ever leaking a
+     * vanilla key.
+     *
+     * Either way the result may contain HTML; the KO template binds it via
+     * `html:`.
      */
     private function getSubtitleHtml(): string
     {
+        $configured = trim($this->configRepository->getSubtitle());
+        if ($configured !== '') {
+            return htmlspecialchars($configured, ENT_QUOTES, 'UTF-8');
+        }
+
         $key = $this->brandRegistry->getCheckoutSubtitle();
         return $key === '' ? '' : (string)__($key);
     }

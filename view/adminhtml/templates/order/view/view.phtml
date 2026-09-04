@@ -9,22 +9,11 @@
     <?php $productName = $block->getProductName(); ?>
     <section class="admin__page-section order-view-account-information">
         <div class="admin__page-section-title">
-            <span class="title"><?= $block->escapeHtml(__('%1 Details', $productName)) ?></span>
+            <span class="title"><?= $block->escapeHtml(__('%1 details', $productName)) ?></span>
         </div>
         <div class="admin__page-section-content">
             <div>
                 <table width="100%">
-                    <?php $twoOrderId = $block->getTwoOrderId(); ?>
-                    <?php if ($twoOrderId != ''): ?>
-                        <tr>
-                            <td>
-                                <strong><?= $block->escapeHtml(__('Order ID')); ?></strong>
-                            </td>
-                            <td>
-                                <?= $block->escapeHtml($twoOrderId); ?>
-                            </td>
-                        </tr>
-                    <?php endif; ?>
                     <?php $fulfillments = $block->getTwoOrderFulfillments(); ?>
                     <?php if (!empty($fulfillments['fulfilled_orders'])): ?>
                         <tr>
@@ -42,7 +31,7 @@
                     <?php if (!empty($fulfillments['refunds'])): ?>
                         <tr>
                             <td>
-                                <strong><?= $block->escapeHtml(__('Credit Note')); ?></strong>
+                                <strong><?= $block->escapeHtml(__('Credit note')); ?></strong>
                             </td>
                             <td>
                                 <?php foreach ($fulfillments['refunds'] ?? [] as $refund) { ?>

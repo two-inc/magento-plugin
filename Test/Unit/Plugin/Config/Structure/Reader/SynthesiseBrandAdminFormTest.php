@@ -11,7 +11,8 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Plugin\Magento\Config\Model\Config\Structure\Reader\SynthesiseBrandAdminForm;
 
 /**
- * Regression coverage for ABN-415.
+ * Regression coverage for the admin-tab-vanishes-after-cold-start
+ * cache race.
  *
  * The pre-fix code gated synthesis on
  * `system/two_brand_synthesis/admin_form/enabled` via a ScopeConfig
@@ -19,12 +20,18 @@ use Two\Gateway\Plugin\Magento\Config\Model\Config\Structure\Reader\SynthesiseBr
  * config-cache could be mid-build at the first admin request, so
  * `isSetFlag` returned false even though `etc/config.xml` declared
  * the default as `1`. The plugin then no-op'd, the un-synthesised
- * Reader output got cached, and the ABN admin tab disappeared for
+ * Reader output got cached, and the brand-overlay admin tab disappeared for
  * the lifetime of the PHP-FPM worker.
  *
  * The fix removes the flag gate entirely. This test pins the
  * constructor signature so it can't grow a ScopeConfig dependency
  * again without an explicit decision.
+ *
+ * TWO-25191 additionally deleted the now-dead
+ * `two_brand_synthesis/admin_form/enabled` default from
+ * `etc/config.xml` — PR #181 left it behind, and its surviving
+ * comment told readers to "flip to 0 to debug" a gate that no longer
+ * existed. `testConfigXmlDeclaresNoAdminFormFlag` pins that removal.
  */
 class SynthesiseBrandAdminFormTest extends TestCase
 {
@@ -41,7 +48,7 @@ class SynthesiseBrandAdminFormTest extends TestCase
             \Magento\Framework\App\Config\ScopeConfigInterface::class,
             $paramTypes,
             'SynthesiseBrandAdminForm must not depend on ScopeConfigInterface — '
-            . 'the flag gate caused the ABN-415 cold-start cache race.'
+            . 'the flag gate caused the admin-tab cold-start cache race.'
         );
     }
 
@@ -53,6 +60,21 @@ class SynthesiseBrandAdminFormTest extends TestCase
             $constants,
             'The FLAG_PATH constant was removed when the flag gate was dropped — '
             . 'its reappearance signals the regression has been reintroduced.'
+        );
+    }
+
+    public function testConfigXmlDeclaresNoAdminFormFlag(): void
+    {
+        $configXml = dirname(__DIR__, 6) . '/etc/config.xml';
+        self::assertFileExists($configXml);
+
+        $xml = simplexml_load_file($configXml);
+        self::assertNotFalse($xml, 'etc/config.xml must parse');
+
+        self::assertEmpty(
+            $xml->xpath('/config/default/two_brand_synthesis/admin_form'),
+            'etc/config.xml must not declare two_brand_synthesis/admin_form — '
+            . 'nothing reads it since the flag-gate removal (TWO-25191).'
         );
     }
 }

@@ -21,9 +21,61 @@ namespace Magento\Quote\Api\Data {
 
 namespace Magento\Store\Model {
     if (!class_exists(Store::class, false)) {
-        class Store
+        class Store implements \Magento\Store\Api\Data\StoreInterface
         {
+            public function getId()
+            {
+                return null;
+            }
+
+            public function getWebsiteId()
+            {
+                return null;
+            }
+
             public function getBaseCurrencyCode()
+            {
+                return null;
+            }
+
+            /**
+             * Declared so tests can configure the display-currency lookup
+             * Model\Ui\ConfigProvider::getCurrencySymbol() makes.
+             *
+             * @return \Magento\Directory\Model\Currency|null
+             */
+            public function getCurrentCurrency()
+            {
+                return null;
+            }
+
+            public function getCurrentCurrencyCode()
+            {
+                return null;
+            }
+
+            /**
+             * Declared so tests can configure the store-default country
+             * Service\Order\BuyerCountryResolver falls back to.
+             *
+             * @return mixed
+             */
+            public function getConfig($path)
+            {
+                return null;
+            }
+        }
+    }
+    // StoreManagerInterface itself is stubbed in AdminScope.php, which
+    // already declares getStore(); do not redeclare it here — this file
+    // loads first, so a partial copy would win and strip the rest.
+}
+
+namespace Magento\Directory\Model {
+    if (!class_exists(Currency::class, false)) {
+        class Currency
+        {
+            public function getCurrencySymbol()
             {
                 return null;
             }
@@ -58,6 +110,38 @@ namespace Magento\Quote\Model {
             public function getAllAddresses()
             {
                 return [];
+            }
+
+            /**
+             * Declared (rather than left to the catch-all) so tests can
+             * configure it: Model\Ui\ConfigProvider resolves the quote's
+             * billing country through it.
+             *
+             * @return \Magento\Quote\Model\Quote\Address|null
+             */
+            public function getBillingAddress()
+            {
+                return null;
+            }
+
+            /**
+             * @return \Magento\Quote\Model\Quote\Address|null
+             */
+            public function getShippingAddress()
+            {
+                return null;
+            }
+        }
+    }
+}
+
+namespace Magento\Quote\Model\Quote {
+    if (!class_exists(Address::class, false)) {
+        class Address
+        {
+            public function getCountryId()
+            {
+                return null;
             }
         }
     }

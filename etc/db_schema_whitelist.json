@@ -12,7 +12,12 @@
             "two_surcharge_invoiced": true,
             "base_two_surcharge_invoiced": true,
             "two_surcharge_refunded": true,
-            "base_two_surcharge_refunded": true
+            "base_two_surcharge_refunded": true,
+            "two_invoice_id": true,
+            "two_invoice_upload_status": true,
+            "two_invoice_upload_reference": true,
+            "two_invoice_uploaded_at": true,
+            "two_invoice_upload_error": true
         }
     },
     "quote": {
@@ -52,7 +57,11 @@
             "two_surcharge_tax_amount": true,
             "base_two_surcharge_tax_amount": true,
             "two_surcharge_description": true,
-            "two_surcharge_tax_rate": true
+            "two_surcharge_tax_rate": true,
+            "two_other_charges_amount": true,
+            "base_two_other_charges_amount": true,
+            "two_other_charges_tax_amount": true,
+            "base_two_other_charges_tax_amount": true
         }
     },
     "sales_order_grid": {

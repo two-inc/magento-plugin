@@ -1,0 +1,334 @@
+/**
+ * Copyright © Two.inc All rights reserved.
+ * See COPYING.txt for license details.
+ *
+ * TWO-25503 — the `postMessage` handshake the hosted signup finishes on, and
+ * the buyer lookup it makes.
+ *
+ * `/autofill/v1/buyer/current` answers with whatever buyer the Two cookie
+ * identifies, and that email IS the identity: the checkout's own contact field
+ * has no say in it. Re-gating on a match there discarded an authenticated
+ * buyer and left the company field permanently blank with no route forward
+ * (TWO-25461).
+ */
+
+'use strict';
+
+const $ = require('jquery');
+const { loadCompanyCapture, brandConfigMock, defaultMocks } = require('./amd-harness');
+
+const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
+const CHECKOUT_API_URL = 'https://api.example';
+const BUYER_ENDPOINT = '/autofill/v1/buyer/current';
+
+/** Stand-in for the signup popup's own window, the only source that counts. */
+const POPUP = { popup: 'the tracked signup window', closed: false, close: function () {} };
+
+const BUYER = {
+    email: 'trader@example.com',
+    organization_number: '999888777',
+    company_name: 'Example Trader'
+};
+
+/**
+ * The real flow, reached through Luma's wired capture component, with `fetch`
+ * recorded.
+ *
+ * @param {object} [options] `{ buyer, mode, customHeaders }` — what the buyer
+ *        endpoint answers with (null for a 404), the capture mode to start in,
+ *        and the headers the merchant config exposes to the browser
+ * @returns {Promise<object>} `{ flow, rec, identity, handler }`
+ */
+async function loadFlow(options) {
+    const opts = options || {};
+    const rec = {
+        requests: [],
+        errors: [],
+        adopted: [],
+        abandons: [],
+        listeners: [],
+        /** Whether `identity.isBusy()` was still true as the write landed. */
+        busyDuringWrite: null
+    };
+
+    const fakeWindow = {
+        open: function () { return null; },
+        addEventListener: function (name, fn) { rec.listeners.push({ name: name, fn: fn }); },
+        removeEventListener: function () {}
+    };
+
+    const component = loadCompanyCapture(
+        {
+            jquery: $,
+            'Two_Gateway/js/model/company-search': Object.assign(
+                {},
+                defaultMocks()['Two_Gateway/js/model/company-search'],
+                { apiClientParams: function () { return { client: 'magento' }; } }
+            ),
+            'Two_Gateway/js/model/brand-config': brandConfigMock({
+                checkoutPageUrl: CHECKOUT_PAGE_URL,
+                checkoutApiUrl: CHECKOUT_API_URL,
+                isCompanySearchEnabled: true,
+                customHeaders: opts.customHeaders || {}
+            }),
+            'Magento_Ui/js/model/messageList': {
+                addErrorMessage: function (message) { rec.errors.push(message); },
+                addSuccessMessage: function () {}
+            }
+        },
+        {
+            document: document,
+            window: fakeWindow,
+            btoa: global.btoa,
+            setInterval: function () { return 1; },
+            clearInterval: function () {},
+            fetch: function (requestUrl, requestOptions) {
+                rec.requests.push({ url: String(requestUrl), options: requestOptions });
+                if (String(requestUrl).indexOf('get-tokens') !== -1) {
+                    return Promise.resolve({
+                        ok: true,
+                        json: function () {
+                            return Promise.resolve([{ delegation_token: 'dt', autofill_token: 'at' }]);
+                        }
+                    });
+                }
+                if (!opts.buyer) return Promise.resolve({ ok: false, status: 404 });
+                return Promise.resolve({
+                    ok: true,
+                    json: function () { return Promise.resolve(opts.buyer); }
+                });
+            }
+        }
+    ).shipping;
+    component.start();
+    // TWO-25547: start() itself mints and looks the buyer up unconditionally
+    // now — let that settle and clear the recorder, so every request a case
+    // below asserts on is the one IT caused, not boot's own.
+    await settle();
+    rec.requests.length = 0;
+    const identity = component.identity();
+    identity.captureMode('mode' in opts ? opts.mode : 'soletrader');
+
+    const adopt = component.adoptSoleTrader.bind(component);
+    component.adoptSoleTrader = function (buyer) {
+        rec.busyDuringWrite = identity.isBusy();
+        rec.adopted.push(buyer);
+        return adopt(buyer);
+    };
+    component.abandonSoleTrader = function () { rec.abandons.push(true); };
+
+    const flow = component.soleTrader();
+    flow.autofillToken = 'at';
+    // The tracked popup, set directly: opening one would also arm the close
+    // watcher, whose own flight would mask the handshake's.
+    flow._popupWindow = POPUP;
+    const bound = rec.listeners.filter((entry) => entry.name === 'message');
+    expect(bound).toHaveLength(1);
+
+    return { flow: flow, rec: rec, identity: identity, handler: bound[0].fn };
+}
+
+/** Two macrotask turns, which is what the ACCEPTED branch needs to settle. */
+function settle() {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function buyerRequests(rec) {
+    return rec.requests.filter((entry) => entry.url.indexOf(BUYER_ENDPOINT) !== -1);
+}
+
+beforeEach(() => {
+    document.body.innerHTML = '';
+});
+
+describe('how the buyer lookup goes out', () => {
+    test('the lookup goes out under the autofill token, with cookies', async () => {
+        const { rec, handler } = await loadFlow({ buyer: BUYER });
+
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+        await settle();
+
+        const request = buyerRequests(rec)[0];
+        expect(request.options.headers['two-delegated-authority-token']).toBe('at');
+        expect(request.options.credentials).toBe('include');
+    });
+});
+
+describe('which messages the handshake acts on', () => {
+    test.each([
+        [
+            { origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP },
+            { adoptions: 1, errors: 0, lookups: 1 },
+            'the tracked popup reports success'
+        ],
+        [
+            { origin: CHECKOUT_PAGE_URL, data: 'REJECTED', source: POPUP },
+            { adoptions: 0, errors: 1, lookups: 0 },
+            'the tracked popup reports something other than ACCEPTED'
+        ],
+        [
+            { origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: { other: 'window' } },
+            { adoptions: 0, errors: 0, lookups: 0 },
+            'an untracked window is ignored entirely, not surfaced as an error'
+        ],
+        [
+            { origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: null },
+            { adoptions: 0, errors: 0, lookups: 0 },
+            'a non-window sender has a null source'
+        ],
+        [
+            { origin: 'https://evil.example', data: 'ACCEPTED', source: POPUP },
+            { adoptions: 0, errors: 0, lookups: 0 },
+            'a foreign origin is ignored'
+        ]
+    ])('%p -> %p (%s)', async (event, expected) => {
+        const { rec, handler } = await loadFlow({ buyer: BUYER });
+
+        handler(event);
+        await settle();
+
+        expect({
+            adoptions: rec.adopted.length,
+            errors: rec.errors.length,
+            lookups: buyerRequests(rec).length
+        }).toEqual(expected);
+    });
+
+    test('an ACCEPTED message outside sole-trader mode adopts nothing', async () => {
+        const { rec, handler } = await loadFlow({ buyer: BUYER, mode: 'registered' });
+
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+        await settle();
+
+        expect(rec.adopted).toEqual([]);
+        expect(buyerRequests(rec)).toEqual([]);
+    });
+
+    test('the listener is bound once however often it is armed', async () => {
+        const { flow, rec } = await loadFlow({ buyer: BUYER });
+
+        flow.listenForSignupResult();
+        flow.listenForSignupResult();
+
+        expect(rec.listeners.filter((entry) => entry.name === 'message')).toHaveLength(1);
+    });
+});
+
+describe('what an authenticated buyer produces', () => {
+    test.each([
+        [BUYER, 'a buyer whose email matches nothing on the checkout is still adopted'],
+        [
+            Object.assign({}, BUYER, { email: null }),
+            'a buyer with no email at all is adopted — the handshake is the proof'
+        ]
+    ])('%p (%s)', async (buyer) => {
+        const { rec, identity, handler } = await loadFlow({ buyer: buyer });
+
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+        await settle();
+
+        expect(rec.adopted).toEqual([buyer]);
+        expect(identity.companyId()).toBe(BUYER.organization_number);
+        expect(identity.companyName()).toBe(BUYER.company_name);
+        expect(identity.isSoleTrader()).toBe(true);
+    });
+
+    test('an ACCEPTED message the lookup cannot answer surfaces an error and fills nothing', async () => {
+        const { rec, identity, handler } = await loadFlow({ buyer: null });
+
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+        await settle();
+
+        expect(rec.adopted).toEqual([]);
+        expect(rec.errors).toHaveLength(1);
+        expect(identity.companyId()).toBe('');
+    });
+
+    test('a replayed ACCEPTED lands on the same identity rather than clobbering it', async () => {
+        const { rec, identity, handler } = await loadFlow({ buyer: BUYER });
+
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+        await settle();
+
+        expect(identity.companyId()).toBe(BUYER.organization_number);
+        expect(identity.companyName()).toBe(BUYER.company_name);
+    });
+});
+
+describe('the flight the handshake holds', () => {
+    test('is still held as the identity write lands, and settled only after', async () => {
+        // The popup can close the instant it posts, well before the identity is
+        // in the form; settling on the response would let the close watcher
+        // read a completed signup as an abandoned one.
+        const { rec, identity, handler } = await loadFlow({ buyer: BUYER });
+
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+        expect(identity.isBusy()).toBe(true);
+
+        await settle();
+
+        expect(rec.busyDuringWrite).toBe(true);
+        expect(identity.isBusy()).toBe(false);
+    });
+
+    test('is settled even when the lookup answers with no buyer', async () => {
+        const { identity, handler } = await loadFlow({ buyer: null });
+
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+        await settle();
+
+        expect(identity.isBusy()).toBe(false);
+    });
+
+    test('a closing popup does not abandon the signup while the lookup is confirming', async () => {
+        const { flow, rec, handler } = await loadFlow({ buyer: BUYER });
+
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+        expect(flow._signupConfirming).toBe(true);
+
+        await settle();
+
+        expect(flow._signupConfirming).toBe(false);
+        expect(rec.abandons).toEqual([]);
+    });
+});
+
+
+// The one call that stays browser-direct: it is authenticated by the buyer's
+// own session cookie on the API's domain, which no server-side call can present.
+describe('the browser-direct buyer lookup and the merchant custom headers', () => {
+    test.each([
+        [
+            { 'X-WAF-TOKEN': 'waf-token' },
+            { 'X-WAF-TOKEN': 'waf-token' },
+            'a header ticked for the browser is sent on the one direct call'
+        ],
+        [
+            { 'X-WAF-TOKEN': 'waf-token', 'X-Gateway': 'edge-1' },
+            { 'X-WAF-TOKEN': 'waf-token', 'X-Gateway': 'edge-1' },
+            'every ticked header is sent, not just the first'
+        ],
+        [
+            {},
+            { 'X-WAF-TOKEN': undefined },
+            'nothing ticked sends no extra header, so no value reaches the wire'
+        ],
+        [
+            { 'two-delegated-authority-token': 'forged' },
+            { 'two-delegated-authority-token': 'at' },
+            'no configured row can displace the token this call is authenticated by'
+        ]
+    ])('customHeaders %p sends %p (%s)', async (customHeaders, expected) => {
+        const { rec, handler } = await loadFlow({ buyer: BUYER, customHeaders: customHeaders });
+
+        handler({ origin: CHECKOUT_PAGE_URL, data: 'ACCEPTED', source: POPUP });
+        await settle();
+
+        const headers = buyerRequests(rec)[0].options.headers;
+        Object.keys(expected).forEach((name) => {
+            expect(headers[name]).toBe(expected[name]);
+        });
+        expect(headers['two-delegated-authority-token']).toBe('at');
+    });
+});

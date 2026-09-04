@@ -35,21 +35,77 @@
             <xs:element name="sign_up_url" type="xs:string" minOccurs="0"/>
             <xs:element name="documentation_url" type="xs:string" minOccurs="0"/>
             <xs:element name="api_base_url" type="xs:string"/>
-            <xs:element name="available_payment_terms" type="paymentTermsType"/>
+            <!--
+                DEPRECATED, ignored by Loader: the offerable payment terms
+                and the buyer-surcharge cap are now sourced per-merchant
+                from GET /v1/merchant (available_terms / surcharge_limit),
+                not from brand.xml. Kept optional in the schema so brand.xml
+                files carrying the legacy elements still validate during the
+                transition; remove once no brand.xml declares them.
+            -->
+            <xs:element name="available_payment_terms" type="paymentTermsType" minOccurs="0"/>
             <xs:element name="surcharge_fixed_max" type="surchargeFixedMaxType" minOccurs="0"/>
             <!--
                 Buyer-surcharge rounding steps offered in the admin
-                "Rounding Step" dropdown (major currency units). Brand
+                "Rounding step" dropdown (major currency units). Brand
                 overlays narrow the parent default set (e.g. to 0.50 /
                 1.00). Omit the element to inherit the parent default
                 set; an empty element is treated as omitted.
             -->
             <xs:element name="surcharge_rounding_steps" type="surchargeRoundingStepsType" minOccurs="0"/>
+            <!--
+                On/off switch for the buyer-facing "order intent
+                approved" reassurance notice rendered inline inside the
+                checkout payment tile. Explicit boolean ONLY:
+
+                  true    ⇒ notice ON
+                  false   ⇒ notice suppressed entirely; no element is
+                            emitted into the DOM, not an empty wrapper
+                  absent  ⇒ documented explicit default `true`, which is
+                            what keeps a third-party overlay that
+                            declares nothing on ON
+                  anything else ⇒ an error. The enumeration below fails
+                            config validation in developer mode, and
+                            Model\Brand\Loader additionally throws a
+                            \DomainException, because nothing validates
+                            brand.xsd in production mode.
+
+                Base plugins declare it explicitly `true`; brand
+                overlays that do not want the notice declare it
+                explicitly `false`.
+            -->
+            <xs:element name="intent_approved_notice_enabled" type="explicitBooleanType" minOccurs="0"/>
+            <!--
+                COPY OVERRIDE ONLY — this element does NOT switch the
+                notice off. That is <intent_approved_notice_enabled>
+                above.
+
+                  absent / empty / whitespace-only
+                          ⇒ INERT: platform default translated copy
+                  non-empty
+                          ⇒ used verbatim as the company-known copy
+                            template (%1 = brand product name,
+                            %2 = buyer company name)
+
+                An empty element used to mean "notice off" (TWO-25213).
+                It no longer does — it is inert (TWO-25218). A stale
+                overlay carrying an empty element against a new parent
+                therefore resolves to notice ON, which is wrong but not
+                broken; the documented merge order (parent first) is the
+                mitigation. Do not resurrect empty-means-off.
+            -->
+            <xs:element name="intent_approved_notice" type="xs:string" minOccurs="0"/>
+            <!--
+                Deliberately no <intent_declined_notice> element here
+                (removed 2026-08-04 ruling, TWO-25326): the "order intent
+                NOT approved" tile notice is never brand-overridable. Do
+                not re-add this element; Model\Brand\Loader also hard-fails
+                if a brand.xml declares it, as a backstop for an overlay on
+                an older copy of this schema.
+            -->
             <xs:element name="csp_origins" type="cspOriginsType" minOccurs="0"/>
             <xs:element name="admin_resource" type="xs:string"/>
             <xs:element name="module_label_chain" type="moduleLabelChainType" minOccurs="0"/>
-            <xs:element name="allowed_currencies" type="allowedCurrenciesType" minOccurs="0"/>
-            <xs:element name="allowed_countries" type="allowedCountriesType" minOccurs="0"/>
             <xs:element name="extra_http_headers" type="extraHttpHeadersType" minOccurs="0"/>
             <xs:element name="suppressed_fields" type="suppressedFieldsType" minOccurs="0"/>
             <!--
@@ -67,13 +123,27 @@
         <!--
             Short identifier used as the prefix for synthesised admin
             Configuration section IDs (e.g. `two` → `two_general`,
-            `two_payment`, `two_search`, `two_version`) and the
-            synthesised admin tab id (`{prefix}_gateway`). Optional —
-            when absent, derived by stripping a trailing `_payment`
-            suffix from `code`.
+            `two_checkout_fields`, `two_search`, `two_payment`,
+            `two_order_management`, `two_version` — TWO-25386's A-F
+            regroup) and the synthesised admin tab id
+            (`{prefix}_gateway`). Optional — when absent, derived by
+            stripping a trailing `_payment` suffix from `code`.
         -->
         <xs:attribute name="section_prefix" type="brandCodeType" use="optional"/>
     </xs:complexType>
+
+    <!--
+        A boolean that must be spelled out. Deliberately NOT xs:boolean:
+        xs:boolean also accepts `1` / `0`, and this switch is meant to
+        read as a decision in the brand.xml, not as a flag. Lowercase
+        `true` / `false` only.
+    -->
+    <xs:simpleType name="explicitBooleanType">
+        <xs:restriction base="xs:string">
+            <xs:enumeration value="true"/>
+            <xs:enumeration value="false"/>
+        </xs:restriction>
+    </xs:simpleType>
 
     <xs:simpleType name="brandCodeType">
         <xs:restriction base="xs:string">
@@ -121,18 +191,6 @@
                     </xs:simpleContent>
                 </xs:complexType>
             </xs:element>
-        </xs:sequence>
-    </xs:complexType>
-
-    <xs:complexType name="allowedCurrenciesType">
-        <xs:sequence>
-            <xs:element name="currency" type="xs:string" minOccurs="1" maxOccurs="unbounded"/>
-        </xs:sequence>
-    </xs:complexType>
-
-    <xs:complexType name="allowedCountriesType">
-        <xs:sequence>
-            <xs:element name="country" type="xs:string" minOccurs="1" maxOccurs="unbounded"/>
         </xs:sequence>
     </xs:complexType>
 

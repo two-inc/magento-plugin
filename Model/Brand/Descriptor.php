@@ -35,17 +35,15 @@ final class Descriptor
      * @param string $signUpUrl Merchant sign-up link shown in admin header.
      * @param string $documentationUrl Plugin docs URL shown in admin header.
      * @param string $apiBaseUrl Outbound API base URL.
-     * @param int[] $availablePaymentTerms Buyer-selectable terms in days.
-     * @param array{amount:float,currency:string}|null $surchargeFixedMax
      * @param string[] $cspOrigins Additional CSP fetch-policy origins.
      * @param string $adminResource ACL resource for the brand's admin form.
      * @param array<array{label:string,module:string}> $moduleLabelChain Version-panel rows.
-     * @param string[] $allowedCurrencies ISO codes; empty = unrestricted.
-     * @param string[] $allowedCountries ISO codes; empty = unrestricted.
      * @param array<string,string> $extraHttpHeaders name=>value, decoration on outbound requests.
      * @param string[] $suppressedFields `section_suffix/group/field` paths to hide in the synthesised admin form.
      * @param bool $inlineTermFees Whether to render the per-term merchant fee beside each Payment Terms checkbox in admin.
-     * @param float[] $surchargeRoundingSteps Buyer-surcharge rounding steps offered in the admin Rounding Step dropdown, ascending.
+     * @param float[] $surchargeRoundingSteps Buyer-surcharge rounding steps offered in the admin Rounding step dropdown, ascending.
+     * @param string|null $intentApprovedNotice Copy override for the buyer-facing intent-approved notice; null = use the platform default copy. Never ''. See getIntentApprovedNotice().
+     * @param bool $intentApprovedNoticeEnabled Whether the buyer-facing intent-approved notice is rendered at all. Default true. See isIntentApprovedNoticeEnabled().
      */
     public function __construct(
         private readonly string $code,
@@ -61,19 +59,59 @@ final class Descriptor
         private readonly string $signUpUrl,
         private readonly string $documentationUrl,
         private readonly string $apiBaseUrl,
-        private readonly array $availablePaymentTerms,
-        private readonly ?array $surchargeFixedMax,
         private readonly array $cspOrigins,
         private readonly string $adminResource,
         private readonly array $moduleLabelChain,
-        private readonly array $allowedCurrencies,
-        private readonly array $allowedCountries,
         private readonly array $extraHttpHeaders,
         private readonly array $suppressedFields = [],
         private readonly bool $inlineTermFees = true,
         private readonly string $checkoutSubtitle = '',
-        private readonly array $surchargeRoundingSteps = []
+        private readonly array $surchargeRoundingSteps = [],
+        private readonly ?string $intentApprovedNotice = null,
+        private readonly bool $intentApprovedNoticeEnabled = true
     ) {
+    }
+
+    /**
+     * Whether the buyer-facing "order intent approved" reassurance notice
+     * is rendered at all, from brand.xml
+     * <intent_approved_notice_enabled>.
+     *
+     *  - `true`  — notice ON. This is the documented default when the
+     *              brand.xml declares nothing, which is what keeps a
+     *              third-party overlay that says nothing on ON.
+     *  - `false` — notice suppressed ENTIRELY: no element is emitted into
+     *              the DOM, not an empty wrapper.
+     *
+     * The switch is independent of the copy override below: a brand can
+     * suppress the notice, keep the default copy, or replace the wording,
+     * and those are three separate decisions.
+     */
+    public function isIntentApprovedNoticeEnabled(): bool
+    {
+        return $this->intentApprovedNoticeEnabled;
+    }
+
+    /**
+     * Per-brand COPY override for the buyer-facing "order intent
+     * approved" reassurance notice rendered inline in the checkout
+     * payment tile. Wording only — it does not turn the notice off; see
+     * isIntentApprovedNoticeEnabled() for that.
+     *
+     *  - `null`  — no override: the renderers use the platform default
+     *              translated copy. This is the Two-brand case, and also
+     *              what an absent, empty or whitespace-only
+     *              <intent_approved_notice> resolves to. Never ''.
+     *  - non-''  — used verbatim as the company-known copy template, with
+     *              %1 = brand product name and %2 = buyer company name.
+     *              The company-unknown variant stays on the platform
+     *              default; in practice it is unreachable, because an
+     *              order intent is only ever placed once both company
+     *              name and company number are known.
+     */
+    public function getIntentApprovedNotice(): ?string
+    {
+        return $this->intentApprovedNotice;
     }
 
     /**
@@ -106,8 +144,9 @@ final class Descriptor
 
     /**
      * Short identifier used as the prefix for synthesised admin
-     * Configuration section IDs (e.g. `two_general`, `two_payment`,
-     * `two_search`, `two_version`) and the admin tab id
+     * Configuration section IDs (e.g. `two_general`,
+     * `two_checkout_fields`, `two_payment`, `two_order_management`,
+     * `two_version` — TWO-25386's A-E regroup) and the admin tab id
      * (`{prefix}_gateway`). Falls back to `code` minus a trailing
      * `_payment` suffix when not explicitly declared.
      */
@@ -193,20 +232,8 @@ final class Descriptor
         return $this->apiBaseUrl;
     }
 
-    /** @return int[] */
-    public function getAvailablePaymentTerms(): array
-    {
-        return $this->availablePaymentTerms;
-    }
-
-    /** @return array{amount:float,currency:string}|null */
-    public function getSurchargeFixedMax(): ?array
-    {
-        return $this->surchargeFixedMax;
-    }
-
     /**
-     * Buyer-surcharge rounding steps offered in the admin Rounding Step
+     * Buyer-surcharge rounding steps offered in the admin Rounding step
      * dropdown, ascending. Brand overlays narrow the set via brand.xml
      * <surcharge_rounding_steps>; Loader applies the parent default set
      * when the element is absent or empty.
@@ -233,18 +260,6 @@ final class Descriptor
     public function getModuleLabelChain(): array
     {
         return $this->moduleLabelChain;
-    }
-
-    /** @return string[] */
-    public function getAllowedCurrencies(): array
-    {
-        return $this->allowedCurrencies;
-    }
-
-    /** @return string[] */
-    public function getAllowedCountries(): array
-    {
-        return $this->allowedCountries;
     }
 
     /** @return array<string,string> */

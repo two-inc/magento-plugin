@@ -16,14 +16,18 @@ content such as plans, transcripts, or implementation notes.
 
 ## Branching & releases
 
--   **PRs target `main`** (prod). `staging` is the GitHub default and the
-    staging shop's deploy branch; `merge-back.yml` syncs `main → staging`
-    after merges (ff-only, else a sync PR). Branch off `origin/main`.
-    There is no `develop` branch.
+-   **Day-to-day PRs target `staging`** (the GitHub default and the
+    staging shop's deploy branch); branch off `origin/staging` —
+    `version-bump.yml` decides the release version on PRs landing there.
+    `auto-pr.yml` opens the staging → main promotion PR on every push to
+    `staging`; `main` is prod. `merge-back.yml` syncs `main → staging`
+    after merges (ff-only, else a sync PR). There is no `develop` branch.
 -   **Releases are automated** — `release.yml` runs on CI success on
-    `main`, derives the bump from conventional commits since the last
-    bare-semver tag (`feat!:` → major, `feat:` → minor, else patch), tags,
-    and creates the GitHub Release. Don't hand-run bumpver.
+    `main` and does not compute a version: it reads the version committed
+    by `version-bump.yml` on the PR that landed on `staging` (bump level
+    from that PR's own conventional-commit types: `feat!:` → major,
+    `feat:` → minor, else patch), tags it, and creates the GitHub Release.
+    Don't hand-run bumpver.
 -   `bumpver.toml` `current_version` MUST equal the version strings in the
     files it patches (`composer.json` `"version"`, `etc/config.xml`
     `<version>`) or every release dies at the bump step with "No match for
@@ -57,6 +61,299 @@ which includes the commands to re-enable PageBuilder for testing
 brand content that relies on it. Same applies to anything
 analytics-driven (e.g. NewRelic dashboards, GA events).
 
+## A surcharge cap of 0: refused at entry, relayed faithfully at runtime
+
+Two rules that look contradictory and are not. Keep both.
+
+**Runtime — never guard.** A configured surcharge limit of `0` that
+somehow exists must be relayed to the pricing API as `cap => 0.0`.
+Do not throw, do not omit the key, do not turn it into "no cap".
+A zero cap bounds the buyer fee at zero — no surcharge is applied —
+and only an _absent_ (null) limit means "no cap", which omits the
+`cap` key and applies the percentage uncapped. Absent and zero are
+different values and both pass through faithfully.
+
+TWO-25269 briefly added a guard that threw on a zero cap, on the
+premise that a zero cap read as "no cap" downstream and would relay
+an uncapped percentage. **That premise was false and the guard was
+reverted** — a zero cap bounds the fee at zero, it never uncaps it.
+In `fixed_and_percentage` mode the cap bounds the combined fee, so
+`Limit = 0` suppresses the fixed component too, not just the
+percentage part.
+`Test/Unit/Service/Order/SurchargeCalculatorTest.php` pins this.
+
+**Admin — refuse zero.** Separately, TWO-25289 stopped a zero limit
+being _configurable_: `Model\Config\Backend\SurchargeGrid` rejects
+`limit === 0` on save, and the grid refuses it in the browser too.
+An EMPTY limit stays valid and still means "no limit".
+
+This is not the reverted guard under another name. It is an
+admin-boundary decision rather than a runtime one, and the reason is
+different: a merchant who wants no fee on a term says so directly
+with 0% and 0 fixed, so a zero limit has no legitimate use — while on
+the sibling plugins a zero cap was being normalised to _absent_ and
+relayed genuinely uncapped, overcharging the buyer. Refusing it at
+entry closes that consistently across all three plugins.
+
+**Read path — junk is absent, zero is not.**
+`Model\Config\Repository::getSurchargeConfig()` no longer casts the
+stored limit blindly. The admin grid refuses junk, but the stored value
+can still arrive from a hand-edited row, `config:set` or an import, and
+a bare `(float)` cast turned `abc` into a hard cap of 0 (suppressing
+the fee) and `-10` into a negative cap (refused upstream, so the buyer
+sees a generic failure). Non-scalar, empty, non-numeric, non-finite and
+negative all resolve to NULL — absent, i.e. no cap. A genuine `0` is
+still relayed verbatim, because a zero cap clamps the fee to zero and
+that is a different instruction from absence. Same shape as the sibling
+plugins.
+
+So: if you are asked to remove the admin validation, that is the
+runtime rule being misread. If you are asked to make the runtime
+throw on a zero cap, that is the reverted guard being reintroduced.
+Neither follows from the other.
+
+## Monetary values in the pricing request are rounded to 2dp
+
+`SurchargeCalculator::convertAmount()` rounds `cap` and `surcharge` to
+two decimal places before they go on the wire. The API refuses
+anything finer rather than rounding it itself, so an unrounded FX
+conversion used to be rejected upstream and surface to the buyer as a
+generic "temporarily unavailable" error.
+
+Plain half-up rounding, deliberately. Sub-cent caps, away-from-zero
+rounding and zero-decimal currencies are all explicitly out of scope
+(TWO-25289).
+
+That is safe for anything a merchant can **configure**, because the
+grid refuses any limit that rounds away at 2dp — not just an explicit
+`0` but anything under half a cent. So the rounding direction never
+decides whether a configured cap survives.
+
+What it does **not** cover is an FX conversion landing under half a
+cent: that collapses to `0.00` and suppresses the fee. Accepted, not
+overlooked — pinned by
+`testASubCentCapRoundsDownToZeroWhichIsAcceptedScope` so it reads as a
+decision. Do not "fix" it with away-from-zero rounding without
+reopening the scope question.
+
+Also note the zero rule is **skipped, not applied and not deleted**, on
+the Limit column when the surcharge type has no percentage component.
+The grid JS hides that column, but a hidden input still posts, so a
+limit stored under an earlier percentage type keeps arriving. Rejecting
+a zero there would fail the whole section save over a cell the admin
+can neither see nor clear, so the rule is skipped and the cell is
+stored exactly as posted.
+
+Do not "tidy" that into deleting the cell. Deleting discards a VALID
+limit on any save made while the surcharge is fixed-only or off — a
+normal round trip — while the equally inapplicable percentage cell
+survives it; and at a non-default scope deleting an override does not
+retire a value at all, it re-exposes the parent's. A legacy zero simply
+surfaces again when the column comes back into view, which is where the
+admin can act on it. The visibility flag is threaded from `afterSave()`
+into `validateValue()` and pinned there by
+`testProductionAfterSaveWiresTheLimitColumnVisibilityIntoTheZeroRule`.
+
+A term the grid does not render at all — one deselected from "Payment
+terms" — is a different case, because no cell for it is POSTED and the
+per-cell rule therefore never sees it. `assertNoStaleZeroLimits()` scans
+those stored rows at the scope being saved whenever the Limit column
+becomes live, and refuses the save naming the terms. That is not the
+dead end above: reselecting the term brings its cell back into the grid,
+where it can be cleared. The scan runs before the write loop so a refusal
+leaves nothing half-applied.
+
+## The custom-header table
+
+`custom_headers` (Diagnostics → Admin controls) lets the merchant send any
+number of named HTTP headers on calls to the Two API, each with its own
+"also send from browser" tick. It replaced a single `firewall_token` field
+plus a browser toggle.
+
+**There is deliberately no data patch.** Those fields never reached `main`
+on any platform — only `staging` — so no merchant ever had one configured
+in production and there is nothing to carry over. Do not add one on the
+assumption that stored values exist.
+
+`Model\Config\Backend\CustomHeaders` is the entry gate and owns the stored
+format. It refuses an empty name, an empty value, a duplicate name, and a
+name outside the RFC 7230 token charset. Two further rules are worth
+spelling out, and every rule below plus the name charset is re-applied on
+the read path in `Model\Config\Repository`, so a value from `config:set` or
+an import cannot bypass any of them:
+
+-   **Values are printable ASCII** (`^[\x20-\x7E]+\z`), refused at save
+    with a message naming the rule. CR/LF is a response-splitting sink,
+    other control characters a log-injection one, and non-ASCII is
+    ambiguous on the wire. The pattern ends `\z`, not `$` — `$` matches
+    before a final newline and would let exactly the worst byte through.
+    A value is trimmed of spaces and tabs ONLY, so a stray control byte
+    survives to be named rather than silently stripped.
+-   **21 header names are reserved**, matched case-insensitively and
+    exactly (a prefix like `X-Upgrade-Path` is the merchant's to use).
+    Five groups: names the integration sets itself (`host`,
+    `content-type`, `content-length`, `accept`, `accept-language`,
+    `x-api-key`, `two-delegated-authority-token`); the proxy identity the
+    checkout rate limiter resolves callers through (`x-forwarded-for`,
+    `x-real-ip`); RFC 7230 hop-by-hop headers, which govern connection
+    handling rather than request content so a value here malforms the call
+    (`connection`, `keep-alive`, `proxy-authenticate`,
+    `proxy-authorization`, `te`, `trailer`, `transfer-encoding`,
+    `upgrade`); transport negotiation the HTTP client owns, where a
+    merchant value breaks every response parse or the request handshake
+    (`accept-encoding`, `expect`); and the generic credential carriers
+    (`authorization`, `cookie`).
+
+`Service\Api\Adapter` case-folds when merging, so a differently-cased row
+cannot add a second conflicting `X-API-Key` even if one were stored.
+
+**A browser-ticked header must already be allowed by the API on
+browser-originated calls**, or the one direct call the browser makes
+fails CORS preflight and the sole-trader autofill silently finds no
+buyer. The field help says so; nothing enforces it.
+
+## An optional constructor argument is NOT autowired
+
+A constructor parameter with a default of `null` is left at its default by
+the object manager — it is never resolved from its type hint. Adding a
+dependency that way and relying on DI to fill it in gets you a silent
+`null` at runtime while every unit test (constructor skipped) still passes.
+`bin/magento dev:di:info <class>` reports it as `"_vn_": "string 1"`
+(value null) instead of `"_i_"` (instance); that is the check.
+
+`Service\Order::$orderTaxManagement` and `Service\Order::$feeLineProviderPool`
+are both declared optional for constructor BC and both named explicitly in
+`etc/di.xml` on the abstract parent, which all four `Compose*` subclasses
+inherit.
+
+## The order/tax composition path never derives a tax rate from amounts
+
+A line's `tax_rate` is whatever the store's tax engine declared for that
+line, relayed verbatim. `tax / net` is a different statement: rounding,
+combined rates and a discounted base all put the quotient on a rate no tax
+rule declares, and Two validates the declared rate against the line's own
+amounts.
+
+Product lines read `tax_percent` off the item. Shipping has no such column,
+so `getTaxRateShipping()` reads the shipping-typed entry out of the order's
+`item_applied_taxes` extension attribute and sums its applied taxes, falling
+back to `OrderTaxManagementInterface::getOrderTaxDetails()`. The extension
+attribute is what makes this work at PLACEMENT time: composition runs from
+`Two::authorize()` inside `Order::place()`, before the order is saved, so it
+has no entity id and the `sales_order_tax_item` rows the management interface
+reads do not exist yet. That interface stays the source for the post-save
+consumers (capture, refund).
+
+Nothing declared and no shipping tax charged is 0% — a store whose shipping
+is untaxed records no tax row at all, and 0% is a statement rather than a
+guess. Nothing declared but tax charged consults the "Default Shipping Tax
+Rate" admin field, and with that unset the order is refused rather than
+given an assumed rate.
+
+`validateTaxReconciliation()` closes the same loop at composition time: a
+line whose declared tax does not follow from its own declared rate and net
+declines the checkout with a generic buyer notice. It never corrects the
+numbers. The tolerance is not a flat 0.02 — it carries a per-unit term for
+the "Unit Price" tax algorithm (which rounds per unit and sums) and a small
+fraction-of-net term, and a discounted line may reconcile against
+`net + discount` as well as `net`, because "Before Discount" tax calculation
+taxes the undiscounted base.
+
+## An unitemized fee is reconciled per entity, and refundable
+
+`findVerifiedResidualTaxRate()` reconciles a taxed residual against the rates
+Magento's own tax engine applied, so a fee extension that registers its tax
+normally needs no `FeeLineProviderInterface`. It resolves an invoice or credit
+memo to its own order and reads the rates there: the residual on either is a
+share of the same order-level fee at the same rate. It reads every rate the
+order records: the `applied_taxes` extension attribute, the item-level tax
+rows, and the order-level tax rows. All three are read rather than the first
+one that is populated, because an order can carry its products' rate in the
+item rows and a differently-taxed fee's rate only at order level. The admin
+invoice and credit-memo controllers load the order through `OrderFactory`,
+which never populates the attribute, and a fee contributed by a totals
+collector has no taxable item row of its own, so without both persisted
+sources a taxed fee stays unrefundable on exactly the screen the merchant
+uses.
+
+Reconciling the refund payload is not enough on its own, because a fee that
+reaches the grand total through a totals collector rather than a quote item
+never reaches the credit memo at all — the refund totals omit it and the
+merchant cannot refund it. `Model\Total\Creditmemo\OtherCharges` prorates the
+order's residual onto the credit memo by refunded subtotal share, and
+`Block\Sales\Total\OtherCharges` renders it as "Other charges".
+
+Both take the residual from `Service\Order\OtherChargesResolver`, which runs
+the composition path's own `getOtherChargesLineItem()` over
+`getKnownLineAmountsOrder()` plus any registered provider's fee lines — the
+same reconciliation `reconcileOtherCharges()` performs. None of it names an
+extension: the residual is defined by what the grand total exceeds, never by
+whose fee it is. The collector is gated on the order being a
+Two order — by payment-method INSTANCE, since a brand overlay's
+`GenericPaymentMethod` extends `Two` under its own per-brand code — because a
+store-wide fee extension applies to every order and this module has no
+business moving anyone else's refund total.
+
+`getKnownLineAmountsOrder()` counts what composition *should* itemize, which
+is deliberately not identical to what it actually emits. Two known
+divergences: it counts an item whose product no longer loads, where
+`getLineItemsOrder()` drops it and the dropped item's own value would read as
+an unitemized fee and be refunded as one; and it reads the surcharge only
+from the order columns, where `ComposeOrder::execute()` still falls back to
+the checkout session. It also loads no products, which a totals collector
+re-run on every credit-memo render cannot afford, and it avoids
+`getShippingLineOrder()`, because resolving the shipping tax rate queries the
+tax engine and throws when none is declared.
+
+**The fee's VAT is not already on the credit memo.** Core's
+`Creditmemo\Total\Tax` builds the tax up from item `tax_invoiced` plus
+shipping tax, then treats the order's allowance two different ways: a `min()`
+ceiling on a partial memo, but a straight assignment on the last one (and only
+when shipping is not partially refunded). So a fee belonging to no item and no
+shipping is in `tax_amount` already on that last memo and absent on every
+other. This is the one place it diverges from the sibling
+`Creditmemo\Surcharge` collector, which *assumes* core's native proration
+already granted its own VAT — an assumption that holds on the last memo and
+fails on a partial one.
+
+How much core granted THIS fee is read the way `ComposeRefund` reads it — the
+memo's tax less the tax of every line composition itemizes (items, shipping,
+surcharge), in ORDER currency, where the payload evaluates its residual —
+never from the tax headroom, which can be zero for reasons unrelated to the
+fee, and never in base currency, which desyncs the two on a converted order.
+
+**Every ceiling is applied by solving the NET, at the fee's own rate.** There
+are three: the proration share (less what earlier memos took), the tax
+allowance, and `validateForRefund()`'s base grand-total ceiling. Clamping a
+net and a VAT that were chosen separately cannot preserve a rate — scaling
+two legs while the already-granted VAT stays fixed changes the quotient — and
+a fee declared at any other rate is refused by `ComposeRefund` while the
+grand total still carries the money. So the net is solved as the minimum
+those ceilings allow and the VAT follows from it: `taxDelta = rate × net −
+granted`. A smaller share refunded at the exact rate beats the whole share at
+a wrong one. Entitlement is cumulative — `feeNet × (refunded subtotal share
+including this memo) − already refunded` — so a share an earlier memo could
+not take is recovered by a later one rather than stranded, and the last memo
+lands on the whole charge exactly with no rounding residue. The one exception
+is the stranding case below.
+
+Three cases defer rather than pay out, all logging `OtherChargesDeferred`. A
+NEGATIVE granted amount means some other total's tax is missing from the
+memo — on a partial memo of a surcharged order core omits the surcharge VAT
+that `ComposeRefund` declares in its surcharge line — and adding it here
+would refund another total's VAT under this fee's name and at a rate that is
+not this fee's. A granted amount larger than `rate × net` cannot be reduced,
+since the collector only ever adds tax. And no ceiling leaving any room at
+all resolves the net to zero.
+
+**Known gap: a surcharged order refunded across two or more partial memos
+strands the fee permanently**, rather than deferring it to a memo that can
+state it. Memo 1 defers on the negative granted amount; the last memo's
+granted then contains the surcharge VAT memo 1 never booked, so it defers
+again. No money is misstated — this is the pre-existing behaviour for that
+configuration — and the root cause is `Creditmemo\Surcharge`'s tax-delta
+assumption above, not this collector.
+
 ## DI registration scope for Structure / Config Reader plugins
 
 **Plugins that target `Magento\Config\Model\Config\Structure\Reader`
@@ -74,8 +371,8 @@ CLI-driven cache writes; the cache lands incomplete, and subsequent
 admin web requests read the broken cached Structure from
 `Scoped::_loadScopedData`.
 
-This is exactly how ABN-415 ("ABN admin tab vanishes after pod
-restart") happened — `SynthesiseBrandAdminForm` was originally
+This is exactly how the admin-tab-vanishes-after-pod-restart bug
+happened — `SynthesiseBrandAdminForm` was originally
 registered under adminhtml; every CLI command in the init/setup
 hooks repopulated the cache without invoking synthesis.
 

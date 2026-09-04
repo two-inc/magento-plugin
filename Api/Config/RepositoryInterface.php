@@ -25,7 +25,9 @@ interface RepositoryInterface
     public const XML_PATH_TITLE = 'payment/two_payment/title';
     public const XML_PATH_MODE = 'payment/two_payment/mode';
     public const XML_PATH_API_KEY = 'payment/two_payment/api_key';
-    public const XML_PATH_DAYS_ON_INVOICE = 'payment/two_payment/days_on_invoice';
+    public const XML_PATH_CUSTOM_HEADERS = 'payment/two_payment/custom_headers';
+    public const XML_PATH_TRUSTED_PROXIES = 'payment/two_payment/trusted_proxies';
+    public const XML_PATH_DISABLE_RATE_LIMIT = 'payment/two_payment/disable_rate_limit';
     public const XML_PATH_FULFILL_TRIGGER = 'payment/two_payment/fulfill_trigger';
     public const XML_PATH_FULFILL_ORDER_STATUS = 'payment/two_payment/fulfill_order_status';
     public const XML_PATH_ENABLE_COMPANY_SEARCH = 'payment/two_payment/enable_company_search';
@@ -44,7 +46,13 @@ interface RepositoryInterface
     public const XML_PATH_SURCHARGE_TYPE = 'payment/two_payment/surcharge_type';
     public const XML_PATH_SURCHARGE_DIFFERENTIAL = 'payment/two_payment/surcharge_differential';
     public const XML_PATH_SURCHARGE_LINE_DESCRIPTION = 'payment/two_payment/surcharge_line_description';
-    public const XML_PATH_SURCHARGE_TAX_RATE = 'payment/two_payment/surcharge_tax_rate';
+    /**
+     * Deprecated custom flat-rate field. Code-level name is
+     * custom_surcharge_tax_rate; the persisted config key deliberately
+     * stays `surcharge_tax_rate` (no data migration — pure BC).
+     */
+    public const XML_PATH_CUSTOM_SURCHARGE_TAX_RATE = 'payment/two_payment/surcharge_tax_rate';
+    public const XML_PATH_SURCHARGE_TAX_CLASS_ID = 'payment/two_payment/surcharge_tax_class';
     public const XML_PATH_SURCHARGE_FIXED_CURRENCY = 'payment/two_payment/surcharge_fixed_currency';
     public const XML_PATH_DEFAULT_PRODUCT_TAX_CLASS = 'tax/classes/default_product_tax_class';
     public const XML_PATH_VERSION = 'payment/two_payment/version';
@@ -92,15 +100,6 @@ interface RepositoryInterface
      * @return bool
      */
     public function isDebugMode(?int $storeId = null, ?string $scope = null): bool;
-
-    /**
-     * Get invoice due in days
-     *
-     * @param int|null $storeId
-     *
-     * @return int
-     */
-    public function getDueInDays(?int $storeId = null): int;
 
     /**
      * Get Fulfill Trigger (invoice or shipment or complete)
@@ -155,6 +154,40 @@ interface RepositoryInterface
      * @return bool
      */
     public function isTaxSubtotalsEnabled(?int $storeId = null): bool;
+
+    /**
+     * DEPRECATED FIELD: merchant-declared fallback shipping tax rate, as a
+     * flat percentage. Superseded by getDefaultShippingTaxClassId()'s
+     * tax-rules-engine resolution; retained only for pre-existing
+     * merchants (TWO-25386) and consulted only when that is unset.
+     *
+     * Only consulted when Magento's tax engine declares no rate at all for a
+     * taxed shipping line (TWO-25503). NULL when unset — the plugin refuses
+     * the order rather than assuming a rate.
+     *
+     * @param int|null $storeId
+     *
+     * @return float|null
+     */
+    public function getDefaultShippingTaxRate(?int $storeId = null): ?float;
+
+    /**
+     * Product Tax Class id used to resolve a fallback shipping tax rate
+     * through Magento's tax rules engine (destination-aware, rule-driven —
+     * the same mechanism a product line's own tax is resolved through) when
+     * Magento declares no rate at all for a taxed shipping line (TWO-25503).
+     * Primary mechanism (TWO-25386); getDefaultShippingTaxRate() is the
+     * deprecated flat-rate fallback consulted only when this is unset.
+     *
+     * Returns null when unconfigured. A value of 0 is a valid selection
+     * ("None"): no tax rule can match class id 0, so the fallback resolves
+     * to untaxed.
+     *
+     * @param int|null $storeId
+     *
+     * @return int|null
+     */
+    public function getDefaultShippingTaxClassId(?int $storeId = null): ?int;
 
     /**
      * Check if department is enabled
@@ -257,6 +290,14 @@ interface RepositoryInterface
     /**
      * Check if address autocomplete is enabled
      *
+     * `enable_address_search` ANDed with `enable_company_search` (TWO-25503):
+     * `enable_company_search` OFF relocates the company-search control to the
+     * payment tile rather than disabling search, but it retires the
+     * convenience this setting exists for, so autofill is forced off with it.
+     * The stored value is also pinned off on save
+     * (Model\Config\Backend\AddressSearchToggle) — this AND is belt-and-
+     * suspenders for a row stored before the coupling existed.
+     *
      * @param int|null $storeId
      *
      * @return bool
@@ -300,6 +341,19 @@ interface RepositoryInterface
     public function getAllBuyerTerms(?int $storeId = null): array;
 
     /**
+     * Whether a term duration is one the merchant currently offers.
+     *
+     * Single owner of the availability check, shared by the chip-click
+     * endpoint and final order composition (TWO-25503).
+     *
+     * @param int $termDays
+     * @param int|null $storeId
+     *
+     * @return bool
+     */
+    public function isBuyerTermAvailable(int $termDays, ?int $storeId = null): bool;
+
+    /**
      * Get default payment term
      *
      * @param int|null $storeId
@@ -336,13 +390,51 @@ interface RepositoryInterface
     public function getSurchargeLineDescription(?int $storeId = null): string;
 
     /**
-     * Get surcharge tax rate (percentage)
+     * Get the custom (flat) surcharge tax rate percentage.
+     *
+     * DEPRECATED FIELD: initial attempt at tax support, superseded by
+     * the tax-rule-based configurable selector (getSurchargeTaxClassId),
+     * retained only for pre-existing merchants. The persisted config
+     * key remains `surcharge_tax_rate` — only the code-level name was
+     * renamed; migrating the core_config_data path would be pure risk
+     * for zero benefit.
      *
      * @param int|null $storeId
      *
      * @return float
      */
-    public function getSurchargeTaxRate(?int $storeId = null): float;
+    public function getCustomSurchargeTaxRate(?int $storeId = null): float;
+
+    /**
+     * Whether a custom (flat) surcharge tax rate value genuinely
+     * exists in config. Existence check, not truthiness: a configured
+     * rate of 0 / "0.00" is a real value and must return true. Gates
+     * the deprecated "Custom" option in the surcharge tax treatment
+     * selector — pre-existing merchants only.
+     *
+     * @param int|null $storeId
+     *
+     * @return bool
+     */
+    public function hasCustomSurchargeTaxRate(?int $storeId = null): bool;
+
+    /**
+     * Get the Product Tax Class id used to tax the surcharge via
+     * Magento's tax rules engine (destination-aware, rule-driven,
+     * additive multi-rate).
+     *
+     * Returns null when the merchant has not opted into engine-driven
+     * surcharge tax (config unset, or explicitly set to the deprecated
+     * "custom" flat-rate treatment) — callers must then fall back to
+     * getCustomSurchargeTaxRate(). A value of 0 is a valid selection
+     * ("None"): no tax rule can match class id 0, so the surcharge is
+     * untaxed everywhere.
+     *
+     * @param int|null $storeId
+     *
+     * @return int|null
+     */
+    public function getSurchargeTaxClassId(?int $storeId = null): ?int;
 
     /**
      * Get surcharge config for a specific term
@@ -386,4 +478,111 @@ interface RepositoryInterface
      * @return float
      */
     public function getSurchargeRoundingStep(?int $storeId = null): float;
+
+    /**
+     * Optional merchant-entered site/vendor name for multi-site setups
+     * (TWO-25386). Sent to the API on order creation as `vendor_name` so a
+     * merchant running Two across several sites/stores that share one
+     * merchant account can tell the orders apart. Empty string means unset.
+     *
+     * @param int|null $storeId
+     *
+     * @return string
+     */
+    public function getVendorSiteName(?int $storeId = null): string;
+
+    /**
+     * Whether the buyer-facing "What is <Product>?" explainer link is
+     * shown on the payment method tile at checkout (TWO-25386).
+     *
+     * @param int|null $storeId
+     *
+     * @return bool
+     */
+    public function isAboutLinkEnabled(?int $storeId = null): bool;
+
+    /**
+     * Whether the optional checkout field inputs (PO number, project,
+     * department, order note, invoice email) render a hover tooltip with
+     * the field's label (TWO-25386). Defaults to enabled — Magento already
+     * rendered these unconditionally before this flag existed, so the
+     * default preserves prior behaviour.
+     *
+     * @param int|null $storeId
+     *
+     * @return bool
+     */
+    public function isDisplayTooltipsEnabled(?int $storeId = null): bool;
+
+    /**
+     * Whether stored Two configuration (payment/<code>/*) is deleted from
+     * core_config_data when the module is uninstalled (TWO-25386). Module
+     * uninstall is the nearest lifecycle event Magento offers for this.
+     *
+     * @param int|null $storeId
+     *
+     * @return bool
+     */
+    public function isClearSettingsOnUninstallEnabled(?int $storeId = null): bool;
+
+    /**
+     * Store-view-scoped payment method subtitle shown beneath the title
+     * at checkout (TWO-25386). Empty string means unset — callers fall back
+     * to the brand's default subtitle
+     * (BrandRegistryInterface::getCheckoutSubtitle).
+     *
+     * @param int|null $storeId
+     *
+     * @return string
+     */
+    public function getSubtitle(?int $storeId = null): string;
+
+    /**
+     * Debug flag: skip TLS certificate verification on outbound API calls
+     * (TWO-25386). Defaults to false (verification ON, secure). Unsafe for
+     * production — intended only for corporate networks that terminate TLS
+     * with a custom/self-signed certificate.
+     *
+     * @param int|null $storeId
+     *
+     * @return bool
+     */
+    public function isSslVerificationDisabled(?int $storeId = null): bool;
+
+    /**
+     * The merchant's own headers, relayed on every server-side call. A coarse
+     * network-egress gate, not credentials — stored and rendered in plain text.
+     *
+     * @param int|null $storeId
+     * @return array<string, string> header name => value
+     */
+    public function getCustomHeaders(?int $storeId = null): array;
+
+    /**
+     * The subset the merchant also ticked for the one call the browser still
+     * makes directly to the API — and therefore publishes to every buyer.
+     *
+     * @param int|null $storeId
+     * @return array<string, string> header name => value
+     */
+    public function getBrowserCustomHeaders(?int $storeId = null): array;
+
+    /**
+     * The store's own reverse proxies, load balancers or CDN egress, as IPs or
+     * CIDR ranges. Empty until named, because a forwarding header from anything
+     * else is a client-supplied value.
+     *
+     * @param int|null $storeId
+     * @return string[]
+     */
+    public function getTrustedProxies(?int $storeId = null): array;
+
+    /**
+     * Whether the per-caller ceiling on the anonymous checkout routes is off —
+     * the escape hatch for a store whose callers all resolve to one address.
+     *
+     * @param int|null $storeId
+     * @return bool
+     */
+    public function isRateLimitDisabled(?int $storeId = null): bool;
 }

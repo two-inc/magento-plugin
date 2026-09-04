@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Model\Total\Creditmemo\Surcharge;
 
 /**
- * Regression coverage for ABN-443 on the refund path.
+ * Regression coverage for the surcharge-VAT double-count on refunds.
  *
  * Same root cause as the invoice collector: the surcharge VAT is already
  * carried in the credit-memo's tax_amount/grand_total (Magento propagates the
@@ -47,7 +47,7 @@ class SurchargeTest extends TestCase
         $order->setData('two_surcharge_refunded', 0.0);
         $order->setData('base_two_surcharge_refunded', 0.0);
         $order->setData('two_surcharge_tax_rate', self::TAX_RATE);
-        $order->setData('two_surcharge_description', 'Zakelijk op Rekening - 90 dagen');
+        $order->setData('two_surcharge_description', 'Business Invoice - 90 days');
         $order->setData('subtotal', self::SUBTOTAL);
         $order->setData('base_to_order_rate', 1.0);
         return $order;
@@ -79,7 +79,7 @@ class SurchargeTest extends TestCase
             (float)$creditmemo->getGrandTotal(),
             0.0001,
             'Credit-memo grand total must increase by the surcharge NET only; '
-            . 're-adding the VAT pushes the refund past the order paid total (ABN-443).'
+            . 're-adding the VAT pushes the refund past the order paid total (the surcharge-VAT double-count bug).'
         );
     }
 
@@ -95,7 +95,7 @@ class SurchargeTest extends TestCase
             (float)$creditmemo->getTaxAmount(),
             0.0001,
             'Credit-memo tax_amount must be unchanged: the surcharge VAT is already '
-            . 'present from native tax propagation (ABN-443).'
+            . 'present from native tax propagation (the surcharge-VAT double-count bug).'
         );
     }
 
@@ -113,7 +113,7 @@ class SurchargeTest extends TestCase
             0.0001
         );
         $this->assertSame(
-            'Zakelijk op Rekening - 90 dagen',
+            'Business Invoice - 90 days',
             $creditmemo->getTwoSurchargeDescription()
         );
     }

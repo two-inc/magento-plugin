@@ -105,22 +105,7 @@ class Loader
             ));
         }
 
-        $terms = [];
-        if (isset($brand->available_payment_terms->term)) {
-            foreach ($brand->available_payment_terms->term as $term) {
-                $terms[] = (int)$term;
-            }
-        }
-
-        $surchargeFixedMax = null;
-        if (isset($brand->surcharge_fixed_max)) {
-            $surchargeFixedMax = [
-                'amount' => (float)$brand->surcharge_fixed_max['amount'],
-                'currency' => (string)$brand->surcharge_fixed_max['currency'],
-            ];
-        }
-
-        // Brand-driven Rounding Step dropdown options. Validate at load
+        // Brand-driven Rounding step dropdown options. Validate at load
         // time — nothing validates brand.xsd at runtime, so a malformed
         // <step> would otherwise coerce to 0.0 and silently offer a
         // bogus option. Absent/empty falls back to the parent default.
@@ -163,20 +148,6 @@ class Loader
             }
         }
 
-        $allowedCurrencies = [];
-        if (isset($brand->allowed_currencies->currency)) {
-            foreach ($brand->allowed_currencies->currency as $currency) {
-                $allowedCurrencies[] = (string)$currency;
-            }
-        }
-
-        $allowedCountries = [];
-        if (isset($brand->allowed_countries->country)) {
-            foreach ($brand->allowed_countries->country as $country) {
-                $allowedCountries[] = (string)$country;
-            }
-        }
-
         $extraHttpHeaders = [];
         if (isset($brand->extra_http_headers->header)) {
             foreach ($brand->extra_http_headers->header as $header) {
@@ -189,6 +160,55 @@ class Loader
             foreach ($brand->suppressed_fields->field as $field) {
                 $suppressedFields[] = (string)$field['path'];
             }
+        }
+
+        // On/off switch for the buyer-facing intent-approved notice.
+        // Explicit boolean only: absent is the documented default `true`
+        // (so a third-party overlay that declares nothing keeps the notice
+        // ON), and anything other than the exact strings 'true'/'false' is
+        // an error rather than a silent third behaviour. Validated here as
+        // well as in brand.xsd because nothing validates brand.xsd in
+        // production mode — same reasoning as the rounding-step guard above.
+        $intentApprovedNoticeEnabled = true;
+        if (isset($brand->intent_approved_notice_enabled)) {
+            $raw = trim((string)$brand->intent_approved_notice_enabled);
+            if ($raw !== 'true' && $raw !== 'false') {
+                throw new \DomainException(sprintf(
+                    'brand.xml at %s declares an invalid '
+                    . '<intent_approved_notice_enabled> value "%s"; it must be '
+                    . 'exactly "true" or "false".',
+                    $sourcePath,
+                    $raw
+                ));
+            }
+            $intentApprovedNoticeEnabled = $raw === 'true';
+        }
+
+        // Copy override ONLY — this is no longer an off switch (TWO-25218
+        // superseded the three-state contract). Absent, empty and
+        // whitespace-only all normalise to null, i.e. "use the platform
+        // default copy"; an empty element is inert. Suppression is
+        // <intent_approved_notice_enabled>false</…> above.
+        $intentApprovedNotice = trim((string)($brand->intent_approved_notice ?? ''));
+        if ($intentApprovedNotice === '') {
+            $intentApprovedNotice = null;
+        }
+
+        // The declined/not-available notice is NEVER brand-overridable
+        // (2026-08-04 ruling, TWO-25326): there is deliberately no copy
+        // override element for it. A brand.xml that declares
+        // <intent_declined_notice> anyway is almost certainly copying the
+        // approved-notice pattern by habit, so this fails loudly rather
+        // than silently ignoring the element and leaving the overlay
+        // author to wonder why their copy never renders.
+        if (isset($brand->intent_declined_notice)) {
+            throw new \DomainException(sprintf(
+                'brand.xml at %s declares <intent_declined_notice>, which is '
+                . 'not a supported override: the buyer-facing "order intent '
+                . 'NOT approved" notice is never brand-overridable. Remove '
+                . 'the element; the platform default copy always renders.',
+                $sourcePath
+            ));
         }
 
         $inlineTermFees = true;
@@ -214,18 +234,16 @@ class Loader
             (string)($brand->sign_up_url ?? ''),
             (string)($brand->documentation_url ?? ''),
             (string)$brand->api_base_url,
-            $terms,
-            $surchargeFixedMax,
             $cspOrigins,
             (string)$brand->admin_resource,
             $moduleLabelChain,
-            $allowedCurrencies,
-            $allowedCountries,
             $extraHttpHeaders,
             $suppressedFields,
             $inlineTermFees,
             (string)($brand->checkout_subtitle ?? ''),
-            $roundingSteps
+            $roundingSteps,
+            $intentApprovedNotice,
+            $intentApprovedNoticeEnabled
         );
     }
 }
