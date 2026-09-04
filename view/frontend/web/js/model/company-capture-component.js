@@ -228,6 +228,10 @@
 
         this._soleTrader = new this._options.SoleTraderFlow(this);
         this._soleTrader.listenForSignupResult();
+        // Ahead of every mount, country and availability step below, so no
+        // failure among them costs the buyer the mint (TWO-25547). Idempotent
+        // against the host's own call on reaching checkout.
+        this._soleTrader.prefetchBuyer();
         this._options.watchCountryChanges(this.onCountryChanged.bind(this));
         // The baseline a later change is measured against. Without it the first
         // switch reads as the first resolution and keeps a company whose
@@ -243,11 +247,6 @@
         this.refreshMount();
         this.refreshSoleTraderAvailability();
         this.refreshCompanySearchAvailability();
-        // Unconditional and decoupled from whichever country is currently
-        // selected (TWO-25547): Bifrost's registry coverage is global, not
-        // merchant-scoped, so there is nothing to gate on — mint and look the
-        // buyer up as soon as checkout is reached, full stop.
-        this._soleTrader.prefetchBuyer();
     };
 
     /**
