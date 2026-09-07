@@ -405,11 +405,7 @@ describe('gateway_method intent-approved notice', () => {
     });
 });
 
-/**
- * A context that can both take an order-intent verdict and reach placeOrder(),
- * which makeContext() alone cannot: placeOrder() needs the latch observable,
- * the validators and a backend stub.
- */
+/** makeContext() plus what placeOrder() needs: the latch observable, the validators and a backend stub. */
 function makePlaceOrderContext(noticeCopy, declinedCopy) {
     const ctx = makeContext(noticeCopy, declinedCopy);
     ctx.generalErrorMessage = 'Something went wrong.';
@@ -472,8 +468,7 @@ describe('a declined order intent refuses placement (TWO-25657)', () => {
     });
 
     test('refuses even when the brand suppressed the notice copy', () => {
-        // The gate reads the recorded verdict, never the rendered sentence: a
-        // brand with the intent message off must not thereby get placement.
+        // The gate reads the recorded verdict, never the rendered sentence.
         const ctx = makePlaceOrderContext(null, null);
 
         ctx.processOrderIntentSuccessResponse.call(ctx, DECLINED);

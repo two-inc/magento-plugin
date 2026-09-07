@@ -128,9 +128,7 @@ define([
     // every renderer Magento re-creates when the payment-method list refreshes.
     var placeOrderInFlight = false;
 
-    // Organisation number whose order intent came back cleanly not-approved,
-    // or null. Module-scope for the same reason as placeOrderInFlight above: a
-    // renderer re-creation must not fail open (TWO-25657).
+    // Org number whose intent came back not-approved; module-scope so a renderer re-creation cannot fail open (TWO-25657).
     var declinedIntentCompanyId = null;
 
     // Count of order-intent requests currently in flight, across ALL
@@ -499,11 +497,7 @@ define([
             if (this.orderIntentErrorNotice) this.orderIntentErrorNotice('');
         },
         /**
-         * Whether the CURRENTLY captured company's order intent came back
-         * cleanly not-approved (TWO-25657). Keyed on the organisation number
-         * so a stale decline never blocks a different company, and read off
-         * the recorded verdict rather than the notice text, which a brand can
-         * suppress.
+         * Whether the currently captured company's intent came back not-approved (TWO-25657).
          *
          * @returns {boolean}
          */
@@ -512,14 +506,11 @@ define([
                 declinedIntentCompanyId === (this.companyId() || '').trim();
         },
         /**
-         * Retire a declined verdict and release the place-order latch it took.
-         *
          * @returns {void}
          */
         clearOrderIntentDeclinedVerdict: function () {
             if (declinedIntentCompanyId === null) return;
             declinedIntentCompanyId = null;
-            // Only our own latch; core's billing-address writer owns the rest.
             if (this.isPlaceOrderActionAllowed && !placeOrderInFlight) {
                 this.isPlaceOrderActionAllowed(true);
             }
@@ -1018,9 +1009,7 @@ define([
                 return;
             }
 
-            // TWO-25657: an order intent that came back not-approved blocks the
-            // submit. Sits before the latch recovery below so a declined verdict
-            // keeps the button latched rather than being re-armed by the click.
+            // Before the latch recovery below, so a declined verdict is not re-armed by the click (TWO-25657).
             if (this.isOrderIntentDeclined()) {
                 this.showErrorMessage(
                     this.resolveOrderIntentDeclinedNotice() || this.generalErrorMessage
@@ -1293,8 +1282,7 @@ define([
                     // ONLY the intent message" the ruling asks for.
                     this.clearOrderIntentNotices();
                     this.orderIntentDeclinedNotice(this.resolveOrderIntentDeclinedNotice());
-                    // TWO-25657: the verdict itself, so placeOrder() refuses an
-                    // order Two has already said it will not take.
+                    // The verdict itself, so placeOrder() refuses too (TWO-25657).
                     declinedIntentCompanyId = (this.companyId() || '').trim() || null;
                     if (declinedIntentCompanyId && this.isPlaceOrderActionAllowed) {
                         this.isPlaceOrderActionAllowed(false);

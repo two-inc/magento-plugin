@@ -73,8 +73,6 @@ function makeContext(component, opts) {
         afterPlaceOrder: function () {},
         showErrorMessage: component.showErrorMessage,
         isSelectedTermStillAvailable: component.isSelectedTermStillAvailable,
-        // No decline recorded in these specs, so the TWO-25657 intent gate is
-        // inert here.
         isOrderIntentDeclined: component.isOrderIntentDeclined,
         placeOrder: component.placeOrder,
         placeOrderBackend: component.placeOrderBackend,
