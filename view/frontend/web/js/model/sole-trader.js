@@ -58,6 +58,21 @@
     const RETURN_TO_CHECKOUT_GRACE_MS = 200;
 
     /**
+     * Page-level, not per-flow: the host builds one capture flow per address
+     * panel, and only one delegation/autofill pair may be live per checkout
+     * (TWO-25646).
+     */
+    const page = {
+        delegationToken: '',
+        autofillToken: '',
+        _mintChain: null,
+        _tokenRefreshId: null,
+        _prefetch: null,
+        _autofillBuyer: null,
+        _autofillGeneration: 0
+    };
+
+    /**
      * What "the same sole trader" means for the once-per-identity address
      * guard. The organisation number where there is one; the email otherwise,
      * so two buyers who both arrive without a number are not treated as one.
@@ -98,10 +113,6 @@
      */
     function SoleTrader(component) {
         this._component = component;
-        this.delegationToken = '';
-        this.autofillToken = '';
-        this._mintChain = null;
-        this._tokenRefreshId = null;
         this._popupWindow = null;
         this._popupCloseWatcherId = null;
         this._messageHandler = null;
@@ -111,23 +122,44 @@
         // the instant it posts, and that lookup is the authority from then on.
         this._signupConfirming = false;
         this._blockedSignupOptions = null;
-        this._prefetch = null;
-        this._autofillBuyer = null;
-        this._autofillGeneration = 0;
         /**
          * Sole-trader identities whose registered address has already been
          * written into this page's checkout, so a replay does not overwrite a
          * correction the buyer made afterwards (TWO-25461 §5).
          */
         this._adoptedIds = new Set();
+        liveFlows.add(this);
     }
+
+    /**
+     * Every flow alive on this page. The one shared refresh answers to all of
+     * them: a tick that read only its own flow's identity would mint over the
+     * pair a signup opened from another panel is running on.
+     */
+    const liveFlows = new Set();
+
+    /** @returns {boolean} whether any flow on the page has a round trip out */
+    function anyFlowBusy() {
+        let busy = false;
+        liveFlows.forEach(function (flow) {
+            if (flow.identity().isBusy()) busy = true;
+        });
+        return busy;
+    }
+
+    Object.keys(page).forEach(function (name) {
+        Object.defineProperty(SoleTrader.prototype, name, {
+            get: function () { return page[name]; },
+            set: function (value) { page[name] = value; }
+        });
+    });
 
     /** @returns {object} the host adapter the component was built with */
     SoleTrader.prototype.host = function () {
         return this._component.host();
     };
 
-    /** @returns {object} the page-level identity */
+    /** @returns {object} this flow's own per-panel identity */
     SoleTrader.prototype.identity = function () {
         return this._component.identity();
     };
@@ -210,12 +242,13 @@
     };
 
     /**
-     * One refresh tick. Skipped while any round trip is outstanding — the
-     * tokens a popup was launched with must stay valid for the flow it is
-     * running, and that flight's own completion leaves them fresh anyway.
+     * One refresh tick. Skipped while ANY flow on the page has a round trip
+     * outstanding — the tokens a popup was launched with must stay valid for
+     * the flow it is running, and that flight's own completion leaves them
+     * fresh anyway.
      */
     SoleTrader.prototype.refreshTokens = function () {
-        if (this.identity().isBusy()) return;
+        if (anyFlowBusy()) return;
         return this.mintTokens();
     };
 
@@ -633,7 +666,10 @@
             this._returnHandler = null;
         }
         this.cancelPendingReturnClose();
-        this.stopTokenRefresh();
+        liveFlows.delete(this);
+        // The refresh is the page's: it outlives this flow while another still
+        // holds the pair.
+        if (!liveFlows.size) this.stopTokenRefresh();
         this.stopPopupCloseWatcher();
     };
 

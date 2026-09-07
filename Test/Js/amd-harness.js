@@ -186,6 +186,10 @@ function defaultMocks() {
                 return 'No matches found';
             },
             abortActiveRequest: function () { return false; },
+            // DELEGATED: the sole-trader buyer lookup throws without it.
+            apiClientParams: function (config) {
+                return realCompanySearch().apiClientParams(config);
+            },
             // TWO-25326 display helpers. DELEGATED to the real module, not
             // reimplemented: call sites READ their return value to decide
             // whether to render a label or brackets at all, so an inert '' would
