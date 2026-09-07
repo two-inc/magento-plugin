@@ -186,8 +186,7 @@ function defaultMocks() {
                 return 'No matches found';
             },
             abortActiveRequest: function () { return false; },
-            // DELEGATED: a pure read of the brand config it is handed, and the
-            // sole-trader buyer lookup throws without it.
+            // DELEGATED: the sole-trader buyer lookup throws without it.
             apiClientParams: function (config) {
                 return realCompanySearch().apiClientParams(config);
             },

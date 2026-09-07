@@ -58,16 +58,10 @@
     const RETURN_TO_CHECKOUT_GRACE_MS = 200;
 
     /**
-     * The token pair, its refresh and the buyer answer are PAGE-level, not
-     * per-flow.
-     *
-     * A host that renders one capture panel per address role constructs one
-     * flow per panel, and each would otherwise mint its own pair: the second
-     * mint supersedes the delegated-authority token the first flow is about to
-     * present, so that flow's buyer lookup is refused and the enrolled sole
-     * trader is offered the signup popup. One pair per checkout, shared by
-     * every panel, is what `openPopup()`'s and `fetchBuyer()`'s docblocks
-     * already assume.
+     * Page-level, not per-flow: a host with one capture panel per address role
+     * builds one flow per panel, and a second mint supersedes the
+     * delegated-authority token the first flow is about to present, so its
+     * buyer lookup is refused.
      */
     const page = {
         delegationToken: '',

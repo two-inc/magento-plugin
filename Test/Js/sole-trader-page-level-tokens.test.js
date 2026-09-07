@@ -2,21 +2,8 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * F001 — the delegation/autofill token pair and the buyer answer belong to the
- * CHECKOUT, not to a capture panel. Luma renders one panel per address role, so
- * `company-capture.js` builds two components and each constructs its own flow;
- * a second mint supersedes the delegated-authority token the first flow is
- * about to present, and that flow's buyer lookup — the one the chip the buyer
- * actually clicks reads — is refused. Hyvä builds one panel and never saw it.
- *
- * Mutation-resistance notes:
- *  - driven through the ADAPTER's own `start()`, which is what production calls
- *    (`company-search-boot.js`); every other sole-trader spec boots
- *    `.shipping` alone and so cannot see a second panel's mint at all;
- *  - pinned by COUNT, so a second mint reintroduced anywhere — construction,
- *    boot, a per-panel refresh — reads as a failure;
- *  - the adoption case asserts the popup count is ZERO as well as the name, so
- *    a held answer that is not consumed fails.
+ * F001 — one delegation/autofill token pair and one buyer lookup per checkout,
+ * however many capture panels the host builds.
  */
 
 'use strict';
@@ -88,8 +75,7 @@ async function startCheckout() {
                 return Promise.resolve({
                     ok: true,
                     json: function () {
-                        // A fresh pair per mint, as the endpoint answers: the
-                        // page must hold ONE of them, not one per panel.
+                        // A distinguishable pair per mint, as the endpoint answers.
                         return Promise.resolve([{
                             delegation_token: `dt-${rec.mints}`,
                             autofill_token: `at-${rec.mints}`
