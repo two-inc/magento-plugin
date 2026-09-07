@@ -320,8 +320,13 @@
      *
      * Runs where the tokens are minted rather than inside the click: the
      * lookup needs the autofill token, and a click that had to wait for either
-     * could not open a popup a blocker would allow. Idempotent, and the answer
-     * is held until something supersedes it.
+     * could not open a popup a blocker would allow. Idempotent, and a real
+     * answer is held until something supersedes it.
+     *
+     * A blip that stops the mint itself from completing is NOT held: nothing
+     * has been answered yet, so the next call (e.g. a re-arm from leaving
+     * sole-trader mode) gets a fresh attempt rather than a null cached
+     * forever from one bad load.
      *
      * The answer is never revalidated, so a buyer who signs out of Two in
      * another tab mid-checkout is still offered the trader it found. Accepted:
@@ -333,8 +338,14 @@
     SoleTrader.prototype.prefetchBuyer = function () {
         if (this._prefetch) return this._prefetch;
         const generation = this._autofillGeneration;
-        this._prefetch = this.ensureTokens()
-            .then((minted) => (minted ? this.fetchBuyer() : null))
+        const attempt = this.ensureTokens()
+            .then((minted) => {
+                if (!minted) {
+                    this._prefetch = null;
+                    return null;
+                }
+                return this.fetchBuyer();
+            })
             .then((buyer) => {
                 // A lookup superseded while it was out is not an answer: a
                 // signup or a country change since has already decided who
@@ -343,7 +354,8 @@
                 this._autofillBuyer = isUsableSoleTrader(buyer) ? buyer : null;
                 return this._autofillBuyer;
             });
-        return this._prefetch;
+        this._prefetch = attempt;
+        return attempt;
     };
 
     /**
