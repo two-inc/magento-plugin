@@ -95,6 +95,22 @@
      */
     const RESTORED_NUMBER_SELECTOR = 'input[name$="[company_id]"], input[name="company_id"]';
 
+    // Duplicates company-search.js's `unwrapProxyResponse()` rather than importing it:
+    // Hyvä loads this file without RequireJS.
+    function unwrapEnvelope(raw) {
+        const first = Array.isArray(raw) ? raw[0] : raw;
+        let parsed = first;
+        if (typeof first === 'string') {
+            try {
+                parsed = JSON.parse(first);
+            } catch (e) {
+                return { ok: false, status: 0, body: null };
+            }
+        }
+        if (!parsed || typeof parsed !== 'object') return { ok: false, status: 0, body: null };
+        return { ok: !!parsed.ok, status: parsed.status || 0, body: parsed.body };
+    }
+
     function assertHost(options) {
         HOST_CONTRACT.forEach(function (member) {
             if (typeof options[member] !== 'function') {
@@ -466,8 +482,9 @@
                 if (!response.ok) throw new Error(`Error response from ${URL}.`);
                 return response.json();
             })
-            .then(function (envelope) {
-                const countries = envelope && envelope.ok && envelope.body && envelope.body.supported_countries;
+            .then(function (raw) {
+                const envelope = unwrapEnvelope(raw);
+                const countries = envelope.ok && envelope.body && envelope.body.supported_countries;
                 if (!Array.isArray(countries)) throw new Error(`Malformed response from ${URL}.`);
                 const result = {
                     known: true,
