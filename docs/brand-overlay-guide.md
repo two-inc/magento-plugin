@@ -153,6 +153,13 @@ branding on the reassurance message while the "not available" wording
 stays neutral. Do not add an `intent_declined_notice` copy-override
 element — `Model\Brand\Loader` hard-fails if a brand.xml declares one.
 
+The switch governs the buyer-facing COPY only. A not-approved order intent
+also blocks placement — the renderer records the verdict against the
+captured organisation number and `placeOrder()` refuses on it, so a brand
+with the notices off still cannot submit an order Two has declined
+(TWO-25657). The buyer then gets `generalErrorMessage` instead of the
+declined sentence.
+
 **Do not overload the switch with wording meaning** — an off switch
 expressed as the absence of content is indistinguishable from an
 unfinished string, and any tidy-up that deletes the "empty, unused"
