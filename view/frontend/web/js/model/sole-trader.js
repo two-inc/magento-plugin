@@ -58,10 +58,9 @@
     const RETURN_TO_CHECKOUT_GRACE_MS = 200;
 
     /**
-     * Page-level, not per-flow: a host with one capture panel per address role
-     * builds one flow per panel, and a second mint supersedes the
-     * delegated-authority token the first flow is about to present, so its
-     * buyer lookup is refused.
+     * Page-level, not per-flow: the host builds one capture flow per address
+     * panel, and only one delegation/autofill pair may be live per checkout
+     * (TWO-25646).
      */
     const page = {
         delegationToken: '',
@@ -129,6 +128,23 @@
          * correction the buyer made afterwards (TWO-25461 §5).
          */
         this._adoptedIds = new Set();
+        liveFlows.add(this);
+    }
+
+    /**
+     * Every flow alive on this page. The one shared refresh answers to all of
+     * them: a tick that read only its own flow's identity would mint over the
+     * pair a signup opened from another panel is running on.
+     */
+    const liveFlows = new Set();
+
+    /** @returns {boolean} whether any flow on the page has a round trip out */
+    function anyFlowBusy() {
+        let busy = false;
+        liveFlows.forEach(function (flow) {
+            if (flow.identity().isBusy()) busy = true;
+        });
+        return busy;
     }
 
     Object.keys(page).forEach(function (name) {
@@ -226,12 +242,13 @@
     };
 
     /**
-     * One refresh tick. Skipped while any round trip is outstanding — the
-     * tokens a popup was launched with must stay valid for the flow it is
-     * running, and that flight's own completion leaves them fresh anyway.
+     * One refresh tick. Skipped while ANY flow on the page has a round trip
+     * outstanding — the tokens a popup was launched with must stay valid for
+     * the flow it is running, and that flight's own completion leaves them
+     * fresh anyway.
      */
     SoleTrader.prototype.refreshTokens = function () {
-        if (this.identity().isBusy()) return;
+        if (anyFlowBusy()) return;
         return this.mintTokens();
     };
 
@@ -649,7 +666,10 @@
             this._returnHandler = null;
         }
         this.cancelPendingReturnClose();
-        this.stopTokenRefresh();
+        liveFlows.delete(this);
+        // The refresh is the page's, so it outlives this flow while another
+        // still holds the pair; nothing re-arms it once cleared.
+        if (!liveFlows.size) this.stopTokenRefresh();
         this.stopPopupCloseWatcher();
     };
 

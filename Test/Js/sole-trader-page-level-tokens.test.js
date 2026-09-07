@@ -124,6 +124,16 @@ describe('one checkout, one token pair', () => {
         expect(read(rec)).toBe(1);
     });
 
+    test("a refresh tick mints nothing while another panel's flow is mid-signup", async () => {
+        const { capture, rec } = await startCheckout();
+        capture.billing.identity().beginFlight();
+
+        capture.shipping.soleTrader().refreshTokens();
+        await settle();
+
+        expect(rec.mints).toBe(1);
+    });
+
     test('the panel the buyer clicks adopts the held record with no popup', async () => {
         const { capture, rec } = await startCheckout();
 
