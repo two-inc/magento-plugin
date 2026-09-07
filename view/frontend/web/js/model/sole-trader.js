@@ -159,7 +159,7 @@
         return this._component.host();
     };
 
-    /** @returns {object} the page-level identity */
+    /** @returns {object} this flow's own per-panel identity */
     SoleTrader.prototype.identity = function () {
         return this._component.identity();
     };
@@ -667,8 +667,8 @@
         }
         this.cancelPendingReturnClose();
         liveFlows.delete(this);
-        // The refresh is the page's, so it outlives this flow while another
-        // still holds the pair; nothing re-arms it once cleared.
+        // The refresh is the page's: it outlives this flow while another still
+        // holds the pair.
         if (!liveFlows.size) this.stopTokenRefresh();
         this.stopPopupCloseWatcher();
     };
