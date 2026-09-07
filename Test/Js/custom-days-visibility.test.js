@@ -2,13 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * When the deprecated custom-days field is shown to the admin.
- *
- * It is hidden unless already configured, which is deliberate — it exists for
- * merchants who already hold a legacy value, not as an entry point. But an
- * entry the field cannot parse has to stay visible: Magento skips hidden
- * fields when validating, so hiding one takes the merchant's typo with it and
- * its own validate-digits rule never fires.
+ * Hidden unless configured or foldable; invalid must stay visible so validate-digits fires.
  */
 
 'use strict';

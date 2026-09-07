@@ -2,9 +2,8 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
     'use strict';
 
     /**
-     * Whether the custom-days field stays hidden: empty (no legacy value to
-     * show) or a value that folds into an offered term's checkbox on save.
-     * An unparseable entry must SHOW, or its validate-digits rule cannot fire.
+     * Hidden when nothing is stored, or when the value folds into an offered
+     * term's checkbox on save. Anything else shows, so validate-digits can fire.
      */
     function shouldHideCustomDays(rawValue, offeredTerms) {
         var raw = String(rawValue == null ? '' : rawValue).trim();
