@@ -2,18 +2,8 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25547 — a mint that fails to reach the server (network error, non-ok
- * response) must not be memoised forever: `prefetchBuyer()` held its
- * resolved-null answer permanently even when the reason was a transient
- * failure, not a real "no sole trader" answer, so one bad load cost the
- * whole page its mint for good.
- *
- * Mutation-resistance notes:
- *  - the retry is pinned by COUNT (`tokenMints`), not a boolean, so a second
- *    call that silently reuses the failed attempt's cached null reads as a
- *    failure;
- *  - a genuinely successful mint is asserted to stay memoised (no re-fetch on
- *    a second call), so "always retry" would also fail this suite.
+ * TWO-25547 — a failed sole-trader mint is not memoised and is retried;
+ * a successful one stays memoised.
  */
 
 'use strict';
@@ -24,13 +14,7 @@ const SOLE_TRADER = 'view/frontend/web/js/model/sole-trader.js';
 const CHECKOUT_PAGE_URL = 'https://checkout.example.two.inc';
 const CHECKOUT_API_URL = 'https://api.example';
 
-/**
- * The real flow over Luma's wired capture component, with a `get-tokens`
- * fetch whose outcome is driven by `state.fail` rather than fixed at load —
- * so the same env can model a bad attempt followed by a good one.
- *
- * @returns {object} `{ flow, state, tokenMints }`
- */
+/** @returns {object} `{ flow, state, tokenMints }` */
 function loadFlow() {
     const state = { fail: true, mintOutcome: null, buyer: null };
     let tokenMints = 0;
@@ -79,7 +63,6 @@ function loadFlow() {
     return { flow: flow, state: state, tokenMints: function () { return tokenMints; } };
 }
 
-/** A mint outcome the test releases, so a failure can land late. */
 function heldMint() {
     let reject;
     const promise = new Promise((_, rejectPromise) => { reject = rejectPromise; });
@@ -98,8 +81,7 @@ describe('a failed attempt answers nothing', () => {
         state.mintOutcome = held.promise;
         const failing = flow.prefetchBuyer();
 
-        // Only forgetAutofilledBuyer() releases the memo in production, and it
-        // bumps the generation too — which is the other, independent guard.
+        // Nulled directly: no public call releases the memo without also bumping the generation.
         flow._prefetch = null;
         state.mintOutcome = null;
         state.fail = false;
