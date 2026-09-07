@@ -104,10 +104,11 @@
      * RequireJS.
      */
     function unwrapEnvelope(raw) {
-        let parsed = raw;
-        if (typeof raw === 'string') {
+        const first = Array.isArray(raw) ? raw[0] : raw;
+        let parsed = first;
+        if (typeof first === 'string') {
             try {
-                parsed = JSON.parse(raw);
+                parsed = JSON.parse(first);
             } catch (e) {
                 return { ok: false, status: 0, body: null };
             }

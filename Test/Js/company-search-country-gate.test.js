@@ -92,14 +92,22 @@ function makeStartedComponent(fetchImpl, omitUrl) {
     return { component: component, setDisabledCalls: setDisabledCalls, fetchCalls: fetchCalls };
 }
 
+// Magento's REST layer sometimes hands back the single envelope inside a
+// one-element array.
+const bare = (encoded) => encoded;
+const arrayWrapped = (encoded) => [encoded];
+
 describe.each([
-    ['gb', ['GB', 'NO'], false, 'a country in the supported list stays enabled'],
-    ['fr', ['GB', 'NO'], true, 'a country outside the supported list is disabled'],
-    ['gb', ['gb', 'no'], false, 'the comparison is case-insensitive']
-])('country %s vs supported list %j', (country, supportedCountries, expectDisabled, description) => {
+    ['gb', ['GB', 'NO'], bare, false, 'a country in the supported list stays enabled'],
+    ['fr', ['GB', 'NO'], bare, true, 'a country outside the supported list is disabled'],
+    ['gb', ['gb', 'no'], bare, false, 'the comparison is case-insensitive'],
+    ['gb', ['GB', 'NO'], arrayWrapped, false, 'an array-wrapped supported country stays enabled'],
+    ['fr', ['GB', 'NO'], arrayWrapped, true, 'an array-wrapped unsupported country is disabled'],
+    ['gb', ['gb', 'no'], arrayWrapped, false, 'an array-wrapped envelope is still compared case-insensitively']
+])('country %s vs supported list %j', (country, supportedCountries, shape, expectDisabled, description) => {
     test(description, async () => {
         const { component, setDisabledCalls } = makeStartedComponent(function () {
-            return Promise.resolve({ ok: true, json: () => Promise.resolve(envelope(supportedCountries)) });
+            return Promise.resolve({ ok: true, json: () => Promise.resolve(shape(envelope(supportedCountries))) });
         });
         component.start();
         await flush();
@@ -108,6 +116,12 @@ describe.each([
         await flush();
 
         expect(setDisabledCalls[setDisabledCalls.length - 1]).toBe(expectDisabled);
+        // An unread payload fails open with known:false, which satisfies every
+        // stays-enabled expectation above vacuously.
+        await expect(component.getSupportedSearchCountries()).resolves.toEqual({
+            known: true,
+            countries: supportedCountries.map((code) => code.toUpperCase())
+        });
     });
 });
 
@@ -143,9 +157,13 @@ describe('fail-open: an unknown or errored answer never disables the search', ()
         expect(setDisabledCalls[setDisabledCalls.length - 1]).toBe(false);
     });
 
-    test('the response body is malformed', async () => {
+    test.each([
+        [{ ok: true, status: 200, body: {} }, 'an envelope carrying no supported_countries'],
+        ['not json at all', 'a payload string that does not parse as JSON'],
+        [['not json at all'], 'an array-wrapped string that does not parse as JSON']
+    ])('the response body is malformed — %j: %s', async (payload, description) => {
         const { component, setDisabledCalls } = makeStartedComponent(function () {
-            return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, status: 200, body: {} }) });
+            return Promise.resolve({ ok: true, json: () => Promise.resolve(payload) });
         });
         component.start();
         await flush();
