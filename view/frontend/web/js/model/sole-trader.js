@@ -58,6 +58,28 @@
     const RETURN_TO_CHECKOUT_GRACE_MS = 200;
 
     /**
+     * The token pair, its refresh and the buyer answer are PAGE-level, not
+     * per-flow.
+     *
+     * A host that renders one capture panel per address role constructs one
+     * flow per panel, and each would otherwise mint its own pair: the second
+     * mint supersedes the delegated-authority token the first flow is about to
+     * present, so that flow's buyer lookup is refused and the enrolled sole
+     * trader is offered the signup popup. One pair per checkout, shared by
+     * every panel, is what `openPopup()`'s and `fetchBuyer()`'s docblocks
+     * already assume.
+     */
+    const page = {
+        delegationToken: '',
+        autofillToken: '',
+        _mintChain: null,
+        _tokenRefreshId: null,
+        _prefetch: null,
+        _autofillBuyer: null,
+        _autofillGeneration: 0
+    };
+
+    /**
      * What "the same sole trader" means for the once-per-identity address
      * guard. The organisation number where there is one; the email otherwise,
      * so two buyers who both arrive without a number are not treated as one.
@@ -98,10 +120,6 @@
      */
     function SoleTrader(component) {
         this._component = component;
-        this.delegationToken = '';
-        this.autofillToken = '';
-        this._mintChain = null;
-        this._tokenRefreshId = null;
         this._popupWindow = null;
         this._popupCloseWatcherId = null;
         this._messageHandler = null;
@@ -111,9 +129,6 @@
         // the instant it posts, and that lookup is the authority from then on.
         this._signupConfirming = false;
         this._blockedSignupOptions = null;
-        this._prefetch = null;
-        this._autofillBuyer = null;
-        this._autofillGeneration = 0;
         /**
          * Sole-trader identities whose registered address has already been
          * written into this page's checkout, so a replay does not overwrite a
@@ -121,6 +136,13 @@
          */
         this._adoptedIds = new Set();
     }
+
+    Object.keys(page).forEach(function (name) {
+        Object.defineProperty(SoleTrader.prototype, name, {
+            get: function () { return page[name]; },
+            set: function (value) { page[name] = value; }
+        });
+    });
 
     /** @returns {object} the host adapter the component was built with */
     SoleTrader.prototype.host = function () {
