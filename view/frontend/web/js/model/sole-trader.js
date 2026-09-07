@@ -50,12 +50,8 @@
     // There is no event for "the popup went away", so the opener polls.
     const POPUP_CLOSE_POLL_MS = 300;
 
-    /**
-     * How long the page keeps focus before the popup is taken down — long
-     * enough for the mousedown of a Sole trader chip click to cancel it, short
-     * enough that a buyer who has genuinely come back does not watch it linger.
-     */
-    const RETURN_TO_CHECKOUT_GRACE_MS = 200;
+    /** The one control whose focus raises the signup popup instead of closing it. */
+    const SOLE_TRADER_CHIP_SELECTOR = '[data-two-chip="soletrader"]';
 
     /**
      * Page-level, not per-flow: the host builds one capture flow per address
@@ -117,7 +113,6 @@
         this._popupCloseWatcherId = null;
         this._messageHandler = null;
         this._returnHandler = null;
-        this._returnCloseTimerId = null;
         // The handshake's own buyer lookup is still out. The popup can close
         // the instant it posts, and that lookup is the authority from then on.
         this._signupConfirming = false;
@@ -409,6 +404,7 @@
         this._popupCloseWatcherId = setInterval(() => {
             if (!win.closed) return;
             this.stopPopupCloseWatcher();
+            this.stopReturnToCheckoutWatcher();
             // The handshake's buyer lookup can still be out; it owns the
             // outcome from here and will write whatever identity it resolves.
             if (this._signupConfirming) return;
@@ -429,47 +425,43 @@
     };
 
     /**
-     * Take the popup down when the buyer comes back to the checkout page.
+     * The Sole trader chip raises the signup popup; another control inside the capture popover
+     * closes the popup; a control outside it closes the popover too (TWO-25658).
      *
-     * The rule: focus returning to CHECKOUT means the buyer is looking at
-     * checkout rather than at the signup, so the popup goes. Focus leaving for
-     * anywhere else — their mail client, to fetch the OTP the signup just sent
-     * them — must leave it alone, which is why this is gated on the page
-     * actually having focus rather than on a blur.
-     *
-     * Deferred so that the one exempt gesture can overtake it: the Sole trader
-     * chip's own click cancels the pending close and re-raises the popup
-     * (`focusSignupPopup()`). Nothing else on the checkout is exempt — a click
-     * anywhere in the capture popover, this chip aside, is the buyer looking
-     * away from the signup (TWO-25654).
+     * A focusin a browser re-fires on window return counts as the buyer focusing that control.
      */
     SoleTrader.prototype.watchForReturnToCheckout = function () {
         if (this._returnHandler) return;
-        this._returnHandler = () => {
+        this._returnHandler = (event) => {
             if (!this.isPopupOpen()) return;
-            clearTimeout(this._returnCloseTimerId);
-            this._returnCloseTimerId = setTimeout(() => {
-                this._returnCloseTimerId = null;
-                if (typeof document.hasFocus === 'function' && !document.hasFocus()) return;
-                // The CLOSE half only: looking away from the signup is not a
-                // decision about the enrolment, which stays live and resumable
-                // with its tokens unspent.
-                this.closeSignupPopup();
-            }, RETURN_TO_CHECKOUT_GRACE_MS);
+            const target = event.target;
+            const panel = this._component.panel();
+            const popover = panel && panel.getPanelElement && panel.getPanelElement();
+            const inside = !!(popover && target && popover.contains(target));
+            if (inside && target.closest && target.closest(SOLE_TRADER_CHIP_SELECTOR)) {
+                this.focusSignupPopup();
+                return;
+            }
+            // The CLOSE half only: the enrolment stays live and resumable, tokens unspent.
+            this.closeSignupPopup();
+            // Outside the popover the buyer has left capture, not just the signup.
+            if (!inside && panel && panel.close) panel.close();
         };
-        window.addEventListener('focus', this._returnHandler);
+        document.addEventListener('focusin', this._returnHandler, true);
     };
 
-    /** The Sole trader chip's route: keep the popup, raise it instead. */
-    SoleTrader.prototype.cancelPendingReturnClose = function () {
-        clearTimeout(this._returnCloseTimerId);
-        this._returnCloseTimerId = null;
+    /** Release the watcher with the popup it was armed for. */
+    SoleTrader.prototype.stopReturnToCheckoutWatcher = function () {
+        if (!this._returnHandler) return;
+        document.removeEventListener('focusin', this._returnHandler, true);
+        this._returnHandler = null;
     };
 
     /** Close the popup this flow opened, if it is still up. */
     SoleTrader.prototype.closeSignupPopup = function () {
         if (!this.isPopupOpen()) return false;
         this._popupWindow.close();
+        this.stopReturnToCheckoutWatcher();
         return true;
     };
 
@@ -481,7 +473,6 @@
      */
     SoleTrader.prototype.focusSignupPopup = function () {
         if (!this.isPopupOpen()) return false;
-        this.cancelPendingReturnClose();
         try {
             this._popupWindow.focus();
         } catch (error) {
@@ -657,11 +648,7 @@
             window.removeEventListener('message', this._messageHandler);
             this._messageHandler = null;
         }
-        if (this._returnHandler) {
-            window.removeEventListener('focus', this._returnHandler);
-            this._returnHandler = null;
-        }
-        this.cancelPendingReturnClose();
+        this.stopReturnToCheckoutWatcher();
         liveFlows.delete(this);
         // The refresh is the page's: it outlives this flow while another still
         // holds the pair.
