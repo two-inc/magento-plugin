@@ -183,7 +183,9 @@ class MinimumOrderGate
         float $comparedValue
     ): void {
         $this->logRepository->addDebugLog(
-            sprintf('%s: below minimum order value', $methodCode),
+            $methodCode === ''
+                ? 'Below minimum order value'
+                : sprintf('%s: below minimum order value', $methodCode),
             [
                 'binding_floor' => $floor,
                 'basket_value' => $basketValue,

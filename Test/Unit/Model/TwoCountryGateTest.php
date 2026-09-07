@@ -143,6 +143,53 @@ class TwoCountryGateTest extends TestCase
     }
 
     /**
+     * @dataProvider belowMinimumVisibilityCases
+     */
+    public function testBelowMinimumWithholdingIsLoggedExceptOnAnAmastyStoreView(
+        bool $amastyStoreView,
+        bool $expectedAvailable,
+        int $expectedLogCount,
+        string $description
+    ): void {
+        $logged = [];
+        $logRepository = $this->createMock(LogRepository::class);
+        $logRepository->method('addDebugLog')->willReturnCallback(
+            function ($message, $data = null) use (&$logged) {
+                $logged[] = [$message, $data];
+            }
+        );
+
+        $gate = $this->createMock(MinimumOrderGate::class);
+        $gate->method('isSatisfied')->willReturn(false);
+
+        $model = $this->build($this->countriesProvider(null));
+        $reflection = new \ReflectionClass(Two::class);
+        $reflection->getProperty('logRepository')->setValue($model, $logRepository);
+        $reflection->getProperty('minimumOrderGate')->setValue($model, $gate);
+        $reflection->getProperty('amastyCheckoutStore')
+            ->setValue($model, $amastyStoreView ? [1 => true] : [1 => false]);
+
+        $this->assertSame(
+            $expectedAvailable,
+            $model->isAvailable($this->quoteInStore('GB', 1)),
+            $description
+        );
+        $this->assertCount($expectedLogCount, $logged, $description);
+        if ($expectedLogCount > 0) {
+            $this->assertStringContainsString('hidden from checkout', $logged[0][0], $description);
+            $this->assertStringContainsString('below minimum order value', $logged[0][0], $description);
+        }
+    }
+
+    public static function belowMinimumVisibilityCases(): array
+    {
+        return [
+            [false, false, 1, 'a normal store view withholds and says so'],
+            [true, true, 0, 'an Amasty store view returns before the gate, so nothing is withheld to log'],
+        ];
+    }
+
+    /**
      * Builds a Two instance holding only the collaborators isAvailable() and
      * canUseForCountry() reach; the real constructor needs the full
      * payment-method framework graph, which these gates do not touch.
@@ -207,6 +254,17 @@ class TwoCountryGateTest extends TestCase
         $quote = $this->createMock(Quote::class);
         $quote->method('getBillingAddress')->willReturn($this->address($billingCountry));
         $quote->method('getStore')->willReturn($this->createMock(Store::class));
+        return $quote;
+    }
+
+    private function quoteInStore(string $billingCountry, int $storeId): Quote
+    {
+        $store = $this->createMock(Store::class);
+        $store->method('getId')->willReturn($storeId);
+        $quote = $this->createMock(Quote::class);
+        $quote->method('getBillingAddress')->willReturn($this->address($billingCountry));
+        $quote->method('getStore')->willReturn($store);
+        $quote->method('getStoreId')->willReturn($storeId);
         return $quote;
     }
 

@@ -435,6 +435,15 @@ class MinimumOrderGateTest extends TestCase
                 'minimum_currency' => 'EUR',
                 'basis' => 'net',
             ], 'converted basket below the platform floor'],
+            [self::EUR_250_NET, $merchantEur400, 100.0, 'EUR', null, [
+                'binding_floor' => 'platform',
+                'basket_value' => 100.0,
+                'basket_currency' => 'EUR',
+                'compared_value' => 100.0,
+                'minimum_amount' => 250.0,
+                'minimum_currency' => 'EUR',
+                'basis' => 'net',
+            ], 'both floors unmet logs once, platform short-circuits'],
             [self::EUR_250_NET, $merchantEur400, 400.0, 'EUR', null, null, 'both floors met'],
         ];
     }

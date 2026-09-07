@@ -932,7 +932,15 @@ class Two extends AbstractMethod
         $merchantMinimum = $store !== null
             ? $this->buildMerchantMinimum((string)$store->getBaseCurrencyCode(), $platformMinimum, $storeId)
             : null;
-        return $this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum, $this->_code);
+        if ($this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum, $this->_code)) {
+            return true;
+        }
+        // Greps with the sibling withholding lines; the gate's own line carries the numbers.
+        $this->logRepository->addDebugLog(
+            sprintf('%s hidden from checkout: below minimum order value', $this->_code),
+            []
+        );
+        return false;
     }
 
     /**

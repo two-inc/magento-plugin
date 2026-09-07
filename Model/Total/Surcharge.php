@@ -169,7 +169,7 @@ class Surcharge extends AbstractTotal
             $platformMinimum,
             $storeId
         );
-        if (!$this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum, (string)$paymentMethod)) {
+        if (!$this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum, $paymentMethod)) {
             $this->clearSessionSurcharge();
             $this->clearTotalSurcharge($total, $quote);
             return $this;
