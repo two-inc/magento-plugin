@@ -128,6 +128,9 @@ define([
     // every renderer Magento re-creates when the payment-method list refreshes.
     var placeOrderInFlight = false;
 
+    // Org number whose intent came back not-approved; module-scope so a renderer re-creation cannot fail open (TWO-25657).
+    var declinedIntentCompanyId = null;
+
     // Count of order-intent requests currently in flight, across ALL
     // instances of this renderer sharing this module. Deliberately
     // module-scope and reference-counted rather than a per-instance
@@ -488,9 +491,29 @@ define([
          * @returns {void}
          */
         clearOrderIntentNotices: function () {
+            this.clearOrderIntentDeclinedVerdict();
             if (this.orderIntentApprovedNotice) this.orderIntentApprovedNotice('');
             if (this.orderIntentDeclinedNotice) this.orderIntentDeclinedNotice('');
             if (this.orderIntentErrorNotice) this.orderIntentErrorNotice('');
+        },
+        /**
+         * Whether the currently captured company's intent came back not-approved (TWO-25657).
+         *
+         * @returns {boolean}
+         */
+        isOrderIntentDeclined: function () {
+            return !!declinedIntentCompanyId &&
+                declinedIntentCompanyId === (this.companyId() || '').trim();
+        },
+        /**
+         * @returns {void}
+         */
+        clearOrderIntentDeclinedVerdict: function () {
+            if (declinedIntentCompanyId === null) return;
+            declinedIntentCompanyId = null;
+            if (this.isPlaceOrderActionAllowed && !placeOrderInFlight) {
+                this.isPlaceOrderActionAllowed(true);
+            }
         },
         /**
          * Put an order-intent failure in the tile's own bordered box rather
@@ -986,6 +1009,14 @@ define([
                 return;
             }
 
+            // Before the latch recovery below, so a declined verdict is not re-armed by the click (TWO-25657).
+            if (this.isOrderIntentDeclined()) {
+                this.showErrorMessage(
+                    this.resolveOrderIntentDeclinedNotice() || this.generalErrorMessage
+                );
+                return;
+            }
+
             // Recover a stale place-order latch.
             //
             // isPlaceOrderActionAllowed has only two writers: this renderer, which
@@ -1251,6 +1282,11 @@ define([
                     // ONLY the intent message" the ruling asks for.
                     this.clearOrderIntentNotices();
                     this.orderIntentDeclinedNotice(this.resolveOrderIntentDeclinedNotice());
+                    // The verdict itself, so placeOrder() refuses too (TWO-25657).
+                    declinedIntentCompanyId = (this.companyId() || '').trim() || null;
+                    if (declinedIntentCompanyId && this.isPlaceOrderActionAllowed) {
+                        this.isPlaceOrderActionAllowed(false);
+                    }
                 }
             }
         },

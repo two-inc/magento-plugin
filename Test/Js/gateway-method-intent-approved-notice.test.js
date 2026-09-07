@@ -405,6 +405,81 @@ describe('gateway_method intent-approved notice', () => {
     });
 });
 
+/** makeContext() plus what placeOrder() needs: the latch observable, the validators and a backend stub. */
+function makePlaceOrderContext(noticeCopy, declinedCopy) {
+    const ctx = makeContext(noticeCopy, declinedCopy);
+    ctx.generalErrorMessage = 'Something went wrong.';
+    ctx.isPlaceOrderActionAllowed = koObservable(true);
+    ctx.isPaymentTermsEnabled = false;
+    ctx.isPaymentTermsAccepted = koObservable(true);
+    ctx.isInvoiceEmailsEnabled = false;
+    ctx.validate = function () {
+        return true;
+    };
+    ctx.submits = 0;
+    ctx.placeOrderBackend = function () {
+        ctx.submits += 1;
+    };
+    ctx.companyName('Acme Widgets AS');
+    ctx.companyId('123456789');
+    return ctx;
+}
+
+/** A verdict object, or a company number to capture instead. */
+function applyEvent(ctx, event) {
+    if (typeof event === 'string') {
+        ctx.companyId(event);
+        return;
+    }
+    ctx.processOrderIntentSuccessResponse.call(ctx, event);
+}
+
+const APPROVED = { approved: true };
+const DECLINED = { approved: false };
+const DECLINED_TEXT = 'Two is not available for this order by Acme Widgets AS (123456789)';
+
+describe('a declined order intent refuses placement (TWO-25657)', () => {
+    test.each([
+        [[APPROVED], 1, [], true, 'an approved intent places the order'],
+        [[DECLINED], 0, [DECLINED_TEXT], false, 'a declined intent refuses, with the verdict as the message'],
+        [
+            [DECLINED, '999888777'],
+            1,
+            [],
+            true,
+            'a decline for one company does not block the next company captured'
+        ],
+        [
+            [DECLINED, '999888777', APPROVED],
+            1,
+            [],
+            true,
+            'a fresh approval after a decline places the order'
+        ]
+    ])('%p → %p submit(s), %p, latch %p — %s', (events, submits, errors, allowed, description) => {
+        const ctx = makePlaceOrderContext(DEFAULT_COPY, DECLINED_COPY);
+        events.forEach((event) => applyEvent(ctx, event));
+
+        ctx.placeOrder.call(ctx);
+
+        expect([description, ctx.submits]).toEqual([description, submits]);
+        expect([description, ctx.errors]).toEqual([description, errors]);
+        expect([description, ctx.isPlaceOrderActionAllowed()]).toEqual([description, allowed]);
+    });
+
+    test('refuses even when the brand suppressed the notice copy', () => {
+        // The gate reads the recorded verdict, never the rendered sentence.
+        const ctx = makePlaceOrderContext(null, null);
+
+        ctx.processOrderIntentSuccessResponse.call(ctx, DECLINED);
+        ctx.placeOrder.call(ctx);
+
+        expect(ctx.orderIntentDeclinedNotice()).toBe('');
+        expect(ctx.submits).toBe(0);
+        expect(ctx.errors).toEqual(['Something went wrong.']);
+    });
+});
+
 /**
  * The box itself. TWO-25326 (2026-08-05): one bordered container, the same
  * three semantic colours, and the message ALONE inside it on all four

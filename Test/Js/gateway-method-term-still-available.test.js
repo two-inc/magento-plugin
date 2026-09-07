@@ -73,6 +73,7 @@ function makeContext(component, opts) {
         afterPlaceOrder: function () {},
         showErrorMessage: component.showErrorMessage,
         isSelectedTermStillAvailable: component.isSelectedTermStillAvailable,
+        isOrderIntentDeclined: component.isOrderIntentDeclined,
         placeOrder: component.placeOrder,
         placeOrderBackend: component.placeOrderBackend,
         getPlaceOrderDeferredObject: function () {
