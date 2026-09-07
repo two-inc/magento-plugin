@@ -1,6 +1,20 @@
 define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
     'use strict';
 
+    /**
+     * Whether the custom-days field stays hidden: empty (no legacy value to
+     * show) or a value that folds into an offered term's checkbox on save.
+     * An unparseable entry must SHOW, or its validate-digits rule cannot fire.
+     */
+    function shouldHideCustomDays(rawValue, offeredTerms) {
+        var raw = String(rawValue == null ? '' : rawValue).trim();
+        if (raw === '') {
+            return true;
+        }
+        var custom = parseInt(raw, 10);
+        return String(custom) === raw && custom > 0 && offeredTerms.indexOf(custom) !== -1;
+    }
+
     function initPaymentTermsConfig() {
         // Discover the section-id prefix from the page. The phtml
         // template ships the checkboxes container with id
@@ -130,9 +144,9 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         }
 
         function updateCustomDaysVisibility() {
-            var custom = parseInt($customDays.val(), 10);
-            var genuine = custom > 0 && getOfferedTerms().indexOf(custom) === -1;
-            genuine ? showField('payment_terms_duration_days') : hideField('payment_terms_duration_days');
+            shouldHideCustomDays($customDays.val(), getOfferedTerms())
+                ? hideField('payment_terms_duration_days')
+                : showField('payment_terms_duration_days');
         }
 
         // ── Differential option label ────────────────────────────────────
@@ -387,6 +401,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
     });
 
     return {
-        init: initPaymentTermsConfig
+        init: initPaymentTermsConfig,
+        shouldHideCustomDays: shouldHideCustomDays
     };
 });
