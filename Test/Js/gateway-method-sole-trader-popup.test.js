@@ -76,6 +76,7 @@ function makeEnv(options) {
         adopted: [],
         abandons: [],
         tokenMints: 0,
+        focused: [],
         /** Flipped mid-test to model a browser blocking the popup. */
         blocked: false
     };
@@ -85,7 +86,11 @@ function makeEnv(options) {
         open: function (url, target, features) {
             rec.opened.push({ url: url, target: target, features: features });
             if (rec.blocked) return null;
-            const handle = { closed: false, close: function () { this.closed = true; } };
+            const handle = {
+                closed: false,
+                close: function () { this.closed = true; },
+                focus: function () { rec.focused.push(this); }
+            };
             rec.handles.push(handle);
             return handle;
         },
@@ -379,6 +384,43 @@ describe('a blocked popup falls back to the on-page link', () => {
 
         expect(rec.opened).toHaveLength(2);
         expect(new URL(rec.opened[1].url).searchParams.get('autoselect')).toBe(expectedAutoselect);
+    });
+
+    test('a real mouse click on the chip raises the popup it holds (TWO-25658)', async () => {
+        // Given: the popover stays open behind the signup, so the second click
+        // needs no trip through the company field.
+        const { rec } = await startStack();
+        chip('soletrader').click();
+        const held = rec.handles[0];
+        const node = document.querySelector('.two-company-mode-chip[data-two-chip="soletrader"]');
+        let focusins = 0;
+        document.addEventListener('focusin', () => { focusins += 1; }, true);
+
+        // When: the real mouse sequence, whose mousedown the panel cancels.
+        const mousedown = new window.MouseEvent('mousedown', { bubbles: true, cancelable: true });
+        node.dispatchEvent(mousedown);
+        node.click();
+
+        // Then: no focus moved at all, so the close path was never reached.
+        expect(mousedown.defaultPrevented).toBe(true);
+        expect(focusins).toBe(0);
+        expect(rec.opened).toHaveLength(1);
+        expect(rec.focused).toEqual([held]);
+        expect(held.closed).toBe(false);
+    });
+
+    test('focus outside closes the real popover with the popup (TWO-25658)', async () => {
+        const { rec } = await startStack();
+        chip('soletrader').click();
+        const popover = document.querySelector('.two-company-dropdown');
+        expect(popover.hasAttribute('hidden')).toBe(false);
+        const outside = document.createElement('input');
+        document.body.appendChild(outside);
+
+        outside.focus();
+
+        expect(rec.handles[0].closed).toBe(true);
+        expect(popover.hasAttribute('hidden')).toBe(true);
     });
 
     test('the note is reachable after the chip click that closes the popover', async () => {

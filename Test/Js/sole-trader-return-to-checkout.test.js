@@ -2,9 +2,8 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25658: focus landing on a control of the checkout takes the signup popup
- * down, the Sole trader chip alone excepted. A return that lands on the page
- * rather than on a control — a tab or app switch — leaves it alone.
+ * TWO-25658: what focus landing on a control does to an open sole-trader signup popup, and to
+ * the capture popover it was launched from. The popup's own controls are in another document.
  */
 
 'use strict';
@@ -27,7 +26,8 @@ function renderCheckout() {
 /**
  * The flow, with a signup popup already up and the watcher armed.
  *
- * @returns {object} `{ flow, windowHandlers, popupRaised, returnToCheckout }`
+ * @returns {object} `{ flow, windowHandlers, popupRaised, focusins, popoverClosed,
+ *          returnToCheckout }`
  */
 function load() {
     const handlers = {};
@@ -43,10 +43,17 @@ function load() {
         clearTimeout: clearTimeout
     });
 
+    let popoverClosed = 0;
     const flow = new SoleTraderCtor({
         host: function () { return {}; },
         identity: function () { return {}; },
-        config: function () { return {}; }
+        config: function () { return {}; },
+        panel: function () {
+            return {
+                getPanelElement: function () { return document.getElementById('popover'); },
+                close: function () { popoverClosed += 1; }
+            };
+        }
     });
     let raised = 0;
     flow._popupWindow = {
@@ -55,13 +62,29 @@ function load() {
         focus: function () { raised += 1; }
     };
     flow.watchForReturnToCheckout();
+    // As company-search-panel.js binds every chip, and as soleTraderMode()
+    // opens: the cancelled mousedown is why a mouse click never focuses it.
+    const chip = document.getElementById('soletrader');
+    chip.addEventListener('mousedown', (event) => { event.preventDefault(); });
+    chip.addEventListener('click', () => { flow.focusSignupPopup(); });
+
+    let focusins = 0;
+    document.addEventListener('focusin', () => { focusins += 1; }, true);
 
     return {
         flow: flow,
         windowHandlers: handlers,
         popupRaised: function () { return raised; },
+        focusins: function () { return focusins; },
+        popoverClosed: function () { return popoverClosed; },
         /** @param {string} kind one of the gestures the table names */
         returnToCheckout: function (kind) {
+            if (kind === 'a real mouse click on the Sole trader chip') {
+                const mousedown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+                chip.dispatchEvent(mousedown);
+                expect(mousedown.defaultPrevented).toBe(true);
+                chip.click();
+            }
             if (kind === 'unrelated control') document.getElementById('other-field').focus();
             if (kind === 'the company query field') document.getElementById('query').focus();
             if (kind === 'a sibling chip') document.getElementById('registered').focus();
@@ -69,12 +92,6 @@ function load() {
             // A tab or app switch returns focus to the page, not to any control.
             if (kind === 'window focus') {
                 if (handlers.focus) handlers.focus();
-            }
-            // The popup's own controls live in another document, which never
-            // reaches the opener's listener.
-            if (kind === 'a popup-internal control') {
-                document.createElement('input')
-                    .dispatchEvent(new Event('focusin', { bubbles: true }));
             }
         }
     };
@@ -84,29 +101,39 @@ beforeEach(renderCheckout);
 
 describe('what a return to checkout does to an open signup popup', () => {
     test.each([
-        ['unrelated control', false, 'plainly looking away from the signup'],
-        ['the company query field', false, 'the popover is not exempt, only the chip in it is'],
-        ['a sibling chip', false, 'a sibling chip is not a route back to the signup'],
-        ['the Sole trader chip', true, 'the one exempt control — it raises the popup instead'],
-        ['window focus', true, 'a tab or app switch lands on no control at all'],
-        ['a popup-internal control', true, 'the buyer is still in the signup']
-    ])('focus landing on %s leaves the popup open=%s', (kind, open, why) => {
-        const ctx = load();
+        ['the company query field', false, 0, 1,
+            'inside the popover: the signup goes, the capture the buyer is still in stays'],
+        ['a sibling chip', false, 0, 1,
+            'inside the popover: switching capture mode ends the signup, not the capture'],
+        ['unrelated control', false, 1, 1,
+            'outside the popover: the buyer has left capture, so both go'],
+        ['the Sole trader chip', true, 0, 1,
+            'tabbing onto the chip must not take the signup down'],
+        ['a real mouse click on the Sole trader chip', true, 0, 0,
+            'the cancelled mousedown moves no focus, so nothing here runs at all'],
+        ['window focus', true, 0, 0, 'a tab or app switch lands on no control at all']
+    ])('focus landing on %s: popup open=%s, popover closed %d time(s)',
+        (kind, open, popoverClosed, focusins, why) => {
+            const ctx = load();
 
-        ctx.returnToCheckout(kind);
+            ctx.returnToCheckout(kind);
 
-        expect(tagged(why, ctx.flow.isPopupOpen())).toEqual(tagged(why, open));
-    });
+            expect(tagged(why, [ctx.flow.isPopupOpen(), ctx.popoverClosed(), ctx.focusins()]))
+                .toEqual(tagged(why, [open, popoverClosed, focusins]));
+        });
 });
 
-test('the Sole trader chip raises the popup it kept, rather than reopening one', () => {
+test('the keyboard route raises the popup it kept, rather than reopening one', () => {
     const ctx = load();
     const held = ctx.flow._popupWindow;
 
+    // Tab onto the chip, then Enter — which the browser delivers as a click.
     ctx.returnToCheckout('the Sole trader chip');
+    document.getElementById('soletrader').click();
 
-    expect(ctx.popupRaised()).toBe(1);
+    expect(ctx.popupRaised()).toBe(2);
     expect(ctx.flow._popupWindow).toBe(held);
+    expect(ctx.flow.isPopupOpen()).toBe(true);
 });
 
 test('no window-level focus listener is armed at all', () => {

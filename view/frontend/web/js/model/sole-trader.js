@@ -425,24 +425,27 @@
     };
 
     /**
-     * Focus landing on a CONTROL of the checkout takes the signup popup down;
-     * the Sole trader chip alone raises it back instead (TWO-25658). A tab or
-     * app switch returns focus to the page rather than to a control, so it
-     * reaches nothing here and leaves the signup alone.
+     * The Sole trader chip raises the signup popup; another control inside the capture popover
+     * closes the popup; a control outside it closes the popover too (TWO-25658).
+     *
+     * A focusin a browser re-fires on window return counts as the buyer focusing that control.
      */
     SoleTrader.prototype.watchForReturnToCheckout = function () {
         if (this._returnHandler) return;
         this._returnHandler = (event) => {
             if (!this.isPopupOpen()) return;
             const target = event.target;
-            if (target && target.closest && target.closest(SOLE_TRADER_CHIP_SELECTOR)) {
+            const panel = this._component.panel();
+            const popover = panel && panel.getPanelElement && panel.getPanelElement();
+            const inside = !!(popover && target && popover.contains(target));
+            if (inside && target.closest && target.closest(SOLE_TRADER_CHIP_SELECTOR)) {
                 this.focusSignupPopup();
                 return;
             }
-            // The CLOSE half only: looking away from the signup is not a
-            // decision about the enrolment, which stays live and resumable
-            // with its tokens unspent.
+            // The CLOSE half only: the enrolment stays live and resumable, tokens unspent.
             this.closeSignupPopup();
+            // Outside the popover the buyer has left capture, not just the signup.
+            if (!inside && panel && panel.close) panel.close();
         };
         document.addEventListener('focusin', this._returnHandler, true);
     };
