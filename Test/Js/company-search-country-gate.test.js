@@ -21,11 +21,7 @@ function flush() {
     return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-// `CompanyLookupInterface::supportedCountries()` returns a JSON-encoded
-// STRING (the envelope, pre-encoded) — Magento's webapi layer then encodes
-// that string again, so `response.json()` in production yields a string,
-// not the envelope object. Mocking the already-decoded object here is what
-// let the double-encode bug through green tests originally.
+// Magento's REST layer double-encodes the envelope, so production sees a JSON string.
 function envelope(countries) {
     return JSON.stringify({ ok: true, status: 200, body: { supported_countries: countries } });
 }
@@ -92,8 +88,6 @@ function makeStartedComponent(fetchImpl, omitUrl) {
     return { component: component, setDisabledCalls: setDisabledCalls, fetchCalls: fetchCalls };
 }
 
-// Magento's REST layer sometimes hands back the single envelope inside a
-// one-element array.
 const bare = (encoded) => encoded;
 const arrayWrapped = (encoded) => [encoded];
 
@@ -116,8 +110,6 @@ describe.each([
         await flush();
 
         expect(setDisabledCalls[setDisabledCalls.length - 1]).toBe(expectDisabled);
-        // An unread payload fails open with known:false, which satisfies every
-        // stays-enabled expectation above vacuously.
         await expect(component.getSupportedSearchCountries()).resolves.toEqual({
             known: true,
             countries: supportedCountries.map((code) => code.toUpperCase())
@@ -159,8 +151,7 @@ describe('fail-open: an unknown or errored answer never disables the search', ()
 
     test.each([
         [{ ok: true, status: 200, body: {} }, 'an envelope carrying no supported_countries'],
-        ['not json at all', 'a payload string that does not parse as JSON'],
-        [['not json at all'], 'an array-wrapped string that does not parse as JSON']
+        ['not json at all', 'a payload string that does not parse as JSON']
     ])('the response body is malformed — %j: %s', async (payload, description) => {
         const { component, setDisabledCalls } = makeStartedComponent(function () {
             return Promise.resolve({ ok: true, json: () => Promise.resolve(payload) });

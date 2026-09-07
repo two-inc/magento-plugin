@@ -95,14 +95,8 @@
      */
     const RESTORED_NUMBER_SELECTOR = 'input[name$="[company_id]"], input[name="company_id"]';
 
-    /**
-     * `CompanyLookupInterface` methods return a JSON-encoded string
-     * (`{ok, status, body}`), so `response.json()` here yields that string,
-     * not the envelope itself — a second decode is needed, same as
-     * `unwrapProxyResponse()` in company-search.js. Duplicated rather than
-     * imported: this file is framework-free so Hyvä can load it without
-     * RequireJS.
-     */
+    // Duplicates company-search.js's `unwrapProxyResponse()` rather than importing it:
+    // Hyvä loads this file without RequireJS.
     function unwrapEnvelope(raw) {
         const first = Array.isArray(raw) ? raw[0] : raw;
         let parsed = first;
