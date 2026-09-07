@@ -60,6 +60,7 @@
     const ROW_CLASS = 'two-company-dropdown__row';
     const ROW_ACTIVE_CLASS = 'two-company-dropdown__row--active';
     const BACK_CLASS = 'two-company-search-back';
+    const ACTION_LINK_CLASS = 'two-field-action-link';
     const CHIPS_CLASS = 'two-company-mode-chips';
     const CHIP_CLASS = 'two-company-mode-chip';
     const CHIP_SELECTED_CLASS = 'two-company-mode-chip--selected';
@@ -1034,7 +1035,7 @@
         this.removeBackToSearchLink();
         const link = document.createElement('button');
         link.type = 'button';
-        link.className = BACK_CLASS;
+        link.className = `${BACK_CLASS} ${ACTION_LINK_CLASS}`;
         link.textContent = this.translate('Search for company');
         this._bindEvent(link, 'click', function (event) {
             event.preventDefault();

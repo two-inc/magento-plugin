@@ -62,6 +62,40 @@ function computedPanelStyles() {
 }
 
 /**
+ * Both links in their real hosts: the return link inside the field wrapper, the
+ * sole-trader link in the wrapper's SIBLING chrome element, which no popover
+ * selector reaches.
+ *
+ * @returns {Object} the computed styles of each link
+ */
+function computedActionLinkStyles() {
+    const style = document.createElement('style');
+    style.textContent = fs.readFileSync(STYLESHEET, 'utf8');
+    document.head.appendChild(style);
+
+    document.body.innerHTML = [
+        '<div class="field">',
+        '  <span class="two-company-field-wrap">',
+        '    <input type="text" />',
+        '    <button type="button" id="back"',
+        '            class="two-company-search-back two-field-action-link">Search for company</button>',
+        '  </span>',
+        '  <div class="two-select-different-sole-trader">',
+        '    <button type="button" id="different"',
+        '            class="two-select-different-sole-trader__link two-field-action-link">',
+        '      Select a different sole trader',
+        '    </button>',
+        '  </div>',
+        '</div>'
+    ].join('\n');
+
+    return {
+        back: window.getComputedStyle(document.getElementById('back')),
+        different: window.getComputedStyle(document.getElementById('different'))
+    };
+}
+
+/**
  * @param {string} selector exactly as written in the stylesheet
  * @returns {CSSStyleDeclaration} that rule's own declarations
  */
@@ -128,5 +162,22 @@ describe('the chips share a row rather than stacking', () => {
         ['fontSize', '13px', 'the theme\'s body size fits one chip per line, not two']
     ])('the chip declares %s: %s — %s', (property, expected) => {
         expect(computedPanelStyles().chip[property]).toBe(expected);
+    });
+});
+
+describe('both action links under a company field look the same everywhere', () => {
+    // px not rem: Luma's 62.5% root and Hyvä's 16px root split one rem value
+    // into 13px and 20.8px (TWO-25652).
+    test.each([
+        ['fontSize', '14px'],
+        ['textAlign', 'right'],
+        ['textDecoration', 'none'],
+        ['display', 'block'],
+        ['width', '100%']
+    ])('each link declares %s: %s', (property, expected) => {
+        const links = computedActionLinkStyles();
+
+        expect(links.back[property]).toBe(expected);
+        expect(links.different[property]).toBe(expected);
     });
 });

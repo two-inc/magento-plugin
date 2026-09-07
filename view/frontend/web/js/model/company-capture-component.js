@@ -79,6 +79,7 @@
     const COMPANY_NUMBER_CLASS = 'two-company-id-text';
 
     const SOLE_TRADER_LINK_CLASS = 'two-select-different-sole-trader';
+    const ACTION_LINK_CLASS = 'two-field-action-link';
 
     /**
      * Why the picked company's address could not be filled in. Styled as the
@@ -819,7 +820,7 @@
         wrapper.className = SOLE_TRADER_LINK_CLASS;
         const link = document.createElement('button');
         link.type = 'button';
-        link.className = `${SOLE_TRADER_LINK_CLASS}__link`;
+        link.className = `${SOLE_TRADER_LINK_CLASS}__link ${ACTION_LINK_CLASS}`;
         link.textContent = this.translate('Select a different sole trader');
         link.addEventListener('click', function (event) {
             event.preventDefault();
