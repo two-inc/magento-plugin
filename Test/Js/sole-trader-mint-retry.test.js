@@ -32,7 +32,7 @@ const CHECKOUT_API_URL = 'https://api.example';
  * @returns {object} `{ flow, state, tokenMints }`
  */
 function loadFlow() {
-    const state = { fail: true };
+    const state = { fail: true, mintOutcome: null, buyer: null };
     let tokenMints = 0;
     const mocks = {
         'Magento_Checkout/js/model/quote': {
@@ -54,8 +54,13 @@ function loadFlow() {
         clearInterval: function () {},
         fetch: function (requestUrl) {
             if (String(requestUrl).indexOf('get-tokens') === -1) {
-                return Promise.resolve({ ok: false, status: 404 });
+                if (!state.buyer) return Promise.resolve({ ok: false, status: 404 });
+                return Promise.resolve({
+                    ok: true,
+                    json: function () { return Promise.resolve(state.buyer); }
+                });
             }
+            if (state.mintOutcome) return state.mintOutcome;
             if (state.fail) return Promise.reject(new Error('network down'));
             tokenMints += 1;
             return Promise.resolve({
@@ -73,6 +78,51 @@ function loadFlow() {
     const flow = new SoleTraderCtor(component);
     return { flow: flow, state: state, tokenMints: function () { return tokenMints; } };
 }
+
+/** A mint outcome the test releases, so a failure can land late. */
+function heldMint() {
+    let reject;
+    const promise = new Promise((_, rejectPromise) => { reject = rejectPromise; });
+    return { promise: promise, fail: function () { reject(new Error('network down')); } };
+}
+
+const GOOD_BUYER = { company_name: 'Ada Stonemason', organization_number: '123456789' };
+
+describe('a failed attempt answers nothing', () => {
+    test.each([
+        ['before the good lookup writes', true],
+        ['after the good lookup wrote', false]
+    ])('a failed mint landing %s leaves the good buyer standing', async (_case, releaseFirst) => {
+        const { flow, state } = loadFlow();
+        const held = heldMint();
+        state.mintOutcome = held.promise;
+        const failing = flow.prefetchBuyer();
+
+        // Only forgetAutofilledBuyer() releases the memo in production, and it
+        // bumps the generation too — which is the other, independent guard.
+        flow._prefetch = null;
+        state.mintOutcome = null;
+        state.fail = false;
+        state.buyer = GOOD_BUYER;
+        flow.delegationToken = 'dt-0';
+        flow.autofillToken = 'at-0';
+        const good = flow.prefetchBuyer();
+
+        if (releaseFirst) {
+            held.fail();
+            await failing;
+            await good;
+        } else {
+            await good;
+            held.fail();
+            await failing;
+        }
+
+        expect(await good).toEqual(GOOD_BUYER);
+        expect(flow.autofilledSoleTrader()).toEqual(GOOD_BUYER);
+        expect(flow._prefetch).not.toBeNull();
+    });
+});
 
 describe('a failed mint is not memoised', () => {
     test('a second prefetchBuyer() after a failed mint retries rather than reusing the cached null', async () => {

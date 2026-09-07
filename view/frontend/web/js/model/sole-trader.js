@@ -341,18 +341,20 @@
         const attempt = this.ensureTokens()
             .then((minted) => {
                 if (!minted) {
-                    this._prefetch = null;
+                    // Answers nothing, so it writes nothing: releasing only its
+                    // OWN memo, and never the held record, keeps a late failure
+                    // from clobbering a good buyer another attempt resolved.
+                    if (this._prefetch === attempt) this._prefetch = null;
                     return null;
                 }
-                return this.fetchBuyer();
-            })
-            .then((buyer) => {
-                // A lookup superseded while it was out is not an answer: a
-                // signup or a country change since has already decided who
-                // the checkout holds.
-                if (generation !== this._autofillGeneration) return null;
-                this._autofillBuyer = isUsableSoleTrader(buyer) ? buyer : null;
-                return this._autofillBuyer;
+                return this.fetchBuyer().then((buyer) => {
+                    // A lookup superseded while it was out is not an answer: a
+                    // signup or a country change since has already decided who
+                    // the checkout holds.
+                    if (generation !== this._autofillGeneration) return null;
+                    this._autofillBuyer = isUsableSoleTrader(buyer) ? buyer : null;
+                    return this._autofillBuyer;
+                });
             });
         this._prefetch = attempt;
         return attempt;
