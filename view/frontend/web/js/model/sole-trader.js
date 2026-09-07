@@ -320,8 +320,9 @@
      *
      * Runs where the tokens are minted rather than inside the click: the
      * lookup needs the autofill token, and a click that had to wait for either
-     * could not open a popup a blocker would allow. Idempotent, and the answer
-     * is held until something supersedes it.
+     * could not open a popup a blocker would allow. Idempotent, and a real
+     * answer is held until something supersedes it; a failed mint is not an
+     * answer and is retried on the next call.
      *
      * The answer is never revalidated, so a buyer who signs out of Two in
      * another tab mid-checkout is still offered the trader it found. Accepted:
@@ -333,17 +334,24 @@
     SoleTrader.prototype.prefetchBuyer = function () {
         if (this._prefetch) return this._prefetch;
         const generation = this._autofillGeneration;
-        this._prefetch = this.ensureTokens()
-            .then((minted) => (minted ? this.fetchBuyer() : null))
-            .then((buyer) => {
-                // A lookup superseded while it was out is not an answer: a
-                // signup or a country change since has already decided who
-                // the checkout holds.
-                if (generation !== this._autofillGeneration) return null;
-                this._autofillBuyer = isUsableSoleTrader(buyer) ? buyer : null;
-                return this._autofillBuyer;
+        const attempt = this.ensureTokens()
+            .then((minted) => {
+                if (!minted) {
+                    // Release only this attempt's memo, never the held buyer.
+                    if (this._prefetch === attempt) this._prefetch = null;
+                    return null;
+                }
+                return this.fetchBuyer().then((buyer) => {
+                    // A lookup superseded while it was out is not an answer: a
+                    // signup or a country change since has already decided who
+                    // the checkout holds.
+                    if (generation !== this._autofillGeneration) return null;
+                    this._autofillBuyer = isUsableSoleTrader(buyer) ? buyer : null;
+                    return this._autofillBuyer;
+                });
             });
-        return this._prefetch;
+        this._prefetch = attempt;
+        return attempt;
     };
 
     /**
