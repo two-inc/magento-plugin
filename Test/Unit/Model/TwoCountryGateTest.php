@@ -179,7 +179,7 @@ class TwoCountryGateTest extends TestCase
         $this->assertCount($expectedLogCount, $logged, $description);
         if ($expectedLogCount > 0) {
             $this->assertStringContainsString('hidden from checkout', $logged[0][0], $description);
-            $this->assertStringContainsString('below minimum order value', $logged[0][0], $description);
+            $this->assertStringContainsString('minimum-order gate withheld', $logged[0][0], $description);
         }
     }
 
