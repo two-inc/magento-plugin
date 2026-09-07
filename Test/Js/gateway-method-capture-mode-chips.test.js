@@ -359,8 +359,6 @@ describe('clicking a chip performs the real transition', () => {
     });
 
     test('the sole-trader chip raises an open popup and changes nothing else', () => {
-        // The chip's click is the one gesture exempt from the return-to-checkout
-        // close (TWO-25654), and raising is all it may do.
         mountTileField();
         const { component, identity, soleTrader } = load({ popupAlreadyOpen: true });
         component.start();

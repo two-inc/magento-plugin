@@ -2,13 +2,8 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25654: focus returning to ANY part of the checkout takes the signup popup
- * down. The single exception is the Sole trader chip, whose click cancels the
- * pending close and re-raises the popup instead — the popover around it is NOT
- * exempt, and neither is any other chip in it.
- *
- * Focus leaving the page altogether — the buyer fetching the OTP the signup
- * just mailed them — still leaves the popup alone.
+ * TWO-25654: focus returning to any part of the checkout takes the signup popup
+ * down, the Sole trader chip's own click alone excepted.
  */
 
 'use strict';
@@ -23,10 +18,7 @@ const AFTER_GRACE_MS = 300;
 /** Whatever the current test wants `document.hasFocus()` to answer. */
 let pageHasFocus = true;
 
-/**
- * A checkout with the capture popover open behind the signup: the chips carry
- * their mode in `data-two-chip`, and their labels are deliberately not English.
- */
+/** The popover open behind the signup; the chip labels are deliberately not English. */
 function renderCheckout() {
     document.body.innerHTML =
         '<input id="other-field">'
@@ -40,8 +32,7 @@ function renderCheckout() {
 /**
  * The flow, with a signup popup already up and the watcher armed.
  *
- * The component stub deliberately carries no `panel()` — the close rule reads
- * no popover.
+ * The component stub carries no `panel()`: the close rule reads no popover.
  *
  * @returns {object} `{ flow, returnCount, returnToCheckout }`
  */
@@ -85,7 +76,7 @@ function load() {
             document.getElementById(settlesOn).focus();
             returns += 1;
             handlers.focus();
-            // What `soleTraderMode()` does first, on the chip and nowhere else.
+            // The chip's click route, as `soleTraderMode()` runs it.
             if (chipRoute) flow.focusSignupPopup();
             return new Promise(function (resolve) { setTimeout(resolve, AFTER_GRACE_MS); });
         }
@@ -103,8 +94,7 @@ afterEach(() => {
 });
 
 describe('what a return to checkout does to an open signup popup', () => {
-    // Rows 1 and 3 settle focus on the same node — the chip's mousedown is
-    // prevented — so only the click itself tells them apart.
+    // Rows 1 and 3 settle focus on the same node, so only the click tells them apart.
     test.each([
         ['the Sole trader chip', true, 'query', true,
             'the one exempt gesture — it re-raises the popup'],
@@ -124,9 +114,7 @@ describe('what a return to checkout does to an open signup popup', () => {
 });
 
 test('a sibling-chip click closes the popup on that one return (TWO-25654)', async () => {
-    // Focus never leaves the page on this click and `window.focus` fires only on
-    // a transition, so a return that spares the popup leaves nothing that can
-    // close it.
+    // `window.focus` fires only on a transition, so this one return is the only chance.
     const ctx = load();
 
     await ctx.returnToCheckout('registered', false);
