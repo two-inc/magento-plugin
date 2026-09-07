@@ -160,7 +160,9 @@ class TwoCountryGateTest extends TestCase
         );
 
         $gate = $this->createMock(MinimumOrderGate::class);
-        $gate->method('isSatisfied')->willReturn(false);
+        $gate->method('isSatisfied')
+            ->with($this->anything(), $this->anything(), $this->anything(), 'two_payment')
+            ->willReturn(false);
 
         $model = $this->build($this->countriesProvider(null));
         $reflection = new \ReflectionClass(Two::class);

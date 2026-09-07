@@ -170,6 +170,7 @@ class Surcharge extends AbstractTotal
             $storeId
         );
         if (!$this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum, $paymentMethod)) {
+            $this->logRepository->addDebugLog('TotalCollector: skipped (below minimum order)', []);
             $this->clearSessionSurcharge();
             $this->clearTotalSurcharge($total, $quote);
             return $this;

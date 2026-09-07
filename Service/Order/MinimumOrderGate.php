@@ -145,7 +145,7 @@ class MinimumOrderGate
             if ($basketValue >= $minimum['amount']) {
                 return true;
             }
-            $this->logBelowMinimum($methodCode, $floor, $minimum, $basketValue, $quoteCurrency, $basketValue);
+            $this->logBelowMinimum($methodCode, $floor, $minimum, $basketValue, $quoteCurrency);
             return false;
         }
 
@@ -169,10 +169,10 @@ class MinimumOrderGate
     }
 
     /**
-     * TWO-25641: phrasing matches Two::isAvailable()'s sibling withholding branches so the family greps together.
+     * TWO-25641.
      *
      * @param array{amount: float, currency: string, basis: string} $minimum
-     * @param float $comparedValue the basket value in the minimum's currency
+     * @param float|null $comparedValue the basket value in the minimum's currency, when conversion was needed
      */
     private function logBelowMinimum(
         string $methodCode,
@@ -180,21 +180,24 @@ class MinimumOrderGate
         array $minimum,
         float $basketValue,
         string $quoteCurrency,
-        float $comparedValue
+        ?float $comparedValue = null
     ): void {
+        $context = [
+            'binding_floor' => $floor,
+            'basket_value' => $basketValue,
+            'basket_currency' => $quoteCurrency,
+            'minimum_amount' => $minimum['amount'],
+            'minimum_currency' => $minimum['currency'],
+            'basis' => $minimum['basis'],
+        ];
+        if ($comparedValue !== null) {
+            $context['compared_value'] = $comparedValue;
+        }
         $this->logRepository->addDebugLog(
             $methodCode === ''
                 ? 'Below minimum order value'
                 : sprintf('%s: below minimum order value', $methodCode),
-            [
-                'binding_floor' => $floor,
-                'basket_value' => $basketValue,
-                'basket_currency' => $quoteCurrency,
-                'compared_value' => $comparedValue,
-                'minimum_amount' => $minimum['amount'],
-                'minimum_currency' => $minimum['currency'],
-                'basis' => $minimum['basis'],
-            ]
+            $context
         );
     }
 

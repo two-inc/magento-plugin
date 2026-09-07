@@ -935,9 +935,10 @@ class Two extends AbstractMethod
         if ($this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum, $this->_code)) {
             return true;
         }
-        // Greps with the sibling withholding lines; the gate's own line carries the numbers.
+        // Greps with the sibling withholding lines; the gate's own line says which
+        // reason - below the floor, or a rate it could not convert at.
         $this->logRepository->addDebugLog(
-            sprintf('%s hidden from checkout: below minimum order value', $this->_code),
+            sprintf('%s hidden from checkout: minimum-order gate withheld', $this->_code),
             []
         );
         return false;
