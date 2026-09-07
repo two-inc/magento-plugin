@@ -321,12 +321,8 @@
      * Runs where the tokens are minted rather than inside the click: the
      * lookup needs the autofill token, and a click that had to wait for either
      * could not open a popup a blocker would allow. Idempotent, and a real
-     * answer is held until something supersedes it.
-     *
-     * A blip that stops the mint itself from completing is NOT held: nothing
-     * has been answered yet, so the next call (e.g. a re-arm from leaving
-     * sole-trader mode) gets a fresh attempt rather than a null cached
-     * forever from one bad load.
+     * answer is held until something supersedes it; a failed mint is not an
+     * answer and is retried on the next call.
      *
      * The answer is never revalidated, so a buyer who signs out of Two in
      * another tab mid-checkout is still offered the trader it found. Accepted:
@@ -341,9 +337,7 @@
         const attempt = this.ensureTokens()
             .then((minted) => {
                 if (!minted) {
-                    // Answers nothing, so it writes nothing: releasing only its
-                    // OWN memo, and never the held record, keeps a late failure
-                    // from clobbering a good buyer another attempt resolved.
+                    // Release only this attempt's memo, never the held buyer.
                     if (this._prefetch === attempt) this._prefetch = null;
                     return null;
                 }
