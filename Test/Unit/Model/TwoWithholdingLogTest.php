@@ -19,10 +19,8 @@ use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Service\Order\SurchargeCalculator;
 
 /**
- * TWO-25641: every branch that withholds the method names its own reason. A
- * shared line at the exit cannot — one message for several causes diagnoses
- * none of them. The minimum-order branch logs from inside the gate instead,
- * where the floor and the basket value are in scope.
+ * TWO-25641: every branch that withholds the method names its own reason, so one
+ * shared line at the exit cannot diagnose several causes at once.
  */
 class TwoWithholdingLogTest extends TestCase
 {
