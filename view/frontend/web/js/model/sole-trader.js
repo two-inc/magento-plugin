@@ -437,10 +437,11 @@
      * them — must leave it alone, which is why this is gated on the page
      * actually having focus rather than on a blur.
      *
-     * Deferred, and gated on where focus SETTLES, because of the one exception:
-     * the capture popover stays open behind the signup, so a click landing
-     * inside it — the Sole trader chip above all — is the buyer reaching for
-     * the signup, not away from it.
+     * Deferred so that the one exempt gesture can overtake it: the Sole trader
+     * chip's own click cancels the pending close and re-raises the popup
+     * (`focusSignupPopup()`). Nothing else on the checkout is exempt — a click
+     * anywhere in the capture popover, this chip aside, is the buyer looking
+     * away from the signup (TWO-25654).
      */
     SoleTrader.prototype.watchForReturnToCheckout = function () {
         if (this._returnHandler) return;
@@ -450,11 +451,6 @@
             this._returnCloseTimerId = setTimeout(() => {
                 this._returnCloseTimerId = null;
                 if (typeof document.hasFocus === 'function' && !document.hasFocus()) return;
-                // This flow's OWN popover, never a page-wide class query —
-                // that returns the other panel's popover (TWO-25554).
-                const own = this._component.panel();
-                const panel = own && own.getPanelElement();
-                if (panel && panel.contains(document.activeElement)) return;
                 // The CLOSE half only: looking away from the signup is not a
                 // decision about the enrolment, which stays live and resumable
                 // with its tokens unspent.
