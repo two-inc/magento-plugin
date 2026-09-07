@@ -41,7 +41,8 @@ const {
     dispatchNative,
     brandConfigMock,
     quoteAddress,
-    makeObservable
+    makeObservable,
+    tagged
 } = require('./amd-harness');
 
 const IDENTITY = 'view/frontend/web/js/model/company-identity.js';
@@ -408,6 +409,31 @@ describe('a blocked popup falls back to the on-page link', () => {
         expect(rec.focused).toEqual([held]);
         expect(held.closed).toBe(false);
     });
+
+    test.each([
+        [false, 'the launching control does not keep focus'],
+        [true, 'so a window return re-focuses nothing and the signup survives the tab switch']
+    ])('afterWindowReturn=%p: nothing holds focus while the popup is open (TWO-25658)',
+        async (afterWindowReturn, why) => {
+            // Given: "Select a different sole trader", whose click is cancelled, so a
+            // mouse click leaves it focused.
+            const { rec, flow, identity } = await startStack();
+            identity.captureMode('soletrader');
+            identity.soleTraderAdopted(true);
+            const node = document.querySelector('.two-select-different-sole-trader__link');
+            node.focus();
+            expect(document.activeElement).toBe(node);
+
+            node.click();
+            // A browser regaining focus re-fires focus on the control that holds it, and
+            // on nothing at all when that is the body.
+            if (afterWindowReturn && document.activeElement !== document.body) {
+                dispatchNative(document.activeElement, 'focusin');
+            }
+
+            expect(tagged(why, [document.activeElement, rec.opened.length, flow.isPopupOpen()]))
+                .toEqual(tagged(why, [document.body, 1, true]));
+        });
 
     test('focus outside closes the real popover with the popup (TWO-25658)', async () => {
         const { rec } = await startStack();

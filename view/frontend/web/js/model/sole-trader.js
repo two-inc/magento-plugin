@@ -302,6 +302,8 @@
             'location=yes,resizable=yes,scrollbars=yes,status=yes,height=805,width=700'
         );
         if (this._popupWindow) {
+            // TWO-25658: a control that keeps focus is re-focused on window return, which reads as leaving the signup.
+            if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
             this.watchPopupClose(this._popupWindow);
             this.watchForReturnToCheckout();
         }
