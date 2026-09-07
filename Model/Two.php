@@ -828,18 +828,6 @@ class Two extends AbstractMethod
      */
     public function isAvailable(?CartInterface $quote = null)
     {
-        if (!parent::isAvailable($quote)) {
-            return false;
-        }
-        $apiKey = $this->_scopeConfig->getValue('payment/' . $this->_code . '/api_key');
-        if ($apiKey === null || $apiKey === '') {
-            return false;
-        }
-        // Platform minimum-order constraint (the API-resolved tuple from
-        // GET /v1/merchant - the same value the API enforces at order
-        // create/intent) plus the merchant's own optional minimum (admin
-        // setting in the STORE BASE currency; validated on save to meet or
-        // exceed the platform floor converted to that currency).
         $storeId = null;
         $store = null;
         if ($quote instanceof \Magento\Quote\Model\Quote) {
@@ -847,6 +835,22 @@ class Two extends AbstractMethod
             if ($quote->getStoreId() !== null) {
                 $storeId = (int)$quote->getStoreId();
             }
+        }
+        if (!parent::isAvailable($quote)) {
+            // parent covers more than the active flag, so report the flag rather than assert "inactive".
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: core payment-method checks failed', $this->_code),
+                ['active' => (bool)$this->scopedConfig('active', $storeId)]
+            );
+            return false;
+        }
+        $apiKey = $this->scopedConfig('api_key', $storeId);
+        if ($apiKey === null || $apiKey === '') {
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: no API key configured', $this->_code),
+                []
+            );
+            return false;
         }
         // A configured api_key is not the same thing as a WORKING one. Unless
         // the stored key currently verifies, the method must not be offered —
@@ -928,11 +932,29 @@ class Two extends AbstractMethod
         if ($this->isAmastyCheckoutStore($store, $storeId)) {
             return true;
         }
+        // The API-resolved tuple from GET /v1/merchant - the same value the API
+        // enforces at order create/intent - plus the merchant's own optional
+        // minimum (admin setting in the STORE BASE currency, validated on save
+        // to meet or exceed the platform floor converted to that currency).
         $platformMinimum = $this->minimumOrderProvider->getMinimum($storeId);
         $merchantMinimum = $store !== null
             ? $this->buildMerchantMinimum((string)$store->getBaseCurrencyCode(), $platformMinimum, $storeId)
             : null;
-        return $this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum);
+        // The gate logs its own withholding reason - the floor, or a rate it could not convert at.
+        return $this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum, $this->_code);
+    }
+
+    /**
+     * parent::isAvailable() judges the quote's scope, so an unscoped read here
+     * can report a store-level setting as its global value.
+     */
+    private function scopedConfig(string $field, ?int $storeId)
+    {
+        return $this->_scopeConfig->getValue(
+            'payment/' . $this->_code . '/' . $field,
+            \Magento\Store\Model\ScopeInterface::SCOPE_STORE,
+            $storeId
+        );
     }
 
     /**

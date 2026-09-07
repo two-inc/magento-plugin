@@ -143,6 +143,46 @@ class TwoCountryGateTest extends TestCase
     }
 
     /**
+     * @dataProvider amastyBypassCases
+     */
+    public function testAnAmastyStoreViewIsOfferedTheMethodWithoutConsultingTheGate(
+        bool $amastyStoreView,
+        bool $expectedAvailable,
+        bool $expectedGateConsulted,
+        string $description
+    ): void {
+        $consulted = false;
+        $gate = $this->createMock(MinimumOrderGate::class);
+        $gate->method('isSatisfied')->willReturnCallback(
+            function () use (&$consulted): bool {
+                $consulted = true;
+                return false;
+            }
+        );
+
+        $model = $this->build($this->countriesProvider(null));
+        $reflection = new \ReflectionClass(Two::class);
+        $reflection->getProperty('minimumOrderGate')->setValue($model, $gate);
+        $reflection->getProperty('amastyCheckoutStore')
+            ->setValue($model, $amastyStoreView ? [1 => true] : [1 => false]);
+
+        $this->assertSame(
+            $expectedAvailable,
+            $model->isAvailable($this->quoteInStore('GB', 1)),
+            $description
+        );
+        $this->assertSame($expectedGateConsulted, $consulted, $description);
+    }
+
+    public static function amastyBypassCases(): array
+    {
+        return [
+            [false, false, true, 'a normal store view is judged by the gate'],
+            [true, true, false, 'an Amasty store view returns before the gate is reached'],
+        ];
+    }
+
+    /**
      * Builds a Two instance holding only the collaborators isAvailable() and
      * canUseForCountry() reach; the real constructor needs the full
      * payment-method framework graph, which these gates do not touch.
@@ -207,6 +247,17 @@ class TwoCountryGateTest extends TestCase
         $quote = $this->createMock(Quote::class);
         $quote->method('getBillingAddress')->willReturn($this->address($billingCountry));
         $quote->method('getStore')->willReturn($this->createMock(Store::class));
+        return $quote;
+    }
+
+    private function quoteInStore(string $billingCountry, int $storeId): Quote
+    {
+        $store = $this->createMock(Store::class);
+        $store->method('getId')->willReturn($storeId);
+        $quote = $this->createMock(Quote::class);
+        $quote->method('getBillingAddress')->willReturn($this->address($billingCountry));
+        $quote->method('getStore')->willReturn($store);
+        $quote->method('getStoreId')->willReturn($storeId);
         return $quote;
     }
 
