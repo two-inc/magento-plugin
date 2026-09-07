@@ -368,4 +368,74 @@ class MinimumOrderGateTest extends TestCase
         $this->gate->isSatisfied(self::EUR_250_NET, $this->quote(100.0, 'SEK'));
         $this->gate->isSatisfied(self::EUR_250_NET, $this->quote(200.0, 'SEK'));
     }
+
+    // ── Below-minimum withholding is traced (TWO-25641) ──────────────
+
+    /**
+     * @dataProvider belowMinimumLogProvider
+     */
+    public function testBelowMinimumLogsWhichFloorWithheldTheMethod(
+        ?array $platformMinimum,
+        ?array $merchantMinimum,
+        float $grandTotal,
+        string $currency,
+        ?float $rate,
+        ?array $expectedContext,
+        string $description
+    ): void {
+        if ($rate !== null) {
+            $this->ratesProvider->method('getRate')->willReturn($rate);
+        }
+        if ($expectedContext === null) {
+            $this->logRepository->expects($this->never())->method('addDebugLog');
+        } else {
+            $this->logRepository->expects($this->once())
+                ->method('addDebugLog')
+                ->with('two_payment hidden from checkout: below minimum order value', $expectedContext);
+        }
+
+        $quote = $this->quote($grandTotal, $currency);
+
+        $this->assertSame(
+            $expectedContext === null,
+            $this->gate->isSatisfied($platformMinimum, $quote, $merchantMinimum, 'two_payment'),
+            $description
+        );
+    }
+
+    public static function belowMinimumLogProvider(): array
+    {
+        $merchantEur400 = ['amount' => 400.0, 'currency' => 'EUR', 'basis' => 'net'];
+
+        return [
+            [self::EUR_250_NET, null, 249.99, 'EUR', null, [
+                'binding_floor' => 'platform',
+                'basket_value' => 249.99,
+                'basket_currency' => 'EUR',
+                'compared_value' => 249.99,
+                'minimum_amount' => 250.0,
+                'minimum_currency' => 'EUR',
+                'basis' => 'net',
+            ], 'platform floor, same currency'],
+            [self::EUR_250_NET, $merchantEur400, 300.0, 'EUR', null, [
+                'binding_floor' => 'merchant',
+                'basket_value' => 300.0,
+                'basket_currency' => 'EUR',
+                'compared_value' => 300.0,
+                'minimum_amount' => 400.0,
+                'minimum_currency' => 'EUR',
+                'basis' => 'net',
+            ], 'merchant floor binds while platform floor is met'],
+            [self::EUR_250_NET, null, 100.0, 'GBP', 1.2, [
+                'binding_floor' => 'platform',
+                'basket_value' => 100.0,
+                'basket_currency' => 'GBP',
+                'compared_value' => 120.0,
+                'minimum_amount' => 250.0,
+                'minimum_currency' => 'EUR',
+                'basis' => 'net',
+            ], 'converted basket below the platform floor'],
+            [self::EUR_250_NET, $merchantEur400, 400.0, 'EUR', null, null, 'both floors met'],
+        ];
+    }
 }

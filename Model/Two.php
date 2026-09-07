@@ -932,7 +932,7 @@ class Two extends AbstractMethod
         $merchantMinimum = $store !== null
             ? $this->buildMerchantMinimum((string)$store->getBaseCurrencyCode(), $platformMinimum, $storeId)
             : null;
-        return $this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum);
+        return $this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum, $this->_code);
     }
 
     /**

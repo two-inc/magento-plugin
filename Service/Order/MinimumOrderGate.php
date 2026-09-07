@@ -71,6 +71,7 @@ class MinimumOrderGate
      *
      * @param array{amount: float, currency: string, basis: string}|null $platformMinimum
      * @param array{amount: float, currency: string, basis: string}|null $merchantMinimum
+     * @param string $methodCode the calling method's code, for the log line only
      * @return bool false when the quote is below an evaluable minimum, or
      *              when the basket currency / exchange rate cannot be
      *              resolved for the platform floor's currency (fail-closed;
@@ -80,7 +81,8 @@ class MinimumOrderGate
     public function isSatisfied(
         ?array $platformMinimum,
         ?CartInterface $quote,
-        ?array $merchantMinimum = null
+        ?array $merchantMinimum = null,
+        string $methodCode = ''
     ): bool {
         if (!$quote instanceof Quote) {
             return true;
@@ -89,12 +91,24 @@ class MinimumOrderGate
         // Both must be satisfied; only the platform floor fails closed on
         // unconvertible FX (see class docblock).
         if ($platformMinimum !== null
-            && !$this->satisfiesMinimum($quote, $platformMinimum, failClosedOnUnconvertible: true)
+            && !$this->satisfiesMinimum(
+                $quote,
+                $platformMinimum,
+                failClosedOnUnconvertible: true,
+                floor: 'platform',
+                methodCode: $methodCode
+            )
         ) {
             return false;
         }
         if ($merchantMinimum !== null
-            && !$this->satisfiesMinimum($quote, $merchantMinimum, failClosedOnUnconvertible: false)
+            && !$this->satisfiesMinimum(
+                $quote,
+                $merchantMinimum,
+                failClosedOnUnconvertible: false,
+                floor: 'merchant',
+                methodCode: $methodCode
+            )
         ) {
             return false;
         }
@@ -108,11 +122,15 @@ class MinimumOrderGate
      *             currency or missing/invalid exchange rate blocks the
      *             method (platform floor) or passes the check (merchant's
      *             own extra minimum).
+     * @param string $floor which floor is being evaluated ('platform'|'merchant'), for the log line only
+     * @param string $methodCode the calling method's code, for the log line only
      */
     private function satisfiesMinimum(
         Quote $quote,
         array $minimum,
-        bool $failClosedOnUnconvertible
+        bool $failClosedOnUnconvertible,
+        string $floor,
+        string $methodCode
     ): bool {
         $basketValue = $this->basketValue($quote, $minimum['basis']);
         $store = $quote->getStore();
@@ -124,7 +142,11 @@ class MinimumOrderGate
         }
 
         if ($quoteCurrency === $minimum['currency']) {
-            return $basketValue >= $minimum['amount'];
+            if ($basketValue >= $minimum['amount']) {
+                return true;
+            }
+            $this->logBelowMinimum($methodCode, $floor, $minimum, $basketValue, $quoteCurrency, $basketValue);
+            return false;
         }
 
         $rate = $this->ratesProvider->getRate(
@@ -138,7 +160,40 @@ class MinimumOrderGate
 
         // Compare at currency precision: full-precision arithmetic,
         // rounded once at the decision boundary (the plugin-wide model).
-        return round($basketValue * $rate, 2) >= $minimum['amount'];
+        $convertedValue = round($basketValue * $rate, 2);
+        if ($convertedValue >= $minimum['amount']) {
+            return true;
+        }
+        $this->logBelowMinimum($methodCode, $floor, $minimum, $basketValue, $quoteCurrency, $convertedValue);
+        return false;
+    }
+
+    /**
+     * TWO-25641: phrasing matches Two::isAvailable()'s sibling withholding branches so the family greps together.
+     *
+     * @param array{amount: float, currency: string, basis: string} $minimum
+     * @param float $comparedValue the basket value in the minimum's currency
+     */
+    private function logBelowMinimum(
+        string $methodCode,
+        string $floor,
+        array $minimum,
+        float $basketValue,
+        string $quoteCurrency,
+        float $comparedValue
+    ): void {
+        $this->logRepository->addDebugLog(
+            sprintf('%s hidden from checkout: below minimum order value', $methodCode),
+            [
+                'binding_floor' => $floor,
+                'basket_value' => $basketValue,
+                'basket_currency' => $quoteCurrency,
+                'compared_value' => $comparedValue,
+                'minimum_amount' => $minimum['amount'],
+                'minimum_currency' => $minimum['currency'],
+                'basis' => $minimum['basis'],
+            ]
+        );
     }
 
     /**
