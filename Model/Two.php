@@ -829,10 +829,19 @@ class Two extends AbstractMethod
     public function isAvailable(?CartInterface $quote = null)
     {
         if (!parent::isAvailable($quote)) {
+            // parent covers more than the active flag, so report the flag rather than assert "inactive".
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: core payment-method checks failed', $this->_code),
+                ['active' => (bool)$this->_scopeConfig->getValue('payment/' . $this->_code . '/active')]
+            );
             return false;
         }
         $apiKey = $this->_scopeConfig->getValue('payment/' . $this->_code . '/api_key');
         if ($apiKey === null || $apiKey === '') {
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: no API key configured', $this->_code),
+                []
+            );
             return false;
         }
         // Platform minimum-order constraint (the API-resolved tuple from
@@ -932,16 +941,8 @@ class Two extends AbstractMethod
         $merchantMinimum = $store !== null
             ? $this->buildMerchantMinimum((string)$store->getBaseCurrencyCode(), $platformMinimum, $storeId)
             : null;
-        if ($this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum, $this->_code)) {
-            return true;
-        }
-        // Greps with the sibling withholding lines; the gate's own line says which
-        // reason - below the floor, or a rate it could not convert at.
-        $this->logRepository->addDebugLog(
-            sprintf('%s hidden from checkout: minimum-order gate withheld', $this->_code),
-            []
-        );
-        return false;
+        // The gate logs its own withholding reason - the floor, or a rate it could not convert at.
+        return $this->minimumOrderGate->isSatisfied($platformMinimum, $quote, $merchantMinimum, $this->_code);
     }
 
     /**

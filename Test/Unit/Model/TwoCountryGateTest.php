@@ -143,30 +143,25 @@ class TwoCountryGateTest extends TestCase
     }
 
     /**
-     * @dataProvider belowMinimumVisibilityCases
+     * @dataProvider amastyBypassCases
      */
-    public function testBelowMinimumWithholdingIsLoggedExceptOnAnAmastyStoreView(
+    public function testAnAmastyStoreViewIsOfferedTheMethodWithoutConsultingTheGate(
         bool $amastyStoreView,
         bool $expectedAvailable,
-        int $expectedLogCount,
+        bool $expectedGateConsulted,
         string $description
     ): void {
-        $logged = [];
-        $logRepository = $this->createMock(LogRepository::class);
-        $logRepository->method('addDebugLog')->willReturnCallback(
-            function ($message, $data = null) use (&$logged) {
-                $logged[] = [$message, $data];
+        $consulted = false;
+        $gate = $this->createMock(MinimumOrderGate::class);
+        $gate->method('isSatisfied')->willReturnCallback(
+            function () use (&$consulted): bool {
+                $consulted = true;
+                return false;
             }
         );
 
-        $gate = $this->createMock(MinimumOrderGate::class);
-        $gate->method('isSatisfied')
-            ->with($this->anything(), $this->anything(), $this->anything(), 'two_payment')
-            ->willReturn(false);
-
         $model = $this->build($this->countriesProvider(null));
         $reflection = new \ReflectionClass(Two::class);
-        $reflection->getProperty('logRepository')->setValue($model, $logRepository);
         $reflection->getProperty('minimumOrderGate')->setValue($model, $gate);
         $reflection->getProperty('amastyCheckoutStore')
             ->setValue($model, $amastyStoreView ? [1 => true] : [1 => false]);
@@ -176,18 +171,14 @@ class TwoCountryGateTest extends TestCase
             $model->isAvailable($this->quoteInStore('GB', 1)),
             $description
         );
-        $this->assertCount($expectedLogCount, $logged, $description);
-        if ($expectedLogCount > 0) {
-            $this->assertStringContainsString('hidden from checkout', $logged[0][0], $description);
-            $this->assertStringContainsString('minimum-order gate withheld', $logged[0][0], $description);
-        }
+        $this->assertSame($expectedGateConsulted, $consulted, $description);
     }
 
-    public static function belowMinimumVisibilityCases(): array
+    public static function amastyBypassCases(): array
     {
         return [
-            [false, false, 1, 'a normal store view withholds and says so'],
-            [true, true, 0, 'an Amasty store view returns before the gate, so nothing is withheld to log'],
+            [false, false, true, 'a normal store view is judged by the gate'],
+            [true, true, false, 'an Amasty store view returns before the gate is reached'],
         ];
     }
 
