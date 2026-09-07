@@ -21,8 +21,13 @@ function flush() {
     return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+// `CompanyLookupInterface::supportedCountries()` returns a JSON-encoded
+// STRING (the envelope, pre-encoded) — Magento's webapi layer then encodes
+// that string again, so `response.json()` in production yields a string,
+// not the envelope object. Mocking the already-decoded object here is what
+// let the double-encode bug through green tests originally.
 function envelope(countries) {
-    return { ok: true, status: 200, body: { supported_countries: countries } };
+    return JSON.stringify({ ok: true, status: 200, body: { supported_countries: countries } });
 }
 
 /**
