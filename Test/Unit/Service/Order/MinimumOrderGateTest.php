@@ -391,7 +391,7 @@ class MinimumOrderGateTest extends TestCase
         } else {
             $this->logRepository->expects($this->once())
                 ->method('addDebugLog')
-                ->with('two_payment hidden from checkout: below minimum order value', $expectedContext);
+                ->with('two_payment: below minimum order value', $expectedContext);
         }
 
         $quote = $this->quote($grandTotal, $currency);
