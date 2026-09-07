@@ -85,7 +85,7 @@ function load(options) {
     const SoleTraderStub = function () {
         this.listenForSignupResult = function () {};
         this.prefetchBuyer = function () { return Promise.resolve(null); };
-        this.focusSignupPopup = function () { return false; };
+        this.focusSignupPopup = function () { return !!opts.popupAlreadyOpen; };
         this.autofilledSoleTrader = function () { return null; };
         this.launchSignup = function (o) { soleTrader.launches.push(o || null); return {}; };
         this.forgetAdoptions = function () {};
@@ -356,6 +356,22 @@ describe('clicking a chip performs the real transition', () => {
         // and take the signup down.
         expect(dropdown().hasAttribute('hidden')).toBe(false);
         expect(chip('soletrader')).not.toBeNull();
+    });
+
+    test('the sole-trader chip raises an open popup and changes nothing else', () => {
+        // The chip's click is the one gesture exempt from the return-to-checkout
+        // close (TWO-25654), and raising is all it may do.
+        mountTileField();
+        const { component, identity, soleTrader } = load({ popupAlreadyOpen: true });
+        component.start();
+        identity.write({ companyName: 'Example Ltd', companyId: '12345678' });
+        chip('registered').click();
+
+        expect(component.soleTraderMode()).toBeNull();
+
+        expect(soleTrader.launches).toHaveLength(0);
+        expect(identity.captureMode()).toBe('registered');
+        expect(identity.companyId()).toBe('12345678');
     });
 
     test('sole-trader mode hides the query row, which answers for nothing there', () => {
