@@ -180,4 +180,17 @@ describe('both action links under a company field look the same everywhere', () 
         expect(links.back[property]).toBe(expected);
         expect(links.different[property]).toBe(expected);
     });
+
+    // jsdom returns `inherit` verbatim rather than resolving it, so these are
+    // asserted as declarations — as the row's `mark` colour is above.
+    test.each([
+        ['line-height', 'inherit'],
+        ['font-style', 'inherit'],
+        ['font-variant', 'inherit']
+    ])('the shared rule hands %s back to the theme rather than the UA', (property, expected) => {
+        computedActionLinkStyles();
+
+        expect(declaredStyle('.two-field-action-link.two-field-action-link')
+            .getPropertyValue(property)).toBe(expected);
+    });
 });

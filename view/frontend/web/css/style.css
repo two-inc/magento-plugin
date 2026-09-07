@@ -550,9 +550,8 @@
     display: none;
 }
 
-/* Both action links under a company field: block flow, spanning the field so the
-   text sits on its right edge. 14px absolute because Luma and Hyvä root font sizes
-   differ; class doubled to outrank a theme's `.amcheckout-* button` rules (TWO-25652). */
+/* 14px absolute because Luma and Hyvä root font sizes differ; selector doubled to
+   outrank a theme's `.amcheckout-* button` rules (TWO-25652). */
 .two-field-action-link.two-field-action-link {
     display: block;
     box-sizing: border-box;
@@ -562,8 +561,11 @@
     background: none;
     color: var(--color-blue2);
     font-family: inherit;
+    font-style: inherit;
+    font-variant: inherit;
     font-weight: normal;
     font-size: 14px;
+    line-height: inherit;
     text-align: right;
     text-decoration: none;
     text-transform: none !important;
