@@ -353,9 +353,9 @@
                     type="submit"
                     data-bind="
                         attr: {title: $t('Place Order')},
-                        enable: (getCode() == isChecked()),
+                        enable: isPlaceOrderEnabled(),
                         click: placeOrder,
-                        css: {disabled: !isPlaceOrderActionAllowed()}
+                        css: {disabled: !isPlaceOrderEnabled() || !isPlaceOrderActionAllowed()}
                         "
                     class="action primary checkout"
                 >

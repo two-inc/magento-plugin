@@ -129,7 +129,7 @@ define([
     var placeOrderInFlight = false;
 
     // Org number whose intent came back not-approved; module-scope so a renderer re-creation cannot fail open (TWO-25657).
-    var declinedIntentCompanyId = null;
+    const declinedIntentCompanyId = ko.observable(null);
 
     // Count of order-intent requests currently in flight, across ALL
     // instances of this renderer sharing this module. Deliberately
@@ -502,15 +502,19 @@ define([
          * @returns {boolean}
          */
         isOrderIntentDeclined: function () {
-            return !!declinedIntentCompanyId &&
-                declinedIntentCompanyId === (this.companyId() || '').trim();
+            return !!declinedIntentCompanyId() &&
+                declinedIntentCompanyId() === (this.companyId() || '').trim();
+        },
+        // Core's billing-address subscription rewrites isPlaceOrderActionAllowed, so the decline gate cannot live there (TWO-25657).
+        isPlaceOrderEnabled: function () {
+            return this.getCode() === this.isChecked() && !this.isOrderIntentDeclined();
         },
         /**
          * @returns {void}
          */
         clearOrderIntentDeclinedVerdict: function () {
-            if (declinedIntentCompanyId === null) return;
-            declinedIntentCompanyId = null;
+            if (declinedIntentCompanyId() === null) return;
+            declinedIntentCompanyId(null);
             if (this.isPlaceOrderActionAllowed && !placeOrderInFlight) {
                 this.isPlaceOrderActionAllowed(true);
             }
@@ -1283,8 +1287,8 @@ define([
                     this.clearOrderIntentNotices();
                     this.orderIntentDeclinedNotice(this.resolveOrderIntentDeclinedNotice());
                     // The verdict itself, so placeOrder() refuses too (TWO-25657).
-                    declinedIntentCompanyId = (this.companyId() || '').trim() || null;
-                    if (declinedIntentCompanyId && this.isPlaceOrderActionAllowed) {
+                    declinedIntentCompanyId((this.companyId() || '').trim() || null);
+                    if (declinedIntentCompanyId() && this.isPlaceOrderActionAllowed) {
                         this.isPlaceOrderActionAllowed(false);
                     }
                 }

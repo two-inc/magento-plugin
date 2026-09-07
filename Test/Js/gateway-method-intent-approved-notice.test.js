@@ -480,6 +480,101 @@ describe('a declined order intent refuses placement (TWO-25657)', () => {
     });
 });
 
+describe('a declined order intent disables the Place Order button (TWO-25657)', () => {
+    const fs = require('fs');
+    const path = require('path');
+
+    function placeOrderDisabled(ctx) {
+        const markup = fs.readFileSync(
+            path.resolve(
+                __dirname,
+                '..',
+                '..',
+                'view/frontend/web/template/payment/gateway_method.html'
+            ),
+            'utf8'
+        );
+        const tag = markup.match(/<button\b[^>]*data-role="review-save"[\s\S]*?>/);
+        if (tag === null) {
+            throw new Error('template has no data-role="review-save" button');
+        }
+        const enable = tag[0].match(/\benable:\s*([^,\n]+)/);
+        if (enable === null) {
+            throw new Error('the Place Order button has no enable: binding');
+        }
+        const button = document.createElement('button');
+        const evaluate = new Function('$data', 'with ($data) { return (' + enable[1].trim() + '); }');
+        if (evaluate(ctx)) {
+            button.removeAttribute('disabled');
+        } else {
+            button.setAttribute('disabled', 'disabled');
+        }
+        return button.hasAttribute('disabled');
+    }
+
+    function makeButtonContext() {
+        const ctx = makePlaceOrderContext(DEFAULT_COPY, DECLINED_COPY);
+        ctx.getCode = function () {
+            return 'two_payment';
+        };
+        ctx.isChecked = koObservable('two_payment');
+        return ctx;
+    }
+
+    test.each([
+        [[], false, 'no verdict yet — the button is live'],
+        [[APPROVED], false, 'an approved intent leaves the button live'],
+        [[DECLINED], true, 'a declined intent disables the button'],
+        [
+            [DECLINED, '999888777'],
+            false,
+            'a different company captured after a decline re-enables the button'
+        ],
+        [
+            [DECLINED, '999888777', APPROVED],
+            false,
+            'a fresh approval for that company keeps it enabled'
+        ],
+        [[DECLINED, '999888777', DECLINED], true, 'a second decline disables it again']
+    ])('%p → disabled %p — %s', (events, disabled, description) => {
+        const ctx = makeButtonContext();
+        events.forEach((event) => applyEvent(ctx, event));
+
+        expect([description, placeOrderDisabled(ctx)]).toEqual([description, disabled]);
+    });
+
+    test('stays disabled when core re-arms the shared latch on a billing-address write', () => {
+        const ctx = makeButtonContext();
+        ctx.processOrderIntentSuccessResponse.call(ctx, DECLINED);
+        expect(placeOrderDisabled(ctx)).toBe(true);
+
+        ctx.isPlaceOrderActionAllowed(true);
+
+        expect(placeOrderDisabled(ctx)).toBe(true);
+    });
+
+    test('is disabled while another payment method is selected, declined or not', () => {
+        const ctx = makeButtonContext();
+        ctx.isChecked('other_method');
+
+        expect(placeOrderDisabled(ctx)).toBe(true);
+    });
+
+    test('the enable binding re-evaluates when the verdict lands', () => {
+        // A plain module `var` leaves the computed cached at its pre-decline value.
+        const ctx = makeButtonContext();
+        const ko = defaultMocks().ko;
+        const enabled = ko.computed(function () {
+            return ctx.isPlaceOrderEnabled();
+        });
+        expect(enabled()).toBe(true);
+
+        ctx.processOrderIntentSuccessResponse.call(ctx, DECLINED);
+
+        expect(enabled()).toBe(false);
+    });
+});
+
 /**
  * The box itself. TWO-25326 (2026-08-05): one bordered container, the same
  * three semantic colours, and the message ALONE inside it on all four
