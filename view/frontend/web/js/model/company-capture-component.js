@@ -1032,14 +1032,12 @@
      * @returns {Window|null} the popup where one opened
      */
     CompanyCaptureComponent.prototype.soleTraderMode = function () {
-        // The one gesture that means "the popup is what I want": clicking this
-        // chip returns focus to the page, which otherwise takes the popup down.
-        // Raise it rather than replacing it with a second signup.
+        // Raised, not reopened: the popup targets `_blank`, so a second open would orphan a
+        // signup the buyer is part-way through (TWO-25658).
         if (this._soleTrader.focusSignupPopup()) return null;
-        // Re-clicking once adopted is the same re-signup the "select a different
-        // sole trader" link launches: offer a choice rather than hand back what
-        // is already on screen — so it skips autofill for the same reason that
-        // link does.
+        // The first click adopts an autofill answer the buyer may not have wanted, so a second
+        // is a deliberate request for the popup itself (TWO-25658).
+        // `autoselect: false` so the hosted flow offers a choice rather than the registration already adopted.
         if (this._identity.isSoleTrader() && this._identity.soleTraderAdopted()) {
             return this._soleTrader.launchSignup({ autoselect: false });
         }

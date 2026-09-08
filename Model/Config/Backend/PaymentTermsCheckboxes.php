@@ -15,7 +15,7 @@ use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Model\Context;
 use Magento\Framework\Model\ResourceModel\AbstractResource;
 use Magento\Framework\Registry;
-use Two\Gateway\Service\Merchant\SettingsProvider;
+use Two\Gateway\Model\Config\Backend\PaymentTerms\OfferedTermsGuard;
 
 /**
  * Backend model for payment terms checkboxes.
@@ -25,28 +25,26 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
  */
 class PaymentTermsCheckboxes extends Value
 {
-    /** @var SettingsProvider */
-    private $settingsProvider;
+    private $offeredTerms;
 
     public function __construct(
         Context $context,
         Registry $registry,
         ScopeConfigInterface $config,
         TypeListInterface $cacheTypeList,
-        SettingsProvider $settingsProvider,
+        OfferedTermsGuard $offeredTerms,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
     ) {
         parent::__construct($context, $registry, $config, $cacheTypeList, $resource, $resourceCollection, $data);
-        $this->settingsProvider = $settingsProvider;
+        $this->offeredTerms = $offeredTerms;
     }
 
     /**
      * @inheritDoc
      *
-     * @throws LocalizedException when no payment term is selected and no custom
-     *         term is entered — a selection is mandatory.
+     * @throws LocalizedException when a selected term is not offered, or nothing is selected.
      */
     public function beforeSave()
     {
@@ -58,24 +56,21 @@ class PaymentTermsCheckboxes extends Value
             $value = array_filter(array_map('intval', explode(',', (string)$raw)));
         }
 
-        // Fold the sibling custom-days field in when it duplicates a
-        // merchant-offered term, ticked or not (TWO-25498) — comparing
-        // against only the ticked subset left this branch unreachable on
-        // an offered-but-unticked preset. getFieldsetDataValue() reads the
-        // POSTED value, which Magento populates for the whole group before
-        // any field's beforeSave() runs, so this does not depend on
-        // save-execution order between the two fields.
+        $storeId = $this->resolveStoreId();
+        $this->offeredTerms->assertOffered($value, $storeId);
+
+        // Comparing against only the ticked subset left this fold-in unreachable on an offered-but-unticked term (TWO-25498).
+        // fieldset_data holds the whole group before any beforeSave() runs, so sibling reads are order-independent (TWO-25498).
         $custom = (int)$this->getFieldsetDataValue('payment_terms_duration_days');
         if ($custom > 0
             && !in_array($custom, $value, true)
-            && in_array($custom, $this->settingsProvider->getAvailableTerms($this->resolveStoreId()), true)
+            && in_array($custom, $this->offeredTerms->offered($storeId), true)
         ) {
             $value[] = $custom;
         }
         sort($value);
 
-        // A selection is mandatory. The optional custom term (sibling field)
-        // also satisfies it, so a single off-preset term may be offered alone.
+        // A selection is mandatory; the sibling custom-days field satisfies it too.
         if (count($value) === 0 && $custom <= 0) {
             throw new LocalizedException(
                 __('Select at least one payment term or enter a custom term.')
@@ -88,7 +83,7 @@ class PaymentTermsCheckboxes extends Value
 
     /**
      * Store id for the scope being saved, or null for website/default —
-     * SettingsProvider resolves the per-store API key from it.
+     * the offered-terms lookup resolves the per-store API key from it.
      */
     private function resolveStoreId(): ?int
     {

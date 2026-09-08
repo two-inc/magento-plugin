@@ -10,6 +10,7 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Config\Repository as ConfigRepositoryImpl;
 use Two\Gateway\Model\Two;
+use Two\Gateway\Model\Ui\CheckoutTileCopy;
 use Two\Gateway\Model\Ui\ConfigProvider;
 use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
@@ -45,7 +46,7 @@ class ConfigProviderApiKeyGateTest extends TestCase
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
         $brandRegistry->method('getProductName')->willReturn('Acme Pay');
         $brandRegistry->method('getProviderFullName')->willReturn('Acme Pay Ltd');
-        $brandRegistry->method('getCheckoutSubtitle')->willReturn('');
+        $brandRegistry->method('getAboutUrl')->willReturn('');
 
         $two = $this->createMock(Two::class);
         $two->method('getMinimumOrderVisibility')->willReturn(['minimums' => [], 'unresolved' => false]);
@@ -68,6 +69,7 @@ class ConfigProviderApiKeyGateTest extends TestCase
             'checkoutSession' => $checkoutSession,
             'storeManager' => $this->storeManager(),
             'supportedCompanyTypes' => $this->createMock(SupportedCompanyTypes::class),
+            'checkoutTileCopy' => $this->createMock(CheckoutTileCopy::class),
         ];
         foreach ($properties as $name => $value) {
             $reflection->getProperty($name)->setValue($provider, $value);

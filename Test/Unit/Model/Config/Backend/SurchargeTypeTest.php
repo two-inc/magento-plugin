@@ -233,6 +233,39 @@ class SurchargeTypeTest extends TestCase
         $model->beforeSave();
     }
 
+    /**
+     * @dataProvider refusedMethods
+     */
+    public function testUnknownMethodIsRefusedOnSave(string $posted, string $case): void
+    {
+        // A treatment is stored, so only the method-set guard can refuse.
+        $this->stubStoredConfig(['payment/two_payment/surcharge_tax_class' => '3']);
+        $model = $this->buildModel([
+            'value' => $posted,
+            'path' => 'payment/two_payment/surcharge_type',
+            'fieldset_data' => ['surcharge_type' => $posted, 'surcharge_tax_class' => '3'],
+        ]);
+
+        try {
+            $model->beforeSave();
+            $this->fail('expected a refusal: ' . $case);
+        } catch (LocalizedException $e) {
+            $this->assertStringContainsString('Unrecognised surcharge method', $e->getMessage(), $case);
+        }
+    }
+
+    public function refusedMethods(): array
+    {
+        return [
+            ['wat', 'a crafted POST of a method that does not exist'],
+            ['PERCENTAGE', 'the right method in the wrong case'],
+            ['', 'a blank submission — the field always posts, so this is a real value'],
+            ['0', 'a falsy value that a truthiness check would have read as unset'],
+            ['<script>x</script>', 'a crafted value is still refused; core escapes on render'],
+        ];
+    }
+
+
     public function testSiblingPathsAreDerivedBrandAware(): void
     {
         // Synthesized brand forms save under payment/<brand_code>/ — sibling

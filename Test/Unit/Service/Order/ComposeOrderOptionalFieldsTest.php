@@ -67,6 +67,10 @@ class ComposeOrderOptionalFieldsTest extends TestCase
         $this->configRepository = $this->createMock(ConfigRepository::class);
         $this->configRepository->method('getVendorSiteName')->willReturn($vendorSiteName);
         $this->configRepository->method('getAllBuyerTerms')->willReturn([30]);
+        $this->configRepository->method('isBuyerTermAvailable')
+            ->willReturnCallback(static function (int $termDays): bool {
+                return $termDays === 30;
+            });
         $this->configRepository->method('getDefaultPaymentTerm')->willReturn(30);
         $this->configRepository->method('getPaymentTermsType')->willReturn('invoice_date');
 

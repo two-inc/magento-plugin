@@ -33,6 +33,7 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\ComposeCapture;
@@ -167,6 +168,10 @@ class Two extends AbstractMethod
      */
     private $supportedCountriesProvider;
     /**
+     * @var SettingsProvider
+     */
+    private $settingsProvider;
+    /**
      * Per-store memo for isAmastyCheckoutStore(); isAvailable() fires many
      * times per page and the detection reads config + core_config_data.
      *
@@ -203,6 +208,7 @@ class Two extends AbstractMethod
      * @param LifecycleEventDispatcher $lifecycleEvents
      * @param BuyerCountryResolver $buyerCountryResolver
      * @param SupportedCountriesProvider $supportedCountriesProvider
+     * @param SettingsProvider $settingsProvider
      * @param AbstractResource|null $resource
      * @param AbstractDb|null $resourceCollection
      * @param array $data
@@ -236,6 +242,7 @@ class Two extends AbstractMethod
         LifecycleEventDispatcher $lifecycleEvents,
         BuyerCountryResolver $buyerCountryResolver,
         SupportedCountriesProvider $supportedCountriesProvider,
+        SettingsProvider $settingsProvider,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -273,6 +280,7 @@ class Two extends AbstractMethod
         $this->lifecycleEvents = $lifecycleEvents;
         $this->buyerCountryResolver = $buyerCountryResolver;
         $this->supportedCountriesProvider = $supportedCountriesProvider;
+        $this->settingsProvider = $settingsProvider;
     }
 
     /**
@@ -878,6 +886,15 @@ class Two extends AbstractMethod
             );
             return false;
         }
+        // An unresolvable merchant record leaves every stored term unvalidated (ABN-493).
+        // Before the Amasty bypass, which defers only the minimum-order gate.
+        if ($this->settingsProvider->getAvailableTerms($storeId) === []) {
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: merchant configuration unavailable', $this->_code),
+                []
+            );
+            return false;
+        }
         // TWO-25503: an FX rate the surcharge needs but cannot get makes THIS
         // method unofferable, nothing more. It used to throw out of
         // SurchargeCalculator::convertAmount() inside the totals collector, so
@@ -892,9 +909,19 @@ class Two extends AbstractMethod
         // Placed BEFORE the Amasty bypass for the same reason the api-key check
         // is: the bypass defers only the MINIMUM-ORDER gate to the client, and
         // there is no client-side equivalent of this one.
-        if (!$this->isSurchargeResolvable($quote, $storeId)) {
+        // Same posture for a corrupt stored method — withdraw this one, not the list.
+        try {
+            if (!$this->isSurchargeResolvable($quote, $storeId)) {
+                $this->logRepository->addDebugLog(
+                    sprintf('%s hidden from checkout: surcharge FX rate unavailable', $this->_code),
+                    []
+                );
+                return false;
+            }
+        } catch (LocalizedException) {
+            // Debug, not error: the config repository already reported it once.
             $this->logRepository->addDebugLog(
-                sprintf('%s hidden from checkout: surcharge FX rate unavailable', $this->_code),
+                sprintf('%s hidden from checkout: unrecognised surcharge method', $this->_code),
                 []
             );
             return false;

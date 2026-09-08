@@ -188,6 +188,19 @@ define([
         }
     }
 
+    /**
+     * Global, because a brand override may name the company twice and a
+     * string pattern would leave the second token raw in the tile.
+     *
+     * @param {string} token
+     * @returns {?RegExp} null for a missing token, whose empty pattern would
+     *                    otherwise match between every character
+     */
+    function globalToken(token) {
+        if (!token) return null;
+        return new RegExp(companySearch.escapeForRegExp(token), 'g');
+    }
+
     return Component.extend({
         defaults: {
             template: 'Two_Gateway/payment/gateway_method'
@@ -1166,9 +1179,8 @@ define([
 
             // TWO-25326 §7.3 (2026-08-03 ruling) counterpart to the notice
             // above: the persistent tile message for a clean "not approved"
-            // order-intent response. Same suppression source
-            // (orderIntentApprovedNoticeCopy === null means the brand
-            // turned the whole intent message off), separate copy.
+            // order-intent response. Own switch and own copy on the brand,
+            // so null here means the brand suppressed THIS outcome.
             this.orderIntentDeclinedNoticeCopy = config.orderIntentDeclinedNotice || null;
             this.orderIntentDeclinedNotice = ko.observable('');
 
@@ -1220,7 +1232,8 @@ define([
          *
          * A replacer *function* is used rather than a plain string so `$&` /
          * `$1` sequences in a company name or number are taken literally
-         * instead of as replacement patterns.
+         * instead of as replacement patterns. See globalToken() for why the
+         * pattern is a global RegExp rather than the token string.
          *
          * @param {?object} copy {withCompany, withoutCompany, companyNameToken, companyNumberToken}|null
          * @returns {string}
@@ -1240,14 +1253,19 @@ define([
             // an empty string would render "Company Name ()". That also fixes
             // the pre-existing empty-`companyId` case, which read the same way.
             const companyId = companySearch.formatCompanyNumber(this.companyId());
-            const withNumber = companyId
-                ? copy.withCompany.replace(copy.companyNumberToken, function () {
+            const numberPattern = globalToken(copy.companyNumberToken);
+            const withNumber = companyId && numberPattern
+                ? copy.withCompany.replace(numberPattern, function () {
                     return companyId;
                 })
                 : companySearch.stripBracketedToken(copy.withCompany, copy.companyNumberToken);
             // Name LAST, so a company name that happens to contain brackets
             // cannot be mistaken for the number's own brackets above.
-            return withNumber.replace(copy.companyNameToken, function () {
+            const namePattern = globalToken(copy.companyNameToken);
+            if (!namePattern) {
+                return withNumber;
+            }
+            return withNumber.replace(namePattern, function () {
                 return companyName;
             });
         },
@@ -1262,7 +1280,7 @@ define([
         /**
          * Resolve the intent-DECLINED notice text for the current buyer
          * (TWO-25326 §7.3, 2026-08-03 ruling). Returns '' when the active
-         * brand suppressed the intent message entirely.
+         * brand suppressed the declined notice.
          */
         resolveOrderIntentDeclinedNotice: function () {
             return this.resolveCompanyNotice(this.orderIntentDeclinedNoticeCopy);
