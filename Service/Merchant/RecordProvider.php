@@ -64,8 +64,7 @@ class RecordProvider
      * wall clock — a config save, the admin button, a storefront render — can
      * only do so if an in-flight call cannot outlast their budget.
      */
-    // TEMP(live-verify): revert to 10.
-    private const FETCH_TIMEOUT_SECONDS = 3;
+    private const FETCH_TIMEOUT_SECONDS = 10;
 
     /** Own cache type, so `cache:clean two_gateway` drops it and a config clean does not. */
     private const CACHE_TAGS = [TwoGateway::CACHE_TAG];

@@ -77,12 +77,6 @@ class ConfigSaveRefreshMerchantRecord implements ObserverInterface
                 $scopeId = 0;
             }
             $identities = $this->recordRefresher->governedIdentities($scope, $scopeId);
-            // TEMP(live-verify)
-            $this->logRepository->addDebugLog('LIVEVERIFY ConfigSave: credentials changed', [
-                'scope' => $scope,
-                'scope_id' => $scopeId,
-                'identities' => count($identities),
-            ]);
         } catch (LocalizedException $e) {
             $this->logRepository->addDebugLog(
                 'ConfigSaveRefreshMerchantRecord: nothing to refresh',
