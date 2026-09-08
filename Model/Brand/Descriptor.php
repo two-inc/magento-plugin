@@ -44,6 +44,8 @@ final class Descriptor
      * @param float[] $surchargeRoundingSteps Buyer-surcharge rounding steps offered in the admin Rounding step dropdown, ascending.
      * @param string|null $intentApprovedNotice Copy override for the buyer-facing intent-approved notice; null = use the platform default copy. Never ''. See getIntentApprovedNotice().
      * @param bool $intentApprovedNoticeEnabled Whether the buyer-facing intent-approved notice is rendered at all. Default true. See isIntentApprovedNoticeEnabled().
+     * @param string|null $intentDeclinedNotice Copy override for the buyer-facing intent-declined notice; null = use the platform default copy. Never ''. See getIntentDeclinedNotice().
+     * @param bool $intentDeclinedNoticeEnabled Whether the buyer-facing intent-declined notice is rendered at all. Resolved by Loader, which inherits the approved switch when the declined switch is undeclared and declined copy is blank. See isIntentDeclinedNoticeEnabled().
      */
     public function __construct(
         private readonly string $code,
@@ -68,7 +70,9 @@ final class Descriptor
         private readonly string $checkoutSubtitle = '',
         private readonly array $surchargeRoundingSteps = [],
         private readonly ?string $intentApprovedNotice = null,
-        private readonly bool $intentApprovedNoticeEnabled = true
+        private readonly bool $intentApprovedNoticeEnabled = true,
+        private readonly ?string $intentDeclinedNotice = null,
+        private readonly bool $intentDeclinedNoticeEnabled = true
     ) {
     }
 
@@ -100,10 +104,11 @@ final class Descriptor
      *
      *  - `null`  — no override: the renderers use the platform default
      *              translated copy. This is the Two-brand case, and also
-     *              what an absent, empty or whitespace-only
+     *              what an absent or visually blank
      *              <intent_approved_notice> resolves to. Never ''.
      *  - non-''  — used verbatim as the company-known copy template, with
-     *              %1 = brand product name and %2 = buyer company name.
+     *              %1 = brand product name, %2 = buyer company name and
+     *              %3 = buyer organisation number.
      *              The company-unknown variant stays on the platform
      *              default; in practice it is unreachable, because an
      *              order intent is only ever placed once both company
@@ -112,6 +117,24 @@ final class Descriptor
     public function getIntentApprovedNotice(): ?string
     {
         return $this->intentApprovedNotice;
+    }
+
+    /**
+     * From brand.xml <intent_declined_notice_enabled> when declared, else
+     * non-blank declined copy OR isIntentApprovedNoticeEnabled().
+     */
+    public function isIntentDeclinedNoticeEnabled(): bool
+    {
+        return $this->intentDeclinedNoticeEnabled;
+    }
+
+    /**
+     * Wording only, same null/non-'' contract as getIntentApprovedNotice()
+     * above; suppression is isIntentDeclinedNoticeEnabled().
+     */
+    public function getIntentDeclinedNotice(): ?string
+    {
+        return $this->intentDeclinedNotice;
     }
 
     /**

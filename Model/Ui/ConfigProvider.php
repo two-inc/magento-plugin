@@ -329,8 +329,8 @@ class ConfigProvider implements ConfigProviderInterface
      *
      * Suppression is driven by the brand's
      * <intent_approved_notice_enabled> switch. The copy override
-     * <intent_approved_notice> is wording only: non-empty replaces the
-     * company-known variant, absent/empty leaves the platform default.
+     * <intent_approved_notice> is wording only: non-blank replaces the
+     * company-known variant, absent/blank leaves the platform default.
      * See BrandRegistryInterface for both contracts.
      *
      * TWO-25326 2026-08-03 ruling, §7.3: this is the ONLY place the
@@ -385,38 +385,39 @@ class ConfigProvider implements ConfigProviderInterface
     /**
      * Resolve the buyer-facing "order intent NOT approved" notice — the
      * §7.3 counterpart to getOrderIntentApprovedNotice() above, added by the
-     * 2026-08-03 ruling. Same shape, same suppression switch (a brand that
-     * turns the notice off gets neither variant — TWO-25326 §7.2 treats
-     * "the intent message" as one on/off unit, approved or declined), and a
-     * SEPARATE copy override so a brand with its own approved wording is not
-     * forced to also take the vanilla declined wording (§7.4).
+     * 2026-08-03 ruling. Same shape, and its own switch and copy override —
+     * <intent_declined_notice_enabled> / <intent_declined_notice> — so a
+     * brand suppresses or rewords the two outcomes separately once it
+     * declares the declined switch or ships non-blank declined copy
+     * (ruling 19.5).
      *
      * This is the "not approved" business outcome only (a clean response
      * with `approved: false`) — a technical/HTTP failure is a different
      * surface, `generalErrorMessage`, handled by
      * processOrderIntentErrorResponse() in gateway_method.js.
      *
-     * Deliberately NOT brand-overridable (2026-08-04 ruling, TWO-25326):
-     * unlike getOrderIntentApprovedNotice() above, there is no copy-override
-     * hook here and there must never be one — every brand renders this exact
-     * platform default copy. See BrandRegistryInterface for the contract.
-     *
      * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
      */
     private function getOrderIntentDeclinedNotice(): ?array
     {
-        if (!$this->brandRegistry->isIntentApprovedNoticeEnabled()) {
+        if (!$this->brandRegistry->isIntentDeclinedNoticeEnabled()) {
             return null;
         }
 
+        $override = $this->brandRegistry->getIntentDeclinedNotice();
+
         $productName = $this->brandRegistry->getProductName();
 
-        $withCompany = __(
-            '%1 is not available for this order by %2 (%3)',
-            $productName,
-            self::COMPANY_NAME_TOKEN,
-            self::COMPANY_NUMBER_TOKEN
-        );
+        // Literal default for the same i18n-collection reason as the
+        // approved notice above.
+        $withCompany = $override === null
+            ? __(
+                '%1 is not available for this order by %2 (%3)',
+                $productName,
+                self::COMPANY_NAME_TOKEN,
+                self::COMPANY_NUMBER_TOKEN
+            )
+            : __($override, $productName, self::COMPANY_NAME_TOKEN, self::COMPANY_NUMBER_TOKEN);
 
         return [
             'withCompany' => (string)$withCompany,

@@ -50,18 +50,8 @@ use Two\Gateway\Service\UrlCookie;
  *
  * Brand\BrandPaymentMethodFactory instantiates this class with the
  * active brand's code and the DI-resolved BrandRegistryInterface
- * (DescriptorBackedBrandRegistry), so legacy overlay virtualTypes
- * keep working alongside the brand.xml-sourced descriptor pipeline.
- *
- * Example brand-overlay binding (legacy, still supported):
- *
- *   <virtualType name="Overlay\Gateway\Model\OverlayPayment"
- *                type="Two\Gateway\Model\GenericPaymentMethod">
- *       <arguments>
- *           <argument name="code" xsi:type="string">acme_payment</argument>
- *           <argument name="brand" xsi:type="object">Overlay\Gateway\Model\OverlayBrand</argument>
- *       </arguments>
- *   </virtualType>
+ * (DescriptorBackedBrandRegistry), so an overlay declares only its
+ * `etc/brand.xml` — the `brand` argument has no other supported binding.
  */
 class GenericPaymentMethod extends Two
 {

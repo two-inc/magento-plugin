@@ -35,6 +35,7 @@
             relying on the absence of a declaration.
         -->
         <intent_approved_notice_enabled>true</intent_approved_notice_enabled>
+        <intent_declined_notice_enabled>true</intent_declined_notice_enabled>
         <admin_resource>Magento_Sales::config_sales</admin_resource>
         <module_label_chain>
             <module label="Payment Method">Two_Gateway</module>

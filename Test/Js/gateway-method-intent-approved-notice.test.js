@@ -183,6 +183,54 @@ describe('gateway_method intent-approved notice', () => {
         expect(ctx.orderIntentApprovedNotice()).toContain('A$& B$1 Ltd');
     });
 
+    // A string pattern substitutes the first occurrence only, so an
+    // override naming the buyer twice leaked a raw token to the tile.
+    // An absent token is a config-shipped value, hence the empty row: an
+    // empty pattern matches between every character.
+    test.each([
+        {
+            approved: true,
+            observable: 'orderIntentApprovedNotice',
+            withCompany: '{{companyName}} ({{companyNumber}}), we expect to accept this order by {{companyName}}',
+            nameToken: '{{companyName}}',
+            expected: 'Acme Widgets AS (123456789), we expect to accept this order by Acme Widgets AS',
+            case: 'approved override naming the company twice'
+        },
+        {
+            approved: false,
+            observable: 'orderIntentDeclinedNotice',
+            withCompany: 'Two cannot cover {{companyName}} ({{companyNumber}}) — {{companyName}} may pay by card',
+            nameToken: '{{companyName}}',
+            expected: 'Two cannot cover Acme Widgets AS (123456789) — Acme Widgets AS may pay by card',
+            case: 'declined override naming the company twice'
+        },
+        {
+            approved: true,
+            observable: 'orderIntentApprovedNotice',
+            withCompany: 'We expect to accept this order',
+            nameToken: '',
+            expected: 'We expect to accept this order',
+            case: 'an empty name token leaves the copy untouched'
+        }
+    ])('substitutes every token occurrence: $case', ({ approved, observable, withCompany, nameToken, expected }) => {
+        const override = {
+            withCompany: withCompany,
+            withoutCompany: 'Two is unavailable',
+            companyNameToken: nameToken,
+            companyNumberToken: '{{companyNumber}}'
+        };
+        const ctx = makeContext(
+            approved ? override : DEFAULT_COPY,
+            approved ? DECLINED_COPY : override
+        );
+        ctx.companyName('Acme Widgets AS');
+        ctx.companyId('123456789');
+
+        ctx.processOrderIntentSuccessResponse.call(ctx, { approved: approved });
+
+        expect(ctx[observable]()).toBe(expected);
+    });
+
     test('emits nothing at all when the brand suppressed the notice', () => {
         // ConfigProvider ships null for a brand whose brand.xml declares
         // <intent_approved_notice_enabled>false</intent_approved_notice_enabled>.

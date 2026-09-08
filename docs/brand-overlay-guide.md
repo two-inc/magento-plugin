@@ -129,12 +129,12 @@ across modules). Elements may appear in any order (`xs:all`).
 | `extra_http_headers`             | no       | `<header name="…">` list  | Extra headers on API calls.                                                                                                                                     |
 | `suppressed_fields`              | no       | `<field path="…">` list   | Hides admin controls for this brand (below).                                                                                                                    |
 | `inline_term_fees`               | no       | boolean                   | Show per-term merchant fee beside Payment Terms checkboxes in admin (default true).                                                                             |
-| `intent_approved_notice_enabled` | no       | `true` \| `false`         | On/off switch for BOTH the "order intent approved" and "order intent declined" notices. Default `true`. **See below.**                                          |
+| `intent_approved_notice_enabled` | no       | `true` \| `false`         | On/off switch for the "order intent approved" notice. Default `true`. **See below.**                                                                            |
 | `intent_approved_notice`         | no       | string                    | Copy override for the approved notice — wording only, **not** an off switch. **See below.**                                                                     |
+| `intent_declined_notice_enabled` | no       | `true` \| `false`         | On/off switch for the "order intent declined" notice. Undeclared, it inherits the approved switch. **See below.**                                               |
+| `intent_declined_notice`         | no       | string                    | Copy override for the declined notice. Never an off switch, but non-blank copy turns an undeclared declined switch ON. **See below.**                            |
 
-There is deliberately **no** `intent_declined_notice` element. See below.
-
-### The intent notices — one on/off switch, one wording override
+### The intent notices — a switch and a wording override per outcome
 
 The notices are buyer-facing "order intent approved" / "order intent not
 approved" lines rendered inline in the checkout payment tile — as of the
@@ -144,41 +144,52 @@ captured company NAME is displayed in the tile; the earlier standalone
 renders separately, independent of these notices, in the
 `.two-company-id-text` label each capture panel paints under its own
 company field (2026-08-04 ruling, TWO-25326 §5/§7 follow-up).
-Both notices are controlled by **one shared on/off switch**, but only the
-APPROVED notice has a wording override. **This is deliberate, not an
-oversight** (2026-08-04 ruling, TWO-25326): the declined/not-available
-notice must render identical platform-default copy for every brand,
-approved-only overrides are how each brand overlay puts its own
-branding on the reassurance message while the "not available" wording
-stays neutral. Do not add an `intent_declined_notice` copy-override
-element — `Model\Brand\Loader` hard-fails if a brand.xml declares one.
+Each outcome has its **own** on/off switch and its **own** wording
+override (ruling 19.5), and the four elements are four independent
+decisions: a brand may reword the declined notice, suppress it, or leave
+it on the platform default, whatever it did with the approved one.
 
-The switch governs the buyer-facing COPY only. A not-approved order intent
+The switches govern the buyer-facing COPY only. A not-approved order intent
 also blocks placement — the renderer records the verdict against the
 captured organisation number and `placeOrder()` refuses on it, so a brand
 with the notices off still cannot submit an order Two has declined
 (TWO-25657). The buyer then gets `generalErrorMessage` instead of the
 declined sentence.
 
-**Do not overload the switch with wording meaning** — an off switch
+**Do not overload a switch with wording meaning** — an off switch
 expressed as the absence of content is indistinguishable from an
 unfinished string, and any tidy-up that deletes the "empty, unused"
 declaration silently turns the notice back on.
 
-#### `intent_approved_notice_enabled` — the on/off switch for BOTH notices
+#### `intent_approved_notice_enabled` / `intent_declined_notice_enabled` — the on/off switches
 
-Explicit boolean only:
+Explicit boolean only, each governing its own outcome:
 
-| brand.xml                                                                | Behaviour                                                                                  |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| `<intent_approved_notice_enabled>true</intent_approved_notice_enabled>`  | Both notices **ON** (whichever one an order-intent outcome selects).                       |
-| `<intent_approved_notice_enabled>false</intent_approved_notice_enabled>` | Both notices **suppressed entirely** — no element is emitted into the DOM, not an empty wrapper. There is no separate `intent_declined_notice_enabled` element; the ruling treats "the intent message" as one on/off unit, approved or declined. |
-| element absent                                                           | Documented explicit default **`true`** (notices ON).                                        |
-| anything else (`1`, `0`, `yes`, empty, whitespace)                       | **Error.** Never a silent third behaviour.                                                 |
+| brand.xml                                          | Behaviour                                                                                                                    |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `<…_notice_enabled>true</…_notice_enabled>`        | That notice **ON**.                                                                                                          |
+| `<…_notice_enabled>false</…_notice_enabled>`       | That notice **suppressed entirely** — no element is emitted into the DOM, not an empty wrapper. The other outcome is unaffected once its own switch is declared or its own copy is non-blank. |
+| element absent                                     | Approved: documented explicit default **`true`**. Declined: see the precedence below.                                        |
+| anything else (`1`, `0`, `yes`, empty, whitespace) | **Error.** Never a silent third behaviour.                                                                                   |
 
-Absent-means-`true` is deliberate: it keeps a third-party overlay that
-declares nothing on ON. Base plugins declare `true` explicitly anyway, so
-the file states its position rather than relying on omission.
+An overlay that wants neither notice declares both switches `false`.
+
+The declined switch is newer than the approved one, so it resolves with
+an inheritance. A declared `intent_declined_notice_enabled` decides.
+Absent that, the notice renders when **either** `intent_declined_notice`
+is non-blank — shipped wording is intent to render — **or**
+`intent_approved_notice_enabled` resolved to `true`. An overlay declaring
+only the approved switch therefore keeps suppressing both, which is what
+it meant before the declined elements existed. A visually-blank
+`intent_declined_notice` is inert here as everywhere: it
+neither renders nor turns the switch on, and non-breaking and zero-width
+spaces both count as blank.
+
+Absent-means-`true` is deliberate for `intent_approved_notice_enabled`
+(and so, through the inheritance above, for an overlay declaring neither
+switch): it keeps a third-party overlay that declares nothing on ON. Base
+plugins declare both switches `true` explicitly anyway, so the file states
+its position rather than relying on omission.
 
 The invalid case is caught twice, because `brand.xsd` is not validated at
 runtime (see the validation warning below):
@@ -192,31 +203,40 @@ runtime (see the validation warning below):
 Note `xs:boolean` is deliberately **not** used: it would also accept `1`
 and `0`, and this switch is meant to read as a decision.
 
-#### `intent_approved_notice` — the copy override (approved only)
+#### `intent_approved_notice` / `intent_declined_notice` — the copy overrides
 
-| brand.xml                                            | Behaviour                                                                                                                                              |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| element absent                                       | Platform default translated copy.                                                                                                        |
-| empty or whitespace-only                             | **Inert** — same as absent. It does **not** mean "off".                                                                                                  |
-| `<intent_approved_notice>…</intent_approved_notice>` | Used verbatim as the approved-notice template. `%1` = brand product name, `%2` = buyer company name, `%3` = buyer organisation number (added 2026-08-03). |
+| brand.xml                          | Behaviour                                                                                                                                    |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| element absent                     | Platform default translated copy.                                                                                                            |
+| visually blank (empty, whitespace, non-breaking or zero-width space) | **Inert** — same as absent. It does **not** mean "off".                                                                    |
+| `<…_notice>…</…_notice>`           | Used verbatim as that outcome's company-known variant. `%1` = brand product name, `%2` = buyer company name, `%3` = buyer organisation number. |
 
-`Descriptor::getIntentApprovedNotice()` returns `null` for the first two
-rows and the template for the third; it never returns `''`. The declined
-notice has no equivalent override — `Model\Ui\ConfigProvider` always
-renders its own literal default copy for that outcome, and only consults
-the switch above to decide whether to ship EITHER payload to the
-renderer at all.
+`Descriptor::getIntentApprovedNotice()` and `getIntentDeclinedNotice()`
+return `null` for the first two rows and the template for the third; they
+never return `''`.
 
 **Every white-label brand overlay is expected to declare
 `intent_approved_notice`** with brand-specific copy (2026-08-04 ruling) —
 falling through to the platform default here for a live overlay is a
-bug, not a valid "no opinion" state.
+bug, not a valid "no opinion" state. `intent_declined_notice` carries no
+such expectation: rewording or suppressing the declined outcome are
+choices an overlay makes or declines to make, and the platform default
+is a valid resting state.
 
 #### Deploy order
 
 **Merge order is `magento-plugin` (parent, owns the parsing) → the brand
 overlay repo → `magento-hyva-extension`.** Out of order there is a window
 in which Hyvä renders the notice for a brand that asked for it off.
+
+The declined switch's fallback to the approved one means an existing
+overlay needs no change to land alongside a parent that parses the
+declined pair: an overlay declaring only the approved switch behaves
+byte-identically before and after.
+
+Hyvä honours the declined pair only from its own parity change,
+`magento-hyva-extension` PR #141. Until that lands, Hyvä renders the
+declined notice regardless of what an overlay declares.
 
 An overlay that declares an empty `<intent_approved_notice>` and no
 `<intent_approved_notice_enabled>` resolves to notice **ON** — wrong for a
@@ -252,10 +272,8 @@ path) emits each notice as a persistent inline element with class
 `two-order-intent-message approved` / `two-order-intent-message declined`
 inside the payment-method tile.
 
-`intent_approved_notice_enabled` is an XSD enumeration here, so an
-invalid value throws rather than falling back to a default. There is no
-copy-override element for the declined/not-available notice, and one
-should never be added.
+Both `_enabled` switches are XSD enumerations here, so an invalid value
+throws rather than falling back to a default.
 
 ### A warning about validation
 
@@ -270,7 +288,8 @@ passive). Two consequences:
    Always verify the feature's observable behaviour after deploy.
 2. Where silent mis-parsing would be dangerous, `Loader` carries its own
    guards (duplicate/empty `code`, `<surcharge_rounding_steps>`,
-   `<intent_approved_notice_enabled>`) that throw `DomainException` at load.
+   `<intent_approved_notice_enabled>`, `<intent_declined_notice_enabled>`)
+   that throw `DomainException` at load.
    Follow that pattern when you add fields whose zero-value would
    silently disable a constraint.
 
@@ -335,11 +354,7 @@ points, in dependency order:
    a constructor argument to `Descriptor`.
 
 3. **Value object** — `Model/Brand/Descriptor.php`: append a readonly
-   constructor property + getter. Mirror the same getter on the
-   deprecated `Model/Brand.php` value object — both implement
-   `BrandRegistryInterface` and must stay in lockstep while that class
-   exists (see the deprecation note in
-   `Brand/DescriptorBackedBrandRegistry.php`).
+   constructor property + getter.
 
 4. **Interface + adapter** — `Api/BrandRegistryInterface.php`: declare
    the getter with the full return-shape docblock (null = feature

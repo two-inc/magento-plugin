@@ -12,83 +12,131 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Ui\ConfigProvider;
 
 /**
- * ConfigProvider's intent-DECLINED-notice payload resolution. Same
- * suppression switch as the approved notice (isIntentApprovedNoticeEnabled),
- * but — unlike the approved notice — deliberately NO brand copy override
- * (2026-08-04 ruling, TWO-25326): every brand renders the exact same
- * platform default copy for this outcome. BrandRegistryInterface has no
- * getIntentDeclinedNotice() method; do not reintroduce one, and do not add
- * a call to it here.
+ * ConfigProvider's intent-DECLINED-notice payload resolution.
+ *
+ * Ruling 19.5: a brand overlay may reword the declined notice or suppress
+ * it, on its own switch and its own copy override, exactly as it may for
+ * the approved notice. The switch — not the copy — decides whether a
+ * payload reaches the renderer at all; `null` is the renderer's "emit no
+ * element" signal.
  */
 class ConfigProviderIntentDeclinedNoticeTest extends TestCase
 {
-    public function testReturnsNullWhenTheBrandDisabledTheNotice(): void
-    {
-        $payload = $this->resolveFor(false);
+    private const DEFAULT_WITH_COMPANY = 'Acme is not available for this order by '
+        . ConfigProvider::COMPANY_NAME_TOKEN
+        . ' (' . ConfigProvider::COMPANY_NUMBER_TOKEN . ')';
 
-        $this->assertNull($payload);
-    }
+    /**
+     * @dataProvider declinedNoticeProvider
+     */
+    public function testDeclinedNoticeResolution(
+        bool $enabled,
+        ?string $override,
+        ?string $expectedWithCompany,
+        string $case
+    ): void {
+        $payload = $this->resolveFor($enabled, $override);
 
-    public function testReturnsPlatformDefaultCopyWhenEnabled(): void
-    {
-        $payload = $this->resolveFor(true);
+        if ($expectedWithCompany === null) {
+            $this->assertNull($payload, $case);
+            return;
+        }
 
-        $this->assertIsArray($payload);
-        $this->assertSame(
-            'Acme is not available for this order by '
-            . ConfigProvider::COMPANY_NAME_TOKEN
-            . ' (' . ConfigProvider::COMPANY_NUMBER_TOKEN . ')',
-            $payload['withCompany']
-        );
+        $this->assertIsArray($payload, $case);
+        $this->assertSame($expectedWithCompany, $payload['withCompany'], $case);
         $this->assertSame(
             'Acme is not available for this order',
-            $payload['withoutCompany']
+            $payload['withoutCompany'],
+            $case
         );
-        $this->assertSame(ConfigProvider::COMPANY_NAME_TOKEN, $payload['companyNameToken']);
-        $this->assertSame(ConfigProvider::COMPANY_NUMBER_TOKEN, $payload['companyNumberToken']);
+        $this->assertSame(ConfigProvider::COMPANY_NAME_TOKEN, $payload['companyNameToken'], $case);
+        $this->assertSame(
+            ConfigProvider::COMPANY_NUMBER_TOKEN,
+            $payload['companyNumberToken'],
+            $case
+        );
+    }
+
+    /** @return array<string,array{0:bool,1:?string,2:?string,3:string}> */
+    public static function declinedNoticeProvider(): array
+    {
+        return [
+            'enabled, no override' => [
+                true,
+                null,
+                self::DEFAULT_WITH_COMPANY,
+                'no override leaves the platform default copy',
+            ],
+            'enabled, override' => [
+                true,
+                '%1 cannot cover %2 (%3).',
+                'Acme cannot cover '
+                . ConfigProvider::COMPANY_NAME_TOKEN
+                . ' (' . ConfigProvider::COMPANY_NUMBER_TOKEN . ').',
+                'a brand override replaces the company-known wording',
+            ],
+            'suppressed' => [
+                false,
+                null,
+                null,
+                'the switch off means no payload at all',
+            ],
+            'suppressed despite override' => [
+                false,
+                '%1 cannot cover %2 (%3).',
+                null,
+                'the switch wins over non-blank copy',
+            ],
+        ];
     }
 
     public function testApprovedOverrideDoesNotLeakIntoTheDeclinedCopy(): void
     {
-        // A brand's approved wording must never bleed into the declined
-        // variant — the declined variant has no override input at all.
+        // The two copy overrides are separate inputs; a brand that reworded
+        // only the approved notice keeps the default declined wording.
         $registry = $this->createMock(BrandRegistryInterface::class);
+        $registry->method('isIntentDeclinedNoticeEnabled')->willReturn(true);
+        $registry->method('getIntentDeclinedNotice')->willReturn(null);
         $registry->method('isIntentApprovedNoticeEnabled')->willReturn(true);
         $registry->method('getIntentApprovedNotice')->willReturn('Approved copy for %2.');
         $registry->method('getProductName')->willReturn('Acme');
 
-        $reflection = new \ReflectionClass(ConfigProvider::class);
-        $provider = $reflection->newInstanceWithoutConstructor();
-        $reflection->getProperty('brandRegistry')->setValue($provider, $registry);
+        $declined = $this->invokeWith($registry);
 
-        $declined = $reflection->getMethod('getOrderIntentDeclinedNotice')->invoke($provider);
-
-        $this->assertStringNotContainsString('Approved copy', $declined['withCompany']);
+        $this->assertSame(self::DEFAULT_WITH_COMPANY, $declined['withCompany']);
     }
 
-    public function testBrandRegistryInterfaceHasNoDeclinedNoticeOverrideHook(): void
+    public function testTheApprovedSwitchDoesNotSuppressTheDeclinedNotice(): void
     {
-        // Locks in the 2026-08-04 ruling at the type level: a brand overlay
-        // must never be able to override this copy. If this assertion ever
-        // fails, someone re-added the hook — revert it, don't update this
-        // test.
-        $this->assertFalse(
-            method_exists(BrandRegistryInterface::class, 'getIntentDeclinedNotice'),
-            'BrandRegistryInterface must not declare a declined-notice copy '
-            . 'override; the "order intent NOT approved" message is never '
-            . 'brand-overridable.'
-        );
+        // Ruling 19.5 split the shared switch: suppressing the approved
+        // notice is no longer a decision about the declined one.
+        $registry = $this->createMock(BrandRegistryInterface::class);
+        $registry->method('isIntentDeclinedNoticeEnabled')->willReturn(true);
+        $registry->method('getIntentDeclinedNotice')->willReturn(null);
+        $registry->method('isIntentApprovedNoticeEnabled')->willReturn(false);
+        $registry->method('getProductName')->willReturn('Acme');
+
+        $this->assertIsArray($this->invokeWith($registry));
     }
 
     /**
      * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
      */
-    private function resolveFor(bool $enabled): ?array
+    private function resolveFor(bool $enabled, ?string $override): ?array
     {
         $registry = $this->createMock(BrandRegistryInterface::class);
-        $registry->method('isIntentApprovedNoticeEnabled')->willReturn($enabled);
+        $registry->method('isIntentDeclinedNoticeEnabled')->willReturn($enabled);
+        $registry->method('getIntentDeclinedNotice')->willReturn($override);
         $registry->method('getProductName')->willReturn('Acme');
 
+        return $this->invokeWith($registry);
+    }
+
+    /**
+     * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
+     */
+    private function invokeWith(BrandRegistryInterface $registry): ?array
+    {
         $reflection = new \ReflectionClass(ConfigProvider::class);
         $provider = $reflection->newInstanceWithoutConstructor();
 
