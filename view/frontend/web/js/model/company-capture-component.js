@@ -1032,9 +1032,11 @@
      * @returns {Window|null} the popup where one opened
      */
     CompanyCaptureComponent.prototype.soleTraderMode = function () {
-        // Raised, not reopened: the popup targets `_blank`, so a second open would orphan a signup the buyer is part-way through (TWO-25658).
+        // Raised, not reopened: the popup targets `_blank`, so a second open would orphan a
+        // signup the buyer is part-way through (TWO-25658).
         if (this._soleTrader.focusSignupPopup()) return null;
-        // The first click adopts an autofill answer the buyer may not have wanted, so a second is a deliberate request for the popup itself (TWO-25658).
+        // The first click adopts an autofill answer the buyer may not have wanted, so a second
+        // is a deliberate request for the popup itself (TWO-25658).
         // `autoselect: false` so the hosted flow offers a choice rather than the registration already adopted.
         if (this._identity.isSoleTrader() && this._identity.soleTraderAdopted()) {
             return this._soleTrader.launchSignup({ autoselect: false });
