@@ -4,7 +4,7 @@ import {
     adminLogin,
     availableMethods,
     fillCheckout,
-    gotoTwoPaymentConfig,
+    gotoConfigSection,
     selectShipping
 } from './_helpers';
 
@@ -17,13 +17,13 @@ import {
 //
 // Admin-gated like the admin-config specs: skips without ADMIN_PASS.
 
-const MIN_FIELD = '#two_payment_payment_method_merchant_minimum_order';
-const BASIS_FIELD = '#two_payment_payment_method_merchant_minimum_order_basis';
+const MIN_FIELD = '#two_checkout_fields_availability_merchant_minimum_order';
+const BASIS_FIELD = '#two_checkout_fields_availability_merchant_minimum_order_basis';
 // Each config field carries a "Use Default" checkbox; while it is checked the
 // field renders disabled, so fill()/selectOption() would hang waiting for an
 // editable element. Manage the checkbox before touching the field.
-const MIN_INHERIT = '#two_payment_payment_method_merchant_minimum_order_inherit';
-const BASIS_INHERIT = '#two_payment_payment_method_merchant_minimum_order_basis_inherit';
+const MIN_INHERIT = '#two_checkout_fields_availability_merchant_minimum_order_inherit';
+const BASIS_INHERIT = '#two_checkout_fields_availability_merchant_minimum_order_basis_inherit';
 
 interface MinimumConfig {
     amount: string;
@@ -48,23 +48,23 @@ async function grandTotal(page: Page): Promise<number> {
     );
 }
 
-// The minimum-order fields live in the collapsible "payment_method" group
-// (name="groups[payment_method]..."). A section landing leaves group state to a
-// remembered UI cookie, so the fieldset can be collapsed — the fields are then
-// in the DOM but not visible, and fill() hangs on the visibility check even
-// though the input is enabled. Force the group open. Clicking the header
-// toggles, so only click when the field isn't already visible.
-async function expandPaymentGroup(page: Page) {
+// The minimum-order fields live in Checkout fields -> Availability. A section
+// landing leaves group state to a remembered UI cookie, so the fieldset can be
+// collapsed — the fields are then in the DOM but not visible, and fill() hangs
+// on the visibility check even though the input is enabled. Force the group
+// open. Clicking the header toggles, so only click when the field isn't
+// already visible.
+async function expandAvailabilityGroup(page: Page) {
     if (await page.locator(MIN_FIELD).isVisible()) {
         return;
     }
-    await page.locator('#two_payment_payment_method-head').click();
+    await page.locator('#two_checkout_fields_availability-head').click();
     await expect(page.locator(MIN_FIELD)).toBeVisible({ timeout: 10_000 });
 }
 
 async function readMinimumConfig(page: Page): Promise<MinimumConfig> {
-    await gotoTwoPaymentConfig(page);
-    await expandPaymentGroup(page);
+    await gotoConfigSection(page, 'two_checkout_fields');
+    await expandAvailabilityGroup(page);
     // inputValue() reads a disabled input fine; isChecked() tells us whether
     // the field was on its default so we can put it back exactly as found.
     return {
@@ -107,8 +107,8 @@ async function setConfigField(
 }
 
 async function writeMinimumConfig(page: Page, cfg: MinimumConfig) {
-    await gotoTwoPaymentConfig(page);
-    await expandPaymentGroup(page);
+    await gotoConfigSection(page, 'two_checkout_fields');
+    await expandAvailabilityGroup(page);
     await setConfigField(page, MIN_INHERIT, MIN_FIELD, cfg.amountInherited, () =>
         page.locator(MIN_FIELD).fill(cfg.amount)
     );
