@@ -12,7 +12,11 @@ Standard Magento dev workflow: composer install, bin/magento
 setup:di:compile, setup:upgrade, cache:flush. PHPUnit under Test/.
 
 This is a **public repository**. Do not commit session-specific
-content such as plans, transcripts, or implementation notes.
+content such as plans, transcripts, or implementation notes. In code
+comments, commit messages and PR bodies alike, cite a Linear ticket id
+and nothing else: a section, question or ruling number belonging to an
+internal review document means nothing to a reader outside the company,
+and neither does a person named as the authority for a rule.
 
 ## Branching & releases
 
@@ -139,6 +143,19 @@ validation message.
 Degrading a junk value to a working default is the failure this replaces: it
 prices an order under a configuration nobody chose, and nobody is told.
 
+**An unresolvable merchant record fails CLOSED** (ABN-493, ABN-495).
+`isAvailable()` withholds the payment method, the read path offers no buyer
+term at all, and order composition refuses to fall back to the nominal default
+term — the buyer cannot use the plugin until the configuration resolves. The
+admin save stays permissive there, and deliberately: refusing it would lock
+the merchant out of correcting the API key that resolves the record.
+
+**A configured payment term is validated against the set the merchant is
+entitled to offer**, in the field's backend model and again where the read path
+intersects the stored set — `config:set` bypasses a backend model. The
+payment-terms type selector is rendered only for a merchant already set to end
+of month (TWO-25656); a merchant not on it is not offered it.
+
 ## Monetary values in the pricing request are rounded to 2dp
 
 `SurchargeCalculator::convertAmount()` rounds `cap` and `surcharge` to
@@ -238,6 +255,81 @@ cannot add a second conflicting `X-API-Key` even if one were stored.
 browser-originated calls**, or the one direct call the browser makes
 fails CORS preflight and the sole-trader autofill silently finds no
 buyer. The field help says so; nothing enforces it.
+
+## The company-search panel is ONE module, vendored twice
+
+`view/frontend/web/js/model/company-search-panel.js` is the implementation and
+the WooCommerce plugin carries a copy of the same file, so **a change to shared
+panel behaviour is TWO edits**. Nothing links the two copies; whoever changes
+one and stops has fixed one platform, and the divergence is invisible to both
+reviewers. The `_bindFieldOpeners` block is identical in both.
+
+It is framework-free with a UMD tail — no RequireJS, no jQuery, no Knockout —
+which is what lets the Hyvä checkout load this repo's own copy by
+`Two_Gateway::` reference instead of reimplementing the panel. Anything that
+makes it depend on this checkout's framework breaks that arrangement.
+
+**The unsupported-country gate greys out SEARCH, never manual entry.** Manual
+entry hands the field over as a plain typeable input that never reaches the
+registry, so the native `disabled` flag there blocks a mode that was never going
+to search — and leaves a buyer in an uncovered country with no way to name their
+company at all.
+
+**The company field opens the panel on FOCUS**, through the same `open()` a
+mousedown runs, which puts the caret in the panel's query field. The
+PrestaShop module deliberately does the opposite — there only a click or a
+keypress opens it and focus alone is inert, stated in that module's own code.
+Those two behaviours are the current state of the two platforms; do not assume
+parity, and do not harmonise one to the other without a product ruling.
+
+## What focus landing on the checkout does to an open signup popup
+
+Every `focusin` while the hosted sole-trader signup window is up is classified
+once, and these are the three rules (TWO-25658):
+
+-   **The role's own Sole trader chip is inert.** Arrival moves the popup
+    neither way — only an activation raises it, and the browser delivers Enter
+    and Space on a focused chip as a click.
+-   **Any other target closes an open popup.**
+-   **A target outside that role's popover closes the popover too**, with the
+    company field counted as INSIDE it: the field is the popover's own trigger
+    and sits outside the panel node, so treating it as outside tore down the
+    results the buyer was still typing against.
+
+A window or application switch lands on no control at all and settles nothing.
+
+**A declined order intent refuses order placement, and it does so through the
+Place Order button's own BINDING** — `isPlaceOrderEnabled()` over an observable
+verdict, never an imperative class or attribute write (TWO-25657). Core's
+billing-address subscription re-evaluates that button and clears anything
+written onto it from outside the binding, silently, so an imperative disable
+lasts until the buyer touches an address field.
+
+## A popup window is in no tab listing
+
+`window.open` returns a window outside the browser extension's tab group, so a
+tab list can never answer "did the popup open" — nor can a hang. The
+authoritative check is the page's own retained handle and its `.closed`, which
+means wrapping `window.open` before the action that should raise one. Judging
+from a tab list yields a confident false "no window opened".
+
+## jsdom cannot verify keyboard navigation
+
+jsdom implements no sequential focus navigation: a dispatched `Tab` keydown
+moves focus nowhere, so no jsdom suite can observe a focus trap, a wrong tab
+order or a reverse-Tab dead end, however many cases it carries and however
+green it is. Assert the observable proxy instead — that the handler leaves the
+event undefaulted, that the control's parts are one contiguous run in document
+order, that a closed panel carries `hidden` — and say in the suite that the
+keyboard behaviour itself is verified in a real browser. A passing jsdom Tab
+test is never evidence that a trap is absent.
+
+## A guard is invoked through `bash`
+
+A script committed mode `100644` and run as `./script.sh` exits 126. On a CI
+dashboard that is indistinguishable from a check that ran and failed, so the
+guard's own absence reads as its verdict. Invoke anything whose failure mode is
+"did not execute" as `bash script.sh`, and have it print what it checked.
 
 ## An optional constructor argument is NOT autowired
 
