@@ -909,9 +909,19 @@ class Two extends AbstractMethod
         // Placed BEFORE the Amasty bypass for the same reason the api-key check
         // is: the bypass defers only the MINIMUM-ORDER gate to the client, and
         // there is no client-side equivalent of this one.
-        if (!$this->isSurchargeResolvable($quote, $storeId)) {
+        // Same posture for a corrupt stored method — withdraw this one, not the list.
+        try {
+            if (!$this->isSurchargeResolvable($quote, $storeId)) {
+                $this->logRepository->addDebugLog(
+                    sprintf('%s hidden from checkout: surcharge FX rate unavailable', $this->_code),
+                    []
+                );
+                return false;
+            }
+        } catch (LocalizedException) {
+            // Debug, not error: the config repository already reported it once.
             $this->logRepository->addDebugLog(
-                sprintf('%s hidden from checkout: surcharge FX rate unavailable', $this->_code),
+                sprintf('%s hidden from checkout: unrecognised surcharge method', $this->_code),
                 []
             );
             return false;

@@ -383,3 +383,4 @@
 "Payment terms you are not able to offer: %1 days. Choose from: %2 days.","Betalningsvillkor som du inte kan erbjuda: %1 dagar. Välj bland: %2 dagar."
 "Default payment term %1 days is not one of the terms you offer: %2 days.","Standardbetalningsvillkor %1 dagar är inte ett av de villkor du erbjuder: %2 dagar."
 "Optional. Enter a custom term as a number of days after the end of the month, offered alongside the terms selected above.","Valfritt. Ange ett anpassat villkor som ett antal dagar efter månadens slut, som erbjuds vid sidan av de villkor som valts ovan."
+"Unrecognised surcharge method: %1. Choose one of: %2.","Okänd tilläggsmetod: %1. Välj en av: %2."

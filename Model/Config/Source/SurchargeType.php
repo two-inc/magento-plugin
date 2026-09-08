@@ -19,6 +19,14 @@ class SurchargeType implements OptionSourceInterface
     public const FIXED = 'fixed';
     public const FIXED_AND_PERCENTAGE = 'fixed_and_percentage';
 
+    public const KNOWN = [self::NONE, self::PERCENTAGE, self::FIXED, self::FIXED_AND_PERCENTAGE];
+
+    /** `''` is excluded on purpose: only the read path maps unset to `none`. */
+    public static function isKnown(?string $type): bool
+    {
+        return $type !== null && in_array($type, self::KNOWN, true);
+    }
+
     /**
      * @inheritDoc
      */

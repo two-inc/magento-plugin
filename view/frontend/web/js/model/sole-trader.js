@@ -50,6 +50,16 @@
     // There is no event for "the popup went away", so the opener polls.
     const POPUP_CLOSE_POLL_MS = 300;
 
+    // Jittered, so a shop's checkout population does not re-mint in lockstep.
+    const MINT_RETRY_DELAY_MS = 3000;
+    const MINT_RETRY_JITTER_MS = 2000;
+
+    /** Whether a failure settles the request rather than the moment — 408 and 429 do not. */
+    function isSettledFailure(status) {
+        if (status === 408 || status === 429) return false;
+        return status >= 400 && status < 500;
+    }
+
     /** The one control whose focus raises the signup popup instead of closing it. */
     const SOLE_TRADER_CHIP_SELECTOR = '[data-two-chip="soletrader"]';
 
@@ -65,7 +75,9 @@
         _tokenRefreshId: null,
         _prefetch: null,
         _autofillBuyer: null,
-        _autofillGeneration: 0
+        _autofillGeneration: 0,
+        _prefetchOwed: false,
+        _mintRetryId: null
     };
 
     /**
@@ -167,7 +179,11 @@
             body: JSON.stringify({ cartId: this.host().quoteId() })
         })
             .then((response) => {
-                if (!response.ok) throw new Error(`Error response from ${URL}.`);
+                if (!response.ok) {
+                    const error = new Error(`Error response from ${URL}.`);
+                    error.status = response.status;
+                    throw error;
+                }
                 return response.json();
             })
             // The REST controller answers with a single-element list.
@@ -187,16 +203,16 @@
     /**
      * Mint a fresh pair, replacing whatever is held.
      *
-     * @returns {Promise<boolean>} whether the mint produced usable tokens
+     * @returns {Promise<number>} 0 means retryable (answered with an empty token, or never answered)
      */
     SoleTrader.prototype.mintTokens = function () {
         return this.getTokens()
             .then((json) => {
                 this.delegationToken = (json && json.delegation_token) || '';
                 this.autofillToken = (json && json.autofill_token) || '';
-                return this.hasSignupTokens();
+                return 0;
             })
-            .catch(() => false);
+            .catch((error) => (error && error.status) || 0);
     };
 
     /**
@@ -215,8 +231,14 @@
         }
         if (this._mintChain) return this._mintChain;
         this._mintChain = this.mintTokens()
-            .then((minted) => {
-                if (minted) this.startTokenRefresh();
+            .then((status) => {
+                const minted = this.hasSignupTokens();
+                if (minted) {
+                    this.startTokenRefresh();
+                    this.rerunOwedPrefetch();
+                } else {
+                    this.scheduleMintRetry(status);
+                }
                 return minted;
             })
             .finally(() => {
@@ -365,12 +387,15 @@
         if (this._prefetch) return this._prefetch;
         const generation = this._autofillGeneration;
         const attempt = this.ensureTokens()
-            .then((minted) => {
-                if (!minted) {
+            .then(() => {
+                // The autofill token ALONE: a 200 can carry an empty delegation token, which only the popup needs (TWO-25653).
+                if (!this.autofillToken) {
                     // Release only this attempt's memo, never the held buyer.
                     if (this._prefetch === attempt) this._prefetch = null;
+                    this._prefetchOwed = true;
                     return null;
                 }
+                this._prefetchOwed = false;
                 return this.fetchBuyer().then((buyer) => {
                     // A lookup superseded while it was out is not an answer: a
                     // signup or a country change since has already decided who
@@ -382,6 +407,22 @@
             });
         this._prefetch = attempt;
         return attempt;
+    };
+
+    /** Re-run a lookup a failed mint dropped — nothing else re-invokes it (TWO-25653). */
+    SoleTrader.prototype.rerunOwedPrefetch = function () {
+        // prefetchBuyer() memoises, so a lookup already out IS this re-run.
+        if (this._prefetchOwed && !this._autofillBuyer) this.prefetchBuyer();
+    };
+
+    /** One retry only — the timer id outlives the firing, and a click mints again anyway. */
+    SoleTrader.prototype.scheduleMintRetry = function (status) {
+        if (this._mintRetryId) return;
+        if (isSettledFailure(status)) return;
+        this._mintRetryId = setTimeout(
+            () => this.ensureTokens(),
+            MINT_RETRY_DELAY_MS + Math.floor(Math.random() * MINT_RETRY_JITTER_MS)
+        );
     };
 
     /**
@@ -427,8 +468,10 @@
     };
 
     /**
-     * The Sole trader chip raises the signup popup; another control inside the capture popover
-     * closes the popup; a control outside it closes the popover too (TWO-25658).
+     * Focus arriving on the Sole trader chip moves the signup popup neither way; arriving on
+     * another control closes the popup, and on one outside the capture popover closes the
+     * popover too (TWO-25658). The company field counts as inside: it is the popover's own
+     * trigger, and its focus opener would otherwise race the popover close on event order.
      *
      * A focusin a browser re-fires on window return counts as the buyer focusing that control.
      */
@@ -439,9 +482,10 @@
             const target = event.target;
             const panel = this._component.panel();
             const popover = panel && panel.getPanelElement && panel.getPanelElement();
-            const inside = !!(popover && target && popover.contains(target));
+            const field = panel && panel.getField && panel.getField()[0];
+            const inside = !!(target && ((popover && popover.contains(target)) || target === field));
             if (inside && target.closest && target.closest(SOLE_TRADER_CHIP_SELECTOR)) {
-                this.focusSignupPopup();
+                // Only an activation moves the popup: Tabbing through the chip must leave it as the buyer left it.
                 return;
             }
             // The CLOSE half only: the enrolment stays live and resumable, tokens unspent.
@@ -654,7 +698,13 @@
         liveFlows.delete(this);
         // The refresh is the page's: it outlives this flow while another still
         // holds the pair.
-        if (!liveFlows.size) this.stopTokenRefresh();
+        if (!liveFlows.size) {
+            this.stopTokenRefresh();
+            if (this._mintRetryId) {
+                clearTimeout(this._mintRetryId);
+                this._mintRetryId = null;
+            }
+        }
         this.stopPopupCloseWatcher();
     };
 

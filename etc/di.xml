@@ -46,6 +46,7 @@
     <type name="Two\Gateway\Model\Config\Repository">
         <arguments>
             <argument name="settingsProvider" xsi:type="object">Two\Gateway\Service\Merchant\SettingsProvider\Proxy</argument>
+            <argument name="logRepository" xsi:type="object">Two\Gateway\Model\Log\Repository\Proxy</argument>
             <!-- Optional ctor arg: named here or the object manager leaves it null. -->
             <argument name="logger" xsi:type="object">Psr\Log\LoggerInterface</argument>
         </arguments>
