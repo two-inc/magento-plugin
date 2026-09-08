@@ -5,7 +5,9 @@ export default defineConfig({
     workers: 1,
     reporter: [['list']],
     use: {
-        baseURL: process.env.STORE_URL || 'https://magento.staging.two.inc',
+        // The dev store git-syncs `staging`; the staging store runs `main`, so a
+        // spec written against unreleased markup can only go red there.
+        baseURL: process.env.STORE_URL || 'https://magento-dev.staging.two.inc',
         actionTimeout: 8_000, // cap every action so an unactionable element can't hang the whole test
         headless: true,
         viewport: { width: 1440, height: 900 },
