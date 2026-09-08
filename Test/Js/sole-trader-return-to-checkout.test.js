@@ -31,6 +31,9 @@ function renderCheckout() {
  * @returns {object} `{ flow, windowHandlers, popupRaised, focusins, popoverClosed,
  *          returnToCheckout }`
  */
+/** Every flow load() armed, so the watchers can be released between tests. */
+const loadedFlows = [];
+
 function load() {
     const handlers = {};
     const fakeWindow = {
@@ -65,6 +68,7 @@ function load() {
         focus: function () { raised += 1; }
     };
     flow.watchForReturnToCheckout();
+    loadedFlows.push(flow);
     // As company-search-panel.js binds every chip, and as soleTraderMode()
     // opens: the cancelled mousedown is why a mouse click never focuses it.
     const chip = document.getElementById('soletrader');
@@ -102,6 +106,13 @@ function load() {
 }
 
 beforeEach(renderCheckout);
+
+// A `document` listener outlives `document.body.innerHTML = ...`, and so does the
+// flow that armed it: left armed, every earlier test's flow judges this test's
+// focus against its own still-open popup.
+afterEach(() => {
+    loadedFlows.splice(0).forEach((flow) => flow.stopReturnToCheckoutWatcher());
+});
 
 describe('what a return to checkout does to an open signup popup', () => {
     test.each([
@@ -142,6 +153,50 @@ test('the keyboard route raises the popup it kept, rather than reopening one', (
     expect(ctx.popupRaised()).toBe(1);
     expect(ctx.flow._popupWindow).toBe(held);
     expect(ctx.flow.isPopupOpen()).toBe(true);
+});
+
+describe('a second capture on the same page (TWO-25658)', () => {
+    /**
+     * The delivery capture's own popover and chip. Magento mounts two - shipping
+     * and billing - each with its own panel, chips and sole-trader flow.
+     *
+     * @returns {object} `{ chip, launches }`, `launches` counting activations
+     */
+    function renderSibling() {
+        const sibling = document.createElement('div');
+        sibling.className = 'two-company-dropdown';
+        sibling.id = 'popover-b';
+        sibling.innerHTML = '<button data-two-chip="soletrader" id="soletrader-b">Eenmanszaak</button>';
+        document.body.appendChild(sibling);
+        const chip = document.getElementById('soletrader-b');
+        const launches = { count: 0 };
+        chip.addEventListener('click', function () { launches.count += 1; });
+        return { chip: chip, launches: launches };
+    }
+
+    test('focus on the sibling capture\'s Sole trader chip closes this popup and launches that one', () => {
+        const ctx = load();
+        const sibling = renderSibling();
+
+        sibling.chip.focus();
+
+        expect(ctx.flow.isPopupOpen()).toBe(false);
+        expect(ctx.popupRaised()).toBe(0);
+        // Outside this capture's popover, so the buyer has left this capture.
+        expect(ctx.popoverClosed()).toBe(1);
+        expect(sibling.launches.count).toBe(1);
+    });
+
+    test('this capture\'s own chip is still exempt with a sibling on the page', () => {
+        const ctx = load();
+        const sibling = renderSibling();
+
+        document.getElementById('soletrader').focus();
+
+        expect(ctx.flow.isPopupOpen()).toBe(true);
+        expect(ctx.popoverClosed()).toBe(0);
+        expect(sibling.launches.count).toBe(0);
+    });
 });
 
 test('no window-level focus listener is armed at all', () => {

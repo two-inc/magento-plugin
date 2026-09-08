@@ -468,10 +468,12 @@
     };
 
     /**
-     * Focus arriving on the Sole trader chip moves the signup popup neither way; arriving on
-     * another control closes the popup, and on one outside the capture popover closes the
-     * popover too (TWO-25658). The company field counts as inside: it is the popover's own
-     * trigger, and its focus opener would otherwise race the popover close on event order.
+     * Focus arriving on THIS capture's Sole trader chip moves the signup popup neither way;
+     * arriving on another control closes the popup, and on one outside the capture popover
+     * closes the popover too (TWO-25658). The company field counts as inside: it is the
+     * popover's own trigger, and its focus opener would otherwise race the popover close on
+     * event order. Another capture's Sole trader chip is one of those other controls, and
+     * gets a popup of its own.
      *
      * A focusin a browser re-fires on window return counts as the buyer focusing that control.
      */
@@ -484,7 +486,8 @@
             const popover = panel && panel.getPanelElement && panel.getPanelElement();
             const field = panel && panel.getField && panel.getField()[0];
             const inside = !!(target && ((popover && popover.contains(target)) || target === field));
-            if (inside && target.closest && target.closest(SOLE_TRADER_CHIP_SELECTOR)) {
+            const chip = target && target.closest && target.closest(SOLE_TRADER_CHIP_SELECTOR);
+            if (inside && chip) {
                 // Only an activation moves the popup: Tabbing through the chip must leave it as the buyer left it.
                 return;
             }
@@ -492,6 +495,10 @@
             this.closeSignupPopup();
             // Outside the popover the buyer has left capture, not just the signup.
             if (!inside && panel && panel.close) panel.close();
+            // The other capture's chip is a different control, and its own click handler is
+            // the one place a launch is spelled out. Last, and after closeSignupPopup() has
+            // released this watcher, so the launch's own focus is not judged here again.
+            if (chip && typeof chip.click === 'function') chip.click();
         };
         document.addEventListener('focusin', this._returnHandler, true);
     };
