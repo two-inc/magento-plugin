@@ -121,7 +121,7 @@ install: clean
 	fi; \
 	echo " Credentials:   exampleuser / examplepassword123"; \
 	echo " Xdebug:        installed (activate with 'make debug')"; \
-	dev/print-resolved-hosts.sh $(CONTAINER); \
+	bash dev/print-resolved-hosts.sh $(CONTAINER); \
 	echo "========================================="
 
 ## Update payment config: make configure TWO_API_KEY=xxx
@@ -155,7 +155,7 @@ run:
 		echo " Proxy admin:   $$PROXY_URL/admin"; \
 	fi; \
 	echo " Credentials:   exampleuser / examplepassword123"; \
-	dev/print-resolved-hosts.sh $(CONTAINER); \
+	bash dev/print-resolved-hosts.sh $(CONTAINER); \
 	echo "========================================="
 
 ## Start Magento with Xdebug and caches disabled for hot reload
@@ -187,7 +187,7 @@ debug:
 	fi; \
 	echo " Credentials:   exampleuser / examplepassword123"; \
 	echo " Mode:          debug (Xdebug + caches disabled)"; \
-	dev/print-resolved-hosts.sh $(CONTAINER); \
+	bash dev/print-resolved-hosts.sh $(CONTAINER); \
 	echo "========================================="
 
 ## Stop Magento container and FRP proxy
