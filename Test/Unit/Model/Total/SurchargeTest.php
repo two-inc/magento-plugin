@@ -252,7 +252,7 @@ class SurchargeTest extends TestCase
     }
 
     /**
-     * Q54: a corrupt stored surcharge method zeroes THIS method's fee and logs
+     * A corrupt stored surcharge method zeroes THIS method's fee and logs
      * once. Raising out of the totals collector errors the whole checkout —
      * the failure mode TWO-25503 already fixed for an unresolvable FX rate.
      *

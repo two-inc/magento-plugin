@@ -892,7 +892,7 @@ class Two extends AbstractMethod
         // Placed BEFORE the Amasty bypass for the same reason the api-key check
         // is: the bypass defers only the MINIMUM-ORDER gate to the client, and
         // there is no client-side equivalent of this one.
-        // Q54: same posture for a corrupt stored method — withdraw this one, not the list.
+        // Same posture for a corrupt stored method — withdraw this one, not the list.
         try {
             if (!$this->isSurchargeResolvable($quote, $storeId)) {
                 $this->logRepository->addDebugLog(

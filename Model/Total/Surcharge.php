@@ -177,7 +177,7 @@ class Surcharge extends AbstractTotal
             return $this;
         }
 
-        // Q54: raising out of a totals collector errors the whole checkout (TWO-25503).
+        // Raising out of a totals collector errors the whole checkout (TWO-25503).
         try {
             $surchargeType = $this->configRepository->getSurchargeType($storeId);
         } catch (LocalizedException) {

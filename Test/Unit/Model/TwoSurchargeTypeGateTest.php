@@ -19,7 +19,7 @@ use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Service\Order\SurchargeCalculator;
 
 /**
- * Q54: a corrupt stored surcharge method withdraws THIS payment method and
+ * A corrupt stored surcharge method withdraws THIS payment method and
  * nothing else. Raising out of isAvailable() empties the whole payment-method
  * list and breaks admin order create, so the refusal is caught here and
  * re-asserted at placement instead.

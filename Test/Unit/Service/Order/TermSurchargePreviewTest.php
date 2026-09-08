@@ -152,7 +152,7 @@ class TermSurchargePreviewTest extends TestCase
     }
 
     /**
-     * Q54: an unrecognised stored method is one condition, not one per term.
+     * An unrecognised stored method is one condition, not one per term.
      * Read before the tax lookup, so a refused render does no tax work and
      * emits no second error line; the config repository owns the error.
      *
