@@ -52,13 +52,11 @@ test.describe('Two admin config', () => {
         await gotoSection(page, 'two_general');
         // Anchor the clip on the section links, which reliably render in the nav
         // (the other config specs resolve them the same way). Top = just above the
-        // General link to include the "Two" tab header; bottom = the last section
-        // link present (Version if the user sees it, else Search).
+        // General link to include the "Two" tab header; bottom = Diagnostics, the
+        // last section.
         const nav = page.locator('.admin__page-nav, #system_config_tabs').first();
         const general = page.locator('a[href*="/section/two_general/"]').first();
-        const bottom = page
-            .locator('a[href*="/section/two_version/"], a[href*="/section/two_search/"]')
-            .last();
+        const bottom = page.locator('a[href*="/section/two_version/"]').last();
         await expect(nav).toBeVisible({ timeout: 15_000 });
         await expect(general).toBeVisible({ timeout: 15_000 });
         await expect(bottom).toBeVisible({ timeout: 15_000 });
@@ -110,8 +108,17 @@ test.describe('Two admin config', () => {
 
     test('config_search', async ({ page }) => {
         await adminLogin(page);
-        await gotoSection(page, 'two_search');
-        await (await openSection(page)).screenshot({ path: `${OUT}/config_search.png` });
+        // TWO-25386 folded the standalone two_search section into
+        // two_checkout_fields as its own collapsible group.
+        await gotoSection(page, 'two_checkout_fields');
+        const head = page.locator('#two_checkout_fields_search-head');
+        await expect(head).toBeVisible({ timeout: 15_000 });
+        const group = page.locator('#two_checkout_fields_search');
+        if (!(await group.isVisible())) {
+            await head.click();
+        }
+        await expect(group).toBeVisible({ timeout: 15_000 });
+        await group.screenshot({ path: `${OUT}/config_search.png` });
         console.log('config_search ok');
     });
 });
