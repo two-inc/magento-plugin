@@ -25,6 +25,11 @@ ADMIN_PASS="<magento admin password>" npx playwright test
 
 Screenshots land in `e2e/screenshots/`.
 
+`global-setup.ts` runs first and aborts the whole suite if the store is not
+returning 200, or if its served `Two_Gateway/css/style.css` does not match the
+checked-out `view/frontend/web/css/style.css` — a mismatch means the store is
+running a different ref, so every assertion afterwards would be meaningless.
+
 ## Run on demand in CI
 
 **Actions → playwright → Run workflow.** Screenshots upload as a build
