@@ -40,9 +40,9 @@ use Two\Gateway\Service\Api\Adapter;
  *   serving. A short failure cooldown stops the hot path (the payment
  *   method's isAvailable()) from re-attempting the fetch on every call
  *   while the API is unreachable.
- * - The cache key includes the API-key hash so a key swap (different
- *   merchant, or sandbox <-> production) never serves rates fetched under
- *   the old key's mode.
+ * - The cache slot is keyed on the mode and the API-key hash: one key can
+ *   be configured against both environments on two store views, and a slot
+ *   they shared would serve each other's table.
  */
 class RateTableProvider
 {
@@ -119,7 +119,7 @@ class RateTableProvider
     public function getRateTable(?int $storeId = null): ?array
     {
         $apiKey = (string)$this->configRepository->getApiKey($storeId);
-        $cacheKey = $this->cacheKey($apiKey);
+        $cacheKey = $this->cacheKey((string)$this->configRepository->getMode($storeId), $apiKey);
         if ($cacheKey === null) {
             return null;
         }
@@ -163,13 +163,14 @@ class RateTableProvider
      * Force-refresh the cached table (cron entry point). A failed fetch
      * leaves the existing cached table untouched.
      *
+     * @param string $mode the environment the table is cached under, as the caller's scope walk read it
      * @param string $apiKey the key the table is cached under, as the caller's scope walk read it
      * @param int|null $storeId a store view reading this key, for its request headers
      * @return bool whether a fresh table was fetched and cached
      */
-    public function refresh(string $apiKey, ?int $storeId = null): bool
+    public function refresh(string $mode, string $apiKey, ?int $storeId = null): bool
     {
-        $cacheKey = $this->cacheKey($apiKey);
+        $cacheKey = $this->cacheKey($mode, $apiKey);
         if ($cacheKey === null) {
             return false;
         }
@@ -225,15 +226,18 @@ class RateTableProvider
     }
 
     /**
-     * The cache key for the current API key, or null when no key is
-     * configured (nothing to authenticate the fetch with).
+     * The cache key for a mode and API key, or null when no key is configured
+     * (nothing to authenticate the fetch with).
+     *
+     * sha256 of the key, never the key itself — cache identifiers end up in
+     * log lines and cache-backend keyspaces.
      */
-    private function cacheKey(string $apiKey): ?string
+    private function cacheKey(string $mode, string $apiKey): ?string
     {
         if ($apiKey === '') {
             return null;
         }
-        return self::CACHE_KEY_PREFIX . hash('sha256', $apiKey);
+        return self::CACHE_KEY_PREFIX . hash('sha256', $mode . "\0" . $apiKey);
     }
 
     /**

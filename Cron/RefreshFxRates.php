@@ -35,25 +35,13 @@ class RefreshFxRates
 
     public function execute(): void
     {
-        $points = $this->recordRefresher->distinctScopes(
-            $this->rateTableIdentity(),
-            $this->recordRefresher->storeScopes()
-        );
-        foreach ($points as $point) {
-            $this->rateTableProvider->refresh($point['api_key'], $point['store_id']);
+        $identities = $this->recordRefresher->distinctScopes($this->recordRefresher->storeScopes());
+        foreach ($identities as $identity) {
+            $this->rateTableProvider->refresh(
+                $identity['mode'],
+                $identity['api_key'],
+                $identity['store_id']
+            );
         }
-    }
-
-    /**
-     * RateTableProvider keys on the API key alone, so two store views sharing
-     * a key across environments share one entry and must not both refresh it.
-     *
-     * @return callable(int|null, string): string
-     */
-    private function rateTableIdentity(): callable
-    {
-        return static function (?int $storeId, string $apiKey): string {
-            return hash('sha256', $apiKey);
-        };
     }
 }

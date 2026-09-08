@@ -23,12 +23,9 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
  * place that translation happens: a scope governs an identity when a store
  * view under it reads the API key set at that scope.
  *
- * It also owns the scope walk the FX rate cron shares. The walk takes the
- * caller's cache identity, because the two caches are keyed differently:
- * the merchant record on mode + API key, the FX rate table on the API key
- * alone. Walking one with the other's identity either misses a scope or
- * refreshes the same entry twice. The walk hands back the key it read, so
- * no caller resolves it a second time.
+ * It also owns the scope walk the FX rate cron shares — both caches are keyed
+ * on (mode, API key), so one walk serves both. The walk hands back the mode
+ * and key it read, so no caller resolves them a second time.
  */
 class RecordRefresher
 {
@@ -70,7 +67,7 @@ class RecordRefresher
      */
     public function refreshDue(): void
     {
-        $identities = $this->identitiesAt($this->distinctScopes($this->recordIdentity(), $this->storeScopes()));
+        $identities = $this->distinctScopes($this->storeScopes());
         $due = [];
         foreach ($identities as $identity) {
             $this->recordProvider->noteScheduledRun($identity['mode'], $identity['api_key']);
@@ -162,18 +159,17 @@ class RecordRefresher
             );
         }
 
-        return $this->identitiesAt($this->distinctScopes($this->recordIdentity(), $inheriting));
+        return $this->distinctScopes($inheriting);
     }
 
     /**
-     * One point per distinct cache identity, in the order given, carrying the
-     * API key that identity was computed from.
+     * One identity per distinct (mode, API key), in the order the given scopes
+     * read them, carrying the scope it was read at.
      *
-     * @param callable(int|null, string): string $identity
      * @param array<int,int|null> $scopes
-     * @return array<int,array{store_id: int|null, api_key: string}>
+     * @return array<int,array{mode: string, api_key: string, store_id: int|null}>
      */
-    public function distinctScopes(callable $identity, array $scopes): array
+    public function distinctScopes(array $scopes): array
     {
         $seen = [];
         $distinct = [];
@@ -182,12 +178,13 @@ class RecordRefresher
             if ($apiKey === '') {
                 continue;
             }
-            $key = $identity($storeId, $apiKey);
-            if (isset($seen[$key])) {
+            $mode = $this->modeAt($storeId);
+            $slot = hash('sha256', $mode . "\0" . $apiKey);
+            if (isset($seen[$slot])) {
                 continue;
             }
-            $seen[$key] = true;
-            $distinct[] = ['store_id' => $storeId, 'api_key' => $apiKey];
+            $seen[$slot] = true;
+            $distinct[] = ['mode' => $mode, 'api_key' => $apiKey, 'store_id' => $storeId];
         }
 
         return $distinct;
@@ -207,19 +204,6 @@ class RecordRefresher
         }
 
         return $scopes;
-    }
-
-    /**
-     * Mode + API key: one key can name a sandbox merchant on one store view
-     * and a production one on another.
-     *
-     * @return callable(int|null, string): string
-     */
-    public function recordIdentity(): callable
-    {
-        return function (?int $storeId, string $apiKey): string {
-            return hash('sha256', $this->modeAt($storeId) . "\0" . $apiKey);
-        };
     }
 
     /** A null point is the default scope read explicitly, not the area-dependent current store. */
@@ -266,23 +250,5 @@ class RecordRefresher
         }
 
         return $this->storeScopes();
-    }
-
-    /**
-     * @param array<int,array{store_id: int|null, api_key: string}> $points one per distinct record identity
-     * @return array<int,array{mode: string, api_key: string, store_id: int|null}>
-     */
-    private function identitiesAt(array $points): array
-    {
-        $identities = [];
-        foreach ($points as $point) {
-            $identities[] = [
-                'mode' => $this->modeAt($point['store_id']),
-                'api_key' => $point['api_key'],
-                'store_id' => $point['store_id'],
-            ];
-        }
-
-        return $identities;
     }
 }

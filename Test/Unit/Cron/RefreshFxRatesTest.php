@@ -40,28 +40,28 @@ class RefreshFxRatesTest extends TestCase
     /**
      * @param array<int,int> $stores
      * @param array<string,array{0: string, 1: string}> $config
-     * @param array<int,string> $expectedKeys
+     * @param array<int,string> $expectedSlots mode:key per refresh, in order
      * @dataProvider scopeSets
      */
     public function testRefreshesEachRateTableOnce(
         array $stores,
         array $config,
         ?int $currentStoreId,
-        array $expectedKeys,
+        array $expectedSlots,
         string $description
     ): void {
         $this->configure($stores, $config, $currentStoreId);
         $refreshed = [];
         $this->rateTableProvider->method('refresh')->willReturnCallback(
-            function (string $apiKey) use (&$refreshed) {
-                $refreshed[] = $apiKey;
+            function (string $mode, string $apiKey) use (&$refreshed) {
+                $refreshed[] = $mode . ':' . $apiKey;
                 return true;
             }
         );
 
         $this->cron()->execute();
 
-        $this->assertSame($expectedKeys, $refreshed, $description);
+        $this->assertSame($expectedSlots, $refreshed, $description);
     }
 
     /**
@@ -74,29 +74,29 @@ class RefreshFxRatesTest extends TestCase
                 [1 => 1],
                 ['default:' => ['key-d', 'sandbox']],
                 1,
-                ['key-d'],
+                ['sandbox:key-d'],
                 'a single-store install refreshes one table',
             ],
             'default plus an override' => [
                 [1 => 1, 2 => 1],
                 ['default:' => ['key-d', 'sandbox'], '2' => ['key-s', 'sandbox']],
                 1,
-                ['key-d', 'key-s'],
+                ['sandbox:key-d', 'sandbox:key-s'],
                 'one refresh per distinct key',
             ],
             'current store overrides, sibling inherits' => [
                 [1 => 1, 2 => 1],
                 ['default:' => ['key-d', 'sandbox'], '1' => ['key-s', 'sandbox']],
                 1,
-                ['key-d', 'key-s'],
+                ['sandbox:key-d', 'sandbox:key-s'],
                 'the default table is refreshed once and the override once, whatever the cron area\'s current store',
             ],
             'shared key, split environments' => [
                 [1 => 1, 2 => 1],
                 ['default:' => ['key-d', 'sandbox'], '2' => ['key-d', 'production']],
                 1,
-                ['key-d'],
-                'the table is keyed on the API key alone, so two environments share one refresh',
+                ['sandbox:key-d', 'production:key-d'],
+                'one key against both environments holds two tables and needs both refreshed',
             ],
             'nothing configured' => [
                 [1 => 1],
