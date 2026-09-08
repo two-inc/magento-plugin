@@ -497,6 +497,21 @@ describe('an open panel takes the tab stop off the field', () => {
         expect(document.querySelector(FIELD).getAttribute('tabindex')).toBe('7');
     });
 
+    test('a throwing host abort still leaves the field with its tab stop back', () => {
+        const ctx = setup();
+        ctx.panel.search = Object.assign({}, ctx.panel.search, {
+            abortActiveRequest: function () { throw new Error('host transport is broken'); }
+        });
+        ctx.panel.open();
+        expect(document.querySelector(FIELD).getAttribute('tabindex')).toBe('-1');
+
+        // Positive control: the throw has to reach the caller, or the release
+        // is being asserted on an ordinary close.
+        expect(() => ctx.panel.close()).toThrow('host transport is broken');
+
+        expect(document.querySelector(FIELD).hasAttribute('tabindex')).toBe(false);
+    });
+
     test('repeated cycles leave the field exactly as they found it', () => {
         const ctx = setup();
 
