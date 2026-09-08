@@ -11,6 +11,7 @@ use Magento\Tax\Model\Calculation as TaxCalculation;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Config\Repository;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Provenance;
 
 /**
@@ -44,7 +45,8 @@ class RepositoryVersionStampTest extends TestCase
             $this->createMock(TaxCalculation::class),
             $brand,
             $this->createMock(\Two\Gateway\Service\Merchant\SettingsProvider::class),
-            $provenance
+            $provenance,
+            $this->createMock(LogRepository::class)
         );
     }
 

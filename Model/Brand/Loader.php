@@ -162,54 +162,21 @@ class Loader
             }
         }
 
-        // On/off switch for the buyer-facing intent-approved notice.
-        // Explicit boolean only: absent is the documented default `true`
-        // (so a third-party overlay that declares nothing keeps the notice
-        // ON), and anything other than the exact strings 'true'/'false' is
-        // an error rather than a silent third behaviour. Validated here as
-        // well as in brand.xsd because nothing validates brand.xsd in
-        // production mode — same reasoning as the rounding-step guard above.
-        $intentApprovedNoticeEnabled = true;
-        if (isset($brand->intent_approved_notice_enabled)) {
-            $raw = trim((string)$brand->intent_approved_notice_enabled);
-            if ($raw !== 'true' && $raw !== 'false') {
-                throw new \DomainException(sprintf(
-                    'brand.xml at %s declares an invalid '
-                    . '<intent_approved_notice_enabled> value "%s"; it must be '
-                    . 'exactly "true" or "false".',
-                    $sourcePath,
-                    $raw
-                ));
-            }
-            $intentApprovedNoticeEnabled = $raw === 'true';
-        }
+        $intentApprovedNoticeEnabled = $this->readNoticeSwitch(
+            $brand,
+            'intent_approved_notice_enabled',
+            $sourcePath
+        );
+        $intentApprovedNotice = $this->readNoticeCopy($brand, 'intent_approved_notice');
+        $intentDeclinedNotice = $this->readNoticeCopy($brand, 'intent_declined_notice');
 
-        // Copy override ONLY — this is no longer an off switch (TWO-25218
-        // superseded the three-state contract). Absent, empty and
-        // whitespace-only all normalise to null, i.e. "use the platform
-        // default copy"; an empty element is inert. Suppression is
-        // <intent_approved_notice_enabled>false</…> above.
-        $intentApprovedNotice = trim((string)($brand->intent_approved_notice ?? ''));
-        if ($intentApprovedNotice === '') {
-            $intentApprovedNotice = null;
-        }
-
-        // The declined/not-available notice is NEVER brand-overridable
-        // (2026-08-04 ruling, TWO-25326): there is deliberately no copy
-        // override element for it. A brand.xml that declares
-        // <intent_declined_notice> anyway is almost certainly copying the
-        // approved-notice pattern by habit, so this fails loudly rather
-        // than silently ignoring the element and leaving the overlay
-        // author to wonder why their copy never renders.
-        if (isset($brand->intent_declined_notice)) {
-            throw new \DomainException(sprintf(
-                'brand.xml at %s declares <intent_declined_notice>, which is '
-                . 'not a supported override: the buyer-facing "order intent '
-                . 'NOT approved" notice is never brand-overridable. Remove '
-                . 'the element; the platform default copy always renders.',
-                $sourcePath
-            ));
-        }
+        // A declared switch decides. Otherwise the notice renders if
+        // non-blank declined copy asked for it OR the approved switch is
+        // on, so an overlay predating the declined elements — approved
+        // switch only — still suppresses both.
+        $intentDeclinedNoticeEnabled = isset($brand->intent_declined_notice_enabled)
+            ? $this->readNoticeSwitch($brand, 'intent_declined_notice_enabled', $sourcePath)
+            : ($intentDeclinedNotice !== null || $intentApprovedNoticeEnabled);
 
         $inlineTermFees = true;
         if (isset($brand->inline_term_fees)) {
@@ -245,7 +212,53 @@ class Loader
             $intentApprovedNotice,
             $intentApprovedNoticeEnabled,
             trim((string)($brand->about_url ?? '')),
-            trim((string)($brand->checkout_subtitle_faq_url ?? ''))
+            trim((string)($brand->checkout_subtitle_faq_url ?? '')),
+            $intentDeclinedNotice,
+            $intentDeclinedNoticeEnabled
         );
+    }
+
+    /**
+     * Duplicates brand.xsd's enumeration because nothing validates
+     * brand.xsd in production mode.
+     */
+    private function readNoticeSwitch(
+        \SimpleXMLElement $brand,
+        string $element,
+        string $sourcePath
+    ): bool {
+        if (!isset($brand->{$element})) {
+            return true;
+        }
+
+        $raw = trim((string)$brand->{$element});
+        if ($raw !== 'true' && $raw !== 'false') {
+            throw new \DomainException(sprintf(
+                'brand.xml at %s declares an invalid <%s> value "%s"; it must '
+                . 'be exactly "true" or "false".',
+                $sourcePath,
+                $element,
+                $raw
+            ));
+        }
+
+        return $raw === 'true';
+    }
+
+    /**
+     * A visually-blank element is inert, never an off switch — TWO-25218
+     * superseded that three-state contract. \pZ and \p{Cf} so a
+     * copy-pasted non-breaking or zero-width space, both of which
+     * trim() keeps, cannot become a template that renders as an empty
+     * notice.
+     */
+    private function readNoticeCopy(\SimpleXMLElement $brand, string $element): ?string
+    {
+        $raw = (string)($brand->{$element} ?? '');
+        // An unreadable subject is treated as blank, the safe direction;
+        // the parser rejects malformed UTF-8 first, so this is unreachable.
+        $copy = preg_replace('/^[\pZ\p{Cf}\s]+|[\pZ\p{Cf}\s]+$/u', '', $raw) ?? '';
+
+        return $copy === '' ? null : $copy;
     }
 }

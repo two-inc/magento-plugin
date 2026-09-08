@@ -687,6 +687,14 @@ define([
     }
 
     /**
+     * @param {string} token
+     * @returns {string} the token, safe to embed in a RegExp
+     */
+    function escapeForRegExp(token) {
+        return String(token).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    /**
      * Remove a copy token from a notice template ALONG WITH the brackets it
      * sits in.
      *
@@ -705,7 +713,7 @@ define([
     function stripBracketedToken(text, token) {
         if (!text) return '';
         if (!token) return String(text);
-        const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const escaped = escapeForRegExp(token);
         return String(text)
             .replace(new RegExp('[ \\t]*[([]\\s*' + escaped + '\\s*[)\\]]', 'g'), '')
             .replace(new RegExp(escaped, 'g'), '')
@@ -988,6 +996,7 @@ define([
         HIDDEN_COMPANY_NUMBER_PREFIX: HIDDEN_COMPANY_NUMBER_PREFIX,
         formatCompanyNumber: formatCompanyNumber,
         stripBracketedToken: stripBracketedToken,
+        escapeForRegExp: escapeForRegExp,
         currentAddressFormCountry: currentAddressFormCountry,
         apiClientParams: apiClientParams,
         unwrapProxyResponse: unwrapProxyResponse,

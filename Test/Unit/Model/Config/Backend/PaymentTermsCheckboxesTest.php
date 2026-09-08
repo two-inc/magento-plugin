@@ -9,6 +9,7 @@ use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Model\Context;
 use Magento\Framework\Registry;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Model\Config\Backend\PaymentTerms\OfferedTermsGuard;
 use Two\Gateway\Model\Config\Backend\PaymentTermsCheckboxes;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
@@ -42,7 +43,7 @@ class PaymentTermsCheckboxesTest extends TestCase
             $this->getMockBuilder(Registry::class)->disableOriginalConstructor()->getMock(),
             $this->createMock(ScopeConfigInterface::class),
             $this->createMock(TypeListInterface::class),
-            $this->settingsProvider,
+            new OfferedTermsGuard($this->settingsProvider),
             null,
             null,
             $data
@@ -97,7 +98,7 @@ class PaymentTermsCheckboxesTest extends TestCase
         $this->assertSame('14', $model->getValue(), 'the ticked term must not be duplicated');
     }
 
-    public function testDoesNotFoldInAGenuinelyCustomValue(): void
+    public function testDoesNotFoldInAValueTheMerchantDoesNotOffer(): void
     {
         $this->settingsProvider->method('getAvailableTerms')->willReturn([14, 30]);
         $model = $this->buildModel([
@@ -112,8 +113,68 @@ class PaymentTermsCheckboxesTest extends TestCase
         $this->assertSame(
             '14',
             $model->getValue(),
-            'a genuinely custom value has no offered term to fold into'
+            'a value outside the offered set has no term to fold into'
         );
+    }
+
+    /**
+     * @param string[] $ticked
+     * @param int[] $offered
+     * @dataProvider unofferedSelectionProvider
+     */
+    public function testASelectionOutsideTheOfferedSetIsRefused(
+        array $ticked,
+        array $offered,
+        string $message,
+        string $case
+    ): void {
+        $this->settingsProvider->method('getAvailableTerms')->willReturn($offered);
+        $model = $this->buildModel([
+            'value' => $ticked,
+            'scope' => 'default',
+            'scope_id' => 0,
+            'fieldset_data' => ['payment_terms_duration_days' => ''],
+        ]);
+
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage($message);
+        $model->beforeSave();
+        $this->fail($case);
+    }
+
+    public static function unofferedSelectionProvider(): array
+    {
+        return [
+            [
+                ['37'],
+                [14, 30],
+                'Payment terms you are not able to offer: 37 days. Choose from: 14, 30 days.',
+                'a config:set CSV or tampered post naming an unoffered term is refused',
+            ],
+            [
+                ['14', '37', '99'],
+                [14, 30],
+                'Payment terms you are not able to offer: 37, 99 days. Choose from: 14, 30 days.',
+                'every unoffered term in the selection is named',
+            ],
+        ];
+    }
+
+    public function testAnUnresolvableOfferedSetCannotRefuseASelection(): void
+    {
+        // No offered terms at all means the merchant record did not resolve —
+        // unknown, not "nothing offered", so the save must still go through.
+        $this->settingsProvider->method('getAvailableTerms')->willReturn([]);
+        $model = $this->buildModel([
+            'value' => ['37'],
+            'scope' => 'default',
+            'scope_id' => 0,
+            'fieldset_data' => ['payment_terms_duration_days' => ''],
+        ]);
+
+        $model->beforeSave();
+
+        $this->assertSame('37', $model->getValue());
     }
 
     public function testResolvesTheOfferedSetAtTheStoreScopeBeingSaved(): void

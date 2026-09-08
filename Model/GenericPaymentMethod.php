@@ -26,6 +26,7 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\ComposeCapture;
@@ -50,18 +51,8 @@ use Two\Gateway\Service\UrlCookie;
  *
  * Brand\BrandPaymentMethodFactory instantiates this class with the
  * active brand's code and the DI-resolved BrandRegistryInterface
- * (DescriptorBackedBrandRegistry), so legacy overlay virtualTypes
- * keep working alongside the brand.xml-sourced descriptor pipeline.
- *
- * Example brand-overlay binding (legacy, still supported):
- *
- *   <virtualType name="Overlay\Gateway\Model\OverlayPayment"
- *                type="Two\Gateway\Model\GenericPaymentMethod">
- *       <arguments>
- *           <argument name="code" xsi:type="string">acme_payment</argument>
- *           <argument name="brand" xsi:type="object">Overlay\Gateway\Model\OverlayBrand</argument>
- *       </arguments>
- *   </virtualType>
+ * (DescriptorBackedBrandRegistry), so an overlay declares only its
+ * `etc/brand.xml` — the `brand` argument has no other supported binding.
  */
 class GenericPaymentMethod extends Two
 {
@@ -99,6 +90,7 @@ class GenericPaymentMethod extends Two
         LifecycleEventDispatcher $lifecycleEvents,
         BuyerCountryResolver $buyerCountryResolver,
         SupportedCountriesProvider $supportedCountriesProvider,
+        SettingsProvider $settingsProvider,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -132,6 +124,7 @@ class GenericPaymentMethod extends Two
             $lifecycleEvents,
             $buyerCountryResolver,
             $supportedCountriesProvider,
+            $settingsProvider,
             $resource,
             $resourceCollection,
             $data

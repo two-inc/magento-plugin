@@ -206,6 +206,9 @@ function defaultMocks() {
             stripBracketedToken: function (text, token) {
                 return realCompanySearch().stripBracketedToken(text, token);
             },
+            escapeForRegExp: function (token) {
+                return realCompanySearch().escapeForRegExp(token);
+            },
             // No DOM in the inert default: a spec that wants the live
             // address-form country read has to supply the real module (or its
             // own double) the same way it already does for the search itself.
