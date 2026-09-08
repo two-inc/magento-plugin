@@ -145,7 +145,7 @@ renders separately, independent of these notices, in the
 `.two-company-id-text` label each capture panel paints under its own
 company field (2026-08-04 ruling, TWO-25326 §5/§7 follow-up).
 Each outcome has its **own** on/off switch and its **own** wording
-override (ruling 19.5), and the four elements are four independent
+override, and the four elements are four independent
 decisions: a brand may reword the declined notice, suppress it, or leave
 it on the platform default, whatever it did with the approved one.
 

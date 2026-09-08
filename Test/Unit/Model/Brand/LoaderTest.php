@@ -25,7 +25,7 @@ use Two\Gateway\Model\Brand\Loader;
  *    visually blank value is INERT (they used to mean "off" under the
  *    superseded TWO-25213 three-state contract).
  *  - <intent_declined_notice_enabled> / <intent_declined_notice> — the same
- *    pair for the "order intent NOT approved" outcome (ruling 19.5). A
+ *    pair for the "order intent NOT approved" outcome (TWO-25326). A
  *    declared switch decides; absent one, the notice renders when
  *    non-blank declined copy or the approved switch says so.
  *

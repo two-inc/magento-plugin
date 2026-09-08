@@ -14,7 +14,7 @@ use Two\Gateway\Model\Ui\ConfigProvider;
 /**
  * ConfigProvider's intent-DECLINED-notice payload resolution.
  *
- * Ruling 19.5: a brand overlay may reword the declined notice or suppress
+ * TWO-25326: a brand overlay may reword the declined notice or suppress
  * it, on its own switch and its own copy override, exactly as it may for
  * the approved notice. The switch — not the copy — decides whether a
  * payload reaches the renderer at all; `null` is the renderer's "emit no
@@ -108,8 +108,8 @@ class ConfigProviderIntentDeclinedNoticeTest extends TestCase
 
     public function testTheApprovedSwitchDoesNotSuppressTheDeclinedNotice(): void
     {
-        // Ruling 19.5 split the shared switch: suppressing the approved
-        // notice is no longer a decision about the declined one.
+        // The two switches are independent: suppressing the approved
+        // notice is not a decision about the declined one.
         $registry = $this->createMock(BrandRegistryInterface::class);
         $registry->method('isIntentDeclinedNoticeEnabled')->willReturn(true);
         $registry->method('getIntentDeclinedNotice')->willReturn(null);

@@ -385,11 +385,11 @@ class ConfigProvider implements ConfigProviderInterface
     /**
      * Resolve the buyer-facing "order intent NOT approved" notice — the
      * §7.3 counterpart to getOrderIntentApprovedNotice() above, added by the
-     * 2026-08-03 ruling. Same shape, and its own switch and copy override —
+     * same TWO-25326 work. Same shape, and its own switch and copy override —
      * <intent_declined_notice_enabled> / <intent_declined_notice> — so a
      * brand suppresses or rewords the two outcomes separately once it
      * declares the declined switch or ships non-blank declined copy
-     * (ruling 19.5).
+     * (TWO-25326).
      *
      * This is the "not approved" business outcome only (a clean response
      * with `approved: false`) — a technical/HTTP failure is a different
