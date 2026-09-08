@@ -114,7 +114,9 @@ class RateTableProviderTest extends TestCase
             $cache->method('load')->willReturn(false);
             $cache->method('save')->willReturnCallback(
                 function ($data, $identifier) use (&$slots) {
-                    $slots[] = $identifier;
+                    if (strpos($identifier, '_cooldown') === false) {
+                        $slots[] = $identifier;
+                    }
                     return true;
                 }
             );
@@ -372,6 +374,18 @@ class RateTableProviderTest extends TestCase
         );
 
         $this->assertTrue($this->provider($cache)->refresh('production', 'test-api-key', 1));
+    }
+
+    public function testRefreshFetchesFromTheEnvironmentItsSlotIsKeyedOn(): void
+    {
+        // Given a caller's mode differing from the store scope's,
+        // When it refreshes, Then the fetch goes to the caller's environment —
+        // otherwise one environment's rates land in the other's slot.
+        $this->apiAdapter->expects($this->once())->method('execute')
+            ->with(RateTableProvider::ENDPOINT, [], 'GET', 1, 'test-api-key', 'sandbox')
+            ->willReturn(self::RATES_RESPONSE);
+
+        $this->assertTrue($this->provider(null, 'test-api-key', 'production')->refresh('sandbox', 'test-api-key', 1));
     }
 
     public function testRefreshFailureLeavesCacheUntouched(): void

@@ -179,7 +179,7 @@ class RecordRefresher
                 continue;
             }
             $mode = $this->modeAt($storeId);
-            $slot = hash('sha256', $mode . "\0" . $apiKey);
+            $slot = $mode . "\0" . $apiKey;
             if (isset($seen[$slot])) {
                 continue;
             }

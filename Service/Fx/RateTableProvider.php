@@ -119,7 +119,8 @@ class RateTableProvider
     public function getRateTable(?int $storeId = null): ?array
     {
         $apiKey = (string)$this->configRepository->getApiKey($storeId);
-        $cacheKey = $this->cacheKey((string)$this->configRepository->getMode($storeId), $apiKey);
+        $mode = $this->configRepository->getMode($storeId);
+        $cacheKey = $this->cacheKey($mode, $apiKey);
         if ($cacheKey === null) {
             return null;
         }
@@ -140,7 +141,7 @@ class RateTableProvider
         // the cooldown keeps an API outage from adding a fetch round-trip
         // to every page view.
         if ($this->cache->load($cacheKey . self::FAILURE_COOLDOWN_SUFFIX) === false) {
-            $fresh = $this->fetchTable($apiKey, $storeId);
+            $fresh = $this->fetchTable($mode, $apiKey, $storeId);
             if ($fresh !== null) {
                 $this->persist($cacheKey, $fresh);
                 return $fresh;
@@ -175,7 +176,7 @@ class RateTableProvider
             return false;
         }
 
-        $fresh = $this->fetchTable($apiKey, $storeId);
+        $fresh = $this->fetchTable($mode, $apiKey, $storeId);
         if ($fresh === null) {
             $this->logRepository->addErrorLog(
                 'RateTableProvider: background FX rate refresh failed, keeping last-known-good table',
@@ -228,9 +229,6 @@ class RateTableProvider
     /**
      * The cache key for a mode and API key, or null when no key is configured
      * (nothing to authenticate the fetch with).
-     *
-     * sha256 of the key, never the key itself — cache identifiers end up in
-     * log lines and cache-backend keyspaces.
      */
     private function cacheKey(string $mode, string $apiKey): ?string
     {
@@ -255,9 +253,11 @@ class RateTableProvider
     /**
      * @return array{rates: array<string,float>, as_of: ?string, fetched_at: int}|null
      */
-    private function fetchTable(string $apiKey, ?int $storeId): ?array
+    private function fetchTable(string $mode, string $apiKey, ?int $storeId): ?array
     {
-        $response = $this->apiAdapter->execute(self::ENDPOINT, [], 'GET', $storeId, $apiKey);
+        // The mode is passed rather than left to the store scope: it is the
+        // environment the slot is keyed on, so the fetch must hit that one.
+        $response = $this->apiAdapter->execute(self::ENDPOINT, [], 'GET', $storeId, $apiKey, $mode);
 
         // Adapter::execute always returns an array; a failure is signalled
         // by an error_code / http_status marker (never present on a real
