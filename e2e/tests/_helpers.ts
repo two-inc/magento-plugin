@@ -1,6 +1,6 @@
 import { expect, Page } from '@playwright/test';
 
-// GB skip-verification test buyer (auto-approved, no SCA) — the staging store is
+// GB skip-verification test buyer (auto-approved, no SCA) — the dev store is
 // GBP, so a GB buyer keeps the order coherent and passes the order-intent.
 // Value mirrors the shared GB skip-verification buyer used by the internal e2e
 // suite; override with COMPANY_QUERY if that fixture changes.
