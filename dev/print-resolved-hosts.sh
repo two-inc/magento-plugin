@@ -16,7 +16,9 @@
 # TWO_PORTAL_BASE_URL) - only the checkout API and the hosted checkout-page
 # app are reported here.
 #
-# Usage: dev/print-resolved-hosts.sh <container-name>
+# Usage: bash dev/print-resolved-hosts.sh <container-name>
+# Invoked through `bash`: core.fileMode is false here, so a Windows-side edit drops
+# the exec bit and a direct call then exits 126.
 # Prints nothing (and exits 0) if the container isn't reachable - callers
 # use this for a "nice to have" status block, not a hard dependency.
 set -euo pipefail
