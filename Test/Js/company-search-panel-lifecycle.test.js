@@ -436,3 +436,84 @@ describe('the company field carries the combobox semantics', () => {
         expect(fieldNode.getAttribute('aria-expanded')).toBe('false');
     });
 });
+
+/**
+ * TWO-25503. The field's focus opener puts the caret in the query input, so a
+ * tab stop on the field catches shift+Tab coming back out of the query and
+ * pushes it forward again — the buyer never reaches the controls above the
+ * company field (WCAG 2.1.2).
+ *
+ * jsdom implements no sequential focus navigation: a `Tab` key event moves
+ * focus nowhere, so the oscillation itself is unreachable here in either
+ * direction and a real browser is what verifies it. What these assert is the
+ * state the fix turns on — no tab stop while open, exactly the prior attribute
+ * back on close.
+ */
+describe('an open panel takes the tab stop off the field', () => {
+    async function tabOutOfTheControl() {
+        document.querySelector(OUTSIDE).focus();
+        document
+            .querySelector(PANEL)
+            .dispatchEvent(new window.FocusEvent('focusout', { bubbles: true }));
+        await nextTick();
+    }
+
+    test('the field is out of the tab order for as long as the panel is open', () => {
+        const ctx = setup();
+        expect(document.querySelector(FIELD).hasAttribute('tabindex')).toBe(false);
+
+        ctx.panel.open();
+
+        expect(document.querySelector(FIELD).getAttribute('tabindex')).toBe('-1');
+    });
+
+    test.each([
+        { close: (ctx) => ctx.panel.close(), description: "the panel's own close" },
+        {
+            close: () => pressKey(document.querySelector(QUERY), 'Escape'),
+            description: 'Escape, which also hands focus back to the field'
+        },
+        { close: () => mousedownOn(OUTSIDE), description: 'a mousedown outside the panel' },
+        { close: () => tabOutOfTheControl(), description: 'focus settling outside the control' }
+    ])('closing gives back the tab stop the field started with ($description)', async ({ close }) => {
+        const ctx = setup();
+        ctx.panel.open();
+        expect(document.querySelector(FIELD).getAttribute('tabindex')).toBe('-1');
+
+        await close(ctx);
+
+        expect(panelIsOpen()).toBe(false);
+        expect(document.querySelector(FIELD).hasAttribute('tabindex')).toBe(false);
+    });
+
+    test("a theme's own tabindex is given back, not the removal", () => {
+        const ctx = setup();
+        document.querySelector(FIELD).setAttribute('tabindex', '7');
+
+        ctx.panel.open();
+        expect(document.querySelector(FIELD).getAttribute('tabindex')).toBe('-1');
+
+        ctx.panel.close();
+        expect(document.querySelector(FIELD).getAttribute('tabindex')).toBe('7');
+    });
+
+    test.each([1, 2, 3])('cycle %i leaves the field exactly as it found it', (cycles) => {
+        const ctx = setup();
+
+        for (let i = 0; i < cycles; i++) {
+            ctx.panel.open();
+            expect(document.querySelector(FIELD).getAttribute('tabindex')).toBe('-1');
+            ctx.panel.close();
+            expect(document.querySelector(FIELD).hasAttribute('tabindex')).toBe(false);
+        }
+    });
+
+    test('teardown while open hands the tab stop back', () => {
+        const ctx = setup();
+        ctx.panel.open();
+
+        ctx.panel.destroy();
+
+        expect(document.querySelector(FIELD).hasAttribute('tabindex')).toBe(false);
+    });
+});
