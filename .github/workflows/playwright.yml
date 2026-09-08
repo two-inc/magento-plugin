@@ -31,7 +31,7 @@ on:
       - "e2e/**"
       - ".github/workflows/playwright.yml"
 
-# One global group: the minimum-order spec temporarily rewrites shared staging
+# One global group: the minimum-order spec temporarily rewrites shared dev
 # store config (and restores it), so two runs must never overlap. Queue rather
 # than cancel — cancelling a run mid-test could skip the config restore.
 concurrency:

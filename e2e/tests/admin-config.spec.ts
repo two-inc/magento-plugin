@@ -52,8 +52,8 @@ test.describe('Two admin config', () => {
         await gotoSection(page, 'two_general');
         // Anchor the clip on the section links, which reliably render in the nav
         // (the other config specs resolve them the same way). Top = just above the
-        // General link to include the "Two" tab header; bottom = Diagnostics, the
-        // last section.
+        // General link to include the "Two" tab header; bottom = the Diagnostics
+        // section, id `two_version`, which sorts last.
         const nav = page.locator('.admin__page-nav, #system_config_tabs').first();
         const general = page.locator('a[href*="/section/two_general/"]').first();
         const bottom = page.locator('a[href*="/section/two_version/"]').last();
