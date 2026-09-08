@@ -368,6 +368,8 @@ interface RepositoryInterface
      * @param int|null $storeId
      *
      * @return string
+     * @throws \Magento\Framework\Exception\LocalizedException when the stored
+     *         value is not one of Model\Config\Source\SurchargeType::KNOWN
      */
     public function getSurchargeType(?int $storeId = null): string;
 

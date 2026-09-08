@@ -33,6 +33,9 @@ class TermSurchargePreviewTest extends TestCase
     /** @var SurchargeTaxCalculator|\PHPUnit\Framework\MockObject\MockObject */
     private $taxCalculator;
 
+    /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
+    private $logRepository;
+
     /** @var TermSurchargePreview */
     private $preview;
 
@@ -41,13 +44,14 @@ class TermSurchargePreviewTest extends TestCase
         $this->config = $this->createMock(ConfigRepository::class);
         $this->calculator = $this->createMock(SurchargeCalculator::class);
         $this->taxCalculator = $this->createMock(SurchargeTaxCalculator::class);
+        $this->logRepository = $this->createMock(LogRepository::class);
 
         $this->preview = new TermSurchargePreview(
             $this->config,
             $this->calculator,
             $this->taxCalculator,
             $this->createMock(SurchargeDisplay::class),
-            $this->createMock(LogRepository::class)
+            $this->logRepository
         );
     }
 
@@ -145,6 +149,63 @@ class TermSurchargePreviewTest extends TestCase
             ],
             $surcharges
         );
+    }
+
+    /**
+     * Q54: an unrecognised stored method is one condition, not one per term.
+     * Read before the tax lookup, so a refused render does no tax work and
+     * emits no second error line; the config repository owns the error.
+     *
+     * @dataProvider corruptStoredMethods
+     */
+    public function testACorruptStoredMethodZeroesEveryTermWithoutASecondErrorLine(
+        int $termCount,
+        string $case
+    ): void {
+        $this->config->method('getSurchargeType')->willThrowException(
+            new LocalizedException(__('Invoice purchase with %1 is not available for this order.', 'Two'))
+        );
+        // A tax class IS configured, so resolveTaxRate() would reach the engine
+        // if the guard sat after it — that is what pins the ordering.
+        $this->config->method('getSurchargeTaxClassId')->willReturn(4);
+        // Neither the tax lookup nor the pricing call may run.
+        $this->taxCalculator->expects($this->never())->method('resolveRateForQuote');
+        $this->calculator->expects($this->never())->method('calculate');
+        $this->logRepository->expects($this->never())->method('addErrorLog');
+        $debug = [];
+        $this->logRepository->method('addDebugLog')->willReturnCallback(
+            function ($type) use (&$debug): void {
+                $debug[] = (string)$type;
+            }
+        );
+
+        $terms = array_slice([30, 60, 90], 0, $termCount);
+        $expected = array_map(
+            static fn ($days) => ['days' => $days, 'net' => 0.0, 'gross' => 0.0],
+            $terms
+        );
+
+        $result = $this->preview->build(
+            $this->createMock(Quote::class),
+            1000.0,
+            $terms,
+            'NO',
+            'NOK',
+            1,
+            'test'
+        );
+
+        $this->assertSame($expected, $result, $case);
+        $this->assertCount(1, $debug, 'one debug line whatever the term count: ' . $case);
+        $this->assertStringContainsString('unrecognised surcharge method', $debug[0], $case);
+    }
+
+    public function corruptStoredMethods(): array
+    {
+        return [
+            [1, 'a single offered term'],
+            [3, 'three offered terms still report once, not once per term'],
+        ];
     }
 
     public function testZeroedCarriesBothAmountsSoChipsLeaveTheLoaderState(): void

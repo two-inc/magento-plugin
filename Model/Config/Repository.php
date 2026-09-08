@@ -10,13 +10,16 @@ namespace Two\Gateway\Model\Config;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
 use Magento\Framework\Encryption\EncryptorInterface;
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\UrlInterface;
 use Magento\Store\Model\ScopeInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Backend\CustomHeaders as CustomHeadersBackend;
 use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource;
+use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
 use Two\Gateway\Model\Provenance;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
@@ -76,6 +79,20 @@ class Repository implements RepositoryInterface
     private $provenance;
 
     /**
+     * \Proxy in di.xml — a direct binding is a construction cycle, as $settingsProvider.
+     *
+     * @var LogRepository
+     */
+    private $logRepository;
+
+    /**
+     * Keyed by scoped path and value, so one request reports one bad method once.
+     *
+     * @var array<string,bool>
+     */
+    private $reportedSurchargeTypes = [];
+
+    /**
      * @var string|null Optional explicit override. Null = resolve
      *                  lazily from BrandRegistryInterface::getCode().
      *                  Kept as a ctor arg for unit-test injection and
@@ -102,6 +119,7 @@ class Repository implements RepositoryInterface
         BrandRegistryInterface $brandRegistry,
         SettingsProvider $settingsProvider,
         Provenance $provenance,
+        LogRepository $logRepository,
         ?string $code = null
     ) {
         $this->scopeConfig = $scopeConfig;
@@ -112,6 +130,7 @@ class Repository implements RepositoryInterface
         $this->brandRegistry = $brandRegistry;
         $this->settingsProvider = $settingsProvider;
         $this->provenance = $provenance;
+        $this->logRepository = $logRepository;
         $this->code = $code;
     }
 
@@ -573,6 +592,7 @@ class Repository implements RepositoryInterface
      */
     public function getAllBuyerTerms(?int $storeId = null): array
     {
+        // EOM: offered days are not filtered to the API-eligible set. TWO-25656.
         $terms = $this->getPaymentTerms($storeId);
         $custom = $this->getPaymentTermsDurationDays($storeId);
         if ($custom > 0) {
@@ -623,7 +643,31 @@ class Repository implements RepositoryInterface
      */
     public function getSurchargeType(?int $storeId = null): string
     {
-        return (string)$this->getConfig($this->path('surcharge_type'), $storeId) ?: 'none';
+        $raw = $this->getConfig($this->path('surcharge_type'), $storeId);
+        // '0' is falsy in PHP, so the old `?: 'none'` read a stored '0' as none.
+        $stored = ($raw === null || $raw === '') ? SurchargeTypeSource::NONE : (string)$raw;
+        // The choke point for every runtime read, so `config:set` and imports are guarded too.
+        if (!SurchargeTypeSource::isKnown($stored)) {
+            // The only place this is reported; the catchers downstream stay quiet.
+            $reportKey = $this->path('surcharge_type') . '|' . (string)$storeId . '|' . $stored;
+            if (!isset($this->reportedSurchargeTypes[$reportKey])) {
+                $this->reportedSurchargeTypes[$reportKey] = true;
+                $this->logRepository->addErrorLog('Unrecognised stored surcharge method', [
+                    'path' => $this->path('surcharge_type'),
+                    'store_id' => $storeId,
+                    'value' => $stored,
+                ]);
+            }
+            // Generic, because it reaches the BUYER; placement uses this wording too.
+            throw new LocalizedException(
+                __(
+                    'Invoice purchase with %1 is not available for this order.',
+                    $this->brandRegistry->getProductName()
+                )
+            );
+        }
+
+        return $stored;
     }
 
     /**

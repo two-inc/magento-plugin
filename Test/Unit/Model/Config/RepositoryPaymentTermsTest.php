@@ -6,12 +6,15 @@ namespace Two\Gateway\Test\Unit\Model\Config;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
 use Magento\Framework\Encryption\EncryptorInterface;
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\UrlInterface;
 use Magento\Framework\DataObject;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Config\Repository;
+use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Provenance;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
@@ -26,6 +29,9 @@ class RepositoryPaymentTermsTest extends TestCase
     /** @var SettingsProvider|\PHPUnit\Framework\MockObject\MockObject */
     private $settingsProvider;
 
+    /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
+    private $logRepository;
+
     /** @var Repository */
     private $repository;
 
@@ -39,11 +45,13 @@ class RepositoryPaymentTermsTest extends TestCase
 
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
         $brandRegistry->method('getCode')->willReturn('two_payment');
+        $brandRegistry->method('getProductName')->willReturn('Two');
 
         // Unstubbed getDefaultTerm() returns null, so the default-term
         // tests below exercise the config-based fallback; the API-default
         // cases stub it explicitly.
         $this->settingsProvider = $this->createMock(SettingsProvider::class);
+        $this->logRepository = $this->createMock(LogRepository::class);
 
         $this->repository = new Repository(
             $this->scopeConfig,
@@ -53,7 +61,8 @@ class RepositoryPaymentTermsTest extends TestCase
             $this->taxCalculation,
             $brandRegistry,
             $this->settingsProvider,
-            $this->createMock(Provenance::class)
+            $this->createMock(Provenance::class),
+            $this->logRepository
         );
     }
 
@@ -575,5 +584,99 @@ class RepositoryPaymentTermsTest extends TestCase
     {
         $this->stubConfig(['payment/two_payment/payment_terms_type' => 'end_of_month']);
         $this->assertEquals('end_of_month', $this->repository->getPaymentTermsType());
+    }
+
+    // ── getSurchargeType ────────────────────────────────────────────
+
+    /**
+     * @dataProvider acceptedSurchargeTypes
+     * @param mixed $stored
+     */
+    public function testGetSurchargeTypeAcceptsTheKnownSet($stored, string $expected, string $case): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_type' => $stored]);
+        $this->assertSame($expected, $this->repository->getSurchargeType(), $case);
+    }
+
+    public function acceptedSurchargeTypes(): array
+    {
+        return [
+            ['none', 'none', 'explicitly disabled'],
+            ['percentage', 'percentage', 'percentage'],
+            ['fixed', 'fixed', 'fixed fee'],
+            ['fixed_and_percentage', 'fixed_and_percentage', 'fixed fee and percentage'],
+            [null, 'none', 'never configured'],
+            ['', 'none', 'the empty initial config node'],
+        ];
+    }
+
+    /**
+     * @dataProvider refusedSurchargeTypes
+     */
+    public function testGetSurchargeTypeRefusesAnythingElse(string $stored, string $case): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_type' => $stored]);
+        try {
+            $this->repository->getSurchargeType();
+            $this->fail('expected a refusal: ' . $case);
+        } catch (LocalizedException $e) {
+            // Generic on purpose: this reaches the BUYER at placement, so it
+            // must not leak the merchant's stored value or the enum keys.
+            $this->assertSame('Invoice purchase with Two is not available for this order.', $e->getMessage(), $case);
+            $this->assertStringNotContainsString($stored, $e->getMessage(), 'no stored value: ' . $case);
+            foreach (SurchargeTypeSource::KNOWN as $known) {
+                $this->assertStringNotContainsString($known, $e->getMessage(), 'no enum keys: ' . $case);
+            }
+        }
+    }
+
+    /**
+     * getSurchargeType() is read once per isAvailable() and once per
+     * collectTotals(), so reporting on every read filled the log with the same
+     * line. Reported once per offending value per request; a second distinct
+     * value still speaks.
+     */
+    public function testAnUnrecognisedMethodIsReportedOncePerRequest(): void
+    {
+        $stored = 'wat';
+        $this->scopeConfig->method('getValue')->willReturnCallback(
+            function ($path) use (&$stored) {
+                return $path === 'payment/two_payment/surcharge_type' ? $stored : null;
+            }
+        );
+        $logged = [];
+        $this->logRepository->method('addErrorLog')->willReturnCallback(
+            function ($type, $data) use (&$logged): void {
+                $logged[] = is_array($data) ? (string)($data['value'] ?? '') : (string)$data;
+            }
+        );
+
+        foreach ([1, 2, 3] as $ignored) {
+            try {
+                $this->repository->getSurchargeType();
+            } catch (LocalizedException $e) {
+                // Every read still refuses; only the reporting is deduplicated.
+                $this->assertSame('Invoice purchase with Two is not available for this order.', $e->getMessage());
+            }
+        }
+        $this->assertSame(['wat'], $logged, 'three reads, one report');
+
+        $stored = 'also_wrong';
+        try {
+            $this->repository->getSurchargeType();
+        } catch (LocalizedException $e) {
+            $this->assertSame('Invoice purchase with Two is not available for this order.', $e->getMessage());
+        }
+        $this->assertSame(['wat', 'also_wrong'], $logged, 'the log, not the buyer, carries the value');
+    }
+
+    public function refusedSurchargeTypes(): array
+    {
+        return [
+            ['wat', 'junk from a hand-edited row, config:set or an import'],
+            ['PERCENTAGE', 'the right method in the wrong case is still not a method'],
+            ['percentage_and_fixed', 'a plausible-looking method that does not exist'],
+            ['0', 'a falsy value that is not the empty node'],
+        ];
     }
 }
