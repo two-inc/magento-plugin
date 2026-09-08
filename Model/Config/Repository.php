@@ -187,13 +187,14 @@ class Repository implements RepositoryInterface
      *
      * @param string $configPath
      * @param int|null $storeId
+     * @param string|null $scope
      * @return mixed
      */
-    private function getConfig(string $configPath, ?int $storeId = null)
+    private function getConfig(string $configPath, ?int $storeId = null, ?string $scope = null)
     {
         return $this->scopeConfig->getValue(
             $configPath,
-            ScopeInterface::SCOPE_STORE,
+            $scope ?? ScopeInterface::SCOPE_STORE,
             $storeId
         );
     }
@@ -201,9 +202,9 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
-    public function getApiKey(?int $storeId = null): string
+    public function getApiKey(?int $storeId = null, ?string $scope = null): string
     {
-        return (string)$this->encryptor->decrypt($this->getConfig($this->path('api_key'), $storeId));
+        return (string)$this->encryptor->decrypt($this->getConfig($this->path('api_key'), $storeId, $scope));
     }
 
     /**
@@ -341,9 +342,9 @@ class Repository implements RepositoryInterface
     /**
      * @inheritDoc
      */
-    public function getMode(?int $storeId = null): string
+    public function getMode(?int $storeId = null, ?string $scope = null): string
     {
-        return (string)$this->getConfig($this->path('mode'), $storeId);
+        return (string)$this->getConfig($this->path('mode'), $storeId, $scope);
     }
 
     /**

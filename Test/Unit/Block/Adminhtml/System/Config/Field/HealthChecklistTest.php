@@ -7,10 +7,11 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Block\Adminhtml\System\Config\Field\HealthChecklist;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\RecordProvider;
 
 /**
- * TWO-25386: the admin "Health checklist" panel. Three checks: API key,
- * environment, SSL verification.
+ * TWO-25386: the admin "Health checklist" panel. Four checks: API key,
+ * environment, SSL verification, merchant profile refresh.
  */
 class HealthChecklistTest extends TestCase
 {
@@ -20,6 +21,9 @@ class HealthChecklistTest extends TestCase
     /** @var ApiKeyStatus|\PHPUnit\Framework\MockObject\MockObject */
     private $apiKeyStatus;
 
+    /** @var RecordProvider|\PHPUnit\Framework\MockObject\MockObject */
+    private $recordProvider;
+
     /** @var HealthChecklist */
     private $block;
 
@@ -27,9 +31,72 @@ class HealthChecklistTest extends TestCase
     {
         $this->configRepository = $this->createMock(ConfigRepository::class);
         $this->apiKeyStatus = $this->createMock(ApiKeyStatus::class);
+        $this->recordProvider = $this->createMock(RecordProvider::class);
+        $this->recordProvider->method('status')
+            ->willReturn(['fetched_at' => 1700000000, 'absent_on_read_at' => null]);
 
         $this->block = new HealthChecklistTestable();
-        $this->block->setDependencies($this->configRepository, $this->apiKeyStatus);
+        $this->block->setDependencies($this->configRepository, $this->apiKeyStatus, $this->recordProvider);
+    }
+
+    /**
+     * @param array{fetched_at: int|null, absent_on_read_at: int|null} $status
+     * @dataProvider refreshStates
+     */
+    public function testTheMerchantProfileRowReportsTheRefresh(
+        array $status,
+        bool $expectedOk,
+        string $expectedFragment,
+        string $description
+    ): void {
+        $this->recordProvider = $this->createMock(RecordProvider::class);
+        // The panel must read the identity it is rendering, not another environment's stamp.
+        $this->recordProvider->expects($this->once())->method('status')
+            ->with('sandbox', 'key-a')
+            ->willReturn($status);
+        $this->block->setDependencies($this->configRepository, $this->apiKeyStatus, $this->recordProvider);
+        $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);
+        $this->configRepository->method('getMode')->willReturn('sandbox');
+        $this->configRepository->method('getApiKey')->willReturn('key-a');
+
+        $row = $this->block->getChecklistRows()[3];
+
+        $this->assertSame('Merchant profile', $row['label'], $description);
+        $this->assertSame($expectedOk, $row['ok'], $description);
+        $this->assertStringContainsString($expectedFragment, $row['value'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: array{fetched_at: int|null, absent_on_read_at: int|null}, 1: bool, 2: string, 3: string}>
+     */
+    public static function refreshStates(): array
+    {
+        return [
+            'refreshed' => [
+                ['fetched_at' => 1700000000, 'absent_on_read_at' => null],
+                true,
+                'Refreshed @1700000000',
+                'a refreshed profile shows when',
+            ],
+            'never refreshed' => [
+                ['fetched_at' => null, 'absent_on_read_at' => null],
+                false,
+                'Never refreshed',
+                'no stamp yet is not ok',
+            ],
+            'absent on read, unclaimed for longer than a cron run' => [
+                ['fetched_at' => 1700000000, 'absent_on_read_at' => 1700003600],
+                false,
+                'hourly refresh appears not to be running',
+                'a read miss the cron never cleared outranks a stamp',
+            ],
+            'absent on read, within this cron interval' => [
+                ['fetched_at' => 1700000000, 'absent_on_read_at' => time()],
+                true,
+                'Refreshed @1700000000',
+                'a read miss the cron has not had a run to clear is the ordinary first read',
+            ],
+        ];
     }
 
     public function testAllHealthyRows(): void
@@ -95,9 +162,16 @@ class HealthChecklistTestable extends HealthChecklist
     {
     }
 
-    public function setDependencies(ConfigRepository $configRepository, ApiKeyStatus $apiKeyStatus): void
-    {
+    public function setDependencies(
+        ConfigRepository $configRepository,
+        ApiKeyStatus $apiKeyStatus,
+        RecordProvider $recordProvider
+    ): void {
         $ref = new \ReflectionClass(HealthChecklist::class);
+
+        $recordProp = $ref->getProperty('recordProvider');
+        $recordProp->setAccessible(true);
+        $recordProp->setValue($this, $recordProvider);
 
         $configProp = $ref->getProperty('configRepository');
         $configProp->setAccessible(true);
@@ -106,5 +180,11 @@ class HealthChecklistTestable extends HealthChecklist
         $apiKeyProp = $ref->getProperty('apiKeyStatus');
         $apiKeyProp->setAccessible(true);
         $apiKeyProp->setValue($this, $apiKeyStatus);
+    }
+
+    /** The real one needs the locale from Context; render the epoch instead. */
+    protected function formatTimestamp(int $timestamp): string
+    {
+        return '@' . $timestamp;
     }
 }

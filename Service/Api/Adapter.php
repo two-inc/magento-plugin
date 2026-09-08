@@ -23,6 +23,8 @@ use Two\Gateway\Api\Webapi\SoleTraderInterface;
  */
 class Adapter
 {
+    private const DEFAULT_TIMEOUT_SECONDS = 60;
+
     /**
      * @var ConfigRepository
      */
@@ -69,6 +71,8 @@ class Adapter
      *        verifying a candidate key that has not been saved yet
      * @param string|null $modeOverride Environment to call instead of the stored one, for verifying
      *        a candidate key against a mode submitted in the same admin save
+     * @param int|null $timeoutSeconds Total time this call may take, for a caller that must bound
+     *        its own wall clock — an admin save or a storefront render
      * @return array
      */
     public function execute(
@@ -77,9 +81,18 @@ class Adapter
         string $method = 'POST',
         ?int $storeId = null,
         ?string $apiKeyOverride = null,
-        ?string $modeOverride = null
+        ?string $modeOverride = null,
+        ?int $timeoutSeconds = null
     ): array {
-        return $this->executeWithStatus($endpoint, $payload, $method, $storeId, $apiKeyOverride, $modeOverride)['body'];
+        return $this->executeWithStatus(
+            $endpoint,
+            $payload,
+            $method,
+            $storeId,
+            $apiKeyOverride,
+            $modeOverride,
+            $timeoutSeconds
+        )['body'];
     }
 
     /**
@@ -96,7 +109,8 @@ class Adapter
         string $method = 'POST',
         ?int $storeId = null,
         ?string $apiKeyOverride = null,
-        ?string $modeOverride = null
+        ?string $modeOverride = null,
+        ?int $timeoutSeconds = null
     ): array {
         try {
             $this->logRepository->addDebugLog(sprintf('API call: %s %s', $method, $endpoint), $payload);
@@ -144,7 +158,7 @@ class Adapter
                 $curl->setOption(CURLOPT_SSL_VERIFYHOST, 2);
                 $curl->setOption(CURLOPT_SSL_VERIFYPEER, true);
             }
-            $curl->setOption(CURLOPT_TIMEOUT, 60);
+            $curl->setOption(CURLOPT_TIMEOUT, $timeoutSeconds ?? self::DEFAULT_TIMEOUT_SECONDS);
 
             if ($call->method == "POST" || $call->method == "PUT") {
                 $curl->addHeader("Content-Length", strlen($call->body));

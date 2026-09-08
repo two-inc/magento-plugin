@@ -249,6 +249,39 @@ class AdapterTest extends TestCase
     }
 
     /**
+     * @dataProvider callTimeouts
+     */
+    public function testTheCallTimeoutIsTheOneTheCallerAskedFor(
+        ?int $requested,
+        int $expected,
+        string $description
+    ): void {
+        $this->curl->method('getStatus')->willReturn(200);
+        $this->curl->method('getBody')->willReturn('{}');
+
+        $calls = [];
+        $this->curl->method('setOption')->willReturnCallback(function ($opt, $val) use (&$calls) {
+            $calls[$opt] = $val;
+        });
+
+        $this->adapter->execute('/v1/order', [], 'POST', null, null, null, $requested);
+
+        $this->assertSame($expected, $calls[CURLOPT_TIMEOUT], $description);
+    }
+
+    /**
+     * @return array<int,array{0: int|null, 1: int, 2: string}>
+     */
+    public static function callTimeouts(): array
+    {
+        return [
+            [null, 60, 'no timeout asked for keeps the default'],
+            [10, 10, 'a caller bounding its own wall clock gets the shorter ceiling'],
+            [120, 120, 'a longer ceiling is relayed, not clamped to the default'],
+        ];
+    }
+
+    /**
      * disable_ssl_verify is store-view-scoped (showInWebsite="1"
      * showInStore="1" in system.xml), same as the other scoped calls this
      * method already makes (getMode($storeId), getApiKey($storeId)). The
