@@ -118,7 +118,8 @@ class RateTableProvider
      */
     public function getRateTable(?int $storeId = null): ?array
     {
-        $cacheKey = $this->cacheKey($storeId);
+        $apiKey = (string)$this->configRepository->getApiKey($storeId);
+        $cacheKey = $this->cacheKey($apiKey);
         if ($cacheKey === null) {
             return null;
         }
@@ -139,7 +140,7 @@ class RateTableProvider
         // the cooldown keeps an API outage from adding a fetch round-trip
         // to every page view.
         if ($this->cache->load($cacheKey . self::FAILURE_COOLDOWN_SUFFIX) === false) {
-            $fresh = $this->fetchTable($storeId);
+            $fresh = $this->fetchTable($apiKey, $storeId);
             if ($fresh !== null) {
                 $this->persist($cacheKey, $fresh);
                 return $fresh;
@@ -162,16 +163,18 @@ class RateTableProvider
      * Force-refresh the cached table (cron entry point). A failed fetch
      * leaves the existing cached table untouched.
      *
+     * @param string $apiKey the key the table is cached under, as the caller's scope walk read it
+     * @param int|null $storeId a store view reading this key, for its request headers
      * @return bool whether a fresh table was fetched and cached
      */
-    public function refresh(?int $storeId = null): bool
+    public function refresh(string $apiKey, ?int $storeId = null): bool
     {
-        $cacheKey = $this->cacheKey($storeId);
+        $cacheKey = $this->cacheKey($apiKey);
         if ($cacheKey === null) {
             return false;
         }
 
-        $fresh = $this->fetchTable($storeId);
+        $fresh = $this->fetchTable($apiKey, $storeId);
         if ($fresh === null) {
             $this->logRepository->addErrorLog(
                 'RateTableProvider: background FX rate refresh failed, keeping last-known-good table',
@@ -225,9 +228,8 @@ class RateTableProvider
      * The cache key for the current API key, or null when no key is
      * configured (nothing to authenticate the fetch with).
      */
-    private function cacheKey(?int $storeId): ?string
+    private function cacheKey(string $apiKey): ?string
     {
-        $apiKey = (string)$this->configRepository->getApiKey($storeId);
         if ($apiKey === '') {
             return null;
         }
@@ -249,9 +251,9 @@ class RateTableProvider
     /**
      * @return array{rates: array<string,float>, as_of: ?string, fetched_at: int}|null
      */
-    private function fetchTable(?int $storeId): ?array
+    private function fetchTable(string $apiKey, ?int $storeId): ?array
     {
-        $response = $this->apiAdapter->execute(self::ENDPOINT, [], 'GET', $storeId);
+        $response = $this->apiAdapter->execute(self::ENDPOINT, [], 'GET', $storeId, $apiKey);
 
         // Adapter::execute always returns an array; a failure is signalled
         // by an error_code / http_status marker (never present on a real

@@ -285,7 +285,7 @@ class RateTableProviderTest extends TestCase
             null
         );
 
-        $this->assertTrue($this->provider($cache)->refresh(1));
+        $this->assertTrue($this->provider($cache)->refresh('test-api-key', 1));
     }
 
     public function testRefreshFailureLeavesCacheUntouched(): void
@@ -294,13 +294,13 @@ class RateTableProviderTest extends TestCase
         $cache = $this->createMock(CacheInterface::class);
         $cache->expects($this->never())->method('save');
 
-        $this->assertFalse($this->provider($cache)->refresh(1));
+        $this->assertFalse($this->provider($cache)->refresh('test-api-key', 1));
     }
 
     public function testRefreshWithoutApiKeyIsANoop(): void
     {
         $this->apiAdapter->expects($this->never())->method('execute');
 
-        $this->assertFalse($this->provider(null, '')->refresh(1));
+        $this->assertFalse($this->provider(null, '')->refresh('', 1));
     }
 }

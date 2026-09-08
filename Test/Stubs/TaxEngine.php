@@ -212,6 +212,13 @@ namespace Magento\Framework\Exception {
             {
                 parent::__construct($phrase ?? new \Magento\Framework\Phrase('No such entity.'), $cause);
             }
+
+            public static function singleField($fieldName, $fieldValue): self
+            {
+                // The Phrase stub renders positional placeholders only.
+                $phrase = new \Magento\Framework\Phrase('No such entity with %1 = %2', [$fieldName, $fieldValue]);
+                return new self($phrase);
+            }
         }
     }
 }

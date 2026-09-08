@@ -7,70 +7,53 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Cron;
 
-use Magento\Store\Model\StoreManagerInterface;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\Fx\RateTableProvider;
+use Two\Gateway\Service\Merchant\RecordRefresher;
 
 /**
  * Background refresh of the cached FX rate table (every 6 hours).
  *
  * Keeps checkout rate lookups off the fetch path: the read side serves
  * the cached table and only fetches itself when the table is missing or
- * this job has not kept it fresh. One refresh per distinct API key —
- * store scopes sharing a key share a cache entry, so refreshing it twice
- * would only duplicate the call.
+ * this job has not kept it fresh.
  */
 class RefreshFxRates
 {
     /** @var RateTableProvider */
     private $rateTableProvider;
 
-    /** @var StoreManagerInterface */
-    private $storeManager;
-
-    /** @var ConfigRepository */
-    private $configRepository;
+    /** @var RecordRefresher */
+    private $recordRefresher;
 
     public function __construct(
         RateTableProvider $rateTableProvider,
-        StoreManagerInterface $storeManager,
-        ConfigRepository $configRepository
+        RecordRefresher $recordRefresher
     ) {
         $this->rateTableProvider = $rateTableProvider;
-        $this->storeManager = $storeManager;
-        $this->configRepository = $configRepository;
+        $this->recordRefresher = $recordRefresher;
     }
 
     public function execute(): void
     {
-        $seen = [];
-        foreach ($this->storeScopes() as $storeId) {
-            $apiKey = (string)$this->configRepository->getApiKey($storeId);
-            if ($apiKey === '') {
-                continue;
-            }
-            $keyHash = hash('sha256', $apiKey);
-            if (isset($seen[$keyHash])) {
-                continue;
-            }
-            $seen[$keyHash] = true;
-            $this->rateTableProvider->refresh($storeId);
+        $points = $this->recordRefresher->distinctScopes(
+            $this->rateTableIdentity(),
+            $this->recordRefresher->storeScopes()
+        );
+        foreach ($points as $point) {
+            $this->rateTableProvider->refresh($point['api_key'], $point['store_id']);
         }
     }
 
     /**
-     * Default scope plus every store view: API keys are store-scoped, so
-     * each scope may resolve a different key (sandbox vs production, or a
-     * different merchant per store).
+     * RateTableProvider keys on the API key alone, so two store views sharing
+     * a key across environments share one entry and must not both refresh it.
      *
-     * @return array<int,int|null>
+     * @return callable(int|null, string): string
      */
-    private function storeScopes(): array
+    private function rateTableIdentity(): callable
     {
-        $scopes = [null];
-        foreach ($this->storeManager->getStores() as $store) {
-            $scopes[] = (int)$store->getId();
-        }
-        return $scopes;
+        return static function (?int $storeId, string $apiKey): string {
+            return hash('sha256', $apiKey);
+        };
     }
 }

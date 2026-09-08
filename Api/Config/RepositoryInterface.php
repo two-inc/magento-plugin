@@ -76,20 +76,22 @@ interface RepositoryInterface
     /**
      * Get mode
      *
-     * @param int|null $storeId
+     * @param int|null $storeId scope id when $scope is given
+     * @param string|null $scope default: store scope
      *
      * @return string
      */
-    public function getMode(?int $storeId = null): string;
+    public function getMode(?int $storeId = null, ?string $scope = null): string;
 
     /**
      * Get API key
      *
-     * @param int|null $storeId
+     * @param int|null $storeId scope id when $scope is given
+     * @param string|null $scope default: store scope
      *
      * @return string
      */
-    public function getApiKey(?int $storeId = null): string;
+    public function getApiKey(?int $storeId = null, ?string $scope = null): string;
 
     /**
      * Check if debug mode is enabled
