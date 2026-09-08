@@ -14,13 +14,17 @@
             />
             <div class="two-title-block">
                 <span class="two-payment-title" data-bind="text: getTitle()"></span>
+                <!-- ko if: twoSubtitleHtml -->
                 <div class="two-payment-subtitle" data-bind="html: twoSubtitleHtml"></div>
+                <!-- /ko -->
+                <!-- ko if: showWhatIsTwo -->
                 <a
                     class="two-about-link"
                     target="_blank"
                     rel="noopener"
-                    data-bind="visible: showWhatIsTwo, attr: {href: aboutLinkUrl}, text: aboutLinkText"
+                    data-bind="attr: {href: aboutLinkUrl}, text: aboutLinkText"
                 ></a>
+                <!-- /ko -->
             </div>
             <div class="two-payment-shield"></div>
         </div>

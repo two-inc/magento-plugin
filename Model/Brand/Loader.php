@@ -243,7 +243,9 @@ class Loader
             (string)($brand->checkout_subtitle ?? ''),
             $roundingSteps,
             $intentApprovedNotice,
-            $intentApprovedNoticeEnabled
+            $intentApprovedNoticeEnabled,
+            trim((string)($brand->about_url ?? '')),
+            trim((string)($brand->checkout_subtitle_faq_url ?? ''))
         );
     }
 }

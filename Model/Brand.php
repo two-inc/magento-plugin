@@ -143,6 +143,32 @@ class Brand implements BrandRegistryInterface
     }
 
     /**
+     * @deprecated 2.0.0 See note on getCode().
+     */
+    public function getAboutUrl(): string
+    {
+        throw new \LogicException(
+            'Two\\Gateway\\Model\\Brand is deprecated; consume '
+            . 'BrandRegistryInterface via DescriptorBackedBrandRegistry instead. '
+            . 'The checkout about-link target now comes from brand.xml '
+            . '`<about_url>` via ActiveBrandResolver.'
+        );
+    }
+
+    /**
+     * @deprecated 2.0.0 See note on getCode().
+     */
+    public function getCheckoutSubtitleFaqUrl(): string
+    {
+        throw new \LogicException(
+            'Two\\Gateway\\Model\\Brand is deprecated; consume '
+            . 'BrandRegistryInterface via DescriptorBackedBrandRegistry instead. '
+            . 'The checkout tagline FAQ link target now comes from brand.xml '
+            . '`<checkout_subtitle_faq_url>` via ActiveBrandResolver.'
+        );
+    }
+
+    /**
      * @deprecated 2.0.0 This class is the virtualType base for the
      *             legacy `OverlayBrand` DI rebinding. After the brand-aware
      *             runtime-resolution work landed (Two\Gateway\Brand\

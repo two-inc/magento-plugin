@@ -44,6 +44,8 @@ final class Descriptor
      * @param float[] $surchargeRoundingSteps Buyer-surcharge rounding steps offered in the admin Rounding step dropdown, ascending.
      * @param string|null $intentApprovedNotice Copy override for the buyer-facing intent-approved notice; null = use the platform default copy. Never ''. See getIntentApprovedNotice().
      * @param bool $intentApprovedNoticeEnabled Whether the buyer-facing intent-approved notice is rendered at all. Default true. See isIntentApprovedNoticeEnabled().
+     * @param string $aboutUrl Target of the checkout "What is <product>?" explainer link; '' = no link. See getAboutUrl().
+     * @param string $checkoutSubtitleFaqUrl Target of the "read more" link in the checkout tagline; '' = no tagline. See getCheckoutSubtitleFaqUrl().
      */
     public function __construct(
         private readonly string $code,
@@ -68,7 +70,9 @@ final class Descriptor
         private readonly string $checkoutSubtitle = '',
         private readonly array $surchargeRoundingSteps = [],
         private readonly ?string $intentApprovedNotice = null,
-        private readonly bool $intentApprovedNoticeEnabled = true
+        private readonly bool $intentApprovedNoticeEnabled = true,
+        private readonly string $aboutUrl = '',
+        private readonly string $checkoutSubtitleFaqUrl = ''
     ) {
     }
 
@@ -215,6 +219,18 @@ final class Descriptor
     public function getCheckoutSubtitle(): string
     {
         return $this->checkoutSubtitle;
+    }
+
+    /** Checkout about-link target from brand.xml <about_url>; '' renders no link. */
+    public function getAboutUrl(): string
+    {
+        return $this->aboutUrl;
+    }
+
+    /** Tagline "read more" target from brand.xml; '' renders no tagline. */
+    public function getCheckoutSubtitleFaqUrl(): string
+    {
+        return $this->checkoutSubtitleFaqUrl;
     }
 
     public function getSignUpUrl(): string

@@ -24,6 +24,9 @@ use Two\Gateway\Model\Brand\Loader;
  *  - <intent_approved_notice> — copy override for the same notice; empty
  *    and whitespace-only are INERT (they used to mean "off" under the
  *    superseded TWO-25213 three-state contract).
+ *  - <about_url> / <checkout_subtitle_faq_url> — checkout link targets
+ *    where '' means the link is not rendered, so whitespace must trim to
+ *    '' rather than become a dead href (ABN-496).
  *
  * Loader does no runtime XSD validation, so the parse/validate guards
  * here are the only safety net.
@@ -247,6 +250,65 @@ class LoaderTest extends TestCase
             'non-numeric' => ['abc'],
             'zero' => ['0'],
             'negative' => ['-1.00'],
+        ];
+    }
+
+    /**
+     * @dataProvider brandUrlProvider
+     */
+    public function testBrandUrlElementsAreTrimmedAndDefaultToEmpty(
+        string $getter,
+        string $extraXml,
+        string $expected,
+        string $description
+    ): void {
+        $loader = $this->loaderForBrandBody($extraXml);
+
+        $descriptor = $loader->load()['two_payment'];
+
+        $this->assertSame($expected, $descriptor->$getter(), $description);
+    }
+
+    /** @return array<string,array{0:string,1:string,2:string,3:string}> */
+    public static function brandUrlProvider(): array
+    {
+        return [
+            'about url present' => [
+                'getAboutUrl',
+                '<about_url>https://about.example.test/x</about_url>',
+                'https://about.example.test/x',
+                'the declared about URL reaches the descriptor',
+            ],
+            'about url absent' => [
+                'getAboutUrl',
+                '',
+                '',
+                'an undeclared about URL means no explainer link',
+            ],
+            'about url whitespace-only' => [
+                'getAboutUrl',
+                "<about_url>  \n </about_url>",
+                '',
+                'whitespace is not a link target',
+            ],
+            'faq url present' => [
+                'getCheckoutSubtitleFaqUrl',
+                '<checkout_subtitle_faq_url>https://faq.example.test/y</checkout_subtitle_faq_url>',
+                'https://faq.example.test/y',
+                'the declared FAQ URL reaches the descriptor',
+            ],
+            'faq url absent' => [
+                'getCheckoutSubtitleFaqUrl',
+                '',
+                '',
+                'an undeclared FAQ URL means no tagline',
+            ],
+            'faq url whitespace-only' => [
+                'getCheckoutSubtitleFaqUrl',
+                '<checkout_subtitle_faq_url>   </checkout_subtitle_faq_url>',
+                '',
+                'whitespace is not a link target',
+            ],
         ];
     }
 

@@ -104,6 +104,12 @@ interface BrandRegistryInterface
      */
     public function getCheckoutSubtitle(): string;
 
+    /** Checkout "What is <product>?" link target from brand.xml <about_url>; '' renders no link (ABN-496). */
+    public function getAboutUrl(): string;
+
+    /** Fills the %1/%2 link args of <checkout_subtitle>; '' renders no tagline (ABN-496). */
+    public function getCheckoutSubtitleFaqUrl(): string;
+
     /**
      * Merchant sign-up URL shown on the admin config header block.
      */

@@ -34,6 +34,10 @@
             <xs:element name="brand_tag" type="xs:string" minOccurs="0"/>
             <xs:element name="sign_up_url" type="xs:string" minOccurs="0"/>
             <xs:element name="documentation_url" type="xs:string" minOccurs="0"/>
+            <!-- Checkout "What is <product>?" link target; empty renders no link. -->
+            <xs:element name="about_url" type="xs:string" minOccurs="0"/>
+            <!-- Supplies the %1/%2 link args of <checkout_subtitle>; empty renders no tagline. -->
+            <xs:element name="checkout_subtitle_faq_url" type="xs:string" minOccurs="0"/>
             <xs:element name="api_base_url" type="xs:string"/>
             <!--
                 DEPRECATED, ignored by Loader: the offerable payment terms

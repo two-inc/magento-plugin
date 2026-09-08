@@ -21,6 +21,8 @@
         <brand_tag></brand_tag>
         <sign_up_url>https://portal.two.inc/auth/merchant/signup</sign_up_url>
         <documentation_url>https://docs.two.inc/developer-portal/plugins/magento</documentation_url>
+        <about_url>https://www.two.inc/what-is-two</about_url>
+        <!-- No <checkout_subtitle_faq_url>: this brand renders no tagline. -->
         <api_base_url>https://api.two.inc</api_base_url>
         <surcharge_rounding_steps>
             <step>0.10</step>

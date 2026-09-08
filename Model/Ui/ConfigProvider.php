@@ -56,19 +56,6 @@ class ConfigProvider implements ConfigProviderInterface
      */
     public const COMPANY_NUMBER_TOKEN = '{{companyNumber}}';
 
-    /**
-     * Buyer-facing "What is Two?" explainer link target (TWO-25386). Kept
-     * as a plain constant here rather than threaded through
-     * BrandRegistryInterface — a single marketing URL did not seem worth
-     * the blast radius of a new brand.xml tag across the descriptor,
-     * loader, XSD and every implementation. A brand overlay only supplies
-     * DATA (its own etc/brand.xml), so it has no subclassing point to
-     * override this constant from; a brand overlay that needs a different
-     * link would need this threaded through BrandRegistryInterface after
-     * all — revisit then, rather than pre-building it now on spec.
-     */
-    public const ABOUT_URL = 'https://www.two.inc/what-is-two';
-
     /** @var string */
     private $code;
 
@@ -111,6 +98,11 @@ class ConfigProvider implements ConfigProviderInterface
     private $supportedCompanyTypes;
 
     /**
+     * @var CheckoutTileCopy
+     */
+    private $checkoutTileCopy;
+
+    /**
      * @param string $code Payment-method code (overlay-specific). Defaults
      *                     to the Two-branded value for backward
      *                     compatibility with installs that don't override.
@@ -124,6 +116,7 @@ class ConfigProvider implements ConfigProviderInterface
         CheckoutSession $checkoutSession,
         StoreManagerInterface $storeManager,
         SupportedCompanyTypes $supportedCompanyTypes,
+        CheckoutTileCopy $checkoutTileCopy,
         ?string $code = null
     ) {
         $this->configRepository = $configRepository;
@@ -134,6 +127,7 @@ class ConfigProvider implements ConfigProviderInterface
         $this->checkoutSession = $checkoutSession;
         $this->storeManager = $storeManager;
         $this->supportedCompanyTypes = $supportedCompanyTypes;
+        $this->checkoutTileCopy = $checkoutTileCopy;
         $this->code = $code ?? $brandRegistry->getCode();
     }
 
@@ -252,10 +246,10 @@ class ConfigProvider implements ConfigProviderInterface
                     // fail-closed stance rather than failing open.
                     'minimumOrder' => $minimumOrder['minimums'],
                     'minimumOrderUnresolved' => $minimumOrder['unresolved'],
-                    'subtitleHtml' => $this->getSubtitleHtml(),
-                    'showAboutLink' => $this->configRepository->isAboutLinkEnabled(),
-                    'aboutLinkUrl' => self::ABOUT_URL,
-                    'aboutLinkText' => (string)__('What is %1?', $this->brandRegistry->getProductName()),
+                    'subtitleHtml' => $this->checkoutTileCopy->getSubtitleHtml(),
+                    'showAboutLink' => $this->checkoutTileCopy->isAboutLinkVisible(),
+                    'aboutLinkUrl' => $this->checkoutTileCopy->getAboutLinkUrl(),
+                    'aboutLinkText' => $this->checkoutTileCopy->getAboutLinkText(),
                     'displayTooltips' => $this->configRepository->isDisplayTooltipsEnabled(),
                     'surchargeDescription' => $this->configRepository->getSurchargeLineDescription(),
                     'isPaymentTermsEnabled' => true,
@@ -440,35 +434,6 @@ class ConfigProvider implements ConfigProviderInterface
         } catch (\Exception $e) {
             return '';
         }
-    }
-
-    /**
-     * Resolve the checkout subtitle for the storefront renderer.
-     *
-     * TWO-25386: a store-view-scoped admin override takes priority when
-     * set. It is merchant-entered free text, so it is HTML-escaped
-     * here rather than treated as a translation source key — unlike the
-     * brand default below, it must never be passed to __().
-     *
-     * Falling back, the string is brand data
-     * (BrandRegistryInterface::getCheckoutSubtitle, sourced from
-     * brand.xml). The vanilla Two brand returns '' → no subtitle. We only
-     * pass a non-empty key to the translator, so an unmapped locale falls
-     * back to the (brand-owned) source key rather than ever leaking a
-     * vanilla key.
-     *
-     * Either way the result may contain HTML; the KO template binds it via
-     * `html:`.
-     */
-    private function getSubtitleHtml(): string
-    {
-        $configured = trim($this->configRepository->getSubtitle());
-        if ($configured !== '') {
-            return htmlspecialchars($configured, ENT_QUOTES, 'UTF-8');
-        }
-
-        $key = $this->brandRegistry->getCheckoutSubtitle();
-        return $key === '' ? '' : (string)__($key);
     }
 
     /**
