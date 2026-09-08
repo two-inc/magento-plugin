@@ -77,7 +77,7 @@ class RefreshMerchantRecordTest extends TestCase
             ->willReturn($identity);
         $this->recordRefresher->expects($this->once())
             ->method('refreshWithin')
-            ->with($identity, $this->greaterThan(0))
+            ->with($identity, 20.0)
             ->willReturn(['records' => [['id' => 'abc-123']], 'skipped' => 0]);
 
         $this->assertTrue($this->invoke($params)['success'], $description);

@@ -64,10 +64,21 @@ class RecordRefresher
         $this->logRepository = $logRepository;
     }
 
-    public function refreshAll(): void
+    /**
+     * The hourly cron: refreshes every identity whose record is MAX_AGE old
+     * or missing, and records that the schedule ran for the rest.
+     */
+    public function refreshDue(): void
     {
-        $points = $this->distinctScopes($this->recordIdentity(), $this->storeScopes());
-        $this->refreshWithin($this->identitiesAt($points), INF);
+        $identities = $this->identitiesAt($this->distinctScopes($this->recordIdentity(), $this->storeScopes()));
+        $due = [];
+        foreach ($identities as $identity) {
+            $this->recordProvider->noteScheduledRun($identity['mode'], $identity['api_key']);
+            if ($this->recordProvider->isDue($identity['mode'], $identity['api_key'])) {
+                $due[] = $identity;
+            }
+        }
+        $this->refreshWithin($due, INF);
     }
 
     /**

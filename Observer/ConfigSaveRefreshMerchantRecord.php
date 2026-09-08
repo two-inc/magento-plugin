@@ -23,7 +23,7 @@ use Two\Gateway\Service\Merchant\RecordRefresher;
  */
 class ConfigSaveRefreshMerchantRecord implements ObserverInterface
 {
-    /** Inside the save request, whose config row is already written; identities past this wait for the cron. */
+    /** Bounds only the start of an identity, so a save costs this plus one identity's two calls. */
     private const INLINE_BUDGET_SECONDS = 15.0;
 
     /**
@@ -88,7 +88,7 @@ class ConfigSaveRefreshMerchantRecord implements ObserverInterface
         $outcome = $this->recordRefresher->refreshWithin($identities, self::INLINE_BUDGET_SECONDS);
         if ($outcome['skipped'] > 0) {
             $this->logRepository->addDebugLog(
-                'ConfigSaveRefreshMerchantRecord: left merchant profiles to the nightly refresh',
+                'ConfigSaveRefreshMerchantRecord: left merchant profiles to the scheduled refresh',
                 ['skipped' => $outcome['skipped']]
             );
         }

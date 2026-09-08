@@ -144,8 +144,9 @@ class RecordProviderTest extends TestCase
         );
 
         $this->assertNull($this->provider->getRecord(1));
-        $this->assertSame(1, count($saved));
-        $this->assertStringEndsWith('_cooldown', $saved[0]);
+        $this->assertSame([], preg_grep('/_record_[0-9a-f]{64}$/', $saved), 'the record key is never written');
+        $this->assertSame([], preg_grep('/_fetched_at$/', $saved), 'the success stamp does not move');
+        $this->assertCount(1, preg_grep('/_cooldown$/', $saved));
     }
 
     public function testCachesSuccessfulRecord(): void
@@ -164,12 +165,15 @@ class RecordProviderTest extends TestCase
         $this->assertSame($record, $this->provider->getRecord(1));
 
         $recordSaves = array_filter($saves, static function (string $key): bool {
-            return strpos($key, 'two_gateway_merchant_record_') === 0 && substr($key, -9) !== '_cooldown';
+            return (bool)preg_match('/_record_[0-9a-f]{64}$/', $key);
         }, ARRAY_FILTER_USE_KEY);
         $this->assertCount(1, $recordSaves);
         [$data, $tags, $lifetime] = array_values($recordSaves)[0];
         $this->assertStringContainsString('"available_terms"', $data);
-        $this->assertSame([['TWO_GATEWAY'], 3600], [$tags, $lifetime]);
+        $this->assertSame([['TWO_GATEWAY'], RecordProvider::CACHE_LIFETIME], [$tags, $lifetime]);
+        $stamps = preg_grep('/_fetched_at$/', array_keys($saves));
+        $this->assertCount(1, $stamps, 'the success stamp is written beside the record');
+        $this->assertSame([['TWO_GATEWAY'], RecordProvider::CACHE_LIFETIME], array_slice($saves[reset($stamps)], 1));
     }
 
     /**
@@ -189,8 +193,8 @@ class RecordProviderTest extends TestCase
             }
         );
         $this->cache->method('save')->willReturnCallback(
-            function ($data, $identifier, $tags) use (&$sequence) {
-                $sequence[] = (substr($identifier, -9) === '_cooldown' ? 'arm cooldown ' : 'store record ') . implode(',', $tags);
+            function ($data, $identifier, $tags, $lifetime) use (&$sequence) {
+                $sequence[] = self::describe($identifier) . ' ' . implode(',', $tags) . ' ' . $lifetime;
                 return true;
             }
         );
@@ -214,22 +218,45 @@ class RecordProviderTest extends TestCase
         return [
             'fetch succeeds' => [
                 ['id' => 'abc-123'],
-                ['arm cooldown TWO_GATEWAY', 'fetch', 'fetch', 'store record TWO_GATEWAY', 'clear cooldown'],
-                'armed first, record stored, cooldown cleared so readers are not stranded on null',
+                [
+                    'mark absent TWO_GATEWAY 93600',
+                    'arm cooldown TWO_GATEWAY 60',
+                    'fetch',
+                    'fetch',
+                    'store record TWO_GATEWAY 93600',
+                    'store stamp TWO_GATEWAY 93600',
+                    'clear cooldown',
+                ],
+                'armed first, record and stamp stored, cooldown cleared so readers are not stranded on null',
             ],
             'fetch fails' => [
                 ['http_status' => 503],
-                ['arm cooldown TWO_GATEWAY', 'fetch', 'fetch'],
-                'armed first and left armed, nothing stored',
+                ['mark absent TWO_GATEWAY 93600', 'arm cooldown TWO_GATEWAY 60', 'fetch', 'fetch'],
+                'armed first and left armed for 60s only, nothing stored, stamp untouched',
             ],
         ];
+    }
+
+    private static function describe(string $identifier): string
+    {
+        $names = ['_cooldown' => 'arm cooldown', '_fetched_at' => 'store stamp', '_absent_on_read' => 'mark absent'];
+        foreach ($names as $suffix => $name) {
+            if (str_ends_with($identifier, $suffix)) {
+                return $name;
+            }
+        }
+        return 'store record';
     }
 
     /**
      * @param CacheInterface|\PHPUnit\Framework\MockObject\MockObject $cache
      */
-    private function providerWith($cache, string $apiKey = 'test-api-key', string $mode = 'sandbox'): RecordProvider
-    {
+    private function providerWith(
+        $cache,
+        string $apiKey = 'test-api-key',
+        string $mode = 'sandbox',
+        ?LogRepository $logRepository = null
+    ): RecordProvider {
         $configRepository = $this->createMock(ConfigRepository::class);
         $configRepository->method('getApiKey')->willReturn($apiKey);
         $configRepository->method('getMode')->willReturn($mode);
@@ -239,8 +266,201 @@ class RecordProviderTest extends TestCase
             $configRepository,
             $cache,
             new Json(),
-            $this->createMock(LogRepository::class)
+            $logRepository ?? $this->createMock(LogRepository::class)
         );
+    }
+
+    /** The identifier the provider must compute for an identity; anything else is a different merchant. */
+    private static function entryFor(string $mode, string $apiKey): string
+    {
+        return 'two_gateway_merchant_record_' . hash('sha256', $mode . "\0" . $apiKey);
+    }
+
+    /**
+     * A cache holding a record and/or a success stamp of the given age, under
+     * one identity's own identifiers only.
+     *
+     * @return CacheInterface|\PHPUnit\Framework\MockObject\MockObject
+     */
+    private function cacheWith(
+        bool $record,
+        ?int $stampAge,
+        ?int $absentAge = null,
+        string $mode = 'sandbox',
+        string $apiKey = 'test-api-key'
+    ) {
+        $entry = self::entryFor($mode, $apiKey);
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->method('load')->willReturnCallback(
+            function (string $identifier) use ($record, $stampAge, $absentAge, $entry) {
+                if ($identifier === $entry . '_fetched_at') {
+                    return $stampAge === null ? false : (string)(time() - $stampAge);
+                }
+                if ($identifier === $entry . '_absent_on_read') {
+                    return $absentAge === null ? false : (string)(time() - $absentAge);
+                }
+                if ($identifier === $entry) {
+                    return $record ? '{"record":{"available_terms":[30]}}' : false;
+                }
+                return false;
+            }
+        );
+
+        return $cache;
+    }
+
+    /**
+     * @dataProvider ages
+     */
+    public function testTheCronRefreshesOnceTheRecordIsMaxAgeOldOrGone(
+        bool $record,
+        ?int $stampAge,
+        bool $expectedDue,
+        string $description
+    ): void {
+        $this->assertSame(
+            $expectedDue,
+            $this->providerWith($this->cacheWith($record, $stampAge))->isDue('sandbox', 'test-api-key'),
+            $description
+        );
+    }
+
+    /**
+     * @return array<string, array{0: bool, 1: int|null, 2: bool, 3: string}>
+     */
+    public static function ages(): array
+    {
+        return [
+            'just under' => [true, RecordProvider::MAX_AGE - 1, false, 'a record just under a day old is left alone'],
+            'just over' => [true, RecordProvider::MAX_AGE + 1, true, 'a record just over a day old is due'],
+            'no stamp' => [true, null, true, 'a record with no success stamp is due'],
+            'stamp, record gone' => [false, 10, true, 'a fresh stamp whose record was dropped is due, not fresh'],
+            'nothing cached' => [false, null, true, 'nothing cached is due'],
+        ];
+    }
+
+    /**
+     * @dataProvider otherIdentities
+     */
+    public function testAnIdentityNeverReadsAnothersEntry(string $mode, string $apiKey, string $description): void
+    {
+        // Given a cache holding sandbox + test-api-key; when another identity is asked; then it is a miss.
+        $provider = $this->providerWith($this->cacheWith(true, 10));
+
+        $this->assertTrue($provider->isDue($mode, $apiKey), $description);
+        $this->assertNull($provider->status($mode, $apiKey)['fetched_at'], $description);
+    }
+
+    /**
+     * @return array<int,array{0: string, 1: string, 2: string}>
+     */
+    public static function otherIdentities(): array
+    {
+        return [
+            ['production', 'test-api-key', 'the same key in the other environment is another merchant'],
+            ['sandbox', 'other-key', 'another key in the same environment is another merchant'],
+        ];
+    }
+
+    public function testTheRecordIsFetchedFromTheMerchantIdVerifyNamed(): void
+    {
+        // Given verify names a merchant; when the record is read; then that id is the endpoint fetched.
+        $endpoints = [];
+        $this->apiAdapter->method('execute')->willReturnCallback(
+            function (string $endpoint) use (&$endpoints) {
+                $endpoints[] = $endpoint;
+
+                return $endpoint === '/v1/merchant/verify_api_key'
+                    ? ['id' => 'abc-123']
+                    : ['available_terms' => [30]];
+            }
+        );
+
+        $this->provider->getRecord(1);
+
+        $this->assertSame(['/v1/merchant/verify_api_key', '/v1/merchant/abc-123'], $endpoints);
+    }
+
+    public function testNoKeyIsNeverDue(): void
+    {
+        $this->assertFalse($this->providerWith($this->cacheWith(false, null), '')->isDue('sandbox', ''));
+    }
+
+    public function testAReadMissLogsThatTheScheduledRefreshMayNotBeRunning(): void
+    {
+        // With the cron running the record is replaced before eviction, so a miss is a signal.
+        $this->stubApi(['id' => 'abc-123'], ['id' => 'abc-123']);
+        $log = $this->createMock(LogRepository::class);
+        $log->expects($this->once())->method('addErrorLog')
+            ->with($this->stringContains('scheduled refresh may not be running'), $this->anything());
+        $cache = $this->cacheWith(false, null);
+        $marked = [];
+        $cache->method('save')->willReturnCallback(
+            function ($data, $identifier) use (&$marked) {
+                if (str_ends_with($identifier, '_absent_on_read')) {
+                    $marked[] = (int)$data;
+                }
+                return true;
+            }
+        );
+
+        $this->assertNotNull($this->providerWith($cache, 'test-api-key', 'sandbox', $log)->getRecord(1), 'still fetched');
+        $this->assertCount(1, $marked, 'the miss is recorded for Diagnostics');
+    }
+
+    public function testACacheHitLogsNothing(): void
+    {
+        $log = $this->createMock(LogRepository::class);
+        $log->expects($this->never())->method('addErrorLog');
+
+        $this->providerWith($this->cacheWith(true, 10), 'test-api-key', 'sandbox', $log)->getRecord(1);
+    }
+
+    public function testStatusReportsTheStampAndTheLastMissAndTheCronRunClearsTheMiss(): void
+    {
+        $cache = $this->cacheWith(true, 100, 50);
+        $removed = [];
+        $cache->method('remove')->willReturnCallback(
+            function (string $identifier) use (&$removed) {
+                $removed[] = $identifier;
+                return true;
+            }
+        );
+        $provider = $this->providerWith($cache);
+
+        $status = $provider->status('sandbox', 'test-api-key');
+        $provider->noteScheduledRun('sandbox', 'test-api-key');
+
+        $this->assertEqualsWithDelta(time() - 100, $status['fetched_at'], 2);
+        $this->assertEqualsWithDelta(time() - 50, $status['absent_on_read_at'], 2);
+        $this->assertCount(1, preg_grep('/_absent_on_read$/', $removed));
+    }
+
+    public function testEveryConsumerReadsThroughGetRecordSoAFailedFetchServesTheLastKnownGoodToAll(): void
+    {
+        // getRecord() serves the cached record after a failed refresh; a consumer bypassing it could not.
+        $root = dirname(__DIR__, 4);
+        $offenders = [];
+        foreach (['Service', 'Model', 'Block', 'Controller', 'Observer', 'Cron'] as $dir) {
+            $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root . '/' . $dir));
+            foreach ($iterator as $file) {
+                if ($file->getExtension() !== 'php' || str_contains($file->getPathname(), 'Service/Merchant/Record')) {
+                    continue;
+                }
+                $source = (string)file_get_contents($file->getPathname());
+                if (!str_contains($source, 'RecordProvider')) {
+                    continue;
+                }
+                preg_match_all('/recordProvider->(\w+)\(/', $source, $calls);
+                foreach (array_unique($calls[1]) as $method) {
+                    if (!in_array($method, ['getRecord', 'status'], true)) {
+                        $offenders[] = substr($file->getPathname(), strlen($root) + 1) . '::' . $method;
+                    }
+                }
+            }
+        }
+
+        $this->assertSame([], $offenders);
     }
 
     public function testRefreshIgnoresTheCachedRecordAndWritesTheFreshOneForward(): void
@@ -250,16 +470,21 @@ class RecordProviderTest extends TestCase
         $cache->method('load')->willReturn('{"record":{"available_terms":[30]}}');
         $fresh = ['id' => 'abc-123', 'available_terms' => [30, 60, 90]];
         $this->stubApi(['id' => 'abc-123'], $fresh);
-        $cache->expects($this->once())->method('save')->with(
-            $this->stringContains('"available_terms":[30,60,90]'),
-            $this->stringContains('two_gateway_merchant_record_'),
-            ['TWO_GATEWAY'],
-            3600
+        $saves = [];
+        $cache->method('save')->willReturnCallback(
+            function ($data, $identifier) use (&$saves) {
+                $saves[$identifier] = $data;
+                return true;
+            }
         );
 
         $provider = $this->providerWith($cache);
 
         $this->assertSame($fresh, $provider->refresh('sandbox', 'test-api-key', 1));
+        $recordKeys = preg_grep('/_record_[0-9a-f]{64}$/', array_keys($saves));
+        $this->assertCount(1, $recordKeys);
+        $this->assertStringContainsString('"available_terms":[30,60,90]', $saves[reset($recordKeys)]);
+        $this->assertCount(1, preg_grep('/_fetched_at$/', array_keys($saves)), 'the success stamp moves');
         $this->assertSame($fresh, $provider->getRecord(1), 'the refreshed record replaces the memo too');
     }
 
@@ -287,7 +512,7 @@ class RecordProviderTest extends TestCase
         $provider = $this->providerWith($cache);
 
         $this->assertNull($provider->refresh('sandbox', 'test-api-key', 1), 'the caller is told the fetch failed');
-        $this->assertSame([], $saved, 'nothing is written — not the record, not a cooldown');
+        $this->assertSame([], $saved, 'nothing is written — not the record, not the stamp, not a cooldown');
         $this->assertSame(
             ['available_terms' => [30]],
             $provider->getRecord(1),
@@ -328,9 +553,7 @@ class RecordProviderTest extends TestCase
         $this->assertNull($this->provider->getRecord(1));
         $this->assertSame(
             [],
-            array_filter($saved, static function (string $identifier): bool {
-                return !str_ends_with($identifier, '_cooldown');
-            }),
+            preg_grep('/_record_[0-9a-f]{64}$/', $saved),
             'an empty body is never written as the record'
         );
     }
@@ -461,17 +684,21 @@ class RecordProviderTest extends TestCase
                 return ['id' => 'abc-123'];
             }
         );
-        $saved = null;
+        $saved = [];
         $this->cache->method('save')->willReturnCallback(
             function (string $data, string $key) use (&$saved) {
-                $saved = $key;
+                $saved[] = $key;
                 return true;
             }
         );
 
         $this->provider->refresh('production', 'other-key', 1);
 
-        $this->assertSame([[1, 'other-key', 'production'], [1, 'other-key', 'production']], $calls);
-        $this->assertStringEndsWith(hash('sha256', "production\0other-key"), (string)$saved);
+        $identity = hash('sha256', "production\0other-key");
+        $this->assertSame([[1, 'other-key', 'production', 10], [1, 'other-key', 'production', 10]], $calls);
+        $this->assertSame(
+            ['two_gateway_merchant_record_' . $identity, 'two_gateway_merchant_record_' . $identity . '_fetched_at'],
+            $saved
+        );
     }
 }

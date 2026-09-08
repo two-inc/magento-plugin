@@ -10,9 +10,9 @@ namespace Two\Gateway\Cron;
 use Two\Gateway\Service\Merchant\RecordRefresher;
 
 /**
- * Nightly refresh of the cached merchant record, so a commercial value
- * changed on Two's side lands without a checkout render paying for the
- * fetch; without this job only expiry refreshes it.
+ * Hourly check of the cached merchant record: refreshes it once a day old,
+ * ahead of the cache lifetime, so a commercial value changed on Two's side
+ * lands within a day and no checkout render ever pays for the fetch.
  */
 class RefreshMerchantRecord
 {
@@ -28,6 +28,6 @@ class RefreshMerchantRecord
 
     public function execute(): void
     {
-        $this->recordRefresher->refreshAll();
+        $this->recordRefresher->refreshDue();
     }
 }

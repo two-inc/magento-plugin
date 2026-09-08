@@ -13,7 +13,7 @@ use Two\Gateway\Service\Merchant\RecordProvider;
 use Two\Gateway\Service\Merchant\RecordRefresher;
 
 /**
- * The scope -> cache-identity mapping behind the nightly cron, the API-key /
+ * The scope -> cache-identity mapping behind the hourly cron, the API-key /
  * environment save and the Diagnostics button.
  */
 class RecordRefresherTest extends TestCase
@@ -150,7 +150,7 @@ class RecordRefresherTest extends TestCase
      * @param array<int,array{0: string, 1: string, 2: int|null}> $expected
      * @dataProvider allScopeSets
      */
-    public function testRefreshAllRefreshesOncePerDistinctModeAndApiKey(
+    public function testTheCronRefreshesOncePerDistinctModeAndApiKey(
         array $stores,
         array $config,
         array $expected,
@@ -158,6 +158,7 @@ class RecordRefresherTest extends TestCase
     ): void {
         // Same (mode, key) is one cache entry; same key on two environments is two.
         $this->configure($stores, $config);
+        $this->recordProvider->method('isDue')->willReturn(true);
         $calls = [];
         $this->recordProvider->method('refresh')->willReturnCallback(
             function (string $mode, string $apiKey, ?int $storeId) use (&$calls) {
@@ -166,9 +167,41 @@ class RecordRefresherTest extends TestCase
             }
         );
 
-        $this->refresher()->refreshAll();
+        $this->refresher()->refreshDue();
 
         $this->assertSame($expected, $calls, $description);
+    }
+
+    public function testTheCronRefreshesOnlyWhatIsDueAndNotesItsRunForEveryIdentity(): void
+    {
+        // A record under a day old is left alone; the run is still recorded so a read miss before it stops signalling.
+        $this->configure(
+            [1 => 1, 2 => 1],
+            ['default:' => ['key-a', 'sandbox'], '2' => ['key-b', 'production']]
+        );
+        $this->recordProvider->method('isDue')->willReturnCallback(
+            static function (string $mode, string $apiKey): bool {
+                return $apiKey === 'key-b';
+            }
+        );
+        $noted = [];
+        $this->recordProvider->method('noteScheduledRun')->willReturnCallback(
+            static function (string $mode, string $apiKey) use (&$noted): void {
+                $noted[] = [$mode, $apiKey];
+            }
+        );
+        $refreshed = [];
+        $this->recordProvider->method('refresh')->willReturnCallback(
+            static function (string $mode, string $apiKey) use (&$refreshed) {
+                $refreshed[] = [$mode, $apiKey];
+                return ['id' => $apiKey];
+            }
+        );
+
+        $this->refresher()->refreshDue();
+
+        $this->assertSame([['sandbox', 'key-a'], ['production', 'key-b']], $noted);
+        $this->assertSame([['production', 'key-b']], $refreshed);
     }
 
     /**

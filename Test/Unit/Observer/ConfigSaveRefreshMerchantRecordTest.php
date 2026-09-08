@@ -92,7 +92,7 @@ class ConfigSaveRefreshMerchantRecordTest extends TestCase
         );
         $this->recordRefresher->expects($this->once())
             ->method('refreshWithin')
-            ->with(self::IDENTITY, $this->greaterThan(0))
+            ->with(self::IDENTITY, 15.0)
             ->willReturn(['records' => [['id' => 'abc']], 'skipped' => 0]);
 
         $this->dispatch($eventData);

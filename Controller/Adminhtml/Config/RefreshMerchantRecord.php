@@ -22,14 +22,14 @@ use Two\Gateway\Service\Merchant\RecordRefresher;
  *
  * Refetches every merchant profile the scope being edited governs, so an
  * admin can pull a commercial change through immediately instead of waiting
- * for the nightly refresh. Same semantics as the cron: each cached record is
+ * for the hourly refresh. Same semantics as the cron: each cached record is
  * replaced on success and left alone on failure, which is reported inline.
  */
 class RefreshMerchantRecord extends Action implements HttpPostActionInterface
 {
     public const ADMIN_RESOURCE = 'Magento_Sales::config_sales';
 
-    /** Under the admin request timeout, so the inline report is always rendered. */
+    /** Bounds only the start of an identity, so a press costs this plus one identity's two calls. */
     private const BUDGET_SECONDS = 20.0;
 
     /**
