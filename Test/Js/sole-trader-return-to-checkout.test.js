@@ -16,6 +16,8 @@ const SOLE_TRADER = 'view/frontend/web/js/model/sole-trader.js';
 function renderCheckout() {
     document.body.innerHTML =
         '<input id="other-field">'
+        // The company field is the popover's own trigger and sits outside it.
+        + '<input id="company">'
         + '<div class="two-company-dropdown" id="popover">'
         + '<input id="query">'
         + '<button data-two-chip="registered" id="registered">Ingeschreven bedrijf</button>'
@@ -51,6 +53,7 @@ function load() {
         panel: function () {
             return {
                 getPanelElement: function () { return document.getElementById('popover'); },
+                getField: function () { return [document.getElementById('company')]; },
                 close: function () { popoverClosed += 1; }
             };
         }
@@ -86,6 +89,7 @@ function load() {
                 chip.click();
             }
             if (kind === 'unrelated control') document.getElementById('other-field').focus();
+            if (kind === 'the company name field') document.getElementById('company').focus();
             if (kind === 'the company query field') document.getElementById('query').focus();
             if (kind === 'a sibling chip') document.getElementById('registered').focus();
             if (kind === 'the Sole trader chip') document.getElementById('soletrader').focus();
@@ -101,25 +105,28 @@ beforeEach(renderCheckout);
 
 describe('what a return to checkout does to an open signup popup', () => {
     test.each([
-        ['the company query field', false, 0, 1,
+        ['the company query field', false, 0, 0, 1,
             'inside the popover: the signup goes, the capture the buyer is still in stays'],
-        ['a sibling chip', false, 0, 1,
+        ['a sibling chip', false, 0, 0, 1,
             'inside the popover: switching capture mode ends the signup, not the capture'],
-        ['unrelated control', false, 1, 1,
+        ['unrelated control', false, 1, 0, 1,
             'outside the popover: the buyer has left capture, so both go'],
-        ['the Sole trader chip', true, 0, 1,
-            'tabbing onto the chip must not take the signup down'],
-        ['a real mouse click on the Sole trader chip', true, 0, 0,
-            'the cancelled mousedown moves no focus, so nothing here runs at all'],
-        ['window focus', true, 0, 0, 'a tab or app switch lands on no control at all']
-    ])('focus landing on %s: popup open=%s, popover closed %d time(s)',
-        (kind, open, popoverClosed, focusins, why) => {
+        ['the company name field', false, 0, 0, 1,
+            'the popover\'s own trigger: the signup goes, the results being typed against stay'],
+        ['the Sole trader chip', true, 0, 0, 1,
+            'arriving on the chip moves the popup neither way'],
+        ['a real mouse click on the Sole trader chip', true, 0, 1, 0,
+            'the cancelled mousedown moves no focus, so the click alone raises it'],
+        ['window focus', true, 0, 0, 0, 'a tab or app switch lands on no control at all']
+    ])('focus landing on %s: popup open=%s, popover closed %d time(s), raised %d time(s)',
+        (kind, open, popoverClosed, raised, focusins, why) => {
             const ctx = load();
 
             ctx.returnToCheckout(kind);
 
-            expect(tagged(why, [ctx.flow.isPopupOpen(), ctx.popoverClosed(), ctx.focusins()]))
-                .toEqual(tagged(why, [open, popoverClosed, focusins]));
+            expect(tagged(why, [
+                ctx.flow.isPopupOpen(), ctx.popoverClosed(), ctx.popupRaised(), ctx.focusins()
+            ])).toEqual(tagged(why, [open, popoverClosed, raised, focusins]));
         });
 });
 
@@ -131,7 +138,8 @@ test('the keyboard route raises the popup it kept, rather than reopening one', (
     ctx.returnToCheckout('the Sole trader chip');
     document.getElementById('soletrader').click();
 
-    expect(ctx.popupRaised()).toBe(2);
+    // The Enter alone: the arrival before it raised nothing.
+    expect(ctx.popupRaised()).toBe(1);
     expect(ctx.flow._popupWindow).toBe(held);
     expect(ctx.flow.isPopupOpen()).toBe(true);
 });

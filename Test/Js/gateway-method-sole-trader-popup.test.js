@@ -410,6 +410,31 @@ describe('a blocked popup falls back to the on-page link', () => {
         expect(held.closed).toBe(false);
     });
 
+    test('Tab onto the chip is inert, and the Enter after it raises the popup (TWO-25658)', async () => {
+        // Given: the signup open behind the popover the chips live in.
+        const { rec } = await startStack();
+        chip('soletrader').click();
+        const held = rec.handles[0];
+        const node = document.querySelector('.two-company-mode-chip[data-two-chip="soletrader"]');
+        const popover = document.querySelector('.two-company-dropdown');
+
+        // When: focus arrives with no activation, as Tab delivers it.
+        node.focus();
+
+        // Then: the popup is neither raised nor closed, and the popover stays.
+        const why = 'arrival alone moves nothing';
+        expect(tagged(why, [rec.focused, held.closed, popover.hasAttribute('hidden'), rec.opened.length]))
+            .toEqual(tagged(why, [[], false, false, 1]));
+
+        // When: Enter on the chip already holding focus, delivered as a click.
+        node.click();
+
+        // Then: the activation is what gives the buyer the popup back.
+        expect(rec.focused).toEqual([held]);
+        expect(rec.opened).toHaveLength(1);
+        expect(held.closed).toBe(false);
+    });
+
     test.each([
         [false, 'the launching control does not keep focus'],
         [true, 'so a window return re-focuses nothing and the signup survives the tab switch']
