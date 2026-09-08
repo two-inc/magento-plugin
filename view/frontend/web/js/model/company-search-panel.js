@@ -365,7 +365,6 @@
         field.setAttribute('aria-haspopup', 'listbox');
         field.setAttribute('aria-controls', `two-company-results-${this._id}`);
         field.setAttribute('aria-expanded', this._open ? 'true' : 'false');
-        if (this._open) this._holdFieldTabStop();
         this.setDisplayText(this.getDisplayText());
     };
 
@@ -437,6 +436,9 @@
         const panel = document.createElement('div');
         panel.className = PANEL_CLASS;
         panel.setAttribute('hidden', 'hidden');
+        // A freshly built panel is hidden, so the field it belongs to is closed.
+        this._open = false;
+        this._releaseFieldTabStop();
 
         const searchRow = document.createElement('div');
         searchRow.className = SEARCH_ROW_CLASS;
@@ -1166,6 +1168,7 @@
         this.removeBackToSearchLink();
         this._releaseWrap(this._field);
         stripComboboxAttributes(this._field);
+        this._releaseFieldTabStop();
         this._field = null;
         this._panel = null;
         this._query = null;

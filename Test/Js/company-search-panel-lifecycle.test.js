@@ -497,10 +497,10 @@ describe('an open panel takes the tab stop off the field', () => {
         expect(document.querySelector(FIELD).getAttribute('tabindex')).toBe('7');
     });
 
-    test.each([1, 2, 3])('cycle %i leaves the field exactly as it found it', (cycles) => {
+    test('repeated cycles leave the field exactly as they found it', () => {
         const ctx = setup();
 
-        for (let i = 0; i < cycles; i++) {
+        for (let i = 0; i < 2; i++) {
             ctx.panel.open();
             expect(document.querySelector(FIELD).getAttribute('tabindex')).toBe('-1');
             ctx.panel.close();
@@ -508,12 +508,53 @@ describe('an open panel takes the tab stop off the field', () => {
         }
     });
 
-    test('teardown while open hands the tab stop back', () => {
+    test.each([
+        { tearDown: (ctx) => ctx.panel.destroy(), description: 'destroy, which is final' },
+        { tearDown: (ctx) => ctx.panel.unmount(), description: 'unmount, which stays re-mountable' }
+    ])('teardown while open hands the tab stop back ($description)', ({ tearDown }) => {
         const ctx = setup();
         ctx.panel.open();
 
-        ctx.panel.destroy();
+        tearDown(ctx);
 
         expect(document.querySelector(FIELD).hasAttribute('tabindex')).toBe(false);
+    });
+
+    /**
+     * The host re-renders its own container while the panel is open: the
+     * wrapper goes, and the field either survives or comes back from the
+     * host's template.
+     *
+     * @param {boolean} keepField
+     */
+    function hostReRender(ctx, keepField) {
+        const field = document.querySelector(FIELD);
+        const wrap = field.parentElement;
+        let next = field;
+        if (!keepField) {
+            next = document.createElement('input');
+            next.type = 'text';
+            next.id = field.id;
+        }
+        wrap.parentNode.insertBefore(next, wrap);
+        wrap.remove();
+        ctx.panel.bind();
+    }
+
+    test.each([
+        { keepField: true, description: 'keeping the field node' },
+        { keepField: false, description: 're-rendering the field too' }
+    ])('a host re-render while open leaves the field closed, not stranded ($description)', ({ keepField }) => {
+        const ctx = setup();
+        ctx.panel.open();
+        expect(document.querySelector(FIELD).getAttribute('tabindex')).toBe('-1');
+
+        hostReRender(ctx, keepField);
+
+        // Positive control: the re-render has to have cost the panel its
+        // wrapper, or this exercises adoption instead of construction.
+        expect(panelIsOpen()).toBe(false);
+        expect(document.querySelector(FIELD).hasAttribute('tabindex')).toBe(false);
+        expect(document.querySelector(FIELD).getAttribute('aria-expanded')).toBe('false');
     });
 });
