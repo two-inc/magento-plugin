@@ -156,6 +156,54 @@ class RepositoryPaymentTermsTest extends TestCase
         $this->assertEquals([], $this->repository->getAllBuyerTerms());
     }
 
+    /**
+     * config:set bypasses the admin fields' save-time entitlement check, so
+     * the read path intersects with the merchant record too (ABN-493).
+     *
+     * @param int[] $offered
+     * @param int[] $expected
+     * @dataProvider offeredIntersectionProvider
+     */
+    public function testGetAllBuyerTermsIntersectsWithTheOfferedSet(
+        string $presets,
+        string $custom,
+        array $offered,
+        array $expected,
+        string $case
+    ): void {
+        $this->settingsProvider->method('getAvailableTerms')->willReturn($offered);
+        $this->stubConfig([
+            'payment/two_payment/payment_terms' => $presets,
+            'payment/two_payment/payment_terms_duration_days' => $custom,
+        ]);
+
+        $this->assertSame($expected, $this->repository->getAllBuyerTerms(), $case);
+    }
+
+    public static function offeredIntersectionProvider(): array
+    {
+        return [
+            ['14,30', '', [14, 30, 60], [14, 30], 'every stored term is offered'],
+            ['14,30', '', [30], [30], 'a stored preset no longer offered is dropped'],
+            ['14', '37', [14], [14], 'a stored custom day that is not offered is dropped'],
+            ['14', '37', [14, 37], [14, 37], 'an offered custom day is kept'],
+            ['7,37', '', [14, 30], [], 'nothing offered in common leaves no buyer terms'],
+            ['14,30', '', [], [14, 30], 'an unresolvable merchant record leaves the stored set alone'],
+        ];
+    }
+
+    public function testGetDefaultPaymentTermIgnoresADefaultTheMerchantNoLongerOffers(): void
+    {
+        $this->settingsProvider->method('getAvailableTerms')->willReturn([14, 30]);
+        $this->stubConfig([
+            'payment/two_payment/default_payment_term' => '37',
+            'payment/two_payment/payment_terms' => '14,30,37',
+            'payment/two_payment/payment_terms_duration_days' => '',
+        ]);
+
+        $this->assertEquals(14, $this->repository->getDefaultPaymentTerm());
+    }
+
     // ── getDefaultPaymentTerm ────────────────────────────────────────
 
     public function testGetDefaultPaymentTermReturnsConfiguredValue(): void

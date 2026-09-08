@@ -13,6 +13,7 @@ use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\UrlInterface;
 use Magento\Store\Model\ScopeInterface;
 use Magento\Tax\Model\Calculation as TaxCalculation;
+use Psr\Log\LoggerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface;
 use Two\Gateway\Model\Config\Backend\CustomHeaders as CustomHeadersBackend;
@@ -84,6 +85,8 @@ class Repository implements RepositoryInterface
      */
     private $code;
 
+    private $logger;
+
     /**
      * @param ?string $code Payment-method code. Null (the shipped
      *                      default) defers to the brand registry —
@@ -102,7 +105,8 @@ class Repository implements RepositoryInterface
         BrandRegistryInterface $brandRegistry,
         SettingsProvider $settingsProvider,
         Provenance $provenance,
-        ?string $code = null
+        ?string $code = null,
+        ?LoggerInterface $logger = null
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->encryptor = $encryptor;
@@ -113,6 +117,7 @@ class Repository implements RepositoryInterface
         $this->settingsProvider = $settingsProvider;
         $this->provenance = $provenance;
         $this->code = $code;
+        $this->logger = $logger;
     }
 
     /**
@@ -578,9 +583,26 @@ class Repository implements RepositoryInterface
         if ($custom > 0) {
             $terms[] = $custom;
         }
-        $terms = array_unique($terms);
+        $terms = array_values(array_unique($terms));
         sort($terms);
-        return $terms;
+
+        // config:set bypasses the fields' save-time entitlement check (ABN-493).
+        $offered = array_map('intval', $this->settingsProvider->getAvailableTerms($storeId));
+        // No terms at all means an unresolvable record — unknown, not "none offered".
+        if ($offered === []) {
+            return $terms;
+        }
+
+        $dropped = array_values(array_diff($terms, $offered));
+        if ($dropped !== [] && $this->logger !== null) {
+            $this->logger->debug(sprintf(
+                'Payment terms %s are configured but not offered by the merchant record (offered: %s) - not offered to the buyer.',
+                implode(', ', $dropped),
+                implode(', ', $offered)
+            ));
+        }
+
+        return array_values(array_intersect($terms, $offered));
     }
 
     /**
