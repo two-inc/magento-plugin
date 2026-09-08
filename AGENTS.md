@@ -20,8 +20,8 @@ and neither does a person named as the authority for a rule.
 
 ## Branching & releases
 
--   **Day-to-day PRs target `staging`** (the GitHub default and the
-    staging shop's deploy branch); branch off `origin/staging` —
+-   **Day-to-day PRs target `staging`** (the GitHub default); branch off
+    `origin/staging` —
     `version-bump.yml` decides the release version on PRs landing there.
     `auto-pr.yml` opens the staging → main promotion PR on every push to
     `staging`; `main` is prod. `merge-back.yml` syncs `main → staging`
@@ -48,6 +48,26 @@ and neither does a person named as the authority for a rule.
     `last_response.code` — 403 means stale Packagist-side authorization for
     the package (fix on Packagist, not GitHub); redeliver the hook to
     confirm.
+
+## Which shop tracks `staging`
+
+**`magento-dev.staging.two.inc` is the only shop that serves this branch.** Its
+deployment is the one carrying a `git-sync-gateway` container
+(`--ref=staging --period=60s`); each brand's own dev shop git-syncs this repo's
+`staging` alongside its overlay. `magento.staging.two.inc` has no git-sync
+container at all and serves the deployed image's code, which tracks `main`.
+
+**Anything that verifies `staging` code targets the dev shop** — e2e, a manual
+click-through, a screenshot. Point it at the other shop and it silently reports
+on `main`: the run stays green for as long as the two branches happen to agree
+and turns red, at the first specification that moved, against a storefront still
+serving the widget the branch deleted (ABN-509). Read the served asset itself
+when confirming which code a shop has — `pub/static/deployed_version.txt`
+answers with an HTML 404 page on these shops.
+
+A merge to `staging` triggers an in-place static redeploy on the dev shop and
+the storefront 500s for roughly three minutes, so a suite that starts mid-sync
+fails for environmental reasons. Warn testers before merging.
 
 ## Local-dev modules disabled by `make install`
 
