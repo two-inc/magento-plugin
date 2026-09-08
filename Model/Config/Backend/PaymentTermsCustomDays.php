@@ -14,38 +14,27 @@ use Magento\Framework\Data\Collection\AbstractDb;
 use Magento\Framework\Model\Context;
 use Magento\Framework\Model\ResourceModel\AbstractResource;
 use Magento\Framework\Registry;
-use Two\Gateway\Service\Merchant\SettingsProvider;
+use Two\Gateway\Model\Config\Backend\PaymentTerms\OfferedTermsGuard;
 
 /**
- * Backend model for the "Custom Payment Terms (days)" field.
- *
- * A custom value that now duplicates one of the merchant's backend-offered
- * terms (SettingsProvider::getAvailableTerms(), regardless of whether that
- * term is currently ticked — see this field's visibility logic in
- * payment-terms-config.js) is redundant: clear it here. The matching
- * fold-in — ticking that term's checkbox — lives on the sibling
- * PaymentTermsCheckboxes backend model, which reads this field's posted
- * value via getFieldsetDataValue(). That is order-independent of Magento's
- * per-field save sequencing: Magento populates fieldset_data for the whole
- * group before any field in it runs beforeSave() (TWO-25498).
+ * Refuses a custom day the merchant does not offer (ABN-493); clears one that duplicates an offered term (TWO-25498).
  */
 class PaymentTermsCustomDays extends Value
 {
-    /** @var SettingsProvider */
-    private $settingsProvider;
+    private $offeredTerms;
 
     public function __construct(
         Context $context,
         Registry $registry,
         ScopeConfigInterface $config,
         TypeListInterface $cacheTypeList,
-        SettingsProvider $settingsProvider,
+        OfferedTermsGuard $offeredTerms,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
     ) {
         parent::__construct($context, $registry, $config, $cacheTypeList, $resource, $resourceCollection, $data);
-        $this->settingsProvider = $settingsProvider;
+        $this->offeredTerms = $offeredTerms;
     }
 
     /**
@@ -54,8 +43,13 @@ class PaymentTermsCustomDays extends Value
     public function beforeSave()
     {
         $custom = (int)$this->getValue();
-        if ($custom > 0 && in_array($custom, $this->settingsProvider->getAvailableTerms($this->resolveStoreId()), true)) {
-            $this->setValue('');
+        if ($custom > 0) {
+            $storeId = $this->resolveStoreId();
+            if (in_array($custom, $this->offeredTerms->offered($storeId), true)) {
+                $this->setValue('');
+            } else {
+                $this->offeredTerms->assertOffered([$custom], $storeId);
+            }
         }
 
         return parent::beforeSave();
@@ -63,7 +57,7 @@ class PaymentTermsCustomDays extends Value
 
     /**
      * Store id for the scope being saved, or null for website/default —
-     * SettingsProvider resolves the per-store API key from it.
+     * the offered-terms lookup resolves the per-store API key from it.
      */
     private function resolveStoreId(): ?int
     {

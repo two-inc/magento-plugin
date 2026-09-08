@@ -8,14 +8,23 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Model\Total;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
+use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\DataObject;
+use Magento\Framework\Encryption\EncryptorInterface;
+use Magento\Framework\App\ProductMetadataInterface;
+use Magento\Framework\UrlInterface;
 use Magento\Quote\Api\Data\ShippingAssignmentInterface;
 use Magento\Quote\Model\Quote;
 use Magento\Quote\Model\Quote\Address\Total;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Magento\Tax\Model\Calculation as TaxCalculation;
+use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Model\Config\Repository as ConfigRepositoryModel;
+use Two\Gateway\Model\Provenance;
 use Two\Gateway\Model\Total\Surcharge;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
@@ -65,6 +74,9 @@ class SurchargeTest extends TestCase
     /** @var SurchargeDisplay|\PHPUnit\Framework\MockObject\MockObject */
     private $surchargeDisplay;
 
+    /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
+    private $logRepository;
+
     /** @var Surcharge */
     private $collector;
 
@@ -87,12 +99,14 @@ class SurchargeTest extends TestCase
                 return $mode === SurchargeDisplay::EXCL ? $net : $net + $tax;
             });
 
+        $this->logRepository = $this->createMock(LogRepository::class);
+
         $this->collector = new Surcharge(
             $this->session,
             $this->config,
             $this->surchargeCalculator,
             $this->taxCalculator,
-            $this->createMock(LogRepository::class),
+            $this->logRepository,
             $this->minimumOrderGate,
             $this->minimumOrderProvider,
             $this->merchantMinimumResolver,
@@ -192,6 +206,89 @@ class SurchargeTest extends TestCase
         $this->assertEqualsWithDelta(1000.0, $total->getGrandTotal(), 1e-9);
         $this->assertEqualsWithDelta(0.0, (float)$total->getData('two_surcharge_amount'), 1e-9);
         $this->assertEqualsWithDelta(0.0, (float)$this->session->getTwoSurchargeAmount(), 1e-9);
+    }
+
+    /**
+     * A real config Repository, so the refusal comes from the production read
+     * path rather than a mock, and the rows genuinely vary the stored value.
+     */
+    private function collectorReading(?string $storedSurchargeType): Surcharge
+    {
+        $scopeConfig = $this->createMock(ScopeConfigInterface::class);
+        $scopeConfig->method('getValue')->willReturnCallback(
+            static function ($path) use ($storedSurchargeType) {
+                return $path === 'payment/two_payment/surcharge_type' ? $storedSurchargeType : null;
+            }
+        );
+        $brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $brandRegistry->method('getCode')->willReturn('two_payment');
+
+        $config = new ConfigRepositoryModel(
+            $scopeConfig,
+            $this->createMock(EncryptorInterface::class),
+            $this->createMock(UrlInterface::class),
+            $this->createMock(ProductMetadataInterface::class),
+            $this->createMock(TaxCalculation::class),
+            $brandRegistry,
+            $this->createMock(SettingsProvider::class),
+            $this->createMock(Provenance::class),
+            // The SAME log mock the collector gets: the assertion below counts
+            // every error line the whole read emits, so a per-collaborator mock
+            // would make it vacuous.
+            $this->logRepository
+        );
+
+        return new Surcharge(
+            $this->session,
+            $config,
+            $this->surchargeCalculator,
+            $this->taxCalculator,
+            $this->logRepository,
+            $this->minimumOrderGate,
+            $this->minimumOrderProvider,
+            $this->merchantMinimumResolver,
+            $this->surchargeDisplay
+        );
+    }
+
+    /**
+     * A corrupt stored surcharge method zeroes THIS method's fee and logs
+     * once. Raising out of the totals collector errors the whole checkout —
+     * the failure mode TWO-25503 already fixed for an unresolvable FX rate.
+     *
+     * @dataProvider corruptStoredMethods
+     */
+    public function testACorruptStoredMethodZeroesTheSurchargeInsteadOfThrowing(
+        string $stored,
+        string $case
+    ): void {
+        $this->surchargeCalculator->expects($this->never())->method('calculate');
+        $this->session->setTwoSelectedTerm(30);
+        $this->session->setTwoSurchargeAmount(100.0);
+        $logged = [];
+        $this->logRepository->method('addErrorLog')->willReturnCallback(
+            function ($type, $data) use (&$logged): void {
+                $logged[] = $type . ' ' . (is_array($data) ? json_encode($data) : (string)$data);
+            }
+        );
+
+        $total = new Total(['grand_total' => 1000.0, 'base_grand_total' => 1000.0]);
+        $this->collectorReading($stored)->collect($this->makeQuote(), $this->makeShippingAssignment(), $total);
+
+        $this->assertEqualsWithDelta(1000.0, $total->getGrandTotal(), 1e-9, $case);
+        $this->assertEqualsWithDelta(0.0, (float)$total->getData('two_surcharge_amount'), 1e-9, $case);
+        $this->assertEqualsWithDelta(0.0, (float)$this->session->getTwoSurchargeAmount(), 1e-9, $case);
+        $this->assertCount(1, $logged, 'reported exactly once across the whole read: ' . $case);
+        $this->assertStringContainsString($stored, $logged[0], 'the log names the stored value: ' . $case);
+    }
+
+    public function corruptStoredMethods(): array
+    {
+        return [
+            ['wat', 'junk from a hand-edited row, config:set or an import'],
+            ['PERCENTAGE', 'the right method in the wrong case'],
+            ['0', 'a falsy value a truthiness check would have read as unset'],
+        ];
     }
 
     public function testEngineTaxUsedWhenTaxClassConfigured(): void

@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Service\Order;
 
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Quote\Model\Quote;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -81,6 +82,17 @@ class TermSurchargePreview
         int $storeId,
         string $context
     ): array {
+        // Read BEFORE the tax lookup: a refused render must do no tax work.
+        try {
+            $this->configRepository->getSurchargeType($storeId);
+        } catch (LocalizedException) {
+            $this->logRepository->addDebugLog(
+                sprintf('%s: zeroed (unrecognised surcharge method)', $context),
+                []
+            );
+            return $this->zeroed($terms);
+        }
+
         $taxRate = $this->resolveTaxRate($quote, $storeId, $context);
 
         $surcharges = [];

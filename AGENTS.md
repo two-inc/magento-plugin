@@ -112,6 +112,33 @@ runtime rule being misread. If you are asked to make the runtime
 throw on a zero cap, that is the reverted guard being reintroduced.
 Neither follows from the other.
 
+## Admin settings fail loud: an unrecognised stored value is never priced
+
+The standard for EVERY admin setting, not only the surcharge method.
+
+**Save refuses it.** A value outside the field's known set is rejected by the
+field's backend model. A crafted POST, a hand-edited row, `config:set` or an
+import therefore cannot leave behind a value nothing understands.
+
+**Read paths raise.** The config repository is the single choke point for the
+runtime read: it maps only the explicit unset key to the field's default and
+raises a `LocalizedException` for anything else. Callers that price a fee or
+build an order let that raise.
+
+**Gates and totals collectors catch it.** The availability gate withdraws the
+Two payment method and nothing else; the totals collector clears its own
+segment and returns. Every other payment method, and the rest of checkout, is
+untouched. The repository reports the offending value once per request, so the
+catchers stay quiet.
+
+**Buyer copy stays generic.** The buyer sees the existing "not available for
+this order" wording. A setting name, a stored value or an enum key never
+reaches the storefront — those belong in the log and in the admin field's own
+validation message.
+
+Degrading a junk value to a working default is the failure this replaces: it
+prices an order under a configuration nobody chose, and nobody is told.
+
 ## Monetary values in the pricing request are rounded to 2dp
 
 `SurchargeCalculator::convertAmount()` rounds `cap` and `surcharge` to

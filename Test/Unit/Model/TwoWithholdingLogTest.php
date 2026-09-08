@@ -11,6 +11,7 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\MerchantMinimumResolver;
@@ -112,6 +113,7 @@ class TwoWithholdingLogTest extends TestCase
             'stubAvailableInBase' => $knob !== 'core_refuses',
             'logRepository' => $logRepository,
             'apiKeyStatus' => $apiKeyStatus,
+            'settingsProvider' => $this->offeredTermsProvider(),
             'surchargeCalculator' => $surchargeCalculator,
             'minimumOrderGate' => $gate,
             'minimumOrderProvider' => $this->createMock(MinimumOrderProvider::class),
@@ -154,5 +156,16 @@ class TwoWithholdingLogTest extends TestCase
         $quote->method('getStoreId')->willReturn(1);
         $quote->method('getQuoteCurrencyCode')->willReturn('GBP');
         return $quote;
+    }
+
+    /**
+     * A resolvable merchant record — without one the method is withheld
+     * before the gate under test is reached (ABN-493).
+     */
+    private function offeredTermsProvider(): SettingsProvider
+    {
+        $provider = $this->createMock(SettingsProvider::class);
+        $provider->method('getAvailableTerms')->willReturn([14, 30]);
+        return $provider;
     }
 }

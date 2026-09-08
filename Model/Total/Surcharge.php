@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Model\Total;
 
 use Magento\Checkout\Model\Session as CheckoutSession;
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Quote\Api\Data\ShippingAssignmentInterface;
 use Magento\Quote\Model\Quote;
 use Magento\Quote\Model\Quote\Address\Total;
@@ -176,7 +177,16 @@ class Surcharge extends AbstractTotal
             return $this;
         }
 
-        $surchargeType = $this->configRepository->getSurchargeType($storeId);
+        // Raising out of a totals collector errors the whole checkout (TWO-25503).
+        try {
+            $surchargeType = $this->configRepository->getSurchargeType($storeId);
+        } catch (LocalizedException) {
+            // Debug, not error: the config repository already reported it once.
+            $this->logRepository->addDebugLog('TotalCollector: skipped (unrecognised type)', []);
+            $this->clearSessionSurcharge();
+            $this->clearTotalSurcharge($total, $quote);
+            return $this;
+        }
 
         if ($surchargeType === SurchargeType::NONE) {
             $this->logRepository->addDebugLog('TotalCollector: skipped (type=none)', []);
