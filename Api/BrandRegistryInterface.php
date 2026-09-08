@@ -70,21 +70,39 @@ interface BrandRegistryInterface
      * Wording only — it is NOT an off switch; see
      * isIntentApprovedNoticeEnabled() for that.
      *
-     *  - `null`  — no override (element absent, empty or whitespace-only):
+     *  - `null`  — no override (element absent or visually blank):
      *              platform default translated copy. Never ''.
      *  - non-''  — used verbatim as the company-known copy template
-     *              (%1 = brand product name, %2 = buyer company name).
+     *              (%1 = brand product name, %2 = buyer company name,
+     *              %3 = buyer organisation number).
      */
     public function getIntentApprovedNotice(): ?string;
 
     /**
-     * Deliberately absent: the buyer-facing "order intent NOT approved"
-     * notice is NEVER brand-overridable (2026-08-04 ruling, TWO-25326).
-     * Every brand renders the platform default declined/not-available
-     * copy. Do not add a getIntentDeclinedNotice()-style hook here; a
-     * brand overlay that wants different declined-notice wording is a
-     * ruling change, not a code change.
+     * Whether the buyer-facing "order intent NOT approved" notice is
+     * rendered at all. `false` emits no DOM element at all.
+     *
+     * A declared brand.xml <intent_declined_notice_enabled> decides.
+     * Absent that, it is `true` when either a non-blank
+     * <intent_declined_notice> or isIntentApprovedNoticeEnabled() says so.
+     *
+     * So it is independent of the approved switch only once the declined
+     * switch is declared or declined copy is non-blank.
      */
+    public function isIntentDeclinedNoticeEnabled(): bool;
+
+    /**
+     * Per-brand COPY override for the buyer-facing "order intent NOT
+     * approved" notice, from brand.xml <intent_declined_notice>. Wording
+     * only — see isIntentDeclinedNoticeEnabled() for the off switch.
+     *
+     *  - `null`  — no override (element absent or visually blank):
+     *              platform default translated copy. Never ''.
+     *  - non-''  — used verbatim as the company-known copy template
+     *              (%1 = brand product name, %2 = buyer company name,
+     *              %3 = buyer organisation number).
+     */
+    public function getIntentDeclinedNotice(): ?string;
 
     /**
      * Short brand tag used to decorate non-production checkout URLs
@@ -103,6 +121,12 @@ interface BrandRegistryInterface
      * so an unmapped key can never leak into the storefront.
      */
     public function getCheckoutSubtitle(): string;
+
+    /** Checkout "What is <product>?" link target from brand.xml <about_url>; '' renders no link (ABN-496). */
+    public function getAboutUrl(): string;
+
+    /** Fills the %1/%2 link args of <checkout_subtitle>; '' renders no tagline (ABN-496). */
+    public function getCheckoutSubtitleFaqUrl(): string;
 
     /**
      * Merchant sign-up URL shown on the admin config header block.

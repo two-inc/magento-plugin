@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Model\Config\Backend;
 
 use Magento\Framework\Exception\LocalizedException;
+use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
 
 /**
  * Server-side guard on the Surcharge method field.
@@ -27,14 +28,31 @@ class SurchargeType extends AbstractSurchargeTreatmentGuard
     /**
      * @inheritDoc
      *
-     * @throws LocalizedException when a surcharge method is enabled and
-     *         no surcharge tax treatment is selected.
+     * @throws LocalizedException when the submitted method is not one this
+     *         module can price, or when a surcharge method is enabled and no
+     *         surcharge tax treatment is selected.
      */
     public function beforeSave()
     {
+        $this->assertKnownMethod();
         $this->assertTaxTreatmentSelected();
 
         return parent::beforeSave();
+    }
+
+    private function assertKnownMethod(): void
+    {
+        // '' is a real submission here (the field always posts), not "unset".
+        $value = (string)$this->getValue();
+        if (!SurchargeTypeSource::isKnown($value)) {
+            throw new LocalizedException(
+                __(
+                    'Unrecognised surcharge method: %1. Choose one of: %2.',
+                    $value,
+                    implode(', ', SurchargeTypeSource::KNOWN)
+                )
+            );
+        }
     }
 
     /**

@@ -1017,12 +1017,12 @@ describe('the notices are gated on their own observables, not on capture', () =>
         expect(declinedNoticeVisible(renderer)).toBe(false);
     });
 
-    test('a brand that suppresses the notice shows neither variant', () => {
-        // <intent_approved_notice_enabled>false</…> leaves both copy objects
-        // null, so neither notice text is ever non-empty — one switch suppresses
-        // both. The control's visibility does not read either observable, so a
-        // brand with the notice UI off can never produce a hidden-with-no-notice
-        // dead end.
+    test('a brand that suppresses both outcomes shows neither variant', () => {
+        // Each outcome has its own switch, so suppressing both means
+        // ConfigProvider ships neither copy object — the config here carries
+        // no notice keys at all. The control's visibility does not read
+        // either observable, so a brand with the notice UI off can never
+        // produce a hidden-with-no-notice dead end.
         const { renderer } = loadTile();
 
         renderer.initOrderIntentApprovedNotice({});
@@ -1038,6 +1038,32 @@ describe('the notices are gated on their own observables, not on capture', () =>
 
         declineIntent(renderer);
         expect(declinedNoticeVisible(renderer)).toBe(false);
+
+        expect(nameFieldVisible(renderer)).toBe(true);
+    });
+
+    test('a brand suppressing only the approved outcome still shows the declined notice', () => {
+        // The switches are independent: ConfigProvider ships null for the
+        // approved notice and a copy object for the declined one, which is
+        // unreachable under the superseded single-switch model.
+        const { renderer } = loadTile();
+
+        renderer.initOrderIntentApprovedNotice({
+            orderIntentDeclinedNotice: DECLINED_NOTICE_COPY
+        });
+        expect(renderer.orderIntentApprovedNoticeCopy).toBeNull();
+        expect(renderer.orderIntentDeclinedNoticeCopy).not.toBeNull();
+
+        renderer.applyCompanyData(
+            { companyName: 'First Example Ltd', companyId: '12345678' },
+            { authoritative: true }
+        );
+
+        approveIntent(renderer);
+        expect(approvedNoticeVisible(renderer)).toBe(false);
+
+        declineIntent(renderer);
+        expect(declinedNoticeVisible(renderer)).toBe(true);
 
         expect(nameFieldVisible(renderer)).toBe(true);
     });

@@ -468,8 +468,10 @@
     };
 
     /**
-     * The Sole trader chip raises the signup popup; another control inside the capture popover
-     * closes the popup; a control outside it closes the popover too (TWO-25658).
+     * Focus arriving on the Sole trader chip moves the signup popup neither way; arriving on
+     * another control closes the popup, and on one outside the capture popover closes the
+     * popover too (TWO-25658). The company field counts as inside: it is the popover's own
+     * trigger, and its focus opener would otherwise race the popover close on event order.
      *
      * A focusin a browser re-fires on window return counts as the buyer focusing that control.
      */
@@ -480,9 +482,10 @@
             const target = event.target;
             const panel = this._component.panel();
             const popover = panel && panel.getPanelElement && panel.getPanelElement();
-            const inside = !!(popover && target && popover.contains(target));
+            const field = panel && panel.getField && panel.getField()[0];
+            const inside = !!(target && ((popover && popover.contains(target)) || target === field));
             if (inside && target.closest && target.closest(SOLE_TRADER_CHIP_SELECTOR)) {
-                this.focusSignupPopup();
+                // Only an activation moves the popup: Tabbing through the chip must leave it as the buyer left it.
                 return;
             }
             // The CLOSE half only: the enrolment stays live and resumable, tokens unspent.

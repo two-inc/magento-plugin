@@ -397,3 +397,7 @@
 "Refreshed %1","Vernieuwd %1"
 "Never refreshed","Nooit vernieuwd"
 "Missing when read at %1 — the hourly refresh appears not to be running","Ontbrak bij het lezen om %1 — de uurlijkse vernieuwing lijkt niet te draaien"
+"Payment terms you are not able to offer: %1 days. Choose from: %2 days.","Betaaltermijnen die u niet kunt aanbieden: %1 dagen. Kies uit: %2 dagen."
+"Default payment term %1 days is not one of the terms you offer: %2 days.","Standaardbetaaltermijn %1 dagen is niet een van de termijnen die u aanbiedt: %2 dagen."
+"Optional. Enter a custom term as a number of days after the end of the month, offered alongside the terms selected above.","Optioneel. Voer een aangepaste termijn in als een aantal dagen na het einde van de maand, aangeboden naast de hierboven geselecteerde termijnen."
+"Unrecognised surcharge method: %1. Choose one of: %2.","Onbekende toeslagmethode: %1. Kies een van: %2."

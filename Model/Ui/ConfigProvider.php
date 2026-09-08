@@ -56,19 +56,6 @@ class ConfigProvider implements ConfigProviderInterface
      */
     public const COMPANY_NUMBER_TOKEN = '{{companyNumber}}';
 
-    /**
-     * Buyer-facing "What is Two?" explainer link target (TWO-25386). Kept
-     * as a plain constant here rather than threaded through
-     * BrandRegistryInterface — a single marketing URL did not seem worth
-     * the blast radius of a new brand.xml tag across the descriptor,
-     * loader, XSD and every implementation. A brand overlay only supplies
-     * DATA (its own etc/brand.xml), so it has no subclassing point to
-     * override this constant from; a brand overlay that needs a different
-     * link would need this threaded through BrandRegistryInterface after
-     * all — revisit then, rather than pre-building it now on spec.
-     */
-    public const ABOUT_URL = 'https://www.two.inc/what-is-two';
-
     /** @var string */
     private $code;
 
@@ -111,6 +98,11 @@ class ConfigProvider implements ConfigProviderInterface
     private $supportedCompanyTypes;
 
     /**
+     * @var CheckoutTileCopy
+     */
+    private $checkoutTileCopy;
+
+    /**
      * @param string $code Payment-method code (overlay-specific). Defaults
      *                     to the Two-branded value for backward
      *                     compatibility with installs that don't override.
@@ -124,6 +116,7 @@ class ConfigProvider implements ConfigProviderInterface
         CheckoutSession $checkoutSession,
         StoreManagerInterface $storeManager,
         SupportedCompanyTypes $supportedCompanyTypes,
+        CheckoutTileCopy $checkoutTileCopy,
         ?string $code = null
     ) {
         $this->configRepository = $configRepository;
@@ -134,6 +127,7 @@ class ConfigProvider implements ConfigProviderInterface
         $this->checkoutSession = $checkoutSession;
         $this->storeManager = $storeManager;
         $this->supportedCompanyTypes = $supportedCompanyTypes;
+        $this->checkoutTileCopy = $checkoutTileCopy;
         $this->code = $code ?? $brandRegistry->getCode();
     }
 
@@ -252,10 +246,10 @@ class ConfigProvider implements ConfigProviderInterface
                     // fail-closed stance rather than failing open.
                     'minimumOrder' => $minimumOrder['minimums'],
                     'minimumOrderUnresolved' => $minimumOrder['unresolved'],
-                    'subtitleHtml' => $this->getSubtitleHtml(),
-                    'showAboutLink' => $this->configRepository->isAboutLinkEnabled(),
-                    'aboutLinkUrl' => self::ABOUT_URL,
-                    'aboutLinkText' => (string)__('What is %1?', $this->brandRegistry->getProductName()),
+                    'subtitleHtml' => $this->checkoutTileCopy->getSubtitleHtml(),
+                    'showAboutLink' => $this->checkoutTileCopy->isAboutLinkVisible(),
+                    'aboutLinkUrl' => $this->checkoutTileCopy->getAboutLinkUrl(),
+                    'aboutLinkText' => $this->checkoutTileCopy->getAboutLinkText(),
                     'displayTooltips' => $this->configRepository->isDisplayTooltipsEnabled(),
                     'surchargeDescription' => $this->configRepository->getSurchargeLineDescription(),
                     'isPaymentTermsEnabled' => true,
@@ -329,8 +323,8 @@ class ConfigProvider implements ConfigProviderInterface
      *
      * Suppression is driven by the brand's
      * <intent_approved_notice_enabled> switch. The copy override
-     * <intent_approved_notice> is wording only: non-empty replaces the
-     * company-known variant, absent/empty leaves the platform default.
+     * <intent_approved_notice> is wording only: non-blank replaces the
+     * company-known variant, absent/blank leaves the platform default.
      * See BrandRegistryInterface for both contracts.
      *
      * TWO-25326 2026-08-03 ruling, §7.3: this is the ONLY place the
@@ -385,38 +379,39 @@ class ConfigProvider implements ConfigProviderInterface
     /**
      * Resolve the buyer-facing "order intent NOT approved" notice — the
      * §7.3 counterpart to getOrderIntentApprovedNotice() above, added by the
-     * 2026-08-03 ruling. Same shape, same suppression switch (a brand that
-     * turns the notice off gets neither variant — TWO-25326 §7.2 treats
-     * "the intent message" as one on/off unit, approved or declined), and a
-     * SEPARATE copy override so a brand with its own approved wording is not
-     * forced to also take the vanilla declined wording (§7.4).
+     * same TWO-25326 work. Same shape, and its own switch and copy override —
+     * <intent_declined_notice_enabled> / <intent_declined_notice> — so a
+     * brand suppresses or rewords the two outcomes separately once it
+     * declares the declined switch or ships non-blank declined copy
+     * (TWO-25326).
      *
      * This is the "not approved" business outcome only (a clean response
      * with `approved: false`) — a technical/HTTP failure is a different
      * surface, `generalErrorMessage`, handled by
      * processOrderIntentErrorResponse() in gateway_method.js.
      *
-     * Deliberately NOT brand-overridable (2026-08-04 ruling, TWO-25326):
-     * unlike getOrderIntentApprovedNotice() above, there is no copy-override
-     * hook here and there must never be one — every brand renders this exact
-     * platform default copy. See BrandRegistryInterface for the contract.
-     *
      * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
      */
     private function getOrderIntentDeclinedNotice(): ?array
     {
-        if (!$this->brandRegistry->isIntentApprovedNoticeEnabled()) {
+        if (!$this->brandRegistry->isIntentDeclinedNoticeEnabled()) {
             return null;
         }
 
+        $override = $this->brandRegistry->getIntentDeclinedNotice();
+
         $productName = $this->brandRegistry->getProductName();
 
-        $withCompany = __(
-            '%1 is not available for this order by %2 (%3)',
-            $productName,
-            self::COMPANY_NAME_TOKEN,
-            self::COMPANY_NUMBER_TOKEN
-        );
+        // Literal default for the same i18n-collection reason as the
+        // approved notice above.
+        $withCompany = $override === null
+            ? __(
+                '%1 is not available for this order by %2 (%3)',
+                $productName,
+                self::COMPANY_NAME_TOKEN,
+                self::COMPANY_NUMBER_TOKEN
+            )
+            : __($override, $productName, self::COMPANY_NAME_TOKEN, self::COMPANY_NUMBER_TOKEN);
 
         return [
             'withCompany' => (string)$withCompany,
@@ -440,35 +435,6 @@ class ConfigProvider implements ConfigProviderInterface
         } catch (\Exception $e) {
             return '';
         }
-    }
-
-    /**
-     * Resolve the checkout subtitle for the storefront renderer.
-     *
-     * TWO-25386: a store-view-scoped admin override takes priority when
-     * set. It is merchant-entered free text, so it is HTML-escaped
-     * here rather than treated as a translation source key — unlike the
-     * brand default below, it must never be passed to __().
-     *
-     * Falling back, the string is brand data
-     * (BrandRegistryInterface::getCheckoutSubtitle, sourced from
-     * brand.xml). The vanilla Two brand returns '' → no subtitle. We only
-     * pass a non-empty key to the translator, so an unmapped locale falls
-     * back to the (brand-owned) source key rather than ever leaking a
-     * vanilla key.
-     *
-     * Either way the result may contain HTML; the KO template binds it via
-     * `html:`.
-     */
-    private function getSubtitleHtml(): string
-    {
-        $configured = trim($this->configRepository->getSubtitle());
-        if ($configured !== '') {
-            return htmlspecialchars($configured, ENT_QUOTES, 'UTF-8');
-        }
-
-        $key = $this->brandRegistry->getCheckoutSubtitle();
-        return $key === '' ? '' : (string)__($key);
     }
 
     /**

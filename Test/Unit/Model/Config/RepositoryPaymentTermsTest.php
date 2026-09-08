@@ -6,12 +6,15 @@ namespace Two\Gateway\Test\Unit\Model\Config;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\ProductMetadataInterface;
 use Magento\Framework\Encryption\EncryptorInterface;
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\UrlInterface;
 use Magento\Framework\DataObject;
 use Magento\Tax\Model\Calculation as TaxCalculation;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Config\Repository;
+use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Provenance;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
@@ -26,8 +29,19 @@ class RepositoryPaymentTermsTest extends TestCase
     /** @var SettingsProvider|\PHPUnit\Framework\MockObject\MockObject */
     private $settingsProvider;
 
+    /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
+    private $logRepository;
+
     /** @var Repository */
     private $repository;
+
+    /**
+     * Offered terms the stubbed merchant record resolves to. A resolvable
+     * record is the baseline: with none, every buyer term reads as unoffered.
+     *
+     * @var int[]
+     */
+    private $offeredTerms = [7, 14, 21, 30, 37, 45, 60, 90];
 
     protected function setUp(): void
     {
@@ -39,11 +53,17 @@ class RepositoryPaymentTermsTest extends TestCase
 
         $brandRegistry = $this->createMock(BrandRegistryInterface::class);
         $brandRegistry->method('getCode')->willReturn('two_payment');
+        $brandRegistry->method('getProductName')->willReturn('Two');
 
         // Unstubbed getDefaultTerm() returns null, so the default-term
         // tests below exercise the config-based fallback; the API-default
         // cases stub it explicitly.
         $this->settingsProvider = $this->createMock(SettingsProvider::class);
+        $this->settingsProvider->method('getAvailableTerms')
+            ->willReturnCallback(function (): array {
+                return $this->offeredTerms;
+            });
+        $this->logRepository = $this->createMock(LogRepository::class);
 
         $this->repository = new Repository(
             $this->scopeConfig,
@@ -53,7 +73,8 @@ class RepositoryPaymentTermsTest extends TestCase
             $this->taxCalculation,
             $brandRegistry,
             $this->settingsProvider,
-            $this->createMock(Provenance::class)
+            $this->createMock(Provenance::class),
+            $this->logRepository
         );
     }
 
@@ -154,6 +175,54 @@ class RepositoryPaymentTermsTest extends TestCase
             'payment/two_payment/payment_terms_duration_days' => '',
         ]);
         $this->assertEquals([], $this->repository->getAllBuyerTerms());
+    }
+
+    /**
+     * config:set bypasses the admin fields' save-time entitlement check, so
+     * the read path intersects with the merchant record too (ABN-493).
+     *
+     * @param int[] $offered
+     * @param int[] $expected
+     * @dataProvider offeredIntersectionProvider
+     */
+    public function testGetAllBuyerTermsIntersectsWithTheOfferedSet(
+        string $presets,
+        string $custom,
+        array $offered,
+        array $expected,
+        string $case
+    ): void {
+        $this->offeredTerms = $offered;
+        $this->stubConfig([
+            'payment/two_payment/payment_terms' => $presets,
+            'payment/two_payment/payment_terms_duration_days' => $custom,
+        ]);
+
+        $this->assertSame($expected, $this->repository->getAllBuyerTerms(), $case);
+    }
+
+    public static function offeredIntersectionProvider(): array
+    {
+        return [
+            ['14,30', '', [14, 30, 60], [14, 30], 'every stored term is offered'],
+            ['14,30', '', [30], [30], 'a stored preset no longer offered is dropped'],
+            ['14', '37', [14], [14], 'a stored custom day that is not offered is dropped'],
+            ['14', '37', [14, 37], [14, 37], 'an offered custom day is kept'],
+            ['7,37', '', [14, 30], [], 'nothing offered in common leaves no buyer terms'],
+            ['14,30', '', [], [], 'an unresolvable merchant record offers no terms at all'],
+        ];
+    }
+
+    public function testGetDefaultPaymentTermIgnoresADefaultTheMerchantNoLongerOffers(): void
+    {
+        $this->offeredTerms = [14, 30];
+        $this->stubConfig([
+            'payment/two_payment/default_payment_term' => '37',
+            'payment/two_payment/payment_terms' => '14,30,37',
+            'payment/two_payment/payment_terms_duration_days' => '',
+        ]);
+
+        $this->assertEquals(14, $this->repository->getDefaultPaymentTerm());
     }
 
     // ── getDefaultPaymentTerm ────────────────────────────────────────
@@ -575,5 +644,99 @@ class RepositoryPaymentTermsTest extends TestCase
     {
         $this->stubConfig(['payment/two_payment/payment_terms_type' => 'end_of_month']);
         $this->assertEquals('end_of_month', $this->repository->getPaymentTermsType());
+    }
+
+    // ── getSurchargeType ────────────────────────────────────────────
+
+    /**
+     * @dataProvider acceptedSurchargeTypes
+     * @param mixed $stored
+     */
+    public function testGetSurchargeTypeAcceptsTheKnownSet($stored, string $expected, string $case): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_type' => $stored]);
+        $this->assertSame($expected, $this->repository->getSurchargeType(), $case);
+    }
+
+    public function acceptedSurchargeTypes(): array
+    {
+        return [
+            ['none', 'none', 'explicitly disabled'],
+            ['percentage', 'percentage', 'percentage'],
+            ['fixed', 'fixed', 'fixed fee'],
+            ['fixed_and_percentage', 'fixed_and_percentage', 'fixed fee and percentage'],
+            [null, 'none', 'never configured'],
+            ['', 'none', 'the empty initial config node'],
+        ];
+    }
+
+    /**
+     * @dataProvider refusedSurchargeTypes
+     */
+    public function testGetSurchargeTypeRefusesAnythingElse(string $stored, string $case): void
+    {
+        $this->stubConfig(['payment/two_payment/surcharge_type' => $stored]);
+        try {
+            $this->repository->getSurchargeType();
+            $this->fail('expected a refusal: ' . $case);
+        } catch (LocalizedException $e) {
+            // Generic on purpose: this reaches the BUYER at placement, so it
+            // must not leak the merchant's stored value or the enum keys.
+            $this->assertSame('Invoice purchase with Two is not available for this order.', $e->getMessage(), $case);
+            $this->assertStringNotContainsString($stored, $e->getMessage(), 'no stored value: ' . $case);
+            foreach (SurchargeTypeSource::KNOWN as $known) {
+                $this->assertStringNotContainsString($known, $e->getMessage(), 'no enum keys: ' . $case);
+            }
+        }
+    }
+
+    /**
+     * getSurchargeType() is read once per isAvailable() and once per
+     * collectTotals(), so reporting on every read filled the log with the same
+     * line. Reported once per offending value per request; a second distinct
+     * value still speaks.
+     */
+    public function testAnUnrecognisedMethodIsReportedOncePerRequest(): void
+    {
+        $stored = 'wat';
+        $this->scopeConfig->method('getValue')->willReturnCallback(
+            function ($path) use (&$stored) {
+                return $path === 'payment/two_payment/surcharge_type' ? $stored : null;
+            }
+        );
+        $logged = [];
+        $this->logRepository->method('addErrorLog')->willReturnCallback(
+            function ($type, $data) use (&$logged): void {
+                $logged[] = is_array($data) ? (string)($data['value'] ?? '') : (string)$data;
+            }
+        );
+
+        foreach ([1, 2, 3] as $ignored) {
+            try {
+                $this->repository->getSurchargeType();
+            } catch (LocalizedException $e) {
+                // Every read still refuses; only the reporting is deduplicated.
+                $this->assertSame('Invoice purchase with Two is not available for this order.', $e->getMessage());
+            }
+        }
+        $this->assertSame(['wat'], $logged, 'three reads, one report');
+
+        $stored = 'also_wrong';
+        try {
+            $this->repository->getSurchargeType();
+        } catch (LocalizedException $e) {
+            $this->assertSame('Invoice purchase with Two is not available for this order.', $e->getMessage());
+        }
+        $this->assertSame(['wat', 'also_wrong'], $logged, 'the log, not the buyer, carries the value');
+    }
+
+    public function refusedSurchargeTypes(): array
+    {
+        return [
+            ['wat', 'junk from a hand-edited row, config:set or an import'],
+            ['PERCENTAGE', 'the right method in the wrong case is still not a method'],
+            ['percentage_and_fixed', 'a plausible-looking method that does not exist'],
+            ['0', 'a falsy value that is not the empty node'],
+        ];
     }
 }

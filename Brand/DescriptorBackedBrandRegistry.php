@@ -61,6 +61,16 @@ class DescriptorBackedBrandRegistry implements BrandRegistryInterface
         return $this->activeBrandResolver->resolve()->getIntentApprovedNotice();
     }
 
+    public function isIntentDeclinedNoticeEnabled(): bool
+    {
+        return $this->activeBrandResolver->resolve()->isIntentDeclinedNoticeEnabled();
+    }
+
+    public function getIntentDeclinedNotice(): ?string
+    {
+        return $this->activeBrandResolver->resolve()->getIntentDeclinedNotice();
+    }
+
     public function getSignUpUrl(): string
     {
         return $this->activeBrandResolver->resolve()->getSignUpUrl();
@@ -79,6 +89,16 @@ class DescriptorBackedBrandRegistry implements BrandRegistryInterface
     public function getCheckoutSubtitle(): string
     {
         return $this->activeBrandResolver->resolve()->getCheckoutSubtitle();
+    }
+
+    public function getAboutUrl(): string
+    {
+        return $this->activeBrandResolver->resolve()->getAboutUrl();
+    }
+
+    public function getCheckoutSubtitleFaqUrl(): string
+    {
+        return $this->activeBrandResolver->resolve()->getCheckoutSubtitleFaqUrl();
     }
 
     public function getCode(): string

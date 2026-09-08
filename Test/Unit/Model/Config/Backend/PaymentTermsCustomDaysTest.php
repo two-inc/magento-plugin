@@ -5,86 +5,106 @@ namespace Two\Gateway\Test\Unit\Model\Config\Backend;
 
 use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Model\Context;
 use Magento\Framework\Registry;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Model\Config\Backend\PaymentTerms\OfferedTermsGuard;
 use Two\Gateway\Model\Config\Backend\PaymentTermsCustomDays;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
- * Tests the save-time half of the "Custom payment terms (days)"
- * genuineness rule (TWO-25498): a custom value that duplicates a
- * merchant-offered term — ticked or not, since SettingsProvider's
- * available-terms set does not carry tick state — is cleared here. The
- * matching fold-in (ticking that term's checkbox) is on the sibling
- * PaymentTermsCheckboxes backend model, tested separately.
+ * Save-time rules for "Custom payment terms (days)": a value the merchant
+ * record does not offer is refused (ABN-493), and one that duplicates an
+ * offered term — ticked or not, since the available-terms set carries no tick
+ * state — is cleared (TWO-25498). The matching fold-in (ticking that term's
+ * checkbox) is on the sibling PaymentTermsCheckboxes backend model.
  */
 class PaymentTermsCustomDaysTest extends TestCase
 {
-    /** @var SettingsProvider|\PHPUnit\Framework\MockObject\MockObject */
-    private $settingsProvider;
-
-    protected function setUp(): void
+    /** @param int[] $offeredForStore terms offered at store 5; $offered covers every other scope */
+    private function buildModel(array $data, array $offered, array $offeredForStore = null): PaymentTermsCustomDays
     {
-        $this->settingsProvider = $this->createMock(SettingsProvider::class);
-    }
+        $settingsProvider = $this->createMock(SettingsProvider::class);
+        $settingsProvider->method('getAvailableTerms')->willReturnCallback(
+            static fn ($storeId) => $storeId === 5 && $offeredForStore !== null ? $offeredForStore : $offered
+        );
 
-    private function buildModel(array $data): PaymentTermsCustomDays
-    {
         return new PaymentTermsCustomDays(
             $this->getMockBuilder(Context::class)->disableOriginalConstructor()->getMock(),
             $this->getMockBuilder(Registry::class)->disableOriginalConstructor()->getMock(),
             $this->createMock(ScopeConfigInterface::class),
             $this->createMock(TypeListInterface::class),
-            $this->settingsProvider,
+            new OfferedTermsGuard($settingsProvider),
             null,
             null,
             $data
         );
     }
 
-    public function testEmptyValueIsLeftEmpty(): void
+    /**
+     * @param int[] $offered
+     * @dataProvider savedValueProvider
+     */
+    public function testSavedValue(string $value, array $offered, string $expected, string $case): void
     {
-        $this->settingsProvider->method('getAvailableTerms')->willReturn([14, 30]);
-        $model = $this->buildModel(['value' => '', 'scope' => 'default', 'scope_id' => 0]);
+        $model = $this->buildModel(['value' => $value, 'scope' => 'default', 'scope_id' => 0], $offered);
 
         $model->beforeSave();
 
-        $this->assertSame('', $model->getValue());
+        $this->assertSame($expected, $model->getValue(), $case);
     }
 
-    public function testValueMatchingAnOfferedTermIsCleared(): void
+    public static function savedValueProvider(): array
     {
-        // SettingsProvider's set carries no tick state, so this covers both
-        // the ticked and the offered-but-unticked case identically — the
-        // distinction only exists on the sibling checkbox field's saved
-        // selection, not here.
-        $this->settingsProvider->method('getAvailableTerms')->willReturn([14, 30, 60]);
-        $model = $this->buildModel(['value' => '30', 'scope' => 'default', 'scope_id' => 0]);
-
-        $model->beforeSave();
-
-        $this->assertSame('', $model->getValue());
+        return [
+            ['', [14, 30], '', 'an empty field is left empty'],
+            ['0', [14, 30], '0', 'a zero is not a term and is left alone'],
+            ['30', [14, 30, 60], '', 'a value duplicating an offered term is cleared'],
+            ['37', [], '37', 'an unresolvable offered set cannot refuse, so the value stands'],
+        ];
     }
 
-    public function testGenuinelyCustomValueIsPreserved(): void
+    /**
+     * @param int[] $offered
+     * @dataProvider refusedValueProvider
+     */
+    public function testAnUnofferedValueIsRefused(string $value, array $offered, string $message, string $case): void
     {
-        $this->settingsProvider->method('getAvailableTerms')->willReturn([14, 30]);
-        $model = $this->buildModel(['value' => '45', 'scope' => 'default', 'scope_id' => 0]);
+        $model = $this->buildModel(['value' => $value, 'scope' => 'default', 'scope_id' => 0], $offered);
 
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage($message);
         $model->beforeSave();
+        $this->fail($case);
+    }
 
-        $this->assertSame('45', $model->getValue());
+    public static function refusedValueProvider(): array
+    {
+        return [
+            [
+                '37',
+                [7, 14, 15, 20, 21, 30, 45, 60, 90],
+                'Payment terms you are not able to offer: 37 days.'
+                . ' Choose from: 7, 14, 15, 20, 21, 30, 45, 60, 90 days.',
+                'the refusal names the rejected value and the offered set',
+            ],
+            [
+                '1',
+                [30],
+                'Payment terms you are not able to offer: 1 days. Choose from: 30 days.',
+                'a single-term merchant refuses everything else',
+            ],
+        ];
     }
 
     public function testResolvesTheOfferedSetAtTheStoreScopeBeingSaved(): void
     {
-        $this->settingsProvider->method('getAvailableTerms')->willReturnCallback(
-            function ($storeId) {
-                return $storeId === 5 ? [45] : [14, 30];
-            }
+        $model = $this->buildModel(
+            ['value' => '45', 'scope' => 'stores', 'scope_id' => 5],
+            [14, 30],
+            [45]
         );
-        $model = $this->buildModel(['value' => '45', 'scope' => 'stores', 'scope_id' => 5]);
 
         $model->beforeSave();
 

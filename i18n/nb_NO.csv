@@ -401,3 +401,7 @@
 "Refreshed %1","Oppdatert %1"
 "Never refreshed","Aldri oppdatert"
 "Missing when read at %1 — the hourly refresh appears not to be running","Manglet ved lesing %1 — den timebaserte oppdateringen ser ikke ut til å kjøre"
+"Payment terms you are not able to offer: %1 days. Choose from: %2 days.","Betalingsbetingelser du ikke kan tilby: %1 dager. Velg blant: %2 dager."
+"Default payment term %1 days is not one of the terms you offer: %2 days.","Standard betalingsbetingelse %1 dager er ikke en av betingelsene du tilbyr: %2 dager."
+"Optional. Enter a custom term as a number of days after the end of the month, offered alongside the terms selected above.","Valgfritt. Angi en egendefinert betingelse som et antall dager etter månedsslutt, som tilbys ved siden av betingelsene valgt ovenfor."
+"Unrecognised surcharge method: %1. Choose one of: %2.","Ukjent tilleggsmetode: %1. Velg en av: %2."

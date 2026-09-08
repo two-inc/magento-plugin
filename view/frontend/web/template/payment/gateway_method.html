@@ -14,13 +14,17 @@
             />
             <div class="two-title-block">
                 <span class="two-payment-title" data-bind="text: getTitle()"></span>
+                <!-- ko if: twoSubtitleHtml -->
                 <div class="two-payment-subtitle" data-bind="html: twoSubtitleHtml"></div>
+                <!-- /ko -->
+                <!-- ko if: showWhatIsTwo -->
                 <a
                     class="two-about-link"
                     target="_blank"
                     rel="noopener"
-                    data-bind="visible: showWhatIsTwo, attr: {href: aboutLinkUrl}, text: aboutLinkText"
+                    data-bind="attr: {href: aboutLinkUrl}, text: aboutLinkText"
                 ></a>
+                <!-- /ko -->
             </div>
             <div class="two-payment-shield"></div>
         </div>
@@ -93,12 +97,13 @@
 
             Persistent inline notices, inside the payment tile next to the
             term chips. Each is emitted only when its own observable is
-            non-empty, so a brand that suppresses the intent message
-            entirely (<intent_approved_notice_enabled>false</…> in
-            brand.xml) yields no element at all rather than an empty
-            wrapper — both notices share that one suppression switch, see
-            ConfigProvider. Class names match the PrestaShop / WooCommerce
-            surfaces so the four platforms stay greppable; `declined` is a
+            non-empty, so a brand that suppresses an outcome
+            (<intent_approved_notice_enabled> / <intent_declined_notice_enabled>
+            false in brand.xml) yields no element at all rather than an
+            empty wrapper. The two outcomes carry their own switch and
+            their own copy override, see ConfigProvider. Class names
+            match the PrestaShop / WooCommerce surfaces so the four
+            platforms stay greppable; `declined` is a
             new modifier alongside the existing `approved` one.
         -->
         <!--
@@ -159,8 +164,8 @@
             modifier is deliberately the box's neutral palette rather than
             Magento's `.message-error`.
 
-            Not gated on the brand's intent-message suppression switch, unlike
-            the two above: an error is not the intent verdict a brand can
+            Not gated on either notice's suppression switch, unlike the two
+            above: an error is not the intent verdict a brand can
             choose not to state, it is the buyer's only sign that the check did
             not happen.
         -->
