@@ -28,15 +28,19 @@
                 type="Two\Gateway\Plugin\Config\Structure\HidePaymentSection"
                 sortOrder="10"/>
     </type>
-    <!--
-        Hides the deprecated default_shipping_tax_rate field unless a
-        value is already stored — see
-        Two\Gateway\Plugin\Config\Structure\HideDeprecatedShippingTaxRateField.
-    -->
+    <!-- Hides the fields below (keyed section_suffix/group/field, as brand.xml suppressed_fields) unless already configured at the scope being edited. -->
     <type name="Magento\Config\Model\Config\Structure\Element\Field">
-        <plugin name="two-hide-deprecated-shipping-tax-rate-field"
-                type="Two\Gateway\Plugin\Config\Structure\HideDeprecatedShippingTaxRateField"
+        <plugin name="two-hide-fields-unless-configured"
+                type="Two\Gateway\Plugin\Config\Structure\HideFieldsUnlessConfigured"
                 sortOrder="10"/>
+    </type>
+    <type name="Two\Gateway\Plugin\Config\Structure\HideFieldsUnlessConfigured">
+        <arguments>
+            <argument name="predicates" xsi:type="array">
+                <item name="order_management/order_management/default_shipping_tax_rate" xsi:type="object">Two\Gateway\Model\Config\FieldGate\UsableRate</item>
+                <item name="payment/payment_terms/payment_terms_type" xsi:type="object">Two\Gateway\Model\Config\FieldGate\EndOfMonth</item>
+            </argument>
+        </arguments>
     </type>
     <!--
         SynthesiseBrandAdminForm is registered globally in etc/di.xml,

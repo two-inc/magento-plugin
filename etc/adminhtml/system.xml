@@ -281,6 +281,7 @@
             <group id="payment_terms" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                    showInStore="1">
                 <label>Payment terms</label>
+                <!-- Hidden unless stored as End of Month (etc/adminhtml/di.xml gate); saving Standard removes it, config:set restores. TWO-25656. -->
                 <field id="payment_terms_type" translate="label comment" type="select" sortOrder="10" showInDefault="1"
                        showInWebsite="1" showInStore="1" canRestore="1">
                     <label>Payment terms type</label>
@@ -448,7 +449,7 @@
                 </field>
                 <!-- DEPRECATED: superseded by default_shipping_tax_class above.
                      Hidden unless a value is already stored — Plugin\Config\
-                     Structure\HideDeprecatedShippingTaxRateField, same
+                     Structure\HideFieldsUnlessConfigured, same
                      hidden-unless-already-configured carve-out as
                      custom_surcharge_tax_rate's, applied directly to this
                      field rather than through a sibling selector's option
