@@ -248,7 +248,7 @@ PHPUNIT_SHA256  := a823d916151f628dd9943ccc81a98bcfbba9c5babf53f27be6c7dccc89f8e
 
 ## Run PHPUnit tests
 test:
-	docker run --rm -v $(CURDIR):/app --tmpfs /app/.worktrees -w /app php:8.1-cli bash -c \
+	docker run --rm -v $(CURDIR):/app --tmpfs /app/.worktrees -w /app php:8.2-cli bash -c \
 		"php -r \"copy('https://phar.phpunit.de/phpunit-$(PHPUNIT_VERSION).phar', '/tmp/phpunit.phar');\" \
 		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
 		&& php /tmp/phpunit.phar"
@@ -258,7 +258,7 @@ test-e2e:
 	docker run --rm -v $(CURDIR):/app --tmpfs /app/.worktrees -w /app \
 		-e TWO_API_KEY=$(TWO_API_KEY) \
 		-e TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
-		php:8.1-cli bash -c \
+		php:8.2-cli bash -c \
 		"php -r \"copy('https://phar.phpunit.de/phpunit-$(PHPUNIT_VERSION).phar', '/tmp/phpunit.phar');\" \
 		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
 		&& php /tmp/phpunit.phar --testsuite E2E"

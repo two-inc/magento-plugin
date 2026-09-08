@@ -19,9 +19,6 @@ trait UpstreamEnvelopeTrait
     /**
      * The only upstream 4xx keys a buyer can act on; the rest of the body is internal.
      *
-     * A trait method, not a const: trait constants require PHP 8.2 and composer.json
-     * still supports >=8.1.
-     *
      * @return string[]
      */
     private function relayed4xxFields(): array
