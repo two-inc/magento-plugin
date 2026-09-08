@@ -17,6 +17,14 @@ class Value extends \Magento\Framework\DataObject
     /** @var ScopeConfigInterface */
     protected $_config;
 
+    /**
+     * AbstractModel's per-object save gate. A backend model that turns this
+     * off in beforeSave() is the only field the config section skips writing.
+     *
+     * @var bool
+     */
+    protected $_dataSaveAllowed = true;
+
     public function __construct(
         $context,
         $registry,
@@ -59,6 +67,11 @@ class Value extends \Magento\Framework\DataObject
     public function beforeSave()
     {
         return $this;
+    }
+
+    public function isSaveAllowed()
+    {
+        return (bool)$this->_dataSaveAllowed;
     }
 
     /**
