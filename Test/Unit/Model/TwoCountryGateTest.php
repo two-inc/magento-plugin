@@ -11,6 +11,7 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\MerchantMinimumResolver;
@@ -206,6 +207,7 @@ class TwoCountryGateTest extends TestCase
         $properties = [
             '_scopeConfig' => $scopeConfig,
             'apiKeyStatus' => $apiKeyStatus,
+            'settingsProvider' => $this->offeredTermsProvider(),
             'logRepository' => $this->createMock(LogRepository::class),
             'minimumOrderProvider' => $this->createMock(MinimumOrderProvider::class),
             'merchantMinimumResolver' => $this->createMock(MerchantMinimumResolver::class),
@@ -269,5 +271,16 @@ class TwoCountryGateTest extends TestCase
         $address = $this->createMock(Address::class);
         $address->method('getCountryId')->willReturn($country);
         return $address;
+    }
+
+    /**
+     * A resolvable merchant record — without one the method is withheld
+     * before the gate under test is reached (ABN-493).
+     */
+    private function offeredTermsProvider(): SettingsProvider
+    {
+        $provider = $this->createMock(SettingsProvider::class);
+        $provider->method('getAvailableTerms')->willReturn([14, 30]);
+        return $provider;
     }
 }

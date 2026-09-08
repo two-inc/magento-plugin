@@ -588,9 +588,14 @@ class Repository implements RepositoryInterface
 
         // config:set bypasses the fields' save-time entitlement check (ABN-493).
         $offered = array_map('intval', $this->settingsProvider->getAvailableTerms($storeId));
-        // No terms at all means an unresolvable record — unknown, not "none offered".
+        // An unresolvable record offers nothing: no term may be offered on trust (ABN-493).
         if ($offered === []) {
-            return $terms;
+            if ($terms !== [] && $this->logger !== null) {
+                $this->logger->debug(
+                    'Merchant payment terms could not be resolved - no terms offered to the buyer.'
+                );
+            }
+            return [];
         }
 
         $dropped = array_values(array_diff($terms, $offered));

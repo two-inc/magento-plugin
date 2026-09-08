@@ -29,6 +29,14 @@ class RepositoryPaymentTermsTest extends TestCase
     /** @var Repository */
     private $repository;
 
+    /**
+     * Offered terms the stubbed merchant record resolves to. A resolvable
+     * record is the baseline: with none, every buyer term reads as unoffered.
+     *
+     * @var int[]
+     */
+    private $offeredTerms = [7, 14, 21, 30, 37, 45, 60, 90];
+
     protected function setUp(): void
     {
         $this->scopeConfig = $this->createMock(ScopeConfigInterface::class);
@@ -44,6 +52,10 @@ class RepositoryPaymentTermsTest extends TestCase
         // tests below exercise the config-based fallback; the API-default
         // cases stub it explicitly.
         $this->settingsProvider = $this->createMock(SettingsProvider::class);
+        $this->settingsProvider->method('getAvailableTerms')
+            ->willReturnCallback(function (): array {
+                return $this->offeredTerms;
+            });
 
         $this->repository = new Repository(
             $this->scopeConfig,
@@ -171,7 +183,7 @@ class RepositoryPaymentTermsTest extends TestCase
         array $expected,
         string $case
     ): void {
-        $this->settingsProvider->method('getAvailableTerms')->willReturn($offered);
+        $this->offeredTerms = $offered;
         $this->stubConfig([
             'payment/two_payment/payment_terms' => $presets,
             'payment/two_payment/payment_terms_duration_days' => $custom,
@@ -188,13 +200,13 @@ class RepositoryPaymentTermsTest extends TestCase
             ['14', '37', [14], [14], 'a stored custom day that is not offered is dropped'],
             ['14', '37', [14, 37], [14, 37], 'an offered custom day is kept'],
             ['7,37', '', [14, 30], [], 'nothing offered in common leaves no buyer terms'],
-            ['14,30', '', [], [14, 30], 'an unresolvable merchant record leaves the stored set alone'],
+            ['14,30', '', [], [], 'an unresolvable merchant record offers no terms at all'],
         ];
     }
 
     public function testGetDefaultPaymentTermIgnoresADefaultTheMerchantNoLongerOffers(): void
     {
-        $this->settingsProvider->method('getAvailableTerms')->willReturn([14, 30]);
+        $this->offeredTerms = [14, 30];
         $this->stubConfig([
             'payment/two_payment/default_payment_term' => '37',
             'payment/two_payment/payment_terms' => '14,30,37',

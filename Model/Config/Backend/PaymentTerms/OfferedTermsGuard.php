@@ -30,7 +30,8 @@ class OfferedTermsGuard
     public function assertOffered(array $days, ?int $storeId): void
     {
         $offered = $this->offered($storeId);
-        // No terms at all means an unresolvable record — unknown, not "none offered".
+        // Refusing the save would lock the merchant out of correcting the API key that
+        // resolves the record; the buyer path fails closed instead (ABN-493).
         if ($offered === []) {
             return;
         }

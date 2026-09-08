@@ -16,7 +16,7 @@ use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Config\FieldGate\EndOfMonth;
 
 /**
- * Names End-of-Month semantics in the custom-days help text only where that type is stored (Q46).
+ * Names End-of-Month semantics in the custom-days help text only where that type is stored (ABN-495).
  */
 class PaymentTermsCustomDays implements CommentInterface
 {
@@ -51,8 +51,8 @@ class PaymentTermsCustomDays implements CommentInterface
     {
         if ($this->endOfMonth->isConfigured($this->storedType())) {
             return (string)__(
-                'Optional. Enter a custom number of days past the end of the month'
-                . ' to offer alongside the selected terms above.'
+                'Optional. Enter a custom term as a number of days after the end of the month,'
+                . ' offered alongside the terms selected above.'
             );
         }
 
