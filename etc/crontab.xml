@@ -15,11 +15,12 @@
              method="execute">
             <schedule>0 */6 * * *</schedule>
         </job>
-        <!-- Hourly; RecordProvider::CRON_INTERVAL must match. -->
+        <!-- Hourly; RecordProvider::CRON_INTERVAL must match.
+             TEMP(live-verify): every minute, revert to "0 * * * *". -->
         <job name="two_gateway_refresh_merchant_record"
              instance="Two\Gateway\Cron\RefreshMerchantRecord"
              method="execute">
-            <schedule>0 * * * *</schedule>
+            <schedule>* * * * *</schedule>
         </job>
         <job name="two_gateway_process_invoice_uploads"
              instance="Two\Gateway\Cron\ProcessInvoiceUploads"

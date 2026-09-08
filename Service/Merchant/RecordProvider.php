@@ -37,14 +37,15 @@ use Two\Gateway\Service\Api\Adapter;
  */
 class RecordProvider
 {
+    // TEMP(live-verify): compressed timings, observable on a dev shop. Revert to 93600/86400/3600.
     /** Eviction ceiling; must exceed MAX_AGE + CRON_INTERVAL so a refresh one run late still beats eviction. */
-    public const CACHE_LIFETIME = 93600;
+    public const CACHE_LIFETIME = 300;
 
     /** Age at which the hourly cron refreshes the record. */
-    public const MAX_AGE = 86400;
+    public const MAX_AGE = 120;
 
     /** Must match the two_gateway_refresh_merchant_record schedule in etc/crontab.xml. */
-    public const CRON_INTERVAL = 3600;
+    public const CRON_INTERVAL = 60;
 
     private const CACHE_KEY_PREFIX = 'two_gateway_merchant_record_';
 
@@ -54,15 +55,17 @@ class RecordProvider
 
     private const FAILURE_COOLDOWN_SUFFIX = '_cooldown';
 
+    // TEMP(live-verify): revert to 60.
     /** Seconds before a failed fetch is retried, so an outage is not a fetch per read. */
-    private const FAILURE_COOLDOWN = 60;
+    private const FAILURE_COOLDOWN = 10;
 
     /**
      * Per-call ceiling on the two GETs below. The callers that bound their own
      * wall clock — a config save, the admin button, a storefront render — can
      * only do so if an in-flight call cannot outlast their budget.
      */
-    private const FETCH_TIMEOUT_SECONDS = 10;
+    // TEMP(live-verify): revert to 10.
+    private const FETCH_TIMEOUT_SECONDS = 3;
 
     /** Own cache type, so `cache:clean two_gateway` drops it and a config clean does not. */
     private const CACHE_TAGS = [TwoGateway::CACHE_TAG];
@@ -280,6 +283,13 @@ class RecordProvider
         ?array $surviving
     ): ?array {
         $record = $this->fetchRecord($mode, $apiKey, $storeId);
+        // TEMP(live-verify)
+        $this->logRepository->addDebugLog('LIVEVERIFY RecordProvider: fetch outcome', [
+            'cache_key' => $cacheKey,
+            'fetched' => $record !== null,
+            'surviving_kept' => $record === null && $surviving !== null,
+            'store_id' => $storeId,
+        ]);
 
         // Memoize either way so a single request never pays the
         // verify+fetch round-trip twice.
