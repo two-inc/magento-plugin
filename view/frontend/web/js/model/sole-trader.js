@@ -63,6 +63,28 @@
     /** The one control whose focus raises the signup popup instead of closing it. */
     const SOLE_TRADER_CHIP_SELECTOR = '[data-two-chip="soletrader"]';
 
+    /** company-search-panel.js's `CLASSES.PANEL`, which this module cannot import. */
+    const CAPTURE_POPOVER_CLASS = 'two-company-dropdown';
+
+    /**
+     * This capture's own popover. The panel builds it as the field's SIBLING and
+     * `isBound()` holds the two to one parent, so a sibling scan cannot reach another
+     * capture's — which a descendant search under a container holding both can.
+     *
+     * @param {?Element} field
+     * @returns {?Element}
+     */
+    function ownPopover(field) {
+        const parent = field && field.parentElement;
+        const children = (parent && parent.children) || [];
+        for (let i = 0; i < children.length; i += 1) {
+            if (children[i].classList && children[i].classList.contains(CAPTURE_POPOVER_CLASS)) {
+                return children[i];
+            }
+        }
+        return null;
+    }
+
     /**
      * Page-level, not per-flow: the host builds one capture flow per address
      * panel, and only one delegation/autofill pair may be live per checkout
@@ -468,10 +490,12 @@
     };
 
     /**
-     * Focus arriving on the Sole trader chip moves the signup popup neither way; arriving on
-     * another control closes the popup, and on one outside the capture popover closes the
-     * popover too (TWO-25658). The company field counts as inside: it is the popover's own
-     * trigger, and its focus opener would otherwise race the popover close on event order.
+     * Focus arriving on THIS capture's Sole trader chip moves the signup popup neither way;
+     * arriving on another control closes the popup, and on one outside the capture popover
+     * closes the popover too (TWO-25658). The company field counts as inside: it is the
+     * popover's own trigger, and its focus opener would otherwise race the popover close on
+     * event order. Another capture's Sole trader chip is one of those other controls, and
+     * gets a popup of its own.
      *
      * A focusin a browser re-fires on window return counts as the buyer focusing that control.
      */
@@ -481,10 +505,14 @@
             if (!this.isPopupOpen()) return;
             const target = event.target;
             const panel = this._component.panel();
-            const popover = panel && panel.getPanelElement && panel.getPanelElement();
             const field = panel && panel.getField && panel.getField()[0];
+            // Off the field, never `getPanelElement()`: a morph re-render deletes the wrap and the
+            // popover and keeps the field, and that stale stored node makes this capture's own
+            // re-rendered chip read as another capture's, inverting the rule on it.
+            const popover = ownPopover(field);
             const inside = !!(target && ((popover && popover.contains(target)) || target === field));
-            if (inside && target.closest && target.closest(SOLE_TRADER_CHIP_SELECTOR)) {
+            const chip = target && target.closest && target.closest(SOLE_TRADER_CHIP_SELECTOR);
+            if (inside && chip) {
                 // Only an activation moves the popup: Tabbing through the chip must leave it as the buyer left it.
                 return;
             }
@@ -492,6 +520,10 @@
             this.closeSignupPopup();
             // Outside the popover the buyer has left capture, not just the signup.
             if (!inside && panel && panel.close) panel.close();
+            // Another capture's chip is a different control, and its own click handler is the one
+            // place a launch is spelled out. Last, so closeSignupPopup() has already released this
+            // watcher and the launch's own focus is not judged here again.
+            if (chip && typeof chip.click === 'function') chip.click();
         };
         document.addEventListener('focusin', this._returnHandler, true);
     };
