@@ -68,3 +68,20 @@ interface TypeListInterface
      */
     public function cleanType($typeCode);
 }
+
+/**
+ * Stub of the cache status manager with the real signature, so a data
+ * patch that enables a cache type can be mocked.
+ */
+class Manager
+{
+    /**
+     * @param array $types
+     * @param bool $isEnabled
+     * @return array
+     */
+    public function setEnabled(array $types, $isEnabled)
+    {
+        return $types;
+    }
+}
