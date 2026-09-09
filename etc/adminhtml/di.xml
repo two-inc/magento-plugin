@@ -10,8 +10,8 @@
         <plugin name="orderFormToolbarButtons" type="Two\Gateway\Plugin\Block\Widget\Button\Toolbar" />
     </type>
     <type name="Magento\Sales\Model\Order\Creditmemo">
-        <plugin name="two-creditmemo-surcharge-override"
-                type="Two\Gateway\Plugin\Model\Sales\CreditmemoSurchargeOverride" sortOrder="10"/>
+        <plugin name="two-creditmemo-fee-override"
+                type="Two\Gateway\Plugin\Model\Sales\CreditmemoFeeOverride" sortOrder="10"/>
     </type>
     <!--
         Hide Two_Gateway admin config sections when a brand overlay is

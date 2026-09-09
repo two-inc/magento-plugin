@@ -656,7 +656,27 @@ not take is recovered by a later one rather than stranded, and the last memo
 lands on the whole charge exactly with no rounding residue. The one exception
 is the stranding case below.
 
-Three cases defer rather than pay out, all logging `OtherChargesDeferred`. A
+**The merchant can refund part of the charge, or none of it.** The credit-memo
+form carries the amount as `creditmemo[two_other_charges_amount]`, which
+`Plugin\Model\Sales\CreditmemoFeeOverride` — one parser for that field and the
+surcharge's — stamps on the memo before `collectTotals`. A stamped value
+replaces the proration entirely and is bounded only by what the charge has
+left, so the whole charge is refundable on a memo carrying no items; a cleared
+field is an explicit zero rather than a fall back to the proportional default.
+The cap is checked at the form against the resolver's derived residual less
+what earlier memos took, with a one-cent tolerance for a default that
+round-tripped through a 2dp display — the collector clamps to the real cap
+regardless, so the tolerance cannot over-refund.
+
+**A ceiling refuses an override out loud.** Every ceiling below is silent on
+the proration, which simply takes less; against a typed amount each raises a
+`LocalizedException` naming the ceiling and the amount that would fit, because
+a merchant who types 7.25 and is handed 0.00 has been told nothing. That
+includes the two solved ceilings, whose clamp is refused rather than applied,
+and an unusable conversion rate.
+
+Three cases defer rather than pay out on the proration path, all logging
+`OtherChargesDeferred`. A
 NEGATIVE granted amount means some other total's tax is missing from the
 memo — on a partial memo of a surcharged order core omits the surcharge VAT
 that `ComposeRefund` declares in its surcharge line — and adding it here

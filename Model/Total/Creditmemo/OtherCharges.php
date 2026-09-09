@@ -7,6 +7,8 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Total\Creditmemo;
 
+use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Phrase;
 use Magento\Sales\Model\Order\Creditmemo;
 use Magento\Sales\Model\Order\Creditmemo\Total\AbstractTotal;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
@@ -78,13 +80,36 @@ class OtherCharges extends AbstractTotal
             ? (float)$residual['tax_rate']
             : $feeTax / $feeNet;
 
-        // Entitlement is CUMULATIVE, so a share an earlier memo could not take
-        // is still recoverable here rather than stranded, and the last memo
-        // lands on the whole charge exactly with no rounding residue.
-        [$refundedCharge, $refundedSubtotal] = $this->priorRefunds($creditmemo, $order);
-        $share = min(1.0, ($refundedSubtotal + (float)$creditmemo->getSubtotal()) / $orderSubtotal);
-        $net = round($feeNet * $share - $refundedCharge, 6);
-        if ($net <= 0) {
+        [$refundedCharge, $refundedSubtotal] = $this->otherChargesResolver
+            ->priorRefunds($order, $creditmemo);
+        $remaining = round($feeNet - $refundedCharge, 6);
+
+        // Plugin\Model\Sales\CreditmemoFeeOverride stamps the admin form's
+        // value on the creditmemo from request data. hasData() distinguishes
+        // an explicit merchant override (including 0) from "never set, prorate".
+        $hasOverride = $creditmemo->hasData('two_other_charges_amount')
+            && $creditmemo->getData('two_other_charges_amount') !== null
+            && $creditmemo->getData('two_other_charges_amount') !== '';
+
+        if ($hasOverride) {
+            // The share is what the merchant typed, bounded only by what the
+            // charge has left: refunding the whole charge on a memo carrying
+            // no items is the point of the override.
+            $requested = min(
+                round((float)$creditmemo->getData('two_other_charges_amount'), 6),
+                max(0.0, $remaining)
+            );
+        } else {
+            // Entitlement is CUMULATIVE, so a share an earlier memo could not
+            // take is still recoverable here rather than stranded, and the last
+            // memo lands on the whole charge exactly with no rounding residue.
+            $share = min(1.0, ($refundedSubtotal + (float)$creditmemo->getSubtotal()) / $orderSubtotal);
+            $requested = round($feeNet * $share - $refundedCharge, 6);
+        }
+
+        if ($requested <= 0) {
+            // An explicit zero is the merchant refunding none of the charge,
+            // which no ceiling refused — so it is not an error.
             return $this;
         }
 
@@ -93,12 +118,15 @@ class OtherCharges extends AbstractTotal
         $granted = $this->grantedFeeTax($creditmemo);
         if ($granted < -0.005) {
             // Another total's shortfall is not this charge's to pay.
-            $this->logRepository->addDebugLog(
-                'OtherChargesDeferred',
+            return $this->deferOrRefuse(
+                $hasOverride,
+                __(
+                    'Other charges cannot be refunded on this credit memo: its tax is short by %1 '
+                    . 'against its own lines.',
+                    round(-$granted, 2)
+                ),
                 sprintf('Memo tax is short by %.4F against its own lines. Deferred.', -$granted)
             );
-
-            return $this;
         }
         $granted = max(0.0, $granted);
 
@@ -106,7 +134,11 @@ class OtherCharges extends AbstractTotal
         $fxRate = (float)$order->getBaseToOrderRate();
         if ($fxRate <= 0) {
             // Assuming 1.0 would over-refund the base amounts.
-            return $this;
+            return $this->deferOrRefuse(
+                $hasOverride,
+                __('Other charges cannot be refunded: the order has no usable currency conversion rate.'),
+                null
+            );
         }
 
         $taxAllowance = (float)$order->getTaxInvoiced() - (float)$order->getTaxRefunded();
@@ -124,27 +156,48 @@ class OtherCharges extends AbstractTotal
         );
 
         // Solved, not clamped: scaling legs chosen separately loses the rate.
-        if ($feeRate > 0) {
-            $net = min(
-                $net,
-                ($granted + $taxHeadroom) / $feeRate,
-                ($payable + $granted) / (1 + $feeRate)
+        $vatCeiling = $feeRate > 0 ? ($granted + $taxHeadroom) / $feeRate : INF;
+        $payableCeiling = $feeRate > 0 ? ($payable + $granted) / (1 + $feeRate) : $payable;
+
+        $net = round(min($requested, $vatCeiling, $payableCeiling), 6);
+
+        // A ceiling the automatic proportion simply absorbs is an explicit
+        // instruction refused, so the merchant is told which one bound it and
+        // what they can type instead — rather than being handed a silent 0.00.
+        if ($hasOverride && $requested - $net > 0.005) {
+            throw new LocalizedException(
+                $vatCeiling <= $payableCeiling
+                    ? __(
+                        'Other charges refund (%1) exceeds what the order\'s remaining VAT allowance '
+                        . 'covers (%2).',
+                        round($requested, 2),
+                        round(max(0.0, $vatCeiling), 2)
+                    )
+                    : __(
+                        'Other charges refund (%1) exceeds what is still refundable on this order (%2).',
+                        round($requested, 2),
+                        round(max(0.0, $payableCeiling), 2)
+                    )
             );
-        } else {
-            $net = min($net, $payable);
         }
-        $net = round($net, 6);
 
         $taxDelta = round($feeRate * $net - $granted, 6);
         if ($taxDelta < -0.005) {
-            $this->logRepository->addDebugLog(
-                'OtherChargesDeferred',
+            return $this->deferOrRefuse(
+                $hasOverride,
+                __(
+                    'Other charges cannot be refunded on this credit memo: %1 of VAT is already '
+                    . 'granted, more than %2 of net carries.',
+                    round($granted, 2),
+                    round($net, 2)
+                ),
                 sprintf('Granted VAT %.4F exceeds the share of %.4F net. Deferred.', $granted, $net)
             );
-
-            return $this;
         }
         if ($net <= 0) {
+            // Unreachable under an override: a requested amount above zero
+            // clamped to zero trips the guard above first, which names the
+            // ceiling rather than reporting the outcome.
             $this->logRepository->addDebugLog(
                 'OtherChargesDeferred',
                 sprintf('No ceiling leaves room for the charge (%.4F granted). Deferred.', $granted)
@@ -166,6 +219,30 @@ class OtherCharges extends AbstractTotal
         $creditmemo->setBaseGrandTotal((float)$creditmemo->getBaseGrandTotal() + $baseNet + $baseTaxDelta);
         $creditmemo->setTaxAmount((float)$creditmemo->getTaxAmount() + $taxDelta);
         $creditmemo->setBaseTaxAmount((float)$creditmemo->getBaseTaxAmount() + $baseTaxDelta);
+
+        return $this;
+    }
+
+    /**
+     * A ceiling the automatic proportion absorbs silently, the merchant's own
+     * typed amount must not: an override reaching one is refused with the
+     * reason, where the proration defers with a debug line.
+     *
+     * @param bool $hasOverride
+     * @param Phrase $message
+     * @param string|null $debug Nothing to log when the proration path is
+     *                           deliberately silent about this case.
+     * @return $this
+     * @throws LocalizedException
+     */
+    private function deferOrRefuse(bool $hasOverride, Phrase $message, ?string $debug): self
+    {
+        if ($hasOverride) {
+            throw new LocalizedException($message);
+        }
+        if ($debug !== null) {
+            $this->logRepository->addDebugLog('OtherChargesDeferred', $debug);
+        }
 
         return $this;
     }
@@ -210,30 +287,4 @@ class OtherCharges extends AbstractTotal
         }
     }
 
-    /**
-     * From the saved memos, not a running column, so a re-collect on this
-     * memo cannot compound.
-     *
-     * @param Creditmemo $creditmemo
-     * @param \Magento\Sales\Model\Order $order
-     * @return array{0: float, 1: float} charge already refunded, subtotal already refunded
-     */
-    private function priorRefunds(Creditmemo $creditmemo, $order): array
-    {
-        $collection = $order->getCreditmemosCollection();
-        if (!$collection) {
-            return [0.0, 0.0];
-        }
-
-        $charge = 0.0;
-        $subtotal = 0.0;
-        foreach ($collection as $existing) {
-            if ($existing->getId() && (int)$existing->getId() !== (int)$creditmemo->getId()) {
-                $charge += (float)$existing->getTwoOtherChargesAmount();
-                $subtotal += (float)$existing->getSubtotal();
-            }
-        }
-
-        return [$charge, $subtotal];
-    }
 }

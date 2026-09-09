@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Model\Total\Creditmemo;
 
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Creditmemo;
 use PHPUnit\Framework\TestCase;
@@ -107,9 +108,17 @@ class OtherChargesTest extends TestCase
         return $creditmemo;
     }
 
+    /**
+     * Only forOrder() is stubbed: the resolver's own priorRefunds() is what
+     * decides what earlier memos already took, so a full mock would answer
+     * "nothing refunded" to every case that exists to prove otherwise.
+     */
     private function makeCollector(?array $residual): OtherCharges
     {
-        $resolver = $this->createMock(OtherChargesResolver::class);
+        $resolver = $this->getMockBuilder(OtherChargesResolver::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['forOrder'])
+            ->getMock();
         $resolver->method('forOrder')->willReturn($residual);
 
         return new OtherCharges($resolver, $this->createMock(LogRepository::class));
@@ -548,4 +557,254 @@ class OtherChargesTest extends TestCase
         ];
     }
 
+    /**
+     * The merchant's typed amount replaces the proration entirely, bounded
+     * only by what the charge has left — refunding the whole charge on a memo
+     * carrying no items is the point of it.
+     *
+     * @dataProvider overrideProvider
+     */
+    public function testTheTypedAmountReplacesTheProration(
+        float $cmSubtotal,
+        float $override,
+        float $expectedNet,
+        float $expectedTax,
+        string $description
+    ): void {
+        $order = $this->makeOrder();
+        $creditmemo = $this->makeCreditmemo($order, $cmSubtotal);
+        $creditmemo->setData('two_other_charges_amount', $override);
+
+        $this->makeCollector($this->residual())->collect($creditmemo);
+
+        $this->assertEqualsWithDelta($expectedNet, (float)$creditmemo->getTwoOtherChargesAmount(), 0.0001, $description);
+        $this->assertEqualsWithDelta(
+            $expectedTax,
+            (float)$creditmemo->getTwoOtherChargesTaxAmount(),
+            0.0001,
+            $description
+        );
+        $this->assertEqualsWithDelta(
+            self::NATIVE_GRAND + $expectedNet + $expectedTax,
+            (float)$creditmemo->getGrandTotal(),
+            0.0001,
+            'grand total moves by exactly what was persisted: ' . $description
+        );
+    }
+
+    public static function overrideProvider(): array
+    {
+        return [
+            [
+                0.0,
+                self::FEE_NET,
+                self::FEE_NET,
+                self::FEE_TAX,
+                'the whole charge on a memo refunding no items, which prorates to nothing',
+            ],
+            [
+                self::ORDER_SUBTOTAL / 2,
+                7.25,
+                7.25,
+                1.45,
+                'more than the 5.00 the half-items share would have taken',
+            ],
+            [
+                self::ORDER_SUBTOTAL,
+                2.0,
+                2.0,
+                0.4,
+                'less than the whole charge the full share would have taken',
+            ],
+            [
+                self::ORDER_SUBTOTAL,
+                self::FEE_NET,
+                self::FEE_NET,
+                self::FEE_TAX,
+                'exactly the charge, its cap',
+            ],
+        ];
+    }
+
+    /**
+     * The typed amount is bounded by what the charge has LEFT, so a value the
+     * form's own cap check let through — its tolerance, or a call that never
+     * saw the form — cannot refund an earlier memo's share a second time.
+     */
+    public function testTheTypedAmountIsStillBoundedByWhatTheChargeHasLeft(): void
+    {
+        $prior = new Creditmemo();
+        $prior->setData('id', 1);
+        $prior->setData('two_other_charges_amount', 6.0);
+
+        $order = $this->withPriorMemos($this->makeOrder(), [$prior]);
+        $creditmemo = $this->makeCreditmemo($order, self::ORDER_SUBTOTAL);
+        $creditmemo->setData('two_other_charges_amount', self::FEE_NET);
+
+        $this->makeCollector($this->residual())->collect($creditmemo);
+
+        $this->assertEqualsWithDelta(4.0, (float)$creditmemo->getTwoOtherChargesAmount(), 0.0001);
+        $this->assertEqualsWithDelta(0.8, (float)$creditmemo->getTwoOtherChargesTaxAmount(), 0.0001);
+    }
+
+    /**
+     * An explicit zero is the merchant refunding none of the charge. It must
+     * not fall back to the proportional default, and it is not an error.
+     */
+    public function testAnExplicitZeroRefundsNoneOfTheChargeWithoutFallingBack(): void
+    {
+        $order = $this->makeOrder();
+        $creditmemo = $this->makeCreditmemo($order, self::ORDER_SUBTOTAL);
+        $creditmemo->setData('two_other_charges_amount', 0.0);
+
+        $this->makeCollector($this->residual())->collect($creditmemo);
+
+        $this->assertEqualsWithDelta(0.0, (float)$creditmemo->getTwoOtherChargesAmount(), 0.0001);
+        $this->assertEqualsWithDelta(0.0, (float)$creditmemo->getTwoOtherChargesTaxAmount(), 0.0001);
+        $this->assertEqualsWithDelta(self::NATIVE_GRAND, (float)$creditmemo->getGrandTotal(), 0.0001);
+        $this->assertEqualsWithDelta(self::NATIVE_TAX, (float)$creditmemo->getTaxAmount(), 0.0001);
+    }
+
+    /**
+     * An empty field is not an instruction, so the proportional default still
+     * governs — the same distinction the form's parser makes on the way in.
+     *
+     * @dataProvider unsetOverrideProvider
+     */
+    public function testAnUnsetFieldLeavesTheProportionalDefaultInPlace($stamped, string $description): void
+    {
+        $order = $this->makeOrder();
+        $creditmemo = $this->makeCreditmemo($order, self::ORDER_SUBTOTAL / 2);
+        if ($stamped !== 'absent') {
+            $creditmemo->setData('two_other_charges_amount', $stamped);
+        }
+
+        $this->makeCollector($this->residual())->collect($creditmemo);
+
+        $this->assertEqualsWithDelta(
+            self::FEE_NET / 2,
+            (float)$creditmemo->getTwoOtherChargesAmount(),
+            0.0001,
+            $description
+        );
+    }
+
+    public static function unsetOverrideProvider(): array
+    {
+        return [
+            ['absent', 'no field on the memo at all'],
+            [null, 'the field present but null'],
+            ['', 'the field present but empty'],
+        ];
+    }
+
+    /**
+     * A ceiling the proration absorbs silently is an explicit instruction
+     * refused: the merchant is told which ceiling stopped their amount instead
+     * of being handed a 0.00 they did not ask for.
+     *
+     * @dataProvider refusedOverrideProvider
+     */
+    public function testEveryCeilingRefusesAnOverrideOutLoud(
+        array $orderData,
+        array $creditmemoData,
+        float $override,
+        string $expectedMessage,
+        string $description
+    ): void {
+        $order = $this->makeOrder();
+        foreach ($orderData as $key => $value) {
+            $order->setData($key, $value);
+        }
+        $creditmemo = $this->makeCreditmemo($order, self::ORDER_SUBTOTAL);
+        foreach ($creditmemoData as $key => $value) {
+            $creditmemo->setData($key, $value);
+        }
+        $creditmemo->setData('two_other_charges_amount', $override);
+
+        try {
+            $this->makeCollector($this->residual())->collect($creditmemo);
+            $this->fail('expected a LocalizedException: ' . $description);
+        } catch (LocalizedException $e) {
+            $this->assertStringContainsString($expectedMessage, $e->getMessage(), $description);
+            $this->assertEqualsWithDelta(
+                self::NATIVE_GRAND,
+                (float)$creditmemo->getGrandTotal(),
+                0.0001,
+                'a refused override moves no money: ' . $description
+            );
+        }
+    }
+
+    public static function refusedOverrideProvider(): array
+    {
+        return [
+            [
+                ['tax_invoiced' => self::NATIVE_TAX + 0.5],
+                [],
+                self::FEE_NET,
+                'remaining VAT allowance covers (2.5)',
+                'the order has VAT allowance for only 2.50 of net at the charge\'s rate',
+            ],
+            [
+                ['total_paid' => 102.0, 'base_total_paid' => 102.0],
+                [],
+                self::FEE_NET,
+                'still refundable on this order (1.67)',
+                'validateForRefund()\'s ceiling leaves room for 1.67 of net',
+            ],
+            [
+                [],
+                ['tax_amount' => self::NATIVE_TAX + 3.0, 'base_tax_amount' => self::NATIVE_TAX + 3.0],
+                5.0,
+                'of VAT is already granted, more than',
+                'core already granted more VAT than the typed net carries',
+            ],
+            [
+                [],
+                ['two_surcharge_tax_amount' => 3.0],
+                self::FEE_NET,
+                'its tax is short by 3',
+                'the memo\'s tax is short against its own lines, so this is another total\'s shortfall',
+            ],
+            [
+                ['base_to_order_rate' => 0.0],
+                [],
+                self::FEE_NET,
+                'no usable currency conversion rate',
+                'the base amounts cannot be derived',
+            ],
+        ];
+    }
+
+    /**
+     * Same arrangements, no override: the proration still defers quietly, so
+     * an ordinary credit memo is unaffected by the refusals above.
+     *
+     * @dataProvider refusedOverrideProvider
+     */
+    public function testTheSameCeilingsStayQuietWithoutAnOverride(
+        array $orderData,
+        array $creditmemoData,
+        float $override,
+        string $expectedMessage,
+        string $description
+    ): void {
+        $order = $this->makeOrder();
+        foreach ($orderData as $key => $value) {
+            $order->setData($key, $value);
+        }
+        $creditmemo = $this->makeCreditmemo($order, self::ORDER_SUBTOTAL);
+        foreach ($creditmemoData as $key => $value) {
+            $creditmemo->setData($key, $value);
+        }
+
+        $this->makeCollector($this->residual())->collect($creditmemo);
+
+        $this->assertLessThanOrEqual(
+            self::FEE_NET,
+            (float)$creditmemo->getTwoOtherChargesAmount(),
+            'nothing raised, at most the whole charge taken: ' . $description
+        );
+    }
 }

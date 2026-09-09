@@ -8,6 +8,7 @@ declare(strict_types=1);
 namespace Two\Gateway\Service\Order;
 
 use Magento\Sales\Model\Order as OrderModel;
+use Magento\Sales\Model\Order\Creditmemo;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 
 /**
@@ -61,5 +62,38 @@ class OtherChargesResolver
 
             return null;
         }
+    }
+
+    /**
+     * What earlier credit memos already took of the order's charge, and the
+     * subtotal they refunded.
+     *
+     * From the saved memos, not a running column, so a re-collect on the
+     * current memo cannot compound.
+     *
+     * @param OrderModel $order
+     * @param Creditmemo|null $current Excluded from the sum.
+     * @return array{0: float, 1: float} charge already refunded, subtotal already refunded
+     */
+    public function priorRefunds(OrderModel $order, ?Creditmemo $current = null): array
+    {
+        $collection = $order->getCreditmemosCollection();
+        if (!$collection) {
+            return [0.0, 0.0];
+        }
+
+        $charge = 0.0;
+        $subtotal = 0.0;
+        foreach ($collection as $existing) {
+            if (!$existing->getId()
+                || ($current && (int)$existing->getId() === (int)$current->getId())
+            ) {
+                continue;
+            }
+            $charge += (float)$existing->getTwoOtherChargesAmount();
+            $subtotal += (float)$existing->getSubtotal();
+        }
+
+        return [$charge, $subtotal];
     }
 }
