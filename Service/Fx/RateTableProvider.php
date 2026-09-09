@@ -92,6 +92,9 @@ class RateTableProvider
      */
     private $memo = [];
 
+    /** @var bool */
+    private $blankModeReported = false;
+
     public function __construct(
         Adapter $apiAdapter,
         ConfigRepository $configRepository,
@@ -110,9 +113,9 @@ class RateTableProvider
      * The current FX rate table, refreshed opportunistically when stale.
      *
      * Returns the freshest table available — a stale table is still
-     * returned when a refresh attempt fails (last-known-good). Returns
-     * null only when no table has ever been fetched under the current
-     * API key and one cannot be fetched now.
+     * returned when a refresh attempt fails (last-known-good). Returns null
+     * when the scope names no API key or no mode, and when no table has ever
+     * been fetched for the pair it does name and one cannot be fetched now.
      *
      * @return array{rates: array<string,float>, as_of: ?string, fetched_at: int}|null
      */
@@ -234,7 +237,17 @@ class RateTableProvider
      */
     private function cacheKey(string $mode, string $apiKey): ?string
     {
-        if ($apiKey === '' || $mode === '') {
+        if ($apiKey === '') {
+            return null;
+        }
+        if ($mode === '') {
+            if (!$this->blankModeReported) {
+                $this->logRepository->addErrorLog(
+                    'RateTableProvider: no environment configured, FX rates unavailable',
+                    ['api_key_hash' => hash('sha256', $apiKey)]
+                );
+                $this->blankModeReported = true;
+            }
             return null;
         }
         return self::CACHE_KEY_PREFIX . hash('sha256', $mode . "\0" . $apiKey);

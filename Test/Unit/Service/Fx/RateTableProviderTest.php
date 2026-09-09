@@ -33,7 +33,8 @@ class RateTableProviderTest extends TestCase
     private function provider(
         $cache = null,
         string $apiKey = 'test-api-key',
-        string $mode = 'production'
+        string $mode = 'production',
+        $logRepository = null
     ): RateTableProvider {
         if ($cache === null) {
             $cache = $this->createMock(CacheInterface::class);
@@ -48,7 +49,7 @@ class RateTableProviderTest extends TestCase
             $configRepository,
             $cache,
             new Json(),
-            $this->createMock(LogRepository::class)
+            $logRepository ?? $this->createMock(LogRepository::class)
         );
     }
 
@@ -114,9 +115,7 @@ class RateTableProviderTest extends TestCase
             $cache->method('load')->willReturn(false);
             $cache->method('save')->willReturnCallback(
                 function ($data, $identifier) use (&$slots) {
-                    if (strpos($identifier, '_cooldown') === false) {
-                        $slots[] = $identifier;
-                    }
+                    $slots[] = $identifier;
                     return true;
                 }
             );
@@ -379,10 +378,15 @@ class RateTableProviderTest extends TestCase
     public function testAnUnsetModeFetchesNothing(): void
     {
         // Adapter would resolve a blank mode itself, landing another
-        // environment's table in this slot.
+        // environment's table in this slot. Reported once, not per lookup.
         $this->apiAdapter->expects($this->never())->method('execute');
+        $log = $this->createMock(LogRepository::class);
+        $log->expects($this->once())->method('addErrorLog');
 
-        $this->assertNull($this->provider(null, 'test-api-key', '')->getRateTable(1));
+        $provider = $this->provider(null, 'test-api-key', '', $log);
+
+        $this->assertNull($provider->getRateTable(1));
+        $this->assertNull($provider->getRateTable(1));
     }
 
     public function testRefreshFetchesFromTheEnvironmentItsSlotIsKeyedOn(): void
