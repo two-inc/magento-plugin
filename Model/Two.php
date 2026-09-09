@@ -168,6 +168,9 @@ class Two extends AbstractMethod
      */
     private $supportedCountriesProvider;
     /**
+     * Read by no method here. Retained because a brand overlay's payment
+     * method mirrors this constructor and passes it through positionally.
+     *
      * @var SettingsProvider
      */
     private $settingsProvider;
@@ -860,13 +863,9 @@ class Two extends AbstractMethod
             );
             return false;
         }
-        // A configured api_key is not the same thing as a WORKING one. Unless
-        // the stored key currently verifies, the method must not be offered —
-        // for ANY reason it fails to verify (rejected key, service 5xx, the
-        // API unreachable), because a buyer selecting a method whose
-        // integration cannot be confirmed gets a failure at placement instead
-        // of at selection. The check is cached (see ApiKeyStatus), so this
-        // costs no HTTP round-trip per render.
+        // The only upstream failure that may withhold the method (ABN-519).
+        // Withholds for ANY reason the key fails to verify, so a revoked key
+        // stops being honoured within the verdict's own cache lifetime.
         //
         // Placed BEFORE the Amasty bypass below deliberately: that bypass
         // returns true unconditionally to defer the *minimum-order* gate to
@@ -883,15 +882,6 @@ class Two extends AbstractMethod
             $this->logRepository->addDebugLog(
                 sprintf('%s hidden from checkout: API key verification failed', $this->_code),
                 ['status' => $status['status'], 'http_status' => $status['code']]
-            );
-            return false;
-        }
-        // An unresolvable merchant record leaves every stored term unvalidated (ABN-493).
-        // Before the Amasty bypass, which defers only the minimum-order gate.
-        if ($this->settingsProvider->getAvailableTerms($storeId) === []) {
-            $this->logRepository->addDebugLog(
-                sprintf('%s hidden from checkout: merchant configuration unavailable', $this->_code),
-                []
             );
             return false;
         }

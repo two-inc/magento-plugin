@@ -25,11 +25,13 @@ use Two\Gateway\Service\Api\Adapter;
  * Cached against mode + API key, since neither a key swap nor an
  * environment switch may serve the previous merchant's record.
  *
- * Freshness is the stored success stamp, not cache expiry: the hourly cron
- * refreshes a record once it is MAX_AGE old, ahead of CACHE_LIFETIME, so
- * on an install whose cron runs the record is never evicted and a failed
- * fetch keeps serving the last good values. A read that finds no record is
- * therefore a sign the cron is not running, and is logged as such.
+ * The entry has no expiry: only the scheduled hourly refresh replaces it, so
+ * a read that finds no record at all is a fresh install or a cache flush, and
+ * is logged (ABN-519).
+ *
+ * Freshness is the stored success stamp. The cron refreshes a record once it
+ * is MAX_AGE old; one that reaches STALE_AFTER says the cron is not running,
+ * so a read stands in for it — see refreshIfStale().
  *
  * A failure is never cached as the record and never moves the stamp —
  * callers degrade to their own "no value configured" behaviour only while
@@ -37,8 +39,8 @@ use Two\Gateway\Service\Api\Adapter;
  */
 class RecordProvider
 {
-    /** Eviction ceiling; must exceed MAX_AGE + CRON_INTERVAL so a refresh one run late still beats eviction. */
-    public const CACHE_LIFETIME = 93600;
+    /** Age at which a read concludes the cron is not running and refreshes the record itself. */
+    public const STALE_AFTER = 93600;
 
     /** Age at which the hourly cron refreshes the record. */
     public const MAX_AGE = 86400;
@@ -52,10 +54,22 @@ class RecordProvider
 
     private const ABSENT_SUFFIX = '_absent_on_read';
 
+    private const STOOD_IN_SUFFIX = '_stood_in_at';
+
+    private const SCHEDULED_SUFFIX = '_scheduled_at';
+
     private const FAILURE_COOLDOWN_SUFFIX = '_cooldown';
+
+    private const STALE_COOLDOWN_SUFFIX = '_stale_cooldown';
 
     /** Seconds before a failed fetch is retried, so an outage is not a fetch per read. */
     private const FAILURE_COOLDOWN = 60;
+
+    /** Seconds between stand-in refreshes of a stale record: one per run the cron owes. */
+    private const STALE_REFRESH_COOLDOWN = self::CRON_INTERVAL;
+
+    /** Per call, and a stand-in makes two, so a read can lose at most four seconds to a dead cron. */
+    private const STALE_FETCH_TIMEOUT_SECONDS = 2;
 
     /**
      * Per-call ceiling on the two GETs below. The callers that bound their own
@@ -138,7 +152,7 @@ class RecordProvider
         $cached = $this->loadRecord($cacheKey);
         if ($cached !== null) {
             $this->memo[$cacheKey] = ['record' => $cached];
-            return $cached;
+            return $this->refreshIfStale($cacheKey, $mode, $apiKey, $storeId, $cached) ?? $cached;
         }
 
         if ($this->cache->load($cacheKey . self::FAILURE_COOLDOWN_SUFFIX) !== false) {
@@ -146,12 +160,12 @@ class RecordProvider
             return null;
         }
 
-        // With the cron running the record is replaced before it can be evicted.
+        // The entry never expires, so nothing has ever fetched one for this
+        // identity, or the cache has been flushed.
         $this->logRepository->addErrorLog(
-            'RecordProvider: merchant record absent on read — the hourly scheduled refresh may not be running',
+            'RecordProvider: merchant record absent on read',
             ['store_id' => $storeId]
         );
-        $this->cache->save((string)time(), $cacheKey . self::ABSENT_SUFFIX, self::CACHE_TAGS, self::CACHE_LIFETIME);
 
         // Armed before the fetch so concurrent renders during an outage share one attempt;
         // read path only — a button press must not push readers to null.
@@ -159,9 +173,19 @@ class RecordProvider
         $record = $this->fetchAndStore($cacheKey, $mode, $apiKey, $storeId, null);
         if ($record !== null) {
             $this->cache->remove($cacheKey . self::FAILURE_COOLDOWN_SUFFIX);
+
+            return $record;
         }
 
-        return $record;
+        // Marked only once the read could not resolve one either: no record and
+        // no way to get one is what the admin health surface has to report. The
+        // FIRST such read owns the timestamp — rewriting it on every later one
+        // keeps the mark permanently young, and the health surface judges its age.
+        if ($this->cache->load($cacheKey . self::ABSENT_SUFFIX) === false) {
+            $this->cache->save((string)time(), $cacheKey . self::ABSENT_SUFFIX, self::CACHE_TAGS, null);
+        }
+
+        return null;
     }
 
     /**
@@ -201,32 +225,100 @@ class RecordProvider
         return $fetchedAt === null || time() - $fetchedAt >= self::MAX_AGE;
     }
 
-    /** The scheduled refresh has run for this identity, so a read miss before it is no longer a signal. */
+    /** The scheduled refresh has run for this identity, so neither mark a read left is a signal any more. */
     public function noteScheduledRun(string $mode, string $apiKey): void
     {
         $cacheKey = $this->cacheKey($mode, $apiKey);
         if ($cacheKey !== null) {
             $this->cache->remove($cacheKey . self::ABSENT_SUFFIX);
+            $this->cache->remove($cacheKey . self::STOOD_IN_SUFFIX);
+            // Recorded whether or not the run's own fetch succeeded: a cron that
+            // runs and cannot reach the API is not a cron that is not running.
+            $this->cache->save((string)time(), $cacheKey . self::SCHEDULED_SUFFIX, self::CACHE_TAGS, null);
         }
     }
 
     /**
-     * When the record was last fetched successfully, and when a read last
-     * found it absent — the Diagnostics panel's view of the refresh.
+     * The Diagnostics panel's view of the refresh: when the record was last
+     * fetched successfully, when a read last found it unresolvable, when a read
+     * last had to stand in for the cron, and when the cron last ran. The two
+     * read marks are cleared by a scheduled run, and the run stamp moves even
+     * when the run's own fetch fails — so a cron that runs against a dead API
+     * is never mistaken for a cron that is not running.
      *
-     * @return array{fetched_at: int|null, absent_on_read_at: int|null}
+     * @return array{
+     *     fetched_at: int|null,
+     *     absent_on_read_at: int|null,
+     *     stood_in_at: int|null,
+     *     scheduled_at: int|null
+     * }
      */
     public function status(string $mode, string $apiKey): array
     {
         $cacheKey = $this->cacheKey($mode, $apiKey);
         if ($cacheKey === null) {
-            return ['fetched_at' => null, 'absent_on_read_at' => null];
+            return [
+                'fetched_at' => null,
+                'absent_on_read_at' => null,
+                'stood_in_at' => null,
+                'scheduled_at' => null,
+            ];
         }
 
         return [
             'fetched_at' => $this->loadTimestamp($cacheKey . self::STAMP_SUFFIX),
             'absent_on_read_at' => $this->loadTimestamp($cacheKey . self::ABSENT_SUFFIX),
+            'stood_in_at' => $this->loadTimestamp($cacheKey . self::STOOD_IN_SUFFIX),
+            'scheduled_at' => $this->loadTimestamp($cacheKey . self::SCHEDULED_SUFFIX),
         ];
+    }
+
+    /**
+     * A record at STALE_AFTER means the scheduled refresh is not running, so a
+     * read stands in for it, once per run the cron owes and on a budget a page
+     * render can afford. A record with no stamp is left to the cron, which
+     * already counts it due (ABN-519).
+     *
+     * @param array<string,mixed> $held record already cached, kept on a failed fetch
+     * @return array<string,mixed>|null
+     */
+    private function refreshIfStale(
+        string $cacheKey,
+        string $mode,
+        string $apiKey,
+        ?int $storeId,
+        array $held
+    ): ?array {
+        $fetchedAt = $this->loadTimestamp($cacheKey . self::STAMP_SUFFIX);
+        if ($fetchedAt === null || time() - $fetchedAt < self::STALE_AFTER) {
+            return null;
+        }
+        if ($this->cache->load($cacheKey . self::STALE_COOLDOWN_SUFFIX) !== false) {
+            return null;
+        }
+        // Armed before the fetch, as on the absent-on-read path, so concurrent
+        // renders share one attempt.
+        $this->cache->save(
+            '1',
+            $cacheKey . self::STALE_COOLDOWN_SUFFIX,
+            self::CACHE_TAGS,
+            self::STALE_REFRESH_COOLDOWN
+        );
+        // First stand-in owns the timestamp, as with the absent mark: stand-ins
+        // recur every cooldown, and rewriting the clock keeps the mark young
+        // enough that the health surface never acts on it.
+        if ($this->cache->load($cacheKey . self::STOOD_IN_SUFFIX) === false) {
+            $this->cache->save((string)time(), $cacheKey . self::STOOD_IN_SUFFIX, self::CACHE_TAGS, null);
+        }
+
+        return $this->fetchAndStore(
+            $cacheKey,
+            $mode,
+            $apiKey,
+            $storeId,
+            $held,
+            self::STALE_FETCH_TIMEOUT_SECONDS
+        );
     }
 
     private function loadTimestamp(string $key): ?int
@@ -277,21 +369,24 @@ class RecordProvider
         string $mode,
         string $apiKey,
         ?int $storeId,
-        ?array $surviving
+        ?array $surviving,
+        int $timeoutSeconds = self::FETCH_TIMEOUT_SECONDS
     ): ?array {
-        $record = $this->fetchRecord($mode, $apiKey, $storeId);
+        $record = $this->fetchRecord($mode, $apiKey, $storeId, $timeoutSeconds);
 
         // Memoize either way so a single request never pays the
         // verify+fetch round-trip twice.
         if ($record !== null) {
+            // Null lifetime: the entry never expires, so nothing but a
+            // successful refresh or a manual flush can take it away.
             $this->cache->save(
                 $this->json->serialize(['record' => $record]),
                 $cacheKey,
                 self::CACHE_TAGS,
-                self::CACHE_LIFETIME
+                null
             );
             // The success clock: moves only here, never on a failure.
-            $this->cache->save((string)time(), $cacheKey . self::STAMP_SUFFIX, self::CACHE_TAGS, self::CACHE_LIFETIME);
+            $this->cache->save((string)time(), $cacheKey . self::STAMP_SUFFIX, self::CACHE_TAGS, null);
             $this->memo[$cacheKey] = ['record' => $record];
 
             return $record;
@@ -316,7 +411,7 @@ class RecordProvider
     /**
      * @return array<string,mixed>|null
      */
-    private function fetchRecord(string $mode, string $apiKey, ?int $storeId): ?array
+    private function fetchRecord(string $mode, string $apiKey, ?int $storeId, int $timeoutSeconds): ?array
     {
         // The key authenticates but does not name the merchant.
         $verify = $this->apiAdapter->execute(
@@ -326,7 +421,7 @@ class RecordProvider
             $storeId,
             $apiKey,
             $mode,
-            self::FETCH_TIMEOUT_SECONDS
+            $timeoutSeconds
         );
         $merchantId = $verify['id'] ?? null;
         if (!is_string($merchantId) || $merchantId === '') {
@@ -344,7 +439,7 @@ class RecordProvider
             $storeId,
             $apiKey,
             $mode,
-            self::FETCH_TIMEOUT_SECONDS
+            $timeoutSeconds
         );
 
         // Adapter failure markers, or an empty 200 body decoded to [] — neither is a record.

@@ -12,7 +12,6 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
-use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
@@ -49,14 +48,10 @@ class TwoSurchargeTypeGateTest extends TestCase
 
         $this->logRepository = $this->createMock(LogRepository::class);
 
-        $settingsProvider = $this->createMock(SettingsProvider::class);
-        $settingsProvider->method('getAvailableTerms')->willReturn([14, 30]);
-
         $properties = [
             '_scopeConfig' => $scopeConfig,
             'apiKeyStatus' => $apiKeyStatus,
             'logRepository' => $this->logRepository,
-            'settingsProvider' => $settingsProvider,
             'minimumOrderProvider' => $this->createMock(MinimumOrderProvider::class),
             'minimumOrderGate' => $minimumOrderGate,
             'merchantMinimumResolver' => null,
