@@ -41,6 +41,18 @@ php bin/magento setup:static-content:deploy
 
 Then configure the plugin under **Stores > Configuration > Sales > Payment Methods > Two**.
 
+### Cache types
+
+`setup:upgrade` enables the module's `two_gateway` cache type, which holds the
+merchant profile values fetched from Two. Drop just those values with:
+
+```bash
+php bin/magento cache:clean two_gateway
+```
+
+The type must be enabled for that to do anything: a disabled cache type
+accepts the command and drops nothing.
+
 ### Post-install steps
 
 Run these immediately after `setup:upgrade` to refresh the DI graph

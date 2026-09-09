@@ -263,6 +263,12 @@ jobs:
             echo "::error::Smoke test failed: config round-trip didn't surface the set value."
             exit 1
           fi
+          # A cache type absent from env.php resolves as disabled, so the
+          # install path has to write its state: assert it did.
+          st=$(docker exec magento-project-community-edition php bin/magento cache:status)
+          echo "$st"
+          echo "$st" | grep -qE '^ *two_gateway: 1$' \
+            || { echo "::error::two_gateway cache type not enabled after setup:upgrade"; exit 1; }
 
   # Merchant-upgrade smoke: install the latest released version from the PREVIOUS
   # major (currently 1.16.2), then composer-require this branch's HEAD and re-run
@@ -391,6 +397,12 @@ jobs:
             echo "::error::still at ${{ steps.prior.outputs.tag }} post-upgrade — upgrade require did not take"
             exit 1
           fi
+          # A cache type absent from env.php resolves as disabled, so the
+          # install path has to write its state: assert it did.
+          st=$(docker exec magento-project-community-edition php bin/magento cache:status)
+          echo "$st"
+          echo "$st" | grep -qE '^ *two_gateway: 1$' \
+            || { echo "::error::two_gateway cache type not enabled after setup:upgrade"; exit 1; }
 
   jest:
     name: Jest (Node 20)
