@@ -261,7 +261,6 @@ define([
             this.generalErrorMessage = config.generalErrorMessage;
             this.invalidEmailListMessage = config.invalidEmailListMessage;
             this.termUnavailableMessage = config.termUnavailableMessage;
-            this.soleTraderErrorMessage = config.soleTraderErrorMessage;
             this.isOrderIntentEnabled = config.isOrderIntentEnabled;
             this.isInvoiceEmailsEnabled = config.isInvoiceEmailsEnabled;
             this.isDepartmentFieldEnabled = config.isDepartmentFieldEnabled;
