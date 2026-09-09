@@ -36,7 +36,7 @@
             comment below for why it's a sibling group rather than
             merged into `checkout_fields`.
         -->
-        <!-- A. General -->
+        <!-- General -->
         <section id="two_general" translate="label comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1"
                  showInStore="1">
             <class>separator-top</class>
@@ -83,7 +83,7 @@
                 </field>
             </group>
         </section>
-        <!-- B. Checkout Fields -->
+        <!-- Checkout fields -->
         <section id="two_checkout_fields" translate="label comment" type="text" sortOrder="20" showInDefault="1"
                  showInWebsite="1" showInStore="1">
             <class>separator-top</class>
@@ -271,7 +271,7 @@
                 </field>
             </group>
         </section>
-        <!-- C. Payment Terms -->
+        <!-- Payment terms -->
         <section id="two_payment" translate="label comment" type="text" sortOrder="40" showInDefault="1" showInWebsite="1"
                  showInStore="1">
             <class>separator-top</class>
@@ -405,7 +405,7 @@
                 </field>
             </group>
         </section>
-        <!-- D. Order management -->
+        <!-- Order management -->
         <section id="two_order_management" translate="label comment" type="text" sortOrder="50" showInDefault="1"
                  showInWebsite="1" showInStore="1">
             <class>separator-top</class>
@@ -464,12 +464,12 @@
             </group>
         </section>
         <!--
-            E. Diagnostics. Standalone section so the operator can land
+            Diagnostics. Standalone section so the operator can land
             directly on it from the left nav. Was the "Version" section
             (two_version, sortOrder=100, kept at the bottom regardless of
             how many sections grew above it); now folds in the debug/log/
             admin-control fields that used to live in two_general and
-            two_payment, and sits last in the 5-section A-E scheme at
+            two_payment, and sits last in the 5-section scheme at
             sortOrder=60.
         -->
         <section id="two_version" translate="label comment" type="text" sortOrder="60" showInDefault="1" showInWebsite="1"

@@ -60,10 +60,8 @@ class Surcharge extends AbstractTotal
         // CreditmemoFeeOverride sets `two_surcharge_amount` directly on the
         // creditmemo from request data. hasData() distinguishes "explicit
         // merchant override" (including 0) from "never set, use proportional
-        // default". It parses admin input at locale precision (often 2dp), so
-        // normalise to 6dp here to keep the refund line gross matching what
-        // ComposeOrder declared at placement — see Model/Total/Surcharge for
-        // the 6dp invariant rationale.
+        // default". Admin input arrives at locale precision, often 2dp but
+        // potentially finer than the 6dp we keep internally, hence the round.
         $hasOverride = $creditmemo->hasData('two_surcharge_amount')
             && $creditmemo->getData('two_surcharge_amount') !== null
             && $creditmemo->getData('two_surcharge_amount') !== '';

@@ -69,10 +69,9 @@
  * TWO-25386: unified 5-section admin scheme — General, Checkout
  * fields, Payment terms, Order management, Diagnostics, in that order,
  * matching prestashop-plugin and woocommerce-plugin. `_general` and
- * `_payment` keep their
- * historical suffixes (relabeled); this is what keeps a brand.xml
- * `<suppressed_fields>` entry of the form `general/…` or
- * `payment/payment_terms/…` matching unchanged. `_checkout_fields`
+ * `_payment` keep their historical suffixes (relabeled); this is what
+ * keeps a brand.xml `<suppressed_fields>` entry of the form `general/…`
+ * or `payment/payment_terms/…` matching unchanged. `_checkout_fields`
  * and `_order_management` are new suffixes for content split out of
  * the old `_payment` section — an overlay that suppressed a field
  * which moved into one of those two (title, subtitle, sort_order,
@@ -96,7 +95,7 @@
              class="{{tab_css_class}}" sortOrder="{{tab_sort_order}}">
             <label>{{tab_label}}</label>
         </tab>
-        <!-- A. General -->
+        <!-- General -->
         <section id="{{section_prefix}}_general" translate="label" type="text" sortOrder="10"
                  showInDefault="1" showInWebsite="1" showInStore="1"
                  brand_code="{{code}}">
@@ -149,7 +148,7 @@
                 </field>
             </group>
         </section>
-        <!-- B. Checkout Fields -->
+        <!-- Checkout fields -->
         <section id="{{section_prefix}}_checkout_fields" translate="label" type="text" sortOrder="20"
                  showInDefault="1" showInWebsite="1" showInStore="1"
                  brand_code="{{code}}">
@@ -364,7 +363,7 @@
                 </field>
             </group>
         </section>
-        <!-- C. Payment Terms -->
+        <!-- Payment terms -->
         <section id="{{section_prefix}}_payment" translate="label" type="text" sortOrder="40"
                  showInDefault="1" showInWebsite="1" showInStore="1"
                  brand_code="{{code}}">
@@ -502,7 +501,7 @@
                 </field>
             </group>
         </section>
-        <!-- D. Order management -->
+        <!-- Order management -->
         <section id="{{section_prefix}}_order_management" translate="label" type="text" sortOrder="50"
                  showInDefault="1" showInWebsite="1" showInStore="1"
                  brand_code="{{code}}">
@@ -562,7 +561,7 @@
                 </field>
             </group>
         </section>
-        <!-- E. Diagnostics -->
+        <!-- Diagnostics -->
         <section id="{{section_prefix}}_version" translate="label" type="text" sortOrder="60"
                  showInDefault="1" showInWebsite="1" showInStore="1"
                  brand_code="{{code}}">
