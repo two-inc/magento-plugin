@@ -287,7 +287,12 @@ class RecordProvider
             self::CACHE_TAGS,
             self::STALE_REFRESH_COOLDOWN
         );
-        $this->cache->save((string)time(), $cacheKey . self::STOOD_IN_SUFFIX, self::CACHE_TAGS, null);
+        // First stand-in owns the timestamp, as with the absent mark: stand-ins
+        // recur every cooldown, and rewriting the clock keeps the mark young
+        // enough that the health surface never acts on it.
+        if ($this->cache->load($cacheKey . self::STOOD_IN_SUFFIX) === false) {
+            $this->cache->save((string)time(), $cacheKey . self::STOOD_IN_SUFFIX, self::CACHE_TAGS, null);
+        }
 
         return $this->fetchAndStore(
             $cacheKey,

@@ -438,7 +438,8 @@ class RecordProviderTest extends TestCase
     public function testAReadMissIsMarkedOnlyWhenTheReadCouldNotResolveOneEither(
         array $merchantResponse,
         int $expectedMarks,
-        string $description
+        string $description,
+        ?int $absentAge = null
     ): void {
         // The entry never expires, so a miss is a fresh install or a flush. The
         // mark says the admin has no record AND no way to get one.
@@ -451,7 +452,7 @@ class RecordProviderTest extends TestCase
                 return null;
             }
         );
-        $cache = $this->cacheWith(false, null);
+        $cache = $this->cacheWith(false, null, $absentAge);
         $marked = [];
         $cache->method('save')->willReturnCallback(
             function ($data, $identifier) use (&$marked) {
@@ -469,13 +470,19 @@ class RecordProviderTest extends TestCase
     }
 
     /**
-     * @return array<int, array{0: array<string,mixed>, 1: int, 2: string}>
+     * @return array<int, array{0: array<string,mixed>, 1: int, 2: string, 3?: int}>
      */
     public static function readMissOutcomes(): array
     {
         return [
             [['id' => 'abc-123'], 0, 'a read that resolved one itself leaves no mark to freeze'],
             [['http_status' => 503], 1, 'no record and no way to get one is recorded for Diagnostics'],
+            [
+                ['http_status' => 503],
+                0,
+                'a mark already stored keeps its own clock, so the health surface can judge its age',
+                7200,
+            ],
         ];
     }
 
@@ -764,7 +771,8 @@ class RecordProviderTest extends TestCase
 
     public function testARefreshFetchesTheIdentityItIsGivenNotTheStoresConfig(): void
     {
-        // Given a store resolving one identity; when another is refreshed through it; then that one is fetched and cached.
+        // Given a store resolving one identity; when another is refreshed
+        // through it; then that one is fetched and cached.
         $calls = [];
         $this->apiAdapter->method('execute')->willReturnCallback(
             function (string $endpoint, array $payload, string $method, ...$identity) use (&$calls) {

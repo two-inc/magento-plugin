@@ -110,8 +110,9 @@ class HealthChecklist extends Field
         $fetchedAt = $status['fetched_at'];
         $absentAt = $status['absent_on_read_at'];
         // A stamp newer than the mark means the miss has since been answered.
+        // Two intervals, not one, so ordinary cron jitter is not a diagnosis.
         if ($absentAt !== null
-            && time() - $absentAt >= RecordProvider::CRON_INTERVAL
+            && time() - $absentAt >= 2 * RecordProvider::CRON_INTERVAL
             && ($fetchedAt === null || $fetchedAt < $absentAt)
         ) {
             return [
@@ -123,10 +124,16 @@ class HealthChecklist extends Field
                 ),
             ];
         }
-        // Judged on age, like the mark above: the schedule clears a stand-in on its
-        // next tick, so one that outlives a tick is what says the schedule is dead.
+        // Two ways the schedule shows as dead against a record that is present:
+        // a stand-in mark it never cleared, and a stamp older than one refresh
+        // plus a tick's grace. The stamp alone cannot answer it, because a
+        // stand-in moves the stamp; the mark alone cannot, because a store with
+        // no traffic never stands in.
         $stoodInAt = $status['stood_in_at'];
-        if ($fetchedAt !== null && $stoodInAt !== null && time() - $stoodInAt >= RecordProvider::CRON_INTERVAL) {
+        $notRunning = ($stoodInAt !== null && time() - $stoodInAt >= 2 * RecordProvider::CRON_INTERVAL)
+            || ($fetchedAt !== null
+                && time() - $fetchedAt >= RecordProvider::MAX_AGE + 2 * RecordProvider::CRON_INTERVAL);
+        if ($fetchedAt !== null && $notRunning) {
             return [
                 'label' => $label,
                 'ok' => false,

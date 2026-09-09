@@ -73,6 +73,8 @@ class HealthChecklistTest extends TestCase
     {
         // Ages, not instants — a mark older than a cron interval is a signal.
         $recent = time() - 60;
+        $tick = RecordProvider::CRON_INTERVAL;
+        $stopped = time() - RecordProvider::MAX_AGE - 2 * $tick - 1;
 
         return [
             'refreshed' => [
@@ -90,7 +92,7 @@ class HealthChecklistTest extends TestCase
             'absent on read, unclaimed for longer than a cron run' => [
                 [
                     'fetched_at' => null,
-                    'absent_on_read_at' => time() - RecordProvider::CRON_INTERVAL - 1,
+                    'absent_on_read_at' => time() - 2 * $tick - 1,
                     'stood_in_at' => null,
                 ],
                 false,
@@ -100,7 +102,7 @@ class HealthChecklistTest extends TestCase
             'absent on read, since answered by a later fetch' => [
                 [
                     'fetched_at' => $recent,
-                    'absent_on_read_at' => time() - RecordProvider::CRON_INTERVAL - 1,
+                    'absent_on_read_at' => time() - 2 * $tick - 1,
                     'stood_in_at' => null,
                 ],
                 true,
@@ -117,7 +119,7 @@ class HealthChecklistTest extends TestCase
                 [
                     'fetched_at' => $recent,
                     'absent_on_read_at' => null,
-                    'stood_in_at' => time() - RecordProvider::CRON_INTERVAL - 1,
+                    'stood_in_at' => time() - 2 * $tick - 1,
                 ],
                 false,
                 'hourly refresh appears not to be running',
@@ -128,6 +130,22 @@ class HealthChecklistTest extends TestCase
                 true,
                 'Refreshed @' . $recent,
                 'a stand-in the cron has not had a tick to clear settles nothing',
+            ],
+            'a stamp the schedule should have replaced, with no mark at all' => [
+                ['fetched_at' => $stopped, 'absent_on_read_at' => null, 'stood_in_at' => null],
+                false,
+                'hourly refresh appears not to be running',
+                'a store with no traffic never stands in, so the stamp has to answer it',
+            ],
+            'a stamp the schedule is due to replace' => [
+                [
+                    'fetched_at' => time() - RecordProvider::MAX_AGE - 1,
+                    'absent_on_read_at' => null,
+                    'stood_in_at' => null,
+                ],
+                true,
+                'Refreshed',
+                'a record merely due a refresh is not a dead schedule',
             ],
         ];
     }
