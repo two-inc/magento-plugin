@@ -61,9 +61,9 @@ container at all and serves the deployed image's code, which tracks `main`.
 click-through, a screenshot. Point it at the other shop and it silently reports
 on `main`: the run stays green for as long as the two branches happen to agree
 and turns red, at the first specification that moved, against a storefront still
-serving the widget the branch deleted (ABN-509). Read the served asset itself
-when confirming which code a shop has — `pub/static/deployed_version.txt`
-answers with an HTML 404 page on these shops.
+serving the widget the branch deleted (ABN-509). Confirm which code a shop has
+from the git-sync container's checked-out HEAD; `pub/static/deployed_version.txt`
+answers with an HTML 404 page on these shops and settles nothing.
 
 A merge to `staging` triggers an in-place static redeploy on the dev shop and
 the storefront 500s for roughly three minutes, so a suite that starts mid-sync
@@ -301,7 +301,7 @@ reviewers. **The two copies have DRIFTED**, this one ahead; re-copying the whole
 file is the only thing that brings them back into step, and the other repo's own
 digest guard catches an in-place edit there without seeing this copy at all.
 
-It is framework-free with a UMD tail — no RequireJS, no jQuery, no Knockout —
+It is framework-free with a UMD tail — no RequireJS, jQuery or Knockout DEPENDENCY —
 which is what lets the Hyvä checkout load this repo's own copy by
 `Two_Gateway::` reference instead of reimplementing the panel. Anything that
 makes it depend on this checkout's framework breaks that arrangement.
@@ -321,9 +321,8 @@ mousedown runs, which puts the caret in the panel's query field — the same sta
 a click leaves it in, and the same on every platform that carries this control.
 
 **The open panel takes the field's tab stop**: `tabindex="-1"` while it is up, and
-on close the field's PRIOR value restored exactly, which is removal because
-nothing sets one — the field is a tab stop by being a native `<input>`
-(TWO-25503). Without it the focus opener is a keyboard trap: the opener puts the
+on close the field's PRIOR value restored exactly, which is removal when there was
+none — a theme's own `tabindex` is given back, not removed (TWO-25503). Without it the focus opener is a keyboard trap: the opener puts the
 caret in the query field, Shift+Tab returns to the field, and the opener pushes
 focus forward again, so the buyer cannot get back past the control (WCAG 2.1.2).
 
@@ -338,18 +337,19 @@ once, and these are the three rules (TWO-25658):
 -   **Any other target closes an open popup.**
 -   **A target outside that role's popover closes the popover too**, with the
     company field counted as INSIDE it: the field is the popover's own trigger
-    and sits outside the panel node, so treating it as outside tore down the
-    results the buyer was still typing against.
+    and sits outside the panel node, and a buyer typing a query is still inside
+    the control.
 
 A window or application switch lands on no control at all and settles nothing.
 
-The ruling adds a fourth: **a Sole trader chip belonging to a DIFFERENT capture
+A fourth rule (TWO-25658): **a Sole trader chip belonging to a DIFFERENT capture
 popover gets a popup of its own**, raised through that chip's own click handler so
-a launch stays spelled out in one place. This checkout does not do that: a chip
-outside the popup's own popover closes it and raises nothing.
+a launch stays spelled out in one place. Reaching that chip by FOCUS does not
+raise it here — the popup closes and nothing replaces it.
 
-**A declined order intent refuses order placement, and it does so through the
-Place Order button's own BINDING** — `isPlaceOrderEnabled()` over an observable
+## A declined order intent refuses order placement
+
+**It does so through the Place Order button's own BINDING** — `isPlaceOrderEnabled()` over an observable
 verdict, never an imperative class or attribute write (TWO-25657). Core's
 billing-address subscription re-evaluates that button and clears anything
 written onto it from outside the binding, silently, so an imperative disable
@@ -388,10 +388,11 @@ Three traps in the same suites:
 
 ## A guard is invoked through `bash`
 
-A script committed mode `100644` and run as `./script.sh` exits 126. On a CI
-dashboard that is indistinguishable from a check that ran and failed, so the
-guard's own absence reads as its verdict. Invoke anything whose failure mode is
-"did not execute" as `bash script.sh`, and have it print what it checked.
+A script whose mode is `100644` and which is run as `./script.sh` exits 126. On a
+CI dashboard that is indistinguishable from a check that ran and failed, so the
+guard's own absence reads as its verdict. A guard committed executable may be run
+directly; anything else is invoked `bash script.sh`, and every guard prints what
+it checked.
 
 ## An optional constructor argument is NOT autowired
 
