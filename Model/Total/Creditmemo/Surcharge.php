@@ -15,8 +15,8 @@ use Magento\Sales\Model\Order\Creditmemo\Total\AbstractTotal;
  *
  * Default behaviour: refund the surcharge proportionally to the items being
  * refunded (creditmemo subtotal / order subtotal). When the merchant types an
- * explicit value into the creditmemo override field, that value is
- * pre-set on the creditmemo before collectTotals runs and we honour it here.
+ * explicit value into the creditmemo override field, that value is pre-set on
+ * the creditmemo before collectTotals runs and we honour it here.
  *
  * The override path is what allows the surcharge to be refunded in full on a
  * creditmemo with no items at all: zero items, the whole surcharge typed into

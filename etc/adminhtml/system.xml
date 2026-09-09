@@ -12,10 +12,10 @@
             <label>Two</label>
         </tab>
         <!--
-            TWO-25386: unified 5-section admin scheme, same names
-            and order as prestashop-plugin and woocommerce-plugin —
-            A. General, B. Checkout Fields, C. Payment Terms,
-            D. Order management, E. Diagnostics.
+            TWO-25386: unified 5-section admin scheme — General,
+            Checkout fields, Payment terms, Order management,
+            Diagnostics, in that order, matching prestashop-plugin
+            and woocommerce-plugin.
 
             Pure reorganization: no field's config_path or behavior
             changed here, only which <section>/<group> it renders under

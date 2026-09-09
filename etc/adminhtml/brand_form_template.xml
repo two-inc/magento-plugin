@@ -66,10 +66,10 @@
  * per-field. Overlays cannot ADD controls via this mechanism — the
  * canonical template is the source of truth for what fields exist.
  *
- * TWO-25386: unified 5-section admin scheme (A. General,
- * B. Checkout fields, C. Payment terms, D. Order management,
- * E. Diagnostics — same names/order as prestashop-plugin and
- * woocommerce-plugin). `_general` and `_payment` keep their
+ * TWO-25386: unified 5-section admin scheme — General, Checkout
+ * fields, Payment terms, Order management, Diagnostics, in that order,
+ * matching prestashop-plugin and woocommerce-plugin. `_general` and
+ * `_payment` keep their
  * historical suffixes (relabeled); this is what keeps a brand.xml
  * `<suppressed_fields>` entry of the form `general/…` or
  * `payment/payment_terms/…` matching unchanged. `_checkout_fields`
