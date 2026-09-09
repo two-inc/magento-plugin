@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Service\Order;
 
+use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\App\CacheInterface;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Serialize\Serializer\Json;
@@ -58,6 +59,14 @@ class SurchargeCalculator
      */
     private const CACHE_LIFETIME = 300;
 
+    private const FAILURE_CACHE_KEY_PREFIX = 'two_gateway_fee_quote_failed_';
+
+    /**
+     * ABN-546: the gate reading this marker never retries the quote, so this
+     * TTL is the only thing that brings the method back after a recovery.
+     */
+    private const FAILURE_CACHE_LIFETIME = 60;
+
     /**
      * @var ConfigRepository
      */
@@ -89,6 +98,11 @@ class SurchargeCalculator
     private $json;
 
     /**
+     * @var CheckoutSession
+     */
+    private $checkoutSession;
+
+    /**
      * Request-scoped cache of resolved surcharges, keyed on the public
      * calculate() inputs. The pricing endpoint is side-effect-free and
      * callers (total collector, ConfigProvider, TermSelection) repeat
@@ -98,13 +112,21 @@ class SurchargeCalculator
      */
     private $responseCache = [];
 
+    /**
+     * Request-scoped mirror of the cached failure markers, keyed identically.
+     *
+     * @var array<string, true>
+     */
+    private $failureCache = [];
+
     public function __construct(
         ConfigRepository $configRepository,
         Adapter $apiAdapter,
         LogRepository $logRepository,
         CurrencyRatesProviderInterface $ratesProvider,
         CacheInterface $cache,
-        Json $json
+        Json $json,
+        CheckoutSession $checkoutSession
     ) {
         $this->configRepository = $configRepository;
         $this->apiAdapter = $apiAdapter;
@@ -112,6 +134,7 @@ class SurchargeCalculator
         $this->ratesProvider = $ratesProvider;
         $this->cache = $cache;
         $this->json = $json;
+        $this->checkoutSession = $checkoutSession;
     }
 
     /**
@@ -162,10 +185,10 @@ class SurchargeCalculator
         // (already folded into buyer_fee_share/order_terms) all fall out
         // of the key naturally, so any of them changing is a cache miss —
         // see CACHE_LIFETIME's doc comment for why a TTL sits underneath
-        // this anyway. Only a successful quote is persisted; a failure
-        // stays request-scoped (thrown below, never reaching this cache)
-        // so a flapping API is retried on the next request, not
-        // remembered as an error for CACHE_LIFETIME.
+        // this anyway. Only a successful quote is persisted here; a failure
+        // is thrown and recorded separately under FAILURE_CACHE_LIFETIME, so
+        // a flapping API is retried within a minute rather than remembered
+        // as an error for CACHE_LIFETIME.
         $crossRequestCacheKey = self::CACHE_KEY_PREFIX . hash('sha256', serialize([$request, $storeId]));
         $cached = $this->cache->load($crossRequestCacheKey);
         if ($cached !== false) {
@@ -188,6 +211,7 @@ class SurchargeCalculator
                 'reason'      => $reason,
                 'trace_id'    => $traceId,
             ]);
+            $this->markQuoteFailed($selectedTermDays, $orderCurrency, $storeId);
             throw new LocalizedException(
                 $traceId
                     ? __('Two payment is temporarily unavailable. Please try another payment method or contact support (ref: %1).', $traceId)
@@ -200,6 +224,7 @@ class SurchargeCalculator
                 'selected_term' => $selectedTermDays,
                 'order_currency' => $orderCurrency,
             ]);
+            $this->markQuoteFailed($selectedTermDays, $orderCurrency, $storeId);
             throw new LocalizedException(
                 __('Pricing API response missing required field: buyer_fee_share')
             );
@@ -217,6 +242,7 @@ class SurchargeCalculator
                 'response_currency' => $respCurrency,
                 'order_currency' => $orderCurrency,
             ]);
+            $this->markQuoteFailed($selectedTermDays, $orderCurrency, $storeId);
             throw new LocalizedException(
                 __(
                     'Pricing API returned currency %1 but order currency is %2.',
@@ -243,6 +269,49 @@ class SurchargeCalculator
         ];
         $this->cache->save($this->json->serialize($result), $crossRequestCacheKey, [], self::CACHE_LIFETIME);
         return $this->responseCache[$cacheKey] = $result;
+    }
+
+    /**
+     * ABN-546: whether the fee quote for the term being charged is currently
+     * failing. Cache-only — isAvailable() calls this on every render of the
+     * payment-method list — and scoped to that one term, so a misconfigured
+     * term takes nothing offline for a checkout not using it.
+     */
+    public function hasFailedFeeQuote(string $orderCurrency, ?int $storeId = null): bool
+    {
+        $chargedTerm = $this->getChargedTermDays($storeId);
+        if ($chargedTerm <= 0) {
+            return false;
+        }
+        $key = $this->failureCacheKey($chargedTerm, $orderCurrency, $storeId);
+        if (isset($this->failureCache[$key])) {
+            return true;
+        }
+        return $this->cache->load($key) !== false;
+    }
+
+    /** The buyer's selection, else the default; 0 when no term is offered. */
+    private function getChargedTermDays(?int $storeId): int
+    {
+        $selected = (int)$this->checkoutSession->getTwoSelectedTerm();
+        if ($selected > 0) {
+            return $selected;
+        }
+        return $this->configRepository->getDefaultPaymentTerm($storeId) ?? 0;
+    }
+
+    private function markQuoteFailed(int $selectedTermDays, string $orderCurrency, ?int $storeId): void
+    {
+        $key = $this->failureCacheKey($selectedTermDays, $orderCurrency, $storeId);
+        $this->failureCache[$key] = true;
+        $this->cache->save('1', $key, [], self::FAILURE_CACHE_LIFETIME);
+    }
+
+    /** Term, currency and store only: the gate knows nothing of the basket. */
+    private function failureCacheKey(int $selectedTermDays, string $orderCurrency, ?int $storeId): string
+    {
+        return self::FAILURE_CACHE_KEY_PREFIX
+            . hash('sha256', serialize([$selectedTermDays, $orderCurrency, $storeId]));
     }
 
     /**

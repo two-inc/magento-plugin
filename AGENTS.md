@@ -254,14 +254,29 @@ the pricing service could not be reached. Do not restore a bare
 
 Core's own checks; a configured non-empty API key; the api-key verification
 verdict; the surcharge FX rate resolving and the stored surcharge method being
-recognised; the buyer country; then an Amasty store view returns true early,
+recognised; a failing buyer fee quote for the term being charged; the buyer
+country; then an Amasty store view returns true early,
 deferring only the minimum-order gate to the client; then the platform and
 merchant minimum-order gate.
 
 **The api-key verdict is the gate the ruling puts that power in** (ABN-519), and
-only its definitive-rejection categories withhold (ABN-533). Do not add another
-gate that withholds because a call to Two failed, and do not widen this one back
-to every failure category; both are defects the rule exists to stop coming back.
+only its definitive-rejection categories withhold (ABN-533). Do not widen it
+back to every failure category, and do not add a further gate that withholds
+because a call to Two failed; both are defects the rule exists to stop coming
+back. The buyer fee quote is the one named exception (ABN-546): a term whose fee
+cannot be priced cannot be charged, so checkout withholds while the admin
+settings page only logs — its fee preview reads merchant rates through
+`Service\Merchant\FeeRatesProvider`, never the buyer quote, so a merchant is
+never locked out of the settings they need to fix it.
+
+`SurchargeCalculator` records that failure as a marker under a 60-second TTL, and
+`isAvailable()` reads the marker only — never a live quote, because it runs on
+every render of the payment-method list. The marker is keyed on term, currency
+and store, so one misconfigured term withholds nothing from a checkout charging
+another, and a recovered pricing endpoint restores the method within the minute
+with no retry from the gate. A quote of zero, an empty basket, a term with no
+surcharge configured and surcharge type `none` are all successes, and withhold
+nothing.
 
 **Every buyer-facing surface asks that same question, and must keep asking it.**
 Three besides `isAvailable()`: `Model\Ui\ConfigProvider::getConfig()`, whose

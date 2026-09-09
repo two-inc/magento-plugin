@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Service\Order;
 
+use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\App\CacheInterface;
 use Magento\Framework\HTTP\Client\CurlFactory;
 use Magento\Framework\Serialize\Serializer\Json;
@@ -19,6 +20,8 @@ use Two\Gateway\Service\Order\SurchargeCalculator;
 
 class SurchargeCalculatorTest extends TestCase
 {
+    private const FAILURE_KEY_PREFIX = 'two_gateway_fee_quote_failed_';
+
     /** @var ConfigRepository|\PHPUnit\Framework\MockObject\MockObject */
     private $config;
 
@@ -33,6 +36,9 @@ class SurchargeCalculatorTest extends TestCase
 
     /** @var CacheInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $cache;
+
+    /** @var CheckoutSession */
+    private $session;
 
     /** @var SurchargeCalculator */
     private $calculator;
@@ -56,20 +62,31 @@ class SurchargeCalculatorTest extends TestCase
         $this->cache = $this->createMock(CacheInterface::class);
         $this->cache->method('load')->willReturn(false);
 
+        $this->session = new CheckoutSession();
+
         $this->calculator = new SurchargeCalculator(
             $this->config,
             $this->adapter,
             $this->log,
             $this->ratesProvider,
             $this->cache,
-            new Json()
+            new Json(),
+            $this->session
         );
     }
 
     /** A calculator wired to a fresh instance — simulates a new PHP request: no per-request memo, only whatever $cache serves. */
     private function freshRequestCalculator(CacheInterface $cache): SurchargeCalculator
     {
-        return new SurchargeCalculator($this->config, $this->adapter, $this->log, $this->ratesProvider, $cache, new Json());
+        return new SurchargeCalculator(
+            $this->config,
+            $this->adapter,
+            $this->log,
+            $this->ratesProvider,
+            $cache,
+            new Json(),
+            $this->session
+        );
     }
 
     /**
@@ -1218,14 +1235,21 @@ class SurchargeCalculatorTest extends TestCase
 
     public function testCrossRequestCacheNotWrittenOnApiFailureSoNextRequestRetries(): void
     {
-        // A failed quote must stay request-scoped: persisting it would
-        // mask a recoverable API blip as "no fee" for the whole TTL.
+        // Persisting a failed quote as a result would mask a recoverable API
+        // blip as "no fee" for the whole TTL. Only the ABN-546 failure marker
+        // is written, under its own far shorter TTL.
         $this->stubCommonConfig(SurchargeType::PERCENTAGE);
         $this->stubSurchargeConfig(50);
         $this->adapter->method('execute')->willReturn(['error_code' => 503, 'http_status' => 503]);
+        $written = [];
         $cache = $this->createMock(CacheInterface::class);
         $cache->method('load')->willReturn(false);
-        $cache->expects($this->never())->method('save');
+        $cache->method('save')->willReturnCallback(
+            function ($data, $key) use (&$written) {
+                $written[] = $key;
+                return true;
+            }
+        );
 
         try {
             $this->freshRequestCalculator($cache)->calculate(1000.0, 60, 'NO', 'NOK');
@@ -1233,5 +1257,205 @@ class SurchargeCalculatorTest extends TestCase
         } catch (\Magento\Framework\Exception\LocalizedException $e) {
             // expected
         }
+
+        $results = array_filter(
+            $written,
+            fn ($key) => !str_starts_with($key, self::FAILURE_KEY_PREFIX)
+        );
+        $this->assertSame([], array_values($results), 'no quote result may be persisted on failure');
+    }
+
+    // ── Fee-quote failure marker (ABN-546) ───────────────────────────
+
+    /**
+     * A cache that records what was written, so a test can tell a persisted
+     * quote result from a persisted failure marker.
+     *
+     * @param array<string, string> $store
+     */
+    private function recordingCache(array &$store): CacheInterface
+    {
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->method('load')->willReturnCallback(
+            fn ($key) => $store[$key] ?? false
+        );
+        $cache->method('save')->willReturnCallback(
+            function ($data, $key) use (&$store) {
+                $store[$key] = (string)$data;
+                return true;
+            }
+        );
+        return $cache;
+    }
+
+    /**
+     * ABN-546: a buyer fee quote the pricing service could not answer withholds
+     * the payment method; anything the service DID answer withholds nothing,
+     * a zero fee included.
+     *
+     * Given a pricing response (or none at all); when the quote is attempted;
+     * then hasFailedFeeQuote() agrees with whether it can be charged.
+     *
+     * @param array<string, mixed> $response
+     * @dataProvider feeQuoteOutcomes
+     */
+    public function testFeeQuoteFailureWithholdsOnlyOnAnUnanswerableQuote(
+        string $surchargeType,
+        ?array $response,
+        float $grossAmount,
+        float $percentage,
+        bool $expectedWithhold,
+        string $case
+    ): void {
+        $this->stubCommonConfig($surchargeType);
+        $this->stubSurchargeConfig($percentage);
+        $this->config->method('getDefaultPaymentTerm')->willReturn(60);
+        if ($response === null) {
+            $this->adapter->expects($this->never())->method('execute');
+        } else {
+            $this->adapter->method('execute')->willReturn($response);
+        }
+
+        $store = [];
+        $calculator = $this->freshRequestCalculator($this->recordingCache($store));
+        try {
+            $calculator->calculate($grossAmount, 60, 'NO', 'NOK');
+        } catch (\Magento\Framework\Exception\LocalizedException $e) {
+            // The withhold decision is the assertion, not the message.
+        }
+
+        $this->assertSame(
+            $expectedWithhold,
+            $calculator->hasFailedFeeQuote('NOK', null),
+            $case
+        );
+    }
+
+    public function feeQuoteOutcomes(): array
+    {
+        return [
+            [
+                SurchargeType::PERCENTAGE,
+                ['http_status' => 503, 'error_code' => 'UPSTREAM'],
+                1000.0,
+                2.0,
+                true,
+                'pricing service returned 503',
+            ],
+            [
+                SurchargeType::PERCENTAGE,
+                ['http_status' => 200, 'error_code' => 'BAD_REQUEST'],
+                1000.0,
+                2.0,
+                true,
+                'pricing service returned an error code on a 200',
+            ],
+            [
+                SurchargeType::PERCENTAGE,
+                ['currency' => 'NOK'],
+                1000.0,
+                2.0,
+                true,
+                'response carried no buyer fee at all',
+            ],
+            [
+                SurchargeType::PERCENTAGE,
+                ['buyer_fee_share' => 20.0, 'currency' => 'SEK'],
+                1000.0,
+                2.0,
+                true,
+                'response quoted a currency the order is not in',
+            ],
+            [
+                SurchargeType::PERCENTAGE,
+                ['buyer_fee_share' => 0.0, 'currency' => 'NOK'],
+                1000.0,
+                2.0,
+                false,
+                'quote resolved to zero',
+            ],
+            [
+                SurchargeType::PERCENTAGE,
+                ['buyer_fee_share' => 0.0, 'currency' => 'NOK'],
+                0.0,
+                2.0,
+                false,
+                'basket total is zero',
+            ],
+            [
+                SurchargeType::PERCENTAGE,
+                ['buyer_fee_share' => 0.0, 'currency' => 'NOK'],
+                1000.0,
+                0.0,
+                false,
+                'term carries no surcharge',
+            ],
+            [
+                SurchargeType::NONE,
+                null,
+                1000.0,
+                0.0,
+                false,
+                'surcharge type is none, so nothing is ever quoted',
+            ],
+        ];
+    }
+
+    public function testTheChargedTermIsTheOnlyOneJudged(): void
+    {
+        // Given a fee quote that fails for term 60 only; when term 14 is the
+        // one selected; then the method stays offerable.
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(2.0);
+        $this->config->method('getDefaultPaymentTerm')->willReturn(60);
+        $this->adapter->method('execute')->willReturn(['http_status' => 503, 'error_code' => 'UPSTREAM']);
+
+        $store = [];
+        $calculator = $this->freshRequestCalculator($this->recordingCache($store));
+        try {
+            $calculator->calculate(1000.0, 60, 'NO', 'NOK');
+        } catch (\Magento\Framework\Exception\LocalizedException $e) {
+            // expected
+        }
+
+        $this->session->setTwoSelectedTerm(14);
+        $this->assertFalse(
+            $calculator->hasFailedFeeQuote('NOK', null),
+            'a term the buyer did not pick must not withhold the method'
+        );
+
+        $this->session->setTwoSelectedTerm(60);
+        $this->assertTrue(
+            $calculator->hasFailedFeeQuote('NOK', null),
+            'the term actually being charged does withhold it'
+        );
+    }
+
+    public function testTheGateReadsTheMarkerWithoutQuotingAgain(): void
+    {
+        // Given a marker persisted by an earlier request; when a new request
+        // asks; then no pricing call is made.
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(2.0);
+        $this->config->method('getDefaultPaymentTerm')->willReturn(60);
+        $this->adapter->method('execute')->willReturn(['http_status' => 503, 'error_code' => 'UPSTREAM']);
+
+        $store = [];
+        try {
+            $this->freshRequestCalculator($this->recordingCache($store))->calculate(1000.0, 60, 'NO', 'NOK');
+        } catch (\Magento\Framework\Exception\LocalizedException $e) {
+            // expected
+        }
+
+        $calls = 0;
+        $adapter = $this->adapter;
+        $adapter->method('execute')->willReturnCallback(function () use (&$calls) {
+            $calls++;
+            return ['http_status' => 503, 'error_code' => 'UPSTREAM'];
+        });
+
+        $fresh = $this->freshRequestCalculator($this->recordingCache($store));
+        $this->assertTrue($fresh->hasFailedFeeQuote('NOK', null), 'the marker survives the request that wrote it');
+        $this->assertSame(0, $calls, 'the gate must never issue a pricing request');
     }
 }

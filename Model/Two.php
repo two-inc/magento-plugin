@@ -914,6 +914,24 @@ class Two extends AbstractMethod
             );
             return false;
         }
+        // ABN-546: a fee quote the pricing endpoint refused makes this method
+        // unofferable. Marker-only, never a re-quote. Placed BEFORE the Amasty
+        // bypass for the same reason as the gates above.
+        try {
+            if ($this->hasFailedFeeQuote($quote, $storeId)) {
+                $this->logRepository->addDebugLog(
+                    sprintf('%s hidden from checkout: buyer fee quote failed', $this->_code),
+                    []
+                );
+                return false;
+            }
+        } catch (LocalizedException) {
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: buyer fee quote unreadable', $this->_code),
+                []
+            );
+            return false;
+        }
         // Judged on the billing-first country, not core's shipping-for-physical-quote choice.
         $buyerCountry = $this->buyerCountryResolver->resolve($quote);
         // Core's admin gate cannot judge an empty country, so only the merchant
@@ -1175,6 +1193,24 @@ class Two extends AbstractMethod
             return true;
         }
         return $this->surchargeCalculator->isSurchargeResolvable($currency, $storeId);
+    }
+
+    /**
+     * See SurchargeCalculator::hasFailedFeeQuote(). False when there is no
+     * currency to judge by, matching isSurchargeResolvable().
+     */
+    private function hasFailedFeeQuote(?CartInterface $quote, ?int $storeId): bool
+    {
+        if (!$quote instanceof \Magento\Quote\Model\Quote) {
+            return false;
+        }
+        $store = $quote->getStore();
+        $currency = (string)($quote->getQuoteCurrencyCode()
+            ?: ($store !== null ? $store->getBaseCurrencyCode() : ''));
+        if ($currency === '') {
+            return false;
+        }
+        return $this->surchargeCalculator->hasFailedFeeQuote($currency, $storeId);
     }
 
     /**
