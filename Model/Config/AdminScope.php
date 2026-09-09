@@ -78,9 +78,7 @@ class AdminScope
     /** Whether a scope type carries a store id the API adapter can use for its headers. */
     public static function isStoreScope(?string $scope): bool
     {
-        return $scope === null
-            || $scope === ScopeInterface::SCOPE_STORE
-            || $scope === ScopeInterface::SCOPE_STORES;
+        return $scope === null || $scope === ScopeInterface::SCOPE_STORE;
     }
 
     /** @return array{null, string} */

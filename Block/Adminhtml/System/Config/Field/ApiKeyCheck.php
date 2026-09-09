@@ -10,6 +10,7 @@ namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
+use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
 
@@ -72,7 +73,9 @@ class ApiKeyCheck extends Field
      */
     public function getApiKeyStatus(): array
     {
-        return $this->statusMessage->describe($this->apiKeyStatus->refresh());
+        return $this->statusMessage->describe(
+            $this->apiKeyStatus->refresh(...AdminScope::fromScope($this->getScope(), $this->getScopeId()))
+        );
     }
 
     /**

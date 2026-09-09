@@ -355,7 +355,8 @@ class SurchargeGrid extends Value
      */
     private function getConvertedFixedMax(string $scope, int $scopeId): ?int
     {
-        $limit = $this->settingsProvider->getSurchargeLimit(...AdminScope::fromScope($scope, $scopeId));
+        [$readId, $readScope] = AdminScope::fromScope($scope, $scopeId);
+        $limit = $this->settingsProvider->getSurchargeLimit($readId, $readScope);
         if ($limit === null) {
             return null;
         }
@@ -367,7 +368,11 @@ class SurchargeGrid extends Value
             return $limitAmount;
         }
 
-        $rate = $this->ratesProvider->getRate($limitCurrency, $baseCurrency, $storeId);
+        $rate = $this->ratesProvider->getRate(
+            $limitCurrency,
+            $baseCurrency,
+            AdminScope::isStoreScope($readScope) ? $readId : null
+        );
         if ($rate !== null && $rate > 0) {
             return (int)ceil($limitAmount * $rate);
         }
