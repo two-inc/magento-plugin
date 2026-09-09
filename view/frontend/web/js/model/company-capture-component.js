@@ -195,6 +195,8 @@
         this._typesInFlight = {};
         /** The countries the registry search covers, fetched once for the page's lifetime. */
         this._supportedSearchCountries = null;
+        /** Fails open until the registry's supported-countries answer lands. */
+        this._companySearchAvailable = true;
         this._searchCountriesInFlight = null;
         this._lastCountry = '';
         this._started = false;
@@ -443,10 +445,11 @@
     };
 
     /**
-     * Grey the search control out on a billing country the registry search
-     * does not cover, rather than let the buyer search and fail. Fails OPEN:
+     * Withdraw the registry search on a billing country it does not cover,
+     * rather than let the buyer search and fail. The popover itself stays
+     * open to manual entry and the sole-trader route (ABN-525). Fails OPEN:
      * a host with no `supportedCountriesUrl` wired up, or an errored fetch,
-     * leaves the control enabled everywhere.
+     * leaves the search offered everywhere.
      *
      * @param {string} [observedCountry] see onCountryChanged()
      * @returns {Promise<boolean>}
@@ -456,6 +459,7 @@
         return this.getSupportedSearchCountries().then(function (result) {
             const country = String(observedCountry || self.countryCode() || '').toUpperCase();
             const available = !result.known || result.countries.indexOf(country) !== -1;
+            self._companySearchAvailable = available;
             if (self._panel) self._panel.setDisabled(!available);
             return available;
         });
@@ -895,10 +899,11 @@
     /**
      * Whether a mode is offered on this checkout at all.
      *
-     * Sole trader follows the billing country's registry. Manual entry needs
-     * somewhere for the registry number to come from later, and with company
-     * search out of the address step there is no such lookup on the checkout —
-     * so a typed name would be a dead end and is not offered.
+     * Sole trader and registered search each follow the billing country's
+     * registry. Manual entry needs somewhere for the registry number to come
+     * from later, and with company search out of the address step there is no
+     * such lookup on the checkout — so a typed name would be a dead end and is
+     * not offered.
      *
      * @param {string} mode
      * @returns {boolean}
@@ -906,6 +911,7 @@
     CompanyCaptureComponent.prototype.isModeOffered = function (mode) {
         if (mode === 'soletrader') return !!this._identity.soleTraderAvailable();
         if (mode === 'manual') return !!this._config.isCompanySearchEnabled;
+        if (mode === 'registered') return this._companySearchAvailable;
         return true;
     };
 

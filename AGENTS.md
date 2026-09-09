@@ -369,15 +369,22 @@ makes it depend on this checkout's framework breaks that arrangement.
 run — the default one and any third-party one-step replacement — loads this same
 file, so a "fix it for that checkout" copy is a fork, not a fix.
 
-**The unsupported-country gate greys out SEARCH, never manual entry.** Manual
-entry hands the field over as a plain typeable input that never reaches the
-registry, so applying the native `disabled` flag there would block a mode that was
-never going to search and leave a buyer in an uncovered country with no way to
-name their company at all.
+**The unsupported-country gate withdraws SEARCH, never manual entry.** It hides
+the panel's query row and the registered-company chip; the panel itself still
+opens, because the chips inside it are the buyer's only route to manual entry and
+the sole-trader flow, and the company field never carries the native `disabled`
+flag. Anything that closes or refuses the panel on an uncovered country leaves a
+buyer there with no way to name their company at all (ABN-525).
+
+**The chip row is shown whenever it offers a mode the buyer is not already in**,
+not merely whenever it holds two chips. A lone chip for the current mode is no
+choice; a lone chip for a different mode is the buyer's whole way out.
 
 **The company field opens the panel on FOCUS**, through the same `open()` a
-mousedown runs, which puts the caret in the panel's query field — the same state
-a click leaves it in, and the same on every platform that carries this control.
+mousedown runs, which puts the caret in the panel's query field — or on the first
+offered chip where the query row is withdrawn, so no mode opens the panel with
+focus nowhere. Same state a click leaves it in, and the same on every platform
+that carries this control.
 
 **The open panel takes the field's tab stop**: `tabindex="-1"` while it is up, and
 on close the field's PRIOR value restored exactly, which is removal when there was
