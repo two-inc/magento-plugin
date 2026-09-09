@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Config\Backend;
 
+use Magento\Config\Model\Config\Reader\Source\Deployed\SettingChecker;
 use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\Config\Value;
@@ -26,11 +27,17 @@ use Two\Gateway\Model\Config\StoredTerm;
  */
 class PaymentTermsCustomDays extends Value
 {
+    /** Sibling holding the term checkboxes, whose tick is the other half of the fold-in. */
+    private const SIBLING = 'payment_terms';
+
     /** @var OfferedTermsGuard */
     private $offeredTerms;
 
     /** @var MessageManager */
     private $messageManager;
+
+    /** @var SettingChecker */
+    private $settingChecker;
 
     /** @var int|null term the fold-in cleared, held for the post-commit notice */
     private $foldedIn = null;
@@ -42,6 +49,7 @@ class PaymentTermsCustomDays extends Value
         TypeListInterface $cacheTypeList,
         OfferedTermsGuard $offeredTerms,
         MessageManager $messageManager,
+        SettingChecker $settingChecker,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -49,6 +57,7 @@ class PaymentTermsCustomDays extends Value
         parent::__construct($context, $registry, $config, $cacheTypeList, $resource, $resourceCollection, $data);
         $this->offeredTerms = $offeredTerms;
         $this->messageManager = $messageManager;
+        $this->settingChecker = $settingChecker;
     }
 
     /**
@@ -105,12 +114,32 @@ class PaymentTermsCustomDays extends Value
     }
 
     /**
-     * The matching tick is the sibling field's write; where the post carries no value for it — its
-     * own scope inherits, or it is locked in env.php — clearing here would drop the term instead.
+     * Whether the sibling writes the matching tick in this same save. Both tests are the ones
+     * Magento\Config\Model\Config::_processGroup applies to decide that: a field carrying an
+     * `inherit` flag goes to the delete transaction, and one locked in env.php is skipped before
+     * its backend model is reached. The posted VALUE cannot answer this — the checkboxes template
+     * always emits an empty hidden fallback, so an inheriting sibling posts '' rather than nothing.
      */
     private function siblingTakesTheTerm(): bool
     {
-        return $this->getFieldsetDataValue('payment_terms') !== null;
+        $groups = $this->getData('groups');
+        $posted = is_array($groups)
+            ? ($groups[(string)$this->getData('group_id')]['fields'][self::SIBLING] ?? null)
+            : null;
+        if (!is_array($posted) || !empty($posted['inherit'])) {
+            return false;
+        }
+
+        $structurePath = $this->getData('field_config')['path'] ?? null;
+        if (!is_string($structurePath) || $structurePath === '') {
+            return false;
+        }
+
+        return !$this->settingChecker->isReadOnly(
+            $structurePath . '/' . self::SIBLING,
+            (string)$this->getScope(),
+            $this->getScopeCode()
+        );
     }
 
     /**

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Model\Config\Backend;
 
+use Magento\Config\Model\Config\Reader\Source\Deployed\SettingChecker;
 use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Exception\LocalizedException;
@@ -25,26 +26,37 @@ class PaymentTermsCustomDaysTest extends TestCase
     /** @var MessageManager|MockObject */
     private $messageManager;
 
+    /** @var SettingChecker|MockObject */
+    private $settingChecker;
+
     protected function setUp(): void
     {
         $this->messageManager = $this->createMock(MessageManager::class);
+        $this->settingChecker = $this->createMock(SettingChecker::class);
     }
 
     /**
      * @param int[] $offered terms the merchant record offers; empty means it did not resolve
-     * @param array<string, mixed> $data extra model data, e.g. a scope or a narrower fieldset_data
+     * @param array<string, mixed> $data extra model data, e.g. the scope being saved
+     * @param array|null $sibling posted shape of the checkboxes field; null means absent from the post
      */
     private function buildModel(
         string $posted,
         ?string $stored,
         array $offered = [],
-        array $data = []
+        array $data = [],
+        ?array $sibling = ['value' => '']
     ): PaymentTermsCustomDays {
         $scopeConfig = $this->createMock(ScopeConfigInterface::class);
         $scopeConfig->method('getValue')->willReturn($stored);
 
         $settingsProvider = $this->createMock(SettingsProvider::class);
         $settingsProvider->method('getAvailableTerms')->willReturn($offered);
+
+        $fields = ['payment_terms_duration_days' => ['value' => $posted]];
+        if ($sibling !== null) {
+            $fields['payment_terms'] = $sibling;
+        }
 
         return new PaymentTermsCustomDays(
             $this->getMockBuilder(Context::class)->disableOriginalConstructor()->getMock(),
@@ -53,6 +65,7 @@ class PaymentTermsCustomDaysTest extends TestCase
             $this->createMock(TypeListInterface::class),
             new OfferedTermsGuard($settingsProvider),
             $this->messageManager,
+            $this->settingChecker,
             null,
             null,
             $data + [
@@ -60,7 +73,9 @@ class PaymentTermsCustomDaysTest extends TestCase
                 'path' => 'payment/two_payment/payment_terms_duration_days',
                 'scope' => 'default',
                 'scope_id' => 0,
-                'fieldset_data' => ['payment_terms' => ['14']],
+                'group_id' => 'payment_terms',
+                'field_config' => ['path' => 'two_payment/payment_terms'],
+                'groups' => ['payment_terms' => ['fields' => $fields]],
             ]
         );
     }
@@ -146,48 +161,68 @@ class PaymentTermsCustomDaysTest extends TestCase
     }
 
     /**
-     * The matching tick is the sibling field's write. Where the post carries no value for it —
-     * its own scope inherits, or env.php locks it — clearing here would drop the term outright.
+     * The matching tick is the sibling field's write, and Magento skips that write for a field
+     * left inheriting or locked in env.php. The posted value cannot report either: the checkboxes
+     * template always emits an empty hidden fallback, so an inheriting sibling posts '' as well.
      *
-     * @param array<string, mixed> $fieldsetData
-     * @dataProvider siblingPresenceProvider
+     * @param array|null $sibling
+     * @dataProvider siblingWriteProvider
      */
     public function testTheFoldInNeedsTheSiblingWriteInTheSameSave(
-        array $fieldsetData,
+        ?array $sibling,
+        bool $readOnly,
         string $expected,
         string $case
     ): void {
-        $model = $this->buildModel('30', '30', [14, 30], ['fieldset_data' => $fieldsetData]);
+        $this->settingChecker->method('isReadOnly')->willReturn($readOnly);
+        $model = $this->buildModel('30', '30', [14, 30], [], $sibling);
 
         $model->beforeSave();
 
         $this->assertSame($expected, $model->getValue(), $case);
     }
 
-    public static function siblingPresenceProvider(): array
+    public static function siblingWriteProvider(): array
     {
         return [
-            [['payment_terms' => ['14']], '', 'the sibling is posted, so the fold-in clears this field'],
-            [['payment_terms' => '14,30'], '', 'a CSV post of the sibling counts too'],
-            [['payment_terms' => ''], '', 'every box unticked is still a posted sibling'],
-            [[], '30', 'the sibling absent from the post takes no term, so nothing is cleared'],
-            [['payment_terms' => null], '30', 'an inherited or locked sibling posts no value'],
-            [
-                ['payment_terms_duration_days' => '30'],
-                '30',
-                'only this field in the post is not enough to move the term',
-            ],
+            [['value' => ['14']], false, '', 'a posted selection takes the term, so this field clears'],
+            [['value' => ''], false, '', 'the template hidden fallback alone is still a write'],
+            [['value' => '', 'inherit' => '1'], false, '30', 'a sibling left inheriting is deleted, not written'],
+            [['value' => ['14'], 'inherit' => '1'], false, '30', 'the inherit flag decides even with a value posted'],
+            [['value' => ['14']], true, '30', 'a sibling locked in env.php is skipped before its model runs'],
+            [null, false, '30', 'a sibling absent from the post writes nothing'],
         ];
     }
 
+    /** The read-only question names the sibling's structure path, as core asks it. */
+    public function testTheReadOnlyCheckAsksAboutTheSiblingAtTheScopeBeingSaved(): void
+    {
+        $this->settingChecker->expects($this->once())
+            ->method('isReadOnly')
+            ->with('two_payment/payment_terms/payment_terms', 'stores', 'de')
+            ->willReturn(false);
+
+        $model = $this->buildModel(
+            '30',
+            '30',
+            [14, 30],
+            ['scope' => 'stores', 'scope_id' => 5, 'scope_code' => 'de']
+        );
+
+        $model->beforeSave();
+
+        $this->assertSame('', $model->getValue());
+    }
+
     /**
-     * @param array<string, mixed> $fieldsetData
+     * @param int[] $offered
+     * @param array|null $sibling
      * @dataProvider announcementProvider
      */
     public function testTheFoldInIsAnnouncedOnlyOnceTheSaveCommits(
         string $posted,
         array $offered,
-        array $fieldsetData,
+        ?array $sibling,
         bool $expectNotice,
         string $case
     ): void {
@@ -198,7 +233,7 @@ class PaymentTermsCustomDaysTest extends TestCase
                 'Custom payment terms (days) of 30 is now one of the standard terms you offer'
             )));
 
-        $model = $this->buildModel($posted, $posted, $offered, ['fieldset_data' => $fieldsetData]);
+        $model = $this->buildModel($posted, $posted, $offered, [], $sibling);
         $model->beforeSave();
         $model->afterCommitCallback();
 
@@ -208,10 +243,16 @@ class PaymentTermsCustomDaysTest extends TestCase
     public static function announcementProvider(): array
     {
         return [
-            ['30', [14, 30], ['payment_terms' => ['14']], true, 'a fold-in that landed is announced'],
-            ['37', [14, 30], ['payment_terms' => ['14']], false, 'an untouched value is not announced'],
-            ['30', [], ['payment_terms' => ['14']], false, 'an unresolvable offered set folds nothing in'],
-            ['30', [14, 30], [], false, 'no fold-in happened, so there is nothing to announce'],
+            ['30', [14, 30], ['value' => ['14']], true, 'a fold-in that landed is announced'],
+            ['37', [14, 30], ['value' => ['14']], false, 'an untouched value is not announced'],
+            ['30', [], ['value' => ['14']], false, 'an unresolvable offered set folds nothing in'],
+            [
+                '30',
+                [14, 30],
+                ['value' => '', 'inherit' => '1'],
+                false,
+                'an inheriting sibling folds nothing in, so there is nothing to announce',
+            ],
         ];
     }
 
@@ -257,6 +298,7 @@ class PaymentTermsCustomDaysTest extends TestCase
             $this->createMock(TypeListInterface::class),
             new OfferedTermsGuard($settingsProvider),
             $this->messageManager,
+            $this->settingChecker,
             null,
             null,
             [
@@ -265,7 +307,9 @@ class PaymentTermsCustomDaysTest extends TestCase
                 'scope' => 'stores',
                 'scope_id' => 5,
                 'scope_code' => 'de',
-                'fieldset_data' => ['payment_terms' => ['14']],
+                'group_id' => 'payment_terms',
+                'field_config' => ['path' => 'two_payment/payment_terms'],
+                'groups' => ['payment_terms' => ['fields' => ['payment_terms' => ['value' => ['14']]]]],
             ]
         );
 

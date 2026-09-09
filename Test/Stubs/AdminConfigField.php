@@ -29,6 +29,46 @@ namespace Magento\Backend\Block\Template {
     if (!class_exists(Context::class, false)) {
         class Context
         {
+            /** As core: the block takes its request from the context, not from a setter. */
+            public function getRequest()
+            {
+                return null;
+            }
+        }
+    }
+}
+
+namespace Magento\Framework {
+    if (!class_exists(Escaper::class, false)) {
+        class Escaper
+        {
+            /**
+             * @param string $data
+             * @param array|null $allowedTags
+             * @return string
+             */
+            public function escapeHtml($data, $allowedTags = null)
+            {
+                return htmlspecialchars((string)$data, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            }
+        }
+    }
+}
+
+namespace Magento\Config\Model\Config\Reader\Source\Deployed {
+    if (!class_exists(SettingChecker::class, false)) {
+        class SettingChecker
+        {
+            /**
+             * @param string $path
+             * @param string $scope
+             * @param string|null $scopeCode
+             * @return bool
+             */
+            public function isReadOnly($path, $scope, $scopeCode = null)
+            {
+                return false;
+            }
         }
     }
 }
@@ -53,6 +93,11 @@ namespace Magento\Config\Block\System\Config\Form {
             {
                 $this->context = $context;
                 $this->data = $data;
+            }
+
+            public function getRequest()
+            {
+                return $this->context->getRequest();
             }
 
             public function setForm($form): void
@@ -100,9 +145,8 @@ namespace Magento\Config\Block\System\Config\Form {
             }
 
             /**
-             * Laminas' rule, which the real Escaper delegates to: every character outside a
-             * conservative alphanumeric set becomes a numeric entity, brackets included. A
-             * htmlspecialchars stand-in would let a test assert a literal production never emits.
+             * Laminas' rule, which the real Escaper delegates to: everything outside a
+             * conservative alphanumeric set becomes a numeric entity, brackets included.
              *
              * @param string $string
              * @param bool $escapeSingleQuote
