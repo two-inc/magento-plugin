@@ -180,7 +180,7 @@ class RateTableProvider
         if ($fresh === null) {
             $this->logRepository->addErrorLog(
                 'RateTableProvider: background FX rate refresh failed, keeping last-known-good table',
-                ['store_id' => $storeId]
+                ['store_id' => $storeId, 'mode' => $mode]
             );
             return false;
         }
@@ -227,12 +227,14 @@ class RateTableProvider
     }
 
     /**
-     * The cache key for a mode and API key, or null when no key is configured
-     * (nothing to authenticate the fetch with).
+     * The cache key for a mode and API key, or null when either is unset —
+     * no key means nothing to authenticate the fetch with, and an empty mode
+     * is one Adapter resolves for itself, which would fetch from an
+     * environment the slot does not name.
      */
     private function cacheKey(string $mode, string $apiKey): ?string
     {
-        if ($apiKey === '') {
+        if ($apiKey === '' || $mode === '') {
             return null;
         }
         return self::CACHE_KEY_PREFIX . hash('sha256', $mode . "\0" . $apiKey);
@@ -255,8 +257,8 @@ class RateTableProvider
      */
     private function fetchTable(string $mode, string $apiKey, ?int $storeId): ?array
     {
-        // The mode is passed rather than left to the store scope: it is the
-        // environment the slot is keyed on, so the fetch must hit that one.
+        // The slot names the environment, so the fetch must hit that one
+        // rather than whichever the store scope resolves.
         $response = $this->apiAdapter->execute(self::ENDPOINT, [], 'GET', $storeId, $apiKey, $mode);
 
         // Adapter::execute always returns an array; a failure is signalled

@@ -376,13 +376,21 @@ class RateTableProviderTest extends TestCase
         $this->assertTrue($this->provider($cache)->refresh('production', 'test-api-key', 1));
     }
 
+    public function testAnUnsetModeFetchesNothing(): void
+    {
+        // Adapter would resolve a blank mode itself, landing another
+        // environment's table in this slot.
+        $this->apiAdapter->expects($this->never())->method('execute');
+
+        $this->assertNull($this->provider(null, 'test-api-key', '')->getRateTable(1));
+    }
+
     public function testRefreshFetchesFromTheEnvironmentItsSlotIsKeyedOn(): void
     {
         // Given a caller's mode differing from the store scope's,
-        // When it refreshes, Then the fetch goes to the caller's environment —
-        // otherwise one environment's rates land in the other's slot.
+        // When it refreshes, Then the fetch goes to the caller's environment.
         $this->apiAdapter->expects($this->once())->method('execute')
-            ->with(RateTableProvider::ENDPOINT, [], 'GET', 1, 'test-api-key', 'sandbox')
+            ->with(RateTableProvider::ENDPOINT, [], 'GET', 1, 'test-api-key', 'sandbox', null)
             ->willReturn(self::RATES_RESPONSE);
 
         $this->assertTrue($this->provider(null, 'test-api-key', 'production')->refresh('sandbox', 'test-api-key', 1));
