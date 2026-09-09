@@ -24,8 +24,6 @@ class DefaultPaymentTerm extends Value
         $default = (int)$this->getValue();
         $enabled = $this->enabledTerms();
         if ($default > 0 && $enabled !== [] && !in_array($default, $enabled, true)) {
-            // Naming the remedy matters here: removing a custom term that is also the default
-            // only lands if the default is repointed in the same save (ABN-522).
             throw new LocalizedException(__(
                 'Default payment terms names %1 days, which is not one of the terms you offer: %2 days.'
                 . ' Choose one of those in this same save.',

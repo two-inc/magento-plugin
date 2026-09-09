@@ -39,15 +39,17 @@ class PaymentTermsCustomDays extends Field
         $stored = trim((string)$element->getValue());
         $days = StoredTerm::days($stored);
         $keepLabel = $days === null ? $stored : (string)__('%1 days', $days);
-        $options = $stored === ''
-            ? [['', (string)__('Remove')]]
-            : [[$stored, $keepLabel], ['', (string)__('Remove')]];
+        $remove = ['', (string)__('Remove'), 0];
+        $options = $stored === '' ? [$remove] : [[$stored, $keepLabel, $days ?? 0], $remove];
 
         $optionsHtml = '';
-        foreach ($options as [$value, $label]) {
+        foreach ($options as [$value, $label, $term]) {
+            // data-two-term carries this normalisation to the admin scripts, which must not
+            // re-derive a term from the raw value (ABN-522).
             $optionsHtml .= sprintf(
-                '<option value="%s"%s>%s</option>',
+                '<option value="%s" data-two-term="%d"%s>%s</option>',
                 $this->escapeHtmlAttr($value),
+                $term,
                 $value === $stored ? ' selected="selected"' : '',
                 $this->escapeHtml($label)
             );
@@ -62,11 +64,7 @@ class PaymentTermsCustomDays extends Field
         ) . $this->foldsInMarker($element, $days);
     }
 
-    /**
-     * Marks the row the save will fold into an offered term's checkbox. Emitted rather than
-     * decided in the browser so one normalisation governs the gate, the render and the save;
-     * the row is hidden but still posts, which is what lets that fold-in happen at all.
-     */
+    /** Marks the row the save will fold into an offered term's checkbox; it stays posted, hidden. */
     private function foldsInMarker(AbstractElement $element, ?int $days): string
     {
         if ($days === null) {

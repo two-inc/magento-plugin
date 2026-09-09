@@ -27,13 +27,19 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
 
         // ── Helpers ──────────────────────────────────────────────────────
 
+        // Server-normalised term for the current selection; parsing the raw value here would
+        // disagree with the save on shapes like '1e2' (ABN-522).
+        function getCustomTerm() {
+            return Number($customDays.find('option:selected').attr('data-two-term')) || 0;
+        }
+
         function getSelectedTerms() {
             var terms = [];
             $termsContainer.find('.two-term-checkboxes__input:checked').each(function () {
                 terms.push(Number($(this).val()));
             });
             terms = terms.filter(function (n) { return n > 0; });
-            var custom = parseInt($customDays.val(), 10);
+            var custom = getCustomTerm();
             if (custom > 0) {
                 terms.push(custom);
             }
@@ -120,8 +126,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // ── Custom payment terms visibility ──────────────────────────────
 
         function hideCustomDaysIfItFoldsIn() {
-            // Server-emitted marker, not a value test here: one normalisation decides the gate,
-            // the render and the save. The row stays in the form so the fold-in save can happen.
+            // Hidden, not removed: the row must still post for the fold-in save to happen.
             if ($customDays.closest('tr').find('.two-legacy-term-folds-in').length) {
                 hideField('payment_terms_duration_days');
             }
@@ -269,7 +274,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             var terms = $termsContainer.find('.two-term-checkboxes__input').map(function () {
                 return Number(this.value);
             }).get().filter(function (n) { return n > 0; });
-            var custom = parseInt($customDays.val(), 10);
+            var custom = getCustomTerm();
             if (custom > 0 && terms.indexOf(custom) === -1) {
                 terms.push(custom);
             }

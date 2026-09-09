@@ -63,9 +63,7 @@ class PaymentTermsCheckboxes extends Value
         // fieldset_data holds the whole group before any beforeSave() runs, so sibling reads are order-independent (TWO-25498).
         $custom = StoredTerm::days($this->getFieldsetDataValue('payment_terms_duration_days'));
 
-        // The deprecated sibling clears a value the merchant record offers as a standard term; it
-        // belongs on that term's checkbox instead. An unresolvable offered set matches nothing, so
-        // an API outage cannot move a migration value either (ABN-493, ABN-522).
+        // An unresolvable offered set matches nothing, so an outage cannot move a value (ABN-522).
         $offered = $this->offeredTerms->offered($storeId);
         if ($custom !== null
             && $offered !== []

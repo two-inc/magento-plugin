@@ -16,6 +16,7 @@ use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
+use Two\Gateway\Model\Config\StoredTerm;
 use Two\Gateway\Service\Locale\AdminDecimalFormatter;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
@@ -115,8 +116,9 @@ class SurchargeGrid extends Field
         $selected = $this->getConfigValue($this->path('payment_terms'));
         $terms = array_filter(array_map('intval', explode(',', (string)$selected)));
 
-        $custom = (int)$this->getConfigValue($this->path('payment_terms_duration_days'));
-        if ($custom > 0) {
+        // StoredTerm, not a cast: a cast reads '1e2' as 100 where the admin reads it as no term (ABN-522).
+        $custom = StoredTerm::days($this->getConfigValue($this->path('payment_terms_duration_days')));
+        if ($custom !== null) {
             $terms[] = $custom;
         }
 

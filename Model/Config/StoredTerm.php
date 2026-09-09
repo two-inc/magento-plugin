@@ -9,9 +9,9 @@ declare(strict_types=1);
 namespace Two\Gateway\Model\Config;
 
 /**
- * The one normalisation of a stored custom payment term, shared by the admin field's gate,
- * renderer and every backend model that reads it — two readings would disagree on a
- * hand-edited row and one of them would then delete it (ABN-522).
+ * The one normalisation of a stored custom payment term. Every consumer resolves a value through
+ * it — the admin field's gate, its renderer, the backend models, the config repository, the
+ * surcharge grid, and the admin scripts via the rendered data-two-term (ABN-522).
  */
 class StoredTerm
 {

@@ -7,9 +7,8 @@ use PHPUnit\Framework\TestCase;
 use Two\Gateway\Model\Config\StoredTerm;
 
 /**
- * The single reading of a stored custom payment term. Every consumer — the visibility gate, the
- * renderer, the fold-in match and the backend models — resolves a value shape identically here,
- * because a disagreement between two readings is what silently deleted one (ABN-522).
+ * The single reading of a stored custom payment term (ABN-522). Test/Unit/Config/CustomTermParityTest
+ * pins each consumer to it.
  */
 class StoredTermTest extends TestCase
 {

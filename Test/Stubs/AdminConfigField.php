@@ -100,13 +100,23 @@ namespace Magento\Config\Block\System\Config\Form {
             }
 
             /**
+             * Laminas' rule, which the real Escaper delegates to: every character outside a
+             * conservative alphanumeric set becomes a numeric entity, brackets included. A
+             * htmlspecialchars stand-in would let a test assert a literal production never emits.
+             *
              * @param string $string
              * @param bool $escapeSingleQuote
              * @return string
              */
             public function escapeHtmlAttr($string, $escapeSingleQuote = true)
             {
-                return htmlspecialchars((string)$string, ENT_QUOTES, 'UTF-8');
+                return preg_replace_callback(
+                    '/[^a-zA-Z0-9,\.\-_]/u',
+                    static function (array $match): string {
+                        return sprintf('&#x%02X;', mb_ord($match[0], 'UTF-8'));
+                    },
+                    (string)$string
+                );
             }
         }
     }
