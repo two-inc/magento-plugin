@@ -344,10 +344,10 @@ once, and these are the three rules (TWO-25658):
 
 A window or application switch lands on no control at all and settles nothing.
 
-A fourth rule (TWO-25658): **a Sole trader chip belonging to a DIFFERENT capture
-popover gets a popup of its own**, raised through that chip's own click handler so
-a launch stays spelled out in one place. Reaching that chip by FOCUS does not
-raise it here — the popup closes and nothing replaces it.
+**Reaching another capture popover's Sole trader chip by FOCUS raises nothing** —
+that chip is not the exempt one, so the popup closes as it would for any other
+target. Only activating the chip launches a popup, through its own click handler,
+which is where a launch stays spelled out (TWO-25658).
 
 ## A declined order intent refuses order placement
 
