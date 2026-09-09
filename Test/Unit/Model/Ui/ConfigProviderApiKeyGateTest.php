@@ -14,6 +14,8 @@ use Two\Gateway\Model\Ui\CheckoutTileCopy;
 use Two\Gateway\Model\Ui\ConfigProvider;
 use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\RecordProvider;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
  * The checkout-config subtree is the gate the company-search control AND the
@@ -28,7 +30,10 @@ use Two\Gateway\Service\Merchant\ApiKeyStatus;
  */
 class ConfigProviderApiKeyGateTest extends TestCase
 {
-    private function build(ApiKeyStatus $apiKeyStatus): ConfigProvider
+    /**
+     * @param array<string,mixed>|null $merchantRecord what the never-expiring record holds
+     */
+    private function build(ApiKeyStatus $apiKeyStatus, ?array $merchantRecord = null): ConfigProvider
     {
         $reflection = new \ReflectionClass(ConfigProvider::class);
         $provider = $reflection->newInstanceWithoutConstructor();
@@ -47,6 +52,11 @@ class ConfigProviderApiKeyGateTest extends TestCase
         $brandRegistry->method('getProviderFullName')->willReturn('Acme Pay Ltd');
         $brandRegistry->method('getAboutUrl')->willReturn('');
 
+        // The real settings provider over a mocked record fetch, so the
+        // identity fall-back is the shipped derivation.
+        $recordProvider = $this->createMock(RecordProvider::class);
+        $recordProvider->method('getRecord')->willReturn($merchantRecord);
+
         $two = $this->createMock(Two::class);
         $two->method('getMinimumOrderVisibility')->willReturn(['minimums' => [], 'unresolved' => false]);
 
@@ -63,6 +73,7 @@ class ConfigProviderApiKeyGateTest extends TestCase
             'configRepository' => $configRepository,
             'brandRegistry' => $brandRegistry,
             'apiKeyStatus' => $apiKeyStatus,
+            'settingsProvider' => new SettingsProvider($recordProvider),
             'two' => $two,
             'assetRepository' => $this->createMock(AssetRepository::class),
             'checkoutSession' => $checkoutSession,
@@ -131,7 +142,8 @@ class ConfigProviderApiKeyGateTest extends TestCase
         bool $emitted,
         string $description
     ): void {
-        $config = $this->build($this->statusService($status, $code, ['id' => 'abc-123']))->getConfig();
+        $merchant = $status === ApiKeyStatus::OK ? ['id' => 'abc-123'] : null;
+        $config = $this->build($this->statusService($status, $code, $merchant))->getConfig();
 
         $this->assertSame($emitted, $config !== [], $description);
         $this->assertSame(
@@ -139,19 +151,6 @@ class ConfigProviderApiKeyGateTest extends TestCase
             self::resolveActiveTwoBrandCode($config),
             $description
         );
-    }
-
-    /**
-     * The withholding half of the pair above, stated as the thing it protects:
-     * a rejected key must not leave a brand code for company search to mount
-     * behind.
-     */
-    public function testARejectedKeyLeavesNothingForCompanySearchToMountBehind(): void
-    {
-        $config = $this->build($this->statusService(ApiKeyStatus::INVALID_KEY, 401))->getConfig();
-
-        $this->assertSame([], $config);
-        $this->assertNull(self::resolveActiveTwoBrandCode($config));
     }
 
     /**
@@ -197,15 +196,52 @@ class ConfigProviderApiKeyGateTest extends TestCase
     }
 
     /**
-     * A fall-through carries no merchant record, and the browser's api-client
-     * params omit the short name rather than sending "undefined".
+     * The verdict carries no merchant on a fall-through, so the identity the
+     * browser is handed comes from the never-expiring record instead. With
+     * neither it is null, and the api-client params omit the short name
+     * rather than sending "undefined".
+     *
+     * @dataProvider fallThroughIdentitySources
+     * @param array<string,mixed>|null $record
+     * @param array<string,string|null>|null $expected
      */
-    public function testAFallThroughEmitsTheSubtreeWithNoMerchantRecord(): void
-    {
-        $config = $this->build($this->statusService(ApiKeyStatus::UNREACHABLE))->getConfig();
+    public function testAFallThroughRelaysTheRecordsIdentity(
+        ?array $record,
+        ?array $expected,
+        string $description
+    ): void {
+        $config = $this->build($this->statusService(ApiKeyStatus::UNREACHABLE), $record)->getConfig();
 
-        $this->assertSame('two_payment', self::resolveActiveTwoBrandCode($config));
-        $this->assertNull($config['payment']['two_payment']['orderIntentConfig']['merchant']);
+        $this->assertSame('two_payment', self::resolveActiveTwoBrandCode($config), $description);
+        $this->assertSame(
+            $expected,
+            $config['payment']['two_payment']['orderIntentConfig']['merchant'],
+            $description
+        );
+    }
+
+    /**
+     * @return array<string, array{0: array<string,mixed>|null, 1: array<string,string|null>|null, 2: string}>
+     */
+    public static function fallThroughIdentitySources(): array
+    {
+        return [
+            'record resolved' => [
+                ['id' => 'abc-123', 'short_name' => 'example'],
+                ['id' => 'abc-123', 'short_name' => 'example'],
+                'last-known-good identity reaches the browser through an outage',
+            ],
+            'record has no short name' => [
+                ['id' => 'abc-123'],
+                ['id' => 'abc-123', 'short_name' => null],
+                'an absent short name is null, not the string "undefined"',
+            ],
+            'nothing ever resolved' => [
+                null,
+                null,
+                'a shop with no record has no identity to relay',
+            ],
+        ];
     }
 
     public function testTheSubtreeAndItsSentinelArePresentOnSuccess(): void

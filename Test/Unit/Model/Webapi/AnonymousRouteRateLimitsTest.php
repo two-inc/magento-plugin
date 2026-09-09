@@ -20,6 +20,7 @@ use Two\Gateway\Model\Webapi\TermSelection;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\TermSurchargePreview;
@@ -118,6 +119,7 @@ class AnonymousRouteRateLimitsTest extends TestCase
                 (new OrderIntent(
                     $this->createMock(Adapter::class),
                     $this->createMock(ApiKeyStatus::class),
+                    $this->createMock(SettingsProvider::class),
                     $limiter,
                     $this->createMock(LogRepository::class),
                     $this->createMock(CheckoutSession::class),
@@ -138,6 +140,7 @@ class AnonymousRouteRateLimitsTest extends TestCase
         return new CompanyLookup(
             $this->createMock(Adapter::class),
             $this->createMock(ApiKeyStatus::class),
+            $this->createMock(SettingsProvider::class),
             $limiter,
             $this->createMock(LogRepository::class),
             $this->createMock(CheckoutSession::class)

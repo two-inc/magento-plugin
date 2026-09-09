@@ -12,6 +12,7 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\OrderIntentInterface;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\RateLimiter;
@@ -31,6 +32,7 @@ class OrderIntent implements OrderIntentInterface
     public function __construct(
         private readonly Adapter $adapter,
         private readonly ApiKeyStatus $apiKeyStatus,
+        private readonly SettingsProvider $settingsProvider,
         private readonly RateLimiter $rateLimiter,
         private readonly LogRepository $logRepository,
         private readonly CheckoutSession $checkoutSession,
@@ -66,13 +68,15 @@ class OrderIntent implements OrderIntentInterface
             return $this->refusal(400, (string)__('Invalid order intent payload.'));
         }
 
-        $status = $this->apiKeyStatus->getStatus();
-        $merchantId = $status['merchant']['id'] ?? null;
-        if ($status['status'] !== ApiKeyStatus::OK || !is_string($merchantId) || $merchantId === '') {
-            // A failed verification is cached for a minute, so sending it on
-            // regardless would turn one blip into a window of declines.
+        // ABN-533: only a definitive rejection refuses. An unreachable or
+        // erroring Two says nothing about the key, and this route is reachable
+        // whenever the tile is offered, so refusing here would put a red
+        // unavailability notice on a correctly configured checkout.
+        $identity = $this->merchantIdentity();
+        if ($this->apiKeyStatus->isDefinitiveFailure() || $identity === null) {
             return $this->refusal(503, (string)__('The payment integration is not available right now.'));
         }
+        $merchantId = $identity['id'];
 
         $storeId = $this->quoteStoreId();
         // Server-resolved, never the payload's own country_prefix — a buyer
@@ -95,14 +99,35 @@ class OrderIntent implements OrderIntentInterface
         // Absent means absent — upstream reads an absent key and an explicit
         // null apart.
         unset($body['merchant_short_name']);
-        $shortName = $status['merchant']['short_name'] ?? null;
-        if (is_string($shortName) && $shortName !== '') {
-            $body['merchant_short_name'] = $shortName;
+        if ($identity['short_name'] !== null) {
+            $body['merchant_short_name'] = $identity['short_name'];
         }
 
         return $this->envelope(
             $this->adapter->executeWithStatus(self::ENDPOINT, $body, 'POST', $storeId)
         );
+    }
+
+    /**
+     * The verdict's own merchant when it has one, else the never-expiring
+     * record's — so an outage relays last-known-good rather than nothing.
+     *
+     * @return array{id: string, short_name: string|null}|null
+     */
+    private function merchantIdentity(): ?array
+    {
+        $merchant = $this->apiKeyStatus->getStatus()['merchant'] ?? null;
+        $id = $merchant['id'] ?? null;
+        if (is_string($id) && $id !== '') {
+            $shortName = $merchant['short_name'] ?? null;
+
+            return [
+                'id' => $id,
+                'short_name' => is_string($shortName) && $shortName !== '' ? $shortName : null,
+            ];
+        }
+
+        return $this->settingsProvider->getMerchantIdentity($this->quoteStoreId());
     }
 
     private function quoteBuyerCountry(): string

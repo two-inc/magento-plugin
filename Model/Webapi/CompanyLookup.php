@@ -12,6 +12,7 @@ use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Api\Webapi\CompanyLookupInterface;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\RateLimiter;
 
 class CompanyLookup implements CompanyLookupInterface
@@ -41,6 +42,7 @@ class CompanyLookup implements CompanyLookupInterface
     public function __construct(
         private readonly Adapter $adapter,
         private readonly ApiKeyStatus $apiKeyStatus,
+        private readonly SettingsProvider $settingsProvider,
         private readonly RateLimiter $rateLimiter,
         private readonly LogRepository $logRepository,
         private readonly CheckoutSession $checkoutSession
@@ -125,20 +127,26 @@ class CompanyLookup implements CompanyLookupInterface
 
     /**
      * Server-resolved only — a browser-supplied merchant is what this proxy
-     * exists to stop. Omitted while the key does not verify, rather than
-     * failing a lookup the buyer is mid-typing.
+     * exists to stop. Omitted rather than failing a lookup the buyer is
+     * mid-typing.
+     *
+     * ABN-533: the verdict carries a merchant only on a success, so an outage
+     * falls back to the never-expiring record's short name rather than
+     * dropping to unscoped lookups for its duration.
      *
      * @return array<string,string>
      */
     private function merchantParams(): array
     {
-        $status = $this->apiKeyStatus->getStatus();
-        $shortName = $status['merchant']['short_name'] ?? null;
-
-        if ($status['status'] !== ApiKeyStatus::OK || !is_string($shortName) || $shortName === '') {
+        if ($this->apiKeyStatus->isDefinitiveFailure()) {
             return [];
         }
 
-        return ['merchant' => $shortName];
+        $shortName = $this->apiKeyStatus->getStatus()['merchant']['short_name'] ?? null;
+        if (!is_string($shortName) || $shortName === '') {
+            $shortName = $this->settingsProvider->getMerchantIdentity($this->quoteStoreId())['short_name'] ?? null;
+        }
+
+        return is_string($shortName) && $shortName !== '' ? ['merchant' => $shortName] : [];
     }
 }

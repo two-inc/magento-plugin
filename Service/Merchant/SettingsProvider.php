@@ -114,6 +114,32 @@ class SettingsProvider
     }
 
     /**
+     * The merchant's identity off the never-expiring record — the
+     * last-known-good `id` and `short_name` from GET /v1/merchant.
+     *
+     * ABN-533: the verification verdict carries a merchant only on a success,
+     * so the surfaces that keep serving a buyer through an upstream failure
+     * read their identity from here instead. Null when nothing has resolved
+     * yet, which is the one state that genuinely has no identity to send.
+     *
+     * @return array{id: string, short_name: string|null}|null
+     */
+    public function getMerchantIdentity(?int $storeId = null): ?array
+    {
+        $record = $this->recordProvider->getRecord($storeId);
+        $id = $record['id'] ?? null;
+        if (!is_string($id) || $id === '') {
+            return null;
+        }
+        $shortName = $record['short_name'] ?? null;
+
+        return [
+            'id' => $id,
+            'short_name' => is_string($shortName) && $shortName !== '' ? $shortName : null,
+        ];
+    }
+
+    /**
      * Whether the merchant self-distributes their own invoices to the
      * buyer (invoice_distributed_by_merchant on the merchant record).
      * Absent, unresolvable, or malformed all degrade to false — the
