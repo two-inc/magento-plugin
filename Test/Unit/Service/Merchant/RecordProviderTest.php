@@ -266,6 +266,7 @@ class RecordProviderTest extends TestCase
         // '_stale_cooldown' also ends in '_cooldown', so the longer suffix is matched first.
         $names = [
             '_stale_cooldown' => 'arm stale cooldown',
+            '_stood_in_at' => 'mark stand-in',
             '_cooldown' => 'arm cooldown',
             '_fetched_at' => 'store stamp',
             '_absent_on_read' => 'mark absent',
@@ -318,14 +319,25 @@ class RecordProviderTest extends TestCase
         ?int $absentAge = null,
         string $mode = 'sandbox',
         string $apiKey = 'test-api-key',
-        bool $staleCooldown = false
+        bool $staleCooldown = false,
+        ?int $stoodInAge = null
     ) {
         $entry = self::entryFor($mode, $apiKey);
         $cache = $this->createMock(CacheInterface::class);
         $cache->method('load')->willReturnCallback(
-            function (string $identifier) use ($record, $stampAge, $absentAge, $entry, $staleCooldown) {
+            function (string $identifier) use (
+                $record,
+                $stampAge,
+                $absentAge,
+                $entry,
+                $staleCooldown,
+                $stoodInAge
+            ) {
                 if ($identifier === $entry . '_stale_cooldown') {
                     return $staleCooldown ? '1' : false;
+                }
+                if ($identifier === $entry . '_stood_in_at') {
+                    return $stoodInAge === null ? false : (string)(time() - $stoodInAge);
                 }
                 if ($identifier === $entry . '_fetched_at') {
                     return $stampAge === null ? false : (string)(time() - $stampAge);
@@ -432,7 +444,13 @@ class RecordProviderTest extends TestCase
         // mark says the admin has no record AND no way to get one.
         $this->stubApi(['id' => 'abc-123'], $merchantResponse);
         $log = $this->createMock(LogRepository::class);
-        $log->expects($this->atLeastOnce())->method('addErrorLog');
+        $logged = [];
+        $log->method('addErrorLog')->willReturnCallback(
+            function ($message, $data = null) use (&$logged) {
+                $logged[] = $message;
+                return null;
+            }
+        );
         $cache = $this->cacheWith(false, null);
         $marked = [];
         $cache->method('save')->willReturnCallback(
@@ -447,6 +465,7 @@ class RecordProviderTest extends TestCase
         $this->providerWith($cache, 'test-api-key', 'sandbox', $log)->getRecord(1);
 
         $this->assertCount($expectedMarks, $marked, $description);
+        $this->assertNotSame([], preg_grep('/merchant record absent on read/', $logged), $description);
     }
 
     /**
@@ -790,6 +809,34 @@ class RecordProviderTest extends TestCase
             preg_grep('/_stale_cooldown$/', $writes),
             'the stand-in refresh is bounded to one attempt per run the cron owes'
         );
+    }
+
+    public function testAStandInLeavesAMarkTheScheduleClears(): void
+    {
+        // The record's own stamp cannot say the schedule is dead, because the
+        // stand-in moves it — this mark is what says so.
+        $this->stubApi(['id' => 'abc-123'], ['id' => 'abc-123', 'available_terms' => [30]]);
+        $cache = $this->cacheWith(true, RecordProvider::STALE_AFTER + 1);
+        $writes = [];
+        $cache->method('save')->willReturnCallback(
+            function ($data, $identifier) use (&$writes) {
+                $writes[] = $identifier;
+                return true;
+            }
+        );
+
+        $this->providerWith($cache)->getRecord(1);
+
+        $this->assertCount(1, preg_grep('/_stood_in_at$/', $writes));
+    }
+
+    public function testStatusReportsTheStandInMark(): void
+    {
+        $cache = $this->cacheWith(true, 100, null, 'sandbox', 'test-api-key', false, 40);
+
+        $status = $this->providerWith($cache)->status('sandbox', 'test-api-key');
+
+        $this->assertEqualsWithDelta(time() - 40, $status['stood_in_at'], 2);
     }
 
     public function testAStaleRecordSurvivesAFailedRefreshAndIsStillServed(): void

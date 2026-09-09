@@ -176,8 +176,12 @@ class RecordProvider
         }
 
         // Marked only once the read could not resolve one either: no record and
-        // no way to get one is what the admin health surface has to report.
-        $this->cache->save((string)time(), $cacheKey . self::ABSENT_SUFFIX, self::CACHE_TAGS, null);
+        // no way to get one is what the admin health surface has to report. The
+        // FIRST such read owns the timestamp — rewriting it on every later one
+        // keeps the mark permanently young, and the health surface judges its age.
+        if ($this->cache->load($cacheKey . self::ABSENT_SUFFIX) === false) {
+            $this->cache->save((string)time(), $cacheKey . self::ABSENT_SUFFIX, self::CACHE_TAGS, null);
+        }
 
         return null;
     }

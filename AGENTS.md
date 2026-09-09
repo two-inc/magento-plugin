@@ -256,9 +256,11 @@ narrow case of a table that was never fetched, or a cache flushed while Two is
 unreachable. One known cost, unaddressed: the rate table's own refresh-on-read
 carries no timeout budget, so a table past its refresh interval can hold a
 storefront render for the HTTP client's default while an outage runs — the
-merchant record's read-path stand-in is bounded, that one is not. The FX gate is not simply removable: it exists because an
-unresolvable rate used to throw inside the totals collector and error the whole
-checkout, which is worse than withholding one method.
+merchant record's read-path stand-in is bounded; that one is not.
+
+The FX gate is not simply removable: it exists because an unresolvable rate used
+to throw inside the totals collector and error the whole checkout, which is
+worse than withholding one method.
 
 **There is no captured-company condition anywhere on that path.** The
 company-number guard runs at placement, not at render — do not reach for

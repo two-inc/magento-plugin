@@ -107,8 +107,13 @@ class HealthChecklist extends Field
     {
         $status = $this->recordProvider->status($mode, $this->configRepository->getApiKey());
         $label = (string)__('Merchant profile');
+        $fetchedAt = $status['fetched_at'];
         $absentAt = $status['absent_on_read_at'];
-        if ($absentAt !== null && time() - $absentAt >= RecordProvider::CRON_INTERVAL) {
+        // A stamp newer than the mark means the miss has since been answered.
+        if ($absentAt !== null
+            && time() - $absentAt >= RecordProvider::CRON_INTERVAL
+            && ($fetchedAt === null || $fetchedAt < $absentAt)
+        ) {
             return [
                 'label' => $label,
                 'ok' => false,
@@ -118,8 +123,10 @@ class HealthChecklist extends Field
                 ),
             ];
         }
-        $fetchedAt = $status['fetched_at'];
-        if ($fetchedAt !== null && $status['stood_in_at'] !== null) {
+        // Judged on age, like the mark above: the schedule clears a stand-in on its
+        // next tick, so one that outlives a tick is what says the schedule is dead.
+        $stoodInAt = $status['stood_in_at'];
+        if ($fetchedAt !== null && $stoodInAt !== null && time() - $stoodInAt >= RecordProvider::CRON_INTERVAL) {
             return [
                 'label' => $label,
                 'ok' => false,
