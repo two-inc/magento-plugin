@@ -90,33 +90,40 @@ abstract class AbstractSurchargeTreatmentGuard extends Value
     }
 
     /**
-     * Reject the save while the treatment STORED at this scope is a
-     * never-taxed one and this save does not replace it with a real one.
-     * A blank submission would otherwise overwrite it, silently changing how
-     * the surcharge is taxed and erasing the state the field's warning reads
-     * (ABN-497). Not gated on the surcharge being enabled, because the
-     * submitted-value refusal it completes is not either.
+     * Reject a save that would leave a stored never-taxed treatment in place:
+     * a blank submission used to overwrite it with an empty string, silently
+     * changing how the surcharge is taxed and erasing the state the field's
+     * warning renderer reads (ABN-497). Not gated on the surcharge being
+     * enabled, because the submitted-value refusal it completes is not either.
+     *
+     * Only a save the treatment field is PART of can be refused. A save
+     * without it cannot overwrite the stored value, and refusing one would
+     * brick the whole section for a brand that suppresses the field or a scope
+     * inheriting it — neither offers the merchant a control to fix.
      *
      * @throws LocalizedException
      */
     protected function assertStoredTreatmentIsReplaced(): void
     {
+        $submitted = $this->getSubmittedTaxTreatment();
+        if ($submitted === null) {
+            return;
+        }
+
         if (!$this->neverTaxedTreatment->isNeverTaxed((string)$this->getScopedSiblingValue('surcharge_tax_class'))) {
             return;
         }
 
-        $submitted = $this->getSubmittedTaxTreatment();
-        if ($submitted !== null && $submitted !== '' && !$this->neverTaxedTreatment->isNeverTaxed($submitted)) {
+        if ($submitted !== '' && !$this->neverTaxedTreatment->isNeverTaxed($submitted)) {
             return;
         }
 
         throw new LocalizedException(
             __(
-                'The Surcharge tax treatment saved for this store leaves the surcharge '
-                . 'untaxed in every jurisdiction and is no longer available. Select a '
-                . 'Surcharge tax treatment to save this configuration. To leave the '
-                . 'surcharge untaxed, create a Tax Rule with a 0% rate and select its '
-                . 'Product Tax Class.'
+                'The saved Surcharge tax treatment leaves the surcharge untaxed in every '
+                . 'jurisdiction and is no longer available. Select a Surcharge tax '
+                . 'treatment to save this configuration. To leave the surcharge untaxed, '
+                . 'create a Tax Rule with a 0% rate and select its Product Tax Class.'
             )
         );
     }

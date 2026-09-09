@@ -56,7 +56,6 @@ class SurchargeTaxClass extends AbstractSurchargeTreatmentGuard
      */
     public function beforeSave()
     {
-        $this->assertStoredTreatmentIsReplaced();
         $this->assertTaxTreatmentSelected();
 
         if ($this->neverTaxedTreatment->isNeverTaxed((string)$this->getValue())) {
@@ -68,6 +67,8 @@ class SurchargeTaxClass extends AbstractSurchargeTreatmentGuard
                 )
             );
         }
+
+        $this->assertStoredTreatmentIsReplaced();
 
         if ((string)$this->getValue() === SurchargeTaxClassSource::CUSTOM && !$this->hasLegacyFlatRate()) {
             throw new LocalizedException(

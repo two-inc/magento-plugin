@@ -36,8 +36,8 @@ class SurchargeType extends AbstractSurchargeTreatmentGuard
     public function beforeSave()
     {
         $this->assertKnownMethod();
-        $this->assertStoredTreatmentIsReplaced();
         $this->assertTaxTreatmentSelected();
+        $this->assertStoredTreatmentIsReplaced();
 
         return parent::beforeSave();
     }

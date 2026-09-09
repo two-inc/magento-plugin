@@ -47,12 +47,20 @@ class BrandFormModelWiringParityTest extends TestCase
     {
         $xml = simplexml_load_file(__DIR__ . '/../../../' . $file);
         $wiring = [];
-        foreach ($xml->xpath(sprintf('//section/group/field/%s', $slot)) ?: [] as $node) {
-            $field = $node->xpath('..')[0];
-            $group = $field->xpath('..')[0];
-            $section = $group->xpath('..')[0];
-            $suffix = substr((string)$section['id'], strlen($sectionPrefix) + 1);
-            $wiring[sprintf('%s/%s/%s', $suffix, (string)$group['id'], (string)$field['id'])] = (string)$node;
+        // Depth-agnostic so a deeper-nested field is compared, not skipped.
+        foreach ($xml->xpath(sprintf('//field/%s', $slot)) ?: [] as $node) {
+            $path = [];
+            for ($element = $node->xpath('..')[0] ?? null; $element !== null; $element = $element->xpath('..')[0] ?? null) {
+                $id = (string)$element['id'];
+                if ($id === '') {
+                    break;
+                }
+                array_unshift($path, $id);
+            }
+            $expectedPrefix = $sectionPrefix . '_';
+            $this->assertStringStartsWith($expectedPrefix, $path[0], $file . ' declares an unprefixed section');
+            $path[0] = substr($path[0], strlen($expectedPrefix));
+            $wiring[implode('/', $path)] = (string)$node;
         }
         ksort($wiring);
 

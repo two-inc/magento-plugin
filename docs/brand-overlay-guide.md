@@ -318,7 +318,14 @@ guards.
 (`{section_prefix}_payment` → `payment_terms` group here).
 `SynthesiseBrandAdminForm` sets `showInDefault/Website/Store="0"` on
 the matching field during section injection: the control stays declared
-in the canonical template but doesn't render for this brand. Use this
+in the canonical template but doesn't render for this brand.
+
+**A suppressed field is not POSTED**, so any save-time guard that reads
+its submitted value silently stops enforcing for this brand — and a
+guard that refused the save on the strength of that read would brick the
+whole section, since the merchant has no control to fix. Suppressing a
+field whose invariant is enforced elsewhere is a decision to drop the
+invariant for this brand, not just to hide a control. Use this
 instead of shipping a `<section>` stub in the overlay's system.xml —
 a static stub inserts itself into the merged Structure first and
 short-circuits the synthesised section ordering.

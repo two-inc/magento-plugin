@@ -196,16 +196,18 @@ class SurchargeTypeTest extends TestCase
     }
 
     /**
-     * ABN-497: the section-save half also has to refuse a stored never-taxed
-     * treatment, because the treatment field may not be in the save at all.
-     * Not gated on the surcharge being enabled — the last two cases pin that.
+     * ABN-497: the section-save half also refuses a stored never-taxed
+     * treatment. Only for a save the treatment field is part of — a save
+     * without it cannot overwrite the stored value, and refusing one would
+     * brick the section for a brand that suppresses the field or a scope
+     * inheriting it. Ungated on enablement: the 'none' rows pin that.
      *
      * @dataProvider storedSentinelSaves
      */
     public function testAStoredNeverTaxedTreatmentIsRefusedUntilReplaced(
         string $method,
         ?string $submittedTreatment,
-        bool $refused,
+        ?string $refusedWith,
         string $case
     ): void {
         $this->neverTaxedTreatment->method('isNeverTaxed')->willReturnCallback(
@@ -223,7 +225,7 @@ class SurchargeTypeTest extends TestCase
             'fieldset_data' => $fieldsetData,
         ]);
 
-        if (!$refused) {
+        if ($refusedWith === null) {
             $this->assertSame($model, $model->beforeSave(), $case);
             return;
         }
@@ -232,19 +234,19 @@ class SurchargeTypeTest extends TestCase
             $model->beforeSave();
             $this->fail('expected a refusal: ' . $case);
         } catch (LocalizedException $e) {
-            $this->assertStringContainsString('untaxed in every jurisdiction', $e->getMessage(), $case);
+            $this->assertStringContainsString($refusedWith, $e->getMessage(), $case);
         }
     }
 
     public static function storedSentinelSaves(): array
     {
         return [
-            ['percentage', null, true, 'a save of some other field while the sentinel is stored'],
-            ['percentage', '', true, 'the treatment cleared to the placeholder in this save'],
-            ['percentage', '0', true, 'the sentinel re-submitted verbatim'],
-            ['percentage', '4', false, 'the merchant replacing it with a real tax class'],
-            ['none', null, true, 'surcharge off — the stored sentinel still has to go'],
-            ['none', '4', false, 'surcharge off and the sentinel replaced in the same save'],
+            ['percentage', '', 'Please select a surcharge tax treatment', 'cleared to the placeholder while enabled — the selection rule refuses first'],
+            ['percentage', '0', 'untaxed in every jurisdiction', 'the sentinel re-submitted verbatim'],
+            ['percentage', '4', null, 'the merchant replacing it with a real tax class'],
+            ['none', '', 'untaxed in every jurisdiction', 'surcharge off, so only the stored-sentinel rule can refuse'],
+            ['none', '4', null, 'surcharge off and the sentinel replaced in the same save'],
+            ['none', null, null, 'the treatment field not in the save at all — suppressed for this brand or inherited at this scope, so no control exists to fix it and this save cannot overwrite it either'],
         ];
     }
 
