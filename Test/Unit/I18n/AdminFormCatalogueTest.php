@@ -36,6 +36,7 @@ class AdminFormCatalogueTest extends TestCase
         'Model/Config/Comment',
         'Model/Config/Source',
         'Model/Config/Backend',
+        'Plugin/Config',
     ];
 
     /**

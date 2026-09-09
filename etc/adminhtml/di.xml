@@ -43,6 +43,11 @@
             </argument>
         </arguments>
     </type>
+    <type name="Magento\Config\Model\Config">
+        <plugin name="two-refuse-unusable-custom-term"
+                type="Two\Gateway\Plugin\Config\RefuseUnusableCustomTerm"
+                sortOrder="10"/>
+    </type>
     <!--
         SynthesiseBrandAdminForm is registered globally in etc/di.xml,
         not here. CLI commands (bin/magento config:set, app:config:import,

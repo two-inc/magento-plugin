@@ -57,6 +57,24 @@ class PaymentTermsFieldWiringTest extends TestCase
         $this->assertSame('Psr\Log\LoggerInterface', trim((string)$argument[0]));
     }
 
+    /**
+     * The group's fields all bind through config_path, so at store and website scope every one of
+     * them posts an inherit flag and reaches no backend model — this plugin is the only guard left.
+     */
+    public function testAdminhtmlDiXmlRegistersTheUnusableTermGuard(): void
+    {
+        $xml = simplexml_load_file(dirname(__DIR__, 3) . '/etc/adminhtml/di.xml');
+        $this->assertNotFalse($xml, 'Cannot parse etc/adminhtml/di.xml.');
+
+        $plugin = $xml->xpath('//type[@name="Magento\Config\Model\Config"]/plugin');
+
+        $this->assertCount(1, $plugin);
+        $this->assertSame(
+            'Two\Gateway\Plugin\Config\RefuseUnusableCustomTerm',
+            (string)$plugin[0]['type']
+        );
+    }
+
     public static function wiringProvider(): array
     {
         return [
