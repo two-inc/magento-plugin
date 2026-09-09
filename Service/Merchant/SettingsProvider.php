@@ -136,16 +136,16 @@ class SettingsProvider
      * here and cannot drift.
      *
      * `mixed`, not `?array`: the verdict is served from a cache whose only
-     * structural guarantee is a `status` key, and an unreadable entry must
-     * never throw out of a checkout render or an anonymous REST route.
+     * structural guarantee is a `status` key, so a scalar or an array naming no
+     * merchant must resolve to null rather than throw out of a checkout render
+     * or an anonymous REST route. Both sources decode JSON, so an object never
+     * reaches here — one would still fatal.
      *
      * @param mixed $merchant
      * @return array{id: string, short_name: string|null}|null
      */
     public function identityFrom($merchant): ?array
     {
-        // A scalar offset read coalesces to null in PHP 8, so no is_array()
-        // guard is needed once the parameter itself is untyped.
         $id = $merchant['id'] ?? null;
         if (!is_string($id) || $id === '') {
             return null;

@@ -269,9 +269,12 @@ or a notice, or unattributed lookups.
 **Merchant IDENTITY on those surfaces falls back to the record.**
 `ApiKeyStatus::getStatus()['merchant']` is populated only on a success, so a
 fall-through reads `SettingsProvider::getMerchantIdentity()` — the
-never-expiring record's `id` and `short_name`. The one state with no identity to
-send is a shop where no record has ever resolved, and the order-intent route
-still refuses there.
+never-expiring record's `id` and `short_name`. Both sources normalise through
+`SettingsProvider::identityFrom()`, so the checkout config publishes
+`{id, short_name}` either way rather than the whole verify_api_key body on a
+success; the merchant's commercial fields have no business in the page. The one
+state with no identity to send is a shop where no record has ever resolved, and
+the order-intent route still refuses there.
 
 Two on the list are NOT the store's own configuration and are worth knowing
 about. The surcharge FX gate resolves its rate table from Two, and the
