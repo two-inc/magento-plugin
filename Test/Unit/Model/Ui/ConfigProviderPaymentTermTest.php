@@ -14,7 +14,20 @@ use Two\Gateway\Model\Ui\CheckoutTileCopy;
 use Two\Gateway\Model\Ui\ConfigProvider;
 use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\RecordProvider;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 
+/**
+ * The checkout-config subtree is the gate the company-search control AND the
+ * payment renderer sit behind.
+ *
+ * `js/model/brand-config.js::getActiveTwoBrandCode()` finds the active
+ * Two-family brand by scanning `window.checkoutConfig.payment` for a
+ * subtree carrying a truthy `redirectUrlCookieCode`, and both mount only
+ * when that resolves. It must therefore withhold on exactly the verdicts
+ * Two::isAvailable() withholds on (ABN-533) — a rejected key and no key —
+ * or an outage leaves the method offered with no config to render it.
+ */
 /**
  * The published term seam: `defaultPaymentTerm` / `selectedPaymentTerm` are
  * what the renderer preselects a chip from, so a day count published here is
@@ -42,6 +55,11 @@ class ConfigProviderPaymentTermTest extends TestCase
         $brandRegistry->method('getProviderFullName')->willReturn('Acme Pay Ltd');
         $brandRegistry->method('getAboutUrl')->willReturn('');
 
+        // The real settings provider over a mocked record fetch, so the
+        // identity fall-back is the shipped derivation.
+        $recordProvider = $this->createMock(RecordProvider::class);
+        $recordProvider->method('getRecord')->willReturn(null);
+
         $two = $this->createMock(Two::class);
         $two->method('getMinimumOrderVisibility')->willReturn(['minimums' => [], 'unresolved' => false]);
 
@@ -58,6 +76,7 @@ class ConfigProviderPaymentTermTest extends TestCase
             'configRepository' => $configRepository,
             'brandRegistry' => $brandRegistry,
             'apiKeyStatus' => $apiKeyStatus,
+            'settingsProvider' => new SettingsProvider($recordProvider),
             'two' => $two,
             'assetRepository' => $this->createMock(AssetRepository::class),
             'checkoutSession' => $checkoutSession,
@@ -89,13 +108,28 @@ class ConfigProviderPaymentTermTest extends TestCase
         return $storeManager;
     }
 
+    /**
+     * The real ApiKeyStatus over a stubbed verdict — only getStatus() is
+     * overridden — so the gate runs the production predicate and cannot pass
+     * by re-stating the rule in the test.
+     */
     private function statusService(string $status, ?int $code = null, ?array $merchant = null): ApiKeyStatus
     {
-        $service = $this->createMock(ApiKeyStatus::class);
-        $service->method('getStatus')->willReturn(
-            ['status' => $status, 'code' => $code, 'merchant' => $merchant]
-        );
-        return $service;
+        return new class (['status' => $status, 'code' => $code, 'merchant' => $merchant]) extends ApiKeyStatus {
+            /** @var array{status: string, code: int|null, merchant: array<string,mixed>|null} */
+            private $verdict;
+
+            /** @param array{status: string, code: int|null, merchant: array<string,mixed>|null} $verdict */
+            public function __construct(array $verdict)
+            {
+                $this->verdict = $verdict;
+            }
+
+            public function getStatus(?int $storeId = null): array
+            {
+                return $this->verdict;
+            }
+        };
     }
 
     /**
