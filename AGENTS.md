@@ -12,13 +12,17 @@ Standard Magento dev workflow: composer install, bin/magento
 setup:di:compile, setup:upgrade, cache:flush. PHPUnit under Test/.
 
 This is a **public repository**. Do not commit session-specific
-content such as plans, transcripts, or implementation notes.
+content such as plans, transcripts, or implementation notes. In code
+comments, commit messages and PR bodies alike, cite a Linear ticket id
+and nothing else: a section, question or ruling number belonging to an
+internal review document means nothing to a reader outside the company,
+and neither does a person named as the authority for a rule.
 
 ## Branching & releases
 
--   **Day-to-day PRs target `staging`** (the GitHub default and the
-    staging shop's deploy branch); branch off `origin/staging` —
-    `version-bump.yml` decides the release version on PRs landing there.
+-   **Day-to-day PRs target `staging`** (the GitHub default); branch off
+    `origin/staging` — `version-bump.yml` decides the release version on PRs
+    landing there.
     `auto-pr.yml` opens the staging → main promotion PR on every push to
     `staging`; `main` is prod. `merge-back.yml` syncs `main → staging`
     after merges (ff-only, else a sync PR). There is no `develop` branch.
@@ -44,6 +48,26 @@ content such as plans, transcripts, or implementation notes.
     `last_response.code` — 403 means stale Packagist-side authorization for
     the package (fix on Packagist, not GitHub); redeliver the hook to
     confirm.
+
+## Which shop tracks `staging`
+
+**`magento-dev.staging.two.inc` is the shared shop that serves this branch**, its
+deployment carrying a `git-sync-gateway` container; each brand's own dev shop
+git-syncs this repo's `staging` too, alongside that brand's overlay.
+`magento.staging.two.inc` has no git-sync container at all and serves the deployed
+image's code, which tracks `main`.
+
+**Anything that verifies `staging` code targets the dev shop** — e2e, a manual
+click-through, a screenshot. Point it at the other shop and it silently reports
+on `main`: the run stays green for as long as the two branches happen to agree
+and turns red, at the first specification that moved, against a storefront still
+serving the widget the branch deleted (ABN-509). Confirm which code a shop has
+from the git-sync container's checked-out HEAD; `pub/static/deployed_version.txt`
+answers with an HTML 404 page on these shops and settles nothing.
+
+A merge to `staging` triggers an in-place static redeploy on the dev shop and
+the storefront 500s for roughly three minutes, so a suite that starts mid-sync
+fails for environmental reasons. Warn testers before merging.
 
 ## Local-dev modules disabled by `make install`
 
@@ -138,6 +162,92 @@ validation message.
 
 Degrading a junk value to a working default is the failure this replaces: it
 prices an order under a configuration nobody chose, and nobody is told.
+
+**An unresolvable merchant record fails CLOSED** (ABN-493, ABN-495).
+`isAvailable()` withholds the payment method, the read path offers no buyer
+term at all, and order composition refuses to fall back to the nominal default
+term — the buyer cannot use the plugin until the configuration resolves. A 200
+carrying no merchant record counts as unresolved: a proxy, a captive portal or a
+maintenance page answers 200 too, and there is no identity to offer the method
+under.
+
+**The admin save stays permissive, and a rejected key blocks only the key field.**
+Refusing the save would lock the merchant out of correcting the very key that
+resolves the record, and a `LocalizedException` from a config backend model rolls
+the WHOLE section back — one mistyped key would discard every unrelated field
+submitted with it. The key field turns off its own save through `_dataSaveAllowed`
+and reports the rejection through the admin message channel, so the rejected value
+is never stored and every sibling field still saves. Only a definitive upstream
+rejection is blocking; unreachable, erroring and malformed verdicts save the
+submitted key.
+
+**A cached merchant record is keyed on the ENVIRONMENT as well as the API key.**
+One key configured against sandbox on one store view and production on another must
+not share a slot, or a store view serves the other environment's merchant.
+
+**The record's freshness is a stored success stamp, not cache expiry.** The hourly
+cron refreshes a record older than 24 hours; the cache's own 26-hour eviction
+ceiling sits above that sum on purpose, so a refresh one run late still beats
+eviction and a stopped cron shows up as a stale stamp rather than an empty slot. A
+fetch is bounded at 10 seconds, so a caller with its own wall-clock budget — a
+config save, the admin refresh button, a storefront render — can hold to it. A
+failed fetch is never cached as the record and never moves the stamp:
+last-known-good is served and re-fetch is bounded to once a minute, so an outage is
+not a fetch per read.
+
+**That last-known-good does NOT keep the method on offer through an outage.** The
+availability chain reaches the api-key verification verdict before it reaches the
+record, and a verdict caches a success for five minutes — so the method is withheld
+about five minutes into an unreachable API, whatever the record holds. Measured
+live: warm record with the API blackholed, and cleared record with the API
+blackholed, withhold identically. What the 26 hours protect is the cron and admin
+paths, not the buyer gate.
+
+**A cache type absent from `env.php` resolves as DISABLED**, and `cache.xml`
+carries no default-state attribute, so an install has to write the state itself:
+a data patch enables every type this module declares, on a fresh install and on
+upgrade alike, so there is no manual enable step. It runs once, so a merchant who
+later turns the type off keeps it off.
+
+**What a disabled type breaks is the type-scoped CLEAN, not the caching.** The
+records themselves resolve to the framework's default frontend and read and write
+either way; `cache:clean two_gateway` and the admin cache-management row are what
+stop working, and they report success while dropping nothing. Declaring the type
+is what makes a targeted clean possible at all — a config clean does not touch
+these records.
+
+## The order `isAvailable()` withholds in, and it is SILENT
+
+Core's own checks; a configured non-empty API key; the api-key verification
+verdict; the merchant's available-terms set being empty; the surcharge FX rate
+resolving and the stored surcharge method being recognised; the buyer country;
+then an Amasty store view returns true early, deferring only the minimum-order
+gate to the client; then the platform and merchant minimum-order gate.
+
+**There is no captured-company condition anywhere on that path.** The
+company-number guard runs at placement, not at render — do not reach for
+`isAvailable()` to explain a company-capture symptom.
+
+**Every one of those withholds is invisible to the buyer**: the method simply
+vanishes, with no message, no error node and an empty message area. Each gate
+writes a log line and that is the only account of it — debug at the gate, error
+where the underlying service reports the cause — so the log is where a "why is the
+method missing" question gets answered. An unrecognised stored surcharge method
+throws with a buyer-facing string that no buyer ever sees.
+
+## A Diagnostics field declared only in `system.xml` never reaches the admin
+
+The Diagnostics pane is rendered from fields synthesised out of
+`brand_form_template.xml`, and that deep merge only carries fields the template
+already declares — so a field added to `system.xml` alone is dropped silently and
+renders on no brand at all. Declare it in both; `DiagnosticsSectionParityTest`
+compares the two field lists and is the guard against the next one.
+
+**A configured payment term is validated against the set the merchant is
+entitled to offer**, in the field's backend model and again where the read path
+intersects the stored set — `config:set` bypasses a backend model. The
+payment-terms type selector is rendered only for a merchant already set to end
+of month (TWO-25656); a merchant not on it is not offered it.
 
 ## Monetary values in the pricing request are rounded to 2dp
 
@@ -238,6 +348,125 @@ cannot add a second conflicting `X-API-Key` even if one were stored.
 browser-originated calls**, or the one direct call the browser makes
 fails CORS preflight and the sole-trader autofill silently finds no
 buyer. The field help says so; nothing enforces it.
+
+## The company-search panel is ONE module, vendored twice
+
+`view/frontend/web/js/model/company-search-panel.js` is the implementation and
+the WooCommerce plugin carries a copy of the same file, so **a change to shared
+panel behaviour is TWO edits**. Nothing links the two copies; whoever changes
+one and stops has fixed one platform, and the divergence is invisible to both
+reviewers. **Nothing compares the two copies** — the other repo's guard locks its
+copy against an in-place edit without ever seeing this one — so re-copying the
+whole file is the only thing that puts them back in step, and a panel change made
+here and nowhere else has landed on one platform (TWO-25503).
+
+It is framework-free with a UMD tail — no RequireJS, jQuery or Knockout DEPENDENCY —
+which is what lets the Hyvä checkout load this repo's own copy by
+`Two_Gateway::` reference instead of reimplementing the panel. Anything that
+makes it depend on this checkout's framework breaks that arrangement.
+
+**There is no checkout-specific copy.** Every Magento checkout variant a store may
+run — the default one and any third-party one-step replacement — loads this same
+file, so a "fix it for that checkout" copy is a fork, not a fix.
+
+**The unsupported-country gate greys out SEARCH, never manual entry.** Manual
+entry hands the field over as a plain typeable input that never reaches the
+registry, so applying the native `disabled` flag there would block a mode that was
+never going to search and leave a buyer in an uncovered country with no way to
+name their company at all.
+
+**The company field opens the panel on FOCUS**, through the same `open()` a
+mousedown runs, which puts the caret in the panel's query field — the same state
+a click leaves it in, and the same on every platform that carries this control.
+
+**The open panel takes the field's tab stop**: `tabindex="-1"` while it is up, and
+on close the field's PRIOR value restored exactly, which is removal when there was
+none — a theme's own `tabindex` is given back, not removed (TWO-25503). Without
+it the focus opener is a keyboard trap: the opener puts the
+caret in the query field, Shift+Tab returns to the field, and the opener pushes
+focus forward again, so the buyer cannot get back past the control (WCAG 2.1.2).
+
+## What focus landing on the checkout does to an open signup popup
+
+Every `focusin` while the hosted sole-trader signup window is up is classified
+once, and these are the three rules (TWO-25658):
+
+-   **A Sole trader chip inside the capture's own popover is inert.** Arrival
+    moves the popup neither way — only an activation raises it, and the browser
+    delivers Enter and Space on a focused chip as a click.
+-   **Any other target closes an open popup.**
+-   **A target outside that capture's popover closes the popover too**, with the
+    company field counted as INSIDE it: the field is the popover's own trigger
+    and sits outside the panel node, and a buyer typing a query is still inside
+    the control.
+
+A `focusin` the browser re-fires on window return counts as the buyer focusing
+that control, so an alt-tab back onto a control is classified like any other
+arrival. Opening the popup blurs whatever held focus for exactly that reason —
+with nothing focused, a window return settles nothing.
+
+**Focus arriving on ANOTHER capture's Sole trader chip hands the popup over.**
+That chip is a different control, so this popup and popover close first; the new
+one is then raised by invoking that chip's own click handler, the single place a
+launch is spelled out. The exemption is per capture and survives a re-render
+because the popover is resolved live as the field's sibling — a stored popover
+node goes stale when a morph deletes the wrap and keeps the field, which makes a
+capture's own rebuilt chip read as a sibling's and inverts the rule on it
+(TWO-25658).
+
+**The POINTER route is not covered.** A chip's `mousedown` cancels, so a real
+click fires no `focusin` and reaches none of this: a buyer clicking a second
+capture's chip with the mouse can hold two popups open at once. Closing that means
+changing the chip's click path, not the focus rule — do not read the focus rules as
+covering it.
+
+## A declined order intent refuses order placement
+
+**It does so through the Place Order button's own BINDING** —
+`isPlaceOrderEnabled()` over an observable verdict, never an imperative class or
+attribute write (TWO-25657). Core's
+billing-address subscription re-evaluates that button and clears anything
+written onto it from outside the binding, silently, so an imperative disable
+lasts until the buyer touches an address field.
+
+## A popup window is in no tab listing
+
+`window.open` returns a window outside a browser extension's tab group, so a
+tab list can never answer "did the popup open" — nor can a hang. The
+authoritative check is the page's own retained handle and its `.closed`, which
+means wrapping `window.open` before the action that should raise one. Judging
+from a tab list yields a confident false "no window opened".
+
+## jsdom cannot verify keyboard navigation
+
+jsdom implements no sequential focus navigation: a dispatched `Tab` keydown
+moves focus nowhere, so no jsdom suite can observe a focus trap, a wrong tab
+order or a reverse-Tab dead end, however many cases it carries and however
+green it is. Assert the observable proxy instead — that the handler leaves the
+event undefaulted, that the control's parts are one contiguous run in document
+order, that a closed panel carries `hidden` — and say in the suite that the
+keyboard behaviour itself is verified in a real browser. A passing jsdom Tab
+test is never evidence that a trap is absent.
+
+Three traps in the same suites:
+
+-   **A real chip click fires no `focusin`.** The chip's `mousedown` handler calls
+    `preventDefault()`, which suppresses the native focus, so a rule written only
+    against `focusin` never sees a pointer buyer at all.
+-   **jsdom's `getElementById` answers with the first-REGISTERED node, not the
+    tree-first one**, so a fixture carrying a duplicate id silently resolves to
+    the wrong element.
+-   **A mutation proves NEW coverage only when re-run against the base ref.** One
+    the existing suite already catches proves the suite is sensitive, not that the
+    case added covers anything.
+
+## A NON-EXECUTABLE guard is invoked through `bash`
+
+A script whose mode is `100644` and which is run as `./script.sh` exits 126. On a
+CI dashboard that is indistinguishable from a check that ran and failed, so the
+guard's own absence reads as its verdict. A guard committed executable runs
+directly; anything else is invoked `bash script.sh`, and every guard prints what
+it checked.
 
 ## An optional constructor argument is NOT autowired
 
