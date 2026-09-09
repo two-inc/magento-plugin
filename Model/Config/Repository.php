@@ -36,9 +36,6 @@ class Repository implements RepositoryInterface
      */
     private const PROVENANCE_MODULE = 'Two_Gateway';
 
-    /** Preferred default term, in days, when no explicit default resolves (ABN-548). */
-    private const PREFERRED_DEFAULT_TERM = 30;
-
     /**
      * @var ScopeConfigInterface
      */
@@ -655,10 +652,8 @@ class Repository implements RepositoryInterface
         if ($default > 0 && in_array($default, $terms, true)) {
             return $default;
         }
-        // No explicit admin choice: fall back to the merchant's API default
-        // (due_in_days) when it is an offered term. This is the same value
-        // the admin field pre-selects when unset, so a never-touched install
-        // and the checkout agree on the default term (TWO-24859).
+        // No explicit admin choice: the merchant's API default (due_in_days)
+        // when it is an offered term (TWO-24859).
         $apiDefault = $this->settingsProvider->getDefaultTerm($storeId);
         if ($apiDefault !== null && in_array($apiDefault, $terms, true)) {
             return $apiDefault;

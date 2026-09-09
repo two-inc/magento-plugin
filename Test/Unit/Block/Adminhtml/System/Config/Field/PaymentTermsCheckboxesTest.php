@@ -212,4 +212,32 @@ class PaymentTermsCheckboxesTest extends TestCase
         $this->assertSame([30], $block->getAvailableTerms());
         $this->assertSame(['stores', self::STORE_ID], [$block->getScope(), $block->getScopeId()]);
     }
+
+    /**
+     * Published to the browser so the admin JS can name the term the checkout
+     * will preselect while the field reads Automatic (ABN-548).
+     *
+     * @dataProvider merchantDefaultTermProvider
+     */
+    public function testTheMerchantDefaultTermPublishedToTheBrowser(
+        ?int $apiDefault,
+        int $expected,
+        string $case
+    ): void {
+        $settingsProvider = $this->createMock(SettingsProvider::class);
+        $settingsProvider->expects($this->once())
+            ->method('getDefaultTerm')
+            ->with(self::STORE_ID, 'store')
+            ->willReturn($apiDefault);
+
+        $this->assertSame($expected, $this->block(['store' => 'de'], $settingsProvider)->getMerchantDefaultTerm(), $case);
+    }
+
+    public static function merchantDefaultTermProvider(): array
+    {
+        return [
+            [45, 45, 'the record\'s own default term is published'],
+            [null, 0, 'a merchant with no default term publishes 0'],
+        ];
+    }
 }

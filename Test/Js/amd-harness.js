@@ -611,8 +611,12 @@ function makeSurchargeMock() {
 function resolveTwoGatewayModule(name) {
     const match = /^Two_Gateway\/(js\/.+)$/.exec(name);
     if (!match) return null;
-    const relPath = `view/frontend/web/${match[1]}.js`;
-    return fs.existsSync(path.resolve(__dirname, '..', '..', relPath)) ? relPath : null;
+    // Either area, the way RequireJS resolves the reference on the page it is
+    // loaded from — an admin-only module lives under view/adminhtml.
+    const candidates = [`view/frontend/web/${match[1]}.js`, `view/adminhtml/web/${match[1]}.js`];
+    return candidates.find(function (relPath) {
+        return fs.existsSync(path.resolve(__dirname, '..', '..', relPath));
+    }) || null;
 }
 
 function loadAmdModule(relPath, extraMocks, extraGlobals, siblingCache) {

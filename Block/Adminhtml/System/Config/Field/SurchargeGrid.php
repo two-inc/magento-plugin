@@ -152,11 +152,34 @@ class SurchargeGrid extends Field
     }
 
     /**
-     * Get the default payment term (for differential mode highlighting).
+     * The term differential mode prices against, resolved the way the checkout
+     * resolves it (ABN-548) — a stored day count is only the first of four
+     * steps, so reading it alone badges no row on the store views that leave
+     * the choice to the resolver. 0 when no term is offered.
      */
     public function getDefaultTerm(): int
     {
-        return (int)$this->getConfigValue($this->path('default_payment_term'));
+        $offered = array_values(array_intersect(
+            $this->getActiveTerms(),
+            array_map('intval', $this->getAvailablePaymentTerms())
+        ));
+        if ($offered === []) {
+            return 0;
+        }
+
+        $stored = (int)$this->getConfigValue($this->path('default_payment_term'));
+        if (in_array($stored, $offered, true)) {
+            return $stored;
+        }
+        $merchantDefault = (int)$this->settingsProvider->getDefaultTerm(...$this->resolveMerchantScope());
+        if (in_array($merchantDefault, $offered, true)) {
+            return $merchantDefault;
+        }
+        if (in_array(ConfigRepository::PREFERRED_DEFAULT_TERM, $offered, true)) {
+            return ConfigRepository::PREFERRED_DEFAULT_TERM;
+        }
+
+        return min($offered);
     }
 
     /**

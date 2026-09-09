@@ -1,4 +1,4 @@
-define(['jquery', 'mage/translate', 'mage/validation', 'domReady!'], function ($, $t) {
+define(['jquery', 'mage/translate', 'Two_Gateway/js/default-term', 'mage/validation', 'domReady!'], function ($, $t, resolveDefaultTerm) {
     'use strict';
 
     // Browser-side mirror of the server-side refusal of a zero limit
@@ -132,8 +132,14 @@ define(['jquery', 'mage/translate', 'mage/validation', 'domReady!'], function ($
             return $differential.val() === '1';
         }
 
+        // The term the server will price against, which is not the select's
+        // value while that reads Automatic.
         function getDefaultTerm() {
-            return parseInt($defaultTerm.val(), 10) || 0;
+            return resolveDefaultTerm(
+                getSelectedTerms(),
+                parseInt($defaultTerm.val(), 10) || 0,
+                parseInt($termsContainer.data('merchant-default-term'), 10) || 0
+            );
         }
 
         // ── Row management ───────────────────────────────────────────────

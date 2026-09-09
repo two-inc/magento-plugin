@@ -1,4 +1,4 @@
-define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
+define(['jquery', 'mage/translate', 'Two_Gateway/js/default-term', 'domReady!'], function ($, $t, resolveDefaultTerm) {
     'use strict';
 
     function initPaymentTermsConfig() {
@@ -145,14 +145,24 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // ── Differential option label ────────────────────────────────────
 
         function updateDifferentialOptionLabel() {
-            var defaultDays = parseInt($defaultTerm.val(), 10) || 0;
+            var defaultDays = resolveDefaultTerm(
+                getSelectedTerms(),
+                getDefaultTermValue(),
+                parseInt($termsContainer.data('merchant-default-term'), 10) || 0
+            );
             var $option = $differential.find('option[value="1"]');
-            if ($option.length && defaultDays > 0) {
-                $option.text(
-                    $t('Fee difference vs default payment term') +
-                    ' (' + $t('%1 days').replace('%1', defaultDays) + ')'
-                );
+            var label = $t('Fee difference vs default payment term');
+
+            if (!$option.length) {
+                return;
             }
+            // Named only while a term resolves, and never left naming a stale
+            // one once it stops resolving.
+            $option.text(
+                defaultDays > 0
+                    ? label + ' (' + $t('%1 days').replace('%1', defaultDays) + ')'
+                    : label
+            );
         }
 
         // ── Event bindings ───────────────────────────────────────────────

@@ -30,6 +30,7 @@ $showFees = $block->showInlineFees();
 
 <div id="<?= $block->escapeHtmlAttr($elementId) ?>_checkboxes"
      class="two-term-checkboxes<?= $showFees ? ' two-term-checkboxes--with-fees' : '' ?>"
+     data-merchant-default-term="<?= (int)$block->getMerchantDefaultTerm() ?>"
      <?php if ($showFees): ?>
      data-fees-url="<?= $block->escapeHtmlAttr($block->getFeesUrl()) ?>"
      data-scope="<?= $block->escapeHtmlAttr($block->getScope()) ?>"

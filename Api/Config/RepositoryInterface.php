@@ -15,6 +15,9 @@ interface RepositoryInterface
     /** Magento payment-method code (canonical, brand-independent). */
     public const CODE = 'two_payment';
 
+    /** Preferred default term, in days, when no explicit default resolves (ABN-548). */
+    public const PREFERRED_DEFAULT_TERM = 30;
+
     // Brand-bound values (PROVIDER, PROVIDER_FULL_NAME, PRODUCT_NAME,
     // URL_TEMPLATE, AVAILABLE_PAYMENT_TERMS, SURCHARGE_FIXED_MAX[_CURRENCY])
     // moved to Two\Gateway\Api\BrandRegistryInterface — inject the registry
