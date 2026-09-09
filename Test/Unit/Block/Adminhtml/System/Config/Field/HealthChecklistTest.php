@@ -278,6 +278,8 @@ class HealthChecklistTest extends TestCase
             ->willReturn($merchantMinimum);
         $this->scopeConfig->method('isSetFlag')->willReturn($coreRestrictedToNoCountry);
         $this->scopeConfig->method('getValue')->willReturn('');
+        // The panel's other reads judge the same scope.
+        $this->configRepository->method('isSslVerificationDisabled')->with(null)->willReturn(false);
 
         $row = $this->block->getChecklistRows()[4];
 
@@ -453,8 +455,11 @@ class HealthChecklistTest extends TestCase
         );
         $this->configRepository->expects($this->once())->method('isActive')->with($expectedStoreId)
             ->willReturn(false);
-        // The checkout row's own verdict read judges the page's scope; the
-        // panel's separate "API key" row is unscoped.
+        $this->configRepository->expects($this->once())->method('getMode')->with($expectedStoreId)
+            ->willReturn('sandbox');
+        $this->configRepository->expects($this->once())->method('isSslVerificationDisabled')
+            ->with($expectedStoreId)->willReturn(false);
+        // Every verdict read on the panel judges the page's scope.
         $scopesAsked = [];
         $this->apiKeyStatus->method('getStatus')
             ->willReturnCallback(function ($storeId = null) use (&$scopesAsked) {
@@ -483,6 +488,55 @@ class HealthChecklistTest extends TestCase
             'website' => ['', '3', true, 7, "a website page judges the website's default store"],
             'stale store param' => ['999', '', false, null, 'an unresolvable scope degrades, never throws'],
             'stale website param' => ['', '999', false, null, 'and the same for a website'],
+        ];
+    }
+
+    /**
+     * Both country gates apply, so the row names their intersection — and says
+     * so plainly when they do not overlap at all.
+     *
+     * @dataProvider countryGatePairs
+     */
+    public function testTheRowNamesBothCountryGatesTogether(
+        string $coreList,
+        ?array $merchantList,
+        string $expectedFragment,
+        string $description
+    ): void {
+        $this->configRepository->method('isActive')->willReturn(true);
+        $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);
+        $this->configRepository->method('getMode')->willReturn('sandbox');
+        $this->configRepository->method('getSurchargeType')->willReturn('none');
+        $this->supportedCountriesProvider->method('getState')->willReturn(
+            $merchantList === null
+                ? SupportedCountriesProvider::STATE_UNRESTRICTED
+                : SupportedCountriesProvider::STATE_ALLOWLIST
+        );
+        $this->supportedCountriesProvider->method('getAllowedCountries')->willReturn($merchantList);
+        $this->minimumOrderProvider->method('getMinimum')->willReturn(null);
+        $this->merchantMinimumResolver->method('resolve')->willReturn(null);
+        $this->scopeConfig->method('isSetFlag')->willReturn($coreList !== '');
+        $this->scopeConfig->method('getValue')->willReturn($coreList);
+
+        $row = $this->block->getChecklistRows()[4];
+
+        $this->assertStringContainsString($expectedFragment, $row['value'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: array<int,string>|null, 2: string, 3: string}>
+     */
+    public static function countryGatePairs(): array
+    {
+        return [
+            'core only' => ['SE,NO', null, 'offered only to buyers in SE, NO',
+                "core's own list bounds who is offered, whatever the account allows"],
+            'merchant only' => ['', ['NO', 'GB'], 'offered only to buyers in NO, GB',
+                'and so does the account allowlist on its own'],
+            'both, overlapping' => ['SE,NO', ['NO', 'GB'], 'offered only to buyers in NO',
+                'only a country in both lists is offered the method'],
+            'both, disjoint' => ['SE', ['NO', 'GB'], 'offered to no buyer country',
+                'two lists that do not overlap leave nobody, which neither field says alone'],
         ];
     }
 
@@ -533,6 +587,48 @@ class HealthChecklistTest extends TestCase
      * A platform floor that has never been fetched is unknown, not absent, and
      * a bare "shown at checkout" would read as no floor at all.
      */
+    /**
+     * The store is needed only for the merchant floor, so a scope with no
+     * resolvable default store must still carry the other constraints.
+     */
+    public function testClausesThatNeedNoStoreSurviveAnAbsentDefaultStore(): void
+    {
+        $brandRegistry = $this->createMock(BrandRegistryInterface::class);
+        $brandRegistry->method('getCode')->willReturn('two_payment');
+        $storeManager = $this->createMock(StoreManagerInterface::class);
+        $storeManager->method('getDefaultStoreView')->willReturn(null);
+
+        $this->block->setDependencies(
+            $this->configRepository,
+            $this->apiKeyStatus,
+            $this->recordProvider,
+            $this->supportedCountriesProvider,
+            $this->minimumOrderProvider,
+            $this->merchantMinimumResolver,
+            $brandRegistry,
+            $storeManager,
+            $this->scopeConfig,
+            $this->request
+        );
+        $this->configRepository->method('isActive')->willReturn(true);
+        $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);
+        $this->configRepository->method('getMode')->willReturn('sandbox');
+        $this->configRepository->method('getSurchargeType')->willReturn('percentage');
+        $this->supportedCountriesProvider->method('getState')
+            ->willReturn(SupportedCountriesProvider::STATE_UNRESTRICTED);
+        $this->supportedCountriesProvider->method('getAllowedCountries')->willReturn(null);
+        $this->minimumOrderProvider->method('getMinimum')->willReturn(null);
+        $this->merchantMinimumResolver->expects($this->never())->method('resolve');
+        $this->scopeConfig->method('isSetFlag')->willReturn(false);
+
+        $row = $this->block->getChecklistRows()[4];
+
+        $this->assertStringContainsString(
+            'hidden for baskets in a currency the buyer surcharge cannot be priced in',
+            $row['value']
+        );
+    }
+
     public function testAProfileThatHasNeverResolvedNamesTheUnknownFloor(): void
     {
         $this->recordProvider = $this->createMock(RecordProvider::class);

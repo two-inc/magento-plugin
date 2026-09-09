@@ -108,8 +108,8 @@ class HealthChecklist extends Field
         $status = $this->apiKeyStatus->getStatus($storeId);
         $apiKeyOk = $status['status'] === ApiKeyStatus::OK;
 
-        $sslDisabled = $this->configRepository->isSslVerificationDisabled();
-        $mode = $this->configRepository->getMode();
+        $sslDisabled = $this->configRepository->isSslVerificationDisabled($storeId);
+        $mode = $this->configRepository->getMode($storeId);
 
         return [
             [
@@ -194,11 +194,10 @@ class HealthChecklist extends Field
         $store = $storeId !== null
             ? $this->_storeManager->getStore($storeId)
             : $this->_storeManager->getDefaultStoreView();
-        if ($store === null) {
-            return $shown;
-        }
         $platform = $this->minimumOrderProvider->getMinimum($storeId);
-        $merchant = $this->merchantMinimumResolver->resolve(
+        // Only the merchant floor needs a store: it is denominated in the base
+        // currency. Without one the other clauses still stand.
+        $merchant = $store === null ? null : $this->merchantMinimumResolver->resolve(
             $this->brandRegistry->getCode(),
             (string)$store->getBaseCurrencyCode(),
             $platform,
@@ -219,9 +218,11 @@ class HealthChecklist extends Field
                 $this->describeFloor($floors[1])
             );
         }
-        $allowed = $this->supportedCountriesProvider->getAllowedCountries($storeId);
-        if (is_array($allowed) && $allowed !== []) {
-            $clauses[] = (string)__('offered only to buyers in %1', implode(', ', $allowed));
+        $offeredTo = $this->offeredCountries($storeId);
+        if ($offeredTo !== null) {
+            $clauses[] = $offeredTo === []
+                ? (string)__('offered to no buyer country, because the two country lists do not overlap')
+                : (string)__('offered only to buyers in %1', implode(', ', $offeredTo));
         }
         if ($this->hasSurchargeConfigured($storeId)) {
             $clauses[] = (string)__('hidden for baskets in a currency the buyer surcharge cannot be priced in');
@@ -291,6 +292,50 @@ class HealthChecklist extends Field
         );
 
         return $status['fetched_at'] !== null;
+    }
+
+    /**
+     * The countries a buyer may be in, as the intersection of core's own
+     * allowlist and the merchant's — both gates apply. Null when neither
+     * restricts.
+     *
+     * @return list<string>|null
+     */
+    private function offeredCountries(?int $storeId): ?array
+    {
+        $merchant = $this->supportedCountriesProvider->getAllowedCountries($storeId);
+        $core = $this->coreAllowedCountries($storeId);
+        if ($merchant === null && $core === null) {
+            return null;
+        }
+        if ($merchant === null) {
+            return $core;
+        }
+        if ($core === null) {
+            return array_values($merchant);
+        }
+
+        return array_values(array_intersect($core, $merchant));
+    }
+
+    /**
+     * Core's `specificcountry` list when `allowspecific` is set, else null.
+     *
+     * @return list<string>|null
+     */
+    private function coreAllowedCountries(?int $storeId): ?array
+    {
+        $path = 'payment/' . $this->brandRegistry->getCode() . '/';
+        if (!$this->_scopeConfig->isSetFlag($path . 'allowspecific', ScopeInterface::SCOPE_STORE, $storeId)) {
+            return null;
+        }
+        $raw = trim((string)$this->_scopeConfig->getValue(
+            $path . 'specificcountry',
+            ScopeInterface::SCOPE_STORE,
+            $storeId
+        ));
+
+        return $raw === '' ? [] : array_values(array_filter(array_map('trim', explode(',', $raw))));
     }
 
     /** Core's own allowlist restricted to specific countries with none chosen. */
