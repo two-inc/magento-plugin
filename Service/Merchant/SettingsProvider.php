@@ -144,9 +144,8 @@ class SettingsProvider
      */
     public function identityFrom($merchant): ?array
     {
-        if (!is_array($merchant)) {
-            return null;
-        }
+        // A scalar offset read coalesces to null in PHP 8, so no is_array()
+        // guard is needed once the parameter itself is untyped.
         $id = $merchant['id'] ?? null;
         if (!is_string($id) || $id === '') {
             return null;
