@@ -201,7 +201,13 @@ class RecordProviderTest extends TestCase
         );
         $this->cache->method('remove')->willReturnCallback(
             function ($identifier) use (&$sequence) {
-                $sequence[] = substr($identifier, -9) === '_cooldown' ? 'clear cooldown' : 'remove ' . $identifier;
+                if (str_ends_with($identifier, '_cooldown')) {
+                    $sequence[] = 'clear cooldown';
+                } elseif (str_ends_with($identifier, '_absent_on_read')) {
+                    $sequence[] = 'clear absent mark';
+                } else {
+                    $sequence[] = 'remove ' . $identifier;
+                }
                 return true;
             }
         );
@@ -226,6 +232,7 @@ class RecordProviderTest extends TestCase
                     'fetch',
                     'store record TWO_GATEWAY no expiry',
                     'store stamp TWO_GATEWAY no expiry',
+                    'clear absent mark',
                     'clear cooldown',
                 ],
                 'armed first, record and stamp stored, cooldown cleared so readers are not stranded on null',
