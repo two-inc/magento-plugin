@@ -50,7 +50,7 @@ class ConfigProvider implements ConfigProviderInterface
 
     /**
      * Same sentinel mechanism as COMPANY_NAME_TOKEN, for the organisation
-     * number (TWO-25326 §7.3: the tile's ONLY company display is now this
+     * number (TWO-25326: the tile's ONLY company display is now this
      * sentence, so the number has to be substitutable into it same as the
      * name).
      */
@@ -262,8 +262,8 @@ class ConfigProvider implements ConfigProviderInterface
                     'orderIntentDeclinedNotice' => $this->getOrderIntentDeclinedNotice(),
                     // The former `orderIntentDeclinedMessage` toast (a plain
                     // "declined" string, fed to the renderer's message
-                    // region) is removed — the 2026-08-03 ruling replaced it
-                    // with the persistent `orderIntentDeclinedNotice` above.
+                    // region) is removed — TWO-25326 replaced it with the
+                    // persistent `orderIntentDeclinedNotice` above.
                     // Found dead in adversarial review, 2026-08-04: a comment
                     // here once claimed it was kept for the generic HTTP/
                     // technical-failure path, but
@@ -275,7 +275,7 @@ class ConfigProvider implements ConfigProviderInterface
                         $this->brandRegistry->getProductName(),
                         $tryAgainLater
                     ),
-                    // TWO-25326 §6a: the Two method stays selectable with a
+                    // TWO-25326: the Two method stays selectable with a
                     // manual (name-only, no organisation number) capture —
                     // it is blocked at submit instead, matching the WC/PS/
                     // Hyvä pattern rather than Magento's previous silent
@@ -327,14 +327,13 @@ class ConfigProvider implements ConfigProviderInterface
      * company-known variant, absent/blank leaves the platform default.
      * See BrandRegistryInterface for both contracts.
      *
-     * TWO-25326 2026-08-03 ruling, §7.3: this is the ONLY place the
-     * captured company NAME is displayed in the payment tile — the
-     * standalone `.two-company-label` text (§7, pre-ruling) is removed, not
-     * supplemented. Default wording is the literal ticket copy, with the
-     * company number substituted the same way the company name always was.
-     * The company NUMBER also renders separately, notice-independent, via
-     * the tile's `.two-company-id-text` label (TWO-25326 2026-08-04 ruling,
-     * §5/§7 follow-up) — see gateway_method.html.
+     * TWO-25326: this is the ONLY place the captured company NAME is
+     * displayed in the payment tile — the standalone `.two-company-label`
+     * text is removed, not supplemented. Default wording is the literal
+     * ticket copy, with the company number substituted the same way the
+     * company name always was. The company NUMBER also renders separately,
+     * notice-independent, via the tile's `.two-company-id-text` label —
+     * see gateway_method.html.
      *
      * @return array{withCompany:string,withoutCompany:string,companyNameToken:string,companyNumberToken:string}|null
      */
@@ -353,9 +352,9 @@ class ConfigProvider implements ConfigProviderInterface
         // repos' i18n audit can both still see it. The override branch
         // takes a variable by necessity — a brand's own copy is its own
         // module's msgid and lives in that module's i18n CSV. %3 (company
-        // number) is a new argument as of the 2026-08-03 ruling; an
-        // existing override string that only references %1/%2 keeps
-        // working unchanged, and one that wants the number can add %3.
+        // number) is a TWO-25326 addition; an existing override string
+        // that only references %1/%2 keeps working unchanged, and one
+        // that wants the number can add %3.
         $withCompany = $override === null
             ? __(
                 'This order by %2 (%3) is likely to be accepted by %1',
@@ -378,7 +377,7 @@ class ConfigProvider implements ConfigProviderInterface
 
     /**
      * Resolve the buyer-facing "order intent NOT approved" notice — the
-     * §7.3 counterpart to getOrderIntentApprovedNotice() above, added by the
+     * counterpart to getOrderIntentApprovedNotice() above, added by the
      * same TWO-25326 work. Same shape, and its own switch and copy override —
      * <intent_declined_notice_enabled> / <intent_declined_notice> — so a
      * brand suppresses or rewords the two outcomes separately once it

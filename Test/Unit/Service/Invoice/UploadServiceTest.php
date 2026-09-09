@@ -254,9 +254,9 @@ class UploadServiceTest extends TestCase
         // e.g. a prior partial/admin-created invoice) plus the one from
         // this fulfilment (id 99, created later). Only the latter must be
         // rendered/uploaded — this is a real regression test for the
-        // getLastItem()->explicit-sort fix (TWO-24758 review round 2,
-        // Vader): ids are given in creation (ascending) order so the test
-        // would fail if the code fell back to trusting insertion order.
+        // getLastItem()->explicit-sort fix (TWO-24758): ids are given in
+        // creation (ascending) order so the test would fail if the code fell
+        // back to trusting insertion order.
         $order = $this->makeOrder();
         $order->setData('invoice_collection', $this->makeInvoiceCollectionWithIds([50, 99]));
         $this->settingsProvider->method('isInvoiceDistributedByMerchant')->willReturn(true);

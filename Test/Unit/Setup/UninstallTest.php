@@ -15,13 +15,12 @@ use Two\Gateway\Setup\Uninstall;
  * nearest equivalent lifecycle event for this. Default off: uninstall must
  * leave configuration in place unless the merchant explicitly opted in.
  *
- * Adversarial review (round 1) found the first version of this class
- * hardcoded `payment/two_payment/%`, ignoring the active brand's own code
- * — on a brand overlay this both silently no-ops the opt-in AND leaves a
- * dead `payment/two_search/%` clause that never matched anything (the
- * "Search" admin section's fields live under `payment/<code>/*` too, same
- * as everything else). This test pins the brand-code-derived behaviour and
- * the LIKE-escaping fix that went with it.
+ * The LIKE clause is derived from the active brand's code, never hardcoded
+ * to `payment/two_payment/%`: on a brand overlay a hardcoded path silently
+ * no-ops the opt-in, and a separate `payment/two_search/%` clause matches
+ * nothing because the "Search" admin section's fields live under
+ * `payment/<code>/*` too. This test pins the brand-derived clause and its
+ * LIKE-escaping.
  *
  * SchemaSetupInterface/ModuleContextInterface are auto-stubbed as EMPTY
  * interfaces by Test/bootstrap.php's catch-all (no real Magento framework

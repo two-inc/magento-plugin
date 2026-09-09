@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25461 §5 — a completed sole-trader signup writes the buyer's registered
+ * TWO-25461 — a completed sole-trader signup writes the buyer's registered
  * ADDRESS, not just their identity.
  *
  * `/autofill/v1/buyer/current` has always answered with the address beside the
@@ -188,7 +188,7 @@ describe('which address on the buyer record is written', () => {
     });
 });
 
-describe('the write ignores the address-lookup switches (§5)', () => {
+describe('the write ignores the address-lookup switches (TWO-25461)', () => {
     test('no brand config is read on the write path at all', () => {
         // Stronger than asserting the write landed with the switches off: a gate
         // added in a helper, or read through the brand config, throws here. A

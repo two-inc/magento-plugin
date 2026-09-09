@@ -79,20 +79,18 @@
         </div>
         <!-- /ko -->
         <!--
-            TWO-25326 §7.3 (2026-08-03 ruling): the standalone
-            `.two-company-label` text that used to sit here is REMOVED, not
-            supplemented. The captured company NAME is now shown ONLY
-            inside the order-intent notice sentence itself — see
-            ConfigProvider::getOrderIntentApprovedNotice() /
+            TWO-25326: the standalone `.two-company-label` text that used to
+            sit here is REMOVED, not supplemented. The captured company NAME
+            is now shown ONLY inside the order-intent notice sentence itself —
+            see ConfigProvider::getOrderIntentApprovedNotice() /
             getOrderIntentDeclinedNotice() for the copy templates and
             resolveCompanyNotice() in gateway_method.js for the substitution.
             A company captured with no intent outcome yet showing renders
             neither notice below and therefore displays the company NAME
-            nowhere in the tile — that follows from "the notice is the
-            only display surface for the name" and is the ruling, not an
-            oversight. The company NUMBER is a separate surface (2026-08-04
-            ruling, §5/§7 follow-up), rendered by each capture panel under
-            its own company field — see renderCompanyNumber() in
+            nowhere in the tile — that follows from "the notice is the only
+            display surface for the name" and is intended, not an oversight.
+            The company NUMBER is a separate surface, rendered by each capture
+            panel under its own company field — see renderCompanyNumber() in
             view/frontend/web/js/model/company-capture-component.js.
 
             Persistent inline notices, inside the payment tile next to the
@@ -239,10 +237,10 @@
                         />
                         <!--
                             In-flight spinner for the sole-trader round trips
-                            (TWO-25461 §7). Inside this field's own `.control`
+                            (TWO-25461). Inside this field's own `.control`
                             (see `.two-sole-trader-field-control` in style.css
-                            for the `position: relative` that anchors it), not a
-                            separate overlay.
+                            for the `position: relative` that anchors it), not
+                            a separate overlay.
                         -->
                         <span
                             class="two-sole-trader-prefetch-spinner"

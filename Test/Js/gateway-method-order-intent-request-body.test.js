@@ -207,14 +207,13 @@ describe('order-intent request body omits buyer.company.website (TWO-25365)', ()
         const path = require('path');
         const src = fs.readFileSync(path.resolve(__dirname, '..', '..', RENDERER), 'utf8');
         // Comments stripped, or this check fails on DOCUMENTATION rather than on
-        // code: prose explaining this very fix necessarily names the global, and
-        // round 1 proved a raw-text match going red on exactly that.
+        // code: prose explaining this very fix necessarily names the global, so a
+        // raw-text match goes red on exactly that.
         //
         // The three comment forms this file uses: JSDoc blocks, whole-line `//`,
         // and TRAILING `//` after code (there is one at the `termsAccepted`
-        // observable). The trailing form was missed for two rounds, which left
-        // the false-red channel open — appending `// no BASE_URL here` to a line
-        // of code still reddened this check.
+        // observable). The trailing form has to be stripped too, or appending
+        // `// no BASE_URL here` to a line of code reddens this check.
         //
         // Each strip is deliberately narrow, because a general one silently
         // WEAKENS the check rather than breaking it: `//` inside a string

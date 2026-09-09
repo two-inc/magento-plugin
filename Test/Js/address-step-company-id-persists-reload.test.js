@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25326 §5, address step (Luma / Amasty OneStepCheckout / Fire Checkout —
+ * TWO-25326, address step (Luma / Amasty OneStepCheckout / Fire Checkout —
  * one code path): the captured organisation number must survive a PAGE RELOAD,
  * exactly as the company name does.
  *
@@ -406,7 +406,7 @@ function pageLoad(storage, options) {
     return { component: component, $: $, restore: restore, companyIdComponent: companyIdComponent };
 }
 
-describe('TWO-25326 §5: the captured company number survives a page reload', () => {
+describe('TWO-25326: the captured company number survives a page reload', () => {
     test('picking a company puts the number where a reload can find it', () => {
         // The crux. Not "the label appeared" — the label appearing was never the
         // broken part. What was broken is that the number never reached the

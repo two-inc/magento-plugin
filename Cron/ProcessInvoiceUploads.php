@@ -30,7 +30,7 @@ use Two\Gateway\Service\Invoice\UploadService;
  * LockManagerInterface lock before upload() runs, so an overlapping
  * tick (or a second cron-eligible pod) skips an order already being
  * worked instead of racing UploadService's read-modify-write on the
- * same row (TWO-24758 review, Han/Yoda/Vader).
+ * same row (TWO-24758).
  */
 class ProcessInvoiceUploads
 {

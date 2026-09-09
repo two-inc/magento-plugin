@@ -3,9 +3,9 @@
  * See COPYING.txt for license details.
  *
  * `signupPrefill()` builds the hosted sole-trader signup's prefill payload
- * from the quote's billing address. Untested until TWO-25503 review round 1 —
- * a `return {}` stub, and mutating just the guest-email fallback alone, both
- * left the suite green.
+ * from the quote's billing address. Untested until TWO-25503 — a `return {}`
+ * stub, and mutating just the guest-email fallback alone, both left the
+ * suite green.
  */
 
 'use strict';

@@ -159,7 +159,7 @@ define([
     }
 
     /**
-     * The zero-results message. TWO-25326 §1 pins the cross-platform wording
+     * The zero-results message. TWO-25326 pins the cross-platform wording
      * as "No matches found".
      *
      * @returns {string} translated zero-results message
@@ -511,9 +511,9 @@ define([
 
     /**
      * Route an external address payload's street parts onto the form's two
-     * address lines (TWO-25461 §2.6). The same rule for an autofill buyer
-     * record and a registered-company search hit — deliberately NOT special
-     * cased per source.
+     * address lines (TWO-25461). The same rule for an autofill buyer record
+     * and a registered-company search hit — deliberately NOT special cased
+     * per source.
      *
      *  - a `building`/`apartment` is the more specific locator and takes LINE
      *    1, moving `street` to line 2. With both present they are joined
@@ -1219,7 +1219,7 @@ define([
          * There is no address-lookup gate here. `config.isAddressSearchEnabled`
          * gates lookupCompanyAddress() — an ordinary search selection — one
          * level up, and the sole-trader write-back must write regardless of
-         * where company search is mounted (TWO-25461 §5).
+         * where company search is mounted (TWO-25461).
          *
          * @param {object} address company address or buyer address record
          * @param {object} root jQuery set for the calling panel's own form
@@ -1282,7 +1282,7 @@ define([
 
         /**
          * Where the payload's `region` can land, in the order the address format
-         * allows (TWO-25461 §2.6):
+         * allows (TWO-25461):
          *
          *  1. the region `<select>`, when the country has predefined regions AND
          *     an option matches the region text (best-effort — see

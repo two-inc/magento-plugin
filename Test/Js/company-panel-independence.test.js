@@ -512,7 +512,7 @@ describe('the billing panel\'s own writes have their own destination', () => {
      * Core leaves the fieldset in the DOM hidden once "same as shipping" is
      * re-checked, so the billing panel has no destination — and a write-back
      * that fills nothing in and says nothing reads as the picker having done
-     * nothing (TWO-25461 §5).
+     * nothing (TWO-25461).
      */
     test.each([
         [

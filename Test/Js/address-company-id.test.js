@@ -106,10 +106,10 @@ function makeDom() {
             attr: function () {
                 return n;
             },
-            // TWO-25326 §5's company-number text label builds and tears
-            // itself down through these. Recorded rather than inert so a
-            // future test can assert on them; this file only needs them not
-            // to throw.
+            // TWO-25326's company-number text label builds and tears itself
+            // down through these. Recorded rather than inert so a future
+            // test can assert on them; this file only needs them not to
+            // throw.
             addClass: function (cls) {
                 n.classes = (n.classes || []).concat(cls);
                 return n;

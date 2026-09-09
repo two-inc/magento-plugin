@@ -779,7 +779,7 @@
     /**
      * Paint the company number as plain text under this panel's field.
      *
-     * The caption is an `aria-label`, not visible text: TWO-25326 §7 forbids an
+     * The caption is an `aria-label`, not visible text: TWO-25326 forbids an
      * additional visible label, and a bare number with no accessible name is
      * unreadable to a screen reader.
      */
@@ -802,7 +802,7 @@
      * "Select a different sole trader" under this panel's field, gated on
      * adoption rather than capture: a sole trader with no trading name of their
      * own has no company number, and keying on capture left them no route out
-     * (TWO-25461 §7).
+     * (TWO-25461).
      */
     CompanyCaptureComponent.prototype.renderSoleTraderLink = function () {
         const anchor = this._chromeAnchor();
@@ -967,7 +967,7 @@
      * ONE `observe()` registration per selector, EVER, not one per component
      * lifetime: `_boundSelector` re-points between the address field and the
      * tile field as the cart flips virtual, and a single lifetime flag would
-     * leave the new selector's manual edits never observed (TWO-25503 round 5).
+     * leave the new selector's manual edits never observed (TWO-25503).
      */
     CompanyCaptureComponent.prototype._watchManualEdits = function () {
         if (!this.observe || !this._boundSelector) return;

@@ -180,7 +180,7 @@ function defaultMocks() {
             minInputLengthMessage: function () {
                 return 'Enter ' + this.MIN_INPUT_LENGTH + ' or more characters';
             },
-            // TWO-25326 §1 wording, mirrored here so a call site that reads it
+            // TWO-25326 wording, mirrored here so a call site that reads it
             // through the mock gets the same string the real module returns.
             noResultsMessage: function () {
                 return 'No matches found';
@@ -478,9 +478,8 @@ function makeJQueryMock() {
  *
  * The real one is a MutationObserver that is never disconnected, so it keeps
  * firing for the life of the page and every registration is permanent. A stub
- * that only ran the callback once made observer STACKING invisible — which is
- * how a re-bind loop that freezes checkout survived three review rounds and a
- * green suite.
+ * that only ran the callback once made observer STACKING invisible, which is
+ * how a re-bind loop that freezes checkout went undetected by a green suite.
  *
  * `$.async.registrations` counts live observers so a test can assert a control
  * registers one per selector, and `$.async.fireAll()` replays them the way a

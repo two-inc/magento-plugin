@@ -213,7 +213,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
             // order is fulfilled and the Magento invoice/shipment already
             // succeeded, so a transient failure writing the upload-queue status
             // (e.g. a DB lock-wait on this same row) must not surface as a
-            // shipment-creation error (TWO-24758 review, Han).
+            // shipment-creation error (TWO-24758).
             try {
                 $twoInvoiceId = $response['fulfilled_order']['invoice_details']['id']
                     ?? $response['invoice_details']['id']
@@ -226,8 +226,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
                 // Throwable, not Exception: matches the cron's own choice
                 // (Cron/ProcessInvoiceUploads.php) and the guarantee this
                 // comment claims — a TypeError/Error here must not surface
-                // as a shipment-creation failure either (TWO-24758 review
-                // round 2, Han).
+                // as a shipment-creation failure either (TWO-24758).
                 $this->logRepository->addErrorLog(
                     'invoice-upload-queue-exception',
                     ['order_id' => $order->getEntityId(), 'error' => $e->getMessage()]

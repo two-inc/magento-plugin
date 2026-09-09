@@ -461,11 +461,11 @@ define([
         },
         /**
          * Same guard, for the declined notice. Deliberately a SEPARATE
-         * function rather than one shared predicate — TWO-25326's
-         * 2026-08-03 ruling explicitly rejects one gate driving two
-         * different sentences (that was the standalone label's defect).
-         * Each notice is its own on/off decision; this only protects against
-         * reading an absent observable, it does not couple the two.
+         * function rather than one shared predicate — TWO-25326 explicitly
+         * rejects one gate driving two different sentences (that was the
+         * standalone label's defect). Each notice is its own on/off decision;
+         * this only protects against reading an absent observable, it does
+         * not couple the two.
          *
          * @returns {boolean}
          */
@@ -1017,7 +1017,7 @@ define([
             // processOrderIntent*Response().
             this.messageContainer.clear();
 
-            // TWO-25326 §6a: a name-only capture blocks the SUBMIT, not the
+            // TWO-25326: a name-only capture blocks the SUBMIT, not the
             // selection — the method stays selectable, matching WC/PS/Hyvä.
             // validate() cannot enforce it: company_name has no number
             // companion field to require.
@@ -1177,10 +1177,10 @@ define([
             // notice into the next.
             this.orderIntentApprovedNotice = ko.observable('');
 
-            // TWO-25326 §7.3 (2026-08-03 ruling) counterpart to the notice
-            // above: the persistent tile message for a clean "not approved"
-            // order-intent response. Own switch and own copy on the brand,
-            // so null here means the brand suppressed THIS outcome.
+            // TWO-25326 counterpart to the notice above: the persistent
+            // tile message for a clean "not approved" order-intent
+            // response. Own switch and own copy on the brand, so null here
+            // means the brand suppressed THIS outcome.
             this.orderIntentDeclinedNoticeCopy = config.orderIntentDeclinedNotice || null;
             this.orderIntentDeclinedNotice = ko.observable('');
 
@@ -1279,8 +1279,8 @@ define([
         },
         /**
          * Resolve the intent-DECLINED notice text for the current buyer
-         * (TWO-25326 §7.3, 2026-08-03 ruling). Returns '' when the active
-         * brand suppressed the declined notice.
+         * (TWO-25326). Returns '' when the active brand suppressed the
+         * declined notice.
          */
         resolveOrderIntentDeclinedNotice: function () {
             return this.resolveCompanyNotice(this.orderIntentDeclinedNoticeCopy);
@@ -1296,12 +1296,12 @@ define([
                     this.clearOrderIntentNotices();
                     this.orderIntentApprovedNotice(this.resolveOrderIntentApprovedNotice());
                 } else {
-                    // TWO-25326 §7.3 (2026-08-03 ruling): a clean "not
-                    // approved" response is a business outcome, not a
-                    // technical failure, so it gets the SAME persistent
-                    // tile-notice treatment as approval — a toast that a
-                    // later checkout update wipes is not "the tile shows
-                    // ONLY the intent message" the ruling asks for.
+                    // TWO-25326: a clean "not approved" response is a
+                    // business outcome, not a technical failure, so it
+                    // gets the SAME persistent tile-notice treatment as
+                    // approval — a toast that a later checkout update
+                    // wipes is not the "tile shows ONLY the intent
+                    // message" the ticket asks for.
                     this.clearOrderIntentNotices();
                     this.orderIntentDeclinedNotice(this.resolveOrderIntentDeclinedNotice());
                     // The verdict itself, so placeOrder() refuses too (TWO-25657).
@@ -1337,9 +1337,9 @@ define([
             // arrived — silently, since this runs inside a jQuery Deferred
             // `.fail()` handler with nothing upstream to surface a thrown
             // error to the buyer. That is very likely why a manual-entry
-            // buyer saw no message at all before the §6a client-side gate
-            // was added: this path was the one meant to show it, and it was
-            // broken.
+            // buyer saw no message at all before the TWO-25326 client-side
+            // gate was added: this path was the one meant to show it, and
+            // it was broken.
             let message = this.generalErrorMessage,
                 self = this;
             if (response && response.responseJSON) {
@@ -1439,12 +1439,12 @@ define([
                 tax_amount: parseFloat(totals['shipping_tax_amount']).toFixed(2),
                 // Free shipping makes shipping_amount 0, and 0/0 is NaN, not
                 // 0 — order_intent then 400s on every free-shipping cart
-                // (found investigating TWO-25326 §6a: it blocked testing
-                // the gating fix on a free-shipping cart). A zero-taxed
-                // shipping line rate is genuinely 0, not "no rate" (the tax
-                // AMOUNT above is already faithfully 0.00), so the guard
-                // resolves to '0.000000' rather than omitting the key or
-                // inventing a non-zero rate.
+                // (found investigating TWO-25326: it blocked testing the
+                // gating fix on a free-shipping cart). A zero-taxed shipping
+                // line rate is genuinely 0, not "no rate" (the tax AMOUNT
+                // above is already faithfully 0.00), so the guard resolves
+                // to '0.000000' rather than omitting the key or inventing a
+                // non-zero rate.
                 //
                 // Guarded on `!isFinite`, not `=== 0`, since adversarial
                 // review (2026-08-04) found the narrower check still let a

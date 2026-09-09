@@ -4,11 +4,11 @@
  *
  * TWO-25503 — the guarantees the page-level rewrite exists to provide.
  *
- * The previous attempt was payment-tile-scoped, and three review rounds kept
- * surfacing the same defect wearing different hats: state whose lifetime was
- * per-render standing in for something page-level. Every case here fails
- * against that architecture and passes against this one, so they are the
- * regression guard on the container itself rather than on any one behaviour.
+ * The previous attempt was payment-tile-scoped, and the same defect kept
+ * resurfacing wearing different hats: state whose lifetime was per-render
+ * standing in for something page-level. Every case here fails against that
+ * architecture and passes against this one, so they are the regression guard
+ * on the container itself rather than on any one behaviour.
  *
  * The invariants:
  *  - the component is constructed exactly twice per page, by the boot
@@ -682,7 +682,7 @@ describe('a typed company name carries no vouched number', () => {
     });
 
     test('a cart flipping virtual mid-manual-entry moves the watcher with the mount', () => {
-        // TWO-25503 round 5: the mount re-points from the address field to the
+        // TWO-25503: the mount re-points from the address field to the
         // tile field when the cart goes virtual, and a single per-lifetime
         // flag left the tile field's manual edits never observed — a typed
         // company name silently lost. `opts` is read live by the quote mock

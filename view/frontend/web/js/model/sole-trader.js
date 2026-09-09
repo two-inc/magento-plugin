@@ -154,7 +154,7 @@
         /**
          * Sole-trader identities whose registered address has already been
          * written into this page's checkout, so a replay does not overwrite a
-         * correction the buyer made afterwards (TWO-25461 §5).
+         * correction the buyer made afterwards (TWO-25461).
          */
         this._adoptedIds = new Set();
         liveFlows.add(this);
@@ -613,7 +613,7 @@
     /**
      * Adopt the sole trader an autofill record describes: the identity through
      * the component's single write path, the registered ADDRESS and the phone
-     * into the checkout form (TWO-25461 §5).
+     * into the checkout form (TWO-25461).
      *
      * The address write is NOT gated on the merchant's address-autofill switch,
      * which gates an ordinary registry pick: that switch is legitimately off

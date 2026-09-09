@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * TWO-25461 §7 — re-signing up as a different sole trader.
+ * TWO-25461 — re-signing up as a different sole trader.
  *
  * Two routes reach the same place: the "Select a different sole trader" link
  * the capture panel renders under its own company field, and re-clicking the

@@ -112,7 +112,7 @@ function makeContext(component, opts) {
         isPaymentTermsEnabled: 'termsEnabled' in opts ? opts.termsEnabled : true,
         isPaymentTermsAccepted: observable('termsAccepted' in opts ? opts.termsAccepted : true),
         isPlaceOrderActionAllowed: observable('allowed' in opts ? opts.allowed : true),
-        // TWO-25326 §6a: placeOrder() now blocks a manual (name-only, no
+        // TWO-25326: placeOrder() now blocks a manual (name-only, no
         // organisation number) capture before it reaches this latch. These
         // specs are about the latch, not the company gate, so a captured
         // company is the default — pass `companyCaptured: false` to exercise
@@ -152,7 +152,7 @@ function makeContext(component, opts) {
     return ctx;
 }
 
-describe('gateway_method §6a company gate (TWO-25326, 2026-08-03 ruling)', () => {
+describe('gateway_method company gate (TWO-25326)', () => {
     test('blocks submit with a visible message when no company id has been captured', () => {
         const component = loadComponent({});
         const ctx = makeContext(component, { companyCaptured: false });

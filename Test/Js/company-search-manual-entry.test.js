@@ -2,9 +2,9 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * #30.x.15. The manual-entry affordance has been a row inside the results
- * list, and then a button beside it; TWO-25503 makes it one of the mode chips
- * inside the popover itself. Each move was driven by the same two failures:
+ * The manual-entry affordance has been a row inside the results list, and
+ * then a button beside it; TWO-25503 makes it one of the mode chips inside
+ * the popover itself. Each move was driven by the same two failures:
  *
  *  - anything living inside the results list is inside the element the picker
  *    clips and scrolls, so it was only visible once the buyer scrolled past

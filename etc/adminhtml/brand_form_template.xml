@@ -4,7 +4,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * Brand-form synthesis template (design v6 §3.5).
+ * Brand-form synthesis template.
  *
  * Tokenised clone of `etc/adminhtml/system.xml` (one full Two-brand
  * admin Configuration surface). The synthesis plugin
@@ -54,7 +54,7 @@
  *   admin_resource   ACL resource string for the brand's section.
  *
  * The `brand_code` attribute on `<section>`/`<group>`/`<field>` is
- * preserved by the Converter (verified by PR #160's §3.5 probe) and
+ * preserved by the Converter (verified by PR #160's probe) and
  * is the runtime hook for code that needs to discriminate by brand
  * when iterating the Structure.
  *
