@@ -20,10 +20,9 @@ use Two\Gateway\Model\Config\Backend\PaymentTerms\OfferedTermsGuard;
 use Two\Gateway\Model\Config\StoredTerm;
 
 /**
- * Deprecated field, retained only to carry a legacy custom term through an upgrade: the stored
- * value may be removed but never replaced, folds into an offered term's checkbox once the
- * merchant record offers it, and blocks the save while it holds something that is not a number
- * of days (ABN-522).
+ * Deprecated field carrying a legacy custom term: the stored value may be removed but never
+ * replaced, folds into an offered term's checkbox where the merchant record offers it, and blocks
+ * the save while it holds something that is not a number of days (ABN-522).
  */
 class PaymentTermsCustomDays extends Value
 {
@@ -32,6 +31,9 @@ class PaymentTermsCustomDays extends Value
 
     /** @var MessageManager */
     private $messageManager;
+
+    /** @var int|null term the fold-in cleared, held for the post-commit notice */
+    private $foldedIn = null;
 
     public function __construct(
         Context $context,
@@ -72,18 +74,43 @@ class PaymentTermsCustomDays extends Value
         }
 
         $days = StoredTerm::days($posted);
-        if ($days !== null && $this->isOffered($days)) {
-            $this->messageManager->addNoticeMessage(__(
-                'Custom payment terms (days) of %1 is now one of the standard terms you offer, so it has'
-                . ' been selected under Payment terms and the custom field cleared.',
-                $days
-            ));
+        if ($days !== null && $this->siblingTakesTheTerm() && $this->isOffered($days)) {
+            $this->foldedIn = $days;
             $posted = '';
         }
 
         $this->setValue($posted);
 
         return parent::beforeSave();
+    }
+
+    /**
+     * @inheritDoc
+     *
+     * Announced only once the whole config save has committed: the message queue is session-backed,
+     * so a later field's refusal would otherwise report a clearing that rolled back.
+     */
+    public function afterCommitCallback()
+    {
+        if ($this->foldedIn !== null) {
+            $this->messageManager->addNoticeMessage(__(
+                'Custom payment terms (days) of %1 is now one of the standard terms you offer, so it has'
+                . ' been selected under Payment terms and the custom field cleared.',
+                $this->foldedIn
+            ));
+            $this->foldedIn = null;
+        }
+
+        return parent::afterCommitCallback();
+    }
+
+    /**
+     * The matching tick is the sibling field's write; where the post carries no value for it — its
+     * own scope inherits, or it is locked in env.php — clearing here would drop the term instead.
+     */
+    private function siblingTakesTheTerm(): bool
+    {
+        return $this->getFieldsetDataValue('payment_terms') !== null;
     }
 
     /**

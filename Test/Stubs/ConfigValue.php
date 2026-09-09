@@ -113,4 +113,13 @@ class Value extends \Magento\Framework\DataObject
     {
         return $this;
     }
+
+    /**
+     * AbstractDb registers this on the connection's commit-callback pool and fires it only when
+     * the outermost transaction commits; a rollback clears the pool instead.
+     */
+    public function afterCommitCallback()
+    {
+        return $this;
+    }
 }

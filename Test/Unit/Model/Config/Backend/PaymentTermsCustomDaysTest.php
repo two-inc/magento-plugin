@@ -30,7 +30,10 @@ class PaymentTermsCustomDaysTest extends TestCase
         $this->messageManager = $this->createMock(MessageManager::class);
     }
 
-    /** @param int[] $offered terms the merchant record offers; empty means it did not resolve */
+    /**
+     * @param int[] $offered terms the merchant record offers; empty means it did not resolve
+     * @param array<string, mixed> $data extra model data, e.g. a scope or a narrower fieldset_data
+     */
     private function buildModel(
         string $posted,
         ?string $stored,
@@ -57,6 +60,7 @@ class PaymentTermsCustomDaysTest extends TestCase
                 'path' => 'payment/two_payment/payment_terms_duration_days',
                 'scope' => 'default',
                 'scope_id' => 0,
+                'fieldset_data' => ['payment_terms' => ['14']],
             ]
         );
     }
@@ -141,23 +145,95 @@ class PaymentTermsCustomDaysTest extends TestCase
         ];
     }
 
-    public function testTheFoldInIsAnnounced(): void
+    /**
+     * The matching tick is the sibling field's write. Where the post carries no value for it —
+     * its own scope inherits, or env.php locks it — clearing here would drop the term outright.
+     *
+     * @param array<string, mixed> $fieldsetData
+     * @dataProvider siblingPresenceProvider
+     */
+    public function testTheFoldInNeedsTheSiblingWriteInTheSameSave(
+        array $fieldsetData,
+        string $expected,
+        string $case
+    ): void {
+        $model = $this->buildModel('30', '30', [14, 30], ['fieldset_data' => $fieldsetData]);
+
+        $model->beforeSave();
+
+        $this->assertSame($expected, $model->getValue(), $case);
+    }
+
+    public static function siblingPresenceProvider(): array
     {
-        $this->messageManager->expects($this->once())
+        return [
+            [['payment_terms' => ['14']], '', 'the sibling is posted, so the fold-in clears this field'],
+            [['payment_terms' => '14,30'], '', 'a CSV post of the sibling counts too'],
+            [['payment_terms' => ''], '', 'every box unticked is still a posted sibling'],
+            [[], '30', 'the sibling absent from the post takes no term, so nothing is cleared'],
+            [['payment_terms' => null], '30', 'an inherited or locked sibling posts no value'],
+            [
+                ['payment_terms_duration_days' => '30'],
+                '30',
+                'only this field in the post is not enough to move the term',
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $fieldsetData
+     * @dataProvider announcementProvider
+     */
+    public function testTheFoldInIsAnnouncedOnlyOnceTheSaveCommits(
+        string $posted,
+        array $offered,
+        array $fieldsetData,
+        bool $expectNotice,
+        string $case
+    ): void {
+        $this->messageManager->expects($expectNotice ? $this->once() : $this->never())
             ->method('addNoticeMessage')
             ->with($this->callback(static fn ($message): bool => str_contains(
                 (string)$message,
                 'Custom payment terms (days) of 30 is now one of the standard terms you offer'
             )));
 
-        $this->buildModel('30', '30', [14, 30])->beforeSave();
+        $model = $this->buildModel($posted, $posted, $offered, ['fieldset_data' => $fieldsetData]);
+        $model->beforeSave();
+        $model->afterCommitCallback();
+
+        $this->assertTrue(true, $case);
     }
 
-    public function testAnUntouchedValueIsNotAnnounced(): void
+    public static function announcementProvider(): array
+    {
+        return [
+            ['30', [14, 30], ['payment_terms' => ['14']], true, 'a fold-in that landed is announced'],
+            ['37', [14, 30], ['payment_terms' => ['14']], false, 'an untouched value is not announced'],
+            ['30', [], ['payment_terms' => ['14']], false, 'an unresolvable offered set folds nothing in'],
+            ['30', [14, 30], [], false, 'no fold-in happened, so there is nothing to announce'],
+        ];
+    }
+
+    /**
+     * The message queue is session-backed, so a notice emitted before the transaction commits
+     * would survive a later field's refusal and report a clearing that rolled back.
+     */
+    public function testNothingIsAnnouncedBeforeTheCommit(): void
     {
         $this->messageManager->expects($this->never())->method('addNoticeMessage');
 
-        $this->buildModel('37', '37', [14, 30])->beforeSave();
+        $this->buildModel('30', '30', [14, 30])->beforeSave();
+    }
+
+    public function testTheNoticeIsNotRepeatedOnASecondCommit(): void
+    {
+        $this->messageManager->expects($this->once())->method('addNoticeMessage');
+
+        $model = $this->buildModel('30', '30', [14, 30]);
+        $model->beforeSave();
+        $model->afterCommitCallback();
+        $model->afterCommitCallback();
     }
 
     public function testTheStoredValueAndTheOfferedSetAreReadAtTheScopeBeingSaved(): void
@@ -189,6 +265,7 @@ class PaymentTermsCustomDaysTest extends TestCase
                 'scope' => 'stores',
                 'scope_id' => 5,
                 'scope_code' => 'de',
+                'fieldset_data' => ['payment_terms' => ['14']],
             ]
         );
 
