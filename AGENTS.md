@@ -360,8 +360,8 @@ against and the differential option still has to name it. `SurchargeGrid` and
 `Two_Gateway/js/default-term` each apply the resolver's order — the JS from the
 ticked terms plus the merchant's own default term, published as
 `data-merchant-default-term` on the checkboxes container. Reading
-`default_payment_term` alone badges no row at all on the stores that leave the
-choice to the resolver, which is most of them.
+`default_payment_term` alone badges no row at all wherever the admin left the
+choice to the resolver.
 
 ## Monetary values in the pricing request are rounded to 2dp
 

@@ -50,6 +50,19 @@ define(['jquery', 'mage/translate', 'Two_Gateway/js/default-term', 'domReady!'],
             return terms;
         }
 
+        // Every term the merchant's record offers: the checkboxes are rendered
+        // one per offered term, ticked or not.
+        function getMerchantOfferedTerms() {
+            var terms = [];
+            $termsContainer.find('.two-term-checkboxes__input').each(function () {
+                var days = Number($(this).val());
+                if (days > 0) {
+                    terms.push(days);
+                }
+            });
+            return terms;
+        }
+
         function getSurchargeType() {
             // Effective (resolved) type, scope-aware. When the type field's
             // "Use Website/Default" is ticked the <select> is disabled but
@@ -147,6 +160,7 @@ define(['jquery', 'mage/translate', 'Two_Gateway/js/default-term', 'domReady!'],
         function updateDifferentialOptionLabel() {
             var defaultDays = resolveDefaultTerm(
                 getSelectedTerms(),
+                getMerchantOfferedTerms(),
                 getDefaultTermValue(),
                 parseInt($termsContainer.data('merchant-default-term'), 10) || 0
             );

@@ -137,9 +137,23 @@ define(['jquery', 'mage/translate', 'Two_Gateway/js/default-term', 'mage/validat
         function getDefaultTerm() {
             return resolveDefaultTerm(
                 getSelectedTerms(),
+                getMerchantOfferedTerms(),
                 parseInt($defaultTerm.val(), 10) || 0,
                 parseInt($termsContainer.data('merchant-default-term'), 10) || 0
             );
+        }
+
+        // Every term the merchant's record offers: the checkboxes are rendered
+        // one per offered term, ticked or not.
+        function getMerchantOfferedTerms() {
+            var terms = [];
+            $termsContainer.find('.two-term-checkboxes__input').each(function () {
+                var days = Number($(this).val());
+                if (days > 0) {
+                    terms.push(days);
+                }
+            });
+            return terms;
         }
 
         // ── Row management ───────────────────────────────────────────────

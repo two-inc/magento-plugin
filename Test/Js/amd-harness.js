@@ -611,8 +611,8 @@ function makeSurchargeMock() {
 function resolveTwoGatewayModule(name) {
     const match = /^Two_Gateway\/(js\/.+)$/.exec(name);
     if (!match) return null;
-    // Either area, the way RequireJS resolves the reference on the page it is
-    // loaded from — an admin-only module lives under view/adminhtml.
+    // Either area. The harness does not know the requiring module's area, so
+    // frontend wins a name that exists in both; today none do.
     const candidates = [`view/frontend/web/${match[1]}.js`, `view/adminhtml/web/${match[1]}.js`];
     return candidates.find(function (relPath) {
         return fs.existsSync(path.resolve(__dirname, '..', '..', relPath));

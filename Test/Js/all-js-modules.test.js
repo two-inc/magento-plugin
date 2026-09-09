@@ -23,6 +23,7 @@ const { loadAmdModule } = require('./amd-harness');
 const JS_FILES = [
     'view/adminhtml/requirejs-config.js',
     'view/adminhtml/web/js/button-functions.js',
+    'view/adminhtml/web/js/default-term.js',
     'view/adminhtml/web/js/refresh-merchant-record.js',
     'view/adminhtml/web/js/payment-terms-config.js',
     'view/adminhtml/web/js/surcharge-grid.js',

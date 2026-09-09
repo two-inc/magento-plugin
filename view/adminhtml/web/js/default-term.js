@@ -7,14 +7,23 @@ define([], function () {
      * The term the checkout will preselect, mirroring
      * Repository::getDefaultPaymentTerm() so the admin's surcharge grid and
      * the differential label can name it while the field reads Automatic
-     * (ABN-548). 0 when no term is offered.
+     * (ABN-548). 0 when nothing is offered.
      *
-     * @param {number[]} offered ticked terms, ascending
+     * `candidates` is intersected with `merchantOffered` here rather than by
+     * each caller: the legacy custom-term field can name a day the merchant's
+     * record does not offer, and the checkout never resolves one of those.
+     *
+     * @param {number[]} candidates configured terms — ticked plus any custom day
+     * @param {number[]} merchantOffered every term the merchant's record offers
      * @param {number} chosen the admin's own stored choice, 0 for Automatic
      * @param {number} merchantDefault the merchant's own default term, 0 for none
      * @returns {number}
      */
-    return function (offered, chosen, merchantDefault) {
+    return function (candidates, merchantOffered, chosen, merchantDefault) {
+        var offered = candidates.filter(function (days) {
+            return merchantOffered.indexOf(days) !== -1;
+        });
+
         if (offered.indexOf(chosen) !== -1) {
             return chosen;
         }

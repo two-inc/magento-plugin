@@ -137,7 +137,7 @@
 "Select the payment term(s) you want to offer. If a custom duration is set below, this selection is optional.","Velg betalingsvilkår(ene) du vil tilby. Hvis en egendefinert varighet er angitt nedenfor, er dette valget valgfritt."
 "Custom payment term (days)","Egendefinert betalingsvilkår (dager)"
 "Default payment term","Standard betalingsvilkår"
-"Select the payment term that will be automatically selected for your customer.","Velg betalingsvilkåret som automatisk blir valgt for kunden din."
+"Select the payment term that will be automatically selected for your customer. Automatic leaves the choice to the checkout, which uses your own default term when you offer it.","Velg betalingsvilkåret som automatisk blir valgt for kunden din. Automatisk overlater valget til kassen, som bruker din egen standardbetingelse når du tilbyr den."
 "Surcharge method","Tilleggsstrategi"
 "No surcharge applied","Ingen tillegg"
 "Select a method to surcharge your customer.","Velg en metode for å belaste kunden din."
