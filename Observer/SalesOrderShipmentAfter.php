@@ -213,7 +213,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
             // order is fulfilled and the Magento invoice/shipment already
             // succeeded, so a transient failure writing the upload-queue status
             // (e.g. a DB lock-wait on this same row) must not surface as a
-            // shipment-creation error (TWO-24758 review, Han).
+            // shipment-creation error (TWO-24758).
             try {
                 $twoInvoiceId = $response['fulfilled_order']['invoice_details']['id']
                     ?? $response['invoice_details']['id']
