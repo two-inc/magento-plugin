@@ -131,6 +131,23 @@ async function writeMinimumConfig(page: Page, cfg: MinimumConfig) {
 test.describe('minimum order value gate', () => {
     test.skip(!process.env.ADMIN_PASS, 'ADMIN_PASS not set');
 
+    // The runner abandons the test body on a timeout, so the finally below can be
+    // skipped and leave a pinned minimum on a store other work shares.
+    let pending: MinimumConfig | null = null;
+
+    test.afterAll(async ({ browser }) => {
+        if (!pending) return;
+        const context = await browser.newContext();
+        const page = await context.newPage();
+        try {
+            await adminLogin(page);
+            await writeMinimumConfig(page, pending);
+            pending = null;
+        } finally {
+            await context.close();
+        }
+    });
+
     test('method shows and hides live as shipping moves the total across the minimum', async ({
         page,
         browser
@@ -165,6 +182,7 @@ test.describe('minimum order value gate', () => {
         const adminPage = await adminContext.newPage();
         await adminLogin(adminPage);
         const original = await readMinimumConfig(adminPage);
+        pending = original;
         try {
             // gross basis compares the grand total directly — the number the
             // buyer sees in the totals block. A pinned custom value, so neither
@@ -194,6 +212,7 @@ test.describe('minimum order value gate', () => {
             // default (Use Default) rather than filling an empty string into a
             // now-disabled input, which is what timed the teardown out before.
             await writeMinimumConfig(adminPage, original);
+            pending = null;
             await adminContext.close();
         }
     });
