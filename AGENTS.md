@@ -21,8 +21,8 @@ and neither does a person named as the authority for a rule.
 ## Branching & releases
 
 -   **Day-to-day PRs target `staging`** (the GitHub default); branch off
-    `origin/staging` —
-    `version-bump.yml` decides the release version on PRs landing there.
+    `origin/staging` — `version-bump.yml` decides the release version on PRs
+    landing there.
     `auto-pr.yml` opens the staging → main promotion PR on every push to
     `staging`; `main` is prod. `merge-back.yml` syncs `main → staging`
     after merges (ff-only, else a sync PR). There is no `develop` branch.
@@ -51,11 +51,11 @@ and neither does a person named as the authority for a rule.
 
 ## Which shop tracks `staging`
 
-**`magento-dev.staging.two.inc` is the only shop that serves this branch.** Its
-deployment is the one carrying a `git-sync-gateway` container
-(`--ref=staging --period=60s`); each brand's own dev shop git-syncs this repo's
-`staging` alongside its overlay. `magento.staging.two.inc` has no git-sync
-container at all and serves the deployed image's code, which tracks `main`.
+**`magento-dev.staging.two.inc` is the shared shop that serves this branch**, its
+deployment carrying a `git-sync-gateway` container; each brand's own dev shop
+git-syncs this repo's `staging` too, alongside that brand's overlay.
+`magento.staging.two.inc` has no git-sync container at all and serves the deployed
+image's code, which tracks `main`.
 
 **Anything that verifies `staging` code targets the dev shop** — e2e, a manual
 click-through, a screenshot. Point it at the other shop and it silently reports
@@ -178,8 +178,8 @@ the WHOLE section back — one mistyped key would discard every unrelated field
 submitted with it. The key field turns off its own save through `_dataSaveAllowed`
 and reports the rejection through the admin message channel, so the rejected value
 is never stored and every sibling field still saves. Only a definitive upstream
-rejection is blocking; unreachable, erroring, malformed and timed-out verdicts save
-the submitted key.
+rejection is blocking; unreachable, erroring and malformed verdicts save the
+submitted key.
 
 **A cached merchant record is keyed on the ENVIRONMENT as well as the API key.**
 One key configured against sandbox on one store view and production on another must
@@ -297,9 +297,10 @@ buyer. The field help says so; nothing enforces it.
 the WooCommerce plugin carries a copy of the same file, so **a change to shared
 panel behaviour is TWO edits**. Nothing links the two copies; whoever changes
 one and stops has fixed one platform, and the divergence is invisible to both
-reviewers. **The two copies have DRIFTED**, this one ahead; re-copying the whole
-file is the only thing that brings them back into step, and the other repo's own
-digest guard catches an in-place edit there without seeing this copy at all.
+reviewers. **Nothing compares the two copies** — the other repo's guard locks its
+copy against an in-place edit without ever seeing this one — so re-copying the
+whole file is the only thing that puts them back in step, and a panel change made
+here and nowhere else has landed on one platform (TWO-25503).
 
 It is framework-free with a UMD tail — no RequireJS, jQuery or Knockout DEPENDENCY —
 which is what lets the Hyvä checkout load this repo's own copy by
@@ -312,9 +313,9 @@ file, so a "fix it for that checkout" copy is a fork, not a fix.
 
 **The unsupported-country gate greys out SEARCH, never manual entry.** Manual
 entry hands the field over as a plain typeable input that never reaches the
-registry, so the native `disabled` flag there blocks a mode that was never going
-to search — and leaves a buyer in an uncovered country with no way to name their
-company at all.
+registry, so applying the native `disabled` flag there would block a mode that was
+never going to search and leave a buyer in an uncovered country with no way to
+name their company at all.
 
 **The company field opens the panel on FOCUS**, through the same `open()` a
 mousedown runs, which puts the caret in the panel's query field — the same state
@@ -322,7 +323,8 @@ a click leaves it in, and the same on every platform that carries this control.
 
 **The open panel takes the field's tab stop**: `tabindex="-1"` while it is up, and
 on close the field's PRIOR value restored exactly, which is removal when there was
-none — a theme's own `tabindex` is given back, not removed (TWO-25503). Without it the focus opener is a keyboard trap: the opener puts the
+none — a theme's own `tabindex` is given back, not removed (TWO-25503). Without
+it the focus opener is a keyboard trap: the opener puts the
 caret in the query field, Shift+Tab returns to the field, and the opener pushes
 focus forward again, so the buyer cannot get back past the control (WCAG 2.1.2).
 
@@ -349,8 +351,9 @@ raise it here — the popup closes and nothing replaces it.
 
 ## A declined order intent refuses order placement
 
-**It does so through the Place Order button's own BINDING** — `isPlaceOrderEnabled()` over an observable
-verdict, never an imperative class or attribute write (TWO-25657). Core's
+**It does so through the Place Order button's own BINDING** —
+`isPlaceOrderEnabled()` over an observable verdict, never an imperative class or
+attribute write (TWO-25657). Core's
 billing-address subscription re-evaluates that button and clears anything
 written onto it from outside the binding, silently, so an imperative disable
 lasts until the buyer touches an address field.
@@ -386,11 +389,11 @@ Three traps in the same suites:
     the existing suite already catches proves the suite is sensitive, not that the
     case added covers anything.
 
-## A guard is invoked through `bash`
+## A NON-EXECUTABLE guard is invoked through `bash`
 
 A script whose mode is `100644` and which is run as `./script.sh` exits 126. On a
 CI dashboard that is indistinguishable from a check that ran and failed, so the
-guard's own absence reads as its verdict. A guard committed executable may be run
+guard's own absence reads as its verdict. A guard committed executable runs
 directly; anything else is invoked `bash script.sh`, and every guard prints what
 it checked.
 
