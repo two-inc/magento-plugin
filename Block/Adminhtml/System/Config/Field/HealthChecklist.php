@@ -12,6 +12,7 @@ use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\RecordProvider;
 
 /**
  * Read-only "install health" panel in Stores Configuration (TWO-25386).
@@ -42,14 +43,21 @@ class HealthChecklist extends Field
      */
     private $apiKeyStatus;
 
+    /**
+     * @var RecordProvider
+     */
+    private $recordProvider;
+
     public function __construct(
         ConfigRepository $configRepository,
         ApiKeyStatus $apiKeyStatus,
+        RecordProvider $recordProvider,
         Context $context,
         array $data = []
     ) {
         $this->configRepository = $configRepository;
         $this->apiKeyStatus = $apiKeyStatus;
+        $this->recordProvider = $recordProvider;
         parent::__construct($context, $data);
     }
 
@@ -82,7 +90,46 @@ class HealthChecklist extends Field
                 'ok' => !$sslDisabled,
                 'value' => $sslDisabled ? (string)__('Disabled') : (string)__('Enabled'),
             ],
+            $this->merchantProfileRow($mode),
         ];
+    }
+
+    /**
+     * When the merchant profile last refreshed. An absent-on-read mark the cron
+     * has had a run to clear and has not is what says the cron is not running;
+     * a newer one is the ordinary first read after a cache flush.
+     *
+     * @return array{label: string, ok: bool, value: string}
+     */
+    private function merchantProfileRow(string $mode): array
+    {
+        $status = $this->recordProvider->status($mode, $this->configRepository->getApiKey());
+        $label = (string)__('Merchant profile');
+        $absentAt = $status['absent_on_read_at'];
+        if ($absentAt !== null && time() - $absentAt >= RecordProvider::CRON_INTERVAL) {
+            return [
+                'label' => $label,
+                'ok' => false,
+                'value' => (string)__(
+                    'Missing when read at %1 — the hourly refresh appears not to be running',
+                    $this->formatTimestamp($absentAt)
+                ),
+            ];
+        }
+        if ($status['fetched_at'] !== null) {
+            return [
+                'label' => $label,
+                'ok' => true,
+                'value' => (string)__('Refreshed %1', $this->formatTimestamp($status['fetched_at'])),
+            ];
+        }
+
+        return ['label' => $label, 'ok' => false, 'value' => (string)__('Never refreshed')];
+    }
+
+    protected function formatTimestamp(int $timestamp): string
+    {
+        return $this->_localeDate->formatDateTime((new \DateTime())->setTimestamp($timestamp));
     }
 
     /**

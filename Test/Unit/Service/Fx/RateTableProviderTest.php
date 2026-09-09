@@ -30,21 +30,26 @@ class RateTableProviderTest extends TestCase
     /**
      * @param CacheInterface|\PHPUnit\Framework\MockObject\MockObject|null $cache
      */
-    private function provider($cache = null, string $apiKey = 'test-api-key'): RateTableProvider
-    {
+    private function provider(
+        $cache = null,
+        string $apiKey = 'test-api-key',
+        string $mode = 'production',
+        $logRepository = null
+    ): RateTableProvider {
         if ($cache === null) {
             $cache = $this->createMock(CacheInterface::class);
             $cache->method('load')->willReturn(false);
         }
         $configRepository = $this->createMock(ConfigRepository::class);
         $configRepository->method('getApiKey')->willReturn($apiKey);
+        $configRepository->method('getMode')->willReturn($mode);
 
         return new RateTableProvider(
             $this->apiAdapter,
             $configRepository,
             $cache,
             new Json(),
-            $this->createMock(LogRepository::class)
+            $logRepository ?? $this->createMock(LogRepository::class)
         );
     }
 
@@ -84,6 +89,88 @@ class RateTableProviderTest extends TestCase
             'rates' => ['EUR' => 1.0, 'GBP' => 1.10],
             'as_of' => '2026-07-10',
             'fetched_at' => time() - RateTableProvider::REFRESH_INTERVAL - 60,
+        ];
+    }
+
+    // ── Cache slot ───────────────────────────────────────────────────
+
+    /**
+     * Given two configurations, When each fetches a table, Then they share a
+     * cache slot only if mode and key both match.
+     *
+     * @dataProvider cacheSlotScopes
+     */
+    public function testCacheSlotIsScopedByModeAndKey(
+        string $modeA,
+        string $keyA,
+        string $modeB,
+        string $keyB,
+        bool $expectedSameSlot,
+        string $description
+    ): void {
+        $this->apiAdapter->method('execute')->willReturn(self::RATES_RESPONSE);
+        $slots = [];
+        $capture = function () use (&$slots) {
+            $cache = $this->createMock(CacheInterface::class);
+            $cache->method('load')->willReturn(false);
+            $cache->method('save')->willReturnCallback(
+                function ($data, $identifier) use (&$slots) {
+                    $slots[] = $identifier;
+                    return true;
+                }
+            );
+            return $cache;
+        };
+
+        $this->provider($capture(), $keyA, $modeA)->getRateTable(1);
+        $this->provider($capture(), $keyB, $modeB)->getRateTable(1);
+
+        $this->assertCount(2, $slots);
+        if ($expectedSameSlot) {
+            $this->assertSame($slots[0], $slots[1], $description);
+        } else {
+            $this->assertNotSame($slots[0], $slots[1], $description);
+        }
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: string, 3: string, 4: bool, 5: string}>
+     */
+    public static function cacheSlotScopes(): array
+    {
+        return [
+            'one key, two environments' => [
+                'production',
+                'key-a',
+                'sandbox',
+                'key-a',
+                false,
+                'one key configured against both environments must not share a slot',
+            ],
+            'same key, same environment' => [
+                'production',
+                'key-a',
+                'production',
+                'key-a',
+                true,
+                'the same key and mode must reuse one slot',
+            ],
+            'two keys, one environment' => [
+                'production',
+                'key-a',
+                'production',
+                'key-b',
+                false,
+                'a different key must not read the previous key\'s table',
+            ],
+            'two keys, two environments' => [
+                'sandbox',
+                'key-a',
+                'production',
+                'key-b',
+                false,
+                'a differing key and mode must not share a slot',
+            ],
         ];
     }
 
@@ -285,7 +372,32 @@ class RateTableProviderTest extends TestCase
             null
         );
 
-        $this->assertTrue($this->provider($cache)->refresh(1));
+        $this->assertTrue($this->provider($cache)->refresh('production', 'test-api-key', 1));
+    }
+
+    public function testAnUnsetModeFetchesNothing(): void
+    {
+        // Adapter would resolve a blank mode itself, landing another
+        // environment's table in this slot. Reported once, not per lookup.
+        $this->apiAdapter->expects($this->never())->method('execute');
+        $log = $this->createMock(LogRepository::class);
+        $log->expects($this->once())->method('addErrorLog');
+
+        $provider = $this->provider(null, 'test-api-key', '', $log);
+
+        $this->assertNull($provider->getRateTable(1));
+        $this->assertNull($provider->getRateTable(1));
+    }
+
+    public function testRefreshFetchesFromTheEnvironmentItsSlotIsKeyedOn(): void
+    {
+        // Given a caller's mode differing from the store scope's,
+        // When it refreshes, Then the fetch goes to the caller's environment.
+        $this->apiAdapter->expects($this->once())->method('execute')
+            ->with(RateTableProvider::ENDPOINT, [], 'GET', 1, 'test-api-key', 'sandbox', null)
+            ->willReturn(self::RATES_RESPONSE);
+
+        $this->assertTrue($this->provider(null, 'test-api-key', 'production')->refresh('sandbox', 'test-api-key', 1));
     }
 
     public function testRefreshFailureLeavesCacheUntouched(): void
@@ -294,13 +406,13 @@ class RateTableProviderTest extends TestCase
         $cache = $this->createMock(CacheInterface::class);
         $cache->expects($this->never())->method('save');
 
-        $this->assertFalse($this->provider($cache)->refresh(1));
+        $this->assertFalse($this->provider($cache)->refresh('production', 'test-api-key', 1));
     }
 
     public function testRefreshWithoutApiKeyIsANoop(): void
     {
         $this->apiAdapter->expects($this->never())->method('execute');
 
-        $this->assertFalse($this->provider(null, '')->refresh(1));
+        $this->assertFalse($this->provider(null, '')->refresh('production', '', 1));
     }
 }

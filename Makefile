@@ -121,7 +121,7 @@ install: clean
 	fi; \
 	echo " Credentials:   exampleuser / examplepassword123"; \
 	echo " Xdebug:        installed (activate with 'make debug')"; \
-	dev/print-resolved-hosts.sh $(CONTAINER); \
+	bash dev/print-resolved-hosts.sh $(CONTAINER); \
 	echo "========================================="
 
 ## Update payment config: make configure TWO_API_KEY=xxx
@@ -155,7 +155,7 @@ run:
 		echo " Proxy admin:   $$PROXY_URL/admin"; \
 	fi; \
 	echo " Credentials:   exampleuser / examplepassword123"; \
-	dev/print-resolved-hosts.sh $(CONTAINER); \
+	bash dev/print-resolved-hosts.sh $(CONTAINER); \
 	echo "========================================="
 
 ## Start Magento with Xdebug and caches disabled for hot reload
@@ -187,7 +187,7 @@ debug:
 	fi; \
 	echo " Credentials:   exampleuser / examplepassword123"; \
 	echo " Mode:          debug (Xdebug + caches disabled)"; \
-	dev/print-resolved-hosts.sh $(CONTAINER); \
+	bash dev/print-resolved-hosts.sh $(CONTAINER); \
 	echo "========================================="
 
 ## Stop Magento container and FRP proxy
@@ -248,7 +248,7 @@ PHPUNIT_SHA256  := a823d916151f628dd9943ccc81a98bcfbba9c5babf53f27be6c7dccc89f8e
 
 ## Run PHPUnit tests
 test:
-	docker run --rm -v $(CURDIR):/app --tmpfs /app/.worktrees -w /app php:8.1-cli bash -c \
+	docker run --rm -v $(CURDIR):/app --tmpfs /app/.worktrees -w /app php:8.2-cli bash -c \
 		"php -r \"copy('https://phar.phpunit.de/phpunit-$(PHPUNIT_VERSION).phar', '/tmp/phpunit.phar');\" \
 		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
 		&& php /tmp/phpunit.phar"
@@ -258,7 +258,7 @@ test-e2e:
 	docker run --rm -v $(CURDIR):/app --tmpfs /app/.worktrees -w /app \
 		-e TWO_API_KEY=$(TWO_API_KEY) \
 		-e TWO_API_BASE_URL=$(TWO_API_BASE_URL) \
-		php:8.1-cli bash -c \
+		php:8.2-cli bash -c \
 		"php -r \"copy('https://phar.phpunit.de/phpunit-$(PHPUNIT_VERSION).phar', '/tmp/phpunit.phar');\" \
 		&& echo '$(PHPUNIT_SHA256)  /tmp/phpunit.phar' | sha256sum -c - \
 		&& php /tmp/phpunit.phar --testsuite E2E"

@@ -9,4 +9,8 @@
     <event name="admin_sales_order_address_update">
         <observer name="two_admin_sales_order_address_update" instance="Two\Gateway\Observer\SalesOrderAddressUpdate"/>
     </event>
+    <event name="admin_system_config_changed_section_two_general">
+        <observer name="two_config_save_refresh_merchant_record"
+                  instance="Two\Gateway\Observer\ConfigSaveRefreshMerchantRecord"/>
+    </event>
 </config>

@@ -5,8 +5,9 @@ namespace Two\Gateway\Test\Unit\Model\Config\Backend;
 
 use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
+use Magento\Framework\App\Config\Value;
 use Magento\Framework\Encryption\EncryptorInterface;
-use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Message\ManagerInterface as MessageManager;
 use Magento\Framework\Model\Context;
 use Magento\Framework\Registry;
 use PHPUnit\Framework\TestCase;
@@ -19,20 +20,31 @@ use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
 /**
  * Save-time guard on the API key field (TWO-25503).
  *
- * A rejected key must not replace a working one. Anything short of a
- * definitive rejection must still save, so an outage cannot lock a
+ * A rejected key must not replace a working one, and must not cost the
+ * merchant the rest of the form either (ABN-495). Anything short of a
+ * definitive rejection saves as submitted, so an outage cannot lock a
  * merchant out of configuring their first key.
  */
 class ApiKeyTest extends TestCase
 {
     private const CANDIDATE = 'candidate-key';
 
+    private const KEY_PATH = 'two_general/general/api_key';
+
+    private const SIBLING_PATH = 'two_general/general/vendor_site_name';
+
+    private const SIBLING_VALUE = 'Northwind Supplies';
+
     /** @var ApiKeyStatus|\PHPUnit\Framework\MockObject\MockObject */
     private $apiKeyStatus;
+
+    /** @var MessageManager|\PHPUnit\Framework\MockObject\MockObject */
+    private $messageManager;
 
     protected function setUp(): void
     {
         $this->apiKeyStatus = $this->createMock(ApiKeyStatus::class);
+        $this->messageManager = $this->createMock(MessageManager::class);
     }
 
     /**
@@ -58,10 +70,46 @@ class ApiKeyTest extends TestCase
             $encryptor,
             $this->apiKeyStatus,
             new ApiKeyStatusMessage($brandRegistry),
+            $this->messageManager,
             null,
             null,
             $data
         );
+    }
+
+    /**
+     * A plain text field posted in the same group as the key.
+     */
+    private function siblingField(): Value
+    {
+        return new Value(
+            $this->getMockBuilder(Context::class)->disableOriginalConstructor()->getMock(),
+            $this->getMockBuilder(Registry::class)->disableOriginalConstructor()->getMock(),
+            $this->createMock(ScopeConfigInterface::class),
+            $this->createMock(TypeListInterface::class),
+            null,
+            null,
+            ['value' => self::SIBLING_VALUE, 'path' => self::SIBLING_PATH]
+        );
+    }
+
+    /**
+     * Mirrors AbstractDb::save(): beforeSave() runs, then only a model that left its own save allowed is written.
+     *
+     * @param array<string, Value> $models keyed by config path
+     * @return array<string, mixed> what storage is left holding
+     */
+    private function saveSection(array $models): array
+    {
+        $stored = [];
+        foreach ($models as $path => $model) {
+            $model->beforeSave();
+            if ($model->isSaveAllowed()) {
+                $stored[$path] = $model->getValue();
+            }
+        }
+
+        return $stored;
     }
 
     private function stubVerdict(string $category, ?int $code = null): void
@@ -71,38 +119,55 @@ class ApiKeyTest extends TestCase
         );
     }
 
-    public function testARejectedKeyAbortsTheSaveAndLeavesTheStoredKeyAlone(): void
+    public function testARejectedKeyIsDroppedAndTheFieldSubmittedBesideItStillSaves(): void
     {
-        // Given a key the API rejects; when the section is saved; then the save
-        // fails and nothing is written over the working key.
+        // Given a key the API rejects and a vendor-name edit in the same
+        // request; when the section is saved; then the working key survives
+        // and the vendor name lands.
         $this->stubVerdict(ApiKeyStatus::INVALID_KEY, 401);
-        $model = $this->build(['value' => self::CANDIDATE, 'scope' => 'default']);
+        $this->messageManager->expects($this->once())
+            ->method('addErrorMessage')
+            ->with($this->callback(function ($message) {
+                return strpos((string)$message, 'rejected') !== false;
+            }));
 
-        try {
-            $model->beforeSave();
-            $this->fail('a rejected key must abort the save');
-        } catch (LocalizedException $e) {
-            $this->assertStringContainsString('rejected', $e->getMessage());
-        }
+        $stored = $this->saveSection([
+            self::KEY_PATH => $this->build([
+                'value' => self::CANDIDATE,
+                'scope' => 'default',
+                'path' => self::KEY_PATH,
+            ]),
+            self::SIBLING_PATH => $this->siblingField(),
+        ]);
 
-        // The parent encrypts the value on the way to storage; an untouched
-        // plaintext value is the proof that nothing was written.
-        $this->assertSame(self::CANDIDATE, $model->getValue());
+        $this->assertArrayNotHasKey(self::KEY_PATH, $stored, 'a rejected key must not be written');
+        $this->assertSame(self::SIBLING_VALUE, $stored[self::SIBLING_PATH] ?? null, 'the sibling field must save');
     }
 
     /**
      * @dataProvider nonBlockingVerdicts
      */
-    public function testAnUnconfirmedKeyStillSaves(string $category, ?int $code, string $description): void
-    {
+    public function testAnUnconfirmedKeyAndTheFieldBesideItBothSave(
+        string $category,
+        ?int $code,
+        string $description
+    ): void {
         // We cannot tell "bad key" from "our side is down", and blocking would
         // stop a merchant configuring a first key during an outage.
         $this->stubVerdict($category, $code);
-        $model = $this->build(['value' => self::CANDIDATE, 'scope' => 'default']);
+        $this->messageManager->expects($this->never())->method('addErrorMessage');
 
-        $model->beforeSave();
+        $stored = $this->saveSection([
+            self::KEY_PATH => $this->build([
+                'value' => self::CANDIDATE,
+                'scope' => 'default',
+                'path' => self::KEY_PATH,
+            ]),
+            self::SIBLING_PATH => $this->siblingField(),
+        ]);
 
-        $this->assertSame('encrypted:' . self::CANDIDATE, $model->getValue(), $description);
+        $this->assertSame('encrypted:' . self::CANDIDATE, $stored[self::KEY_PATH] ?? null, $description);
+        $this->assertSame(self::SIBLING_VALUE, $stored[self::SIBLING_PATH] ?? null, $description);
     }
 
     /**

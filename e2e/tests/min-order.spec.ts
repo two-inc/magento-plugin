@@ -36,7 +36,7 @@ interface MinimumConfig {
 }
 
 // Grand total of the current quote, in the quote currency (= store base currency
-// on the staging store, so it compares 1:1 against the merchant minimum).
+// on the dev store, so it compares 1:1 against the merchant minimum).
 async function grandTotal(page: Page): Promise<number> {
     return page.evaluate(
         () =>
