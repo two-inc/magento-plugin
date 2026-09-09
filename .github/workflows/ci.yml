@@ -36,7 +36,7 @@ jobs:
           # One classification, sliced three ways — so the run/skip/lint lists
           # are always mutually consistent (a transient image-probe blip can't
           # land a combo in one list but not its mirror) and we hit upstream +
-          # Docker Hub once, not 3x (review: brtkwr on #237).
+          # Docker Hub once, not 3x.
           all=$(./dev/magento-support-matrix.sh --emit-all)
           matrix=$(echo "$all" | jq -c '.matrix')
           skips=$(echo "$all" | jq -c '.skips')

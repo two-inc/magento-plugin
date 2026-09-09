@@ -387,9 +387,7 @@ define([
     }
 
     /**
-     * shippingWriteRoot(), and a notice on the shipping identity when there is
-     * none — a pick that fills nothing in and says nothing reads to the buyer
-     * as the picker having done nothing (TWO-25461).
+     * Silence would read to the buyer as the picker having done nothing (TWO-25461).
      *
      * @returns {?object} jQuery set, or null
      */
@@ -417,12 +415,6 @@ define([
         return $root.length ? $root : null;
     }
 
-    /**
-     * billingWriteRoot(), and a notice on the billing identity when there is
-     * none — shippingWriteTarget()'s counterpart, for the same reason.
-     *
-     * @returns {?object} jQuery set, or null
-     */
     function billingWriteTarget() {
         const root = billingWriteRoot();
         if (!root) companySearch.announceAddressUndeliverable(billingIdentity);
