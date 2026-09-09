@@ -108,7 +108,10 @@ function setup(debounceMs) {
     const panel = new CompanySearchPanel({
         fieldSelector: FIELD,
         config: BASE_CONFIG,
-        getCountryCode: function () { return 'gb'; }
+        getCountryCode: function () { return 'gb'; },
+        // The query row belongs to registered-company mode alone, and every
+        // case below drives the panel through it.
+        getSelectedMode: function () { return 'registered'; }
     });
     panel.bind();
 

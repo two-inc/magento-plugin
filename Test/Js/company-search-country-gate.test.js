@@ -216,3 +216,31 @@ describe('a supported -> unsupported -> supported round trip', () => {
         expect(setDisabledCalls[setDisabledCalls.length - 1]).toBe(false);
     });
 });
+
+describe('ABN-525: the registered-company chip follows the same gate', () => {
+    test.each([
+        ['gb', true, 'a covered country still offers the search'],
+        ['fr', false, 'an uncovered country withdraws the chip, leaving manual entry'],
+    ])('country %s offers the registered chip: %s (%s)', async (country, offered, description) => {
+        const { component } = makeStartedComponent(function () {
+            return Promise.resolve({ ok: true, json: () => Promise.resolve(envelope(['GB', 'NO'])) });
+        });
+        component.start();
+        await flush();
+
+        component.onCountryChanged(country);
+        await flush();
+
+        expect(component.isModeOffered('registered')).toBe(offered);
+        expect(component.isModeOffered('manual')).toBe(true);
+        expect(description).toBeTruthy();
+    });
+
+    test('the chip is offered before any answer has landed', () => {
+        const { component } = makeStartedComponent(function () {
+            return new Promise(function () {});
+        });
+
+        expect(component.isModeOffered('registered')).toBe(true);
+    });
+});
