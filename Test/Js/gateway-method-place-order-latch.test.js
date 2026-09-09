@@ -284,8 +284,8 @@ describe('gateway_method renderer defects (TWO-25174)', () => {
     });
 
     test('two rapid clicks still yield exactly one place-order request', () => {
-        // The guarantee PR #262 established, re-asserted after re-keying the
-        // in-flight check off placeOrderInFlight.
+        // The guarantee magento-plugin PR #262 established, re-asserted
+        // after re-keying the in-flight check off placeOrderInFlight.
         const component = loadComponent({});
         const ctx = makeContext(component, {});
 

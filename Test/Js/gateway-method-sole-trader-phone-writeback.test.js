@@ -3,7 +3,7 @@
  * See COPYING.txt for license details.
  *
  * TWO-25503 — adopting a sole trader writes the buyer's own phone number, same
- * as WooCommerce (PR #496) and PrestaShop (PR #186) now do.
+ * as woocommerce-plugin PR #496 and prestashop-plugin PR #186 now do.
  *
  * The route matters as much as the outcome. `applyAddress()` deliberately never
  * touches telephone — a registry business number is not the buyer's own — so

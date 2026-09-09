@@ -29,7 +29,7 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
  *   3. GET /uploads/v1/status/{reference} -> poll until resolved
  *
  * Gated solely on invoice_distributed_by_merchant from GET /v1/merchant
- * (TWO-25106, Option A — no admin toggle). Renders the invoice with
+ * (TWO-25106) — there is no admin toggle. Renders the invoice with
  * Magento's native Magento\Sales\Model\Order\Pdf\Invoice.
  *
  * Split into two phases so the network-bound work never runs inline in

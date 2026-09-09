@@ -15,8 +15,8 @@ use Magento\Sales\Model\Order\Creditmemo\Total\AbstractTotal;
  *
  * Default behaviour: refund the surcharge proportionally to the items being
  * refunded (creditmemo subtotal / order subtotal). When the merchant types an
- * explicit value into the creditmemo override field (Phase 5), that value is
- * pre-set on the creditmemo before collectTotals runs and we honour it here.
+ * explicit value into the creditmemo override field, that value is pre-set on
+ * the creditmemo before collectTotals runs and we honour it here.
  *
  * The override path is what allows the surcharge to be refunded in full on a
  * creditmemo with no items at all: zero items, the whole surcharge typed into
@@ -46,14 +46,6 @@ class Surcharge extends AbstractTotal
         $baseAlreadyRefunded = (float)$order->getBaseTwoSurchargeRefunded();
         $baseMaxRefundable = $baseOrderSurcharge - $baseAlreadyRefunded;
 
-        // Phase 5 plugin sets `two_surcharge_amount` directly on the
-        // creditmemo from request data. hasData() distinguishes "explicit
-        // merchant override" (including 0) from "never set, use default".
-        // Normalise to 6dp on entry — admin input is parsed by
-        // CreditmemoFeeOverride at locale precision (often 2dp,
-        // potentially more) and we keep 6dp internally so the refund
-        // line gross matches what ComposeOrder declared at placement.
-        // See Model/Total/Surcharge for the 6dp invariant rationale.
         // The proportional default is the surcharge net Magento's native tax
         // collector has ALREADY refunded VAT for on this credit memo (it
         // prorates order tax by subtotal). Compute it regardless of any
@@ -65,9 +57,11 @@ class Surcharge extends AbstractTotal
         $proportion = $orderSubtotal > 0 ? $cmSubtotal / $orderSubtotal : 0.0;
         $defaultNet = round($orderSurcharge * $proportion, 6);
 
-        // Phase 5 plugin sets `two_surcharge_amount` directly on the creditmemo
-        // from request data. hasData() distinguishes "explicit merchant
-        // override" (including 0) from "never set, use proportional default".
+        // CreditmemoFeeOverride sets `two_surcharge_amount` directly on the
+        // creditmemo from request data. hasData() distinguishes "explicit
+        // merchant override" (including 0) from "never set, use proportional
+        // default". Admin input arrives at locale precision, often 2dp but
+        // potentially finer than the 6dp we keep internally, hence the round.
         $hasOverride = $creditmemo->hasData('two_surcharge_amount')
             && $creditmemo->getData('two_surcharge_amount') !== null
             && $creditmemo->getData('two_surcharge_amount') !== '';
@@ -101,9 +95,10 @@ class Surcharge extends AbstractTotal
         // Tax delta: native already refunded VAT on the proportional default
         // surcharge net, so adjust the tax line ONLY for the difference an
         // override introduces. This is exactly zero on the non-override path,
-        // preserving the #201 de-dup guarantee (surcharge VAT counted once);
-        // when the merchant edits the surcharge it moves the Tax line to the
-        // VAT on the surcharge actually refunded (refunded net × rate).
+        // preserving the de-dup guarantee from magento-plugin PR #201
+        // (surcharge VAT counted once); when the merchant edits the surcharge
+        // it moves the Tax line to the VAT on the surcharge actually refunded
+        // (refunded net × rate).
         $taxDelta = round(($amount - $defaultNet) * ($taxRatePercent / 100), 6);
         $baseTaxDelta = round(($baseAmount - $baseDefaultNet) * ($taxRatePercent / 100), 6);
 

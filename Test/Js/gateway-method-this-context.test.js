@@ -5,7 +5,7 @@
  * Guard against the regression where `this._brandConfig` is referenced
  * inside an iteration callback that doesn't preserve renderer `this`.
  *
- * The brand-overlay refactor (#128) moved per-instance config reads
+ * The brand-overlay refactor moved per-instance config reads
  * onto `this._brandConfig`, but the renderer still uses `_.each(...,
  * function () { ... })` and `.forEach(function () { ... })` callbacks
  * in several methods. Inside those callbacks `this` is NOT the KO

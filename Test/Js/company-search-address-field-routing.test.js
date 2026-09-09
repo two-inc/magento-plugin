@@ -502,9 +502,9 @@ describe('every field the write can reach, the revert can take back', () => {
     });
 
     test('the country is never written, wherever the payload came from', () => {
-        // Decision #12: the server discards a company whose country disagrees
-        // with the checkout address's, so writing a registered country over the
-        // one the buyer chose would destroy the selection this completes.
+        // The server discards a company whose country disagrees with the
+        // checkout address's, so writing a registered country over the one
+        // the buyer chose would destroy the selection this completes.
         document.body.innerHTML =
             '<div id="shipping-new-address-form">' +
             ADDRESS_FIELDS +

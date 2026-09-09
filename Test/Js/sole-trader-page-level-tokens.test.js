@@ -2,7 +2,7 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * F001 — one delegation/autofill token pair and one buyer lookup per checkout,
+ * One delegation/autofill token pair and one buyer lookup per checkout,
  * however many capture panels the host builds.
  */
 

@@ -208,8 +208,9 @@ class SurchargeTest extends TestCase
 
     /**
      * The proportional (non-override) path must remain a no-op on tax — the
-     * #201 / double-count guarantee. Refunded net equals the proportional
-     * default, so the delta is zero and native tax stands.
+     * double-count guarantee of magento-plugin PR #201. Refunded net
+     * equals the proportional default, so the delta is zero and native
+     * tax stands.
      */
     public function testProportionalRefundDoesNotAdjustTax(): void
     {

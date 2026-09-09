@@ -127,7 +127,7 @@ class SettingsProviderTest extends TestCase
         $this->assertNull($this->provider->getDefaultTerm(1));
     }
 
-    // --- isInvoiceDistributedByMerchant (TWO-24758 / TWO-25106 Option A) ---
+    // --- isInvoiceDistributedByMerchant (TWO-24758 / TWO-25106) ---
 
     public function testInvoiceDistributedByMerchantTrue(): void
     {

@@ -15,12 +15,11 @@ use Two\Gateway\Model\Brand\Descriptor;
 use Two\Gateway\Model\Brand\Loader;
 
 /**
- * Synthesises a brand's admin Configuration surface — tab plus
- * the six canonical sections (`{prefix}_general`, `{prefix}_checkout_fields`,
- * `{prefix}_search`, `{prefix}_payment`, `{prefix}_order_management`,
- * `{prefix}_version` — TWO-25386's A-F regroup) — by stamping
- * `etc/adminhtml/brand_form_template.xml` against each brand's
- * `Brand\Descriptor` and feeding the result through
+ * Synthesises a brand's admin Configuration surface — tab plus the
+ * five canonical sections (`{prefix}_general`, `{prefix}_checkout_fields`,
+ * `{prefix}_payment`, `{prefix}_order_management`, `{prefix}_version`) —
+ * by stamping `etc/adminhtml/brand_form_template.xml` against each
+ * brand's `Brand\Descriptor` and feeding the result through
  * `Magento\Config\Model\Config\Structure\Converter::convert`. The
  * converted tabs and sections are then merged into the Structure
  * result that `Reader::read` returns.
@@ -29,17 +28,16 @@ use Two\Gateway\Model\Brand\Loader;
  * what's already in the Structure: synthesis only contributes
  * section/tab IDs that aren't already statically declared.
  * First-writer-wins applies per-element, so an overlay module's
- * slim suppression-only `system.xml` (the Option B mechanism)
- * merges via Magento's native merge AFTER synthesis: synthesis
- * injects the canonical surface, overlay attributes hide what
- * each brand suppresses.
+ * slim suppression-only `system.xml` merges via Magento's native
+ * merge AFTER synthesis: synthesis injects the canonical surface,
+ * overlay attributes hide what each brand suppresses.
  *
  * Synthesis is unconditional. The previous `system/two_brand_synthesis/
  * admin_form/enabled` flag-gate was a transition kill-switch from
- * before strip-down. It was removed in PR #181 because we suspected
- * a cold-cache race on the flag was the cause of the admin-tab-
- * vanishes-post-restart bug. That fix closed a real race but the
- * symptom kept recurring.
+ * before strip-down. It was removed in magento-plugin PR #181
+ * because we suspected a cold-cache race on the flag was the cause
+ * of the admin-tab-vanishes-post-restart bug. That fix closed a real
+ * race but the symptom kept recurring.
  *
  * Evidence-driven follow-up (a diagnostic harness run on staging)
  * showed the actual root cause: this plugin used to be registered
@@ -64,9 +62,10 @@ use Two\Gateway\Model\Brand\Loader;
  * system.xml.
  *
  * `brand_code` survives Converter conversion at section / group /
- * field levels (PR #160's probe). Synthesised elements carry
- * `brand_code="{code}"` so downstream code can discriminate by brand
- * when iterating Structure (e.g. brand-aware admin-block headers).
+ * field levels (probed in magento-plugin PR #160). Synthesised
+ * elements carry `brand_code="{code}"` so downstream code can
+ * discriminate by brand when iterating Structure (e.g. brand-aware
+ * admin-block headers).
  */
 class SynthesiseBrandAdminForm
 {
