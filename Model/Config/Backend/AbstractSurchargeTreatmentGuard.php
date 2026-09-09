@@ -7,8 +7,15 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Config\Backend;
 
+use Magento\Framework\App\Cache\TypeListInterface;
+use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\Config\Value;
+use Magento\Framework\Data\Collection\AbstractDb;
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Model\Context;
+use Magento\Framework\Model\ResourceModel\AbstractResource;
+use Magento\Framework\Registry;
+use Two\Gateway\Model\Config\NeverTaxedTreatment;
 use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
 
 /**
@@ -33,7 +40,12 @@ use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
  *
  * Sibling config paths are derived from the field's own path so the rule is
  * brand-aware: synthesized brand forms save under payment/<brand_code>/ and
- * get identical enforcement.
+ * get identical enforcement. That enforcement only exists where the
+ * backend_model is wired, and an overlay install renders ONLY the synthesized
+ * form (Plugin\Config\Structure\HidePaymentSection hides the static Two
+ * sections), so both etc/adminhtml/system.xml and
+ * etc/adminhtml/brand_form_template.xml must carry it — ABN-497 was this
+ * wiring missing from the template.
  *
  * Nothing here runs on config page load — this is the save path only, and it
  * throws a LocalizedException, which Magento renders as an admin error
@@ -58,6 +70,64 @@ use Two\Gateway\Model\Config\Source\SurchargeType as SurchargeTypeSource;
  */
 abstract class AbstractSurchargeTreatmentGuard extends Value
 {
+    /**
+     * @var NeverTaxedTreatment
+     */
+    protected $neverTaxedTreatment;
+
+    public function __construct(
+        Context $context,
+        Registry $registry,
+        ScopeConfigInterface $config,
+        TypeListInterface $cacheTypeList,
+        NeverTaxedTreatment $neverTaxedTreatment,
+        ?AbstractResource $resource = null,
+        ?AbstractDb $resourceCollection = null,
+        array $data = []
+    ) {
+        parent::__construct($context, $registry, $config, $cacheTypeList, $resource, $resourceCollection, $data);
+        $this->neverTaxedTreatment = $neverTaxedTreatment;
+    }
+
+    /**
+     * Reject a save that would leave a stored never-taxed treatment in place:
+     * a blank submission used to overwrite it with an empty string, silently
+     * changing how the surcharge is taxed and erasing the state the field's
+     * warning renderer reads (ABN-497). Not gated on the surcharge being
+     * enabled, because the submitted-value refusal it completes is not either.
+     *
+     * Only a save the treatment field is PART of can be refused. A save
+     * without it cannot overwrite the stored value, and refusing one would
+     * brick the whole section for a brand that suppresses the field or a scope
+     * inheriting it — neither offers the merchant a control to fix.
+     *
+     * @throws LocalizedException
+     */
+    protected function assertStoredTreatmentIsReplaced(): void
+    {
+        $submitted = $this->getSubmittedTaxTreatment();
+        if ($submitted === null) {
+            return;
+        }
+
+        if (!$this->neverTaxedTreatment->isNeverTaxed((string)$this->getScopedSiblingValue('surcharge_tax_class'))) {
+            return;
+        }
+
+        if ($submitted !== '' && !$this->neverTaxedTreatment->isNeverTaxed($submitted)) {
+            return;
+        }
+
+        throw new LocalizedException(
+            __(
+                'The saved Surcharge tax treatment leaves the surcharge untaxed in every '
+                . 'jurisdiction and is no longer available. Select a Surcharge tax '
+                . 'treatment to save this configuration. To leave the surcharge untaxed, '
+                . 'create a Tax Rule with a 0% rate and select its Product Tax Class.'
+            )
+        );
+    }
+
     /**
      * Reject the save when a surcharge is enabled at this scope but no
      * surcharge tax treatment has been chosen.
@@ -119,15 +189,26 @@ abstract class AbstractSurchargeTreatmentGuard extends Value
     }
 
     /**
-     * Surcharge tax treatment for this save. Prefers the value posted in the
-     * same request; falls back to stored config for partial saves. A posted
-     * empty string is a real (blank) submission, not an absent field.
+     * Surcharge tax treatment submitted by this save, with no fallback to
+     * stored config. null means the treatment field is not part of the save;
+     * an empty string is a real (blank) submission.
+     */
+    protected function getSubmittedTaxTreatment(): ?string
+    {
+        $posted = $this->getFieldsetDataValue('surcharge_tax_class');
+
+        return $posted === null ? null : (string)$posted;
+    }
+
+    /**
+     * Surcharge tax treatment this scope ends up with: the submitted value,
+     * or the stored one for a save the treatment field is not part of.
      */
     protected function getTaxTreatmentValue(): ?string
     {
-        $posted = $this->getFieldsetDataValue('surcharge_tax_class');
-        if ($posted !== null) {
-            return (string)$posted;
+        $submitted = $this->getSubmittedTaxTreatment();
+        if ($submitted !== null) {
+            return $submitted;
         }
 
         $stored = $this->getScopedSiblingValue('surcharge_tax_class');

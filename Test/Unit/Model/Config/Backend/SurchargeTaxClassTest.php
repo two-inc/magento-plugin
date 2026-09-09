@@ -49,6 +49,20 @@ class SurchargeTaxClassTest extends TestCase
         );
     }
 
+    /**
+     * @param string[] $neverTaxed values the shared decision calls never-taxed
+     * @param string[] $seen        receives every value it was asked about
+     */
+    private function stubNeverTaxed(array $neverTaxed, array &$seen = []): void
+    {
+        $this->neverTaxedTreatment->method('isNeverTaxed')->willReturnCallback(
+            function (string $value) use ($neverTaxed, &$seen) {
+                $seen[] = $value;
+                return in_array($value, $neverTaxed, true);
+            }
+        );
+    }
+
     private function stubStoredConfig(array $map): void
     {
         $this->scopeConfig->method('getValue')->willReturnCallback(
@@ -228,7 +242,7 @@ class SurchargeTaxClassTest extends TestCase
      */
     public function testANeverTaxedTreatmentIsRefused(): void
     {
-        $this->neverTaxedTreatment->method('isNeverTaxed')->with('0')->willReturn(true);
+        $this->stubNeverTaxed(['0']);
         $model = $this->buildModel([
             'value' => '0',
             'path' => 'payment/two_payment/surcharge_tax_class',
@@ -268,10 +282,8 @@ class SurchargeTaxClassTest extends TestCase
      */
     public function testTheRefusalDelegatesToTheSharedDecision(): void
     {
-        $this->neverTaxedTreatment->expects($this->once())
-            ->method('isNeverTaxed')
-            ->with('4')
-            ->willReturn(true);
+        $seen = [];
+        $this->stubNeverTaxed(['4'], $seen);
         $model = $this->buildModel([
             'value' => '4',
             'path' => 'payment/two_payment/surcharge_tax_class',
@@ -279,8 +291,12 @@ class SurchargeTaxClassTest extends TestCase
             'fieldset_data' => ['surcharge_type' => 'percentage'],
         ]);
 
-        $this->expectException(LocalizedException::class);
-        $model->beforeSave();
+        try {
+            $model->beforeSave();
+            $this->fail('Expected LocalizedException');
+        } catch (LocalizedException $e) {
+            $this->assertContains('4', $seen);
+        }
     }
 
     public function testARealTaxClassIsStillAccepted(): void
@@ -294,6 +310,51 @@ class SurchargeTaxClassTest extends TestCase
         ]);
 
         $this->assertSame($model, $model->beforeSave());
+    }
+
+    /**
+     * ABN-497: a blank submission over a stored never-taxed treatment used to
+     * be accepted and overwrite it with an empty string — a silent change to
+     * how the surcharge is taxed, and the stored sentinel is what the field
+     * renderer's warning depends on. Surcharges are OFF in every case here, so
+     * only the stored-treatment rule can refuse.
+     *
+     * @dataProvider storedSentinelSubmissions
+     */
+    public function testAStoredNeverTaxedTreatmentIsRefusedUntilReplaced(
+        string $submitted,
+        bool $refused,
+        string $case
+    ): void {
+        $this->stubNeverTaxed(['0']);
+        $this->stubStoredConfig(['payment/two_payment/surcharge_tax_class' => '0']);
+        $model = $this->buildModel([
+            'value' => $submitted,
+            'path' => 'payment/two_payment/surcharge_tax_class',
+            'scope' => 'default',
+            'fieldset_data' => ['surcharge_type' => 'none', 'surcharge_tax_class' => $submitted],
+        ]);
+
+        if (!$refused) {
+            $this->assertSame($model, $model->beforeSave(), $case);
+            return;
+        }
+
+        try {
+            $model->beforeSave();
+            $this->fail('expected a refusal: ' . $case);
+        } catch (LocalizedException $e) {
+            $this->assertStringContainsString('untaxed in every jurisdiction', $e->getMessage(), $case);
+        }
+    }
+
+    public static function storedSentinelSubmissions(): array
+    {
+        return [
+            ['', true, 'cleared to the placeholder — the rewrite that hid the stored sentinel'],
+            ['0', true, 'the sentinel re-submitted verbatim'],
+            ['4', false, 'replaced with a real tax class in the same save'],
+        ];
     }
 
     public function testSiblingPathsAreDerivedBrandAware(): void

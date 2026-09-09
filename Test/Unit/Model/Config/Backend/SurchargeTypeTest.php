@@ -10,6 +10,7 @@ use Magento\Framework\Model\Context;
 use Magento\Framework\Registry;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Model\Config\Backend\SurchargeType;
+use Two\Gateway\Model\Config\NeverTaxedTreatment;
 
 /**
  * Tests the section-save half of the surcharge tax treatment invariant.
@@ -25,9 +26,13 @@ class SurchargeTypeTest extends TestCase
     /** @var ScopeConfigInterface|\PHPUnit\Framework\MockObject\MockObject */
     private $scopeConfig;
 
+    /** @var NeverTaxedTreatment|\PHPUnit\Framework\MockObject\MockObject */
+    private $neverTaxedTreatment;
+
     protected function setUp(): void
     {
         $this->scopeConfig = $this->createMock(ScopeConfigInterface::class);
+        $this->neverTaxedTreatment = $this->createMock(NeverTaxedTreatment::class);
     }
 
     private function buildModel(array $data): SurchargeType
@@ -37,6 +42,7 @@ class SurchargeTypeTest extends TestCase
             $this->getMockBuilder(Registry::class)->disableOriginalConstructor()->getMock(),
             $this->scopeConfig,
             $this->createMock(TypeListInterface::class),
+            $this->neverTaxedTreatment,
             null,
             null,
             $data
@@ -187,6 +193,61 @@ class SurchargeTypeTest extends TestCase
         ]);
 
         $this->assertSame($model, $model->beforeSave());
+    }
+
+    /**
+     * ABN-497: the section-save half also refuses a stored never-taxed
+     * treatment. Only for a save the treatment field is part of — a save
+     * without it cannot overwrite the stored value, and refusing one would
+     * brick the section for a brand that suppresses the field or a scope
+     * inheriting it. Ungated on enablement: the 'none' rows pin that.
+     *
+     * @dataProvider storedSentinelSaves
+     */
+    public function testAStoredNeverTaxedTreatmentIsRefusedUntilReplaced(
+        string $method,
+        ?string $submittedTreatment,
+        ?string $refusedWith,
+        string $case
+    ): void {
+        $this->neverTaxedTreatment->method('isNeverTaxed')->willReturnCallback(
+            static fn (string $value): bool => $value === '0'
+        );
+        $this->stubStoredConfig(['payment/two_payment/surcharge_tax_class' => '0']);
+        $fieldsetData = ['surcharge_type' => $method];
+        if ($submittedTreatment !== null) {
+            $fieldsetData['surcharge_tax_class'] = $submittedTreatment;
+        }
+        $model = $this->buildModel([
+            'value' => $method,
+            'path' => 'payment/two_payment/surcharge_type',
+            'scope' => 'default',
+            'fieldset_data' => $fieldsetData,
+        ]);
+
+        if ($refusedWith === null) {
+            $this->assertSame($model, $model->beforeSave(), $case);
+            return;
+        }
+
+        try {
+            $model->beforeSave();
+            $this->fail('expected a refusal: ' . $case);
+        } catch (LocalizedException $e) {
+            $this->assertStringContainsString($refusedWith, $e->getMessage(), $case);
+        }
+    }
+
+    public static function storedSentinelSaves(): array
+    {
+        return [
+            ['percentage', '', 'Please select a surcharge tax treatment', 'cleared to the placeholder while enabled — the selection rule refuses first'],
+            ['percentage', '0', 'untaxed in every jurisdiction', 'the sentinel re-submitted verbatim'],
+            ['percentage', '4', null, 'the merchant replacing it with a real tax class'],
+            ['none', '', 'untaxed in every jurisdiction', 'surcharge off, so only the stored-sentinel rule can refuse'],
+            ['none', '4', null, 'surcharge off and the sentinel replaced in the same save'],
+            ['none', null, null, 'the treatment field not in the save at all — suppressed for this brand or inherited at this scope, so no control exists to fix it and this save cannot overwrite it either'],
+        ];
     }
 
     public function testSystemXmlWiresTheGuardOntoBothFields(): void

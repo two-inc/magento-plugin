@@ -8,13 +8,6 @@ declare(strict_types=1);
 namespace Two\Gateway\Model\Config\Backend;
 
 use Magento\Framework\Exception\LocalizedException;
-use Magento\Framework\Model\Context;
-use Magento\Framework\Registry;
-use Magento\Framework\App\Cache\TypeListInterface;
-use Magento\Framework\App\Config\ScopeConfigInterface;
-use Magento\Framework\Model\ResourceModel\AbstractResource;
-use Magento\Framework\Data\Collection\AbstractDb;
-use Two\Gateway\Model\Config\NeverTaxedTreatment;
 use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource;
 
 /**
@@ -40,8 +33,9 @@ use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource
  * creatable by anyone who crafts the POST, and "an untaxed surcharge
  * must be a Tax Rule the merchant configured" would be advisory. There
  * is no already-stored exemption: a scope sitting on such a value is
- * told to fix it (see the field's frontend model), not allowed to
- * re-save it.
+ * told to fix it (see the field's frontend model), and no save of the
+ * section is accepted until it does — including a blank submission,
+ * which would otherwise overwrite the stored value and hide the state.
  *
  * Real coverage: every admin config-section save, at any scope. NOT
  * `bin/magento config:set`, NOT "Use Default" / inherit, NOT direct
@@ -52,29 +46,11 @@ use Two\Gateway\Model\Config\Source\SurchargeTaxClass as SurchargeTaxClassSource
 class SurchargeTaxClass extends AbstractSurchargeTreatmentGuard
 {
     /**
-     * @var NeverTaxedTreatment
-     */
-    private $neverTaxedTreatment;
-
-    public function __construct(
-        Context $context,
-        Registry $registry,
-        ScopeConfigInterface $config,
-        TypeListInterface $cacheTypeList,
-        NeverTaxedTreatment $neverTaxedTreatment,
-        ?AbstractResource $resource = null,
-        ?AbstractDb $resourceCollection = null,
-        array $data = []
-    ) {
-        parent::__construct($context, $registry, $config, $cacheTypeList, $resource, $resourceCollection, $data);
-        $this->neverTaxedTreatment = $neverTaxedTreatment;
-    }
-
-    /**
      * @inheritDoc
      *
-     * @throws LocalizedException when surcharges are enabled and no
-     *         tax treatment is selected, when a never-taxed treatment is
+     * @throws LocalizedException when a stored never-taxed treatment is not
+     *         replaced by this save, when surcharges are enabled and no tax
+     *         treatment is selected, when a never-taxed treatment is
      *         submitted, or when "Custom" is submitted without a
      *         pre-existing legacy flat rate.
      */
@@ -91,6 +67,8 @@ class SurchargeTaxClass extends AbstractSurchargeTreatmentGuard
                 )
             );
         }
+
+        $this->assertStoredTreatmentIsReplaced();
 
         if ((string)$this->getValue() === SurchargeTaxClassSource::CUSTOM && !$this->hasLegacyFlatRate()) {
             throw new LocalizedException(
@@ -110,7 +88,7 @@ class SurchargeTaxClass extends AbstractSurchargeTreatmentGuard
      * including an explicit blank, which must never fall back to whatever
      * happens to be stored.
      */
-    protected function getTaxTreatmentValue(): ?string
+    protected function getSubmittedTaxTreatment(): ?string
     {
         return (string)$this->getValue();
     }

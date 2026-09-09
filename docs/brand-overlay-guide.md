@@ -302,11 +302,30 @@ passive). Two consequences:
 </suppressed_fields>
 ```
 
+A brand's admin surface comes ENTIRELY from
+`etc/adminhtml/brand_form_template.xml`:
+`Plugin\Config\Structure\HidePaymentSection` hides the static Two sections
+once an overlay is installed, and the deep merge with `system.xml` only
+overrides fields the template already declares. So a field — or a field's
+`source_model`, `backend_model` or `frontend_model` — added to `system.xml`
+alone is wired on no brand at all, and a missing `backend_model` means a
+save-time guard that silently does not exist for every partner while it
+still passes on Two. Declare both, in both files;
+`BrandFormModelWiringParityTest` and `DiagnosticsSectionParityTest` are the
+guards.
+
 `path` is `section_suffix/group/field` against the synthesised section
 (`{section_prefix}_payment` → `payment_terms` group here).
 `SynthesiseBrandAdminForm` sets `showInDefault/Website/Store="0"` on
 the matching field during section injection: the control stays declared
-in the canonical template but doesn't render for this brand. Use this
+in the canonical template but doesn't render for this brand.
+
+**A suppressed field is not POSTED**, so any save-time guard that reads
+its submitted value silently stops enforcing for this brand — and a
+guard that refused the save on the strength of that read would brick the
+whole section, since the merchant has no control to fix. Suppressing a
+field whose invariant is enforced elsewhere is a decision to drop the
+invariant for this brand, not just to hide a control. Use this
 instead of shipping a `<section>` stub in the overlay's system.xml —
 a static stub inserts itself into the merged Structure first and
 short-circuits the synthesised section ordering.
