@@ -337,7 +337,9 @@ company-number guard runs at placement, not at render — do not reach for
 vanishes, with no message, no error node and an empty message area. Each gate
 writes a log line and that is the only account of it — debug at the gate, error
 where the underlying service reports the cause — so the log is where a "why is the
-method missing" question gets answered. An unrecognised stored surcharge method
+method missing" question gets answered. The fee-quote gate is the one that error-logs
+at the gate itself, class and message only: nothing downstream records a corrupt
+cached quote or a failing session read. An unrecognised stored surcharge method
 throws with a buyer-facing string that no buyer ever sees.
 
 ## A field declared only in `system.xml` reaches no brand — nor does its model

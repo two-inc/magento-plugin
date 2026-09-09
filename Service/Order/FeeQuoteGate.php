@@ -13,6 +13,7 @@ use Magento\Framework\App\State as AppState;
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\Quote\Model\Quote;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Source\SurchargeType;
 
 /**
@@ -44,13 +45,16 @@ class FeeQuoteGate
 
     private BuyerCountryResolver $buyerCountryResolver;
 
+    private LogRepository $logRepository;
+
     public function __construct(
         AppState $appState,
         ConfigRepository $configRepository,
         ChargedTermResolver $chargedTermResolver,
         CheckoutSession $checkoutSession,
         SurchargeCalculator $surchargeCalculator,
-        BuyerCountryResolver $buyerCountryResolver
+        BuyerCountryResolver $buyerCountryResolver,
+        LogRepository $logRepository
     ) {
         $this->appState = $appState;
         $this->configRepository = $configRepository;
@@ -58,6 +62,7 @@ class FeeQuoteGate
         $this->checkoutSession = $checkoutSession;
         $this->surchargeCalculator = $surchargeCalculator;
         $this->buyerCountryResolver = $buyerCountryResolver;
+        $this->logRepository = $logRepository;
     }
 
     /**
@@ -106,8 +111,13 @@ class FeeQuoteGate
                 self::TIMEOUT_SECONDS
             );
             return true;
-        } catch (\Exception) {
-            // A malformed response must cost this method, never the page.
+        } catch (\Exception $e) {
+            // Nothing downstream records this one, and the withhold is invisible
+            // to buyer and merchant alike. Class and message only.
+            $this->logRepository->addErrorLog('Buyer fee quote failed, payment method withheld', [
+                'error' => get_class($e),
+                'reason' => $e->getMessage(),
+            ]);
             return false;
         }
     }

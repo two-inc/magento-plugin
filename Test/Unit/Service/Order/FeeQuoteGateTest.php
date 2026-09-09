@@ -7,6 +7,7 @@ use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\App\Area;
 use Magento\Framework\App\CacheInterface;
 use Magento\Framework\App\State as AppState;
+use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Serialize\Serializer\Json;
 use Magento\Quote\Model\Quote;
 use Magento\Quote\Model\Quote\Address;
@@ -19,8 +20,8 @@ use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\ChargedTermResolver;
 use Two\Gateway\Service\Order\FeeQuoteGate;
-use Two\Gateway\Service\Order\SurchargeCalculator;
 use Two\Gateway\Test\Unit\Service\Order\Doubles\RecordingAdapter;
+use Two\Gateway\Test\Unit\Service\Order\Doubles\RecordingSurchargeCalculator;
 
 /**
  * ABN-546. The gate prices the charged term on the request being judged;
@@ -29,6 +30,11 @@ use Two\Gateway\Test\Unit\Service\Order\Doubles\RecordingAdapter;
 class FeeQuoteGateTest extends TestCase
 {
     private RecordingAdapter $adapter;
+
+    private RecordingSurchargeCalculator $calculator;
+
+    /** @var list<array{0: string, 1: array<string, mixed>}> */
+    private array $gateErrors = [];
 
     private CheckoutSession $session;
 
@@ -64,6 +70,11 @@ class FeeQuoteGateTest extends TestCase
             $expectQuotable,
             $gate->isQuotable($this->makeQuote($grandTotal, $itemCount, $currency), 1),
             $case
+        );
+        $this->assertSame(
+            $expectApiCall ? 1 : 0,
+            $this->calculator->attempts,
+            'quote attempts: ' . $case
         );
         $this->assertCount(
             $expectApiCall ? 1 : 0,
@@ -164,6 +175,57 @@ class FeeQuoteGateTest extends TestCase
     }
 
     /**
+     * Given a withhold; when it happens; then the cause is on the record at a
+     * level someone will see, and carries nothing identifying.
+     *
+     * @dataProvider withholdCauses
+     */
+    public function testAWithholdRecordsItsCause(
+        array $response,
+        string|bool $cached,
+        string $expectedClass,
+        string $case
+    ): void {
+        $gate = $this->buildGate(
+            Area::AREA_FRONTEND,
+            SurchargeType::PERCENTAGE,
+            30,
+            $response,
+            $cached
+        );
+
+        $this->assertFalse($gate->isQuotable($this->makeQuote(1000.0, 1, 'EUR'), 1), $case);
+        $this->assertCount(1, $this->gateErrors, 'one error line naming the cause: ' . $case);
+        [$message, $data] = $this->gateErrors[0];
+        $this->assertStringContainsString('withheld', $message, $case);
+        $this->assertSame($expectedClass, $data['error'] ?? null, $case);
+        $this->assertNotSame('', (string)($data['reason'] ?? ''), 'the cause is not blank: ' . $case);
+        $this->assertSame(
+            ['error', 'reason'],
+            array_keys($data),
+            'nothing about the cart, the buyer or the merchant is logged: ' . $case
+        );
+    }
+
+    public function withholdCauses(): array
+    {
+        return [
+            [
+                ['http_status' => 503, 'error_code' => 'UPSTREAM'],
+                false,
+                LocalizedException::class,
+                'the endpoint refused the quote',
+            ],
+            [
+                ['buyer_fee_share' => 12.5],
+                '{ this is not json',
+                \InvalidArgumentException::class,
+                'the cached quote is corrupt',
+            ],
+        ];
+    }
+
+    /**
      * @param array<string, mixed> $response
      */
     private function buildGate(
@@ -192,7 +254,7 @@ class FeeQuoteGateTest extends TestCase
         $cache = $this->createMock(CacheInterface::class);
         $cache->method('load')->willReturn($cached);
 
-        $calculator = new SurchargeCalculator(
+        $this->calculator = new RecordingSurchargeCalculator(
             $config,
             $this->adapter,
             $this->createMock(LogRepository::class),
@@ -209,9 +271,25 @@ class FeeQuoteGateTest extends TestCase
             $config,
             new ChargedTermResolver($this->session, $config),
             $this->session,
-            $calculator,
-            new BuyerCountryResolver()
+            $this->calculator,
+            new BuyerCountryResolver(),
+            $this->recordingLog()
         );
+    }
+
+    /**
+     * @return LogRepository|\PHPUnit\Framework\MockObject\MockObject
+     */
+    private function recordingLog()
+    {
+        $this->gateErrors = [];
+        $log = $this->createMock(LogRepository::class);
+        $log->method('addErrorLog')->willReturnCallback(
+            function ($message, $data = []) {
+                $this->gateErrors[] = [(string)$message, (array)$data];
+            }
+        );
+        return $log;
     }
 
     private function makeQuote(float $grandTotal, int $itemCount, string $currency): Quote

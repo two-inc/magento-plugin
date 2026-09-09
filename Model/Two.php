@@ -1193,10 +1193,6 @@ class Two extends AbstractMethod
         return $this->surchargeCalculator->isSurchargeResolvable($currency, $storeId);
     }
 
-    /**
-     * See FeeQuoteGate::isQuotable(). Concedes rather than withholds whenever
-     * there is nothing to price.
-     */
     private function isFeeQuotable(?CartInterface $quote, ?int $storeId): bool
     {
         return $this->feeQuoteGate->isQuotable($quote, $storeId);
