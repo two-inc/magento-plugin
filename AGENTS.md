@@ -185,6 +185,30 @@ submitted key.
 One key configured against sandbox on one store view and production on another must
 not share a slot, or a store view serves the other environment's merchant.
 
+**The record's freshness is a stored success stamp, not cache expiry.** The hourly
+cron refreshes a record older than 24 hours; the cache's own 26-hour eviction
+ceiling sits above that sum on purpose, so a refresh one run late still beats
+eviction and a stopped cron shows up as a stale stamp rather than an empty slot. A
+fetch is bounded at 10 seconds, so a caller with its own wall-clock budget — a
+config save, the admin refresh button, a storefront render — can hold to it. A
+failed fetch is never cached as the record and never moves the stamp:
+last-known-good is served and re-fetch is bounded to once a minute, so an outage is
+not a fetch per read.
+
+**The `two_gateway` cache type must be ENABLED for any of that to happen.** A cache
+type ships off unless something turns it on, and with no `env.php` entry every save
+is a no-op and every read re-fetches — `bin/magento cache:status` is the check, and
+a shop enabled by hand tells you nothing about a merchant's install. The type is its
+own so `cache:clean two_gateway` drops the record and a config clean does not.
+
+## A Diagnostics field declared only in `system.xml` never reaches the admin
+
+The Diagnostics pane is rendered from fields synthesised out of
+`brand_form_template.xml`, and that deep merge only carries fields the template
+already declares — so a field added to `system.xml` alone is dropped silently and
+renders on no brand at all. Declare it in both; `DiagnosticsSectionParityTest`
+compares the two field lists and is the guard against the next one.
+
 **A configured payment term is validated against the set the merchant is
 entitled to offer**, in the field's backend model and again where the read path
 intersects the stored set — `config:set` bypasses a backend model. The
