@@ -30,7 +30,8 @@ use Two\Gateway\Service\Order\MinimumOrderProvider;
  * Uses the cached ApiKeyStatus::getStatus() rather than a live refresh():
  * the neighbouring "API key check" field (ApiKeyCheck) already performs a
  * live verification on this same page render, so a second live HTTP call
- * here would be redundant.
+ * here would be redundant. The merchant-record reads can still stand in for
+ * a cron that has never run, which is RecordProvider's own contract.
  */
 class HealthChecklist extends Field
 {
@@ -150,6 +151,15 @@ class HealthChecklist extends Field
             $reason = (string)__('no API key is saved. Check API key.');
         } elseif ($apiKeyStatus['status'] === ApiKeyStatus::INVALID_KEY) {
             $reason = (string)__('the API key was rejected. Check API key and Environment.');
+        } elseif ($apiKeyStatus['status'] !== ApiKeyStatus::OK) {
+            // Neither "shown" nor a reason: ApiKeyStatus::isVerified() still
+            // withholds on a transient verdict, and ABN-533's fall-through to
+            // the cached record will stop it. True either way.
+            return [
+                'label' => $label,
+                'ok' => false,
+                'value' => (string)__('Cannot be checked — the API key could not be verified just now.'),
+            ];
         }
         if ($reason === null) {
             try {
@@ -173,9 +183,7 @@ class HealthChecklist extends Field
             }
         }
         if ($reason === null && $this->coreCountryGateAllowsNothing($storeId)) {
-            $reason = (string)__(
-                'Country availability is set to specific countries and Allowed countries is empty.'
-            );
+            $reason = (string)__('Country availability is set to specific countries with none chosen. Check Allowed countries.');
         }
         if ($reason !== null) {
             return ['label' => $label, 'ok' => false, 'value' => $notShown . ' — ' . $reason];
@@ -194,6 +202,9 @@ class HealthChecklist extends Field
         $shown = (string)__('Shown at checkout');
         $store = $this->_storeManager->getStore($storeId ?? 0);
         $platform = $this->minimumOrderProvider->getMinimum($storeId);
+        if ($platform === null && !$this->hasEverFetchedRecord($storeId)) {
+            return $shown . ' — ' . (string)__('minimum order value not known until your profile refreshes');
+        }
         $merchant = $this->merchantMinimumResolver->resolve(
             $this->brandRegistry->getCode(),
             (string)$store->getBaseCurrencyCode(),
@@ -251,6 +262,20 @@ class HealthChecklist extends Field
         );
     }
 
+    /**
+     * Whether a merchant record has ever resolved for this scope. Without one
+     * the platform floor reads as absent when it is merely unknown.
+     */
+    private function hasEverFetchedRecord(?int $storeId): bool
+    {
+        $status = $this->recordProvider->status(
+            $this->configRepository->getMode($storeId),
+            $this->configRepository->getApiKey($storeId)
+        );
+
+        return $status['fetched_at'] !== null;
+    }
+
     /** Core's own allowlist restricted to specific countries with none chosen. */
     private function coreCountryGateAllowsNothing(?int $storeId): bool
     {
@@ -271,7 +296,7 @@ class HealthChecklist extends Field
      * The scope the config page is open at, so the row reports the same
      * store's verdict the checkout gate would.
      */
-    protected function resolveScopeStoreId(): ?int
+    private function resolveScopeStoreId(): ?int
     {
         try {
             $store = (string)$this->getRequest()->getParam('store');

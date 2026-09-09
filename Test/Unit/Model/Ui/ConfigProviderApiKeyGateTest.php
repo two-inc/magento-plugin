@@ -280,7 +280,7 @@ class ConfigProviderApiKeyGateTest extends TestCase
         $this->logRepository = $this->createMock(LogRepository::class);
         $this->logRepository->expects($this->once())->method('addDebugLog')
             ->with(
-                'two_payment withheld from checkout: API key verification failed',
+                sprintf('two_payment checkout config withheld (tile and company search): API key verdict "%s"', $status),
                 ['status' => $status, 'http_status' => $code]
             );
 

@@ -310,13 +310,13 @@ class HealthChecklistTest extends TestCase
                 'a definitive rejection names both key and environment',
             ],
             'key unverifiable, service down' => [
-                true, ApiKeyStatus::SERVICE_ERROR, true, $unrestricted, null, null, false, true,
-                'Shown at checkout',
-                'ABN-533: a transient verdict falls through to the cached record, so nothing is withheld',
+                true, ApiKeyStatus::SERVICE_ERROR, true, $unrestricted, null, null, false, false,
+                'Cannot be checked',
+                'a transient verdict claims neither a withholding nor a showing',
             ],
             'key unverifiable, unreachable' => [
-                true, ApiKeyStatus::UNREACHABLE, true, $unrestricted, null, null, false, true,
-                'Shown at checkout',
+                true, ApiKeyStatus::UNREACHABLE, true, $unrestricted, null, null, false, false,
+                'Cannot be checked',
                 'the same for a store that cannot reach us at all',
             ],
             'stored surcharge method unknown' => [
@@ -331,7 +331,7 @@ class HealthChecklistTest extends TestCase
             ],
             'core allowlist restricted to nothing' => [
                 true, ApiKeyStatus::OK, true, $unrestricted, null, null, true, false,
-                'Allowed countries is empty',
+                'Check Allowed countries',
                 'the two country gates are separate settings and name themselves separately',
             ],
             'nothing withholding it' => [
@@ -429,8 +429,8 @@ class HealthChecklistTest extends TestCase
         );
         $this->configRepository->expects($this->once())->method('isActive')->with($expectedStoreId)
             ->willReturn(false);
-        // The checkout row's own verdict read judges the page's scope. The
-        // panel's separate "API key" row is unscoped and predates this.
+        // The checkout row's own verdict read judges the page's scope; the
+        // panel's separate "API key" row is unscoped.
         $scopesAsked = [];
         $this->apiKeyStatus->method('getStatus')
             ->willReturnCallback(function ($storeId = null) use (&$scopesAsked) {
@@ -459,6 +459,36 @@ class HealthChecklistTest extends TestCase
             'stale store param' => ['999', '', false, null, 'an unresolvable scope degrades, never throws'],
             'stale website param' => ['', '999', false, null, 'and the same for a website'],
         ];
+    }
+
+    /**
+     * ABN-518: a platform floor that has never been fetched is unknown, not
+     * absent, and a bare "shown at checkout" would read as no floor at all.
+     */
+    public function testAProfileThatHasNeverResolvedNamesTheUnknownFloor(): void
+    {
+        $this->recordProvider = $this->createMock(RecordProvider::class);
+        $this->recordProvider->method('status')->willReturn([
+            'fetched_at' => null,
+            'absent_on_read_at' => null,
+            'stood_in_at' => null,
+            'scheduled_at' => null,
+        ]);
+        $this->setBlockDependencies();
+        $this->configRepository->method('isActive')->willReturn(true);
+        $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);
+        $this->configRepository->method('getMode')->willReturn('sandbox');
+        $this->configRepository->method('getSurchargeType')->willReturn('none');
+        $this->supportedCountriesProvider->method('getState')
+            ->willReturn(SupportedCountriesProvider::STATE_UNRESTRICTED);
+        $this->minimumOrderProvider->method('getMinimum')->willReturn(null);
+        $this->merchantMinimumResolver->method('resolve')->willReturn(null);
+        $this->scopeConfig->method('isSetFlag')->willReturn(false);
+
+        $row = $this->block->getChecklistRows()[4];
+
+        $this->assertTrue($row['ok']);
+        $this->assertStringContainsString('minimum order value not known until your profile refreshes', $row['value']);
     }
 
     public function testAllHealthyRows(): void
