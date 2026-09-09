@@ -16,9 +16,8 @@ use Two\Gateway\Service\Order\MinimumOrderProvider;
 /**
  * The api-key verdict is the only upstream failure that may withhold the
  * payment method, and only when it is a DEFINITIVE rejection: Two said no,
- * or there is no key. An outage falls through to the cached merchant record
- * (ABN-533) — it used to empty checkout on a correctly configured shop
- * within one verdict cache lifetime of any upstream incident.
+ * or there is no key. Everything else falls through to the cached merchant
+ * record (ABN-533).
  */
 class TwoApiKeyGateTest extends TestCase
 {
@@ -63,18 +62,27 @@ class TwoApiKeyGateTest extends TestCase
     }
 
     /**
-     * Wires the real predicate over a stubbed verdict, so a test can never
-     * pass by disagreeing with ApiKeyStatus about which categories withhold.
+     * The real ApiKeyStatus over a stubbed verdict — only getStatus() is
+     * overridden — so the gate runs the production predicate and cannot pass
+     * by re-stating the rule in the test.
      */
     private function statusService(string $status, ?int $code = null): ApiKeyStatus
     {
-        $service = $this->createMock(ApiKeyStatus::class);
-        $verdict = ['status' => $status, 'code' => $code, 'merchant' => null];
-        $service->method('getStatus')->willReturn($verdict);
-        $service->method('isDefinitiveFailure')->willReturn(
-            $status === ApiKeyStatus::INVALID_KEY || $status === ApiKeyStatus::NOT_CONFIGURED
-        );
-        return $service;
+        return new class (['status' => $status, 'code' => $code, 'merchant' => null]) extends ApiKeyStatus {
+            /** @var array{status: string, code: int|null, merchant: array<string,mixed>|null} */
+            private $verdict;
+
+            /** @param array{status: string, code: int|null, merchant: array<string,mixed>|null} $verdict */
+            public function __construct(array $verdict)
+            {
+                $this->verdict = $verdict;
+            }
+
+            public function getStatus(?int $storeId = null): array
+            {
+                return $this->verdict;
+            }
+        };
     }
 
     /**
