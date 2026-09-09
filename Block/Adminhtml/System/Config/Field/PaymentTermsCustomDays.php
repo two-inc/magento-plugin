@@ -10,6 +10,8 @@ namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Config\Model\Config\Reader\Source\Deployed\SettingChecker;
+use Magento\Config\Model\Config\Structure;
+use Magento\Config\Model\Config\Structure\Element\Field as StructureField;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Model\Config\Backend\PaymentTerms\OfferedTermsGuard;
@@ -33,6 +35,9 @@ class PaymentTermsCustomDays extends Field
     /** @var SettingChecker */
     private $settingChecker;
 
+    /** @var Structure */
+    private $structure;
+
     /** @var string|null */
     private $scope;
 
@@ -47,12 +52,14 @@ class PaymentTermsCustomDays extends Field
         OfferedTermsGuard $offeredTerms,
         StoreManagerInterface $storeManager,
         SettingChecker $settingChecker,
+        Structure $structure,
         array $data = []
     ) {
         parent::__construct($context, $data);
         $this->offeredTerms = $offeredTerms;
         $this->storeManager = $storeManager;
         $this->settingChecker = $settingChecker;
+        $this->structure = $structure;
     }
 
     /**
@@ -100,22 +107,36 @@ class PaymentTermsCustomDays extends Field
     }
 
     /**
-     * Env.php-locking the sibling stops it reaching its backend model; its inherit state is only
+     * An env.php lock overrides whatever the sibling's own save writes, so the tick never takes
+     * effect and folding the value away would lose the term. The sibling's inherit state is only
      * known in the browser, so the JS composes that half with this marker.
      */
     private function siblingCanTakeTheTerm(AbstractElement $element): bool
     {
-        $structurePath = $element->getData('field_config')['path'] ?? null;
-        if (!is_string($structurePath) || $structurePath === '') {
+        $sibling = $this->siblingConfigPath($element->getData('field_config')['path'] ?? null);
+        if ($sibling === null) {
             return false;
         }
         $this->resolveScope();
 
-        return !$this->settingChecker->isReadOnly(
-            $structurePath . '/' . self::SIBLING,
-            (string)$this->scope,
-            $this->scopeCode
-        );
+        return !$this->settingChecker->isReadOnly($sibling, (string)$this->scope, $this->scopeCode);
+    }
+
+    /**
+     * SettingChecker keys env.php locks by config path; the element carries its group's structure
+     * path, which resolves to nothing there.
+     *
+     * @param mixed $groupStructurePath
+     */
+    private function siblingConfigPath($groupStructurePath): ?string
+    {
+        if (!is_string($groupStructurePath) || $groupStructurePath === '') {
+            return null;
+        }
+        $sibling = $this->structure->getElement($groupStructurePath . '/' . self::SIBLING);
+        $path = $sibling instanceof StructureField ? (string)$sibling->getConfigPath() : '';
+
+        return $path === '' ? null : $path;
     }
 
     /** Store id for the scope being edited, or null for website/default — resolves the API key. */

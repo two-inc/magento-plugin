@@ -5,6 +5,8 @@ namespace Two\Gateway\Test\Unit\Config;
 
 use Magento\Backend\Block\Template\Context as BlockContext;
 use Magento\Config\Model\Config\Reader\Source\Deployed\SettingChecker;
+use Magento\Config\Model\Config\Structure;
+use Magento\Config\Model\Config\Structure\Element\Field as StructureField;
 use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\RequestInterface;
@@ -28,6 +30,11 @@ class PaymentTermsFoldInAgreementTest extends TestCase
 {
     private const STRUCTURE_PATH = 'two_payment/payment_terms';
 
+    /** Public: the anonymous Structure and Field subclasses below read them. */
+    public const SIBLING_STRUCTURE_PATH = 'two_payment/payment_terms/payment_terms';
+
+    public const SIBLING_CONFIG_PATH = 'payment/two_payment/payment_terms';
+
     /** @param int[] $offered */
     private function markerIsRendered(string $stored, array $offered, bool $envLocked): bool
     {
@@ -38,7 +45,8 @@ class PaymentTermsFoldInAgreementTest extends TestCase
             $context,
             new OfferedTermsGuard($this->settingsProvider($offered)),
             $this->createMock(StoreManagerInterface::class),
-            $this->settingChecker($envLocked)
+            $this->settingChecker($envLocked),
+            self::structure()
         ) extends CustomDaysField {
             public function renderForTest(AbstractElement $element): string
             {
@@ -74,6 +82,7 @@ class PaymentTermsFoldInAgreementTest extends TestCase
             new OfferedTermsGuard($this->settingsProvider($offered)),
             $this->createMock(MessageManager::class),
             $this->settingChecker($envLocked),
+            self::structure(),
             null,
             null,
             [
@@ -107,10 +116,35 @@ class PaymentTermsFoldInAgreementTest extends TestCase
     {
         $settingChecker = $this->createMock(SettingChecker::class);
         $settingChecker->method('isReadOnly')->willReturnCallback(
-            static fn ($path) => $envLocked && $path === self::STRUCTURE_PATH . '/payment_terms'
+            static fn ($path) => $envLocked && $path === self::SIBLING_CONFIG_PATH
         );
 
         return $settingChecker;
+    }
+
+    /** Declares the sibling's config path, as etc/adminhtml/system.xml does. */
+    private static function structure(): Structure
+    {
+        return new class extends Structure {
+            // phpcs:disable
+            public function getElement($path)
+            {
+                $configPath = $path === PaymentTermsFoldInAgreementTest::SIBLING_STRUCTURE_PATH
+                    ? PaymentTermsFoldInAgreementTest::SIBLING_CONFIG_PATH
+                    : null;
+
+                return new class ($configPath) extends StructureField {
+                    public function __construct(private ?string $configPath)
+                    {
+                    }
+                    public function getConfigPath()
+                    {
+                        return $this->configPath;
+                    }
+                };
+            }
+            // phpcs:enable
+        };
     }
 
     /**

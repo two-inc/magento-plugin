@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Model\Config\Backend;
 
 use Magento\Config\Model\Config\Reader\Source\Deployed\SettingChecker;
+use Magento\Config\Model\Config\Structure;
+use Magento\Config\Model\Config\Structure\Element\Field as StructureField;
 use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Exception\LocalizedException;
@@ -23,6 +25,10 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
  */
 class PaymentTermsCustomDaysTest extends TestCase
 {
+    /** Public: the anonymous Structure and Field subclasses below read them. */
+    public const SIBLING_STRUCTURE_PATH = 'two_payment/payment_terms/payment_terms';
+
+    public const SIBLING_CONFIG_PATH = 'payment/two_payment/payment_terms';
     /** @var MessageManager|MockObject */
     private $messageManager;
 
@@ -66,6 +72,7 @@ class PaymentTermsCustomDaysTest extends TestCase
             new OfferedTermsGuard($settingsProvider),
             $this->messageManager,
             $this->settingChecker,
+            self::structure(),
             null,
             null,
             $data + [
@@ -78,6 +85,31 @@ class PaymentTermsCustomDaysTest extends TestCase
                 'groups' => ['payment_terms' => ['fields' => $fields]],
             ]
         );
+    }
+
+    /** Declares the sibling's config path, as etc/adminhtml/system.xml does. */
+    private static function structure(): Structure
+    {
+        return new class extends Structure {
+            // phpcs:disable
+            public function getElement($path)
+            {
+                $configPath = $path === PaymentTermsCustomDaysTest::SIBLING_STRUCTURE_PATH
+                    ? PaymentTermsCustomDaysTest::SIBLING_CONFIG_PATH
+                    : null;
+
+                return new class ($configPath) extends StructureField {
+                    public function __construct(private ?string $configPath)
+                    {
+                    }
+                    public function getConfigPath()
+                    {
+                        return $this->configPath;
+                    }
+                };
+            }
+            // phpcs:enable
+        };
     }
 
     /**
@@ -194,12 +226,12 @@ class PaymentTermsCustomDaysTest extends TestCase
         ];
     }
 
-    /** The read-only question names the sibling's structure path, as core asks it. */
+    /** Env.php locks are keyed by config path, so the sibling's structure path matches none. */
     public function testTheReadOnlyCheckAsksAboutTheSiblingAtTheScopeBeingSaved(): void
     {
         $this->settingChecker->expects($this->once())
             ->method('isReadOnly')
-            ->with('two_payment/payment_terms/payment_terms', 'stores', 'de')
+            ->with(self::SIBLING_CONFIG_PATH, 'stores', 'de')
             ->willReturn(false);
 
         $model = $this->buildModel(
@@ -299,6 +331,7 @@ class PaymentTermsCustomDaysTest extends TestCase
             new OfferedTermsGuard($settingsProvider),
             $this->messageManager,
             $this->settingChecker,
+            self::structure(),
             null,
             null,
             [

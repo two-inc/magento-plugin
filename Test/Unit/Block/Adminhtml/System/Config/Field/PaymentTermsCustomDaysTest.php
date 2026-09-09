@@ -7,6 +7,8 @@ use DOMDocument;
 use DOMElement;
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Model\Config\Reader\Source\Deployed\SettingChecker;
+use Magento\Config\Model\Config\Structure;
+use Magento\Config\Model\Config\Structure\Element\Field as StructureField;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Magento\Store\Api\Data\StoreInterface;
@@ -28,6 +30,11 @@ class PaymentTermsCustomDaysTest extends TestCase
 {
     private const STRUCTURE_PATH = 'two_payment/payment_terms';
 
+    /** Public: the anonymous Structure and Field subclasses below read them. */
+    public const SIBLING_STRUCTURE_PATH = 'two_payment/payment_terms/payment_terms';
+
+    public const SIBLING_CONFIG_PATH = 'payment/two_payment/payment_terms';
+
     /**
      * @param int[] $offered
      * @param array<string, string> $params the admin page's own request params
@@ -36,7 +43,8 @@ class PaymentTermsCustomDaysTest extends TestCase
         array $offered = [],
         array $params = [],
         ?SettingsProvider $settingsProvider = null,
-        bool $siblingEnvLocked = false
+        bool $siblingEnvLocked = false,
+        ?SettingChecker $settingChecker = null
     ): PaymentTermsCustomDays {
         if ($settingsProvider === null) {
             $settingsProvider = $this->createMock(SettingsProvider::class);
@@ -59,21 +67,54 @@ class PaymentTermsCustomDaysTest extends TestCase
         );
         $storeManager->method('getWebsite')->willReturn($website);
 
-        // A lock is scoped, so a query at the wrong scope must not read as one.
+        // A lock is scoped and keyed by config path, so a query at the wrong scope or under the
+        // structure path must not read as one.
         $editedScope = self::editedScope($params);
-        $settingChecker = $this->createMock(SettingChecker::class);
-        $settingChecker->method('isReadOnly')->willReturnCallback(
-            static fn ($path, $scope, $scopeCode = null) => $siblingEnvLocked
-                && [$path, $scope, $scopeCode]
-                    === [self::STRUCTURE_PATH . '/payment_terms', $editedScope[0], $editedScope[1]]
-        );
+        if ($settingChecker === null) {
+            $settingChecker = $this->createMock(SettingChecker::class);
+            $settingChecker->method('isReadOnly')->willReturnCallback(
+                static fn ($path, $scope, $scopeCode = null) => $siblingEnvLocked
+                    && [$path, $scope, $scopeCode]
+                        === [self::SIBLING_CONFIG_PATH, $editedScope[0], $editedScope[1]]
+            );
+        }
 
-        return new class ($context, new OfferedTermsGuard($settingsProvider), $storeManager, $settingChecker)
-            extends PaymentTermsCustomDays {
+        return new class (
+            $context,
+            new OfferedTermsGuard($settingsProvider),
+            $storeManager,
+            $settingChecker,
+            self::structure()
+        ) extends PaymentTermsCustomDays {
             public function renderForTest(AbstractElement $element): string
             {
                 return $this->_getElementHtml($element);
             }
+        };
+    }
+
+    /** Declares the sibling's config path, as etc/adminhtml/system.xml does. */
+    private static function structure(): Structure
+    {
+        return new class extends Structure {
+            // phpcs:disable
+            public function getElement($path)
+            {
+                $configPath = $path === PaymentTermsCustomDaysTest::SIBLING_STRUCTURE_PATH
+                    ? PaymentTermsCustomDaysTest::SIBLING_CONFIG_PATH
+                    : null;
+
+                return new class ($configPath) extends StructureField {
+                    public function __construct(private ?string $configPath)
+                    {
+                    }
+                    public function getConfigPath()
+                    {
+                        return $this->configPath;
+                    }
+                };
+            }
+            // phpcs:enable
         };
     }
 
@@ -271,6 +312,26 @@ class PaymentTermsCustomDaysTest extends TestCase
             'html_id' => 'two_payment_payment_terms_payment_terms_duration_days',
             'name' => 'groups[payment_terms][fields][payment_terms_duration_days][value]',
         ]));
+
+        $this->assertSame(0, $this->parse($html)->getElementsByTagName('span')->length);
+    }
+
+    /** A lock is declared against the config path, so the structure path never resolves to one. */
+    public function testTheLockIsQueriedByTheSiblingsConfigPath(): void
+    {
+        $settingChecker = $this->createMock(SettingChecker::class);
+        $settingChecker->expects($this->once())
+            ->method('isReadOnly')
+            ->with(self::SIBLING_CONFIG_PATH, 'default', null)
+            ->willReturn(true);
+
+        $html = $this->block([30], [], null, false, $settingChecker)
+            ->renderForTest(new AbstractElement([
+                'value' => '30',
+                'html_id' => 'two_payment_payment_terms_payment_terms_duration_days',
+                'name' => 'groups[payment_terms][fields][payment_terms_duration_days][value]',
+                'field_config' => ['path' => self::STRUCTURE_PATH],
+            ]));
 
         $this->assertSame(0, $this->parse($html)->getElementsByTagName('span')->length);
     }

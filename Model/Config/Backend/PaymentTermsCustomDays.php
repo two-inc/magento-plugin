@@ -8,6 +8,8 @@ declare(strict_types=1);
 namespace Two\Gateway\Model\Config\Backend;
 
 use Magento\Config\Model\Config\Reader\Source\Deployed\SettingChecker;
+use Magento\Config\Model\Config\Structure;
+use Magento\Config\Model\Config\Structure\Element\Field as StructureField;
 use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\Config\Value;
@@ -39,6 +41,9 @@ class PaymentTermsCustomDays extends Value
     /** @var SettingChecker */
     private $settingChecker;
 
+    /** @var Structure */
+    private $structure;
+
     /** @var int|null term the fold-in cleared, held for the post-commit notice */
     private $foldedIn = null;
 
@@ -50,6 +55,7 @@ class PaymentTermsCustomDays extends Value
         OfferedTermsGuard $offeredTerms,
         MessageManager $messageManager,
         SettingChecker $settingChecker,
+        Structure $structure,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -58,6 +64,7 @@ class PaymentTermsCustomDays extends Value
         $this->offeredTerms = $offeredTerms;
         $this->messageManager = $messageManager;
         $this->settingChecker = $settingChecker;
+        $this->structure = $structure;
     }
 
     /**
@@ -114,11 +121,10 @@ class PaymentTermsCustomDays extends Value
     }
 
     /**
-     * Whether the sibling writes the matching tick in this same save. Both tests are the ones
-     * Magento\Config\Model\Config::_processGroup applies to decide that: a field carrying an
-     * `inherit` flag goes to the delete transaction, and one locked in env.php is skipped before
-     * its backend model is reached. The posted VALUE cannot answer this — the checkboxes template
-     * always emits an empty hidden fallback, so an inheriting sibling posts '' rather than nothing.
+     * Whether the sibling's matching tick will be in effect after this save. An `inherit` flag
+     * means no value is written for it, and an env.php lock overrides whatever is. The posted
+     * VALUE cannot answer either — the checkboxes template always emits an empty hidden fallback,
+     * so an inheriting sibling posts '' rather than nothing.
      */
     private function siblingTakesTheTerm(): bool
     {
@@ -130,16 +136,32 @@ class PaymentTermsCustomDays extends Value
             return false;
         }
 
-        $structurePath = $this->getData('field_config')['path'] ?? null;
-        if (!is_string($structurePath) || $structurePath === '') {
+        $sibling = $this->siblingConfigPath();
+        if ($sibling === null) {
             return false;
         }
 
         return !$this->settingChecker->isReadOnly(
-            $structurePath . '/' . self::SIBLING,
+            $sibling,
             (string)$this->getScope(),
             $this->getScopeCode()
         );
+    }
+
+    /**
+     * SettingChecker keys env.php locks by config path; the model carries its group's structure
+     * path, which resolves to nothing there.
+     */
+    private function siblingConfigPath(): ?string
+    {
+        $groupStructurePath = $this->getData('field_config')['path'] ?? null;
+        if (!is_string($groupStructurePath) || $groupStructurePath === '') {
+            return null;
+        }
+        $sibling = $this->structure->getElement($groupStructurePath . '/' . self::SIBLING);
+        $path = $sibling instanceof StructureField ? (string)$sibling->getConfigPath() : '';
+
+        return $path === '' ? null : $path;
     }
 
     /**
