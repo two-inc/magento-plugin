@@ -459,4 +459,58 @@ class ApiKeyStatusTest extends TestCase
 
         $this->assertSame(ApiKeyStatus::OK, $this->build()->getStatus()['status']);
     }
+
+    /**
+     * Given either entry point that verifies the stored key, When the adapter is
+     * called, Then the call carries an explicit timeout rather than inheriting
+     * the adapter's 60s default.
+     *
+     * @dataProvider verifyingEntryPoints
+     */
+    public function testEveryStoredKeyVerificationCarriesATimeoutBudget(
+        string $entryPoint,
+        int $expectedTimeout,
+        string $description
+    ): void {
+        $this->cache->method('load')->willReturn(false);
+        $budgets = [];
+        $this->apiAdapter->method('execute')->willReturnCallback(
+            function (
+                string $endpoint,
+                array $payload = [],
+                string $method = 'POST',
+                ?int $storeId = null,
+                ?string $apiKeyOverride = null,
+                ?string $modeOverride = null,
+                ?int $timeoutSeconds = null
+            ) use (&$budgets) {
+                $budgets[] = $timeoutSeconds;
+                return ['id' => 'abc-123'];
+            }
+        );
+
+        $status = $entryPoint === 'refresh' ? $this->build()->refresh(1) : $this->build()->getStatus(1);
+
+        $this->assertSame(ApiKeyStatus::OK, $status['status']);
+        $this->assertSame([$expectedTimeout], $budgets, $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: int, 2: string}>
+     */
+    public static function verifyingEntryPoints(): array
+    {
+        return [
+            'checkout render on a cache miss' => [
+                'getStatus',
+                10,
+                'a checkout render must not be able to wait out the adapter default',
+            ],
+            'admin live re-check' => [
+                'refresh',
+                10,
+                'the admin re-check shares the verification call, so it shares its budget',
+            ],
+        ];
+    }
 }

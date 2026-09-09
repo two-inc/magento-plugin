@@ -269,7 +269,6 @@
 "Merchant ID:","Verkoper-ID:"
 "Refund %1","Terugbetaling %1"
 "Surcharge","Toeslag"
-"Amounts are shown in %1 unless otherwise stated.","Bedragen worden getoond in %1, tenzij anders vermeld."
 "Please select a surcharge tax treatment. A surcharge method is enabled (see the Surcharge method field), so the Surcharge tax treatment field must be chosen explicitly before this configuration can be saved.","Selecteer een BTW-behandeling voor de toeslag. Er is een toeslagmethode ingeschakeld (zie het veld Toeslagstrategie), dus het veld BTW-behandeling toeslag moet expliciet worden gekozen voordat deze configuratie kan worden opgeslagen."
 "Unable to calculate payment terms surcharge. Please try again in a moment.","Kan de toeslag voor betaaltermijnen niet berekenen. Probeer het over een moment opnieuw."
 "The configured surcharge cap resolves to zero in %1 and cannot be applied. Please try another payment method or contact support.","De ingestelde toeslaglimiet komt in %1 uit op nul en kan niet worden toegepast. Probeer een andere betaalmethode of neem contact op met support."
