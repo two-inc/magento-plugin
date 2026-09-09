@@ -165,8 +165,8 @@ function makeDom() {
             }
         };
         // The shipping address form is the SCOPE the autofill and the revert
-        // resolve their fields inside (TWO-25461), so a lookup through it has to
-        // land on the same node the plain selector does — otherwise every
+        // resolve their fields inside (TWO-25461), so a lookup through it has
+        // to land on the same node the plain selector does — otherwise every
         // assertion below would be watching a node production never writes.
         if (selector === PRIMARY_ROOT) {
             n.find = function (sel) {

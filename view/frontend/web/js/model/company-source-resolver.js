@@ -7,10 +7,9 @@
  * TWO-25554: which of the two address panels' captured companies is the
  * buyer's actual paying-as company.
  *
- * Rule (confirmed ruling, verbatim): "where billing address is secondary, pick from
- * shipping unless user specifies billing is different in which case pick
- * from billing first, falling back to shipping only if billing doesn't
- * present a company number."
+ * Shipping's capture wins while billing is not a distinct address. Once the
+ * buyer makes billing distinct, billing's capture wins, falling back to
+ * shipping when billing carries no company number to bill against.
  *
  * Never a hybrid of the two: `resolved` is always a live mirror of exactly ONE
  * of `shipping`/`billing`, so a downstream reader (order-intent, the tile's own

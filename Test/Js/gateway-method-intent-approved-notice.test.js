@@ -258,9 +258,8 @@ describe('gateway_method intent-approved notice', () => {
         expect(ctx.orderIntentDeclinedNotice()).toBe(
             'Two is not available for this order by Acme Widgets AS (123456789)'
         );
-        // No toast for a clean decline — the persistent tile notice is the
-        // only surface, matching the "tile shows ONLY the intent message"
-        // ruling.
+        // No toast for a clean decline — TWO-25326 makes the persistent
+        // tile notice the only surface.
         expect(ctx.errors).toEqual([]);
     });
 

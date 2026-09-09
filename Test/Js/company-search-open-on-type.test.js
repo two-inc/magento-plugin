@@ -151,7 +151,7 @@ describe('TWO-25326: any character opens the panel', () => {
         expect(searched).toEqual(['e']);
     });
 
-    test('Tab is never intercepted, so it still moves focus out of the field', () => {
+    test('Tab is neither intercepted nor opens the panel', () => {
         const tab = pressKey(field(), 'Tab');
 
         expect(tab.defaultPrevented).toBe(false);
