@@ -16,6 +16,7 @@ use Magento\Framework\Model\Context;
 use Magento\Framework\Model\ResourceModel\AbstractResource;
 use Magento\Framework\Registry;
 use Two\Gateway\Model\Config\Backend\PaymentTerms\OfferedTermsGuard;
+use Two\Gateway\Model\Config\StoredTerm;
 
 /**
  * Backend model for payment terms checkboxes.
@@ -59,13 +60,24 @@ class PaymentTermsCheckboxes extends Value
         $storeId = $this->resolveStoreId();
         $this->offeredTerms->assertOffered($value, $storeId);
 
+        // fieldset_data holds the whole group before any beforeSave() runs, so sibling reads are order-independent (TWO-25498).
+        $custom = StoredTerm::days($this->getFieldsetDataValue('payment_terms_duration_days'));
+
+        // The deprecated sibling clears a value the merchant record offers as a standard term; it
+        // belongs on that term's checkbox instead. An unresolvable offered set matches nothing, so
+        // an API outage cannot move a migration value either (ABN-493, ABN-522).
+        $offered = $this->offeredTerms->offered($storeId);
+        if ($custom !== null
+            && $offered !== []
+            && in_array($custom, $offered, true)
+            && !in_array($custom, $value, true)
+        ) {
+            $value[] = $custom;
+        }
         sort($value);
 
-        // fieldset_data holds the whole group before any beforeSave() runs, so sibling reads are order-independent (TWO-25498).
-        $custom = (int)$this->getFieldsetDataValue('payment_terms_duration_days');
-
         // A selection is mandatory; the sibling custom-days field satisfies it too.
-        if (count($value) === 0 && $custom <= 0) {
+        if (count($value) === 0 && $custom === null) {
             throw new LocalizedException(
                 __('Select at least one payment term or enter a custom term.')
             );

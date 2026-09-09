@@ -14,11 +14,15 @@ use Two\Gateway\Model\Config\Backend\PaymentTermsCheckboxes;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
- * Tests PaymentTermsCheckboxes::beforeSave(): the offered-set guard, and the mandatory-
- * selection guard that a legacy custom term satisfies on its own.
+ * Tests PaymentTermsCheckboxes::beforeSave(): the offered-set guard, the mandatory-selection
+ * guard that a legacy custom term satisfies on its own, and the fold-in that moves a deprecated
+ * custom value onto the checkbox of the offered term it names, which the sibling clears in the
+ * same save (TWO-25498, ABN-522).
  *
- * The stored set is the ticked boxes and nothing else — the deprecated custom-days field is
- * read only to know whether a selection exists, never merged into it (ABN-522).
+ * The fold-in must be reachable for a custom value matching an offered term that is NOT
+ * currently ticked, since the available-terms set carries no tick state. An unresolvable
+ * offered set must fold nothing in: it means "unknown", and moving a migration value on the
+ * strength of an API outage would lose it.
  */
 class PaymentTermsCheckboxesTest extends TestCase
 {
@@ -61,15 +65,17 @@ class PaymentTermsCheckboxesTest extends TestCase
 
     /**
      * @param string[] $ticked
+     * @param int[] $offered
      * @dataProvider siblingCustomDaysProvider
      */
-    public function testTheSiblingCustomDaysValueNeverJoinsTheStoredSet(
+    public function testTheSiblingCustomDaysValueFoldsIntoTheTermItNames(
         array $ticked,
         string $custom,
+        array $offered,
         string $expected,
         string $case
     ): void {
-        $this->settingsProvider->method('getAvailableTerms')->willReturn([14, 30, 60]);
+        $this->settingsProvider->method('getAvailableTerms')->willReturn($offered);
         $model = $this->buildModel([
             'value' => $ticked,
             'scope' => 'default',
@@ -85,10 +91,15 @@ class PaymentTermsCheckboxesTest extends TestCase
     public static function siblingCustomDaysProvider(): array
     {
         return [
-            [[], '30', '', 'a custom term matching an offered one does not tick that box'],
-            [['14'], '14', '14', 'a custom term duplicating a ticked one changes nothing'],
-            [['14'], '45', '14', 'a custom term outside the offered set changes nothing'],
-            [['14'], '', '14', 'no custom term at all'],
+            [[], '30', [14, 30, 60], '30', 'an offered-but-unticked term is ticked by the fold-in'],
+            [['14'], '30', [14, 30], '14,30', 'the fold-in joins the existing selection'],
+            [['14'], '030', [14, 30], '14,30', 'a leading-zero value folds into the same term'],
+            [['14'], '14', [14, 30], '14', 'a value duplicating a ticked term is not duplicated'],
+            [['14'], '45', [14, 30], '14', 'a value outside the offered set has no term to fold into'],
+            [['14'], '30', [], '14', 'an unresolvable offered set folds nothing in'],
+            [['14'], 'abc', [14, 30], '14', 'an unusable value names no term'],
+            [['14'], '0', [14, 30], '14', 'a zero names no term'],
+            [['14'], '', [14, 30], '14', 'no custom term at all'],
         ];
     }
 

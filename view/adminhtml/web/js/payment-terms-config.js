@@ -117,6 +117,16 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             });
         }
 
+        // ── Custom payment terms visibility ──────────────────────────────
+
+        function hideCustomDaysIfItFoldsIn() {
+            // Server-emitted marker, not a value test here: one normalisation decides the gate,
+            // the render and the save. The row stays in the form so the fold-in save can happen.
+            if ($customDays.closest('tr').find('.two-legacy-term-folds-in').length) {
+                hideField('payment_terms_duration_days');
+            }
+        }
+
         // ── Differential option label ────────────────────────────────────
 
         function updateDifferentialOptionLabel() {
@@ -357,6 +367,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         updateDefaultTermOptions();
         updateDifferentialOptionLabel();
         updateSurchargeVisibility();
+        hideCustomDaysIfItFoldsIn();
         initInheritResetBehavior();
         initTermCheckboxInherit();
         loadFees();
