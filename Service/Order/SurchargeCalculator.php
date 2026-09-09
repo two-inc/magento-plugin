@@ -59,6 +59,14 @@ class SurchargeCalculator
     private const CACHE_LIFETIME = 300;
 
     /**
+     * One ceiling for every surcharge quote, so the availability gate can
+     * never refuse a fee the charging path would have priced. Below the
+     * adapter default because a quote is also made on a render path, where
+     * a hanging endpoint would otherwise stall the payment step.
+     */
+    private const PRICING_TIMEOUT_SECONDS = 30;
+
+    /**
      * @var ConfigRepository
      */
     private $configRepository;
@@ -122,10 +130,6 @@ class SurchargeCalculator
      * @param string $buyerCountry ISO Alpha-2 country code
      * @param string $orderCurrency ISO 4217 currency code of the order
      * @param int|null $storeId
-     * @param int|null $timeoutSeconds Overrides the adapter default; deliberately
-     *        outside both cache keys so a short-timeout caller and a normal one
-     *        still share one quote
-     *
      * @return array{amount: float, tax_rate: float, description: string}
      * @throws LocalizedException when no FX rate is resolvable for the pair, or when
      *         the API response is malformed or quotes a currency other than the order's
@@ -135,8 +139,7 @@ class SurchargeCalculator
         int $selectedTermDays,
         string $buyerCountry,
         string $orderCurrency,
-        ?int $storeId = null,
-        ?int $timeoutSeconds = null
+        ?int $storeId = null
     ): array {
         $cacheKey = md5(serialize([$grossAmount, $selectedTermDays, $buyerCountry, $orderCurrency, $storeId]));
         if (isset($this->responseCache[$cacheKey])) {
@@ -183,7 +186,7 @@ class SurchargeCalculator
             $storeId,
             null,
             null,
-            $timeoutSeconds
+            self::PRICING_TIMEOUT_SECONDS
         );
 
         // `http_status` may be set on success too (observability convenience);

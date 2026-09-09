@@ -274,9 +274,11 @@ selection the merchant has since withdrawn falls back to the default rather
 than pricing a term the order would be refused for at placement. It prices the
 fee-EXCLUSIVE total, as the collector and both chip endpoints do, so the fee
 already on the quote is neither compounded nor a cache miss against their
-quote. The call carries its own timeout ceiling instead of the adapter's
-default, because a hanging endpoint on a render path would otherwise stall the
-payment step for the whole default. A refusal — including a malformed
+quote. `SurchargeCalculator` bounds every surcharge quote at one ceiling,
+below the adapter default because a quote is also made on a render path, where
+a hanging endpoint would otherwise stall the payment step. Gate and charging
+path share that ceiling by construction, so the gate cannot refuse a fee
+placement would have priced. A refusal — including a malformed
 response, which is caught as broadly as the collector catches it — withholds
 the method for that request and that cart only; the next request re-asks, so
 recovery needs no expiry and one buyer's refused quote cannot reach another's

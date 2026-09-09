@@ -134,7 +134,7 @@ class FeeQuoteGateTest extends TestCase
         ];
     }
 
-    public function testTheRenderPathQuoteCarriesItsOwnBoundedTimeout(): void
+    public function testTheRenderPathQuoteCarriesTheSurchargePricingCeiling(): void
     {
         // Given the payment list is rendering; when the fee is quoted; then the
         // call cannot fall through to the adapter's default while it hangs.
@@ -151,12 +151,12 @@ class FeeQuoteGateTest extends TestCase
         $adapterDefault = (new \ReflectionClass(Adapter::class))
             ->getConstant('DEFAULT_TIMEOUT_SECONDS');
         $timeout = $this->adapter->calls[0]['timeout'];
-        $this->assertNotNull($timeout, 'the render-path quote sets its own timeout');
+        $this->assertNotNull($timeout, 'the quote is bounded, not left to the adapter default');
         $this->assertGreaterThan(0, $timeout, 'a timeout of zero would never time out');
         $this->assertLessThan(
             $adapterDefault,
             $timeout,
-            'the render path must bound the call tighter than the adapter default'
+            'a surcharge quote is bounded tighter than the adapter default'
         );
     }
 

@@ -1216,6 +1216,32 @@ class SurchargeCalculatorTest extends TestCase
         ];
     }
 
+    /**
+     * Every surcharge quote carries one ceiling, whichever path asked: the
+     * availability gate must not refuse a fee the charging path would price.
+     */
+    public function testEverySurchargeQuoteCarriesThePricingCeiling(): void
+    {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE);
+        $this->stubSurchargeConfig(2.0);
+        $captured = null;
+        $this->adapter->method('execute')->willReturnCallback(
+            function (...$args) use (&$captured): array {
+                $captured = $args[6] ?? null;
+                return ['buyer_fee_share' => 20.0, 'currency' => 'NOK'];
+            }
+        );
+
+        $this->calculator->calculate(1000.0, 30, 'NO', 'NOK', 1);
+
+        // Read rather than restated, so the bound holds if either number moves.
+        $adapterDefault = (new \ReflectionClass(Adapter::class))
+            ->getConstant('DEFAULT_TIMEOUT_SECONDS');
+        $this->assertNotNull($captured, 'the pricing call is bounded, not left to the adapter default');
+        $this->assertGreaterThan(0, $captured, 'a timeout of zero would never time out');
+        $this->assertLessThan($adapterDefault, $captured, 'the ceiling is tighter than the default');
+    }
+
     public function testCrossRequestCacheNotWrittenOnApiFailureSoNextRequestRetries(): void
     {
         // A failed quote must stay request-scoped: persisting it would

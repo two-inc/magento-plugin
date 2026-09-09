@@ -27,13 +27,6 @@ use Two\Gateway\Model\Config\Source\SurchargeType;
  */
 class FeeQuoteGate
 {
-    /**
-     * A render-path call carries its own ceiling rather than the adapter's
-     * default, so a hanging endpoint cannot stall the payment step for the
-     * full default per request.
-     */
-    private const TIMEOUT_SECONDS = 30;
-
     private AppState $appState;
 
     private ConfigRepository $configRepository;
@@ -108,8 +101,7 @@ class FeeQuoteGate
                 $chargedTerm,
                 $this->buyerCountryResolver->resolve($quote),
                 $currency,
-                $storeId,
-                self::TIMEOUT_SECONDS
+                $storeId
             );
             return true;
         } catch (\Exception $e) {

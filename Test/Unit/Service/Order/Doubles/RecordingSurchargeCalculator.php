@@ -21,8 +21,7 @@ class RecordingSurchargeCalculator extends SurchargeCalculator
         int $selectedTermDays,
         string $buyerCountry,
         string $orderCurrency,
-        ?int $storeId = null,
-        ?int $timeoutSeconds = null
+        ?int $storeId = null
     ): array {
         $this->attempts++;
         return parent::calculate(
@@ -30,8 +29,7 @@ class RecordingSurchargeCalculator extends SurchargeCalculator
             $selectedTermDays,
             $buyerCountry,
             $orderCurrency,
-            $storeId,
-            $timeoutSeconds
+            $storeId
         );
     }
 }
