@@ -167,7 +167,7 @@
      * @param {function(): string} options.tokensUrl
      * @param {function(): string} options.quoteId
      * @param {function(object): object} options.apiClientParams query params
-     *        identifying this client to checkout-api.
+     *        identifying this client to Two's API.
      * @param {function(): object} options.signupPrefill the hosted signup's
      *        prefill payload.
      * @param {function(): string} options.signupCountry ISO code, upper cased,
@@ -261,9 +261,9 @@
         this.refreshSoleTraderAvailability();
         this.refreshCompanySearchAvailability();
         // Unconditional and decoupled from whichever country is currently
-        // selected (TWO-25547): Bifrost's registry coverage is global, not
-        // merchant-scoped, so there is nothing to gate on — mint and look the
-        // buyer up as soon as checkout is reached, full stop.
+        // selected (TWO-25547): the registry coverage behind the lookup is
+        // global, not merchant-scoped, so there is nothing to gate on — mint
+        // and look the buyer up as soon as checkout is reached, full stop.
         this._soleTrader.prefetchBuyer();
     };
 
