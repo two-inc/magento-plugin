@@ -423,37 +423,9 @@ class SurchargeGrid extends Field
         return $this->scope === 'stores' && $this->scopeId > 0 ? $this->scopeId : null;
     }
 
-    /**
-     * Admin URL the grid's JS hits to fetch merchant fees.
-     */
-    public function getFeesUrl(): string
-    {
-        return $this->getUrl('two/config/fees');
-    }
-
-    /**
-     * Current scope for the Fees request, so the controller can resolve
-     * the right API key when the merchant has per-scope credentials.
-     */
     public function getScope(): string
     {
         return $this->scope;
-    }
-
-    public function getScopeId(): int
-    {
-        return $this->scopeId;
-    }
-
-
-    /**
-     * Decimal separator for the active admin locale, exposed so
-     * the grid's data attributes can carry it through to the JS
-     * fees-formatting routine.
-     */
-    public function getDecimalSeparator(): string
-    {
-        return $this->decimalFormatter->getSeparator();
     }
 
     /**

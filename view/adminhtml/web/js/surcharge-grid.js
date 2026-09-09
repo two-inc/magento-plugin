@@ -322,8 +322,6 @@ define(['jquery', 'mage/translate', 'mage/validation', 'domReady!'], function ($
             // state, overriding column/differential toggles when the whole
             // grid is inheriting.
             applyGridInherit();
-            // Fee-preview column removed in a prior grid simplification; skip the
-            // loadFees() AJAX whose response would have no cells to populate.
         }
 
         // ── Event bindings ───────────────────────────────────────────────
@@ -336,98 +334,6 @@ define(['jquery', 'mage/translate', 'mage/validation', 'domReady!'], function ($
         $('#' + prefix + 'surcharge_type_inherit').on('change', update);
         $inheritToggle.on('change', applyGridInherit);
 
-        // ── Fee column (read-only, fetched from Two API via admin proxy) ─
-
-        // Memoise the term-set we last fetched so rapid re-fires (keystrokes
-        // in the custom-days input, unrelated update() calls) collapse into
-        // one network round-trip per genuine change. Declared before the
-        // init update() call below so the assignment doesn't shadow what
-        // loadFees() writes during init.
-        var lastFeesKey = null;
-
         update();
-
-        function loadFees() {
-            var url = $container.data('fees-url');
-            if (!url) {
-                return;
-            }
-            var terms = getSelectedTerms();
-            if (!terms.length) {
-                return;
-            }
-            var key = terms.join(',');
-            if (key === lastFeesKey) {
-                return;
-            }
-            lastFeesKey = key;
-            var $formKey = $('input[name="form_key"]').first();
-            $.ajax({
-                url: url,
-                type: 'POST',
-                dataType: 'json',
-                data: {
-                    form_key: $formKey.val() || (window.FORM_KEY || ''),
-                    terms: JSON.stringify(terms),
-                    scope: String($container.data('scope') || 'default'),
-                    scopeId: parseInt($container.data('scope-id'), 10) || 0
-                }
-            }).done(function (response) {
-                if (!response || !response.success || !response.fees) {
-                    return; // leave "—" in cells
-                }
-                var gridCurrency = String($container.data('base-currency') || '').toUpperCase();
-                var responseCurrency = String(response.currency || '').toUpperCase();
-                var degraded = responseCurrency !== '' && responseCurrency !== gridCurrency;
-                var suffix = degraded ? ' ' + responseCurrency : '';
-                var decimalSep = String($container.data('decimal-separator') || '.');
-                function formatAmount(n) {
-                    var s = Number(n).toFixed(2);
-                    return decimalSep === '.' ? s : s.replace('.', decimalSep);
-                }
-                var zero = formatAmount(0);
-                $container.find('td.surcharge-grid__fee').each(function () {
-                    var $cell = $(this);
-                    var term = String($cell.data('term'));
-                    var fee = response.fees[term];
-                    if (!fee) {
-                        return;
-                    }
-                    var pctStr = formatAmount(fee.percentage || 0);
-                    var fixedStr = formatAmount(fee.fixed || 0);
-                    var pctZero = pctStr === zero;
-                    var fixedZero = fixedStr === zero;
-                    var text;
-                    if (pctZero && fixedZero) {
-                        text = zero + suffix;
-                    } else if (pctZero) {
-                        text = fixedStr + suffix;
-                    } else if (fixedZero) {
-                        text = pctStr + '%';
-                    } else {
-                        text = pctStr + '% + ' + fixedStr + suffix;
-                    }
-                    $cell.text(text);
-                });
-                var $note = $currencyNote.find('span');
-                var noteText = degraded
-                    ? $currencyNote.attr('data-text-degraded')
-                    : $currencyNote.attr('data-text-default');
-                if (noteText) {
-                    $note.text(noteText);
-                }
-            }).fail(function () {
-                // Allow a retry on the same term-set after a transient error,
-                // and fall back to "—" on any cell still showing the loading
-                // animation so the user isn't watching dots forever.
-                lastFeesKey = null;
-                $container.find('td.surcharge-grid__fee').each(function () {
-                    var $cell = $(this);
-                    if ($cell.find('.surcharge-grid__loading').length) {
-                        $cell.text('—');
-                    }
-                });
-            });
-        }
     };
 });
