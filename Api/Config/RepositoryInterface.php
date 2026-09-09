@@ -356,13 +356,14 @@ interface RepositoryInterface
     public function isBuyerTermAvailable(int $termDays, ?int $storeId = null): bool;
 
     /**
-     * Get default payment term
+     * Get default payment term, or null when the merchant offers no term at
+     * all - no day count may be invented for that state (ABN-544).
      *
      * @param int|null $storeId
      *
-     * @return int
+     * @return int|null
      */
-    public function getDefaultPaymentTerm(?int $storeId = null): int;
+    public function getDefaultPaymentTerm(?int $storeId = null): ?int;
 
     /**
      * Get surcharge type

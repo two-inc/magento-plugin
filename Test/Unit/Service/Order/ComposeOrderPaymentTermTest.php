@@ -30,10 +30,11 @@ class ComposeOrderPaymentTermTest extends TestCase
     private $logRepository;
 
     /**
-     * @param array $availableTerms terms the merchant currently offers
+     * @param array    $availableTerms terms the merchant currently offers
+     * @param int|null $defaultTerm    null when no term is offered at all
      * @return ComposeOrder|\PHPUnit\Framework\MockObject\MockObject
      */
-    private function makeComposeOrder(array $availableTerms)
+    private function makeComposeOrder(array $availableTerms, ?int $defaultTerm = 30)
     {
         $composeOrder = $this->getMockBuilder(ComposeOrder::class)
             ->disableOriginalConstructor()
@@ -59,7 +60,7 @@ class ComposeOrderPaymentTermTest extends TestCase
         $this->configRepository = $this->createMock(ConfigRepository::class);
         $this->configRepository->method('getVendorSiteName')->willReturn('');
         $this->configRepository->method('getPaymentTermsType')->willReturn('invoice_date');
-        $this->configRepository->method('getDefaultPaymentTerm')->willReturn(30);
+        $this->configRepository->method('getDefaultPaymentTerm')->willReturn($defaultTerm);
         $this->configRepository->method('getAllBuyerTerms')->willReturn($availableTerms);
         $this->configRepository->method('isBuyerTermAvailable')
             ->willReturnCallback(static function (int $termDays) use ($availableTerms): bool {
@@ -114,13 +115,37 @@ class ComposeOrderPaymentTermTest extends TestCase
 
     /**
      * No selection is not a failed selection: the checkout never sent one, so
-     * the configured default applies.
+     * the default applies — and when there is no default, no term is invented
+     * for the order either (ABN-544).
+     *
+     * @param int[] $availableTerms
+     * @dataProvider noSelectionProvider
      */
-    public function testNoSelectionFallsBackToTheDefaultTerm(): void
-    {
-        $payload = $this->makeComposeOrder([14, 30])->execute($this->makeOrder(), 'ref', []);
+    public function testNoSelectionResolvesTheDefaultTerm(
+        array $availableTerms,
+        ?int $defaultTerm,
+        ?int $expectedDays,
+        string $case
+    ): void {
+        $composeOrder = $this->makeComposeOrder($availableTerms, $defaultTerm);
 
-        $this->assertSame(30, $payload['terms']['duration_days']);
+        if ($expectedDays === null) {
+            $this->expectException(InputException::class);
+            $this->expectExceptionMessage('Selected payment term is not available.');
+            $composeOrder->execute($this->makeOrder(), 'ref', []);
+            return;
+        }
+
+        $payload = $composeOrder->execute($this->makeOrder(), 'ref', []);
+        $this->assertSame($expectedDays, $payload['terms']['duration_days'], $case);
+    }
+
+    public static function noSelectionProvider(): array
+    {
+        return [
+            [[14, 30], 30, 30, 'no selection takes the default term'],
+            [[], null, null, 'no offered term refuses the order rather than inventing one'],
+        ];
     }
 
     /**

@@ -317,6 +317,11 @@ intersects the stored set — `config:set` bypasses a backend model. The
 payment-terms type selector is rendered only for a merchant already set to end
 of month (TWO-25656); a merchant not on it is not offered it.
 
+**With nothing offered there is no default term.** `getDefaultPaymentTerm()`
+returns null rather than a day count, and no caller substitutes one: the term
+set is offered empty and the buyer is refused at order placement rather than at
+selection (ABN-544).
+
 ## Monetary values in the pricing request are rounded to 2dp
 
 `SurchargeCalculator::convertAmount()` rounds `cap` and `surcharge` to

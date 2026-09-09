@@ -600,46 +600,48 @@ class SurchargeCalculatorTest extends TestCase
 
     // ── Differential mode (reference_terms) ──────────────────────────
 
-    public function testPayloadIncludesReferenceTermsWhenDifferential(): void
-    {
-        $this->stubCommonConfig(SurchargeType::PERCENTAGE, true);
-        $this->config->method('getDefaultPaymentTerm')->willReturn(30);
+    /**
+     * @dataProvider referenceTermsProvider
+     */
+    public function testDifferentialReferenceTerms(
+        bool $differential,
+        ?int $defaultTerm,
+        ?int $expectedReferenceDays,
+        string $case
+    ): void {
+        $this->stubCommonConfig(SurchargeType::PERCENTAGE, $differential);
+        $this->config->method('getDefaultPaymentTerm')->willReturn($defaultTerm);
         $this->stubSurchargeConfig(75);
 
         $this->adapter->expects($this->once())
             ->method('execute')
             ->with(
                 '/v1/pricing/order/fee',
-                $this->callback(function ($payload) {
-                    $ref = $payload['buyer_fee_share']['reference_terms'] ?? null;
-                    return is_array($ref)
-                        && $ref['type'] === 'NET_TERMS'
-                        && $ref['duration_days'] === 30;
+                $this->callback(function ($payload) use ($expectedReferenceDays, $case) {
+                    $share = $payload['buyer_fee_share'];
+                    if ($expectedReferenceDays === null) {
+                        $this->assertArrayNotHasKey('reference_terms', $share, $case);
+                        return true;
+                    }
+                    $this->assertSame('NET_TERMS', $share['reference_terms']['type'], $case);
+                    $this->assertSame($expectedReferenceDays, $share['reference_terms']['duration_days'], $case);
+                    return true;
                 })
             )
             ->willReturn(['buyer_fee_share' => 11.25]);
 
         $result = $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
 
-        $this->assertEquals(11.25, $result['amount']);
+        $this->assertEquals(11.25, $result['amount'], $case);
     }
 
-    public function testPayloadOmitsReferenceTermsWhenNotDifferential(): void
+    public static function referenceTermsProvider(): array
     {
-        $this->stubCommonConfig(SurchargeType::PERCENTAGE, false);
-        $this->stubSurchargeConfig(50);
-
-        $this->adapter->expects($this->once())
-            ->method('execute')
-            ->with(
-                '/v1/pricing/order/fee',
-                $this->callback(function ($payload) {
-                    return !array_key_exists('reference_terms', $payload['buyer_fee_share']);
-                })
-            )
-            ->willReturn(['buyer_fee_share' => 0]);
-
-        $this->calculator->calculate(1000.0, 60, 'NO', 'NOK');
+        return [
+            [true, 30, 30, 'differential prices against the default term'],
+            [false, 30, null, 'a non-differential fee carries no reference term'],
+            [true, null, null, 'no offered term leaves no reference term to price against'],
+        ];
     }
 
     // ── End of month terms ───────────────────────────────────────────

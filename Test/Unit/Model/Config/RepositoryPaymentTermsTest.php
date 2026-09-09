@@ -43,6 +43,14 @@ class RepositoryPaymentTermsTest extends TestCase
      */
     private $offeredTerms = [7, 14, 21, 30, 37, 45, 60, 90];
 
+    /**
+     * The merchant record's own default term (`due_in_days`), or null when it
+     * is unset or unresolved.
+     *
+     * @var int|null
+     */
+    private $apiDefaultTerm = null;
+
     protected function setUp(): void
     {
         $this->scopeConfig = $this->createMock(ScopeConfigInterface::class);
@@ -55,10 +63,11 @@ class RepositoryPaymentTermsTest extends TestCase
         $brandRegistry->method('getCode')->willReturn('two_payment');
         $brandRegistry->method('getProductName')->willReturn('Two');
 
-        // Unstubbed getDefaultTerm() returns null, so the default-term
-        // tests below exercise the config-based fallback; the API-default
-        // cases stub it explicitly.
         $this->settingsProvider = $this->createMock(SettingsProvider::class);
+        $this->settingsProvider->method('getDefaultTerm')
+            ->willReturnCallback(function (): ?int {
+                return $this->apiDefaultTerm;
+            });
         $this->settingsProvider->method('getAvailableTerms')
             ->willReturnCallback(function (): array {
                 return $this->offeredTerms;
@@ -213,116 +222,47 @@ class RepositoryPaymentTermsTest extends TestCase
         ];
     }
 
-    public function testGetDefaultPaymentTermIgnoresADefaultTheMerchantNoLongerOffers(): void
-    {
-        $this->offeredTerms = [14, 30];
-        $this->stubConfig([
-            'payment/two_payment/default_payment_term' => '37',
-            'payment/two_payment/payment_terms' => '14,30,37',
-            'payment/two_payment/payment_terms_duration_days' => '',
-        ]);
-
-        $this->assertEquals(14, $this->repository->getDefaultPaymentTerm());
-    }
-
     // ── getDefaultPaymentTerm ────────────────────────────────────────
 
-    public function testGetDefaultPaymentTermReturnsConfiguredValue(): void
-    {
+    /**
+     * @param int[] $offered
+     * @dataProvider defaultPaymentTermProvider
+     */
+    public function testGetDefaultPaymentTerm(
+        string $storedDefault,
+        string $presets,
+        array $offered,
+        ?int $apiDefault,
+        ?int $expected,
+        string $case
+    ): void {
+        $this->offeredTerms = $offered;
+        $this->apiDefaultTerm = $apiDefault;
         $this->stubConfig([
-            'payment/two_payment/default_payment_term' => '60',
-            'payment/two_payment/payment_terms' => '30,60,90',
+            'payment/two_payment/default_payment_term' => $storedDefault,
+            'payment/two_payment/payment_terms' => $presets,
             'payment/two_payment/payment_terms_duration_days' => '',
         ]);
-        $this->assertEquals(60, $this->repository->getDefaultPaymentTerm());
+
+        $this->assertSame($expected, $this->repository->getDefaultPaymentTerm(), $case);
     }
 
-    public function testGetDefaultPaymentTermFallsBackToLowest(): void
+    public static function defaultPaymentTermProvider(): array
     {
-        $this->stubConfig([
-            'payment/two_payment/default_payment_term' => '',
-            'payment/two_payment/payment_terms' => '60,90',
-            'payment/two_payment/payment_terms_duration_days' => '',
-        ]);
-        $this->assertEquals(60, $this->repository->getDefaultPaymentTerm());
-    }
+        $allOffered = [7, 14, 21, 30, 37, 45, 60, 90];
 
-    public function testGetDefaultPaymentTermFallsBackTo30WhenNoTerms(): void
-    {
-        $this->stubConfig([
-            'payment/two_payment/default_payment_term' => '',
-            'payment/two_payment/payment_terms' => '',
-            'payment/two_payment/payment_terms_duration_days' => '',
-        ]);
-        $this->assertEquals(30, $this->repository->getDefaultPaymentTerm());
-    }
-
-    public function testGetDefaultPaymentTermPreselectsSingleAvailableTermDespiteStaleDefault(): void
-    {
-        // With a single available term, that term must always be the
-        // default (and therefore preselected), even if a stale
-        // default_payment_term points at a term that's no longer available.
-        $this->stubConfig([
-            'payment/two_payment/default_payment_term' => '30', // stale, not available
-            'payment/two_payment/payment_terms' => '90',        // only 90 available
-            'payment/two_payment/payment_terms_duration_days' => '',
-        ]);
-        $this->assertEquals(90, $this->repository->getDefaultPaymentTerm());
-    }
-
-    public function testGetDefaultPaymentTermIgnoresDefaultOutsideAvailableTerms(): void
-    {
-        // A configured default that isn't among the available terms falls back
-        // to the lowest available term rather than returning an unselectable one.
-        $this->stubConfig([
-            'payment/two_payment/default_payment_term' => '14', // not available
-            'payment/two_payment/payment_terms' => '30,60,90',
-            'payment/two_payment/payment_terms_duration_days' => '',
-        ]);
-        $this->assertEquals(30, $this->repository->getDefaultPaymentTerm());
-    }
-
-    public function testGetDefaultPaymentTermAdminChoiceWinsOverApi(): void
-    {
-        // An explicit admin-configured default (when offered) is the
-        // admin's own choice and must NOT be silently overridden by the
-        // merchant's due_in_days (TWO-24859). The API default only seeds
-        // the field when the admin hasn't chosen — see the unset test.
-        $this->settingsProvider->method('getDefaultTerm')->willReturn(90);
-        $this->stubConfig([
-            'payment/two_payment/default_payment_term' => '30',
-            'payment/two_payment/payment_terms' => '30,60,90',
-            'payment/two_payment/payment_terms_duration_days' => '',
-        ]);
-        $this->assertEquals(30, $this->repository->getDefaultPaymentTerm());
-    }
-
-    public function testGetDefaultPaymentTermUsesApiDefaultWhenAdminUnset(): void
-    {
-        // No explicit admin choice (config.xml carries no static default):
-        // fall back to the merchant's due_in_days when it is an offered
-        // term, so a never-touched install matches what the admin field
-        // pre-selects.
-        $this->settingsProvider->method('getDefaultTerm')->willReturn(60);
-        $this->stubConfig([
-            'payment/two_payment/default_payment_term' => '',
-            'payment/two_payment/payment_terms' => '30,60,90',
-            'payment/two_payment/payment_terms_duration_days' => '',
-        ]);
-        $this->assertEquals(60, $this->repository->getDefaultPaymentTerm());
-    }
-
-    public function testGetDefaultPaymentTermIgnoresApiTermOutsideOfferedTerms(): void
-    {
-        // due_in_days is not guaranteed to be an offered term; when it
-        // isn't, fall through (here to the admin-configured default).
-        $this->settingsProvider->method('getDefaultTerm')->willReturn(14);
-        $this->stubConfig([
-            'payment/two_payment/default_payment_term' => '60',
-            'payment/two_payment/payment_terms' => '30,60,90',
-            'payment/two_payment/payment_terms_duration_days' => '',
-        ]);
-        $this->assertEquals(60, $this->repository->getDefaultPaymentTerm());
+        return [
+            ['60', '30,60,90', $allOffered, null, 60, 'a stored default that is still offered wins'],
+            ['30', '30,60,90', $allOffered, 90, 30, 'a stored default outranks the API default term'],
+            ['14', '30,60,90', $allOffered, null, 30, 'a stored default that is not offered falls to the shortest'],
+            ['37', '14,30,37', [14, 30], null, 14, 'a stored default the merchant withdrew falls to the shortest'],
+            ['', '30,60,90', $allOffered, 60, 60, 'with no stored default the API default term is used'],
+            ['60', '30,60,90', $allOffered, 14, 60, 'an API default term that is not offered is ignored'],
+            ['', '60,90', $allOffered, null, 60, 'with neither default the shortest offered term is used'],
+            ['30', '90', $allOffered, null, 90, 'a single offered term wins over a stale stored default'],
+            ['', '', $allOffered, null, null, 'no configured term leaves no default at all'],
+            ['30', '30,60', [], null, null, 'an unresolvable merchant record leaves no default at all'],
+        ];
     }
 
     // ── getSurchargeType ─────────────────────────────────────────────
