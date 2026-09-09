@@ -4,8 +4,8 @@
  *
  * TWO-25547 — the sole-trader mint and buyer lookup fire unconditionally as
  * soon as checkout is reached, decoupled from whichever country the buyer
- * currently has selected in the checkout form. Bifrost's registry coverage
- * is global, not merchant-scoped, so there is nothing to gate the mint on —
+ * currently has selected in the checkout form. The registry coverage behind
+ * the lookup is global, not merchant-scoped, so nothing gates the mint —
  * only the sole-trader CHIP's own visibility (`soleTraderAvailable`) stays
  * per-country.
  *
