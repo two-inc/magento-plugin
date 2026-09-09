@@ -31,12 +31,13 @@ class PaymentTermsCustomDaysTest extends TestCase
     /**
      * @param int[] $offered
      * @param array<string, string> $params the admin page's own request params
+     * @param string[] $envLocked field ids locked in env.php at the scope being edited
      */
     private function block(
         array $offered = [],
         array $params = [],
         ?SettingsProvider $settingsProvider = null,
-        bool $siblingEnvLocked = false
+        array $envLocked = []
     ): PaymentTermsCustomDays {
         if ($settingsProvider === null) {
             $settingsProvider = $this->createMock(SettingsProvider::class);
@@ -50,14 +51,25 @@ class PaymentTermsCustomDaysTest extends TestCase
 
         $store = $this->createMock(StoreInterface::class);
         $store->method('getId')->willReturn(5);
+        $store->method('getCode')->willReturn('de');
+        $website = $this->createMock(WebsiteInterface::class);
+        $website->method('getCode')->willReturn('eu');
         $storeManager = $this->createMock(StoreManagerInterface::class);
         $storeManager->method('getStore')->willReturnCallback(
             static fn ($code) => $code === 'broken' ? throw new \RuntimeException('no such store') : $store
         );
-        $storeManager->method('getWebsite')->willReturn($this->createMock(WebsiteInterface::class));
+        $storeManager->method('getWebsite')->willReturn($website);
 
+        // A lock is scoped, so a query at the wrong scope must not read as one.
+        $editedScope = self::editedScope($params);
         $settingChecker = $this->createMock(SettingChecker::class);
-        $settingChecker->method('isReadOnly')->willReturn($siblingEnvLocked);
+        $settingChecker->method('isReadOnly')->willReturnCallback(
+            static fn ($path, $scope, $scopeCode = null) => [$scope, $scopeCode] === $editedScope
+                && in_array($path, array_map(
+                    static fn (string $field): string => self::STRUCTURE_PATH . '/' . $field,
+                    $envLocked
+                ), true)
+        );
 
         return new class ($context, new OfferedTermsGuard($settingsProvider), $storeManager, $settingChecker)
             extends PaymentTermsCustomDays {
@@ -68,14 +80,30 @@ class PaymentTermsCustomDaysTest extends TestCase
         };
     }
 
-    /** @param int[] $offered */
+    /**
+     * @param array<string, string> $params
+     * @return array{string, string|null}
+     */
+    private static function editedScope(array $params): array
+    {
+        if (($params['store'] ?? '') !== '' && $params['store'] !== 'broken') {
+            return ['stores', 'de'];
+        }
+
+        return ($params['website'] ?? '') !== '' ? ['websites', 'eu'] : ['default', null];
+    }
+
+    /**
+     * @param int[] $offered
+     * @param string[] $envLocked
+     */
     private function render(
         array $elementData,
         array $offered = [],
         array $params = [],
-        bool $siblingEnvLocked = false
+        array $envLocked = []
     ): string {
-        return $this->block($offered, $params, null, $siblingEnvLocked)
+        return $this->block($offered, $params, null, $envLocked)
             ->renderForTest(new AbstractElement($elementData + [
                 'html_id' => 'two_payment_payment_terms_payment_terms_duration_days',
                 'name' => 'groups[payment_terms][fields][payment_terms_duration_days][value]',
@@ -189,16 +217,17 @@ class PaymentTermsCustomDaysTest extends TestCase
 
     /**
      * @param int[] $offered
+     * @param string[] $envLocked
      * @dataProvider foldsInProvider
      */
     public function testTheFoldInMarker(
         string $stored,
         array $offered,
-        bool $siblingEnvLocked,
+        array $envLocked,
         bool $expected,
         string $case
     ): void {
-        $markers = $this->parse($this->render(['value' => $stored], $offered, [], $siblingEnvLocked))
+        $markers = $this->parse($this->render(['value' => $stored], $offered, [], $envLocked))
             ->getElementsByTagName('span');
 
         $this->assertSame($expected, $markers->length === 1, $case);
@@ -207,13 +236,15 @@ class PaymentTermsCustomDaysTest extends TestCase
     public static function foldsInProvider(): array
     {
         return [
-            ['30', [14, 30], false, true, 'a term the record offers folds in, so the row hides'],
-            ['030', [14, 30], false, true, 'a leading-zero value folds into the same term'],
-            ['37', [14, 30], false, false, 'a term the record does not offer keeps the row visible'],
-            ['30', [], false, false, 'an unresolvable offered set folds nothing in'],
-            ['abc', [14, 30], false, false, 'an unusable value has no term to fold into'],
-            ['1e2', [100], false, false, 'an unusable value is not the term a cast would read it as'],
-            ['30', [14, 30], true, false, 'an env.php-locked sibling cannot take the tick, so the row stays visible'],
+            ['30', [14, 30], [], true, 'a term the record offers folds in, so the row hides'],
+            ['030', [14, 30], [], true, 'a leading-zero value folds into the same term'],
+            ['37', [14, 30], [], false, 'a term the record does not offer keeps the row visible'],
+            ['30', [], [], false, 'an unresolvable offered set folds nothing in'],
+            ['abc', [14, 30], [], false, 'an unusable value has no term to fold into'],
+            ['1e2', [100], [], false, 'an unusable value is not the term a cast would read it as'],
+            ['30', [14, 30], ['payment_terms'], false, 'an env.php-locked sibling cannot take the tick, so the row stays visible'],
+            ['30', [14, 30], ['payment_terms_duration_days'], false, 'this field locked in env.php never reaches the backend model that folds it'],
+            ['30', [14, 30], ['payment_terms', 'payment_terms_duration_days'], false, 'both halves locked'],
         ];
     }
 

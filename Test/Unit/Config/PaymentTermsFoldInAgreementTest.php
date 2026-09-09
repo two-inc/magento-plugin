@@ -28,8 +28,13 @@ class PaymentTermsFoldInAgreementTest extends TestCase
 {
     private const STRUCTURE_PATH = 'two_payment/payment_terms';
 
-    /** @param int[] $offered */
-    private function markerIsRendered(string $stored, array $offered, bool $envLocked): bool
+    private const FIELD = 'payment_terms_duration_days';
+
+    /**
+     * @param int[] $offered
+     * @param string[] $envLocked field ids locked in env.php at the scope being edited
+     */
+    private function markerIsRendered(string $stored, array $offered, array $envLocked): bool
     {
         $context = $this->createMock(BlockContext::class);
         $context->method('getRequest')->willReturn($this->createMock(RequestInterface::class));
@@ -56,13 +61,22 @@ class PaymentTermsFoldInAgreementTest extends TestCase
         return strpos($html, 'two-legacy-term-folds-in') !== false;
     }
 
-    /** @param int[] $offered */
+    /**
+     * @param int[] $offered
+     * @param string[] $envLocked
+     */
     private function saveFoldsTheValueAway(
         string $stored,
         array $offered,
-        bool $envLocked,
+        array $envLocked,
         bool $siblingInherits
     ): bool {
+        // As Magento\Config\Model\Config::_processGroup: a field locked in env.php is skipped
+        // before its backend model is reached, so this save never runs at all.
+        if (in_array(self::FIELD, $envLocked, true)) {
+            return false;
+        }
+
         $scopeConfig = $this->createMock(ScopeConfigInterface::class);
         $scopeConfig->method('getValue')->willReturn($stored);
 
@@ -103,11 +117,19 @@ class PaymentTermsFoldInAgreementTest extends TestCase
         return $settingsProvider;
     }
 
-    private function settingChecker(bool $envLocked): SettingChecker
+    /**
+     * @param string[] $envLocked
+     */
+    private function settingChecker(array $envLocked): SettingChecker
     {
         $settingChecker = $this->createMock(SettingChecker::class);
+        // A lock is scoped, so a query at the wrong scope must not read as one.
         $settingChecker->method('isReadOnly')->willReturnCallback(
-            static fn ($path) => $envLocked && $path === self::STRUCTURE_PATH . '/payment_terms'
+            static fn ($path, $scope, $scopeCode = null) => [$scope, $scopeCode] === ['default', null]
+                && in_array($path, array_map(
+                    static fn (string $field): string => self::STRUCTURE_PATH . '/' . $field,
+                    $envLocked
+                ), true)
         );
 
         return $settingChecker;
@@ -115,12 +137,13 @@ class PaymentTermsFoldInAgreementTest extends TestCase
 
     /**
      * @param int[] $offered
+     * @param string[] $envLocked
      * @dataProvider agreementProvider
      */
     public function testTheMarkerClaimsAFoldInOnlyWhereTheSaveFoldsOne(
         string $stored,
         array $offered,
-        bool $envLocked,
+        array $envLocked,
         bool $siblingInherits,
         bool $expectedMarker,
         bool $expectedFold,
@@ -139,14 +162,15 @@ class PaymentTermsFoldInAgreementTest extends TestCase
     public static function agreementProvider(): array
     {
         return [
-            ['30', [14, 30], false, false, true, true, 'an editable sibling and an offered term: the row hides and the save folds'],
-            ['30', [14, 30], true, false, false, false, 'an env.php-locked sibling never takes the tick, so nothing hides and nothing folds'],
-            ['37', [14, 30], false, false, false, false, 'a term the merchant record does not offer'],
-            ['30', [], false, false, false, false, 'an unresolvable offered set matches nothing'],
+            ['30', [14, 30], [], false, true, true, 'an editable sibling and an offered term: the row hides and the save folds'],
+            ['30', [14, 30], ['payment_terms'], false, false, false, 'an env.php-locked sibling never takes the tick, so nothing hides and nothing folds'],
+            ['30', [14, 30], ['payment_terms_duration_days'], false, false, false, 'this field locked in env.php never reaches the backend model that folds it'],
+            ['37', [14, 30], [], false, false, false, 'a term the merchant record does not offer'],
+            ['30', [], [], false, false, false, 'an unresolvable offered set matches nothing'],
             [
                 '30',
                 [14, 30],
-                false,
+                [],
                 true,
                 true,
                 false,

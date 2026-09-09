@@ -24,6 +24,9 @@ class PaymentTermsCustomDays extends Field
     /** Sibling holding the term checkboxes, whose tick is the other half of the fold-in. */
     private const SIBLING = 'payment_terms';
 
+    /** This field's own id, as the group's structure names it. */
+    private const FIELD = 'payment_terms_duration_days';
+
     /** @var OfferedTermsGuard */
     private $offeredTerms;
 
@@ -89,7 +92,7 @@ class PaymentTermsCustomDays extends Field
     /** Marks the row the save may fold into an offered term's checkbox; it stays posted, hidden. */
     private function foldsInMarker(AbstractElement $element, ?int $days): string
     {
-        if ($days === null || !$this->siblingCanTakeTheTerm($element)) {
+        if ($days === null || !$this->saveCanFoldTheTerm($element)) {
             return '';
         }
         $offered = $this->offeredTerms->offered($this->resolveStoreId());
@@ -100,10 +103,11 @@ class PaymentTermsCustomDays extends Field
     }
 
     /**
-     * Env.php-locking the sibling stops it reaching its backend model; its inherit state is only
-     * known in the browser, so the JS composes that half with this marker.
+     * A field locked in env.php never reaches its backend model, so a lock on either half of the
+     * fold-in leaves nothing to fold. The sibling's inherit state is only known in the browser, so
+     * the JS composes that half with this marker.
      */
-    private function siblingCanTakeTheTerm(AbstractElement $element): bool
+    private function saveCanFoldTheTerm(AbstractElement $element): bool
     {
         $structurePath = $element->getData('field_config')['path'] ?? null;
         if (!is_string($structurePath) || $structurePath === '') {
@@ -111,11 +115,17 @@ class PaymentTermsCustomDays extends Field
         }
         $this->resolveScope();
 
-        return !$this->settingChecker->isReadOnly(
-            $structurePath . '/' . self::SIBLING,
-            (string)$this->scope,
-            $this->scopeCode
-        );
+        foreach ([self::SIBLING, self::FIELD] as $field) {
+            if ($this->settingChecker->isReadOnly(
+                $structurePath . '/' . $field,
+                (string)$this->scope,
+                $this->scopeCode
+            )) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** Store id for the scope being edited, or null for website/default — resolves the API key. */
