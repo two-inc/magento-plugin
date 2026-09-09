@@ -640,7 +640,7 @@ class Repository implements RepositoryInterface
         return in_array($termDays, $this->getAllBuyerTerms($storeId), true);
     }
 
-    public function getDefaultPaymentTerm(?int $storeId = null): int
+    public function getDefaultPaymentTerm(?int $storeId = null): ?int
     {
         $terms = $this->getAllBuyerTerms($storeId);
         // An admin who has explicitly configured a default term owns that
@@ -660,11 +660,9 @@ class Repository implements RepositoryInterface
         if ($apiDefault !== null && in_array($apiDefault, $terms, true)) {
             return $apiDefault;
         }
-        // Else the lowest available term, so the buyer always lands on a
-        // real, selectable term — in particular a single available term is
-        // always the default (and thus preselected), even if a stale
-        // default_payment_term points elsewhere.
-        return $terms ? min($terms) : 30;
+        // With nothing offered there is no default: an invented one offers a
+        // term the merchant's account cannot honour (ABN-544).
+        return $terms ? min($terms) : null;
     }
 
     /**

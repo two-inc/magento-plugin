@@ -408,7 +408,9 @@ class SurchargeCalculator
 
         if ($this->configRepository->isSurchargeDifferential($storeId)) {
             $defaultDays = $this->configRepository->getDefaultPaymentTerm($storeId);
-            $payload['reference_terms'] = $this->buildOrderTerms($defaultDays, $storeId);
+            if ($defaultDays !== null) {
+                $payload['reference_terms'] = $this->buildOrderTerms($defaultDays, $storeId);
+            }
         }
 
         return $payload;

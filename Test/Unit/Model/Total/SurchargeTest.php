@@ -209,6 +209,24 @@ class SurchargeTest extends TestCase
     }
 
     /**
+     * Given a merchant offering no term, When the collector runs with nothing
+     * selected in session, Then no fee is priced (ABN-544).
+     */
+    public function testNoOfferedTermPricesNoSurcharge(): void
+    {
+        $this->config->method('getSurchargeType')->willReturn('percentage');
+        $this->config->method('getDefaultPaymentTerm')->willReturn(null);
+        $this->surchargeCalculator->method('isSurchargeResolvable')->willReturn(true);
+        $this->surchargeCalculator->expects($this->never())->method('calculate');
+        $this->session->setTwoSelectedTerm(0);
+
+        $total = new Total(['grand_total' => 1000.0, 'base_grand_total' => 1000.0]);
+        $this->collector->collect($this->makeQuote(), $this->makeShippingAssignment(), $total);
+
+        $this->assertEqualsWithDelta(0.0, (float)$total->getData('two_surcharge_amount'), 1e-9);
+    }
+
+    /**
      * A real config Repository, so the refusal comes from the production read
      * path rather than a mock, and the rows genuinely vary the stored value.
      */

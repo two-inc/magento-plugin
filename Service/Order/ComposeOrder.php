@@ -280,9 +280,9 @@ class ComposeOrder extends OrderService
             throw new InputException(__('Selected payment term is not available.'));
         }
 
-        $resolved = $selected > 0 ? $selected : $this->configRepository->getDefaultPaymentTerm($storeId);
-        // The default falls back to a nominal 30 when nothing is offered — an unresolvable
-        // merchant record must not compose an order on it (ABN-493).
+        // No offered term resolves to 0, which no offered set contains — an
+        // unresolvable merchant record must not compose an order (ABN-493).
+        $resolved = $selected > 0 ? $selected : (int)$this->configRepository->getDefaultPaymentTerm($storeId);
         if ($selected === 0 && !$this->configRepository->isBuyerTermAvailable($resolved, $storeId)) {
             $this->logRepository->addErrorLog(
                 'UnavailablePaymentTerm',

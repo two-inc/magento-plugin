@@ -207,6 +207,7 @@ class ConfigProvider implements ConfigProviderInterface
         $brandParams = $this->buildBrandQueryString();
         $paymentTermsLink = $this->configRepository->getCheckoutPageUrl() . '/terms' . $brandParams;
         $minimumOrder = $this->two->getMinimumOrderVisibility($this->checkoutSession->getQuote());
+        $defaultPaymentTerm = $this->configRepository->getDefaultPaymentTerm() ?? 0;
 
         return [
             'payment' => [
@@ -234,9 +235,10 @@ class ConfigProvider implements ConfigProviderInterface
                     'isOrderNoteFieldEnabled' => $this->configRepository->isOrderNoteEnabled(),
                     'isPONumberFieldEnabled' => $this->configRepository->isPONumberEnabled(),
                     'availableBuyerTerms' => $this->configRepository->getAllBuyerTerms(),
-                    'defaultPaymentTerm' => $this->configRepository->getDefaultPaymentTerm(),
+                    // 0, not a day count, when no term is offered (ABN-544).
+                    'defaultPaymentTerm' => $defaultPaymentTerm,
                     'selectedPaymentTerm' => (int)$this->checkoutSession->getTwoSelectedTerm()
-                        ?: $this->configRepository->getDefaultPaymentTerm(),
+                        ?: $defaultPaymentTerm,
                     'currencySymbol' => $this->getCurrencySymbol(),
                     // Server-resolved minimum-order constraints in the display
                     // currency, for the renderer's client-side visibility gate

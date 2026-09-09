@@ -422,7 +422,8 @@ class Surcharge extends AbstractTotal
         if ($sessionTerm > 0) {
             return $sessionTerm;
         }
-        return $this->configRepository->getDefaultPaymentTerm($storeId);
+        // 0 when no term is offered, which the caller reads as no selection.
+        return $this->configRepository->getDefaultPaymentTerm($storeId) ?? 0;
     }
 
     /**
