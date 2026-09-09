@@ -219,20 +219,20 @@ class RecordProviderTest extends TestCase
             'fetch succeeds' => [
                 ['id' => 'abc-123'],
                 [
-                    'mark absent TWO_GATEWAY 300',
-                    'arm cooldown TWO_GATEWAY 10',
+                    'mark absent TWO_GATEWAY 93600',
+                    'arm cooldown TWO_GATEWAY 60',
                     'fetch',
                     'fetch',
-                    'store record TWO_GATEWAY 300',
-                    'store stamp TWO_GATEWAY 300',
+                    'store record TWO_GATEWAY 93600',
+                    'store stamp TWO_GATEWAY 93600',
                     'clear cooldown',
                 ],
                 'armed first, record and stamp stored, cooldown cleared so readers are not stranded on null',
             ],
             'fetch fails' => [
                 ['http_status' => 503],
-                ['mark absent TWO_GATEWAY 300', 'arm cooldown TWO_GATEWAY 10', 'fetch', 'fetch'],
-                'armed first and left armed for the cooldown only, nothing stored, stamp untouched',
+                ['mark absent TWO_GATEWAY 93600', 'arm cooldown TWO_GATEWAY 60', 'fetch', 'fetch'],
+                'armed first and left armed for 60s only, nothing stored, stamp untouched',
             ],
         ];
     }
