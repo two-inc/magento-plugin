@@ -266,7 +266,7 @@ refusal there is a red unavailability notice on a working checkout; and
 `isDefinitiveFailure()` and an outage puts the method on offer with no config,
 or a notice, or unattributed lookups.
 
-**Merchant IDENTITY on those surfaces comes from the record, not the verdict.**
+**Merchant IDENTITY on those surfaces falls back to the record.**
 `ApiKeyStatus::getStatus()['merchant']` is populated only on a success, so a
 fall-through reads `SettingsProvider::getMerchantIdentity()` — the
 never-expiring record's `id` and `short_name`. The one state with no identity to

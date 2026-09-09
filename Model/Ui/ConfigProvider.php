@@ -187,9 +187,12 @@ class ConfigProvider implements ConfigProviderInterface
         if ($this->apiKeyStatus->isDefinitiveFailure()) {
             return [];
         }
-        // The verdict carries a merchant only on a success, so a fall-through
-        // relays the never-expiring record's identity instead of null.
-        $merchant = $this->apiKeyStatus->getStatus()['merchant']
+        // Identity only, and one shape whichever source supplies it: the
+        // verdict's `merchant` is the whole verify_api_key body, and the
+        // record's commercial fields have no business in the page. The verdict
+        // carries a merchant only on a success, so a fall-through reads the
+        // never-expiring record instead.
+        $merchant = $this->settingsProvider->identityFrom($this->apiKeyStatus->getStatus()['merchant'] ?? null)
             ?? $this->settingsProvider->getMerchantIdentity();
         $orderIntentConfig = [
             'extensionPlatformName' => $this->configRepository->getExtensionPlatformName(),

@@ -220,6 +220,27 @@ class ConfigProviderApiKeyGateTest extends TestCase
         );
     }
 
+    /** With both sources resolvable the verdict wins, and only on a success has it one. */
+    public function testTheVerdictsOwnMerchantWinsOverTheRecord(): void
+    {
+        $record = ['id' => 'from-record', 'short_name' => 'record-name'];
+
+        $verified = $this->build(
+            $this->statusService(ApiKeyStatus::OK, 200, ['id' => 'from-verdict', 'short_name' => 'verdict-name']),
+            $record
+        )->getConfig();
+        $this->assertSame(
+            ['id' => 'from-verdict', 'short_name' => 'verdict-name'],
+            $verified['payment']['two_payment']['orderIntentConfig']['merchant']
+        );
+
+        $fallThrough = $this->build($this->statusService(ApiKeyStatus::UNREACHABLE), $record)->getConfig();
+        $this->assertSame(
+            ['id' => 'from-record', 'short_name' => 'record-name'],
+            $fallThrough['payment']['two_payment']['orderIntentConfig']['merchant']
+        );
+    }
+
     /**
      * @return array<string, array{0: array<string,mixed>|null, 1: array<string,string|null>|null, 2: string}>
      */
@@ -254,6 +275,73 @@ class ConfigProviderApiKeyGateTest extends TestCase
         $this->assertNotEmpty($config['payment']['two_payment']['redirectUrlCookieCode']);
         // And through the gate as its JS consumer reads it.
         $this->assertSame('two_payment', self::resolveActiveTwoBrandCode($config));
+    }
+
+    /**
+     * The verdict's `merchant` is the whole verify_api_key body. Only the
+     * identity reaches the page — the merchant's commercial fields are not the
+     * browser's business, and one shape for this key means the fall-through and
+     * the success case cannot be told apart by a consumer.
+     */
+    public function testOnlyTheMerchantIdentityReachesThePage(): void
+    {
+        $verdictBody = [
+            'id' => 'abc-123',
+            'short_name' => 'acme',
+            'available_terms' => [14, 30],
+            'min_order_amount' => ['amount' => '250.00', 'currency' => 'EUR'],
+            'invoice_distributed_by_merchant' => true,
+        ];
+
+        $config = $this->build($this->statusService(ApiKeyStatus::OK, 200, $verdictBody))->getConfig();
+
+        $this->assertSame(
+            ['id' => 'abc-123', 'short_name' => 'acme'],
+            $config['payment']['two_payment']['orderIntentConfig']['merchant']
+        );
+        $this->assertStringNotContainsString(
+            'min_order_amount',
+            (string)json_encode($config),
+            'the merchant record\'s commercial fields must not reach the page'
+        );
+    }
+
+    /**
+     * The verdict is served from a cache whose only structural guarantee is a
+     * `status` key, so an unreadable entry must degrade rather than fatal out
+     * of a checkout render.
+     *
+     * @dataProvider unreadableVerdictMerchants
+     * @param mixed $merchant
+     */
+    public function testAnUnreadableVerdictMerchantDegradesToTheRecord($merchant, string $description): void
+    {
+        $service = $this->createMock(ApiKeyStatus::class);
+        $service->method('getStatus')->willReturn(
+            ['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => $merchant]
+        );
+        $service->method('isDefinitiveFailure')->willReturn(false);
+
+        $config = $this->build($service, ['id' => 'from-record'])->getConfig();
+
+        $this->assertSame(
+            ['id' => 'from-record', 'short_name' => null],
+            $config['payment']['two_payment']['orderIntentConfig']['merchant'],
+            $description
+        );
+    }
+
+    /**
+     * @return array<string, array{0: mixed, 1: string}>
+     */
+    public static function unreadableVerdictMerchants(): array
+    {
+        return [
+            'a string' => ['not-an-array', 'a scalar cache entry must not fatal'],
+            'a bool' => [false, 'nor a bool'],
+            'an int' => [0, 'nor an int'],
+            'an array with no id' => [['short_name' => 'acme'], 'an array naming no merchant resolves nothing'],
+        ];
     }
 
     public function testTheCachedVerificationSuppliesTheMerchantRecord(): void

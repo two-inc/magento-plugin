@@ -14,6 +14,8 @@ use Two\Gateway\Model\Ui\CheckoutTileCopy;
 use Two\Gateway\Model\Ui\ConfigProvider;
 use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\RecordProvider;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
  * The checkout config subtree is published to every buyer on every checkout
@@ -98,6 +100,7 @@ class ConfigProviderCustomHeaderExposureTest extends TestCase
             'configRepository' => $configRepository,
             'brandRegistry' => $brandRegistry,
             'apiKeyStatus' => $apiKeyStatus,
+            'settingsProvider' => new SettingsProvider($this->createMock(RecordProvider::class)),
             'two' => $two,
             'assetRepository' => $this->createMock(AssetRepository::class),
             'checkoutSession' => $checkoutSession,

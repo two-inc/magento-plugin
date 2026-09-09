@@ -22,11 +22,6 @@ namespace Two\Gateway\Service\Merchant;
  * (empty term set, no surcharge cap, no default term): an unconfigured
  * or invalid API key, or an API blip, must not harden into a wrong
  * commercial constraint.
- *
- * getMerchantIdentity() is the one non-commercial reader: the same record's
- * `id` and `short_name`, for the surfaces that keep serving a buyer through an
- * upstream failure, where the verification verdict carries no merchant of its
- * own (ABN-533).
  */
 class SettingsProvider
 {
@@ -131,20 +126,27 @@ class SettingsProvider
      */
     public function getMerchantIdentity(?int $storeId = null): ?array
     {
-        return self::identityFrom($this->recordProvider->getRecord($storeId));
+        return $this->identityFrom($this->recordProvider->getRecord($storeId));
     }
 
     /**
      * The identity a merchant payload carries, or null when it names no
-     * merchant. Shared with the callers that prefer the verification verdict's
-     * own merchant and reach for the record only when it has none, so both
-     * sources normalise the same way.
+     * merchant. The callers prefer the verification verdict's own merchant and
+     * reach for the record only when it has none, so both sources normalise
+     * here and cannot drift.
      *
-     * @param array<string,mixed>|null $merchant
+     * `mixed`, not `?array`: the verdict is served from a cache whose only
+     * structural guarantee is a `status` key, and an unreadable entry must
+     * never throw out of a checkout render or an anonymous REST route.
+     *
+     * @param mixed $merchant
      * @return array{id: string, short_name: string|null}|null
      */
-    public static function identityFrom(?array $merchant): ?array
+    public function identityFrom($merchant): ?array
     {
+        if (!is_array($merchant)) {
+            return null;
+        }
         $id = $merchant['id'] ?? null;
         if (!is_string($id) || $id === '') {
             return null;

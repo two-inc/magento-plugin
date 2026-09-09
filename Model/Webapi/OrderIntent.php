@@ -82,7 +82,8 @@ class OrderIntent implements OrderIntentInterface
         // verdict carries one only on a success, and an unresolvable record
         // must not refuse an intent by itself (ABN-519). Neither resolving is
         // the one state with no identity to send.
-        $identity = SettingsProvider::identityFrom($this->apiKeyStatus->getStatus($storeId)['merchant'] ?? null)
+        $identity = $this->settingsProvider
+            ->identityFrom($this->apiKeyStatus->getStatus($storeId)['merchant'] ?? null)
             ?? $this->settingsProvider->getMerchantIdentity($storeId);
         if ($identity === null) {
             return $this->refusal(503, (string)__('The payment integration is not available right now.'));

@@ -142,7 +142,8 @@ class CompanyLookup implements CompanyLookupInterface
         if ($this->apiKeyStatus->isDefinitiveFailure($storeId)) {
             return [];
         }
-        $identity = SettingsProvider::identityFrom($this->apiKeyStatus->getStatus($storeId)['merchant'] ?? null)
+        $identity = $this->settingsProvider
+            ->identityFrom($this->apiKeyStatus->getStatus($storeId)['merchant'] ?? null)
             ?? $this->settingsProvider->getMerchantIdentity($storeId);
         $shortName = $identity['short_name'] ?? null;
 
