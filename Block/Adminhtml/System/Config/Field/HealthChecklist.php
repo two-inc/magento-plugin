@@ -152,10 +152,6 @@ class HealthChecklist extends Field
             $reason = (string)__('no API key is saved. Check API key.');
         } elseif ($apiKeyStatus['status'] === ApiKeyStatus::INVALID_KEY) {
             $reason = (string)__('the API key was rejected. Check API key and Environment.');
-        } elseif ($apiKeyStatus['status'] !== ApiKeyStatus::OK) {
-            // isVerified() is status === OK, so a transient verdict withholds
-            // today. ABN-533's fall-through owns this arm's removal.
-            $reason = (string)__('the API key could not be verified just now.');
         }
         if ($reason === null) {
             try {

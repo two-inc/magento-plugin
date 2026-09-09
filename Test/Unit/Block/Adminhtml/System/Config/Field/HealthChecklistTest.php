@@ -310,13 +310,13 @@ class HealthChecklistTest extends TestCase
                 'a definitive rejection names both key and environment',
             ],
             'key unverifiable, service down' => [
-                true, ApiKeyStatus::SERVICE_ERROR, 'none', $unrestricted, null, null, false, false,
-                'Not shown at checkout — the API key could not be verified just now.',
-                'a transient verdict withholds today, so the row says so',
+                true, ApiKeyStatus::SERVICE_ERROR, 'none', $unrestricted, null, null, false, true,
+                'Shown at checkout',
+                'ABN-533: a transient verdict falls through to the cached record and withholds nothing',
             ],
             'key unverifiable, unreachable' => [
-                true, ApiKeyStatus::UNREACHABLE, 'none', $unrestricted, null, null, false, false,
-                'the API key could not be verified just now.',
+                true, ApiKeyStatus::UNREACHABLE, 'none', $unrestricted, null, null, false, true,
+                'Shown at checkout',
                 'the same for a store that cannot reach us at all',
             ],
             'stored surcharge method unknown' => [
