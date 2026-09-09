@@ -16,16 +16,15 @@ use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 
 /**
- * The checkout-config subtree is the gate the company-search control sits
- * behind.
+ * The checkout-config subtree is the gate the company-search control AND the
+ * payment renderer sit behind.
  *
  * `js/model/brand-config.js::getActiveTwoBrandCode()` finds the active
  * Two-family brand by scanning `window.checkoutConfig.payment` for a
- * subtree carrying a truthy `redirectUrlCookieCode`, and the address
- * block's company-search widget mounts only when that resolves. So
- * withholding the subtree on a verification failure is what stops company
- * search rendering on a broken integration — the same job the sibling
- * plugins do by withholding their client-side bootstrap object.
+ * subtree carrying a truthy `redirectUrlCookieCode`, and both mount only
+ * when that resolves. It must therefore withhold on exactly the verdicts
+ * Two::isAvailable() withholds on (ABN-533) — a rejected key and no key —
+ * or an outage leaves the method offered with no config to render it.
  */
 class ConfigProviderApiKeyGateTest extends TestCase
 {
@@ -95,43 +94,64 @@ class ConfigProviderApiKeyGateTest extends TestCase
         return $storeManager;
     }
 
+    /**
+     * The real ApiKeyStatus over a stubbed verdict — only getStatus() is
+     * overridden — so the gate runs the production predicate and cannot pass
+     * by re-stating the rule in the test.
+     */
     private function statusService(string $status, ?int $code = null, ?array $merchant = null): ApiKeyStatus
     {
-        $service = $this->createMock(ApiKeyStatus::class);
-        $service->method('getStatus')->willReturn(
-            ['status' => $status, 'code' => $code, 'merchant' => $merchant]
-        );
-        return $service;
+        return new class (['status' => $status, 'code' => $code, 'merchant' => $merchant]) extends ApiKeyStatus {
+            /** @var array{status: string, code: int|null, merchant: array<string,mixed>|null} */
+            private $verdict;
+
+            /** @param array{status: string, code: int|null, merchant: array<string,mixed>|null} $verdict */
+            public function __construct(array $verdict)
+            {
+                $this->verdict = $verdict;
+            }
+
+            public function getStatus(?int $storeId = null): array
+            {
+                return $this->verdict;
+            }
+        };
     }
 
     /**
-     * @dataProvider failureCategories
+     * Asserted through a PHP mirror of the JS consumer, so this fails if the
+     * emitted shape stops matching what getActiveTwoBrandCode() looks for,
+     * not merely if a key is renamed.
+     *
+     * @dataProvider verdictCategories
      */
-    public function testNoConfigSubtreeIsEmittedOnAnyVerificationFailure(string $status, ?int $code): void
+    public function testTheSubtreeIsWithheldOnlyOnADefinitiveRejection(
+        string $status,
+        ?int $code,
+        bool $emitted,
+        string $description
+    ): void {
+        $config = $this->build($this->statusService($status, $code, ['id' => 'abc-123']))->getConfig();
+
+        $this->assertSame($emitted, $config !== [], $description);
+        $this->assertSame(
+            $emitted ? 'two_payment' : null,
+            self::resolveActiveTwoBrandCode($config),
+            $description
+        );
+    }
+
+    /**
+     * The withholding half of the pair above, stated as the thing it protects:
+     * a rejected key must not leave a brand code for company search to mount
+     * behind.
+     */
+    public function testARejectedKeyLeavesNothingForCompanySearchToMountBehind(): void
     {
-        $config = $this->build($this->statusService($status, $code))->getConfig();
+        $config = $this->build($this->statusService(ApiKeyStatus::INVALID_KEY, 401))->getConfig();
 
         $this->assertSame([], $config);
-    }
-
-    /**
-     * The gate as its JS consumer actually reads it: no subtree anywhere in
-     * `payment` carrying a truthy `redirectUrlCookieCode` means
-     * getActiveTwoBrandCode() resolves to null and company search never
-     * mounts.
-     *
-     * @dataProvider failureCategories
-     */
-    public function testTheCompanySearchSentinelIsAbsentOnAnyVerificationFailure(
-        string $status,
-        ?int $code
-    ): void {
-        $config = $this->build($this->statusService($status, $code))->getConfig();
-
-        $this->assertNull(
-            self::resolveActiveTwoBrandCode($config),
-            'a resolvable brand code would let company search mount on a broken integration'
-        );
+        $this->assertNull(self::resolveActiveTwoBrandCode($config));
     }
 
     /**
@@ -154,18 +174,38 @@ class ConfigProviderApiKeyGateTest extends TestCase
     }
 
     /**
-     * @return array<string, array{0: string, 1: int|null}>
+     * @return array<string, array{0: string, 1: int|null, 2: bool, 3: string}>
      */
-    public static function failureCategories(): array
+    public static function verdictCategories(): array
     {
         return [
-            'rejected key' => [ApiKeyStatus::INVALID_KEY, 401],
-            'service error' => [ApiKeyStatus::SERVICE_ERROR, 503],
-            'unreachable' => [ApiKeyStatus::UNREACHABLE, null],
-            'other error' => [ApiKeyStatus::ERROR, 404],
-            'malformed response' => [ApiKeyStatus::MALFORMED_RESPONSE, null],
-            'not configured' => [ApiKeyStatus::NOT_CONFIGURED, null],
+            'ok' => [ApiKeyStatus::OK, 200, true,
+                'a verifying key emits the subtree'],
+            'rejected key' => [ApiKeyStatus::INVALID_KEY, 401, false,
+                'Two rejected the key, so nothing can mount'],
+            'not configured' => [ApiKeyStatus::NOT_CONFIGURED, null, false,
+                'there is no key to mount against'],
+            'service error' => [ApiKeyStatus::SERVICE_ERROR, 503, true,
+                'the method stays offered, so its renderer needs its config'],
+            'unreachable' => [ApiKeyStatus::UNREACHABLE, null, true,
+                'an outage must not leave the method offered with no config'],
+            'other error' => [ApiKeyStatus::ERROR, 404, true,
+                'a non-2xx that is not a 401/403 is not a rejection'],
+            'malformed response' => [ApiKeyStatus::MALFORMED_RESPONSE, null, true,
+                'an unreadable answer is about the service, not the key'],
         ];
+    }
+
+    /**
+     * A fall-through carries no merchant record, and the browser's api-client
+     * params omit the short name rather than sending "undefined".
+     */
+    public function testAFallThroughEmitsTheSubtreeWithNoMerchantRecord(): void
+    {
+        $config = $this->build($this->statusService(ApiKeyStatus::UNREACHABLE))->getConfig();
+
+        $this->assertSame('two_payment', self::resolveActiveTwoBrandCode($config));
+        $this->assertNull($config['payment']['two_payment']['orderIntentConfig']['merchant']);
     }
 
     public function testTheSubtreeAndItsSentinelArePresentOnSuccess(): void

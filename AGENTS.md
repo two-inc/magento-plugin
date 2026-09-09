@@ -255,6 +255,14 @@ only its definitive-rejection categories withhold (ABN-533). Do not add another
 gate that withholds because a call to Two failed, and do not widen this one back
 to every failure category; both are defects the rule exists to stop coming back.
 
+**`Model\Ui\ConfigProvider::getConfig()` asks the same question, and must keep
+doing so.** Its emptiness is a second withhold in all but name: the Luma
+company-search widget and the payment renderer both mount behind
+`getActiveTwoBrandCode()` finding a `payment` subtree with a truthy
+`redirectUrlCookieCode`. Gate it on anything wider than `isDefinitiveFailure()`
+and an outage leaves the method offered by `isAvailable()` with no config for its
+renderer — worse than either outcome alone.
+
 Two on the list are NOT the store's own configuration and are worth knowing
 about. The surcharge FX gate resolves its rate table from Two, and the
 minimum-order gate fails closed when it cannot convert at that same table. Both

@@ -162,22 +162,25 @@ class ConfigProvider implements ConfigProviderInterface
      */
     public function getConfig(): array
     {
-        // No config subtree at all unless the stored API key currently
-        // verifies. This is the gate the company-search control sits behind:
+        // No config subtree at all when Two has REJECTED the stored key. This
+        // is the gate the company-search control sits behind:
         // `js/model/brand-config.js::getActiveTwoBrandCode()` identifies the
         // active Two-family brand by scanning
         // `window.checkoutConfig.payment` for a subtree carrying a truthy
         // `redirectUrlCookieCode`, and its consumers — the address block's
         // company-search widget (`js/view/address-autocomplete.js`) and the
         // payment-method renderer — mount only when that resolves. Emitting
-        // nothing therefore withholds company search as well as the tile,
-        // matching the sibling plugins, where the equivalent client-side
-        // bootstrap object is withheld on a verification failure.
+        // nothing therefore withholds company search AND the tile's renderer.
         //
-        // The check is the same one Two::isAvailable() makes, and cached
-        // (see ApiKeyStatus), so this no longer costs a live HTTP round-trip
-        // on every checkout render as it did when the verify call was made
-        // inline here.
+        // It must therefore ask the same question Two::isAvailable() asks
+        // (ABN-533), or an outage leaves the method on offer with no config
+        // for its renderer to mount against — worse than either outcome on
+        // its own. The verdict is cached (see ApiKeyStatus), so this costs no
+        // HTTP round-trip per render.
+        //
+        // `merchant` is null on a fall-through, which is why the browser's
+        // api-client params omit the short name rather than sending
+        // "undefined" (see js/model/company-search.js::apiClientParams).
         //
         // No store id is passed, matching every other configRepository read
         // in this method: ConfigRepository resolves a null store id through
@@ -187,11 +190,10 @@ class ConfigProvider implements ConfigProviderInterface
         // so both surfaces judge the same store's key and agree. They would
         // only diverge if this provider were evaluated outside the store
         // whose quote is being rendered, which checkout does not do.
-        $apiKeyStatus = $this->apiKeyStatus->getStatus();
-        if ($apiKeyStatus['status'] !== ApiKeyStatus::OK) {
+        if ($this->apiKeyStatus->isDefinitiveFailure()) {
             return [];
         }
-        $merchant = $apiKeyStatus['merchant'];
+        $merchant = $this->apiKeyStatus->getStatus()['merchant'];
         $orderIntentConfig = [
             'extensionPlatformName' => $this->configRepository->getExtensionPlatformName(),
             'extensionDBVersion' => $this->configRepository->getExtensionDBVersion(),
