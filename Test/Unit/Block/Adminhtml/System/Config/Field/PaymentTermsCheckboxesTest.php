@@ -27,6 +27,9 @@ class PaymentTermsCheckboxesTest extends TestCase
     /** @var array<int, mixed> what storeManager::getStore() was asked for, in order */
     private $storeLookups = [];
 
+    /** @var array<int, mixed> what storeManager::getWebsite() was asked for, in order */
+    private $websiteLookups = [];
+
     /** @param array<string, string> $params the admin page's own request params */
     private function block(array $params, ?SettingsProvider $settingsProvider = null): PaymentTermsCheckboxes
     {
@@ -67,7 +70,11 @@ class PaymentTermsCheckboxesTest extends TestCase
 
             return $store;
         });
-        $storeManager->method('getWebsite')->willReturn($website);
+        $storeManager->method('getWebsite')->willReturnCallback(function ($id) use ($website) {
+            $this->websiteLookups[] = $id;
+
+            return $website;
+        });
 
         $scopeConfig = $this->createMock(ScopeConfigInterface::class);
         $scopeConfig->method('getValue')->willReturn('EUR');
@@ -135,28 +142,34 @@ class PaymentTermsCheckboxesTest extends TestCase
 
     /**
      * @param array<string, string> $params
-     * @param array<int, mixed> $expectedLookups
+     * @param array<int, mixed> $expectedStoreLookups
+     * @param array<int, mixed> $expectedWebsiteLookups
      * @dataProvider currencyProvider
      */
     public function testTheFeeFiguresAreLabelledWithTheScopesOwnCurrency(
         array $params,
         string $expected,
-        array $expectedLookups,
+        array $expectedStoreLookups,
+        array $expectedWebsiteLookups,
         string $case
     ): void {
         $this->assertSame($expected, $this->block($params)->getBaseCurrency(), $case);
-        $this->assertSame($expectedLookups, $this->storeLookups, $case);
+        $this->assertSame(
+            [$expectedStoreLookups, $expectedWebsiteLookups],
+            [$this->storeLookups, $this->websiteLookups],
+            $case
+        );
     }
 
     public static function currencyProvider(): array
     {
         return [
-            [['store' => 'de'], 'NOK', ['de', self::STORE_ID], 'the store record answers, looked up by the id the param resolved to'],
-            [[], 'EUR', [], 'the default scope answers from config'],
-            [['website' => 'eu'], 'SEK', [], 'the website record answers at website scope'],
-            [['store' => ''], 'EUR', [], 'an empty param leaves the default scope'],
-            [['store' => 'broken'], 'EUR', ['broken'], 'an unresolvable store falls back to config'],
-            [['store' => 'broken', 'website' => 'eu'], 'SEK', ['broken'], 'an unresolvable store falls through to the website param'],
+            [['store' => 'de'], 'NOK', ['de', self::STORE_ID], [], 'the store record answers, looked up by the id the param resolved to'],
+            [[], 'EUR', [], [], 'the default scope answers from config'],
+            [['website' => 'eu'], 'SEK', [], ['eu', self::WEBSITE_ID], 'the website record answers at website scope, looked up by the id the param resolved to'],
+            [['store' => ''], 'EUR', [], [], 'an empty param leaves the default scope'],
+            [['store' => 'broken'], 'EUR', ['broken'], [], 'an unresolvable store falls back to config'],
+            [['store' => 'broken', 'website' => 'eu'], 'SEK', ['broken'], ['eu', self::WEBSITE_ID], 'an unresolvable store falls through to the website param'],
         ];
     }
 
