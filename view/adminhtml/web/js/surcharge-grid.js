@@ -108,8 +108,6 @@ define(['jquery', 'mage/translate', 'mage/validation', 'domReady!'], function ($
                 terms.push(Number($(this).val()));
             });
             terms = terms.filter(function (n) { return n > 0; });
-            // Server-normalised term; parsing the raw value here would disagree with the
-            // save on shapes like '1e2' (ABN-522).
             var custom = Number($customDays.find('option:selected').attr('data-two-term')) || 0;
             if (custom > 0) {
                 terms.push(custom);

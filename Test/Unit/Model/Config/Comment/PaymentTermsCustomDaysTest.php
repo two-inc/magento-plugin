@@ -5,6 +5,7 @@ namespace Two\Gateway\Test\Unit\Model\Config\Comment;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\RequestInterface;
+use Magento\Framework\Escaper;
 use Magento\Store\Api\Data\StoreInterface;
 use Magento\Store\Api\Data\WebsiteInterface;
 use Magento\Store\Model\StoreManagerInterface;
@@ -52,7 +53,8 @@ class PaymentTermsCustomDaysTest extends TestCase
             $request,
             $storeManager,
             $brandRegistry,
-            new EndOfMonth()
+            new EndOfMonth(),
+            new Escaper()
         );
 
         return $model->getCommentText($value);
@@ -99,6 +101,18 @@ class PaymentTermsCustomDaysTest extends TestCase
         $this->assertStringContainsString('this section cannot be saved until it is removed', $text);
         $this->assertStringContainsString('Choose Remove to clear it.', $text);
         $this->assertStringNotContainsString('offers a custom term', $text);
+    }
+
+    /**
+     * Comment output is rendered raw, so a stored value the admin form never validated reaches
+     * the page as markup unless it is escaped on the way in.
+     */
+    public function testAnUnusableStoredValueCannotInjectMarkup(): void
+    {
+        $text = $this->comment([], [], '<img src=x onerror=alert(1)>');
+
+        $this->assertStringNotContainsString('<img', $text);
+        $this->assertStringContainsString('&lt;img src=x onerror=alert(1)&gt;', $text);
     }
 
     public static function interpolatedDaysProvider(): array

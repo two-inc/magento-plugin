@@ -10,6 +10,7 @@ namespace Two\Gateway\Block\Adminhtml\System\Config\Field;
 use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
+use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Model\Config\Backend\PaymentTerms\OfferedTermsGuard;
 use Two\Gateway\Model\Config\StoredTerm;
 
@@ -22,13 +23,18 @@ class PaymentTermsCustomDays extends Field
     /** @var OfferedTermsGuard */
     private $offeredTerms;
 
+    /** @var StoreManagerInterface */
+    private $storeManager;
+
     public function __construct(
         Context $context,
         OfferedTermsGuard $offeredTerms,
+        StoreManagerInterface $storeManager,
         array $data = []
     ) {
         parent::__construct($context, $data);
         $this->offeredTerms = $offeredTerms;
+        $this->storeManager = $storeManager;
     }
 
     /**
@@ -44,8 +50,6 @@ class PaymentTermsCustomDays extends Field
 
         $optionsHtml = '';
         foreach ($options as [$value, $label, $term]) {
-            // data-two-term carries this normalisation to the admin scripts, which must not
-            // re-derive a term from the raw value (ABN-522).
             $optionsHtml .= sprintf(
                 '<option value="%s" data-two-term="%d"%s>%s</option>',
                 $this->escapeHtmlAttr($value),
@@ -61,16 +65,16 @@ class PaymentTermsCustomDays extends Field
             $this->escapeHtmlAttr((string)$element->getName()),
             $element->getDisabled() ? ' disabled="disabled"' : '',
             $optionsHtml
-        ) . $this->foldsInMarker($element, $days);
+        ) . $this->foldsInMarker($days);
     }
 
     /** Marks the row the save will fold into an offered term's checkbox; it stays posted, hidden. */
-    private function foldsInMarker(AbstractElement $element, ?int $days): string
+    private function foldsInMarker(?int $days): string
     {
         if ($days === null) {
             return '';
         }
-        $offered = $this->offeredTerms->offered($this->resolveStoreId($element));
+        $offered = $this->offeredTerms->offered($this->resolveStoreId());
 
         return $offered !== [] && in_array($days, $offered, true)
             ? '<span class="two-legacy-term-folds-in" hidden="hidden"></span>'
@@ -78,18 +82,22 @@ class PaymentTermsCustomDays extends Field
     }
 
     /**
-     * Store id for the active config scope, or null for website/default — the offered-terms
-     * lookup resolves the per-store API key from it.
+     * Store id for the scope being edited, or null for website/default — the offered-terms lookup
+     * resolves the per-store API key from it. Read from the `store` request param, as
+     * SurchargeGrid::resolveScope() does: the Data\Form object never carries scope, so asking it
+     * resolves every scope to default.
      */
-    private function resolveStoreId(AbstractElement $element): ?int
+    private function resolveStoreId(): ?int
     {
-        $form = $element->getForm();
-        if (!$form) {
+        $store = $this->getRequest()->getParam('store');
+        if ($store === null || $store === '') {
             return null;
         }
 
-        return (string)$form->getScope() === 'stores' && (int)$form->getScopeId() > 0
-            ? (int)$form->getScopeId()
-            : null;
+        try {
+            return (int)$this->storeManager->getStore($store)->getId() ?: null;
+        } catch (\Exception $e) {
+            return null;
+        }
     }
 }

@@ -6,45 +6,65 @@ namespace Two\Gateway\Test\Unit\Block\Adminhtml\System\Config\Field;
 use DOMDocument;
 use DOMElement;
 use Magento\Backend\Block\Template\Context;
+use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Data\Form\Element\AbstractElement;
+use Magento\Store\Api\Data\StoreInterface;
+use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Block\Adminhtml\System\Config\Field\PaymentTermsCustomDays;
 use Two\Gateway\Model\Config\Backend\PaymentTerms\OfferedTermsGuard;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
- * The deprecated custom term is offered as keep-or-remove, never as free entry: the merchant
- * cannot type a replacement the save would then refuse. Each option carries the server's own
- * normalisation as data-two-term, and the fold-in marker is emitted here, so the admin scripts
- * never re-read the stored value (ABN-522).
+ * The deprecated custom term is offered as keep-or-remove, never as free entry, and each option
+ * carries the server's own normalisation as data-two-term (ABN-522).
  *
- * Attributes are read back through a parser rather than matched as literals: the real
- * escapeHtmlAttr emits numeric entities for brackets, so a literal `name="groups[...]"` would
- * pass only against a laxer stand-in. Test/Stubs/AdminConfigField.php supplies the framework base
- * class and element, and the test subclass only exposes the protected method.
+ * Attributes are read back through a parser, not matched as literals: the real escapeHtmlAttr
+ * emits numeric entities for brackets.
  */
 class PaymentTermsCustomDaysTest extends TestCase
 {
-    /** @param int[] $offered */
-    private function render(array $elementData, array $offered = []): string
-    {
-        $settingsProvider = $this->createMock(SettingsProvider::class);
-        $settingsProvider->method('getAvailableTerms')->willReturn($offered);
+    /**
+     * @param int[] $offered
+     * @param array<string, string> $params the admin page's own request params
+     */
+    private function block(
+        array $offered = [],
+        array $params = [],
+        ?SettingsProvider $settingsProvider = null
+    ): PaymentTermsCustomDays {
+        if ($settingsProvider === null) {
+            $settingsProvider = $this->createMock(SettingsProvider::class);
+            $settingsProvider->method('getAvailableTerms')->willReturn($offered);
+        }
 
-        $block = new class (
-            $this->createMock(Context::class),
-            new OfferedTermsGuard($settingsProvider)
-        ) extends PaymentTermsCustomDays {
+        $request = $this->createMock(RequestInterface::class);
+        $request->method('getParam')->willReturnCallback(static fn ($key) => $params[$key] ?? null);
+        $context = $this->createMock(Context::class);
+        $context->method('getRequest')->willReturn($request);
+
+        $store = $this->createMock(StoreInterface::class);
+        $store->method('getId')->willReturn(5);
+        $storeManager = $this->createMock(StoreManagerInterface::class);
+        $storeManager->method('getStore')->willReturnCallback(
+            static fn ($code) => $code === 'broken' ? throw new \RuntimeException('no such store') : $store
+        );
+
+        return new class ($context, new OfferedTermsGuard($settingsProvider), $storeManager)
+            extends PaymentTermsCustomDays {
             public function renderForTest(AbstractElement $element): string
             {
                 return $this->_getElementHtml($element);
             }
         };
+    }
 
-        return $block->renderForTest(new AbstractElement($elementData + [
+    /** @param int[] $offered */
+    private function render(array $elementData, array $offered = [], array $params = []): string
+    {
+        return $this->block($offered, $params)->renderForTest(new AbstractElement($elementData + [
             'html_id' => 'two_payment_payment_terms_payment_terms_duration_days',
             'name' => 'groups[payment_terms][fields][payment_terms_duration_days][value]',
-            'form' => null,
         ]));
     }
 
@@ -213,37 +233,63 @@ class PaymentTermsCustomDaysTest extends TestCase
         ];
     }
 
-    public function testTheOfferedSetIsResolvedForTheStoreScopeBeingEdited(): void
-    {
+    /**
+     * @param array<string, string> $params
+     * @dataProvider scopeProvider
+     */
+    public function testTheOfferedSetIsResolvedForTheScopeBeingEdited(
+        array $params,
+        ?int $expectedStoreId,
+        string $case
+    ): void {
         $settingsProvider = $this->createMock(SettingsProvider::class);
         $settingsProvider->expects($this->once())
             ->method('getAvailableTerms')
-            ->with(5)
+            ->with($expectedStoreId)
             ->willReturn([30]);
 
-        $block = new class (
-            $this->createMock(Context::class),
-            new OfferedTermsGuard($settingsProvider)
-        ) extends PaymentTermsCustomDays {
-            public function renderForTest(AbstractElement $element): string
-            {
-                return $this->_getElementHtml($element);
-            }
-        };
+        $html = $this->block([], $params, $settingsProvider)->renderForTest(new AbstractElement([
+            'value' => '30',
+            'html_id' => 'two_payment_payment_terms_payment_terms_duration_days',
+            'name' => 'groups[payment_terms][fields][payment_terms_duration_days][value]',
+        ]));
+
+        $this->assertSame(1, $this->parse($html)->getElementsByTagName('span')->length, $case);
+    }
+
+    public static function scopeProvider(): array
+    {
+        return [
+            [['store' => 'de'], 5, 'the store param names the store whose record is asked'],
+            [[], null, 'no param is the default scope'],
+            [['website' => 'eu'], null, 'a website scope has no single store to ask for'],
+            [['store' => ''], null, 'an empty param is not a scope'],
+            [['store' => 'broken'], null, 'an unresolvable store falls back rather than throwing'],
+        ];
+    }
+
+    /**
+     * The form object never carries scope, so reading it resolved every scope to default and the
+     * marker was computed from the default record's offered set at store scope.
+     */
+    public function testTheFormObjectIsNotTheScopeSource(): void
+    {
+        $settingsProvider = $this->createMock(SettingsProvider::class);
+        $settingsProvider->expects($this->once())->method('getAvailableTerms')->with(5)->willReturn([30]);
 
         $form = new class {
             public function getScope(): string
             {
-                return 'stores';
+                return 'default';
             }
 
             public function getScopeId(): int
             {
-                return 5;
+                return 0;
             }
         };
 
-        $html = $block->renderForTest(new AbstractElement([
+        $html = $this->block([], ['store' => 'de'], $settingsProvider)->renderForTest(new AbstractElement([
             'value' => '30',
             'html_id' => 'two_payment_payment_terms_payment_terms_duration_days',
             'name' => 'groups[payment_terms][fields][payment_terms_duration_days][value]',

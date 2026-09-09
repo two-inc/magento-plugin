@@ -10,6 +10,7 @@ namespace Two\Gateway\Model\Config\Comment;
 use Magento\Config\Model\Config\CommentInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\RequestInterface;
+use Magento\Framework\Escaper;
 use Magento\Store\Model\ScopeInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
@@ -31,18 +32,22 @@ class PaymentTermsCustomDays implements CommentInterface
 
     private $endOfMonth;
 
+    private $escaper;
+
     public function __construct(
         ScopeConfigInterface $scopeConfig,
         RequestInterface $request,
         StoreManagerInterface $storeManager,
         BrandRegistryInterface $brandRegistry,
-        EndOfMonth $endOfMonth
+        EndOfMonth $endOfMonth,
+        Escaper $escaper
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->request = $request;
         $this->storeManager = $storeManager;
         $this->brandRegistry = $brandRegistry;
         $this->endOfMonth = $endOfMonth;
+        $this->escaper = $escaper;
     }
 
     /**
@@ -50,7 +55,9 @@ class PaymentTermsCustomDays implements CommentInterface
      */
     public function getCommentText($elementValue)
     {
-        $days = StoredTerm::days($elementValue) ?? trim((string)$elementValue);
+        // Comment output is rendered raw so this form's help text can carry markup, so an
+        // unusable stored value has to be escaped before it is named.
+        $days = $this->escaper->escapeHtml(StoredTerm::days($elementValue) ?? trim((string)$elementValue));
 
         // No term semantics to qualify, so the terms type does not enter into it.
         if (StoredTerm::isUnusable($elementValue)) {
