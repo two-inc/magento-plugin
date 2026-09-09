@@ -230,11 +230,10 @@ company-number guard runs at placement, not at render — do not reach for
 
 **Every one of those withholds is invisible to the buyer**: the method simply
 vanishes, with no message, no error node and an empty message area. Each gate
-writes a log line and that is the only account of it — debug for most, error for
-the unrecognised stored surcharge method and for a platform floor that cannot be
-converted — so the log is where a "why is the method missing" question gets
-answered. The surcharge case throws with a buyer-facing string that no buyer
-ever sees.
+writes a log line and that is the only account of it — debug at the gate, error
+where the underlying service reports the cause — so the log is where a "why is the
+method missing" question gets answered. An unrecognised stored surcharge method
+throws with a buyer-facing string that no buyer ever sees.
 
 ## A Diagnostics field declared only in `system.xml` never reaches the admin
 
