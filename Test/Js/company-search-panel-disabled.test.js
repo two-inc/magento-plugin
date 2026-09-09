@@ -175,6 +175,39 @@ describe('the panel still opens while the search is withdrawn', () => {
     });
 });
 
+describe('typing in the field while the search is withdrawn', () => {
+    test('the keystrokes stay in the field and no search is queued', () => {
+        const { panel } = setup();
+        const searches = [];
+        panel.search.searchCompanies = function (params) {
+            searches.push(params.term);
+            return Promise.resolve({ items: [] });
+        };
+        panel.setDisabled(true);
+
+        const field = document.querySelector(FIELD);
+        field.value = 'Alp';
+        field.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+        expect(field.value).toBe('Alp');
+        expect(document.querySelector(QUERY).value).toBe('');
+        expect(searches).toEqual([]);
+        // The panel is still up, so the manual-entry chip is a click away.
+        expect(panelIsOpen()).toBe(true);
+    });
+
+    test('an ungated field still forwards into the query row', () => {
+        const { panel } = setup();
+        panel.setDisabled(false);
+
+        const field = document.querySelector(FIELD);
+        field.value = 'Alp';
+        field.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+        expect(document.querySelector(QUERY).value).toBe('Alp');
+    });
+});
+
 describe('the gate survives a rebind', () => {
     test('a fresh field node re-attaches with the search still withdrawn', () => {
         const { panel } = setup();
