@@ -120,15 +120,37 @@ class DefaultPaymentTermTest extends TestCase
             ->renderForTest(new AbstractElement(['value' => '', 'form' => $form]));
     }
 
-    /** An explicit stored choice wins, so the record is never consulted for it. */
-    public function testAStoredChoiceIsLeftAlone(): void
-    {
+    /**
+     * @param int[] $offered
+     * @dataProvider preSelectionProvider
+     */
+    public function testThePreSelectedTerm(
+        string $stored,
+        array $offered,
+        ?int $apiDefault,
+        string $expected,
+        string $case
+    ): void {
         $settingsProvider = $this->createMock(SettingsProvider::class);
-        $settingsProvider->expects($this->never())->method('getAvailableTerms');
+        $settingsProvider->method('getAvailableTerms')->willReturn($offered);
+        $settingsProvider->method('getDefaultTerm')->willReturn($apiDefault);
 
-        $element = new AbstractElement(['value' => '45']);
+        $element = new AbstractElement(['value' => $stored]);
         $this->block($settingsProvider, ['store' => 'de'])->renderForTest($element);
 
-        $this->assertSame('45', $element->getValue());
+        $this->assertSame($expected, (string)$element->getValue(), $case);
+    }
+
+    public static function preSelectionProvider(): array
+    {
+        return [
+            ['45', [14, 30, 45], 30, '45', 'a stored choice that is still offered is left alone'],
+            ['45', [14, 30], 30, '30', 'a stored choice no longer offered falls to the API default term'],
+            ['', [7, 30], 7, '7', 'the API default term outranks the 30 preference'],
+            ['', [7, 30], null, '30', '30 is preferred over a shorter offered term'],
+            ['', [7, 14], null, '7', 'without 30 offered the lowest offered term is used'],
+            ['', [7, 14], 45, '7', 'an API default term that is not offered is ignored'],
+            ['', [], null, '', 'nothing offered pre-selects nothing'],
+        ];
     }
 }

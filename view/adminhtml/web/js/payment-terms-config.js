@@ -1,6 +1,9 @@
 define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
     'use strict';
 
+    /** Mirrors Repository::PREFERRED_DEFAULT_TERM. */
+    var PREFERRED_DEFAULT_TERM = 30;
+
     function initPaymentTermsConfig() {
         // Discover the section-id prefix from the page. The phtml
         // template ships the checkboxes container with id
@@ -81,9 +84,12 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 );
             });
 
-            // Keep current selection if still valid, otherwise pick lowest
+            // Keep current selection if still valid, otherwise mirror the
+            // checkout resolver: 30 when offered, else the lowest (ABN-548).
             if (terms.indexOf(currentDefault) !== -1) {
                 $defaultTerm.val(currentDefault);
+            } else if (terms.indexOf(PREFERRED_DEFAULT_TERM) !== -1) {
+                $defaultTerm.val(PREFERRED_DEFAULT_TERM);
             } else if (terms.length) {
                 $defaultTerm.val(terms[0]);
             }

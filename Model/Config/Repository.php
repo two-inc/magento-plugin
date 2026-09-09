@@ -37,7 +37,7 @@ class Repository implements RepositoryInterface
     private const PROVENANCE_MODULE = 'Two_Gateway';
 
     /** Preferred default term, in net days, when no explicit default resolves (ABN-548). */
-    private const PREFERRED_DEFAULT_TERM = 30;
+    public const PREFERRED_DEFAULT_TERM = 30;
 
     /**
      * @var ScopeConfigInterface
@@ -663,8 +663,6 @@ class Repository implements RepositoryInterface
         if ($apiDefault !== null && in_array($apiDefault, $terms, true)) {
             return $apiDefault;
         }
-        // 30 net days is preferred over a shorter term whenever the merchant
-        // offers it (ABN-548).
         if (in_array(self::PREFERRED_DEFAULT_TERM, $terms, true)) {
             return self::PREFERRED_DEFAULT_TERM;
         }

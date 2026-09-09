@@ -340,9 +340,13 @@ returns null rather than a day count, and no caller substitutes one: the term
 set is offered empty and the buyer is refused at order placement rather than at
 selection (ABN-544).
 
-**The default term prefers 30 net days.** `getDefaultPaymentTerm()` resolves the
-admin's stored default, then the merchant record's own default term, then 30
-whenever it is offered, and only then the shortest offered term (ABN-548).
+**The default term prefers 30 days.** `getDefaultPaymentTerm()` resolves the
+admin's stored default, then the merchant record's own default term, then 30,
+then the shortest offered term — each honoured only while it is in the offered
+set (ABN-548). The admin's own default-term field pre-selects by the same order
+whenever the stored value is not offered, and its JS applies it again when a
+term is unticked: that select posts on save, so a synthesised shortest term
+would pin the stored default below 30 permanently.
 
 ## Monetary values in the pricing request are rounded to 2dp
 
