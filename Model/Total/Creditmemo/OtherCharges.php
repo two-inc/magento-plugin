@@ -12,7 +12,6 @@ use Magento\Framework\Phrase;
 use Magento\Sales\Model\Order\Creditmemo;
 use Magento\Sales\Model\Order\Creditmemo\Total\AbstractTotal;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
-use Two\Gateway\Model\Two as TwoPayment;
 use Two\Gateway\Service\Order\OtherChargesResolver;
 
 /**
@@ -53,8 +52,7 @@ class OtherCharges extends AbstractTotal
             return $this;
         }
 
-        // By instance, not code: a brand overlay extends Two under its own.
-        if (!$this->isTwoOrder($order)) {
+        if (!$this->otherChargesResolver->appliesTo($order)) {
             return $this;
         }
 
@@ -266,25 +264,6 @@ class OtherCharges extends AbstractTotal
         }
 
         return round((float)$creditmemo->getTaxAmount() - $itemised, 6);
-    }
-
-    /**
-     * @param \Magento\Sales\Model\Order $order
-     * @return bool
-     */
-    private function isTwoOrder($order): bool
-    {
-        $payment = $order->getPayment();
-        if (!$payment) {
-            return false;
-        }
-
-        try {
-            return $payment->getMethodInstance() instanceof TwoPayment;
-        } catch (\Throwable $e) {
-            // getMethodInstance() throws for a method no longer installed.
-            return false;
-        }
     }
 
 }

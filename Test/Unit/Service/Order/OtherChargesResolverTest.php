@@ -10,6 +10,8 @@ namespace Two\Gateway\Test\Unit\Service\Order;
 use Magento\Sales\Model\Order as OrderModel;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Model\GenericPaymentMethod;
+use Two\Gateway\Model\Two as TwoPayment;
 use Two\Gateway\Service\Order\ComposeRefund;
 use Two\Gateway\Service\Order\OtherChargesResolver;
 
@@ -38,13 +40,72 @@ class OtherChargesResolverTest extends TestCase
         $this->resolver = new OtherChargesResolver($this->composeRefund, $this->logRepository);
     }
 
-    private function makeOrder(): OrderModel
+    private function makeOrder(string $method = 'two'): OrderModel
     {
         $order = new OrderModel();
         $order->setData('grand_total', 112.00);
         $order->setData('tax_amount', 22.00);
+        if ($method === 'none') {
+            return $order;
+        }
+        $instance = $method === 'other'
+            ? new \stdClass()
+            : $this->createMock($method === 'acme_payment' ? GenericPaymentMethod::class : TwoPayment::class);
+        $order->setData('payment', new class ($instance) {
+            private $instance;
+
+            public function __construct($instance)
+            {
+                $this->instance = $instance;
+            }
+
+            public function getMethodInstance()
+            {
+                return $this->instance;
+            }
+        });
 
         return $order;
+    }
+
+    /**
+     * A fee extension applies store-wide, so the residual is resolved only for
+     * an order this module may move the refund totals of — by payment-method
+     * INSTANCE, since a brand overlay extends Two under its own code. Without
+     * this the credit-memo form would offer an editable charge row on someone
+     * else's order and silently discard whatever was typed into it.
+     *
+     * @dataProvider paymentGateProvider
+     */
+    public function testOnlyTwoOrdersIncludingBrandOverlaysResolveAResidual(
+        string $method,
+        bool $expectResolved,
+        string $description
+    ): void {
+        $order = $this->makeOrder($method);
+        $residual = ['net_amount' => '10.00', 'tax_amount' => '2.00'];
+
+        $this->composeRefund->method('getKnownLineAmountsOrder')->willReturn([]);
+        $this->composeRefund->method('getFeeLines')->willReturn([]);
+        $this->composeRefund->expects($expectResolved ? $this->once() : $this->never())
+            ->method('getOtherChargesLineItem')
+            ->willReturn($residual);
+
+        $this->assertSame(
+            $expectResolved ? $residual : null,
+            $this->resolver->forOrder($order),
+            $description
+        );
+    }
+
+    public static function paymentGateProvider(): array
+    {
+        return [
+            ['two', true, 'the base payment method'],
+            ['acme_payment', true, 'a brand overlay extending it under its own code'],
+            ['other', false, 'an order paid by an unrelated method'],
+            ['none', false, 'an order with no payment at all'],
+        ];
     }
 
     public function testTheOrdersOwnTotalsAndKnownAmountsAreWhatGetReconciled(): void

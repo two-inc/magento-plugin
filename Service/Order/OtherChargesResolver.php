@@ -10,6 +10,7 @@ namespace Two\Gateway\Service\Order;
 use Magento\Sales\Model\Order as OrderModel;
 use Magento\Sales\Model\Order\Creditmemo;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Model\Two as TwoPayment;
 
 /**
  * The order-level "other charges" residual, for consumers outside the payload
@@ -41,6 +42,10 @@ class OtherChargesResolver
      */
     public function forOrder(OrderModel $order): ?array
     {
+        if (!$this->appliesTo($order)) {
+            return null;
+        }
+
         try {
             $lineItems = $this->composeRefund->getKnownLineAmountsOrder($order);
             foreach ($this->composeRefund->getFeeLines($order) as $feeLine) {
@@ -61,6 +66,30 @@ class OtherChargesResolver
             );
 
             return null;
+        }
+    }
+
+    /**
+     * A fee extension applies store-wide, so this decides whose refund totals
+     * this module may move. By payment-method INSTANCE, not code: a brand
+     * overlay's GenericPaymentMethod extends Two under its own per-brand code,
+     * so a code comparison would miss every branded install.
+     *
+     * @param OrderModel $order
+     * @return bool
+     */
+    public function appliesTo(OrderModel $order): bool
+    {
+        $payment = $order->getPayment();
+        if (!$payment) {
+            return false;
+        }
+
+        try {
+            return $payment->getMethodInstance() instanceof TwoPayment;
+        } catch (\Throwable $e) {
+            // getMethodInstance() throws for a method no longer installed.
+            return false;
         }
     }
 

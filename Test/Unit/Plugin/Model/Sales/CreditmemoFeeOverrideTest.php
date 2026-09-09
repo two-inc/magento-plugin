@@ -78,12 +78,18 @@ class CreditmemoFeeOverrideTest extends TestCase
     /** @var array */
     private $priorMemos = [];
 
-    private function plugin(array $post, string $action = 'save', ?array $residual = null): CreditmemoFeeOverride
+    /**
+     * @param array|null|string $residual The string 'default' stands in for
+     *                                     "an order carrying a charge".
+     */
+    private function plugin(array $post, string $action = 'save', $residual = 'default'): CreditmemoFeeOverride
     {
         return new CreditmemoFeeOverride(
             $this->request(['creditmemo' => $post], $action),
             $this->format(),
-            $this->resolver($residual ?? ['net_amount' => (string)self::OTHER_CHARGES_CHARGED])
+            $this->resolver(
+                $residual === 'default' ? ['net_amount' => (string)self::OTHER_CHARGES_CHARGED] : $residual
+            )
         );
     }
 
@@ -279,16 +285,32 @@ class CreditmemoFeeOverrideTest extends TestCase
     }
 
     /**
-     * With no residual there is no charge to bound the typed value against, so
-     * the value passes to the collector, which has the order in hand.
+     * No charge on the order — an order paid by another method, or one whose
+     * grand total is fully itemized — means the collector grants nothing
+     * whatever is posted. Stamping the value anyway would persist it to the
+     * memo's own column, where it renders as a refund that never happened.
      */
-    public function testAnUnresolvableResidualDoesNotRefuseTheValue(): void
+    public function testNothingIsStampedWhenTheOrderCarriesNoCharge(): void
     {
         $plugin = $this->plugin(['two_other_charges_amount' => '3.00'], 'save', null);
         $creditmemo = $this->creditmemo();
 
         $plugin->beforeCollectTotals($creditmemo);
 
-        $this->assertEqualsWithDelta(3.0, (float)$creditmemo->getData('two_other_charges_amount'), 0.0001);
+        $this->assertNull($creditmemo->getData('two_other_charges_amount'));
+    }
+
+    /**
+     * The same rule on the surcharge field, whose order column is the cap.
+     */
+    public function testNothingIsStampedWhenTheOrderCarriesNoSurcharge(): void
+    {
+        $plugin = $this->plugin(['two_surcharge_amount' => '3.00']);
+        $creditmemo = $this->creditmemo();
+        $creditmemo->getOrder()->setData('two_surcharge_amount', 0.0);
+
+        $plugin->beforeCollectTotals($creditmemo);
+
+        $this->assertNull($creditmemo->getData('two_surcharge_amount'));
     }
 }

@@ -120,10 +120,17 @@ class CreditmemoFeeOverride
 
         $value = $this->parse($raw, $field);
 
+        // No charge on the order means the collector grants nothing whatever
+        // is posted, and a value stamped here would still persist to the
+        // memo's own column and render as a refund that never happened.
+        $maxRefundable = $this->maxRefundable($subject, $field);
+        if ($maxRefundable === null) {
+            return;
+        }
+
         // Validate against what the order has left, so the merchant gets an
         // explicit error rather than a silent cap.
-        $maxRefundable = $this->maxRefundable($subject, $field);
-        if ($maxRefundable !== null && $value - $maxRefundable > self::CAP_TOLERANCE) {
+        if ($value - $maxRefundable > self::CAP_TOLERANCE) {
             throw new LocalizedException(
                 $this->exceedsMessage($field, $value, max(0.0, $maxRefundable))
             );
