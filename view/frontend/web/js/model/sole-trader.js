@@ -63,9 +63,27 @@
     /** The one control whose focus raises the signup popup instead of closing it. */
     const SOLE_TRADER_CHIP_SELECTOR = '[data-two-chip="soletrader"]';
 
-    /** company-search-panel.js's `CLASSES.WRAP` and `CLASSES.PANEL`, which this module cannot import. */
-    const CAPTURE_WRAP_SELECTOR = '.two-company-field-wrap';
-    const CAPTURE_POPOVER_SELECTOR = '.two-company-dropdown';
+    /** company-search-panel.js's `CLASSES.PANEL`, which this module cannot import. */
+    const CAPTURE_POPOVER_CLASS = 'two-company-dropdown';
+
+    /**
+     * This capture's own popover. The panel builds it as the field's SIBLING and
+     * `isBound()` holds the two to one parent, so a sibling scan cannot reach another
+     * capture's — which a descendant search under a container holding both can.
+     *
+     * @param {?Element} field
+     * @returns {?Element}
+     */
+    function ownPopover(field) {
+        const parent = field && field.parentElement;
+        const children = (parent && parent.children) || [];
+        for (let i = 0; i < children.length; i += 1) {
+            if (children[i].classList && children[i].classList.contains(CAPTURE_POPOVER_CLASS)) {
+                return children[i];
+            }
+        }
+        return null;
+    }
 
     /**
      * Page-level, not per-flow: the host builds one capture flow per address
@@ -491,8 +509,7 @@
             // Off the field, never `getPanelElement()`: a morph re-render deletes the wrap and the
             // popover and keeps the field, and that stale stored node makes this capture's own
             // re-rendered chip read as another capture's, inverting the rule on it.
-            const own = field && (field.closest(CAPTURE_WRAP_SELECTOR) || field.parentElement);
-            const popover = own && own.querySelector(CAPTURE_POPOVER_SELECTOR);
+            const popover = ownPopover(field);
             const inside = !!(target && ((popover && popover.contains(target)) || target === field));
             const chip = target && target.closest && target.closest(SOLE_TRADER_CHIP_SELECTOR);
             if (inside && chip) {

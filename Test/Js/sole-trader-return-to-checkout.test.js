@@ -192,7 +192,7 @@ describe('a second capture on the same page (TWO-25658)', () => {
      *
      * @returns {object} `{ chip, launches }`, `launches` counting activations
      */
-    function renderSibling() {
+    function renderSibling(first) {
         const sibling = document.createElement('div');
         sibling.className = 'two-company-field-wrap';
         sibling.id = 'wrap-b';
@@ -200,7 +200,10 @@ describe('a second capture on the same page (TWO-25658)', () => {
             + '<div class="two-company-dropdown">'
             + '<button data-two-chip="soletrader" id="soletrader-b">Eenmanszaak</button>'
             + '</div>';
-        document.body.appendChild(sibling);
+        // First in tree order is the order a descendant search under a shared container
+        // resolves the WRONG capture's popover in.
+        if (first) document.body.insertBefore(sibling, document.body.firstChild);
+        else document.body.appendChild(sibling);
         // Queried in the sibling's own subtree: jsdom's `getElementById` answers with
         // the first node REGISTERED under an id, not the first in the tree.
         const chip = sibling.querySelector('[data-two-chip="soletrader"]');
@@ -229,16 +232,18 @@ describe('a second capture on the same page (TWO-25658)', () => {
     // The launching capture is the one that re-rendered, so its own chip is a node the
     // panel's stored popover never contained.
     test.each([
-        ['own', true, true, 0, 0,
+        ['own', true, false, true, 0, 0,
             'the launching capture\'s own re-rendered chip is still its own: the popup it launched stays'],
-        ['own', false, true, 0, 0,
+        ['own', false, false, true, 0, 0,
             'and still its own when the re-render took the wrap too, leaving the field where it is'],
-        ['sibling', true, false, 1, 1,
+        ['own', false, true, true, 0, 0,
+            'and still its own with the other capture ahead of it in the document'],
+        ['sibling', true, false, false, 1, 1,
             'the sibling capture\'s chip is still another control: this popup and its popover go, and that chip gets one']
-    ])('after a re-render, focus landing on the %s chip (wrap kept=%s): popup open=%s, popover closed %d time(s), sibling launched %d time(s)',
-        (which, keepWrap, open, popoverClosed, launches, why) => {
+    ])('after a re-render, focus landing on the %s chip (wrap kept=%s, sibling first=%s): popup open=%s, popover closed %d time(s), sibling launched %d time(s)',
+        (which, keepWrap, siblingFirst, open, popoverClosed, launches, why) => {
             const ctx = load();
-            const sibling = renderSibling();
+            const sibling = renderSibling(siblingFirst);
             const ownChip = remorph(document.getElementById('wrap'), keepWrap);
 
             (which === 'own' ? ownChip : sibling.chip).focus();
