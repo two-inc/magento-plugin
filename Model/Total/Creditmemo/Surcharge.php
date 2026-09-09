@@ -101,9 +101,10 @@ class Surcharge extends AbstractTotal
         // Tax delta: native already refunded VAT on the proportional default
         // surcharge net, so adjust the tax line ONLY for the difference an
         // override introduces. This is exactly zero on the non-override path,
-        // preserving the #201 de-dup guarantee (surcharge VAT counted once);
-        // when the merchant edits the surcharge it moves the Tax line to the
-        // VAT on the surcharge actually refunded (refunded net × rate).
+        // preserving the de-dup guarantee from magento-plugin PR #201 (surcharge
+        // VAT counted once); when the merchant edits the surcharge it moves the
+        // Tax line to the VAT on the surcharge actually refunded
+        // (refunded net × rate).
         $taxDelta = round(($amount - $defaultNet) * ($taxRatePercent / 100), 6);
         $baseTaxDelta = round(($baseAmount - $baseDefaultNet) * ($taxRatePercent / 100), 6);
 

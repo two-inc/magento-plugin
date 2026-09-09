@@ -29,9 +29,9 @@ use Two\Gateway\Plugin\Magento\Config\Model\Config\Structure\Reader\SynthesiseBr
  *
  * TWO-25191 additionally deleted the now-dead
  * `two_brand_synthesis/admin_form/enabled` default from
- * `etc/config.xml` — PR #181 left it behind, and its surviving
- * comment told readers to "flip to 0 to debug" a gate that no longer
- * existed. `testConfigXmlDeclaresNoAdminFormFlag` pins that removal.
+ * `etc/config.xml` — magento-plugin PR #181 left it behind, and its
+ * surviving comment told readers to "flip to 0 to debug" a gate that
+ * no longer existed. `testConfigXmlDeclaresNoAdminFormFlag` pins that removal.
  */
 class SynthesiseBrandAdminFormTest extends TestCase
 {

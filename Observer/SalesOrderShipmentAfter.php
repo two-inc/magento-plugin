@@ -201,7 +201,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
             }
 
             // Self-invoice upload: gated solely on invoice_distributed_by_merchant
-            // from GET /v1/merchant (TWO-25106, Option A — no admin toggle). This
+            // from GET /v1/merchant (TWO-25106) — there is no admin toggle. This
             // only marks the order for upload; the actual render + 3-step upload
             // runs out-of-band via the ProcessInvoiceUploads cron so it never
             // blocks this request (see UploadService::queueForOrder). A missing

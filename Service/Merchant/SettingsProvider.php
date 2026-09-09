@@ -164,8 +164,7 @@ class SettingsProvider
      * Absent, unresolvable, or malformed all degrade to false — the
      * plugin only ever generates/uploads an invoice PDF when the
      * merchant record explicitly says so. This is the sole gate: there
-     * is deliberately no admin-configurable override (TWO-25106,
-     * Option A).
+     * is deliberately no admin-configurable override (TWO-25106).
      */
     public function isInvoiceDistributedByMerchant(?int $storeId = null, ?string $scope = null): bool
     {

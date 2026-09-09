@@ -12,7 +12,7 @@
             <label>Two</label>
         </tab>
         <!--
-            TWO-25386 Part 1: unified 5-section admin scheme, same names
+            TWO-25386: unified 5-section admin scheme, same names
             and order as prestashop-plugin and woocommerce-plugin —
             A. General, B. Checkout Fields, C. Payment Terms,
             D. Order management, E. Diagnostics.

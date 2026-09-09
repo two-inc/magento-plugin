@@ -200,7 +200,7 @@
                 sortOrder="10"/>
     </type>
     <!--
-        Synthesise per-brand admin Configuration sections (Layer C/3).
+        Synthesise per-brand admin Configuration sections.
         MUST be registered globally (not under etc/adminhtml/di.xml) —
         CLI invocations of bin/magento populate the adminhtml-scoped
         structure cache key using the CLI process's DI graph, which
