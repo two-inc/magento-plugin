@@ -130,23 +130,22 @@ class CompanyLookup implements CompanyLookupInterface
      * exists to stop. Omitted rather than failing a lookup the buyer is
      * mid-typing.
      *
-     * ABN-533: the verdict carries a merchant only on a success, so an outage
-     * falls back to the never-expiring record's short name rather than
-     * dropping to unscoped lookups for its duration.
+     * ABN-533: the verdict carries a merchant only on a success, so a
+     * fall-through takes the short name off the never-expiring record instead
+     * of dropping to unscoped lookups for the duration of an outage.
      *
      * @return array<string,string>
      */
     private function merchantParams(): array
     {
-        if ($this->apiKeyStatus->isDefinitiveFailure()) {
+        $storeId = $this->quoteStoreId();
+        if ($this->apiKeyStatus->isDefinitiveFailure($storeId)) {
             return [];
         }
+        $identity = SettingsProvider::identityFrom($this->apiKeyStatus->getStatus($storeId)['merchant'] ?? null)
+            ?? $this->settingsProvider->getMerchantIdentity($storeId);
+        $shortName = $identity['short_name'] ?? null;
 
-        $shortName = $this->apiKeyStatus->getStatus()['merchant']['short_name'] ?? null;
-        if (!is_string($shortName) || $shortName === '') {
-            $shortName = $this->settingsProvider->getMerchantIdentity($this->quoteStoreId())['short_name'] ?? null;
-        }
-
-        return is_string($shortName) && $shortName !== '' ? ['merchant' => $shortName] : [];
+        return $shortName !== null ? ['merchant' => $shortName] : [];
     }
 }

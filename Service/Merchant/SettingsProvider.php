@@ -22,6 +22,11 @@ namespace Two\Gateway\Service\Merchant;
  * (empty term set, no surcharge cap, no default term): an unconfigured
  * or invalid API key, or an API blip, must not harden into a wrong
  * commercial constraint.
+ *
+ * getMerchantIdentity() is the one non-commercial reader: the same record's
+ * `id` and `short_name`, for the surfaces that keep serving a buyer through an
+ * upstream failure, where the verification verdict carries no merchant of its
+ * own (ABN-533).
  */
 class SettingsProvider
 {
@@ -126,12 +131,25 @@ class SettingsProvider
      */
     public function getMerchantIdentity(?int $storeId = null): ?array
     {
-        $record = $this->recordProvider->getRecord($storeId);
-        $id = $record['id'] ?? null;
+        return self::identityFrom($this->recordProvider->getRecord($storeId));
+    }
+
+    /**
+     * The identity a merchant payload carries, or null when it names no
+     * merchant. Shared with the callers that prefer the verification verdict's
+     * own merchant and reach for the record only when it has none, so both
+     * sources normalise the same way.
+     *
+     * @param array<string,mixed>|null $merchant
+     * @return array{id: string, short_name: string|null}|null
+     */
+    public static function identityFrom(?array $merchant): ?array
+    {
+        $id = $merchant['id'] ?? null;
         if (!is_string($id) || $id === '') {
             return null;
         }
-        $shortName = $record['short_name'] ?? null;
+        $shortName = $merchant['short_name'] ?? null;
 
         return [
             'id' => $id,

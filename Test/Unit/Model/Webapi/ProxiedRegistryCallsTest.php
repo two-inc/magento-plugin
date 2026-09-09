@@ -113,13 +113,13 @@ class ProxiedRegistryCallsTest extends TestCase
     private function orderIntent(
         string $status = ApiKeyStatus::OK,
         ?int $storeId = null,
-        ?array $merchantRecord = null,
+        ?array $merchantRecord = [],
         ?string $buyerCountry = null
     ): OrderIntent {
         // Real provider over a mocked record fetch: the tri-state derivation
         // the gate depends on is the shipped one, not a mock's.
         $recordProvider = $this->createMock(RecordProvider::class);
-        $recordProvider->method('getRecord')->willReturn($merchantRecord);
+        $recordProvider->method('getRecord')->willReturn(self::record($merchantRecord));
 
         return new OrderIntent(
             $this->adapter(),
@@ -136,10 +136,10 @@ class ProxiedRegistryCallsTest extends TestCase
     private function companyLookup(
         string $status = ApiKeyStatus::OK,
         ?int $storeId = null,
-        ?array $merchantRecord = null
+        ?array $merchantRecord = []
     ): CompanyLookup {
         $recordProvider = $this->createMock(RecordProvider::class);
-        $recordProvider->method('getRecord')->willReturn($merchantRecord);
+        $recordProvider->method('getRecord')->willReturn(self::record($merchantRecord));
 
         return new CompanyLookup(
             $this->adapter(),
@@ -149,6 +149,21 @@ class ProxiedRegistryCallsTest extends TestCase
             $this->logRepository(),
             $this->checkoutSession($storeId)
         );
+    }
+
+    /**
+     * What the never-expiring record holds. A resolved shop always has an
+     * identity in it, so the builders default to one and a case only says what
+     * it wants to differ; null is the shop where nothing has ever resolved.
+     *
+     * @param array<string,mixed>|null $overrides
+     * @return array<string,mixed>|null
+     */
+    private static function record(?array $overrides): ?array
+    {
+        return $overrides === null
+            ? null
+            : array_merge(['id' => 'merchant-uuid', 'short_name' => 'acme'], $overrides);
     }
 
     /**
@@ -489,9 +504,10 @@ class ProxiedRegistryCallsTest extends TestCase
         bool $refused,
         string $description
     ): void {
-        $record = ['id' => 'merchant-uuid', 'short_name' => 'acme'];
+        // The verdict carries no merchant for any of the non-OK rows, so an
+        // identity that reaches upstream can only have come from the record.
         $decoded = json_decode(
-            $this->orderIntent($status, null, $record)->place('{"gross_amount":"10.00"}'),
+            $this->orderIntent($status)->place('{"gross_amount":"10.00"}'),
             true
         );
 
@@ -532,7 +548,7 @@ class ProxiedRegistryCallsTest extends TestCase
     public function testAnIntentIsStillRefusedWhenNoIdentityHasEverResolved(): void
     {
         $decoded = json_decode(
-            $this->orderIntent(ApiKeyStatus::UNREACHABLE)->place('{"gross_amount":"10.00"}'),
+            $this->orderIntent(ApiKeyStatus::UNREACHABLE, null, null)->place('{"gross_amount":"10.00"}'),
             true
         );
 
@@ -670,11 +686,10 @@ class ProxiedRegistryCallsTest extends TestCase
         string $endpoint,
         string $description
     ): void {
-        $record = ['id' => 'merchant-uuid', 'short_name' => 'acme'];
         if ($endpoint === 'search') {
-            $this->companyLookup(ApiKeyStatus::SERVICE_ERROR, null, $record)->search('no', 'acme');
+            $this->companyLookup(ApiKeyStatus::SERVICE_ERROR)->search('no', 'acme');
         } else {
-            $this->companyLookup(ApiKeyStatus::SERVICE_ERROR, null, $record)->get('lookup-1');
+            $this->companyLookup(ApiKeyStatus::SERVICE_ERROR)->get('lookup-1');
         }
 
         parse_str((string)parse_url($this->requestedUrl, PHP_URL_QUERY), $query);
@@ -683,23 +698,41 @@ class ProxiedRegistryCallsTest extends TestCase
     }
 
     /**
-     * The two states that genuinely carry no attribution: a rejected key, and
-     * a shop where no record has ever resolved.
+     * The two states that genuinely carry no attribution — a rejected key, and
+     * a shop where no record has ever resolved — still make the call, because
+     * the registry endpoint answers unauthenticated and the buyer may be
+     * mid-typing.
      *
-     * @dataProvider registryCalls
+     * @dataProvider unattributableStates
      */
     public function testAnUnattributableRegistryCallStillRuns(
         string $endpoint,
+        string $status,
+        ?array $merchantRecord,
         string $description
     ): void {
-        foreach ([ApiKeyStatus::INVALID_KEY, ApiKeyStatus::SERVICE_ERROR] as $status) {
-            $this->requestedUrl = '';
-            $this->invoke($endpoint, $status);
+        $lookup = $this->companyLookup($status, null, $merchantRecord);
+        $endpoint === 'search' ? $lookup->search('no', 'acme') : $lookup->get('lookup-1');
 
-            parse_str((string)parse_url($this->requestedUrl, PHP_URL_QUERY), $query);
-            $this->assertNotSame('', $this->requestedUrl, $description);
-            $this->assertArrayNotHasKey('merchant', $query, $description);
+        parse_str((string)parse_url($this->requestedUrl, PHP_URL_QUERY), $query);
+        $this->assertNotSame('', $this->requestedUrl, $description);
+        $this->assertArrayNotHasKey('merchant', $query, $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: array<string,mixed>|null, 3: string}>
+     */
+    public static function unattributableStates(): array
+    {
+        $states = [];
+        foreach (['search', 'get'] as $endpoint) {
+            $states[$endpoint . ': rejected key'] = [$endpoint, ApiKeyStatus::INVALID_KEY, [],
+                'a rejected key attributes nothing even with a record'];
+            $states[$endpoint . ': nothing ever resolved'] = [$endpoint, ApiKeyStatus::SERVICE_ERROR, null,
+                'no record means no short name to attribute with'];
         }
+
+        return $states;
     }
 
     /**

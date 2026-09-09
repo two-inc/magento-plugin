@@ -68,17 +68,27 @@ class OrderIntent implements OrderIntentInterface
             return $this->refusal(400, (string)__('Invalid order intent payload.'));
         }
 
+        $storeId = $this->quoteStoreId();
         // ABN-533: only a definitive rejection refuses. An unreachable or
         // erroring Two says nothing about the key, and this route is reachable
         // whenever the tile is offered, so refusing here would put a red
-        // unavailability notice on a correctly configured checkout.
-        $identity = $this->merchantIdentity();
-        if ($this->apiKeyStatus->isDefinitiveFailure() || $identity === null) {
+        // unavailability notice on a correctly configured checkout. Judged
+        // before the identity read, which can cost a fetch on a shop that has
+        // never resolved a record.
+        if ($this->apiKeyStatus->isDefinitiveFailure($storeId)) {
+            return $this->refusal(503, (string)__('The payment integration is not available right now.'));
+        }
+        // The verdict's own merchant, else the never-expiring record's: the
+        // verdict carries one only on a success, and an unresolvable record
+        // must not refuse an intent by itself (ABN-519). Neither resolving is
+        // the one state with no identity to send.
+        $identity = SettingsProvider::identityFrom($this->apiKeyStatus->getStatus($storeId)['merchant'] ?? null)
+            ?? $this->settingsProvider->getMerchantIdentity($storeId);
+        if ($identity === null) {
             return $this->refusal(503, (string)__('The payment integration is not available right now.'));
         }
         $merchantId = $identity['id'];
 
-        $storeId = $this->quoteStoreId();
         // Server-resolved, never the payload's own country_prefix — a buyer
         // must not be able to name the country their eligibility is judged on.
         $buyerCountry = $this->quoteBuyerCountry();
@@ -106,28 +116,6 @@ class OrderIntent implements OrderIntentInterface
         return $this->envelope(
             $this->adapter->executeWithStatus(self::ENDPOINT, $body, 'POST', $storeId)
         );
-    }
-
-    /**
-     * The verdict's own merchant when it has one, else the never-expiring
-     * record's — so an outage relays last-known-good rather than nothing.
-     *
-     * @return array{id: string, short_name: string|null}|null
-     */
-    private function merchantIdentity(): ?array
-    {
-        $merchant = $this->apiKeyStatus->getStatus()['merchant'] ?? null;
-        $id = $merchant['id'] ?? null;
-        if (is_string($id) && $id !== '') {
-            $shortName = $merchant['short_name'] ?? null;
-
-            return [
-                'id' => $id,
-                'short_name' => is_string($shortName) && $shortName !== '' ? $shortName : null,
-            ];
-        }
-
-        return $this->settingsProvider->getMerchantIdentity($this->quoteStoreId());
     }
 
     private function quoteBuyerCountry(): string
