@@ -397,6 +397,7 @@
 "Merchant profile fetched from Two: offerable payment terms, buyer-surcharge cap, minimum order value and default term.","Säljarprofil hämtad från Two: betalningsvillkor som kan erbjudas, tak för köpartillägg, minsta ordervärde och standardvillkor."
 "Refreshed %1","Uppdaterad %1"
 "Never refreshed","Aldrig uppdaterad"
+"Refreshed %1 — the hourly refresh appears not to be running","Uppdaterad %1 — den timvisa uppdateringen verkar inte köras"
 "Missing when read at %1 — the hourly refresh appears not to be running","Saknades vid läsning %1 — den timvisa uppdateringen verkar inte köras"
 "Payment terms you are not able to offer: %1 days. Choose from: %2 days.","Betalningsvillkor som du inte kan erbjuda: %1 dagar. Välj bland: %2 dagar."
 "Default payment term %1 days is not one of the terms you offer: %2 days.","Standardbetalningsvillkor %1 dagar är inte ett av de villkor du erbjuder: %2 dagar."

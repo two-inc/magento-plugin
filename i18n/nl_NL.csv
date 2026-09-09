@@ -396,6 +396,7 @@
 "Merchant profile fetched from Two: offerable payment terms, buyer-surcharge cap, minimum order value and default term.","Verkopersprofiel opgehaald bij Two: aan te bieden betaaltermijnen, maximale kopertoeslag, minimale orderwaarde en standaardtermijn."
 "Refreshed %1","Vernieuwd %1"
 "Never refreshed","Nooit vernieuwd"
+"Refreshed %1 — the hourly refresh appears not to be running","Vernieuwd %1 — de uurlijkse vernieuwing lijkt niet te draaien"
 "Missing when read at %1 — the hourly refresh appears not to be running","Ontbrak bij het lezen om %1 — de uurlijkse vernieuwing lijkt niet te draaien"
 "Payment terms you are not able to offer: %1 days. Choose from: %2 days.","Betaaltermijnen die u niet kunt aanbieden: %1 dagen. Kies uit: %2 dagen."
 "Default payment term %1 days is not one of the terms you offer: %2 days.","Standaardbetaaltermijn %1 dagen is niet een van de termijnen die u aanbiedt: %2 dagen."

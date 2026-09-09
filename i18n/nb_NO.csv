@@ -400,6 +400,7 @@
 "Merchant profile fetched from Two: offerable payment terms, buyer-surcharge cap, minimum order value and default term.","Selgerprofil hentet fra Two: betalingsvilkårene du kan tilby, taket for kjøpstillegget, minste ordreverdi og standardvilkår."
 "Refreshed %1","Oppdatert %1"
 "Never refreshed","Aldri oppdatert"
+"Refreshed %1 — the hourly refresh appears not to be running","Oppdatert %1 — den timebaserte oppdateringen ser ikke ut til å kjøre"
 "Missing when read at %1 — the hourly refresh appears not to be running","Manglet ved lesing %1 — den timebaserte oppdateringen ser ikke ut til å kjøre"
 "Payment terms you are not able to offer: %1 days. Choose from: %2 days.","Betalingsbetingelser du ikke kan tilby: %1 dager. Velg blant: %2 dager."
 "Default payment term %1 days is not one of the terms you offer: %2 days.","Standard betalingsbetingelse %1 dager er ikke en av betingelsene du tilbyr: %2 dager."

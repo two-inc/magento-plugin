@@ -194,7 +194,8 @@ class RecordProviderTest extends TestCase
         );
         $this->cache->method('save')->willReturnCallback(
             function ($data, $identifier, $tags, $lifetime) use (&$sequence) {
-                $sequence[] = self::describe($identifier) . ' ' . implode(',', $tags) . ' ' . $lifetime;
+                $sequence[] = self::describe($identifier) . ' ' . implode(',', $tags)
+                    . ' ' . ($lifetime === null ? 'no expiry' : $lifetime);
                 return true;
             }
         );
@@ -219,19 +220,19 @@ class RecordProviderTest extends TestCase
             'fetch succeeds' => [
                 ['id' => 'abc-123'],
                 [
-                    'mark absent TWO_GATEWAY 93600',
+                    'mark absent TWO_GATEWAY no expiry',
                     'arm cooldown TWO_GATEWAY 60',
                     'fetch',
                     'fetch',
-                    'store record TWO_GATEWAY 93600',
-                    'store stamp TWO_GATEWAY 93600',
+                    'store record TWO_GATEWAY no expiry',
+                    'store stamp TWO_GATEWAY no expiry',
                     'clear cooldown',
                 ],
                 'armed first, record and stamp stored, cooldown cleared so readers are not stranded on null',
             ],
             'fetch fails' => [
                 ['http_status' => 503],
-                ['mark absent TWO_GATEWAY 93600', 'arm cooldown TWO_GATEWAY 60', 'fetch', 'fetch'],
+                ['mark absent TWO_GATEWAY no expiry', 'arm cooldown TWO_GATEWAY 60', 'fetch', 'fetch'],
                 'armed first and left armed for 60s only, nothing stored, stamp untouched',
             ],
         ];
@@ -390,13 +391,13 @@ class RecordProviderTest extends TestCase
         $this->assertFalse($this->providerWith($this->cacheWith(false, null), '')->isDue('sandbox', ''));
     }
 
-    public function testAReadMissLogsThatTheScheduledRefreshMayNotBeRunning(): void
+    public function testAReadMissIsLoggedAndMarked(): void
     {
-        // With the cron running the record is replaced before eviction, so a miss is a signal.
+        // The entry never expires, so a miss is a fresh install or a flush.
         $this->stubApi(['id' => 'abc-123'], ['id' => 'abc-123']);
         $log = $this->createMock(LogRepository::class);
         $log->expects($this->once())->method('addErrorLog')
-            ->with($this->stringContains('scheduled refresh may not be running'), $this->anything());
+            ->with($this->stringContains('merchant record absent on read'), $this->anything());
         $cache = $this->cacheWith(false, null);
         $marked = [];
         $cache->method('save')->willReturnCallback(
