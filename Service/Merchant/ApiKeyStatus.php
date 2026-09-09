@@ -11,6 +11,7 @@ use Magento\Framework\App\CacheInterface;
 use Magento\Framework\Serialize\Serializer\Json;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Service\Api\Adapter;
 
 /**
@@ -159,14 +160,14 @@ class ApiKeyStatus
      *
      * @return array{status: string, code: int|null, merchant: array<string,mixed>|null}
      */
-    public function getStatus(?int $storeId = null): array
+    public function getStatus(?int $storeId = null, ?string $scope = null): array
     {
-        $apiKey = (string)$this->configRepository->getApiKey($storeId);
+        $apiKey = (string)$this->configRepository->getApiKey($storeId, $scope);
         if ($apiKey === '') {
             return self::notConfigured();
         }
 
-        $cacheKey = $this->cacheKey($apiKey, $storeId);
+        $cacheKey = $this->cacheKey($apiKey, $storeId, $scope);
         if (isset($this->memo[$cacheKey])) {
             return $this->memo[$cacheKey];
         }
@@ -188,7 +189,7 @@ class ApiKeyStatus
             }
         }
 
-        return $this->verify($apiKey, $cacheKey, $storeId);
+        return $this->verify($apiKey, $cacheKey, $storeId, $scope);
     }
 
     /**
@@ -202,14 +203,14 @@ class ApiKeyStatus
      *
      * @return array{status: string, code: int|null, merchant: array<string,mixed>|null}
      */
-    public function refresh(?int $storeId = null): array
+    public function refresh(?int $storeId = null, ?string $scope = null): array
     {
-        $apiKey = (string)$this->configRepository->getApiKey($storeId);
+        $apiKey = (string)$this->configRepository->getApiKey($storeId, $scope);
         if ($apiKey === '') {
             return self::notConfigured();
         }
 
-        return $this->verify($apiKey, $this->cacheKey($apiKey, $storeId), $storeId);
+        return $this->verify($apiKey, $this->cacheKey($apiKey, $storeId, $scope), $storeId, $scope);
     }
 
     /**
@@ -227,14 +228,25 @@ class ApiKeyStatus
      *
      * @return array{status: string, code: int|null, merchant: array<string,mixed>|null}
      */
-    public function verifyCandidate(string $apiKey, ?int $storeId = null, ?string $mode = null): array
-    {
+    public function verifyCandidate(
+        string $apiKey,
+        ?int $storeId = null,
+        ?string $mode = null,
+        ?string $scope = null
+    ): array {
         if ($apiKey === '') {
             return self::notConfigured();
         }
 
         return self::categorize(
-            $this->apiAdapter->execute(self::ENDPOINT, [], 'GET', $storeId, $apiKey, $mode)
+            $this->apiAdapter->execute(
+                self::ENDPOINT,
+                [],
+                'GET',
+                AdminScope::isStoreScope($scope) ? $storeId : null,
+                $apiKey,
+                $mode ?? $this->configRepository->getMode($storeId, $scope)
+            )
         );
     }
 
@@ -245,9 +257,9 @@ class ApiKeyStatus
      * key, and treating it as a rejection took the payment method off
      * correctly-configured shops within one CACHE_LIFETIME of any outage.
      */
-    public function isDefinitiveFailure(?int $storeId = null): bool
+    public function isDefinitiveFailure(?int $storeId = null, ?string $scope = null): bool
     {
-        $status = $this->getStatus($storeId)['status'];
+        $status = $this->getStatus($storeId, $scope)['status'];
 
         return $status === self::INVALID_KEY || $status === self::NOT_CONFIGURED;
     }
@@ -301,16 +313,16 @@ class ApiKeyStatus
      *
      * @return array{status: string, code: int|null, merchant: array<string,mixed>|null}
      */
-    private function verify(string $apiKey, string $cacheKey, ?int $storeId): array
+    private function verify(string $apiKey, string $cacheKey, ?int $storeId, ?string $scope = null): array
     {
         $status = self::categorize(
             $this->apiAdapter->execute(
                 self::ENDPOINT,
                 [],
                 'GET',
-                $storeId,
-                null,
-                null,
+                AdminScope::isStoreScope($scope) ? $storeId : null,
+                $apiKey,
+                $this->configRepository->getMode($storeId, $scope),
                 self::FETCH_TIMEOUT_SECONDS
             )
         );
@@ -342,10 +354,10 @@ class ApiKeyStatus
      * sha256 of the key, never the key itself — cache identifiers end up
      * in log lines and cache-backend keyspaces.
      */
-    private function cacheKey(string $apiKey, ?int $storeId): string
+    private function cacheKey(string $apiKey, ?int $storeId, ?string $scope = null): string
     {
         return self::CACHE_KEY_PREFIX
-            . hash('sha256', $this->configRepository->getMode($storeId) . "\0" . $apiKey);
+            . hash('sha256', $this->configRepository->getMode($storeId, $scope) . "\0" . $apiKey);
     }
 
     /**

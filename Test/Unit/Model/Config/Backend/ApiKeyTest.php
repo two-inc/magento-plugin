@@ -216,12 +216,13 @@ class ApiKeyTest extends TestCase
     public function testTheFieldScopeSelectsTheStoreTheCandidateIsVerifiedAgainst(
         string $scope,
         int $scopeId,
-        ?int $expectedStoreId,
+        ?int $expectedScopeId,
+        string $expectedScope,
         string $description
     ): void {
         $this->apiKeyStatus->expects($this->once())
             ->method('verifyCandidate')
-            ->with(self::CANDIDATE, $expectedStoreId, null)
+            ->with(self::CANDIDATE, $expectedScopeId, null, $expectedScope)
             ->willReturn(['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => null]);
 
         $model = $this->build([
@@ -236,15 +237,15 @@ class ApiKeyTest extends TestCase
     }
 
     /**
-     * @return array<string, array{0: string, 1: int, 2: int|null, 3: string}>
+     * @return array<string, array{0: string, 1: int, 2: int|null, 3: string, 4: string}>
      */
     public static function fieldScopes(): array
     {
         return [
-            'store view' => ['stores', 7, 7, 'a store-scope save uses that store'],
-            'singular store spelling' => ['store', 7, 7, 'the config layer uses both spellings'],
-            'default' => ['default', 0, null, 'the default scope has no store'],
-            'website' => ['websites', 3, null, 'website scope stays on the default environment'],
+            'store view' => ['stores', 7, 7, 'store', 'a store-scope save uses that store'],
+            'singular store spelling' => ['store', 7, 7, 'store', 'the config layer uses both spellings'],
+            'default' => ['default', 0, null, 'default', 'the default scope has no id'],
+            'website' => ['websites', 3, 3, 'website', "a website uses its own environment, not the default's (ABN-530)"],
         ];
     }
 
@@ -263,7 +264,7 @@ class ApiKeyTest extends TestCase
     ): void {
         $this->apiKeyStatus->expects($this->once())
             ->method('verifyCandidate')
-            ->with(self::CANDIDATE, null, $expectedMode)
+            ->with(self::CANDIDATE, null, $expectedMode, 'default')
             ->willReturn(['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => null]);
 
         $model = $this->build([

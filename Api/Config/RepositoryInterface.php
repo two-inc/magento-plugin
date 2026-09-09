@@ -417,11 +417,12 @@ interface RepositoryInterface
      * the deprecated "Custom" option in the surcharge tax treatment
      * selector — pre-existing merchants only.
      *
-     * @param int|null $storeId
+     * @param int|null $storeId scope id when $scope is given
+     * @param string|null $scope default: store scope
      *
      * @return bool
      */
-    public function hasCustomSurchargeTaxRate(?int $storeId = null): bool;
+    public function hasCustomSurchargeTaxRate(?int $storeId = null, ?string $scope = null): bool;
 
     /**
      * Get the Product Tax Class id used to tax the surcharge via

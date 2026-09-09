@@ -4,13 +4,13 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Model\Config\Source;
 
 use Magento\Framework\App\RequestInterface;
-use Magento\Store\Api\Data\GroupInterface;
 use Magento\Store\Api\Data\StoreInterface;
 use Magento\Store\Api\Data\WebsiteInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Magento\Tax\Model\TaxClass\Source\Product as ProductTaxClassSource;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Model\Config\Source\SurchargeTaxClass;
 use Two\Gateway\Service\Order\SurchargeTaxCalculator;
 
@@ -62,7 +62,7 @@ class SurchargeTaxClassTest extends TestCase
             $this->productTaxClassSource,
             $this->configRepository,
             $this->request,
-            $this->storeManager
+            new AdminScope($this->storeManager)
         );
     }
 
@@ -132,7 +132,7 @@ class SurchargeTaxClassTest extends TestCase
             $delegate,
             $this->configRepository,
             $this->request,
-            $this->storeManager
+            new AdminScope($this->storeManager)
         );
         $this->configRepository->method('hasCustomSurchargeTaxRate')->willReturn(false);
 
@@ -147,42 +147,50 @@ class SurchargeTaxClassTest extends TestCase
         $this->assertSame(['', SurchargeTaxClass::CUSTOM, '2'], $values);
     }
 
-    public function testExistenceCheckUsesRequestedStoreScope(): void
-    {
+    /**
+     * A website is read at website scope, never through one of its stores, whose own
+     * override would decide the answer (ABN-530).
+     *
+     * @param array<string, string> $params
+     * @dataProvider editedScopeProvider
+     */
+    public function testTheExistenceCheckReadsTheScopeBeingEdited(
+        array $params,
+        ?int $expectedScopeId,
+        string $expectedScope,
+        string $case
+    ): void {
         $this->request->method('getParam')->willReturnCallback(
-            fn ($key) => $key === 'store' ? 'store_two' : null
+            static fn ($key) => $params[$key] ?? null
         );
         $store = $this->createMock(StoreInterface::class);
         $store->method('getId')->willReturn(7);
-        $this->storeManager->method('getStore')->with('store_two')->willReturn($store);
-
-        $this->configRepository->expects($this->once())
-            ->method('hasCustomSurchargeTaxRate')
-            ->with(7)
-            ->willReturn(true);
-
-        $values = array_column($this->source->toOptionArray(), 'value');
-        $this->assertContains(SurchargeTaxClass::CUSTOM, $values);
-    }
-
-    public function testExistenceCheckResolvesWebsiteScopeViaDefaultStore(): void
-    {
-        $this->request->method('getParam')->willReturnCallback(
-            fn ($key) => $key === 'website' ? 'base' : null
+        $this->storeManager->method('getStore')->willReturnCallback(
+            static fn ($code) => $code === 'broken' ? throw new \RuntimeException('no such store') : $store
         );
         $website = $this->createMock(WebsiteInterface::class);
-        $website->method('getDefaultGroupId')->willReturn(3);
-        $group = $this->createMock(GroupInterface::class);
-        $group->method('getDefaultStoreId')->willReturn(9);
-        $this->storeManager->method('getWebsite')->with('base')->willReturn($website);
-        $this->storeManager->method('getGroup')->with(3)->willReturn($group);
+        $website->method('getId')->willReturn(4);
+        $this->storeManager->method('getWebsite')->willReturn($website);
 
         $this->configRepository->expects($this->once())
             ->method('hasCustomSurchargeTaxRate')
-            ->with(9)
+            ->with($expectedScopeId, $expectedScope)
             ->willReturn(true);
 
-        $values = array_column($this->source->toOptionArray(), 'value');
-        $this->assertContains(SurchargeTaxClass::CUSTOM, $values);
+        $this->assertContains(
+            SurchargeTaxClass::CUSTOM,
+            array_column($this->source->toOptionArray(), 'value'),
+            $case
+        );
+    }
+
+    public static function editedScopeProvider(): array
+    {
+        return [
+            [['store' => 'store_two'], 7, 'store', 'a store view is read at its own scope'],
+            [['website' => 'base'], 4, 'website', 'a website is read at website scope'],
+            [[], null, 'default', 'no param is the default scope'],
+            [['store' => 'broken'], null, 'default', 'an unresolvable store falls back rather than throwing'],
+        ];
     }
 }

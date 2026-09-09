@@ -97,13 +97,14 @@ class PaymentTermsCheckboxesTest extends TestCase
         array $params,
         string $scope,
         int $scopeId,
-        ?int $expectedStoreId,
+        ?int $expectedScopeId,
+        string $expectedScope,
         string $case
     ): void {
         $settingsProvider = $this->createMock(SettingsProvider::class);
         $settingsProvider->expects($this->once())
             ->method('getAvailableTerms')
-            ->with($expectedStoreId)
+            ->with($expectedScopeId, $expectedScope)
             ->willReturn([30]);
 
         $this->assertSame([30], $this->block($params, $settingsProvider)->getAvailableTerms(), $case);
@@ -120,7 +121,8 @@ class PaymentTermsCheckboxesTest extends TestCase
         array $params,
         string $scope,
         int $scopeId,
-        ?int $expectedStoreId,
+        ?int $expectedScopeId,
+        string $expectedScope,
         string $case
     ): void {
         $block = $this->block($params);
@@ -131,12 +133,12 @@ class PaymentTermsCheckboxesTest extends TestCase
     public static function scopeProvider(): array
     {
         return [
-            [['store' => 'de'], 'stores', self::STORE_ID, self::STORE_ID, 'the store param names the scope being edited'],
-            [[], 'default', 0, null, 'no param is the default scope'],
-            [['website' => 'eu'], 'websites', self::WEBSITE_ID, null, 'a website scope has no single store to ask for'],
-            [['store' => ''], 'default', 0, null, 'an empty param is not a scope'],
-            [['store' => 'broken'], 'default', 0, null, 'an unresolvable store falls back rather than throwing'],
-            [['store' => 'broken', 'website' => 'eu'], 'websites', self::WEBSITE_ID, null, 'an unresolvable store falls through to the website param'],
+            [['store' => 'de'], 'stores', self::STORE_ID, self::STORE_ID, 'store', 'the store param names the scope being edited'],
+            [[], 'default', 0, null, 'default', 'no param is the default scope'],
+            [['website' => 'eu'], 'websites', self::WEBSITE_ID, self::WEBSITE_ID, 'website', 'a website reads its own key (ABN-530)'],
+            [['store' => ''], 'default', 0, null, 'default', 'an empty param is not a scope'],
+            [['store' => 'broken'], 'default', 0, null, 'default', 'an unresolvable store falls back rather than throwing'],
+            [['store' => 'broken', 'website' => 'eu'], 'websites', self::WEBSITE_ID, self::WEBSITE_ID, 'website', 'an unresolvable store falls through to the website param'],
         ];
     }
 

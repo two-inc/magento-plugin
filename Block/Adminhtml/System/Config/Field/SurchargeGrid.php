@@ -16,6 +16,7 @@ use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
+use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Model\Config\StoredTerm;
 use Two\Gateway\Service\Locale\AdminDecimalFormatter;
 use Two\Gateway\Service\Merchant\SettingsProvider;
@@ -173,7 +174,7 @@ class SurchargeGrid extends Field
      */
     public function getMaxFixed(): ?int
     {
-        $limit = $this->settingsProvider->getSurchargeLimit($this->resolveStoreId());
+        $limit = $this->settingsProvider->getSurchargeLimit(...$this->resolveMerchantScope());
         if ($limit === null) {
             return null;
         }
@@ -239,7 +240,7 @@ class SurchargeGrid extends Field
      */
     public function getFixedLimitLabel(): string
     {
-        $limit = $this->settingsProvider->getSurchargeLimit($this->resolveStoreId());
+        $limit = $this->settingsProvider->getSurchargeLimit(...$this->resolveMerchantScope());
         if ($limit === null) {
             return '';
         }
@@ -278,7 +279,7 @@ class SurchargeGrid extends Field
      */
     public function getCurrencyWarning(): string
     {
-        $limit = $this->settingsProvider->getSurchargeLimit($this->resolveStoreId());
+        $limit = $this->settingsProvider->getSurchargeLimit(...$this->resolveMerchantScope());
         if ($limit === null) {
             return '';
         }
@@ -411,17 +412,17 @@ class SurchargeGrid extends Field
      */
     public function getAvailablePaymentTerms(): array
     {
-        return $this->settingsProvider->getAvailableTerms($this->resolveStoreId());
+        return $this->settingsProvider->getAvailableTerms(...$this->resolveMerchantScope());
     }
 
     /**
-     * Store id for the active config scope, or null for website/default
-     * scope — used to resolve the per-store API key when reading
-     * merchant settings.
+     * Scope being edited, as the config repository reads it (ABN-530).
+     *
+     * @return array{int|null, string}
      */
-    private function resolveStoreId(): ?int
+    private function resolveMerchantScope(): array
     {
-        return $this->scope === 'stores' && $this->scopeId > 0 ? $this->scopeId : null;
+        return AdminScope::fromScope($this->scope, $this->scopeId);
     }
 
     public function getScope(): string

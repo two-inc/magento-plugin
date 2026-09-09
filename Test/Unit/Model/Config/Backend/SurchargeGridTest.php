@@ -8,6 +8,7 @@ use Magento\Framework\App\Config\Storage\WriterInterface;
 use Magento\Framework\Exception\LocalizedException;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Model\Config\Backend\SurchargeGrid;
 use Two\Gateway\Service\Merchant\SettingsProvider;
@@ -405,6 +406,76 @@ class SurchargeGridTest extends TestCase
         $this->expectNotToPerformAssertions();
         $this->invokeValidateValue('limit', '0', 30, false);
         $this->invokeValidateValue('limit', '0.001', 30, false);
+    }
+
+    /**
+     * The merchant's fixed-fee cap is read at the scope being saved, and the FX lookup
+     * that converts it is given a store id only when that scope is a store view — a
+     * website id is not a store id (ABN-530).
+     *
+     * @dataProvider capScopes
+     */
+    public function testTheFixedCapIsReadAtTheScopeBeingSaved(
+        string $scope,
+        int $scopeId,
+        ?int $expectedReadId,
+        string $expectedReadScope,
+        ?int $expectedRateStoreId,
+        string $case
+    ): void {
+        $settings = $this->getMockBuilder(SettingsProvider::class)
+            ->disableOriginalConstructor()
+            ->getMock();
+        $settings->expects($this->once())
+            ->method('getSurchargeLimit')
+            ->with($expectedReadId, $expectedReadScope)
+            ->willReturn(['amount' => 25.0, 'currency' => 'EUR']);
+
+        $rates = $this->getMockBuilder(CurrencyRatesProviderInterface::class)->getMock();
+        $rates->expects($this->once())
+            ->method('getRate')
+            ->with('EUR', 'USD', $expectedRateStoreId)
+            ->willReturn(1.1);
+
+        $config = $this->getMockBuilder(ScopeConfigInterface::class)->getMock();
+        $config->method('getValue')->willReturnCallback(
+            static fn ($path) => $path === 'currency/options/base' ? 'USD' : null
+        );
+
+        $model = (new \ReflectionClass(SurchargeGrid::class))->newInstanceWithoutConstructor();
+        $inject = static function (string $class, string $property, $value) use ($model): void {
+            (new \ReflectionProperty($class, $property))->setValue($model, $value);
+        };
+        // The scope's own base currency, so the conversion branch is the one under test.
+        $scoped = new class {
+            public function getBaseCurrencyCode(): string
+            {
+                return 'USD';
+            }
+        };
+        $storeManager = $this->getMockBuilder(\Magento\Store\Model\StoreManagerInterface::class)->getMock();
+        $storeManager->method('getStore')->willReturn($scoped);
+        $storeManager->method('getWebsite')->willReturn($scoped);
+
+        $inject(\Magento\Framework\App\Config\Value::class, '_config', $config);
+        $inject(SurchargeGrid::class, 'settingsProvider', $settings);
+        $inject(SurchargeGrid::class, 'ratesProvider', $rates);
+        $inject(SurchargeGrid::class, 'storeManager', $storeManager);
+
+        $this->assertSame(
+            28,
+            (new \ReflectionMethod(SurchargeGrid::class, 'getConvertedFixedMax'))->invoke($model, $scope, $scopeId),
+            $case
+        );
+    }
+
+    public static function capScopes(): array
+    {
+        return [
+            ['stores', 7, 7, 'store', 7, 'a store view reads and converts on its own store'],
+            ['websites', 3, 3, 'website', null, 'a website reads its own cap, with no store to convert on'],
+            ['default', 0, null, 'default', null, 'the default scope has no id'],
+        ];
     }
 
     /**

@@ -175,14 +175,15 @@ class VerifyApiKeyTest extends TestCase
     public function testThePostedScopeSelectsTheStoreTheCandidateIsVerifiedAgainst(
         string $scope,
         int $scopeId,
-        ?int $expectedStoreId,
+        ?int $expectedScopeId,
+        string $expectedScope,
         string $description
     ): void {
-        // The store id picks the environment host, so losing it would verify a
+        // The resolved scope picks the environment host, so losing it would verify a
         // sandbox key against production and report it as rejected.
         $this->apiKeyStatus->expects($this->once())
             ->method('verifyCandidate')
-            ->with(self::VALID_LENGTH_KEY, $expectedStoreId)
+            ->with(self::VALID_LENGTH_KEY, $expectedScopeId, null, $expectedScope)
             ->willReturn(['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => null]);
 
         $response = $this->invoke(
@@ -193,15 +194,15 @@ class VerifyApiKeyTest extends TestCase
     }
 
     /**
-     * @return array<string, array{0: string, 1: int, 2: int|null, 3: string}>
+     * @return array<string, array{0: string, 1: int, 2: int|null, 3: string, 4: string}>
      */
     public static function scopes(): array
     {
         return [
-            'store view' => ['stores', 7, 7, 'a store-scope check uses that store'],
-            'default' => ['default', 0, null, 'the default scope has no store'],
-            'website' => ['websites', 3, null, 'website scope stays on the default environment'],
-            'store scope without an id' => ['stores', 0, null, 'a store scope with no id is the default scope'],
+            'store view' => ['stores', 7, 7, 'store', 'a store-scope check uses that store'],
+            'default' => ['default', 0, null, 'default', 'the default scope has no id'],
+            'website' => ['websites', 3, 3, 'website', "a website uses its own environment, not the default's (ABN-530)"],
+            'store scope without an id' => ['stores', 0, null, 'default', 'a store scope with no id is the default scope'],
         ];
     }
 }

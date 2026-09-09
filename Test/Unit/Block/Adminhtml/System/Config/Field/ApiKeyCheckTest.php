@@ -50,6 +50,55 @@ class ApiKeyCheckTest extends TestCase
         return (string)$this->build()->getApiKeyStatus()['message'];
     }
 
+    /**
+     * The API key is website-scoped, so the panel must verify the key of the scope its
+     * form is editing rather than the default scope's (ABN-530).
+     *
+     * @dataProvider formScopes
+     */
+    public function testThePanelReportsOnTheScopeItsFormIsEditing(
+        string $scope,
+        int $scopeId,
+        ?int $expectedScopeId,
+        string $expectedScope,
+        string $case
+    ): void {
+        $this->apiKeyStatus->expects($this->once())
+            ->method('refresh')
+            ->with($expectedScopeId, $expectedScope)
+            ->willReturn(['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => null]);
+
+        $block = $this->build();
+        $block->setForm(new class ($scope, $scopeId) {
+            public function __construct(private string $scope, private int $scopeId)
+            {
+            }
+
+            public function getScope(): string
+            {
+                return $this->scope;
+            }
+
+            public function getScopeId(): int
+            {
+                return $this->scopeId;
+            }
+        });
+
+        $block->getApiKeyStatus();
+
+        $this->assertTrue(true, $case);
+    }
+
+    public static function formScopes(): array
+    {
+        return [
+            ['stores', 7, 7, 'store', 'a store view reports on its own key'],
+            ['websites', 3, 3, 'website', 'a website reports on its own key'],
+            ['default', 0, null, 'default', 'the default scope has no id'],
+        ];
+    }
+
     // ── The three categories that used to be indistinguishable ──────────
 
     public function testRejectedKeyBlamesTheKey(): void

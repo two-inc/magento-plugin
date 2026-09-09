@@ -17,6 +17,7 @@ use Magento\Framework\Stdlib\DateTime\TimezoneInterface;
 use Magento\Store\Model\ScopeInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
+use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Service\Merchant\FeeRatesProvider;
 
 /**
@@ -97,10 +98,15 @@ class Fees extends Action
             return $result->setData(['success' => false, 'error' => 'no terms']);
         }
 
-        $storeId = $this->resolveStoreId();
+        [$scopeId, $scope] = $this->resolveScope();
         $targetCurrency = $this->resolveTargetCurrency();
 
-        $rates = $this->feeRates->getRates($terms, $this->resolveBuyerCountry($storeId), $storeId);
+        $rates = $this->feeRates->getRates(
+            $terms,
+            $this->resolveBuyerCountry($scopeId, $scope),
+            $scopeId,
+            $scope
+        );
         if (!$rates['success']) {
             return $result->setData($rates);
         }
@@ -112,7 +118,9 @@ class Fees extends Action
             );
         }
 
-        return $result->setData($this->convertFees($rates, $targetCurrency, $storeId));
+        return $result->setData(
+            $this->convertFees($rates, $targetCurrency, AdminScope::isStoreScope($scope) ? $scopeId : null)
+        );
     }
 
     /**
@@ -138,30 +146,17 @@ class Fees extends Action
     }
 
     /**
-     * Map scope + scopeId POSTed by the grid JS to a concrete store ID, so
-     * the API call uses the same merchant credentials as the scope the user
-     * is configuring.
+     * Scope + scopeId POSTed by the grid JS, so the fee call uses the merchant
+     * credentials of the scope being configured (ABN-530).
+     *
+     * @return array{int|null, string}
      */
-    private function resolveStoreId(): ?int
+    private function resolveScope(): array
     {
-        $scope = (string)$this->getRequest()->getParam('scope', 'default');
-        $scopeId = (int)$this->getRequest()->getParam('scopeId', 0);
-
-        if ($scope === ScopeInterface::SCOPE_STORES || $scope === 'stores') {
-            return $scopeId > 0 ? $scopeId : null;
-        }
-        if ($scope === ScopeInterface::SCOPE_WEBSITES || $scope === 'websites') {
-            if ($scopeId > 0) {
-                try {
-                    $website = $this->storeManager->getWebsite($scopeId);
-                    $store = $website->getDefaultStore();
-                    return $store ? (int)$store->getId() : null;
-                } catch (\Exception $e) {
-                    return null;
-                }
-            }
-        }
-        return null;
+        return AdminScope::fromScope(
+            (string)$this->getRequest()->getParam('scope', 'default'),
+            $this->getRequest()->getParam('scopeId', 0)
+        );
     }
 
     /**
@@ -231,10 +226,9 @@ class Fees extends Action
      * this — use the Magento store's base country as a stand-in. Merchant
      * can override later (e.g. a dropdown) if the proxy turns out wrong.
      */
-    private function resolveBuyerCountry(?int $storeId): string
+    private function resolveBuyerCountry(?int $scopeId, string $scope): string
     {
-        $scope = $storeId !== null ? ScopeInterface::SCOPE_STORES : 'default';
-        $country = (string)$this->scopeConfig->getValue('general/country/default', $scope, $storeId);
+        $country = (string)$this->scopeConfig->getValue('general/country/default', $scope, $scopeId);
         return $country !== '' ? strtoupper($country) : 'NL';
     }
 }

@@ -125,7 +125,7 @@ class ConfigProviderPaymentTermTest extends TestCase
                 $this->verdict = $verdict;
             }
 
-            public function getStatus(?int $storeId = null): array
+            public function getStatus(?int $storeId = null, ?string $scope = null): array
             {
                 return $this->verdict;
             }

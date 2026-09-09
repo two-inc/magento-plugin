@@ -12,6 +12,7 @@ use Magento\Framework\Serialize\Serializer\Json;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Cache\Type\TwoGateway;
+use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Service\Api\Adapter;
 
 /**
@@ -134,12 +135,16 @@ class RecordProvider
      * cannot currently be resolved (no API key, unresolvable merchant
      * id, or a fetch failure with nothing cached).
      *
+     * @param int|null $storeId scope id when $scope is given
+     * @param string|null $scope default: store scope
      * @return array<string,mixed>|null
      */
-    public function getRecord(?int $storeId = null): ?array
+    public function getRecord(?int $storeId = null, ?string $scope = null): ?array
     {
-        $mode = $this->configRepository->getMode($storeId);
-        $apiKey = $this->configRepository->getApiKey($storeId);
+        $mode = $this->configRepository->getMode($storeId, $scope);
+        $apiKey = $this->configRepository->getApiKey($storeId, $scope);
+        // A website or default scope id is not a store id, so it cannot travel as one (ABN-530).
+        $headerStoreId = AdminScope::isStoreScope($scope) ? $storeId : null;
         $cacheKey = $this->cacheKey($mode, $apiKey);
         if ($cacheKey === null) {
             return null;
@@ -152,7 +157,7 @@ class RecordProvider
         $cached = $this->loadRecord($cacheKey);
         if ($cached !== null) {
             $this->memo[$cacheKey] = ['record' => $cached];
-            return $this->refreshIfStale($cacheKey, $mode, $apiKey, $storeId, $cached) ?? $cached;
+            return $this->refreshIfStale($cacheKey, $mode, $apiKey, $headerStoreId, $cached) ?? $cached;
         }
 
         if ($this->cache->load($cacheKey . self::FAILURE_COOLDOWN_SUFFIX) !== false) {
@@ -164,13 +169,13 @@ class RecordProvider
         // identity, or the cache has been flushed.
         $this->logRepository->addErrorLog(
             'RecordProvider: merchant record absent on read',
-            ['store_id' => $storeId]
+            ['store_id' => $headerStoreId]
         );
 
         // Armed before the fetch so concurrent renders during an outage share one attempt;
         // read path only — a button press must not push readers to null.
         $this->cache->save('1', $cacheKey . self::FAILURE_COOLDOWN_SUFFIX, self::CACHE_TAGS, self::FAILURE_COOLDOWN);
-        $record = $this->fetchAndStore($cacheKey, $mode, $apiKey, $storeId, null);
+        $record = $this->fetchAndStore($cacheKey, $mode, $apiKey, $headerStoreId, null);
         if ($record !== null) {
             $this->cache->remove($cacheKey . self::FAILURE_COOLDOWN_SUFFIX);
 

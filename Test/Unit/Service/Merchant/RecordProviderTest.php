@@ -75,6 +75,47 @@ class RecordProviderTest extends TestCase
         $this->assertSame($record, $this->provider->getRecord(1));
     }
 
+    /**
+     * A website or default scope id is not a store id, so it must not travel to the
+     * adapter as one; the key the scope resolves still does (ABN-530).
+     *
+     * @dataProvider adapterScopeProvider
+     */
+    public function testTheAdapterIsGivenAStoreIdOnlyForAStoreScopedRead(
+        ?int $scopeId,
+        ?string $scope,
+        ?int $expectedStoreId,
+        string $case
+    ): void {
+        $seen = [];
+        $this->apiAdapter->method('execute')->willReturnCallback(
+            function (
+                string $endpoint,
+                array $payload = [],
+                string $method = 'GET',
+                ?int $storeId = null,
+                ?string $apiKey = null
+            ) use (&$seen): array {
+                $seen[] = [$storeId, $apiKey];
+                return ['id' => 'abc-123', 'available_terms' => [30]];
+            }
+        );
+
+        $this->provider->getRecord($scopeId, $scope);
+
+        $this->assertSame([[$expectedStoreId, 'test-api-key'], [$expectedStoreId, 'test-api-key']], $seen, $case);
+    }
+
+    public static function adapterScopeProvider(): array
+    {
+        return [
+            [7, 'store', 7, 'a store-scoped read passes its store id'],
+            [4, 'website', null, 'a website id is not a store id'],
+            [null, 'default', null, 'the default scope has no store'],
+            [7, null, 7, 'no scope is store scope, as the storefront reads'],
+        ];
+    }
+
     public function testUnresolvableMerchantIdResolvesToNull(): void
     {
         $this->stubApi(['error' => 'unauthorized']);

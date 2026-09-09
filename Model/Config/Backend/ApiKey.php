@@ -16,7 +16,7 @@ use Magento\Framework\Message\ManagerInterface as MessageManager;
 use Magento\Framework\Model\Context;
 use Magento\Framework\Model\ResourceModel\AbstractResource;
 use Magento\Framework\Registry;
-use Magento\Store\Model\ScopeInterface;
+use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\ApiKeyStatusMessage;
 
@@ -86,10 +86,12 @@ class ApiKey extends Encrypted
             return;
         }
 
+        [$scopeId, $scope] = AdminScope::fromScope((string)$this->getScope(), $this->getScopeId());
         $result = $this->apiKeyStatus->verifyCandidate(
             $candidate,
-            $this->resolveStoreId(),
-            $this->submittedMode()
+            $scopeId,
+            $this->submittedMode(),
+            $scope
         );
 
         // ONLY a definitive upstream rejection stops the key being written. An
@@ -124,26 +126,5 @@ class ApiKey extends Encrypted
         $mode = $this->getFieldsetDataValue('mode');
 
         return is_string($mode) && $mode !== '' ? $mode : null;
-    }
-
-    /**
-     * Store scope of the field being saved. Website scope is not mapped to
-     * its default store: the store id only selects which environment the
-     * candidate is verified against, and the website's own environment
-     * override is not reachable without a StoreManager hop this does not
-     * otherwise need.
-     *
-     * Both spellings of store scope are accepted — the config layer uses the
-     * plural form on save and the singular one when reading values back.
-     */
-    private function resolveStoreId(): ?int
-    {
-        $scope = (string)$this->getScope();
-        if ($scope !== ScopeInterface::SCOPE_STORES && $scope !== ScopeInterface::SCOPE_STORE) {
-            return null;
-        }
-        $scopeId = (int)$this->getScopeId();
-
-        return $scopeId > 0 ? $scopeId : null;
     }
 }

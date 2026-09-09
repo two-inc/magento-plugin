@@ -12,6 +12,7 @@ use Magento\Framework\Serialize\Serializer\Json;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Cache\Type\TwoGateway;
+use Two\Gateway\Model\Config\AdminScope;
 use Two\Gateway\Service\Api\Adapter;
 
 /**
@@ -93,9 +94,9 @@ class FeeRatesProvider
      * @param int[] $terms
      * @return array{success: bool, currency?: string, fees?: array<string, array{percentage: float, fixed: float}>, stale?: bool, fetched_at?: int, error?: string}
      */
-    public function getRates(array $terms, string $buyerCountry, ?int $storeId = null): array
+    public function getRates(array $terms, string $buyerCountry, ?int $storeId = null, ?string $scope = null): array
     {
-        $cacheKey = $this->cacheKey($terms, $buyerCountry, $storeId);
+        $cacheKey = $this->cacheKey($terms, $buyerCountry, $storeId, $scope);
         if ($cacheKey === null) {
             // Its own category: nothing here will change until a key is saved,
             // so the screen says that rather than blaming the service.
@@ -105,7 +106,7 @@ class FeeRatesProvider
 
         $normalised = $cooling
             ? ['success' => false, 'error' => 'upstream']
-            : $this->fetch($terms, $buyerCountry, $storeId);
+            : $this->fetch($terms, $buyerCountry, $storeId, $scope);
 
         if ($normalised['success']) {
             $normalised['fetched_at'] = time();
@@ -142,7 +143,7 @@ class FeeRatesProvider
      * @param int[] $terms
      * @return array{success: bool, currency?: string, fees?: array<string, array{percentage: float, fixed: float}>, error?: string}
      */
-    private function fetch(array $terms, string $buyerCountry, ?int $storeId): array
+    private function fetch(array $terms, string $buyerCountry, ?int $storeId, ?string $scope = null): array
     {
         try {
             $response = $this->apiAdapter->execute(
@@ -155,9 +156,9 @@ class FeeRatesProvider
                     'net_terms' => array_values($terms),
                 ],
                 'POST',
-                $storeId,
-                null,
-                null,
+                AdminScope::isStoreScope($scope) ? $storeId : null,
+                $this->configRepository->getApiKey($storeId, $scope),
+                $this->configRepository->getMode($storeId, $scope),
                 self::FETCH_TIMEOUT_SECONDS
             );
         } catch (\Throwable $e) {
@@ -195,9 +196,9 @@ class FeeRatesProvider
      *
      * @param int[] $terms
      */
-    private function cacheKey(array $terms, string $buyerCountry, ?int $storeId): ?string
+    private function cacheKey(array $terms, string $buyerCountry, ?int $storeId, ?string $scope = null): ?string
     {
-        $apiKey = (string)$this->configRepository->getApiKey($storeId);
+        $apiKey = (string)$this->configRepository->getApiKey($storeId, $scope);
         if ($apiKey === '') {
             return null;
         }
@@ -206,7 +207,7 @@ class FeeRatesProvider
 
         return self::CACHE_KEY_PREFIX . hash(
             'sha256',
-            $this->configRepository->getMode($storeId)
+            $this->configRepository->getMode($storeId, $scope)
             . "\0" . $apiKey
             . "\0" . $buyerCountry
             . "\0" . implode(',', $terms)
