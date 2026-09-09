@@ -166,9 +166,24 @@ prices an order under a configuration nobody chose, and nobody is told.
 **An unresolvable merchant record fails CLOSED** (ABN-493, ABN-495).
 `isAvailable()` withholds the payment method, the read path offers no buyer
 term at all, and order composition refuses to fall back to the nominal default
-term — the buyer cannot use the plugin until the configuration resolves. The
-admin save stays permissive there, and deliberately: refusing it would lock
-the merchant out of correcting the API key that resolves the record.
+term — the buyer cannot use the plugin until the configuration resolves. A 200
+carrying no merchant record counts as unresolved: a proxy, a captive portal or a
+maintenance page answers 200 too, and there is no identity to offer the method
+under.
+
+**The admin save stays permissive, and a rejected key blocks only the key field.**
+Refusing the save would lock the merchant out of correcting the very key that
+resolves the record, and a `LocalizedException` from a config backend model rolls
+the WHOLE section back — one mistyped key would discard every unrelated field
+submitted with it. The key field turns off its own save through `_dataSaveAllowed`
+and reports the rejection through the admin message channel, so the rejected value
+is never stored and every sibling field still saves. Only a definitive upstream
+rejection is blocking; unreachable, erroring, malformed and timed-out verdicts save
+the submitted key.
+
+**A cached merchant record is keyed on the ENVIRONMENT as well as the API key.**
+One key configured against sandbox on one store view and production on another must
+not share a slot, or a store view serves the other environment's merchant.
 
 **A configured payment term is validated against the set the merchant is
 entitled to offer**, in the field's backend model and again where the read path
@@ -282,12 +297,18 @@ buyer. The field help says so; nothing enforces it.
 the WooCommerce plugin carries a copy of the same file, so **a change to shared
 panel behaviour is TWO edits**. Nothing links the two copies; whoever changes
 one and stops has fixed one platform, and the divergence is invisible to both
-reviewers. The `_bindFieldOpeners` block is identical in both.
+reviewers. **The two copies have DRIFTED**, this one ahead; re-copying the whole
+file is the only thing that brings them back into step, and the other repo's own
+digest guard catches an in-place edit there without seeing this copy at all.
 
 It is framework-free with a UMD tail — no RequireJS, no jQuery, no Knockout —
 which is what lets the Hyvä checkout load this repo's own copy by
 `Two_Gateway::` reference instead of reimplementing the panel. Anything that
 makes it depend on this checkout's framework breaks that arrangement.
+
+**There is no checkout-specific copy.** Every Magento checkout variant a store may
+run — the default one and any third-party one-step replacement — loads this same
+file, so a "fix it for that checkout" copy is a fork, not a fix.
 
 **The unsupported-country gate greys out SEARCH, never manual entry.** Manual
 entry hands the field over as a plain typeable input that never reaches the
@@ -296,11 +317,15 @@ to search — and leaves a buyer in an uncovered country with no way to name the
 company at all.
 
 **The company field opens the panel on FOCUS**, through the same `open()` a
-mousedown runs, which puts the caret in the panel's query field. The
-PrestaShop module deliberately does the opposite — there only a click or a
-keypress opens it and focus alone is inert, stated in that module's own code.
-Those two behaviours are the current state of the two platforms; do not assume
-parity, and do not harmonise one to the other without a product ruling.
+mousedown runs, which puts the caret in the panel's query field — the same state
+a click leaves it in, and the same on every platform that carries this control.
+
+**The open panel takes the field's tab stop**: `tabindex="-1"` while it is up, and
+on close the field's PRIOR value restored exactly, which is removal because
+nothing sets one — the field is a tab stop by being a native `<input>`
+(TWO-25503). Without it the focus opener is a keyboard trap: the opener puts the
+caret in the query field, Shift+Tab returns to the field, and the opener pushes
+focus forward again, so the buyer cannot get back past the control (WCAG 2.1.2).
 
 ## What focus landing on the checkout does to an open signup popup
 
@@ -317,6 +342,11 @@ once, and these are the three rules (TWO-25658):
     results the buyer was still typing against.
 
 A window or application switch lands on no control at all and settles nothing.
+
+The ruling adds a fourth: **a Sole trader chip belonging to a DIFFERENT capture
+popover gets a popup of its own**, raised through that chip's own click handler so
+a launch stays spelled out in one place. This checkout does not do that: a chip
+outside the popup's own popover closes it and raises nothing.
 
 **A declined order intent refuses order placement, and it does so through the
 Place Order button's own BINDING** — `isPlaceOrderEnabled()` over an observable
@@ -343,6 +373,18 @@ event undefaulted, that the control's parts are one contiguous run in document
 order, that a closed panel carries `hidden` — and say in the suite that the
 keyboard behaviour itself is verified in a real browser. A passing jsdom Tab
 test is never evidence that a trap is absent.
+
+Three traps in the same suites:
+
+-   **A real chip click fires no `focusin`.** The chip's `mousedown` handler calls
+    `preventDefault()`, which suppresses the native focus, so a rule written only
+    against `focusin` never sees a pointer buyer at all.
+-   **jsdom's `getElementById` answers with the first-REGISTERED node, not the
+    tree-first one**, so a fixture carrying a duplicate id silently resolves to
+    the wrong element.
+-   **A mutation proves NEW coverage only when re-run against the base ref.** One
+    the existing suite already catches proves the suite is sensitive, not that the
+    case added covers anything.
 
 ## A guard is invoked through `bash`
 
