@@ -940,7 +940,7 @@ class Two extends AbstractMethod
             return false;
         }
         // ABN-546: no later request is guaranteed to notice an unpriceable fee.
-        if (!$this->isFeeQuotable($quote, $storeId)) {
+        if (!$this->feeQuoteGate->isQuotable($quote, $storeId)) {
             $this->logRepository->addDebugLog(
                 sprintf('%s hidden from checkout: buyer fee quote failed', $this->_code),
                 []
@@ -1191,11 +1191,6 @@ class Two extends AbstractMethod
             return true;
         }
         return $this->surchargeCalculator->isSurchargeResolvable($currency, $storeId);
-    }
-
-    private function isFeeQuotable(?CartInterface $quote, ?int $storeId): bool
-    {
-        return $this->feeQuoteGate->isQuotable($quote, $storeId);
     }
 
     /**

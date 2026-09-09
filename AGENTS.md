@@ -276,10 +276,13 @@ fee-EXCLUSIVE total, as the collector and both chip endpoints do, so the fee
 already on the quote is neither compounded nor a cache miss against their
 quote. The call carries its own timeout ceiling instead of the adapter's
 default, because a hanging endpoint on a render path would otherwise stall the
-payment step for the whole default. A refusal — including a malformed response, which is caught as broadly
-as the collector catches it — withholds the method for that request and that
-cart only; the next request re-asks, so recovery needs no expiry and one
-buyer's refused quote cannot reach another's checkout.
+payment step for the whole default. A refusal — including a malformed
+response, which is caught as broadly as the collector catches it — withholds
+the method for that request and that cart only; the next request re-asks, so
+recovery needs no expiry and one buyer's refused quote cannot reach another's
+checkout. During a pricing outage every payment-method render therefore spends
+one such call, bounded by the gate's own ceiling, and that cost is accepted so
+a slow-but-healthy pricing service is never mistaken for a refusing one.
 
 Guards run before any call and concede the method without one: the adminhtml
 area, no surcharge configured, no cart carrying items and a positive
