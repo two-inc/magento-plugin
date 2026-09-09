@@ -79,17 +79,24 @@ class FeeRatesProviderTest extends TestCase
     public function testAFailedFetchServesTheLastSetAndSaysItIsNotCurrent(): void
     {
         $this->apiAdapter->method('execute')->willReturn(['error_code' => 503]);
+        $held = (new Json())->serialize([
+            'success' => true,
+            'currency' => 'EUR',
+            'fees' => ['30' => ['percentage' => 1.5, 'fixed' => 0.5]],
+            'fetched_at' => 1700000000,
+            'stale' => false,
+        ]);
         $cache = $this->createMock(CacheInterface::class);
-        $cache->method('load')->willReturn(
-            (new Json())->serialize([
-                'success' => true,
-                'currency' => 'EUR',
-                'fees' => ['30' => ['percentage' => 1.5, 'fixed' => 0.5]],
-                'fetched_at' => 1700000000,
-                'stale' => false,
-            ])
+        $cache->method('load')->willReturnCallback(
+            fn(string $id) => str_ends_with($id, '_cooldown') ? false : $held
         );
-        $cache->expects($this->never())->method('save');
+        $writes = [];
+        $cache->method('save')->willReturnCallback(
+            function ($data, $identifier) use (&$writes) {
+                $writes[] = $identifier;
+                return true;
+            }
+        );
 
         $rates = $this->build($cache)->getRates([30], 'NL', 1);
 
@@ -97,6 +104,7 @@ class FeeRatesProviderTest extends TestCase
         $this->assertTrue($rates['stale']);
         $this->assertSame(1700000000, $rates['fetched_at'], 'the age reported is when the set was retrieved');
         $this->assertSame(['30' => ['percentage' => 1.5, 'fixed' => 0.5]], $rates['fees']);
+        $this->assertSame([], preg_grep('/_fee_rates_[0-9a-f]{64}$/', $writes), 'the set is not overwritten');
     }
 
     /**
@@ -121,6 +129,8 @@ class FeeRatesProviderTest extends TestCase
             [['error_code' => 503], 'the adapter failure envelope is not a fee set'],
             [['http_status' => 500], 'a 5xx is not a fee set'],
             [[], 'an empty body is not a fee set'],
+            [['rates' => []], 'a 200 pricing nothing is not a fee set'],
+            [['rates' => [['percentage_fee' => '1.5']]], 'a rate naming no term prices nothing'],
         ];
     }
 
@@ -128,7 +138,9 @@ class FeeRatesProviderTest extends TestCase
     {
         $this->apiAdapter->method('execute')->willReturn(['error_code' => 503]);
         $cache = $this->createMock(CacheInterface::class);
-        $cache->method('load')->willReturn('not json at all');
+        $cache->method('load')->willReturnCallback(
+            fn(string $id) => str_ends_with($id, '_cooldown') ? false : 'not json at all'
+        );
 
         $this->assertSame(
             ['success' => false, 'error' => 'upstream'],
@@ -201,5 +213,61 @@ class FeeRatesProviderTest extends TestCase
         $cache->expects($this->never())->method('save');
 
         $this->assertTrue($this->build($cache, '')->getRates([30], 'NL', 1)['success']);
+    }
+
+    public function testA200PricingNothingNeverOverwritesTheLastSet(): void
+    {
+        // Caching it would replace a renderable set with one the screen cannot
+        // render, which is the original defect.
+        $this->apiAdapter->method('execute')->willReturn(['rates' => []]);
+        $cache = $this->createMock(CacheInterface::class);
+        $held = [
+            'success' => true,
+            'currency' => 'EUR',
+            'fees' => ['30' => ['percentage' => 1.5, 'fixed' => 0.5]],
+            'fetched_at' => 1700000000,
+        ];
+        $cache->method('load')->willReturnCallback(
+            fn(string $id) => str_ends_with($id, '_cooldown') ? false : (new Json())->serialize($held)
+        );
+        $writes = [];
+        $cache->method('save')->willReturnCallback(
+            function ($data, $identifier) use (&$writes) {
+                $writes[] = $identifier;
+                return true;
+            }
+        );
+
+        $rates = $this->build($cache)->getRates([30], 'NL', 1);
+
+        $this->assertTrue($rates['stale']);
+        $this->assertSame($held['fees'], $rates['fees']);
+        $this->assertSame([], preg_grep('/_fee_rates_[0-9a-f]{64}$/', $writes), 'the set is not overwritten');
+    }
+
+    public function testAnAdapterThrowIsAFailedFetchRatherThanAnError(): void
+    {
+        // A 200 carrying a body the adapter cannot decode raises rather than
+        // answering, and that is an outage like any other.
+        $this->apiAdapter->method('execute')->willThrowException(new \RuntimeException('boom'));
+
+        $this->assertSame(
+            ['success' => false, 'error' => 'upstream'],
+            $this->build($this->emptyCache())->getRates([30], 'NL', 1)
+        );
+    }
+
+    public function testAFailedFetchIsNotRepeatedWhileTheCooldownStands(): void
+    {
+        $this->apiAdapter->expects($this->never())->method('execute');
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->method('load')->willReturnCallback(
+            fn(string $id) => str_ends_with($id, '_cooldown') ? '1' : false
+        );
+
+        $this->assertSame(
+            ['success' => false, 'error' => 'upstream'],
+            $this->build($cache)->getRates([30], 'NL', 1)
+        );
     }
 }

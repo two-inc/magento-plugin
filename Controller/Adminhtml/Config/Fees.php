@@ -13,6 +13,7 @@ use Magento\Framework\App\ResponseInterface;
 use Magento\Framework\Controller\Result\Json;
 use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Framework\Controller\ResultInterface;
+use Magento\Framework\Stdlib\DateTime\TimezoneInterface;
 use Magento\Store\Model\ScopeInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
@@ -60,13 +61,19 @@ class Fees extends Action
      */
     private $currencyRates;
 
+    /**
+     * @var TimezoneInterface
+     */
+    private $localeDate;
+
     public function __construct(
         Action\Context $context,
         JsonFactory $resultJsonFactory,
         FeeRatesProvider $feeRates,
         StoreManagerInterface $storeManager,
         ScopeConfigInterface $scopeConfig,
-        CurrencyRatesProviderInterface $currencyRates
+        CurrencyRatesProviderInterface $currencyRates,
+        TimezoneInterface $localeDate
     ) {
         parent::__construct($context);
         $this->resultJsonFactory = $resultJsonFactory;
@@ -74,6 +81,7 @@ class Fees extends Action
         $this->storeManager = $storeManager;
         $this->scopeConfig = $scopeConfig;
         $this->currencyRates = $currencyRates;
+        $this->localeDate = $localeDate;
     }
 
     /**
@@ -94,6 +102,13 @@ class Fees extends Action
         $rates = $this->feeRates->getRates($terms, $this->resolveBuyerCountry($storeId), $storeId);
         if (!$rates['success']) {
             return $result->setData($rates);
+        }
+        if (!empty($rates['stale']) && isset($rates['fetched_at'])) {
+            // Formatted here, in the admin's own locale and timezone, rather
+            // than in the browser's.
+            $rates['fetched_at_display'] = $this->localeDate->formatDateTime(
+                (new \DateTime())->setTimestamp((int)$rates['fetched_at'])
+            );
         }
 
         return $result->setData($this->convertFees($rates, $targetCurrency, $storeId));

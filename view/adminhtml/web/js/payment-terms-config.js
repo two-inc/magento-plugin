@@ -276,9 +276,8 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // checkboxes__fee` span is populated with text like " (1.50% + 0.50)"
         // when the response arrives.
         //
-        // An empty span means that term carries no fee, so a failed fetch must
-        // never leave the spans empty and silent — it says so in the notice
-        // below instead (ABN-512).
+        // An empty span means that term carries no fee, so a failed fetch says
+        // so in the notice rather than leaving the spans empty (ABN-512).
         var lastFeesKey = null;
 
         function setFeeNotice(text) {
@@ -294,18 +293,8 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         }
 
         function showFeesUnavailable() {
-            // Retry allowed on the same term-set once the service answers again.
-            lastFeesKey = null;
             $termsContainer.find('.two-term-checkboxes__fee').text('');
-            setFeeNotice($t(
-                'Fees could not be loaded because the pricing service could not be reached.'
-                + ' The figures beside each term are missing, not zero.'
-            ));
-        }
-
-        function describeFetchedAt(timestamp) {
-            var when = new Date(Number(timestamp) * 1000);
-            return isNaN(when.getTime()) ? '' : when.toLocaleString();
+            setFeeNotice($t('Fees could not be loaded because the pricing service could not be reached. The figures beside each term are missing, not zero.'));
         }
 
         function loadFees() {
@@ -348,21 +337,17 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 }
             }).done(function (response) {
                 if (!response || !response.success || !response.fees) {
-                    if (response && response.error === 'upstream') {
-                        showFeesUnavailable();
-                    }
+                    showFeesUnavailable();
                     return;
                 }
                 if (response.stale) {
-                    var retrieved = describeFetchedAt(response.fetched_at);
+                    var retrieved = String(response.fetched_at_display || '');
                     setFeeNotice(
                         retrieved === ''
                             ? $t('Fees could not be refreshed, so the figures last retrieved are shown.')
                             : $t('Fees could not be refreshed, so the figures retrieved on %1 are shown.')
                                 .replace('%1', retrieved)
                     );
-                    // Allow a retry on the same term-set once the service answers again.
-                    lastFeesKey = null;
                 } else {
                     setFeeNotice('');
                 }
@@ -418,7 +403,11 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     }
                     $span.text(' (' + inner + ')');
                 });
-            }).fail(showFeesUnavailable);
+            }).fail(function () {
+                // A transport error may be transient, so the same term-set may be asked again.
+                lastFeesKey = null;
+                showFeesUnavailable();
+            });
         }
 
         // Additional handlers for fee refresh — fire alongside the term-set

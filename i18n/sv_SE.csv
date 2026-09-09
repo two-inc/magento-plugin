@@ -402,3 +402,6 @@
 "Default payment term %1 days is not one of the terms you offer: %2 days.","Standardbetalningsvillkor %1 dagar är inte ett av de villkor du erbjuder: %2 dagar."
 "Optional. Enter a custom term as a number of days after the end of the month, offered alongside the terms selected above.","Valfritt. Ange ett anpassat villkor som ett antal dagar efter månadens slut, som erbjuds vid sidan av de villkor som valts ovan."
 "Unrecognised surcharge method: %1. Choose one of: %2.","Okänd tilläggsmetod: %1. Välj en av: %2."
+"Fees could not be loaded because the pricing service could not be reached. The figures beside each term are missing, not zero.","Avgifterna kunde inte läsas in eftersom pristjänsten inte gick att nå. Beloppen intill varje betalningsvillkor saknas, de är inte noll."
+"Fees could not be refreshed, so the figures last retrieved are shown.","Avgifterna kunde inte uppdateras, så de senast hämtade beloppen visas."
+"Fees could not be refreshed, so the figures retrieved on %1 are shown.","Avgifterna kunde inte uppdateras, så beloppen som hämtades %1 visas."

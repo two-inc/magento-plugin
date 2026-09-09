@@ -54,24 +54,22 @@ function load() {
     return { requests: requests };
 }
 
+const STALE = {
+    success: true,
+    currency: 'EUR',
+    fees: { 30: { percentage: 1.5, fixed: 0 } },
+    stale: true,
+    fetched_at_display: 'Sep 1, 2026, 9:00:00 AM'
+};
+const FRESH = { success: true, currency: 'EUR', fees: { 30: { percentage: 1.5, fixed: 0 } }, stale: false };
+
 describe('inline merchant fees, when the pricing service cannot answer', () => {
     it.each([
-        [
-            { success: false, error: 'upstream' },
-            'could not be reached',
-            'an upstream failure with nothing cached says so'
-        ],
-        [
-            { success: true, currency: 'EUR', fees: { 30: { percentage: 1.5, fixed: 0 } }, stale: true, fetched_at: 1700000000 },
-            'could not be refreshed',
-            'a last-known-good set says it is not current'
-        ],
-        [
-            { success: true, currency: 'EUR', fees: { 30: { percentage: 1.5, fixed: 0 } }, stale: false },
-            '',
-            'a fresh set carries no notice'
-        ]
-    ])('%#: %j', (response, expectedFragment, description) => {
+        ['an upstream failure with nothing cached says so', { success: false, error: 'upstream' }, 'could not be reached'],
+        ['a response with no fee set at all says so', { success: true, currency: 'EUR' }, 'could not be reached'],
+        ['a last-known-good set says it is not current', STALE, 'could not be refreshed'],
+        ['a fresh set carries no notice', FRESH, '']
+    ])('%s', (description, response, expectedFragment) => {
         const loaded = load();
         expect(loaded.requests.length).toBe(1);
 
@@ -79,22 +77,36 @@ describe('inline merchant fees, when the pricing service cannot answer', () => {
 
         const notice = jq(NOTICE).text();
         if (expectedFragment === '') {
-            expect(notice).toBe('');
+            expect(notice).toBe('', description);
         } else {
             expect(notice).toContain(expectedFragment);
         }
     });
 
+    it('clears a stale notice once the figures come back current', () => {
+        const loaded = load();
+        loaded.requests[0].settleDone(STALE);
+        expect(jq(NOTICE).text()).toContain('could not be refreshed');
+
+        // A term change re-asks, and this time the service answers.
+        jq('.two-term-checkboxes__input').trigger('change');
+        loaded.requests[loaded.requests.length - 1].settleDone(FRESH);
+
+        expect(jq(NOTICE).text()).toBe('');
+    });
+
+    it('names when the figures it is showing were retrieved', () => {
+        const loaded = load();
+
+        loaded.requests[0].settleDone(STALE);
+
+        expect(jq(NOTICE).text()).toContain('Sep 1, 2026, 9:00:00 AM');
+    });
+
     it('renders the figures it was given even when they are not current', () => {
         const loaded = load();
 
-        loaded.requests[0].settleDone({
-            success: true,
-            currency: 'EUR',
-            fees: { 30: { percentage: 1.5, fixed: 0 } },
-            stale: true,
-            fetched_at: 1700000000
-        });
+        loaded.requests[0].settleDone(STALE);
 
         expect(jq('.two-term-checkboxes__fee[data-term="30"]').text()).toContain('1.50%');
     });
