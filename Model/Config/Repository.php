@@ -652,13 +652,14 @@ class Repository implements RepositoryInterface
         if ($default > 0 && in_array($default, $terms, true)) {
             return $default;
         }
-        // No explicit admin choice: fall back to the merchant's API default
-        // (due_in_days) when it is an offered term. This is the same value
-        // the admin field pre-selects when unset, so a never-touched install
-        // and the checkout agree on the default term (TWO-24859).
+        // No explicit admin choice: the merchant's API default (due_in_days)
+        // when it is an offered term (TWO-24859).
         $apiDefault = $this->settingsProvider->getDefaultTerm($storeId);
         if ($apiDefault !== null && in_array($apiDefault, $terms, true)) {
             return $apiDefault;
+        }
+        if (in_array(self::PREFERRED_DEFAULT_TERM, $terms, true)) {
+            return self::PREFERRED_DEFAULT_TERM;
         }
         // With nothing offered there is no default: an invented one offers a
         // term the merchant's account cannot honour (ABN-544).

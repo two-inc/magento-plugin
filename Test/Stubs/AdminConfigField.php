@@ -127,6 +127,16 @@ namespace Magento\Config\Block\System\Config\Form {
             }
 
             /**
+             * As core: the framework's entry point into a renderer, which
+             * subclasses override to resolve the scope being edited before any
+             * config read. The markup itself is not what these tests assert.
+             */
+            public function render(AbstractElement $element)
+            {
+                return '';
+            }
+
+            /**
              * As core, whose Field descends from DataObject: renderers stash the element on
              * themselves, and an array key replaces the whole bag rather than indexing it.
              */

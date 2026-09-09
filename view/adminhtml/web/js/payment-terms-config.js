@@ -1,4 +1,4 @@
-define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
+define(['jquery', 'mage/translate', 'Two_Gateway/js/default-term', 'domReady!'], function ($, $t, resolveDefaultTerm) {
     'use strict';
 
     function initPaymentTermsConfig() {
@@ -50,6 +50,19 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             return terms;
         }
 
+        // Every term the merchant's record offers: the checkboxes are rendered
+        // one per offered term, ticked or not.
+        function getMerchantOfferedTerms() {
+            var terms = [];
+            $termsContainer.find('.two-term-checkboxes__input').each(function () {
+                var days = Number($(this).val());
+                if (days > 0) {
+                    terms.push(days);
+                }
+            });
+            return terms;
+        }
+
         function getSurchargeType() {
             // Effective (resolved) type, scope-aware. When the type field's
             // "Use Website/Default" is ticked the <select> is disabled but
@@ -75,17 +88,17 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             var currentDefault = getDefaultTermValue();
 
             $defaultTerm.empty();
+            // First, so a selection that is no longer offered lands here rather
+            // than on a day count nobody chose (ABN-548).
+            $defaultTerm.append($('<option></option>').attr('value', '').text($t('Automatic')));
             $.each(terms, function (_, days) {
                 $defaultTerm.append(
                     $('<option></option>').attr('value', days).text($t('%1 days').replace('%1', days))
                 );
             });
 
-            // Keep current selection if still valid, otherwise pick lowest
             if (terms.indexOf(currentDefault) !== -1) {
                 $defaultTerm.val(currentDefault);
-            } else if (terms.length) {
-                $defaultTerm.val(terms[0]);
             }
 
             $defaultTerm.trigger('change');
@@ -145,14 +158,25 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // ── Differential option label ────────────────────────────────────
 
         function updateDifferentialOptionLabel() {
-            var defaultDays = parseInt($defaultTerm.val(), 10) || 0;
+            var defaultDays = resolveDefaultTerm(
+                getSelectedTerms(),
+                getMerchantOfferedTerms(),
+                getDefaultTermValue(),
+                parseInt($termsContainer.data('merchant-default-term'), 10) || 0
+            );
             var $option = $differential.find('option[value="1"]');
-            if ($option.length && defaultDays > 0) {
-                $option.text(
-                    $t('Fee difference vs default payment term') +
-                    ' (' + $t('%1 days').replace('%1', defaultDays) + ')'
-                );
+            var label = $t('Fee difference vs default payment term');
+
+            if (!$option.length) {
+                return;
             }
+            // Named only while a term resolves, and never left naming a stale
+            // one once it stops resolving.
+            $option.text(
+                defaultDays > 0
+                    ? label + ' (' + $t('%1 days').replace('%1', defaultDays) + ')'
+                    : label
+            );
         }
 
         // ── Event bindings ───────────────────────────────────────────────

@@ -87,6 +87,16 @@ class PaymentTermsCheckboxes extends Field
     }
 
     /**
+     * The merchant's own default term (`due_in_days`), or 0 when there is
+     * none. Published to the browser so the admin JS can name the term the
+     * checkout will preselect while the select reads Automatic (ABN-548).
+     */
+    public function getMerchantDefaultTerm(): int
+    {
+        return (int)$this->settingsProvider->getDefaultTerm(...$this->resolveMerchantScope());
+    }
+
+    /**
      * Scope being edited, as the config repository reads it (ABN-530).
      *
      * @return array{int|null, string}

@@ -55,9 +55,11 @@ function initWith(storedValue, foldsIn, term, inherit) {
 
 /** Terms the default-payment-term dropdown was rebuilt from, i.e. what the module read. */
 function offeredTermsInDropdown() {
-    return $('#' + PREFIX + 'default_payment_term option').map(function () {
-        return Number(this.value);
-    }).get();
+    return $('#' + PREFIX + 'default_payment_term option')
+        // The leading Automatic option carries no term.
+        .filter(function () { return this.value !== ''; })
+        .map(function () { return Number(this.value); })
+        .get();
 }
 
 describe('deprecated custom-term row visibility', () => {

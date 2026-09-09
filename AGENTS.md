@@ -340,6 +340,29 @@ returns null rather than a day count, and no caller substitutes one: the term
 set is offered empty and the buyer is refused at order placement rather than at
 selection (ABN-544).
 
+**The default term prefers 30 days.** `getDefaultPaymentTerm()` resolves the
+admin's stored default, then the merchant record's own default term, then 30,
+then the shortest offered term — each honoured only while it is in the offered
+set (ABN-548). The differential surcharge baseline reads the same resolver, so
+the reference term it prices against moves with the preference.
+
+**Nothing but the admin synthesises a stored default term.** The field's first
+option is Automatic — an empty value — and neither the field nor its JS ever
+puts a day count in the select on the admin's behalf: the select posts on every
+save, so one synthesised there is stored, becomes the resolver's first step, and
+makes every later step unreachable on that scope. A stored term the merchant
+withdrew has no matching option, so the select reads Automatic.
+
+**The admin surfaces that NAME the default term resolve it, never read the
+select.** With Automatic selected the select carries no day count, while the
+surcharge grid still has to disable and zero the row differential mode prices
+against and the differential option still has to name it. `SurchargeGrid` and
+`Two_Gateway/js/default-term` each apply the resolver's order — the JS from the
+ticked terms plus the merchant's own default term, published as
+`data-merchant-default-term` on the checkboxes container. Reading
+`default_payment_term` alone badges no row at all wherever the admin left the
+choice to the resolver.
+
 ## Monetary values in the pricing request are rounded to 2dp
 
 `SurchargeCalculator::convertAmount()` rounds `cap` and `surcharge` to

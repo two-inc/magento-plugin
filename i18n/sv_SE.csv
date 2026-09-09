@@ -136,7 +136,7 @@
 "Select the payment term(s) you want to offer. If a custom duration is set below, this selection is optional.","Välj betalningsvillkor du vill erbjuda. Om en anpassad varaktighet anges nedan är detta val valfritt."
 "Custom payment term (days)","Anpassat betalningsvillkor (dagar)"
 "Default payment term","Standard betalningsvillkor"
-"Select the payment term that will be automatically selected for your customer.","Välj det betalningsvillkor som automatiskt väljs för din kund."
+"Select the payment term that will be automatically selected for your customer. Automatic leaves the choice to the checkout, which uses your own default term when you offer it.","Välj det betalningsvillkor som automatiskt väljs för din kund. Automatiskt lämnar valet till kassan, som använder ditt eget standardvillkor när du erbjuder det."
 "Surcharge method","Tilläggsstrategi"
 "No surcharge applied","Ingen tilläggsavgift appliceras"
 "Select a method to surcharge your customer.","Välj en metod för att debitera din kund."
@@ -441,3 +441,4 @@
 "hidden for baskets in a currency the buyer surcharge cannot be priced in","döljs för varukorgar i en valuta som köpartillägget inte kan prissättas i"
 "offered only to buyers in %1","erbjuds endast köpare i %1"
 "offered to no buyer country, because the two country lists do not overlap","erbjuds inget köparland, eftersom de två landlistorna inte överlappar"
+"Automatic","Automatiskt"

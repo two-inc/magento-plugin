@@ -611,8 +611,12 @@ function makeSurchargeMock() {
 function resolveTwoGatewayModule(name) {
     const match = /^Two_Gateway\/(js\/.+)$/.exec(name);
     if (!match) return null;
-    const relPath = `view/frontend/web/${match[1]}.js`;
-    return fs.existsSync(path.resolve(__dirname, '..', '..', relPath)) ? relPath : null;
+    // Either area. The harness does not know the requiring module's area, so
+    // frontend wins a name that exists in both; today none do.
+    const candidates = [`view/frontend/web/${match[1]}.js`, `view/adminhtml/web/${match[1]}.js`];
+    return candidates.find(function (relPath) {
+        return fs.existsSync(path.resolve(__dirname, '..', '..', relPath));
+    }) || null;
 }
 
 function loadAmdModule(relPath, extraMocks, extraGlobals, siblingCache) {
