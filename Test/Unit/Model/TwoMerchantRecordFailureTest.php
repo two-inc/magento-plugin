@@ -40,7 +40,7 @@ class TwoMerchantRecordFailureTest extends TestCase
         $scopeConfig->method('getValue')->willReturn('test-api-key');
 
         $apiKeyStatus = $this->createMock(ApiKeyStatus::class);
-        $apiKeyStatus->method('isVerified')->willReturn(true);
+        $apiKeyStatus->method('isDefinitiveFailure')->willReturn(false);
         $apiKeyStatus->method('getStatus')->willReturn(
             ['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => ['id' => 'abc-123']]
         );

@@ -236,14 +236,17 @@ class ApiKeyStatus
     }
 
     /**
-     * True only when the stored API key currently verifies. Every failure
-     * category is false: a buyer must not be offered a payment method
-     * whose integration cannot be confirmed to work, whatever the reason
-     * it cannot be confirmed.
+     * True only for a DEFINITIVE rejection of the stored key: Two said no, or
+     * there is no key to say no to. Every other failure category is false —
+     * ABN-533: a 5xx, a timeout or a malformed answer says nothing about the
+     * key, and treating it as a rejection took the payment method off
+     * correctly-configured shops within one CACHE_LIFETIME of any outage.
      */
-    public function isVerified(?int $storeId = null): bool
+    public function isDefinitiveFailure(?int $storeId = null): bool
     {
-        return $this->getStatus($storeId)['status'] === self::OK;
+        $status = $this->getStatus($storeId)['status'];
+
+        return $status === self::INVALID_KEY || $status === self::NOT_CONFIGURED;
     }
 
     /**

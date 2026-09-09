@@ -198,7 +198,7 @@ class TwoCountryGateTest extends TestCase
         $scopeConfig->method('getValue')->willReturn('test-api-key');
 
         $apiKeyStatus = $this->createMock(ApiKeyStatus::class);
-        $apiKeyStatus->method('isVerified')->willReturn(true);
+        $apiKeyStatus->method('isDefinitiveFailure')->willReturn(false);
 
         $minimumOrderGate = $this->createMock(MinimumOrderGate::class);
         $minimumOrderGate->method('isSatisfied')->willReturn(true);

@@ -208,18 +208,17 @@ never cached as the record and never moves the stamp: last-known-good is served 
 re-fetch is bounded, so an outage is not a fetch per read. The admin health
 checklist reports both an absent-on-read mark and a stamp the record has outlived.
 
-**That last-known-good does NOT keep the method on offer through an outage, and
-that is the ruling.** The availability chain reaches the api-key verification
-verdict before it reaches the record, and a verdict caches a success for five
-minutes — a heartbeat — so the method is withheld about five minutes into an
-unreachable API, whatever the record holds. Every failure category withholds
-alike: a rejected key, a transport failure, a timeout and a 5xx are not
-distinguished for this purpose, and no fallback to the record belongs on the buyer
-surface. Measured live: warm record with the API blackholed, and cleared record
-with the API blackholed, withhold identically. What the record protects is the
-cron and admin paths, and no admin surface is gated on the verdict at all — the
-one place a verdict blocks an admin action is the api-key field refusing to store
-a key the API definitively rejected.
+**That last-known-good DOES keep the method on offer through an outage** (ABN-533).
+The availability chain reaches the api-key verification verdict before it reaches
+the record, and only a DEFINITIVE rejection there withholds: `invalid_key` (Two
+said no) and `not_configured` (there is no key). `unreachable`, `service_error`,
+`error` and `malformed_response` fall through to the record, which never expires,
+so a correctly configured shop keeps serving buyers for as long as the outage
+lasts. `ApiKeyStatus::isDefinitiveFailure()` is the single definition of that set —
+do not re-list the categories at a gate. No admin surface is gated on the verdict
+at all; the one place it blocks an admin action is the api-key field refusing to
+store a key the API definitively rejected, and the health checklist still reads
+"Not verified" on every category short of a verified key.
 
 **A cache type absent from `env.php` resolves as DISABLED**, and `cache.xml`
 carries no default-state attribute, so an install has to write the state itself:
@@ -251,9 +250,10 @@ recognised; the buyer country; then an Amasty store view returns true early,
 deferring only the minimum-order gate to the client; then the platform and
 merchant minimum-order gate.
 
-**The api-key verdict is the gate the ruling puts that power in** (ABN-519). Do
-not add another gate that withholds because a call to Two failed; that is the
-defect the rule exists to stop coming back.
+**The api-key verdict is the gate the ruling puts that power in** (ABN-519), and
+only its definitive-rejection categories withhold (ABN-533). Do not add another
+gate that withholds because a call to Two failed, and do not widen this one back
+to every failure category; both are defects the rule exists to stop coming back.
 
 Two on the list are NOT the store's own configuration and are worth knowing
 about. The surcharge FX gate resolves its rate table from Two, and the

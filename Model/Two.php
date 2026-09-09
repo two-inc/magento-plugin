@@ -863,24 +863,22 @@ class Two extends AbstractMethod
             );
             return false;
         }
-        // The only upstream failure that may withhold the method (ABN-519).
-        // Withholds for ANY reason the key fails to verify, so a revoked key
-        // stops being honoured within the verdict's own cache lifetime.
+        // The only upstream failure that may withhold the method (ABN-519), and
+        // only on a DEFINITIVE rejection (ABN-533): an outage falls through to
+        // the cached merchant record, which is sufficient to keep serving the
+        // buyer, rather than emptying checkout minutes into every incident.
         //
         // Placed BEFORE the Amasty bypass below deliberately: that bypass
         // returns true unconditionally to defer the *minimum-order* gate to
         // the client, and it must not also defer this one — there is no
-        // client-side equivalent, and an unverified key is not something a
+        // client-side equivalent, and a rejected key is not something a
         // later total recalculation can turn into a working integration.
-        if (!$this->apiKeyStatus->isVerified($storeId)) {
+        if ($this->apiKeyStatus->isDefinitiveFailure($storeId)) {
             // Withdrawing the method is invisible to the merchant, so record
-            // why. Category and HTTP status only, never a response body —
-            // being unable to tell "wrong key" from "service down" is the
-            // exact gap this change closes on the admin page, and it must not
-            // reappear here.
+            // why. Category and HTTP status only, never a response body.
             $status = $this->apiKeyStatus->getStatus($storeId);
             $this->logRepository->addDebugLog(
-                sprintf('%s hidden from checkout: API key verification failed', $this->_code),
+                sprintf('%s hidden from checkout: API key rejected', $this->_code),
                 ['status' => $status['status'], 'http_status' => $status['code']]
             );
             return false;
