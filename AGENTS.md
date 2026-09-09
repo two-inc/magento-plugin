@@ -195,10 +195,12 @@ failed fetch is never cached as the record and never moves the stamp:
 last-known-good is served and re-fetch is bounded to once a minute, so an outage is
 not a fetch per read.
 
-**The `two_gateway` cache type must be ENABLED for any of that to happen.** A cache
-type ships off unless something turns it on, and with no `env.php` entry every save
-is a no-op and every read re-fetches — `bin/magento cache:status` is the check, and
-a shop enabled by hand tells you nothing about a merchant's install. The type is its
+**A cache type absent from `env.php` resolves as DISABLED**, and `cache.xml`
+carries no default-state attribute, so an install has to write the state itself:
+a data patch
+enables every type this module declares. It runs once, so a merchant who later turns
+the type off keeps it off — and a disabled type makes every save a no-op and every
+read a re-fetch, silently. `bin/magento cache:status` is the check. The type is its
 own so `cache:clean two_gateway` drops the record and a config clean does not.
 
 ## A Diagnostics field declared only in `system.xml` never reaches the admin
