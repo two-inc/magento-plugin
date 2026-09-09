@@ -91,6 +91,16 @@ class PaymentTermsCustomDaysTest extends TestCase
         $this->assertStringNotContainsString('%1', $text, "$case — the placeholder is filled");
     }
 
+    /** The hint is the only place the merchant is told why the section will not save. */
+    public function testTheUnusableWordingNamesTheBlockAndTheRemedy(): void
+    {
+        $text = $this->comment([], [], 'abc');
+
+        $this->assertStringContainsString('this section cannot be saved until it is removed', $text);
+        $this->assertStringContainsString('Choose Remove to clear it.', $text);
+        $this->assertStringNotContainsString('offers a custom term', $text);
+    }
+
     public static function interpolatedDaysProvider(): array
     {
         $eom = ['payment/two_payment/payment_terms_type@default:' => 'end_of_month'];
@@ -100,7 +110,24 @@ class PaymentTermsCustomDaysTest extends TestCase
             [[], '37', 'custom term of 37 days from fulfilment', 'Standard names the term'],
             [$eom, '037', 'custom term of 37 days', 'a leading-zero value names the normalised term'],
             [[], '  37  ', 'custom term of 37 days', 'padding is trimmed out of the wording'],
-            [[], 'abc', 'custom term of abc days', 'an unusable value is named as stored, so it can be recognised'],
+            [
+                [],
+                'abc',
+                'Legacy setting currently holds "abc", which is not a usable number of days.',
+                'an unusable value says nothing is offered and names the value as stored',
+            ],
+            [
+                [],
+                '-5',
+                'Legacy setting currently holds "-5", which is not a usable number of days.',
+                'a negative is unusable and is named as stored',
+            ],
+            [
+                $eom,
+                'abc',
+                'Legacy setting currently holds "abc", which is not a usable number of days.',
+                'the unusable wording does not depend on the terms type',
+            ],
         ];
     }
 

@@ -59,7 +59,7 @@ class PaymentTermsCheckboxesTest extends TestCase
         ]);
 
         $this->expectException(LocalizedException::class);
-        $this->expectExceptionMessage('Select at least one payment term or enter a custom term.');
+        $this->expectExceptionMessage('Select at least one payment term.');
         $model->beforeSave();
     }
 

@@ -52,6 +52,16 @@ class PaymentTermsCustomDays implements CommentInterface
     {
         $days = StoredTerm::days($elementValue) ?? trim((string)$elementValue);
 
+        // No term semantics to qualify, so the terms type does not enter into it.
+        if (StoredTerm::isUnusable($elementValue)) {
+            return (string)__(
+                'Legacy setting currently holds "%1", which is not a usable number of days.'
+                . ' It is no longer supported and cannot be edited, and this section cannot be saved'
+                . ' until it is removed. Choose Remove to clear it.',
+                $days
+            );
+        }
+
         if ($this->endOfMonth->isConfigured($this->storedType())) {
             return (string)__(
                 'Legacy setting. This offers a custom term of %1 days after the end of the month.'

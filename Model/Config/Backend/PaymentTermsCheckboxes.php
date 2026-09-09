@@ -74,10 +74,10 @@ class PaymentTermsCheckboxes extends Value
         }
         sort($value);
 
-        // A selection is mandatory; the sibling custom-days field satisfies it too.
+        // A selection is mandatory; a legacy term still stored satisfies it, so this fires without one.
         if (count($value) === 0 && $custom === null) {
             throw new LocalizedException(
-                __('Select at least one payment term or enter a custom term.')
+                __('Select at least one payment term.')
             );
         }
 
