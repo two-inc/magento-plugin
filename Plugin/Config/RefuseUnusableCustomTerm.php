@@ -23,8 +23,8 @@ use Two\Gateway\Model\Config\StoredTerm;
  *
  * Every field in this group binds through `config_path`, which the admin form's config-data filter
  * does not match, so each renders with `inherit` ticked at store and website scope — and an
- * inherit-flagged field is routed to the delete transaction, where no backend model's beforeSave
- * runs. This is the only guard those scopes reach (ABN-522).
+ * inherit-flagged field never reaches its backend model. This is the only guard those scopes reach
+ * (ABN-522).
  */
 class RefuseUnusableCustomTerm
 {
@@ -80,7 +80,6 @@ class RefuseUnusableCustomTerm
         ));
     }
 
-    /** Null for any section that does not declare the field, an overlay's own sections included. */
     private function field(string $section): ?Field
     {
         if ($section === '') {
