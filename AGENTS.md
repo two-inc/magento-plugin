@@ -171,6 +171,24 @@ carrying no merchant record counts as unresolved: a proxy, a captive portal or a
 maintenance page answers 200 too, and there is no identity to offer the method
 under.
 
+## The order `isAvailable()` withholds in, and it is SILENT
+
+Core's own checks; a configured non-empty API key; the api-key verification
+verdict; the merchant's available-terms set being empty; the surcharge FX rate
+resolving and the stored surcharge method being recognised; the buyer country;
+then an Amasty store view returns true early, deferring only the minimum-order
+gate to the client; then the platform and merchant minimum-order gate.
+
+**There is no captured-company condition anywhere on that path.** The
+company-number guard runs at placement, not at render — do not reach for
+`isAvailable()` to explain a company-capture symptom.
+
+**Every one of those withholds is invisible to the buyer**: the method simply
+vanishes, with no message, no error node and an empty message area. Each gate
+writes a debug log line and that is the only account of it, so the log is where a
+"why is the method missing" question gets answered. An unrecognised stored
+surcharge method throws with a buyer-facing string that no buyer ever sees.
+
 **The admin save stays permissive, and a rejected key blocks only the key field.**
 Refusing the save would lock the merchant out of correcting the very key that
 resolves the record, and a `LocalizedException` from a config backend model rolls
@@ -194,6 +212,14 @@ config save, the admin refresh button, a storefront render — can hold to it. A
 failed fetch is never cached as the record and never moves the stamp:
 last-known-good is served and re-fetch is bounded to once a minute, so an outage is
 not a fetch per read.
+
+**That last-known-good does NOT keep the method on offer through an outage.** The
+availability chain reaches the api-key verification verdict before it reaches the
+record, and a verdict caches a success for five minutes — so the method is withheld
+about five minutes into an unreachable API, whatever the record holds. Measured
+live: warm record with the API blackholed, and cleared record with the API
+blackholed, withhold identically. What the 26 hours protect is the cron and admin
+paths, not the buyer gate.
 
 **A cache type absent from `env.php` resolves as DISABLED**, and `cache.xml`
 carries no default-state attribute, so an install has to write the state itself:
