@@ -15,7 +15,7 @@
  * The cases below fail against a `bind()` that registers per call. They need
  * the harness's `$.async` SIMULATION rather than its old one-shot stub: a stub
  * that never re-fires cannot express stacking, which is why this class of
- * defect survived three review rounds and a green suite.
+ * defect survived a green suite.
  */
 
 'use strict';

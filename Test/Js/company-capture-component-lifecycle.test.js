@@ -4,9 +4,9 @@
  *
  * TWO-25503 — the guarantees the page-level rewrite exists to provide.
  *
- * The previous attempt was payment-tile-scoped, and three review rounds kept
- * surfacing the same defect wearing different hats: state whose lifetime was
- * per-render standing in for something page-level. Every case here fails
+ * The previous attempt was payment-tile-scoped, and the same defect kept
+ * resurfacing wearing different hats: state whose lifetime was per-render
+ * standing in for something page-level. Every case here fails
  * against that architecture and passes against this one, so they are the
  * regression guard on the container itself rather than on any one behaviour.
  *

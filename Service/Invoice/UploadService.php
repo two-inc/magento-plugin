@@ -253,7 +253,7 @@ class UploadService
             // recently created — should be uploaded. getLastItem() alone
             // is "less wrong", not guaranteed, since it depends on the
             // collection's default load order matching creation order
-            // (TWO-24758 review round 2, Vader).
+            // (TWO-24758).
             if (method_exists($invoices, 'setOrder')) {
                 $invoices->setOrder('entity_id', 'DESC');
             }
