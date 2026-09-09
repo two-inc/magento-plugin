@@ -197,11 +197,16 @@ not a fetch per read.
 
 **A cache type absent from `env.php` resolves as DISABLED**, and `cache.xml`
 carries no default-state attribute, so an install has to write the state itself:
-a data patch
-enables every type this module declares. It runs once, so a merchant who later turns
-the type off keeps it off — and a disabled type makes every save a no-op and every
-read a re-fetch, silently. `bin/magento cache:status` is the check. The type is its
-own so `cache:clean two_gateway` drops the record and a config clean does not.
+a data patch enables every type this module declares, on a fresh install and on
+upgrade alike, so there is no manual enable step. It runs once, so a merchant who
+later turns the type off keeps it off.
+
+**What a disabled type breaks is the type-scoped CLEAN, not the caching.** The
+records themselves resolve to the framework's default frontend and read and write
+either way; `cache:clean two_gateway` and the admin cache-management row are what
+stop working, and they report success while dropping nothing. Declaring the type
+is what makes a targeted clean possible at all — a config clean does not touch
+these records.
 
 ## A Diagnostics field declared only in `system.xml` never reaches the admin
 
@@ -377,10 +382,16 @@ with nothing focused, a window return settles nothing.
 That chip is a different control, so this popup and popover close first; the new
 one is then raised by invoking that chip's own click handler, the single place a
 launch is spelled out. The exemption is per capture and survives a re-render
-because the popover is resolved from the field each time — a stored popover node
-goes stale when a morph deletes the wrap and keeps the field, which makes a
+because the popover is resolved live as the field's sibling — a stored popover
+node goes stale when a morph deletes the wrap and keeps the field, which makes a
 capture's own rebuilt chip read as a sibling's and inverts the rule on it
 (TWO-25658).
+
+**The POINTER route is not covered.** A chip's `mousedown` cancels, so a real
+click fires no `focusin` and reaches none of this: a buyer clicking a second
+capture's chip with the mouse can hold two popups open at once. Closing that means
+changing the chip's click path, not the focus rule — do not read the focus rules as
+covering it.
 
 ## A declined order intent refuses order placement
 
