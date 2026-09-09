@@ -19,7 +19,8 @@ use Two\Gateway\Setup\Uninstall;
  * to `payment/two_payment/%`: on a brand overlay a hardcoded path silently
  * no-ops the opt-in, and a separate `payment/two_search/%` clause matches
  * nothing because the "Search" admin section's fields live under
- * `payment/<code>/*` too. This test pins that and the LIKE-escaping with it.
+ * `payment/<code>/*` too. This test pins the brand-derived clause and its
+ * LIKE-escaping.
  *
  * SchemaSetupInterface/ModuleContextInterface are auto-stubbed as EMPTY
  * interfaces by Test/bootstrap.php's catch-all (no real Magento framework

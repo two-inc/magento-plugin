@@ -115,7 +115,7 @@ class UploadService
         // occasionally dispatch sales_order_shipment_save_after more than
         // once for the same shipment, and a second call resetting
         // two_invoice_upload_reference/error here would race the cron's
-        // upload() if it is already mid-flight for this order (TWO-24758).
+        // upload() if it's already mid-flight for this order (TWO-24758).
         if ($currentStatus === self::STATUS_UPLOADED || $currentStatus === self::STATUS_UPLOADING) {
             return;
         }
@@ -168,10 +168,9 @@ class UploadService
         // Re-check the gate at execution time, not just at queue time: the
         // cron can run minutes after queueForOrder(), and the merchant may
         // have flipped invoice_distributed_by_merchant to false in between
-        // (TWO-24758). A flip the other way (false -> true)
-        // is not retro-actively picked up for orders already resolved to
-        // NOT_APPLICABLE; that is an accepted limitation, not a bug fixed
-        // here.
+        // (TWO-24758). A flip the other way (false -> true) is not retro-
+        // actively picked up for orders already resolved to NOT_APPLICABLE;
+        // that is an accepted limitation, not a bug fixed here.
         if (!$this->settingsProvider->isInvoiceDistributedByMerchant($storeId)) {
             $this->persistStatus($order, self::STATUS_NOT_APPLICABLE);
             $order->setData('two_invoice_upload_error', null);
