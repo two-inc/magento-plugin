@@ -140,8 +140,7 @@ test.describe('minimum order value gate', () => {
     let pending: MinimumConfig | null = null;
 
     test.afterAll(async ({ browser }) => {
-        // Its own budget: the hook inherits the config timeout, not the test's,
-        // and it exists precisely for the run where the body ran out of time.
+        // The hook inherits the config timeout, not the test's.
         test.setTimeout(180_000);
         if (!pending) return;
         const context = await browser.newContext();
@@ -183,6 +182,10 @@ test.describe('minimum order value gate', () => {
         await expect
             .poll(() => availableMethods(page), { timeout: 25_000 })
             .toContain('two_payment');
+        // Whatever else this store offers, used below to tell "Two withheld"
+        // apart from "the list has not been populated yet".
+        const control = (await availableMethods(page)).find((m) => m !== 'two_payment');
+        expect(control, 'the store must offer a second method as a control').toBeTruthy();
 
         // Admin runs in its own context so the buyer page keeps its session and
         // is never reloaded — the whole point is the in-page recalc.
@@ -206,14 +209,14 @@ test.describe('minimum order value gate', () => {
             await selectShipping(page, 'freeshipping');
             await goToPaymentStep(page);
             // `not.toContain` alone also passes on the empty list the payment
-            // service shows mid-repopulation, so require a control method too.
+            // service shows mid-repopulation.
             await expect
                 .poll(async () => {
                     const methods = await availableMethods(page);
 
                     return {
                         offered: methods.includes('two_payment'),
-                        populated: methods.includes('checkmo')
+                        populated: methods.includes(control as string)
                     };
                 }, { timeout: 25_000 })
                 .toEqual({ offered: false, populated: true });

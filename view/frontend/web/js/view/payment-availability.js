@@ -14,7 +14,10 @@
  * applied on the payment step), so a basket crossing the threshold keeps its
  * stale visibility until a full checkout reload. Hyvä and FireCheckout
  * re-fetch on every totals change and are unaffected; this gives Luma (and
- * Luma-derived one-step checkouts) the same behaviour.
+ * Luma-derived one-step checkouts) the same behaviour. A derivative that never
+ * persists the shipping choice mid-flow gets nothing from this component: the
+ * server it would ask cannot see the change, so the basket check below rejects
+ * every answer.
  *
  * On a genuine totals change it re-fetches the payment-information endpoint
  * (the server re-runs isAvailable) and applies the returned method list ONLY

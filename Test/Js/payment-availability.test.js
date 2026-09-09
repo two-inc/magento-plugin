@@ -80,7 +80,13 @@ const ComponentMock = {
 /** mage/storage.get() stub returning a jQuery-style promise. */
 function makeStorage(opts) {
     opts = opts || {};
-    const response = opts.response || { payment_methods: [{ method: 'two_payment' }] };
+    // The real endpoint always returns a totals segment, and the component
+    // compares it against the emit that asked; a stub without one only ever
+    // exercises the reject branch.
+    const response = opts.response || {
+        payment_methods: [{ method: 'two_payment' }],
+        totals: { grand_total: '264.00' }
+    };
     const get = jest.fn(function () {
         let settled = null;
         const done = [];
@@ -285,8 +291,8 @@ describe('Two_Gateway/js/view/payment-availability', () => {
         expect(() => storage.get._last._reject()).not.toThrow();
         expect(setPaymentMethods).not.toHaveBeenCalled();
 
-        // Key rolled back → a later change still fetches (retry not stranded).
-        totals({ grand_total: '300.00' });
+        // The SAME key: without the rollback this would dedup and never retry.
+        totals({ grand_total: '264.00' });
         expect(storage.get).toHaveBeenCalledTimes(2);
     });
 

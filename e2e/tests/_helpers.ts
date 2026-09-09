@@ -92,8 +92,8 @@ export async function goToPaymentStep(page: Page) {
 }
 
 // Return to the shipping-method step: the radios stay in the DOM but hidden once
-// the payment step renders the chosen rate as a summary. Waits for the step to
-// actually flip, or goToPaymentStep() would early-return and never submit.
+// the payment step renders the chosen rate as a summary. The submit that follows
+// early-returns unless the step has actually flipped.
 export async function editShippingMethod(page: Page) {
     await waitIdle(page);
     const edit = page.locator('.ship-via .action-edit').first();
