@@ -466,7 +466,6 @@ class HealthChecklistTest extends TestCase
                 $scopesAsked[] = $storeId;
                 return ['status' => ApiKeyStatus::OK];
             });
-        $this->configRepository->method('getMode')->willReturn('sandbox');
 
         $row = $this->block->getChecklistRows()[4];
 
@@ -584,10 +583,6 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * A platform floor that has never been fetched is unknown, not absent, and
-     * a bare "shown at checkout" would read as no floor at all.
-     */
-    /**
      * The store is needed only for the merchant floor, so a scope with no
      * resolvable default store must still carry the other constraints.
      */
@@ -629,6 +624,10 @@ class HealthChecklistTest extends TestCase
         );
     }
 
+    /**
+     * A platform floor that has never been fetched is unknown, not absent, and
+     * a bare "shown at checkout" would read as no floor at all.
+     */
     public function testAProfileThatHasNeverResolvedNamesTheUnknownFloor(): void
     {
         $this->recordProvider = $this->createMock(RecordProvider::class);

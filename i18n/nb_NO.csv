@@ -439,7 +439,7 @@
 "excluding tax","eksklusiv mva."
 "including tax","inklusiv mva."
 "the buyer countries on your account could not be read. Contact %1.","kjøperlandene på kontoen din kunne ikke leses. Kontakt %1."
-"Country availability is set to specific countries with none chosen. Check Allowed countries.","Landtilgjengelighet er satt til bestemte land uten at noen er valgt. Kontroller Tillatte land."
+"country availability is set to specific countries with none chosen. Check Allowed countries.","Landtilgjengelighet er satt til bestemte land uten at noen er valgt. Kontroller Tillatte land."
 "minimum order value not known until your profile refreshes","minste ordreverdi er ikke kjent før profilen din oppdateres"
 "hidden for baskets in a currency the buyer surcharge cannot be priced in","skjult for handlekorger i en valuta kjøpertillegget ikke kan prises i"
 "offered only to buyers in %1","tilbys bare kjøpere i %1"

@@ -175,7 +175,7 @@ class HealthChecklist extends Field
         }
         if ($reason === null && $this->coreCountryGateAllowsNothing($storeId)) {
             $reason = (string)__(
-                'Country availability is set to specific countries with none chosen. Check Allowed countries.'
+                'country availability is set to specific countries with none chosen. Check Allowed countries.'
             );
         }
         if ($reason !== null) {
