@@ -91,14 +91,15 @@ export async function goToPaymentStep(page: Page) {
     await waitIdle(page);
 }
 
-// Return to the shipping-method step from the payment step. Luma renders the
-// chosen rate there as a summary; the radios stay in the DOM but hidden, so this
-// edit control is the only way to reach them again.
+// Return to the shipping-method step: the radios stay in the DOM but hidden once
+// the payment step renders the chosen rate as a summary. Waits for the step to
+// actually flip, or goToPaymentStep() would early-return and never submit.
 export async function editShippingMethod(page: Page) {
     await waitIdle(page);
     const edit = page.locator('.ship-via .action-edit').first();
     await expect(edit).toBeVisible({ timeout: 20_000 });
     await edit.click();
+    await expect.poll(() => onPaymentStep(page), { timeout: 20_000 }).toBe(false);
     await waitIdle(page);
 }
 

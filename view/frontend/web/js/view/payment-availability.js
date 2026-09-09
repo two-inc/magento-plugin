@@ -111,7 +111,9 @@ define([
             }
             var tax = parseFloat(totals.tax_amount) || 0;
 
-            return grand + '|' + tax;
+            // Fixed precision, because this key is also compared against the
+            // server's own totals: raw float text makes the same basket differ.
+            return grand.toFixed(4) + '|' + tax.toFixed(4);
         },
 
         /**

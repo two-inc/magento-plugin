@@ -140,6 +140,9 @@ test.describe('minimum order value gate', () => {
     let pending: MinimumConfig | null = null;
 
     test.afterAll(async ({ browser }) => {
+        // Its own budget: the hook inherits the config timeout, not the test's,
+        // and it exists precisely for the run where the body ran out of time.
+        test.setTimeout(180_000);
         if (!pending) return;
         const context = await browser.newContext();
         const page = await context.newPage();
@@ -202,9 +205,18 @@ test.describe('minimum order value gate', () => {
             await editShippingMethod(page);
             await selectShipping(page, 'freeshipping');
             await goToPaymentStep(page);
+            // `not.toContain` alone also passes on the empty list the payment
+            // service shows mid-repopulation, so require a control method too.
             await expect
-                .poll(() => availableMethods(page), { timeout: 25_000 })
-                .not.toContain('two_payment');
+                .poll(async () => {
+                    const methods = await availableMethods(page);
+
+                    return {
+                        offered: methods.includes('two_payment'),
+                        populated: methods.includes('checkmo')
+                    };
+                }, { timeout: 25_000 })
+                .toEqual({ offered: false, populated: true });
             // …and back, so the gate re-opens as well as closes.
             await editShippingMethod(page);
             await selectShipping(page, 'flatrate');
