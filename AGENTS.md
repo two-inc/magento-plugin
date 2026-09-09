@@ -254,29 +254,35 @@ the pricing service could not be reached. Do not restore a bare
 
 Core's own checks; a configured non-empty API key; the api-key verification
 verdict; the surcharge FX rate resolving and the stored surcharge method being
-recognised; a failing buyer fee quote for the term being charged; the buyer
-country; then an Amasty store view returns true early,
-deferring only the minimum-order gate to the client; then the platform and
-merchant minimum-order gate.
+recognised; the buyer country; the fee quote for the term being charged; then an
+Amasty store view returns true early, deferring only the minimum-order gate to
+the client; then the platform and merchant minimum-order gate.
 
 **The api-key verdict is the gate the ruling puts that power in** (ABN-519), and
 only its definitive-rejection categories withhold (ABN-533). Do not widen it
 back to every failure category, and do not add a further gate that withholds
 because a call to Two failed; both are defects the rule exists to stop coming
-back. The buyer fee quote is the one named exception (ABN-546): a term whose fee
-cannot be priced cannot be charged, so checkout withholds while the admin
-settings page only logs — its fee preview reads merchant rates through
-`Service\Merchant\FeeRatesProvider`, never the buyer quote, so a merchant is
-never locked out of the settings they need to fix it.
+back. The buyer fee quote is the one named exception (ABN-546): a term whose
+fee cannot be priced cannot be charged, so the gate prices it rather than wait
+to be told. It resolves the charged term — the buyer's own selection, else the
+configured default, through `Service\Order\ChargedTermResolver`, the same
+resolver the totals collector uses so the two can never disagree — and asks
+`SurchargeCalculator::calculate()` for that one term on the cart being judged.
+A refusal withholds the method for that request and that cart only, and the
+next request re-asks, so recovery needs no expiry and one buyer's refused quote
+cannot reach another's checkout.
 
-`SurchargeCalculator` records that failure as a marker under a 60-second TTL, and
-`isAvailable()` reads the marker only — never a live quote, because it runs on
-every render of the payment-method list. The marker is keyed on term, currency
-and store, so one misconfigured term withholds nothing from a checkout charging
-another, and a recovered pricing endpoint restores the method within the minute
-with no retry from the gate. A quote of zero, an empty basket, a term with no
-surcharge configured and surcharge type `none` are all successes, and withhold
-nothing.
+Four guards run before any call and concede the method without one: no
+surcharge configured, no cart carrying items and a positive total, no currency,
+no term offered. They are also why no adminhtml or cron path ever prices
+anything — none of them presents a cart to price. Cost is bounded at one
+pricing call per render: `calculate()` memoizes per request and caches a
+success for 300 seconds keyed on the request body, so the totals collector and
+the term-chip endpoints reuse the same quote.
+
+The admin settings page is untouched: its fee preview reads merchant rates
+through `Service\Merchant\FeeRatesProvider`, never the buyer quote, so a
+merchant is never locked out of the settings needed to fix this.
 
 **Every buyer-facing surface asks that same question, and must keep asking it.**
 Three besides `isAvailable()`: `Model\Ui\ConfigProvider::getConfig()`, whose

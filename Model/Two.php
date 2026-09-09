@@ -31,11 +31,13 @@ use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
+use Two\Gateway\Service\Order\ChargedTermResolver;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
@@ -156,6 +158,10 @@ class Two extends AbstractMethod
      */
     private $surchargeCalculator;
     /**
+     * @var ChargedTermResolver
+     */
+    private $chargedTermResolver;
+    /**
      * @var LifecycleEventDispatcher
      */
     private $lifecycleEvents;
@@ -208,6 +214,7 @@ class Two extends AbstractMethod
      * @param ConfigDataCollectionFactory $configDataCollectionFactory
      * @param ApiKeyStatus $apiKeyStatus
      * @param SurchargeCalculator $surchargeCalculator
+     * @param ChargedTermResolver $chargedTermResolver
      * @param LifecycleEventDispatcher $lifecycleEvents
      * @param BuyerCountryResolver $buyerCountryResolver
      * @param SupportedCountriesProvider $supportedCountriesProvider
@@ -242,6 +249,7 @@ class Two extends AbstractMethod
         ConfigDataCollectionFactory $configDataCollectionFactory,
         ApiKeyStatus $apiKeyStatus,
         SurchargeCalculator $surchargeCalculator,
+        ChargedTermResolver $chargedTermResolver,
         LifecycleEventDispatcher $lifecycleEvents,
         BuyerCountryResolver $buyerCountryResolver,
         SupportedCountriesProvider $supportedCountriesProvider,
@@ -280,6 +288,7 @@ class Two extends AbstractMethod
         $this->configDataCollectionFactory = $configDataCollectionFactory;
         $this->apiKeyStatus = $apiKeyStatus;
         $this->surchargeCalculator = $surchargeCalculator;
+        $this->chargedTermResolver = $chargedTermResolver;
         $this->lifecycleEvents = $lifecycleEvents;
         $this->buyerCountryResolver = $buyerCountryResolver;
         $this->supportedCountriesProvider = $supportedCountriesProvider;
@@ -914,24 +923,6 @@ class Two extends AbstractMethod
             );
             return false;
         }
-        // ABN-546: a fee quote the pricing endpoint refused makes this method
-        // unofferable. Marker-only, never a re-quote. Placed BEFORE the Amasty
-        // bypass for the same reason as the gates above.
-        try {
-            if ($this->hasFailedFeeQuote($quote, $storeId)) {
-                $this->logRepository->addDebugLog(
-                    sprintf('%s hidden from checkout: buyer fee quote failed', $this->_code),
-                    []
-                );
-                return false;
-            }
-        } catch (LocalizedException) {
-            $this->logRepository->addDebugLog(
-                sprintf('%s hidden from checkout: buyer fee quote unreadable', $this->_code),
-                []
-            );
-            return false;
-        }
         // Judged on the billing-first country, not core's shipping-for-physical-quote choice.
         $buyerCountry = $this->buyerCountryResolver->resolve($quote);
         // Core's admin gate cannot judge an empty country, so only the merchant
@@ -946,6 +937,14 @@ class Two extends AbstractMethod
                     'country' => $buyerCountry,
                     'restriction' => $this->supportedCountriesProvider->getState($storeId),
                 ]
+            );
+            return false;
+        }
+        // ABN-546: no later request is guaranteed to notice an unpriceable fee.
+        if (!$this->isFeeQuotable($quote, $storeId)) {
+            $this->logRepository->addDebugLog(
+                sprintf('%s hidden from checkout: buyer fee quote failed', $this->_code),
+                []
             );
             return false;
         }
@@ -1196,21 +1195,48 @@ class Two extends AbstractMethod
     }
 
     /**
-     * See SurchargeCalculator::hasFailedFeeQuote(). False when there is no
-     * currency to judge by, matching isSurchargeResolvable().
+     * One pricing call per request at most — calculate() memoizes it and caches
+     * a success, so the totals collector and the chip endpoints reuse this
+     * quote. The guards concede without a call when there is no cart to price,
+     * which is also why no adminhtml or cron path reaches one.
      */
-    private function hasFailedFeeQuote(?CartInterface $quote, ?int $storeId): bool
+    private function isFeeQuotable(?CartInterface $quote, ?int $storeId): bool
     {
         if (!$quote instanceof \Magento\Quote\Model\Quote) {
-            return false;
+            return true;
         }
         $store = $quote->getStore();
-        $currency = (string)($quote->getQuoteCurrencyCode()
-            ?: ($store !== null ? $store->getBaseCurrencyCode() : ''));
-        if ($currency === '') {
+        if ($store === null) {
+            return true;
+        }
+        $storeId = $storeId ?? (int)$store->getId();
+        try {
+            if ($this->configRepository->getSurchargeType($storeId) === SurchargeType::NONE) {
+                return true;
+            }
+            $grossAmount = (float)$quote->getGrandTotal();
+            if ($grossAmount <= 0.0 || $quote->getAllVisibleItems() === []) {
+                return true;
+            }
+            $currency = (string)($quote->getQuoteCurrencyCode() ?: $store->getBaseCurrencyCode());
+            if ($currency === '') {
+                return true;
+            }
+            $chargedTerm = $this->chargedTermResolver->resolve($storeId);
+            if ($chargedTerm <= 0) {
+                return true;
+            }
+            $this->surchargeCalculator->calculate(
+                $grossAmount,
+                $chargedTerm,
+                $this->buyerCountryResolver->resolve($quote),
+                $currency,
+                $storeId
+            );
+            return true;
+        } catch (LocalizedException) {
             return false;
         }
-        return $this->surchargeCalculator->hasFailedFeeQuote($currency, $storeId);
     }
 
     /**

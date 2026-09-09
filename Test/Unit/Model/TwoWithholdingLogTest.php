@@ -8,7 +8,9 @@ use Magento\Quote\Model\Quote;
 use Magento\Quote\Model\Quote\Address;
 use Magento\Store\Model\Store;
 use PHPUnit\Framework\TestCase;
+use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
+use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
@@ -113,6 +115,9 @@ class TwoWithholdingLogTest extends TestCase
             '_scopeConfig' => $scopeConfig,
             'stubAvailableInBase' => $knob !== 'core_refuses',
             'logRepository' => $logRepository,
+            // No surcharge configured: the fee-quote gate concedes without
+            // pricing anything, which is not this test's subject.
+            'configRepository' => $this->surchargeFreeConfig(),
             'apiKeyStatus' => $apiKeyStatus,
             'surchargeCalculator' => $surchargeCalculator,
             'minimumOrderGate' => $gate,
@@ -158,4 +163,14 @@ class TwoWithholdingLogTest extends TestCase
         return $quote;
     }
 
+
+    /**
+     * @return ConfigRepository|\PHPUnit\Framework\MockObject\MockObject
+     */
+    private function surchargeFreeConfig()
+    {
+        $config = $this->createMock(ConfigRepository::class);
+        $config->method('getSurchargeType')->willReturn(SurchargeType::NONE);
+        return $config;
+    }
 }

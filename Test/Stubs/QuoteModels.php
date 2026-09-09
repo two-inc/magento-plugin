@@ -119,6 +119,17 @@ namespace Magento\Quote\Model {
             }
 
             /**
+             * Declared so tests can configure it: Model\Two's fee-quote gate
+             * asks whether there is a basket to price.
+             *
+             * @return array<int, mixed>
+             */
+            public function getAllVisibleItems()
+            {
+                return [];
+            }
+
+            /**
              * Declared (rather than left to the catch-all) so tests can
              * configure it: Model\Ui\ConfigProvider resolves the quote's
              * billing country through it.

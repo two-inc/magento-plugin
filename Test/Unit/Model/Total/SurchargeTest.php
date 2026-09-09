@@ -28,6 +28,7 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
+use Two\Gateway\Service\Order\ChargedTermResolver;
 use Two\Gateway\Service\Order\SurchargeCalculator;
 use Two\Gateway\Service\Order\SurchargeDisplay;
 use Two\Gateway\Service\Order\SurchargeTaxCalculator;
@@ -110,7 +111,8 @@ class SurchargeTest extends TestCase
             $this->minimumOrderGate,
             $this->minimumOrderProvider,
             $this->merchantMinimumResolver,
-            $this->surchargeDisplay
+            $this->surchargeDisplay,
+            new ChargedTermResolver($this->session, $this->config)
         );
     }
 
@@ -265,7 +267,8 @@ class SurchargeTest extends TestCase
             $this->minimumOrderGate,
             $this->minimumOrderProvider,
             $this->merchantMinimumResolver,
-            $this->surchargeDisplay
+            $this->surchargeDisplay,
+            new ChargedTermResolver($this->session, $this->config)
         );
     }
 
@@ -400,7 +403,8 @@ class SurchargeTest extends TestCase
             $this->minimumOrderGate,
             $this->minimumOrderProvider,
             $this->merchantMinimumResolver,
-            $this->surchargeDisplay
+            $this->surchargeDisplay,
+            new ChargedTermResolver($this->session, $this->config)
         );
 
         $this->session->setTwoSurchargeAmount(100.0);
@@ -432,7 +436,8 @@ class SurchargeTest extends TestCase
             $this->minimumOrderGate,
             $this->minimumOrderProvider,
             $this->merchantMinimumResolver,
-            $display
+            $display,
+            new ChargedTermResolver($this->session, $this->config)
         );
     }
 
