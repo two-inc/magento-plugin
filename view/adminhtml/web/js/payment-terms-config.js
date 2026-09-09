@@ -274,8 +274,39 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // Fetched async from admin proxy `two/config/fees` (same endpoint
         // the old surcharge-grid Fee column used). Each `.two-term-
         // checkboxes__fee` span is populated with text like " (1.50% + 0.50)"
-        // when the response arrives. On failure the span stays empty.
+        // when the response arrives.
+        //
+        // An empty span means that term carries no fee, so a failed fetch must
+        // never leave the spans empty and silent — it says so in the notice
+        // below instead (ABN-512).
         var lastFeesKey = null;
+
+        function setFeeNotice(text) {
+            var $notice = $termsContainer.find('.two-term-checkboxes__fee-notice');
+            if (!$notice.length) {
+                if (!text) {
+                    return;
+                }
+                $notice = $('<div class="two-term-checkboxes__fee-notice admin__field-note"></div>')
+                    .appendTo($termsContainer);
+            }
+            $notice.text(text || '');
+        }
+
+        function showFeesUnavailable() {
+            // Retry allowed on the same term-set once the service answers again.
+            lastFeesKey = null;
+            $termsContainer.find('.two-term-checkboxes__fee').text('');
+            setFeeNotice($t(
+                'Fees could not be loaded because the pricing service could not be reached.'
+                + ' The figures beside each term are missing, not zero.'
+            ));
+        }
+
+        function describeFetchedAt(timestamp) {
+            var when = new Date(Number(timestamp) * 1000);
+            return isNaN(when.getTime()) ? '' : when.toLocaleString();
+        }
 
         function loadFees() {
             var url = $termsContainer.data('fees-url');
@@ -317,7 +348,23 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 }
             }).done(function (response) {
                 if (!response || !response.success || !response.fees) {
-                    return; // leave spans empty
+                    if (response && response.error === 'upstream') {
+                        showFeesUnavailable();
+                    }
+                    return;
+                }
+                if (response.stale) {
+                    var retrieved = describeFetchedAt(response.fetched_at);
+                    setFeeNotice(
+                        retrieved === ''
+                            ? $t('Fees could not be refreshed, so the figures last retrieved are shown.')
+                            : $t('Fees could not be refreshed, so the figures retrieved on %1 are shown.')
+                                .replace('%1', retrieved)
+                    );
+                    // Allow a retry on the same term-set once the service answers again.
+                    lastFeesKey = null;
+                } else {
+                    setFeeNotice('');
                 }
                 // Currency MUST come from the API response — the fee
                 // values do too, and we don't get to guess what currency
@@ -371,12 +418,7 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     }
                     $span.text(' (' + inner + ')');
                 });
-            }).fail(function () {
-                // Allow a retry on the same term-set after a transient error,
-                // and clear any half-populated spans.
-                lastFeesKey = null;
-                $termsContainer.find('.two-term-checkboxes__fee').text('');
-            });
+            }).fail(showFeesUnavailable);
         }
 
         // Additional handlers for fee refresh — fire alongside the term-set
