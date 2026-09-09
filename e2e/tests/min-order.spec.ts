@@ -152,6 +152,13 @@ test.describe('minimum order value gate', () => {
         const pinned = ((freeTotal + flatTotal) / 2).toFixed(2);
         console.log(`totals: free=${freeTotal} flat=${flatTotal}; pinning minimum at ${pinned}`);
 
+        // Baseline before any admin write, so a later absence is attributable to
+        // the minimum rather than to the method never having been offered.
+        await selectShipping(page, 'flatrate');
+        await expect
+            .poll(() => availableMethods(page), { timeout: 25_000 })
+            .toContain('two_payment');
+
         // Admin runs in its own context so the buyer page keeps its session and
         // is never reloaded — the whole point is the in-page recalc.
         const adminContext = await browser.newContext();
