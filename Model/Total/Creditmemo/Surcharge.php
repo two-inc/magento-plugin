@@ -18,8 +18,9 @@ use Magento\Sales\Model\Order\Creditmemo\Total\AbstractTotal;
  * explicit value into the creditmemo override field (Phase 5), that value is
  * pre-set on the creditmemo before collectTotals runs and we honour it here.
  *
- * The override path covers Doug's "valued buyer refuses surcharge" case:
- * a creditmemo with zero items but the full surcharge in the override input.
+ * The override path is what allows the surcharge to be refunded in full on a
+ * creditmemo with no items at all: zero items, the whole surcharge typed into
+ * the override input.
  */
 class Surcharge extends AbstractTotal
 {
