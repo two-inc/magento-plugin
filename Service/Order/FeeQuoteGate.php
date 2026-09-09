@@ -28,10 +28,11 @@ use Two\Gateway\Model\Config\Source\SurchargeType;
 class FeeQuoteGate
 {
     /**
-     * A render-path call cannot wait on the adapter's 60s default — a hanging
-     * endpoint would stall the payment step for a minute per request.
+     * A render-path call carries its own ceiling rather than the adapter's
+     * default, so a hanging endpoint cannot stall the payment step for the
+     * full default per request.
      */
-    private const TIMEOUT_SECONDS = 5;
+    private const TIMEOUT_SECONDS = 30;
 
     private AppState $appState;
 

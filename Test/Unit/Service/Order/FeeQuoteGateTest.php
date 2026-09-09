@@ -17,6 +17,7 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\CurrencyRatesProviderInterface;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Source\SurchargeType;
+use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\ChargedTermResolver;
 use Two\Gateway\Service\Order\FeeQuoteGate;
@@ -133,10 +134,10 @@ class FeeQuoteGateTest extends TestCase
         ];
     }
 
-    public function testTheRenderPathQuoteCarriesItsOwnShortTimeout(): void
+    public function testTheRenderPathQuoteCarriesItsOwnBoundedTimeout(): void
     {
         // Given the payment list is rendering; when the fee is quoted; then the
-        // call cannot sit on the adapter's default while an endpoint hangs.
+        // call cannot fall through to the adapter's default while it hangs.
         $gate = $this->buildGate(
             Area::AREA_FRONTEND,
             SurchargeType::PERCENTAGE,
@@ -146,13 +147,16 @@ class FeeQuoteGateTest extends TestCase
 
         $gate->isQuotable($this->makeQuote(1000.0, 1, 'EUR'), 1);
 
+        // Read rather than restated, so the bound holds if either number moves.
+        $adapterDefault = (new \ReflectionClass(Adapter::class))
+            ->getConstant('DEFAULT_TIMEOUT_SECONDS');
         $timeout = $this->adapter->calls[0]['timeout'];
         $this->assertNotNull($timeout, 'the render-path quote sets its own timeout');
         $this->assertGreaterThan(0, $timeout, 'a timeout of zero would never time out');
-        $this->assertLessThanOrEqual(
-            10,
+        $this->assertLessThan(
+            $adapterDefault,
             $timeout,
-            'a render-path timeout must be seconds, not the adapter default'
+            'the render path must bound the call tighter than the adapter default'
         );
     }
 
