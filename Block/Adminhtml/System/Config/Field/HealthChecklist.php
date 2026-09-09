@@ -95,11 +95,9 @@ class HealthChecklist extends Field
     }
 
     /**
-     * When the merchant profile last refreshed. Two marks say the cron is not
-     * running: an absent-on-read mark it has had a run to clear and has not
-     * (a newer one is the ordinary first read after a cache flush), and a
-     * success stamp the record has outlived by STALE_AFTER. Neither withholds
-     * anything — the record is still served (ABN-519).
+     * When the merchant profile last refreshed. An absent-on-read mark the cron
+     * has had a run to clear, and a stamp older than STALE_AFTER, both say the
+     * cron is not running; neither withholds anything.
      *
      * @return array{label: string, ok: bool, value: string}
      */

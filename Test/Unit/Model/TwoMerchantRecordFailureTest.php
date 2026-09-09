@@ -93,12 +93,18 @@ class TwoMerchantRecordFailureTest extends TestCase
 
     public function testTheRecordFetchIsNotAReasonToLogAWithholding(): void
     {
+        $logged = [];
         $logRepository = $this->createMock(LogRepository::class);
-        $logRepository->expects($this->never())->method('addDebugLog');
+        $logRepository->method('addDebugLog')->willReturnCallback(
+            function ($message, $data = null) use (&$logged) {
+                $logged[] = $message;
+            }
+        );
 
         $model = $this->build(null);
         (new \ReflectionClass(Two::class))->getProperty('logRepository')->setValue($model, $logRepository);
 
         $this->assertTrue($model->isAvailable(null));
+        $this->assertSame([], preg_grep('/hidden from checkout/', $logged));
     }
 }

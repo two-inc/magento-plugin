@@ -863,17 +863,9 @@ class Two extends AbstractMethod
             );
             return false;
         }
-        // A configured api_key is not the same thing as a WORKING one. Unless
-        // the stored key currently verifies, the method must not be offered —
-        // for ANY reason it fails to verify (rejected key, service 5xx, the
-        // API unreachable). The verdict's five-minute success cache is what
-        // makes a revoked key stop being honoured promptly, which is the whole
-        // point of the gate, and it costs no HTTP round-trip per render.
-        //
-        // This check is the ONLY upstream failure that may withhold the method
-        // (ABN-519). A merchant-record fetch that 5xxes is unrelated to whether
-        // the key works, so it withholds nothing: the record's consumers each
-        // degrade to their own "not configured" behaviour instead.
+        // The only upstream failure that may withhold the method (ABN-519).
+        // Withholds for ANY reason the key fails to verify, so a revoked key
+        // stops being honoured within the verdict's own cache lifetime.
         //
         // Placed BEFORE the Amasty bypass below deliberately: that bypass
         // returns true unconditionally to defer the *minimum-order* gate to

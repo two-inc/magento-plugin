@@ -240,7 +240,13 @@ class RecordProviderTest extends TestCase
 
     private static function describe(string $identifier): string
     {
-        $names = ['_cooldown' => 'arm cooldown', '_fetched_at' => 'store stamp', '_absent_on_read' => 'mark absent'];
+        // '_stale_cooldown' also ends in '_cooldown', so the longer suffix is matched first.
+        $names = [
+            '_stale_cooldown' => 'arm stale cooldown',
+            '_cooldown' => 'arm cooldown',
+            '_fetched_at' => 'store stamp',
+            '_absent_on_read' => 'mark absent',
+        ];
         foreach ($names as $suffix => $name) {
             if (str_ends_with($identifier, $suffix)) {
                 return $name;
@@ -751,7 +757,26 @@ class RecordProviderTest extends TestCase
         $this->assertSame(['available_terms' => [30]], $this->providerWith($cache)->getRecord(1));
         $this->assertSame([], preg_grep('/_record_[0-9a-f]{64}$/', $writes), 'the record is not rewritten');
         $this->assertSame([], preg_grep('/_fetched_at$/', $writes), 'the success stamp does not move');
-        $this->assertSame([], $removes, 'nothing is ever evicted');
+        $this->assertSame([], $removes, 'a failed stand-in refresh evicts nothing');
+    }
+
+    public function testASuccessfulReadPathFetchClearsTheAbsentMark(): void
+    {
+        // Otherwise the mark never expires and the health row reports a miss
+        // that has since been answered.
+        $this->stubApi(['id' => 'abc-123'], ['id' => 'abc-123', 'available_terms' => [30]]);
+        $cache = $this->cacheWith(false, null, 10);
+        $removed = [];
+        $cache->method('remove')->willReturnCallback(
+            function (string $identifier) use (&$removed) {
+                $removed[] = $identifier;
+                return true;
+            }
+        );
+
+        $this->providerWith($cache)->getRecord(1);
+
+        $this->assertNotSame([], preg_grep('/_absent_on_read$/', $removed));
     }
 
     public function testAStaleRecordIsNotRefetchedWhileTheCooldownStands(): void
@@ -765,7 +790,7 @@ class RecordProviderTest extends TestCase
     /**
      * @dataProvider freshAges
      */
-    public function testAFreshEnoughRecordIsServedWithNoApiCall(int $stampAge, string $description): void
+    public function testAFreshEnoughRecordIsServedWithNoApiCall(?int $stampAge, string $description): void
     {
         $this->apiAdapter->expects($this->never())->method('execute');
         $cache = $this->cacheWith(true, $stampAge);
@@ -774,12 +799,13 @@ class RecordProviderTest extends TestCase
     }
 
     /**
-     * @return array<int, array{0: int, 1: string}>
+     * @return array<int, array{0: int|null, 1: string}>
      */
     public static function freshAges(): array
     {
         return [
             [10, 'a record fetched moments ago is served as it is'],
+            [null, 'a record with no success stamp is left to the cron, which already counts it due'],
             [RecordProvider::MAX_AGE + 1, 'a record the cron owes a refresh is still not stale'],
             [RecordProvider::STALE_AFTER - 1, 'a record just under the staleness bound is still not stale'],
         ];

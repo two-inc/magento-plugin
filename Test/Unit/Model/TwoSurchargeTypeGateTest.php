@@ -48,7 +48,6 @@ class TwoSurchargeTypeGateTest extends TestCase
 
         $this->logRepository = $this->createMock(LogRepository::class);
 
-
         $properties = [
             '_scopeConfig' => $scopeConfig,
             'apiKeyStatus' => $apiKeyStatus,

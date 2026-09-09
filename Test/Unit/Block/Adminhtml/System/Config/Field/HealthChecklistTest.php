@@ -71,8 +71,7 @@ class HealthChecklistTest extends TestCase
      */
     public static function refreshStates(): array
     {
-        // Ages, not fixed instants: the row now judges the stamp against the
-        // staleness bound, so a stamp from 2023 is stale rather than healthy.
+        // Ages, not instants — the row judges the stamp against STALE_AFTER.
         $recent = time() - 60;
         $stale = time() - RecordProvider::STALE_AFTER - 1;
 

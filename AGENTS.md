@@ -189,8 +189,9 @@ submitted key.
 One key configured against sandbox on one store view and production on another must
 not share a slot, or a store view serves the other environment's merchant.
 
-**The record entry NEVER expires and is never evicted.** The scheduled hourly
-refresh is the only thing that replaces it, so a key that stops verifying costs the
+**The record entry has NO expiry.** The scheduled hourly refresh is the only
+thing this module lets replace it (a cache backend under a memory-pressure
+eviction policy is its own matter), so a key that stops verifying costs the
 merchant nothing beyond the buyer-facing payment method: every admin control the
 record drives keeps rendering indefinitely (ABN-519). The motivating case is a
 merchant running two shops who rotates their key and updates only one — the
@@ -241,11 +242,20 @@ recognised; the buyer country; then an Amasty store view returns true early,
 deferring only the minimum-order gate to the client; then the platform and
 merchant minimum-order gate.
 
-**The api-key verdict is the only UPSTREAM failure on that list** (ABN-519). The
-two that remain are a store's own configuration — an FX rate the store has not
-entered, and a stored surcharge method nothing recognises — not a service that
-could not be reached. Do not add a gate that withholds because a call to Two
-failed; that is the defect this rule exists to stop coming back.
+**The api-key verdict is the gate the ruling puts that power in** (ABN-519). Do
+not add another gate that withholds because a call to Two failed; that is the
+defect the rule exists to stop coming back.
+
+Two on the list are NOT the store's own configuration and are worth knowing
+about. The surcharge FX gate resolves its rate table from Two, and the
+minimum-order gate fails closed when it cannot convert at that same table. Both
+are nonetheless safe against an outage, because the rate table is cached with no
+expiry and keeps its last-known-good on a failed fetch, exactly as the merchant
+record does — so an unreachable API loses neither. What remains reachable is the
+narrow case of a table that was never fetched, or a cache flushed while Two is
+unreachable. The FX gate is not simply removable: it exists because an
+unresolvable rate used to throw inside the totals collector and error the whole
+checkout, which is worse than withholding one method.
 
 **There is no captured-company condition anywhere on that path.** The
 company-number guard runs at placement, not at render — do not reach for
