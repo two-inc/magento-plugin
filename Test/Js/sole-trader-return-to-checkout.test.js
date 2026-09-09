@@ -31,11 +31,10 @@ function renderCheckout() {
 
 /**
  * Re-render a capture the way a host that morphs its server markup over the live
- * DOM does: the wrap the panel built and the popover inside it go, the field node
- * stays. `keepWrap` is the same host before the wrap is reached.
+ * DOM does: the popover goes, the field node stays.
  *
  * @param {Element} wrap the capture's own field wrap
- * @param {boolean} keepWrap whether the wrap itself survives
+ * @param {boolean} keepWrap whether the morph stopped short of the wrap or took it too
  * @returns {Element} the newly rendered Sole trader chip
  */
 function remorph(wrap, keepWrap) {
@@ -190,6 +189,7 @@ describe('a second capture on the same page (TWO-25658)', () => {
      * A second capture's own popover and chip — this checkout mounts two, each
      * with its own panel, chips and sole-trader flow.
      *
+     * @param {boolean} [first] mount it ahead of the launching capture in the document
      * @returns {object} `{ chip, launches }`, `launches` counting activations
      */
     function renderSibling(first) {
