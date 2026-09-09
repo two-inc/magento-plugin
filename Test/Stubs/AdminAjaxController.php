@@ -91,8 +91,8 @@ namespace Magento\Config\Model\Config\Backend {
     if (!class_exists(Encrypted::class, false)) {
         /**
          * Mirrors the real class's beforeSave(): the submitted value is
-         * encrypted unless it is the obscured all-asterisks placeholder or
-         * empty, in which case the stored value is left alone.
+         * encrypted unless it is the obscured all-asterisks placeholder, which
+         * turns off this field's save so the stored value is left alone.
          */
         class Encrypted extends \Magento\Framework\App\Config\Value
         {
@@ -116,7 +116,8 @@ namespace Magento\Config\Model\Config\Backend {
             public function beforeSave()
             {
                 $value = (string)$this->getValue();
-                if (!preg_match('/^\*+$/', $value) && $value !== '') {
+                $this->_dataSaveAllowed = !preg_match('/^\*+$/', $value);
+                if ($this->_dataSaveAllowed && $value !== '') {
                     $this->setValue($this->_encryptor->encrypt(trim($value)));
                 }
 

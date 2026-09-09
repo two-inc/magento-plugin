@@ -169,6 +169,10 @@ require_once __DIR__ . '/Stubs/AdminNotification.php';
 // $_scopeConfig, so Model\Two's availability gates are testable.
 require_once __DIR__ . '/Stubs/PaymentMethod.php';
 
+// Admin/storefront message channel with real adder signatures, so a call to
+// it is mockable; per-symbol guard lives inside the stub file.
+require_once __DIR__ . '/Stubs/MessageManager.php';
+
 // Catch-all autoloader for remaining Magento classes/interfaces.
 // Creates empty stubs so that type hints, extends, and implements resolve.
 spl_autoload_register(function ($class) {

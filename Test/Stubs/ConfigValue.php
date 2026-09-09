@@ -17,6 +17,9 @@ class Value extends \Magento\Framework\DataObject
     /** @var ScopeConfigInterface */
     protected $_config;
 
+    /** @var bool AbstractModel's per-object save gate; off in beforeSave() means the field is not written. */
+    protected $_dataSaveAllowed = true;
+
     public function __construct(
         $context,
         $registry,
@@ -59,6 +62,11 @@ class Value extends \Magento\Framework\DataObject
     public function beforeSave()
     {
         return $this;
+    }
+
+    public function isSaveAllowed()
+    {
+        return (bool)$this->_dataSaveAllowed;
     }
 
     /**

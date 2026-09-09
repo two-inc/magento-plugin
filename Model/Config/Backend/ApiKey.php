@@ -12,7 +12,7 @@ use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Data\Collection\AbstractDb;
 use Magento\Framework\Encryption\EncryptorInterface;
-use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Message\ManagerInterface as MessageManager;
 use Magento\Framework\Model\Context;
 use Magento\Framework\Model\ResourceModel\AbstractResource;
 use Magento\Framework\Registry;
@@ -39,6 +39,11 @@ class ApiKey extends Encrypted
      */
     private $statusMessage;
 
+    /**
+     * @var MessageManager
+     */
+    private $messageManager;
+
     public function __construct(
         Context $context,
         Registry $registry,
@@ -47,6 +52,7 @@ class ApiKey extends Encrypted
         EncryptorInterface $encryptor,
         ApiKeyStatus $apiKeyStatus,
         ApiKeyStatusMessage $statusMessage,
+        MessageManager $messageManager,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -63,12 +69,11 @@ class ApiKey extends Encrypted
         );
         $this->apiKeyStatus = $apiKeyStatus;
         $this->statusMessage = $statusMessage;
+        $this->messageManager = $messageManager;
     }
 
     /**
      * @inheritDoc
-     *
-     * @throws LocalizedException when the submitted key is rejected upstream.
      */
     public function beforeSave()
     {
@@ -87,12 +92,18 @@ class ApiKey extends Encrypted
             $this->submittedMode()
         );
 
-        // ONLY a definitive upstream rejection aborts the save. An unreachable
-        // or erroring service cannot be told apart from a bad key, and blocking
-        // on it would stop a merchant configuring their first key during an
-        // outage — a worse failure than accepting a key we could not confirm.
+        // ONLY a definitive upstream rejection stops the key being written. An
+        // unreachable or erroring service cannot be told apart from a bad key,
+        // and blocking on it would stop a merchant configuring their first key
+        // during an outage — a worse failure than accepting a key we could not
+        // confirm.
+        //
+        // A field-level skip, not an exception: an exception rolls back the whole section (ABN-495).
         if ($result['status'] === ApiKeyStatus::INVALID_KEY) {
-            throw new LocalizedException($this->statusMessage->describe($result)['message']);
+            $this->_dataSaveAllowed = false;
+            $this->messageManager->addErrorMessage($this->statusMessage->describe($result)['message']);
+
+            return;
         }
 
         parent::beforeSave();
