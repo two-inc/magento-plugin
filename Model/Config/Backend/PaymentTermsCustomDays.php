@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Model\Config\Backend;
 
+use Magento\Config\Model\Config\Loader;
 use Magento\Config\Model\Config\Reader\Source\Deployed\SettingChecker;
 use Magento\Config\Model\Config\Structure;
 use Magento\Config\Model\Config\Structure\Element\Field as StructureField;
@@ -44,6 +45,9 @@ class PaymentTermsCustomDays extends Value
     /** @var Structure */
     private $structure;
 
+    /** @var Loader */
+    private $configLoader;
+
     /** @var int|null term the fold-in cleared, held for the post-commit notice */
     private $foldedIn = null;
 
@@ -56,6 +60,7 @@ class PaymentTermsCustomDays extends Value
         MessageManager $messageManager,
         SettingChecker $settingChecker,
         Structure $structure,
+        Loader $configLoader,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = []
@@ -65,6 +70,7 @@ class PaymentTermsCustomDays extends Value
         $this->messageManager = $messageManager;
         $this->settingChecker = $settingChecker;
         $this->structure = $structure;
+        $this->configLoader = $configLoader;
     }
 
     /**
@@ -75,7 +81,7 @@ class PaymentTermsCustomDays extends Value
     public function beforeSave()
     {
         $posted = trim((string)$this->getValue());
-        $stored = trim((string)$this->getOldValue());
+        $stored = trim($this->storedValue());
 
         if ($posted !== '' && $posted !== $stored) {
             throw new LocalizedException(__('Custom payment terms (days) can only be removed, not changed.'));
@@ -118,6 +124,24 @@ class PaymentTermsCustomDays extends Value
         }
 
         return parent::afterCommitCallback();
+    }
+
+    /**
+     * The value the form rendered — the config table row, not getOldValue()'s cached resolution
+     * of the same path: a disagreement made the keep option unpostable (ABN-531).
+     */
+    private function storedValue(): string
+    {
+        $path = (string)$this->getPath();
+        $separator = strrpos($path, '/');
+        $rows = $separator === false ? [] : $this->configLoader->getConfigByPath(
+            substr($path, 0, $separator),
+            (string)$this->getScope() ?: 'default',
+            (int)$this->getScopeId(),
+            false
+        );
+
+        return (string)(array_key_exists($path, $rows) ? $rows[$path] : $this->getOldValue());
     }
 
     /**
