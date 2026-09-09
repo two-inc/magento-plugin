@@ -101,6 +101,9 @@ class ApiKeyStatus
      */
     private const FAILURE_CACHE_LIFETIME = 60;
 
+    /** The verdict gates every cart and checkout render, so a verification may not outlast a page (ABN-535). */
+    private const FETCH_TIMEOUT_SECONDS = 10;
+
     /**
      * @var Adapter
      */
@@ -297,7 +300,17 @@ class ApiKeyStatus
      */
     private function verify(string $apiKey, string $cacheKey, ?int $storeId): array
     {
-        $status = self::categorize($this->apiAdapter->execute(self::ENDPOINT, [], 'GET', $storeId));
+        $status = self::categorize(
+            $this->apiAdapter->execute(
+                self::ENDPOINT,
+                [],
+                'GET',
+                $storeId,
+                null,
+                null,
+                self::FETCH_TIMEOUT_SECONDS
+            )
+        );
 
         if ($status['status'] !== self::OK) {
             // Log the bucket and status code only — never the response

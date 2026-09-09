@@ -57,6 +57,9 @@ class RateTableProvider
     /** Seconds between fetch attempts after a failure. */
     private const FAILURE_COOLDOWN = 300;
 
+    /** The read path is reached from a storefront render, so a fetch may not outlast a page (ABN-535). */
+    private const FETCH_TIMEOUT_SECONDS = 10;
+
     /**
      * @var Adapter
      */
@@ -272,7 +275,15 @@ class RateTableProvider
     {
         // The slot names the environment, so the fetch must hit that one
         // rather than whichever the store scope resolves.
-        $response = $this->apiAdapter->execute(self::ENDPOINT, [], 'GET', $storeId, $apiKey, $mode);
+        $response = $this->apiAdapter->execute(
+            self::ENDPOINT,
+            [],
+            'GET',
+            $storeId,
+            $apiKey,
+            $mode,
+            self::FETCH_TIMEOUT_SECONDS
+        );
 
         // Adapter::execute always returns an array; a failure is signalled
         // by an error_code / http_status marker (never present on a real
