@@ -386,6 +386,14 @@ it the focus opener is a keyboard trap: the opener puts the
 caret in the query field, Shift+Tab returns to the field, and the opener pushes
 focus forward again, so the buyer cannot get back past the control (WCAG 2.1.2).
 
+**Only one popover is open, page-wide.** Opening one closes whichever other one
+was open, enforced at open time rather than inferred from focus leaving the
+first: a real pointer press on a second capture need not deliver a focus event
+to the control it hits (ABN-510). The popover that closes gives its own field's
+tab stop back before the newly opened one takes its. A pointer press outside the
+open popover closes it too, with the company field counted as inside the
+control.
+
 ## What focus landing on the checkout does to an open signup popup
 
 Every `focusin` while the hosted sole-trader signup window is up is classified
@@ -414,11 +422,12 @@ node goes stale when a morph deletes the wrap and keeps the field, which makes a
 capture's own rebuilt chip read as a sibling's and inverts the rule on it
 (TWO-25658).
 
-**The POINTER route is not covered.** A chip's `mousedown` cancels, so a real
-click fires no `focusin` and reaches none of this: a buyer clicking a second
-capture's chip with the mouse can hold two popups open at once. Closing that means
-changing the chip's click path, not the focus rule — do not read the focus rules as
-covering it.
+**The POINTER route reaches none of this.** A chip's `mousedown` cancels, so a
+real click fires no `focusin`: a buyer clicking a second capture's chip with the
+mouse can hold two signup POPUPS open at once. Closing that means changing the
+chip's click path, not the focus rule. The popover is a separate matter — its
+single-open invariant is enforced at open time and does not depend on these
+rules.
 
 ## A declined order intent refuses order placement
 
