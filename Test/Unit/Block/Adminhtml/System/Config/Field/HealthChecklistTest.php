@@ -89,13 +89,23 @@ class HealthChecklistTest extends TestCase
             ],
             'absent on read, unclaimed for longer than a cron run' => [
                 [
-                    'fetched_at' => $recent,
+                    'fetched_at' => null,
                     'absent_on_read_at' => time() - RecordProvider::CRON_INTERVAL - 1,
                     'stood_in_at' => null,
                 ],
                 false,
                 'hourly refresh appears not to be running',
-                'a read miss the cron never cleared outranks a stamp',
+                'a read miss the cron never cleared is reported',
+            ],
+            'absent on read, since answered by a later fetch' => [
+                [
+                    'fetched_at' => $recent,
+                    'absent_on_read_at' => time() - RecordProvider::CRON_INTERVAL - 1,
+                    'stood_in_at' => null,
+                ],
+                true,
+                'Refreshed @' . $recent,
+                'a stamp newer than the mark means the miss has been answered',
             ],
             'absent on read, within this cron interval' => [
                 ['fetched_at' => $recent, 'absent_on_read_at' => time(), 'stood_in_at' => null],
@@ -103,11 +113,21 @@ class HealthChecklistTest extends TestCase
                 'Refreshed @' . $recent,
                 'a read miss the cron has not had a run to clear is the ordinary first read',
             ],
-            'a read stood in for the cron' => [
-                ['fetched_at' => $recent, 'absent_on_read_at' => null, 'stood_in_at' => time() - 10],
+            'a read stood in for the cron, and the cron never cleared it' => [
+                [
+                    'fetched_at' => $recent,
+                    'absent_on_read_at' => null,
+                    'stood_in_at' => time() - RecordProvider::CRON_INTERVAL - 1,
+                ],
                 false,
                 'hourly refresh appears not to be running',
-                'a stand-in the cron never cleared says the schedule is dead, however fresh the record',
+                'a stand-in outliving a scheduled tick says the schedule is dead, however fresh the record',
+            ],
+            'a read stood in within this cron interval' => [
+                ['fetched_at' => $recent, 'absent_on_read_at' => null, 'stood_in_at' => time() - 10],
+                true,
+                'Refreshed @' . $recent,
+                'a stand-in the cron has not had a tick to clear settles nothing',
             ],
         ];
     }
