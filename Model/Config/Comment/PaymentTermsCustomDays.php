@@ -14,6 +14,7 @@ use Magento\Store\Model\ScopeInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Model\Config\FieldGate\EndOfMonth;
+use Two\Gateway\Model\Config\StoredTerm;
 
 /**
  * Names End-of-Month semantics in the custom-days help text only where that type is stored (ABN-495).
@@ -49,19 +50,21 @@ class PaymentTermsCustomDays implements CommentInterface
      */
     public function getCommentText($elementValue)
     {
-        // %1 is the stored day count, so either wording can name the term it describes.
-        $days = trim((string)$elementValue);
+        $days = StoredTerm::days($elementValue) ?? trim((string)$elementValue);
 
         if ($this->endOfMonth->isConfigured($this->storedType())) {
             return (string)__(
-                'Optional. Enter a custom term as a number of days after the end of the month,'
-                . ' offered alongside the terms selected above.',
+                'Legacy setting. This offers a custom term of %1 days after the end of the month.'
+                . ' It is no longer supported and cannot be edited. Choose Remove to withdraw it,'
+                . ' or use the payment terms above to change what you offer.',
                 $days
             );
         }
 
         return (string)__(
-            'Optional. Enter a custom number of days to offer alongside the selected terms above.',
+            'Legacy setting. This offers a custom term of %1 days from fulfilment.'
+            . ' It is no longer supported and cannot be edited. Choose Remove to withdraw it,'
+            . ' or use the payment terms above to change what you offer.',
             $days
         );
     }

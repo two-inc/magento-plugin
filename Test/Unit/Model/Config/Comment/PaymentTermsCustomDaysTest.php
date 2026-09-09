@@ -24,7 +24,7 @@ class PaymentTermsCustomDaysTest extends TestCase
     private const EOM_COPY = 'after the end of the month';
 
     /** @param array<string, mixed> $storedRows keyed `<path>@<scope>:<id>`, no inheritance */
-    private function comment(array $storedRows, array $params = []): string
+    private function comment(array $storedRows, array $params = [], string $value = ''): string
     {
         $scopeConfig = $this->createMock(ScopeConfigInterface::class);
         $scopeConfig->method('getValue')->willReturnCallback(
@@ -55,7 +55,7 @@ class PaymentTermsCustomDaysTest extends TestCase
             new EndOfMonth()
         );
 
-        return $model->getCommentText('');
+        return $model->getCommentText($value);
     }
 
     /**
@@ -72,7 +72,36 @@ class PaymentTermsCustomDaysTest extends TestCase
         $text = $this->comment($storedRows, $params);
 
         $this->assertSame($expectEom, str_contains($text, self::EOM_COPY), $case);
-        $this->assertStringContainsString('Optional.', $text, $case);
+        $this->assertStringContainsString('Legacy setting.', $text, $case);
+    }
+
+    /**
+     * @param array<string, mixed> $storedRows
+     * @dataProvider interpolatedDaysProvider
+     */
+    public function testTheHintNamesTheStoredTerm(
+        array $storedRows,
+        string $value,
+        string $expected,
+        string $case
+    ): void {
+        $text = $this->comment($storedRows, [], $value);
+
+        $this->assertStringContainsString($expected, $text, $case);
+        $this->assertStringNotContainsString('%1', $text, "$case — the placeholder is filled");
+    }
+
+    public static function interpolatedDaysProvider(): array
+    {
+        $eom = ['payment/two_payment/payment_terms_type@default:' => 'end_of_month'];
+
+        return [
+            [$eom, '37', 'custom term of 37 days after the end of the month', 'End of Month names the term'],
+            [[], '37', 'custom term of 37 days from fulfilment', 'Standard names the term'],
+            [$eom, '037', 'custom term of 37 days', 'a leading-zero value names the normalised term'],
+            [[], '  37  ', 'custom term of 37 days', 'padding is trimmed out of the wording'],
+            [[], 'abc', 'custom term of abc days', 'an unusable value is named as stored, so it can be recognised'],
+        ];
     }
 
     public static function storedTypeProvider(): array
