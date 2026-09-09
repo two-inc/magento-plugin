@@ -404,3 +404,4 @@
 "Fees could not be loaded because the pricing service could not be reached. The figures beside each term are missing, not zero.","De kosten konden niet worden geladen omdat de prijsservice niet bereikbaar was. De bedragen naast elke betalingstermijn ontbreken, ze zijn niet nul."
 "Fees could not be refreshed, so the figures last retrieved are shown.","De kosten konden niet worden vernieuwd, dus de laatst opgehaalde bedragen worden weergegeven."
 "Fees could not be refreshed, so the figures retrieved on %1 are shown.","De kosten konden niet worden vernieuwd, dus de op %1 opgehaalde bedragen worden weergegeven."
+"Fees cannot be shown until an API key is saved for this scope.","De kosten kunnen niet worden weergegeven totdat er een API-sleutel voor dit bereik is opgeslagen."

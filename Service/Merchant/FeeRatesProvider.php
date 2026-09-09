@@ -97,7 +97,9 @@ class FeeRatesProvider
     {
         $cacheKey = $this->cacheKey($terms, $buyerCountry, $storeId);
         if ($cacheKey === null) {
-            return ['success' => false, 'error' => 'upstream'];
+            // Its own category: nothing here will change until a key is saved,
+            // so the screen says that rather than blaming the service.
+            return ['success' => false, 'error' => 'not_configured'];
         }
         $cooling = $this->cache->load($cacheKey . self::FAILURE_COOLDOWN_SUFFIX) !== false;
 
@@ -237,15 +239,17 @@ class FeeRatesProvider
             ];
         }
 
-        if ($fees === []) {
-            // Nothing priced is not an answer: caching it would overwrite the
-            // last-known-good set with a set the screen cannot render.
+        // Nothing priced, and a fee set with no currency, are both unrenderable:
+        // caching either would overwrite the last-known-good set with one the
+        // screen would draw as "this term carries no fee".
+        $currency = (string)($response['currency'] ?? '');
+        if ($fees === [] || $currency === '') {
             return ['success' => false, 'error' => 'upstream'];
         }
 
         return [
             'success' => true,
-            'currency' => (string)($response['currency'] ?? ''),
+            'currency' => $currency,
             'fees' => $fees,
         ];
     }

@@ -67,7 +67,12 @@ describe('inline merchant fees, when the pricing service cannot answer', () => {
     it.each([
         ['an upstream failure with nothing cached says so', { success: false, error: 'upstream' }, 'could not be reached'],
         ['a response with no fee set at all says so', { success: true, currency: 'EUR' }, 'could not be reached'],
-        ['a last-known-good set says it is not current', STALE, 'could not be refreshed']
+        ['a last-known-good set says it is not current', STALE, 'could not be refreshed'],
+        [
+            'an unsaved key is named as such, not as an outage',
+            { success: false, error: 'not_configured' },
+            'until an API key is saved'
+        ]
     ])('%s', (description, response, expectedFragment) => {
         const loaded = load();
         expect(loaded.requests.length).toBe(1);
@@ -103,6 +108,37 @@ describe('inline merchant fees, when the pricing service cannot answer', () => {
         jq('.two-term-checkboxes__input').trigger('change');
 
         expect(loaded.requests.length).toBe(2);
+    });
+
+    it('keeps asking no further once the answer is that no key is saved', () => {
+        const loaded = load();
+        loaded.requests[0].settleDone({ success: false, error: 'not_configured' });
+
+        jq('.two-term-checkboxes__input').trigger('change');
+
+        expect(loaded.requests.length).toBe(1);
+    });
+
+    it('does not re-ask for the same terms after a current answer', () => {
+        // The dedup key survives a fresh answer, so the screen is not a call per change.
+        const loaded = load();
+        loaded.requests[0].settleDone(FRESH);
+
+        jq('.two-term-checkboxes__input').trigger('change');
+
+        expect(loaded.requests.length).toBe(1);
+    });
+
+    it('ignores an answer that a later request has already superseded', () => {
+        const loaded = load();
+        loaded.requests[0].settleDone(FRESH);
+        jq('#two_payment_payment_terms_payment_terms_duration_days').val('45').trigger('change');
+        expect(loaded.requests.length).toBe(2);
+
+        // The first request answers late, with a stale set.
+        loaded.requests[0].settleDone(STALE);
+
+        expect(jq(NOTICE).text()).toBe('');
     });
 
     it('names when the figures it is showing were retrieved', () => {

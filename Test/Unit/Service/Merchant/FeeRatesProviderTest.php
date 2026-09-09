@@ -21,7 +21,10 @@ class FeeRatesProviderTest extends TestCase
     /** @var Adapter|\PHPUnit\Framework\MockObject\MockObject */
     private $apiAdapter;
 
-    private const RATES = ['rates' => [['net_terms' => 30, 'percentage_fee' => '1.5', 'fixed_fee' => '0.5']]];
+    private const RATES = [
+        'currency' => 'EUR',
+        'rates' => [['net_terms' => 30, 'percentage_fee' => '1.5', 'fixed_fee' => '0.5']],
+    ];
 
     protected function setUp(): void
     {
@@ -131,6 +134,10 @@ class FeeRatesProviderTest extends TestCase
             [[], 'an empty body is not a fee set'],
             [['rates' => []], 'a 200 pricing nothing is not a fee set'],
             [['rates' => [['percentage_fee' => '1.5']]], 'a rate naming no term prices nothing'],
+            [
+                ['rates' => [['net_terms' => 30, 'percentage_fee' => '0', 'fixed_fee' => '0.5']]],
+                'a fee set with no currency cannot be drawn, so it is not an answer',
+            ],
         ];
     }
 
@@ -205,15 +212,16 @@ class FeeRatesProviderTest extends TestCase
         $this->assertSame($keys[0], $keys[1]);
     }
 
-    public function testNoStoredApiKeyIsNeitherAskedNorCached(): void
+    public function testNoStoredApiKeyIsNeitherAskedNorCachedAndSaysSo(): void
     {
-        // Nothing to ask with, and no identity to cache an answer against.
+        // Nothing to ask with, no identity to cache against, and a category of
+        // its own so the screen does not report an outage.
         $this->apiAdapter->expects($this->never())->method('execute');
         $cache = $this->emptyCache();
         $cache->expects($this->never())->method('save');
 
         $this->assertSame(
-            ['success' => false, 'error' => 'upstream'],
+            ['success' => false, 'error' => 'not_configured'],
             $this->build($cache, '')->getRates([30], 'NL', 1)
         );
     }
@@ -262,10 +270,31 @@ class FeeRatesProviderTest extends TestCase
         $this->assertCount(1, $cooldowns);
         $this->assertSame(60, $saves[reset($cooldowns)], 'a failed fetch is not repeated for a minute');
 
+        // Armed once, then gone: the next call must reach the adapter again.
+        $armed = true;
+        $cooling = $this->createMock(CacheInterface::class);
+        $cooling->method('load')->willReturnCallback(
+            function (string $id) use (&$armed) {
+                if (!str_ends_with($id, '_cooldown')) {
+                    return false;
+                }
+                $answer = $armed ? '1' : false;
+                $armed = false;
+                return $answer;
+            }
+        );
+        $cooling->method('remove')->willReturnCallback(
+            function (string $identifier) use (&$removed) {
+                $removed[] = $identifier;
+                return true;
+            }
+        );
         $this->apiAdapter = $this->createMock(Adapter::class);
-        $this->apiAdapter->method('execute')->willReturn(self::RATES);
-        $this->build($cache)->getRates([30], 'NL', 1);
+        $this->apiAdapter->expects($this->exactly(1))->method('execute')->willReturn(self::RATES);
+        $provider = $this->build($cooling);
 
+        $this->assertFalse($provider->getRates([30], 'NL', 1)['success'], 'the armed call never asks');
+        $this->assertTrue($provider->getRates([30], 'NL', 1)['success'], 'the next one does');
         $this->assertCount(1, preg_grep('/_cooldown$/', $removed), 'a success lifts it');
     }
 

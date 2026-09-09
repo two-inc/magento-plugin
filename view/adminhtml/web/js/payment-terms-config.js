@@ -292,10 +292,18 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             $notice.text(text || '');
         }
 
-        function showFeesUnavailable() {
+        function showFeesUnavailable(reason) {
             $termsContainer.find('.two-term-checkboxes__fee').text('');
-            setFeeNotice($t('Fees could not be loaded because the pricing service could not be reached. The figures beside each term are missing, not zero.'));
+            setFeeNotice(
+                reason === 'not_configured'
+                    ? $t('Fees cannot be shown until an API key is saved for this scope.')
+                    : $t('Fees could not be loaded because the pricing service could not be reached. The figures beside each term are missing, not zero.')
+            );
         }
+
+        // Only the newest request may paint: a slow answer landing after a
+        // later one would otherwise re-state figures that are already replaced.
+        var feesRequestId = 0;
 
         function loadFees() {
             var url = $termsContainer.data('fees-url');
@@ -324,6 +332,8 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 return;
             }
             lastFeesKey = key;
+            feesRequestId += 1;
+            var requestId = feesRequestId;
             var $formKey = $('input[name="form_key"]').first();
             $.ajax({
                 url: url,
@@ -336,14 +346,19 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     scopeId: parseInt($termsContainer.data('scope-id'), 10) || 0
                 }
             }).done(function (response) {
+                if (requestId !== feesRequestId) {
+                    return;
+                }
+                var terminal = response && response.error === 'not_configured';
                 // Anything but a fresh, renderable set may be asked again for
-                // the same terms: the server's own cooldown, not this key, is
-                // what stops an outage becoming a call per render.
-                if (!response || !response.success || !response.fees || response.stale) {
+                // the same terms — the server's own cooldown, not this key, is
+                // what stops an outage becoming a call per render. An unsaved
+                // key is the exception: nothing changes until it is saved.
+                if (!terminal && (!response || !response.success || !response.fees || response.stale)) {
                     lastFeesKey = null;
                 }
                 if (!response || !response.success || !response.fees) {
-                    showFeesUnavailable();
+                    showFeesUnavailable(response && response.error);
                     return;
                 }
                 if (response.stale) {
@@ -410,6 +425,9 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     $span.text(' (' + inner + ')');
                 });
             }).fail(function () {
+                if (requestId !== feesRequestId) {
+                    return;
+                }
                 lastFeesKey = null;
                 showFeesUnavailable();
             });

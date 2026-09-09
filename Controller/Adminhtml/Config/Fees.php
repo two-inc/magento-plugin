@@ -204,13 +204,10 @@ class Fees extends Action
         if (empty($raw['success']) || empty($raw['fees'])) {
             return $raw;
         }
+        // A set with no source currency never reaches here — it is not a
+        // renderable answer, so the provider does not return one.
         $sourceCurrency = (string)($raw['currency'] ?? '');
-        if ($sourceCurrency === '') {
-            // Left empty on purpose: the grid drops the fixed component rather
-            // than labelling an amount in a currency the API never stated.
-            return $raw;
-        }
-        if ($sourceCurrency === $targetCurrency) {
+        if ($sourceCurrency === '' || $sourceCurrency === $targetCurrency) {
             return $raw;
         }
 
