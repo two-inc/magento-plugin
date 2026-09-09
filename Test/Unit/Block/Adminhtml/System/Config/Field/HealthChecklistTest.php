@@ -33,7 +33,12 @@ class HealthChecklistTest extends TestCase
         $this->apiKeyStatus = $this->createMock(ApiKeyStatus::class);
         $this->recordProvider = $this->createMock(RecordProvider::class);
         $this->recordProvider->method('status')
-            ->willReturn(['fetched_at' => time() - 60, 'absent_on_read_at' => null, 'stood_in_at' => null]);
+            ->willReturn([
+                'fetched_at' => time() - 60,
+                'absent_on_read_at' => null,
+                'stood_in_at' => null,
+                'scheduled_at' => null,
+            ]);
 
         $this->block = new HealthChecklistTestable();
         $this->block->setDependencies($this->configRepository, $this->apiKeyStatus, $this->recordProvider);
@@ -78,13 +83,13 @@ class HealthChecklistTest extends TestCase
 
         return [
             'refreshed' => [
-                ['fetched_at' => $recent, 'absent_on_read_at' => null, 'stood_in_at' => null],
+                ['fetched_at' => $recent, 'absent_on_read_at' => null, 'stood_in_at' => null, 'scheduled_at' => null],
                 true,
                 'Refreshed @' . $recent,
                 'a refreshed profile shows when',
             ],
             'never refreshed' => [
-                ['fetched_at' => null, 'absent_on_read_at' => null, 'stood_in_at' => null],
+                ['fetched_at' => null, 'absent_on_read_at' => null, 'stood_in_at' => null, 'scheduled_at' => null],
                 false,
                 'Never refreshed',
                 'no stamp yet is not ok',
@@ -94,6 +99,7 @@ class HealthChecklistTest extends TestCase
                     'fetched_at' => null,
                     'absent_on_read_at' => time() - 2 * $tick - 1,
                     'stood_in_at' => null,
+                    'scheduled_at' => null,
                 ],
                 false,
                 'hourly refresh appears not to be running',
@@ -104,13 +110,14 @@ class HealthChecklistTest extends TestCase
                     'fetched_at' => $recent,
                     'absent_on_read_at' => time() - 2 * $tick - 1,
                     'stood_in_at' => null,
+                    'scheduled_at' => null,
                 ],
                 true,
                 'Refreshed @' . $recent,
                 'a stamp newer than the mark means the miss has been answered',
             ],
             'absent on read, within this cron interval' => [
-                ['fetched_at' => $recent, 'absent_on_read_at' => time(), 'stood_in_at' => null],
+                ['fetched_at' => $recent, 'absent_on_read_at' => time(), 'stood_in_at' => null, 'scheduled_at' => null],
                 true,
                 'Refreshed @' . $recent,
                 'a read miss the cron has not had a run to clear is the ordinary first read',
@@ -120,28 +127,57 @@ class HealthChecklistTest extends TestCase
                     'fetched_at' => $recent,
                     'absent_on_read_at' => null,
                     'stood_in_at' => time() - 2 * $tick - 1,
+                    'scheduled_at' => null,
                 ],
                 false,
                 'hourly refresh appears not to be running',
                 'a stand-in outliving a scheduled tick says the schedule is dead, however fresh the record',
             ],
             'a read stood in within this cron interval' => [
-                ['fetched_at' => $recent, 'absent_on_read_at' => null, 'stood_in_at' => time() - 10],
+                [
+                    'fetched_at' => $recent,
+                    'absent_on_read_at' => null,
+                    'stood_in_at' => time() - 10,
+                    'scheduled_at' => null,
+                ],
                 true,
                 'Refreshed @' . $recent,
                 'a stand-in the cron has not had a tick to clear settles nothing',
             ],
             'a stamp the schedule should have replaced, with no mark at all' => [
-                ['fetched_at' => $stopped, 'absent_on_read_at' => null, 'stood_in_at' => null],
+                ['fetched_at' => $stopped, 'absent_on_read_at' => null, 'stood_in_at' => null, 'scheduled_at' => null],
                 false,
                 'hourly refresh appears not to be running',
                 'a store with no traffic never stands in, so the stamp has to answer it',
+            ],
+            'the cron runs but its fetches keep failing' => [
+                [
+                    'fetched_at' => $stopped,
+                    'absent_on_read_at' => null,
+                    'stood_in_at' => null,
+                    'scheduled_at' => time() - 60,
+                ],
+                true,
+                'Refreshed',
+                'a cron that runs and cannot reach the API is not a cron that is not running',
+            ],
+            'the cron itself has stopped running' => [
+                [
+                    'fetched_at' => time() - 60,
+                    'absent_on_read_at' => null,
+                    'stood_in_at' => null,
+                    'scheduled_at' => time() - 2 * $tick - 1,
+                ],
+                false,
+                'hourly refresh appears not to be running',
+                'the run stamp going stale is the direct signal',
             ],
             'a stamp the schedule is due to replace' => [
                 [
                     'fetched_at' => time() - RecordProvider::MAX_AGE - 1,
                     'absent_on_read_at' => null,
                     'stood_in_at' => null,
+                    'scheduled_at' => null,
                 ],
                 true,
                 'Refreshed',

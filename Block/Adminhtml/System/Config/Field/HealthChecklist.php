@@ -124,15 +124,21 @@ class HealthChecklist extends Field
                 ),
             ];
         }
-        // Two ways the schedule shows as dead against a record that is present:
-        // a stand-in mark it never cleared, and a stamp older than one refresh
-        // plus a tick's grace. The stamp alone cannot answer it, because a
-        // stand-in moves the stamp; the mark alone cannot, because a store with
-        // no traffic never stands in.
+        // Three ways a schedule that is not running shows up against a record
+        // that is present. Its own run stamp going stale is the direct one. A
+        // stand-in mark it never cleared covers the window before that stamp
+        // exists at all. An overdue success stamp covers a store with no
+        // traffic, which never stands in — but only while no run stamp says
+        // otherwise, since a cron that runs and cannot reach the API moves the
+        // run stamp and not the success stamp.
+        $grace = 2 * RecordProvider::CRON_INTERVAL;
         $stoodInAt = $status['stood_in_at'];
-        $notRunning = ($stoodInAt !== null && time() - $stoodInAt >= 2 * RecordProvider::CRON_INTERVAL)
-            || ($fetchedAt !== null
-                && time() - $fetchedAt >= RecordProvider::MAX_AGE + 2 * RecordProvider::CRON_INTERVAL);
+        $scheduledAt = $status['scheduled_at'];
+        $notRunning = ($scheduledAt !== null && time() - $scheduledAt >= $grace)
+            || ($stoodInAt !== null && time() - $stoodInAt >= $grace)
+            || ($scheduledAt === null
+                && $fetchedAt !== null
+                && time() - $fetchedAt >= RecordProvider::MAX_AGE + $grace);
         if ($fetchedAt !== null && $notRunning) {
             return [
                 'label' => $label,

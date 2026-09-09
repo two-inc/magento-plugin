@@ -56,6 +56,8 @@ class RecordProvider
 
     private const STOOD_IN_SUFFIX = '_stood_in_at';
 
+    private const SCHEDULED_SUFFIX = '_scheduled_at';
+
     private const FAILURE_COOLDOWN_SUFFIX = '_cooldown';
 
     private const STALE_COOLDOWN_SUFFIX = '_stale_cooldown';
@@ -230,29 +232,44 @@ class RecordProvider
         if ($cacheKey !== null) {
             $this->cache->remove($cacheKey . self::ABSENT_SUFFIX);
             $this->cache->remove($cacheKey . self::STOOD_IN_SUFFIX);
+            // Recorded whether or not the run's own fetch succeeded: a cron that
+            // runs and cannot reach the API is not a cron that is not running.
+            $this->cache->save((string)time(), $cacheKey . self::SCHEDULED_SUFFIX, self::CACHE_TAGS, null);
         }
     }
 
     /**
      * The Diagnostics panel's view of the refresh: when the record was last
-     * fetched successfully, when a read last found it unresolvable, and when a
-     * read last had to stand in for the cron. The last two are cleared by a
-     * scheduled run, so either one still set says the cron is not running —
-     * which the record's own stamp cannot say, since a stand-in moves it.
+     * fetched successfully, when a read last found it unresolvable, when a read
+     * last had to stand in for the cron, and when the cron last ran. The two
+     * read marks are cleared by a scheduled run, and the run stamp moves even
+     * when the run's own fetch fails — so a cron that runs against a dead API
+     * is never mistaken for a cron that is not running.
      *
-     * @return array{fetched_at: int|null, absent_on_read_at: int|null, stood_in_at: int|null}
+     * @return array{
+     *     fetched_at: int|null,
+     *     absent_on_read_at: int|null,
+     *     stood_in_at: int|null,
+     *     scheduled_at: int|null
+     * }
      */
     public function status(string $mode, string $apiKey): array
     {
         $cacheKey = $this->cacheKey($mode, $apiKey);
         if ($cacheKey === null) {
-            return ['fetched_at' => null, 'absent_on_read_at' => null, 'stood_in_at' => null];
+            return [
+                'fetched_at' => null,
+                'absent_on_read_at' => null,
+                'stood_in_at' => null,
+                'scheduled_at' => null,
+            ];
         }
 
         return [
             'fetched_at' => $this->loadTimestamp($cacheKey . self::STAMP_SUFFIX),
             'absent_on_read_at' => $this->loadTimestamp($cacheKey . self::ABSENT_SUFFIX),
             'stood_in_at' => $this->loadTimestamp($cacheKey . self::STOOD_IN_SUFFIX),
+            'scheduled_at' => $this->loadTimestamp($cacheKey . self::SCHEDULED_SUFFIX),
         ];
     }
 

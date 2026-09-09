@@ -520,6 +520,13 @@ class RecordProviderTest extends TestCase
                 return true;
             }
         );
+        $written = [];
+        $cache->method('save')->willReturnCallback(
+            function ($data, $identifier) use (&$written) {
+                $written[] = $identifier;
+                return true;
+            }
+        );
         $provider = $this->providerWith($cache);
 
         $status = $provider->status('sandbox', 'test-api-key');
@@ -529,6 +536,11 @@ class RecordProviderTest extends TestCase
         $this->assertEqualsWithDelta(time() - 50, $status['absent_on_read_at'], 2);
         $this->assertCount(1, preg_grep('/_absent_on_read$/', $removed));
         $this->assertCount(1, preg_grep('/_stood_in_at$/', $removed), 'the cron clears the stand-in mark too');
+        $this->assertCount(
+            1,
+            preg_grep('/_scheduled_at$/', $written),
+            'and records that it ran, whatever its own fetch did'
+        );
     }
 
     public function testEveryConsumerReadsThroughGetRecordSoAFailedFetchServesTheLastKnownGoodToAll(): void
