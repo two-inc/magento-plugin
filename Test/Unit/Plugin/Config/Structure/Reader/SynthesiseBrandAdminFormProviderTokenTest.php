@@ -172,9 +172,8 @@ class SynthesiseBrandAdminFormProviderTokenTest extends TestCase
      * come through literally ("Smith & Co."), NOT as an entity-escaped
      * "Smith &amp;amp; Co." — which is what would happen if this site
      * used the entity-escaped {{provider}} substitution instead of the
-     * raw {{provider_cdata}} one. This is the regression Han's review
-     * (round 1) caught: legal/partner entity names routinely contain
-     * "&", so this was not a hypothetical edge case.
+     * raw {{provider_cdata}} one. Legal/partner entity names routinely
+     * contain "&", so this is not a hypothetical edge case.
      */
     public function testProviderCdataSiteHandlesAmpersandLiterally(): void
     {

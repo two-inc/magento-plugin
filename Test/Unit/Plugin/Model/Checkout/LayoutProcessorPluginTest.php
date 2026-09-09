@@ -229,7 +229,7 @@ class LayoutProcessorPluginTest extends TestCase
      * Read both sortOrders back out of the array (already resolved by core
      * by this point) rather than assume a fixed number, so this holds for
      * any store configuration. Anchoring to company ALONE was the exact gap
-     * an earlier round of this fix shipped with — street is independently
+     * an earlier version of this fix shipped with — street is independently
      * configurable and was the field actually reported live.
      */
     public function testCountrySortsBeforeCompanyAndStreetRegardlessOfConfiguredSortOrder(): void

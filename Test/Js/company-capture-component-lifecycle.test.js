@@ -682,7 +682,7 @@ describe('a typed company name carries no vouched number', () => {
     });
 
     test('a cart flipping virtual mid-manual-entry moves the watcher with the mount', () => {
-        // TWO-25503 round 5: the mount re-points from the address field to the
+        // TWO-25503: the mount re-points from the address field to the
         // tile field when the cart goes virtual, and a single per-lifetime
         // flag left the tile field's manual edits never observed — a typed
         // company name silently lost. `opts` is read live by the quote mock

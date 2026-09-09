@@ -226,8 +226,7 @@ class SalesOrderShipmentAfter implements ObserverInterface
                 // Throwable, not Exception: matches the cron's own choice
                 // (Cron/ProcessInvoiceUploads.php) and the guarantee this
                 // comment claims — a TypeError/Error here must not surface
-                // as a shipment-creation failure either (TWO-24758 review
-                // round 2, Han).
+                // as a shipment-creation failure either (TWO-24758).
                 $this->logRepository->addErrorLog(
                     'invoice-upload-queue-exception',
                     ['order_id' => $order->getEntityId(), 'error' => $e->getMessage()]

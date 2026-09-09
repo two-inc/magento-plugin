@@ -967,7 +967,7 @@
      * ONE `observe()` registration per selector, EVER, not one per component
      * lifetime: `_boundSelector` re-points between the address field and the
      * tile field as the cart flips virtual, and a single lifetime flag would
-     * leave the new selector's manual edits never observed (TWO-25503 round 5).
+     * leave the new selector's manual edits never observed (TWO-25503).
      */
     CompanyCaptureComponent.prototype._watchManualEdits = function () {
         if (!this.observe || !this._boundSelector) return;

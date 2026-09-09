@@ -15,8 +15,7 @@ use Two\Gateway\Setup\Uninstall;
  * nearest equivalent lifecycle event for this. Default off: uninstall must
  * leave configuration in place unless the merchant explicitly opted in.
  *
- * Adversarial review (round 1) found the first version of this class
- * hardcoded `payment/two_payment/%`, ignoring the active brand's own code
+ * An early version of this class hardcoded `payment/two_payment/%`, ignoring the active brand's own code
  * — on a brand overlay this both silently no-ops the opt-in AND leaves a
  * dead `payment/two_search/%` clause that never matched anything (the
  * "Search" admin section's fields live under `payment/<code>/*` too, same
