@@ -40,7 +40,7 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * @param array{fetched_at: int|null, absent_on_read_at: int|null} $status
+     * @param array<string, int|null> $status
      * @dataProvider refreshStates
      */
     public function testTheMerchantProfileRowReportsTheRefresh(
@@ -67,7 +67,7 @@ class HealthChecklistTest extends TestCase
     }
 
     /**
-     * @return array<string, array{0: array{fetched_at: int|null, absent_on_read_at: int|null}, 1: bool, 2: string, 3: string}>
+     * @return array<string, array{0: array<string, int|null>, 1: bool, 2: string, 3: string}>
      */
     public static function refreshStates(): array
     {
