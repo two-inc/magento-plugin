@@ -200,15 +200,44 @@ class HealthChecklistTest extends TestCase
         $this->assertFalse($this->block->isProductionWithSslDisabled());
     }
 
-    public function testUnverifiedApiKeyRowIsNotOk(): void
-    {
-        $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::INVALID_KEY]);
+    /**
+     * ABN-533 narrowed which categories withhold the payment method from the
+     * BUYER. The admin's own verdict is unchanged: anything short of a
+     * verified key still reads "Not verified" here.
+     *
+     * @dataProvider apiKeyRowStates
+     */
+    public function testTheApiKeyRowReportsOnlyAVerifiedKeyAsOk(
+        string $status,
+        bool $expectedOk,
+        string $description
+    ): void {
+        $this->apiKeyStatus->method('getStatus')->willReturn(['status' => $status]);
         $this->configRepository->method('getMode')->willReturn('sandbox');
         $this->configRepository->method('isSslVerificationDisabled')->willReturn(false);
 
-        $rows = $this->block->getChecklistRows();
+        $row = $this->block->getChecklistRows()[0];
 
-        $this->assertFalse($rows[0]['ok']);
+        $this->assertSame($expectedOk, $row['ok'], $description);
+        $this->assertSame($expectedOk ? 'Verified' : 'Not verified', $row['value'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: bool, 2: string}>
+     */
+    public static function apiKeyRowStates(): array
+    {
+        return [
+            'ok' => [ApiKeyStatus::OK, true, 'a verified key is the only ok state'],
+            'invalid key' => [ApiKeyStatus::INVALID_KEY, false, 'a rejected key is not verified'],
+            'service error' => [ApiKeyStatus::SERVICE_ERROR, false,
+                'an outage still leaves the key unconfirmed on the admin panel'],
+            'unreachable' => [ApiKeyStatus::UNREACHABLE, false,
+                'the buyer keeps the method, the admin is still told it is unconfirmed'],
+            'other error' => [ApiKeyStatus::ERROR, false, 'no confirmation, not ok'],
+            'malformed response' => [ApiKeyStatus::MALFORMED_RESPONSE, false, 'no confirmation, not ok'],
+            'not configured' => [ApiKeyStatus::NOT_CONFIGURED, false, 'nothing to verify'],
+        ];
     }
 
     public function testSslDisabledRowIsNotOk(): void

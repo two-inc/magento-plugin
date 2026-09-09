@@ -14,12 +14,10 @@ use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 
 /**
- * The payment method must not be offered when the stored API key does not
- * currently verify — whatever the reason it does not.
- *
- * A configured api_key used to be treated as a working one, so a revoked
- * key or an unreachable API left the method selectable and the buyer met
- * the failure at order placement instead of at selection.
+ * The api-key verdict is the only upstream failure that may withhold the
+ * payment method, and only when it is a DEFINITIVE rejection: Two said no,
+ * or there is no key. Everything else falls through to the cached merchant
+ * record (ABN-533).
  */
 class TwoApiKeyGateTest extends TestCase
 {
@@ -63,44 +61,76 @@ class TwoApiKeyGateTest extends TestCase
         return $model;
     }
 
+    /**
+     * The real ApiKeyStatus over a stubbed verdict — only getStatus() is
+     * overridden — so the gate runs the production predicate and cannot pass
+     * by re-stating the rule in the test.
+     */
     private function statusService(string $status, ?int $code = null): ApiKeyStatus
     {
-        $service = $this->createMock(ApiKeyStatus::class);
-        $service->method('isVerified')->willReturn($status === ApiKeyStatus::OK);
-        $service->method('getStatus')->willReturn(
-            ['status' => $status, 'code' => $code, 'merchant' => null]
-        );
-        return $service;
+        return new class (['status' => $status, 'code' => $code, 'merchant' => null]) extends ApiKeyStatus {
+            /** @var array{status: string, code: int|null, merchant: array<string,mixed>|null} */
+            private $verdict;
+
+            /** @param array{status: string, code: int|null, merchant: array<string,mixed>|null} $verdict */
+            public function __construct(array $verdict)
+            {
+                $this->verdict = $verdict;
+            }
+
+            public function getStatus(?int $storeId = null): array
+            {
+                return $this->verdict;
+            }
+        };
     }
 
     /**
-     * @dataProvider failureCategories
+     * @dataProvider verdictCategories
      */
-    public function testMethodIsUnavailableForEveryVerificationFailure(string $status, ?int $code): void
-    {
+    public function testOnlyADefinitiveRejectionWithholdsTheMethod(
+        string $status,
+        ?int $code,
+        bool $offered,
+        string $description
+    ): void {
         $model = $this->build($this->statusService($status, $code));
 
-        $this->assertFalse($model->isAvailable(null));
+        $this->assertSame($offered, $model->isAvailable(null), $description);
     }
 
     /**
-     * @return array<string, array{0: string, 1: int|null}>
+     * @return array<string, array{0: string, 1: int|null, 2: bool, 3: string}>
      */
-    public static function failureCategories(): array
+    public static function verdictCategories(): array
     {
         return [
-            'rejected key' => [ApiKeyStatus::INVALID_KEY, 401],
-            'service error' => [ApiKeyStatus::SERVICE_ERROR, 503],
-            'unreachable' => [ApiKeyStatus::UNREACHABLE, null],
-            'other error' => [ApiKeyStatus::ERROR, 404],
-            'malformed response' => [ApiKeyStatus::MALFORMED_RESPONSE, null],
-            'not configured' => [ApiKeyStatus::NOT_CONFIGURED, null],
+            'ok' => [ApiKeyStatus::OK, 200, true,
+                'a verifying key is offered'],
+            'invalid key' => [ApiKeyStatus::INVALID_KEY, 401, false,
+                'Two rejected the key, so the integration cannot work'],
+            'not configured' => [ApiKeyStatus::NOT_CONFIGURED, null, false,
+                'there is no key to serve an order with'],
+            'service error' => [ApiKeyStatus::SERVICE_ERROR, 503, true,
+                'a 5xx says nothing about the key; the cached record still serves the buyer'],
+            'unreachable' => [ApiKeyStatus::UNREACHABLE, null, true,
+                'an outage must not empty a correctly configured checkout'],
+            'other error' => [ApiKeyStatus::ERROR, 404, true,
+                'a non-2xx that is not a 401/403 is not a rejection of the key'],
+            'malformed response' => [ApiKeyStatus::MALFORMED_RESPONSE, null, true,
+                'an unparseable answer is an answer about the service, not the key'],
         ];
     }
 
-    public function testMethodIsAvailableWhenTheKeyVerifies(): void
+    public function testAnOutageIsNotLoggedAsAWithhold(): void
     {
-        $model = $this->build($this->statusService(ApiKeyStatus::OK, 200));
+        // The method is still offered, so there is nothing to explain.
+        $logRepository = $this->createMock(LogRepository::class);
+        $logRepository->expects($this->never())->method('addDebugLog');
+
+        $model = $this->build($this->statusService(ApiKeyStatus::UNREACHABLE, null));
+        (new \ReflectionClass(Two::class))
+            ->getProperty('logRepository')->setValue($model, $logRepository);
 
         $this->assertTrue($model->isAvailable(null));
     }
@@ -115,7 +145,7 @@ class TwoApiKeyGateTest extends TestCase
         $this->assertFalse($model->isAvailable(null));
     }
 
-    public function testFailureIsLoggedWithTheCategoryButNoResponseBody(): void
+    public function testRejectionIsLoggedWithTheCategoryButNoResponseBody(): void
     {
         // Withdrawing the method is invisible to the merchant, so the reason
         // has to be recorded — and recorded as a category, not a payload.
@@ -128,15 +158,15 @@ class TwoApiKeyGateTest extends TestCase
         );
 
         $reflection = new \ReflectionClass(Two::class);
-        $model = $this->build($this->statusService(ApiKeyStatus::SERVICE_ERROR, 503));
+        $model = $this->build($this->statusService(ApiKeyStatus::INVALID_KEY, 401));
         $reflection->getProperty('logRepository')->setValue($model, $logRepository);
 
         $this->assertFalse($model->isAvailable(null));
 
         $this->assertCount(1, $logged);
-        $this->assertStringContainsString('API key verification failed', $logged[0][0]);
+        $this->assertStringContainsString('API key rejected', $logged[0][0]);
         $this->assertSame(
-            ['status' => ApiKeyStatus::SERVICE_ERROR, 'http_status' => 503],
+            ['status' => ApiKeyStatus::INVALID_KEY, 'http_status' => 401],
             $logged[0][1]
         );
     }

@@ -61,8 +61,8 @@ class TwoWithholdingLogTest extends TestCase
                 'core\'s own verdict is reported as core\'s, never asserted as "inactive"'],
             ['no_api_key', false, 'no API key configured',
                 'an unconfigured key is named rather than withheld silently'],
-            ['key_unverified', false, 'API key verification failed',
-                'a configured but non-working key is distinguishable from an absent one'],
+            ['key_rejected', false, 'API key rejected',
+                'a key Two rejected is distinguishable from an absent one'],
             ['surcharge_unresolvable', false, 'surcharge FX rate unavailable',
                 'an unresolvable surcharge rate is named at the render that withheld the method'],
             ['country_refused', false, 'buyer country not supported',
@@ -97,8 +97,10 @@ class TwoWithholdingLogTest extends TestCase
         );
 
         $apiKeyStatus = $this->createMock(ApiKeyStatus::class);
-        $apiKeyStatus->method('isVerified')->willReturn($knob !== 'key_unverified');
-        $apiKeyStatus->method('getStatus')->willReturn(['status' => 'rejected', 'code' => 401]);
+        $apiKeyStatus->method('isDefinitiveFailure')->willReturn($knob === 'key_rejected');
+        $apiKeyStatus->method('getStatus')->willReturn(
+            ['status' => ApiKeyStatus::INVALID_KEY, 'code' => 401]
+        );
 
         $surchargeCalculator = $this->createMock(SurchargeCalculator::class);
         $surchargeCalculator->method('isSurchargeResolvable')

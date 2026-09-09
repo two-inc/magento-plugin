@@ -170,39 +170,43 @@ class ApiKeyStatusTest extends TestCase
         $this->assertNull($this->build()->getStatus()['merchant']);
     }
 
-    // ── isVerified ──────────────────────────────────────────────────────
-
-    public function testIsVerifiedOnlyOnOk(): void
-    {
-        $this->cache->method('load')->willReturn(false);
-        $this->apiAdapter->method('execute')->willReturn(['id' => 'abc-123']);
-
-        $this->assertTrue($this->build()->isVerified());
-    }
+    // ── isDefinitiveFailure ─────────────────────────────────────────────
 
     /**
-     * @dataProvider failingOutcomes
+     * @dataProvider verdictOutcomes
      * @param array<string,mixed> $apiResponse
      */
-    public function testIsNotVerifiedForEveryFailureCategory(array $apiResponse): void
-    {
+    public function testOnlyARejectedKeyIsADefinitiveFailure(
+        array $apiResponse,
+        bool $definitive,
+        string $description
+    ): void {
         $this->cache->method('load')->willReturn(false);
         $this->apiAdapter->method('execute')->willReturn($apiResponse);
 
-        $this->assertFalse($this->build()->isVerified());
+        $this->assertSame($definitive, $this->build()->isDefinitiveFailure(), $description);
     }
 
     /**
-     * @return array<string, array{0: array<string,mixed>}>
+     * @return array<string, array{0: array<string,mixed>, 1: bool, 2: string}>
      */
-    public static function failingOutcomes(): array
+    public static function verdictOutcomes(): array
     {
         return [
-            'invalid key' => [['http_status' => 401]],
-            'service error' => [['http_status' => 503]],
-            'unreachable' => [['error_code' => 400, 'error_message' => 'Error in transfer']],
-            'other error' => [['http_status' => 404]],
-            'malformed' => [[]],
+            'verified' => [['id' => 'abc-123'], false,
+                'a working key is no failure at all'],
+            'invalid key' => [['http_status' => 401], true,
+                'a 401 is Two rejecting this key'],
+            'forbidden' => [['http_status' => 403], true,
+                'a 403 is the same rejection'],
+            'service error' => [['http_status' => 503], false,
+                'a 5xx is the service failing, not the key'],
+            'unreachable' => [['error_code' => 400, 'error_message' => 'Error in transfer'], false,
+                'no exchange completed, so nothing was rejected'],
+            'other error' => [['http_status' => 404], false,
+                'a 404 is not a verdict on the key'],
+            'malformed' => [[], false,
+                'a 2xx with no merchant id is an answer we cannot read, not a rejection'],
         ];
     }
 
@@ -214,7 +218,7 @@ class ApiKeyStatusTest extends TestCase
         $status = $this->build('')->getStatus();
 
         $this->assertSame(ApiKeyStatus::NOT_CONFIGURED, $status['status']);
-        $this->assertFalse($this->build('')->isVerified());
+        $this->assertTrue($this->build('')->isDefinitiveFailure());
     }
 
     // ── verifyCandidate ─────────────────────────────────────────────────
@@ -344,7 +348,7 @@ class ApiKeyStatusTest extends TestCase
         $service = $this->build();
         $service->getStatus();
         $service->getStatus();
-        $service->isVerified();
+        $service->isDefinitiveFailure();
     }
 
     public function testCacheKeyTracksTheApiKeySoAKeySwapMisses(): void
