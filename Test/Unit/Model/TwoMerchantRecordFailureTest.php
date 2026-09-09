@@ -24,9 +24,10 @@ class TwoMerchantRecordFailureTest extends TestCase
 {
     /**
      * Builds a Two instance with only the collaborators isAvailable() reaches,
-     * injected by reflection. The minimum-order provider is the REAL one over
-     * a record provider that cannot resolve, so the record failure reaches the
-     * availability chain the way it does in production.
+     * injected by reflection. The minimum-order provider is the real one over a
+     * record provider that cannot resolve, so an unresolvable record reaches
+     * the chain rather than being stubbed away; the gate it feeds has its own
+     * tests and is mocked here.
      *
      * @param array<string,mixed>|null $record
      */

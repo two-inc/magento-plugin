@@ -95,9 +95,11 @@ class HealthChecklist extends Field
     }
 
     /**
-     * When the merchant profile last refreshed. An absent-on-read mark the cron
-     * has had a run to clear, and a stamp older than STALE_AFTER, both say the
-     * cron is not running; neither withholds anything.
+     * When the merchant profile last refreshed, and whether the scheduled
+     * refresh is running. A read that had to stand in for the cron, and one
+     * that could not resolve a record at all, both leave a mark a scheduled
+     * run clears — the record's own stamp cannot answer that, because a
+     * stand-in moves it (ABN-519).
      *
      * @return array{label: string, ok: bool, value: string}
      */
@@ -117,7 +119,7 @@ class HealthChecklist extends Field
             ];
         }
         $fetchedAt = $status['fetched_at'];
-        if ($fetchedAt !== null && time() - $fetchedAt >= RecordProvider::STALE_AFTER) {
+        if ($fetchedAt !== null && $status['stood_in_at'] !== null) {
             return [
                 'label' => $label,
                 'ok' => false,

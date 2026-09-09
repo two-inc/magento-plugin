@@ -40,10 +40,23 @@ class RecordProviderTest extends TestCase
         );
     }
 
+    /** Timeout budgets the last stubApi() call observed, one per API call, in order. */
+    private $budgets = [];
+
     private function stubApi(array $verifyResponse, array $merchantResponse = []): void
     {
+        $this->budgets = [];
         $this->apiAdapter->method('execute')->willReturnCallback(
-            function (string $endpoint) use ($verifyResponse, $merchantResponse) {
+            function (
+                string $endpoint,
+                array $payload = [],
+                string $method = 'GET',
+                ?int $storeId = null,
+                ?string $apiKey = null,
+                ?string $mode = null,
+                ?int $timeoutSeconds = null
+            ) use ($verifyResponse, $merchantResponse) {
+                $this->budgets[] = $timeoutSeconds;
                 return $endpoint === '/v1/merchant/verify_api_key' ? $verifyResponse : $merchantResponse;
             }
         );
@@ -226,20 +239,23 @@ class RecordProviderTest extends TestCase
             'fetch succeeds' => [
                 ['id' => 'abc-123'],
                 [
-                    'mark absent TWO_GATEWAY no expiry',
                     'arm cooldown TWO_GATEWAY 60',
                     'fetch',
                     'fetch',
                     'store record TWO_GATEWAY no expiry',
                     'store stamp TWO_GATEWAY no expiry',
-                    'clear absent mark',
                     'clear cooldown',
                 ],
                 'armed first, record and stamp stored, cooldown cleared so readers are not stranded on null',
             ],
             'fetch fails' => [
                 ['http_status' => 503],
-                ['mark absent TWO_GATEWAY no expiry', 'arm cooldown TWO_GATEWAY 60', 'fetch', 'fetch'],
+                [
+                    'arm cooldown TWO_GATEWAY 60',
+                    'fetch',
+                    'fetch',
+                    'mark absent TWO_GATEWAY no expiry',
+                ],
                 'armed first and left armed for 60s only, nothing stored, stamp untouched',
             ],
         ];
@@ -404,13 +420,19 @@ class RecordProviderTest extends TestCase
         $this->assertFalse($this->providerWith($this->cacheWith(false, null), '')->isDue('sandbox', ''));
     }
 
-    public function testAReadMissIsLoggedAndMarked(): void
-    {
-        // The entry never expires, so a miss is a fresh install or a flush.
-        $this->stubApi(['id' => 'abc-123'], ['id' => 'abc-123']);
+    /**
+     * @dataProvider readMissOutcomes
+     */
+    public function testAReadMissIsMarkedOnlyWhenTheReadCouldNotResolveOneEither(
+        array $merchantResponse,
+        int $expectedMarks,
+        string $description
+    ): void {
+        // The entry never expires, so a miss is a fresh install or a flush. The
+        // mark says the admin has no record AND no way to get one.
+        $this->stubApi(['id' => 'abc-123'], $merchantResponse);
         $log = $this->createMock(LogRepository::class);
-        $log->expects($this->once())->method('addErrorLog')
-            ->with($this->stringContains('merchant record absent on read'), $this->anything());
+        $log->expects($this->atLeastOnce())->method('addErrorLog');
         $cache = $this->cacheWith(false, null);
         $marked = [];
         $cache->method('save')->willReturnCallback(
@@ -422,8 +444,36 @@ class RecordProviderTest extends TestCase
             }
         );
 
-        $this->assertNotNull($this->providerWith($cache, 'test-api-key', 'sandbox', $log)->getRecord(1), 'still fetched');
-        $this->assertCount(1, $marked, 'the miss is recorded for Diagnostics');
+        $this->providerWith($cache, 'test-api-key', 'sandbox', $log)->getRecord(1);
+
+        $this->assertCount($expectedMarks, $marked, $description);
+    }
+
+    /**
+     * @return array<int, array{0: array<string,mixed>, 1: int, 2: string}>
+     */
+    public static function readMissOutcomes(): array
+    {
+        return [
+            [['id' => 'abc-123'], 0, 'a read that resolved one itself leaves no mark to freeze'],
+            [['http_status' => 503], 1, 'no record and no way to get one is recorded for Diagnostics'],
+        ];
+    }
+
+    public function testTheReadPathStandsInOnASmallerBudgetThanTheCron(): void
+    {
+        // A page render may not wait on the cron's budget.
+        $this->stubApi(['id' => 'abc-123'], ['id' => 'abc-123', 'available_terms' => [30]]);
+        $provider = $this->providerWith($this->cacheWith(true, RecordProvider::STALE_AFTER + 1));
+
+        $provider->getRecord(1);
+        $standIn = $this->budgets;
+
+        $provider->refresh('sandbox', 'test-api-key');
+        $scheduled = array_slice($this->budgets, count($standIn));
+
+        $this->assertSame([2, 2], $standIn, 'the stand-in is bounded per call');
+        $this->assertSame([10, 10], $scheduled, 'the cron and the admin button keep the full budget');
     }
 
     public function testACacheHitLogsNothing(): void
@@ -452,6 +502,7 @@ class RecordProviderTest extends TestCase
         $this->assertEqualsWithDelta(time() - 100, $status['fetched_at'], 2);
         $this->assertEqualsWithDelta(time() - 50, $status['absent_on_read_at'], 2);
         $this->assertCount(1, preg_grep('/_absent_on_read$/', $removed));
+        $this->assertCount(1, preg_grep('/_stood_in_at$/', $removed), 'the cron clears the stand-in mark too');
     }
 
     public function testEveryConsumerReadsThroughGetRecordSoAFailedFetchServesTheLastKnownGoodToAll(): void
@@ -765,25 +816,6 @@ class RecordProviderTest extends TestCase
         $this->assertSame([], preg_grep('/_record_[0-9a-f]{64}$/', $writes), 'the record is not rewritten');
         $this->assertSame([], preg_grep('/_fetched_at$/', $writes), 'the success stamp does not move');
         $this->assertSame([], $removes, 'a failed stand-in refresh evicts nothing');
-    }
-
-    public function testASuccessfulReadPathFetchClearsTheAbsentMark(): void
-    {
-        // Otherwise the mark never expires and the health row reports a miss
-        // that has since been answered.
-        $this->stubApi(['id' => 'abc-123'], ['id' => 'abc-123', 'available_terms' => [30]]);
-        $cache = $this->cacheWith(false, null, 10);
-        $removed = [];
-        $cache->method('remove')->willReturnCallback(
-            function (string $identifier) use (&$removed) {
-                $removed[] = $identifier;
-                return true;
-            }
-        );
-
-        $this->providerWith($cache)->getRecord(1);
-
-        $this->assertNotSame([], preg_grep('/_absent_on_read$/', $removed));
     }
 
     public function testAStaleRecordIsNotRefetchedWhileTheCooldownStands(): void

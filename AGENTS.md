@@ -253,7 +253,10 @@ are nonetheless safe against an outage, because the rate table is cached with no
 expiry and keeps its last-known-good on a failed fetch, exactly as the merchant
 record does — so an unreachable API loses neither. What remains reachable is the
 narrow case of a table that was never fetched, or a cache flushed while Two is
-unreachable. The FX gate is not simply removable: it exists because an
+unreachable. One known cost, unaddressed: the rate table's own refresh-on-read
+carries no timeout budget, so a table past its refresh interval can hold a
+storefront render for the HTTP client's default while an outage runs — the
+merchant record's read-path stand-in is bounded, that one is not. The FX gate is not simply removable: it exists because an
 unresolvable rate used to throw inside the totals collector and error the whole
 checkout, which is worse than withholding one method.
 

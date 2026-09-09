@@ -54,6 +54,8 @@ class RecordProvider
 
     private const ABSENT_SUFFIX = '_absent_on_read';
 
+    private const STOOD_IN_SUFFIX = '_stood_in_at';
+
     private const FAILURE_COOLDOWN_SUFFIX = '_cooldown';
 
     private const STALE_COOLDOWN_SUFFIX = '_stale_cooldown';
@@ -64,7 +66,7 @@ class RecordProvider
     /** Seconds between stand-in refreshes of a stale record: one per run the cron owes. */
     private const STALE_REFRESH_COOLDOWN = self::CRON_INTERVAL;
 
-    /** A read stands in for the cron without waiting on it, so its budget is a fraction of a page. */
+    /** Per call, and a stand-in makes two, so a read can lose at most four seconds to a dead cron. */
     private const STALE_FETCH_TIMEOUT_SECONDS = 2;
 
     /**
@@ -162,7 +164,6 @@ class RecordProvider
             'RecordProvider: merchant record absent on read',
             ['store_id' => $storeId]
         );
-        $this->cache->save((string)time(), $cacheKey . self::ABSENT_SUFFIX, self::CACHE_TAGS, null);
 
         // Armed before the fetch so concurrent renders during an outage share one attempt;
         // read path only — a button press must not push readers to null.
@@ -170,9 +171,15 @@ class RecordProvider
         $record = $this->fetchAndStore($cacheKey, $mode, $apiKey, $storeId, null);
         if ($record !== null) {
             $this->cache->remove($cacheKey . self::FAILURE_COOLDOWN_SUFFIX);
+
+            return $record;
         }
 
-        return $record;
+        // Marked only once the read could not resolve one either: no record and
+        // no way to get one is what the admin health surface has to report.
+        $this->cache->save((string)time(), $cacheKey . self::ABSENT_SUFFIX, self::CACHE_TAGS, null);
+
+        return null;
     }
 
     /**
@@ -212,31 +219,36 @@ class RecordProvider
         return $fetchedAt === null || time() - $fetchedAt >= self::MAX_AGE;
     }
 
-    /** The scheduled refresh has run for this identity, so a read miss before it is no longer a signal. */
+    /** The scheduled refresh has run for this identity, so neither mark a read left is a signal any more. */
     public function noteScheduledRun(string $mode, string $apiKey): void
     {
         $cacheKey = $this->cacheKey($mode, $apiKey);
         if ($cacheKey !== null) {
             $this->cache->remove($cacheKey . self::ABSENT_SUFFIX);
+            $this->cache->remove($cacheKey . self::STOOD_IN_SUFFIX);
         }
     }
 
     /**
-     * When the record was last fetched successfully, and when a read last
-     * found it absent — the Diagnostics panel's view of the refresh.
+     * The Diagnostics panel's view of the refresh: when the record was last
+     * fetched successfully, when a read last found it unresolvable, and when a
+     * read last had to stand in for the cron. The last two are cleared by a
+     * scheduled run, so either one still set says the cron is not running —
+     * which the record's own stamp cannot say, since a stand-in moves it.
      *
-     * @return array{fetched_at: int|null, absent_on_read_at: int|null}
+     * @return array{fetched_at: int|null, absent_on_read_at: int|null, stood_in_at: int|null}
      */
     public function status(string $mode, string $apiKey): array
     {
         $cacheKey = $this->cacheKey($mode, $apiKey);
         if ($cacheKey === null) {
-            return ['fetched_at' => null, 'absent_on_read_at' => null];
+            return ['fetched_at' => null, 'absent_on_read_at' => null, 'stood_in_at' => null];
         }
 
         return [
             'fetched_at' => $this->loadTimestamp($cacheKey . self::STAMP_SUFFIX),
             'absent_on_read_at' => $this->loadTimestamp($cacheKey . self::ABSENT_SUFFIX),
+            'stood_in_at' => $this->loadTimestamp($cacheKey . self::STOOD_IN_SUFFIX),
         ];
     }
 
@@ -271,6 +283,7 @@ class RecordProvider
             self::CACHE_TAGS,
             self::STALE_REFRESH_COOLDOWN
         );
+        $this->cache->save((string)time(), $cacheKey . self::STOOD_IN_SUFFIX, self::CACHE_TAGS, null);
 
         return $this->fetchAndStore(
             $cacheKey,
@@ -348,7 +361,6 @@ class RecordProvider
             );
             // The success clock: moves only here, never on a failure.
             $this->cache->save((string)time(), $cacheKey . self::STAMP_SUFFIX, self::CACHE_TAGS, null);
-            $this->cache->remove($cacheKey . self::ABSENT_SUFFIX);
             $this->memo[$cacheKey] = ['record' => $record];
 
             return $record;
