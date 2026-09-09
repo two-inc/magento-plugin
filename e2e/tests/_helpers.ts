@@ -91,6 +91,18 @@ export async function goToPaymentStep(page: Page) {
     await waitIdle(page);
 }
 
+// Return to the shipping-method step: the radios stay in the DOM but hidden once
+// the payment step renders the chosen rate as a summary. The submit that follows
+// early-returns unless the step has actually flipped.
+export async function editShippingMethod(page: Page) {
+    await waitIdle(page);
+    const edit = page.locator('.ship-via .action-edit').first();
+    await expect(edit).toBeVisible({ timeout: 20_000 });
+    await edit.click();
+    await expect.poll(() => onPaymentStep(page), { timeout: 20_000 }).toBe(false);
+    await waitIdle(page);
+}
+
 // Native click on the shipping radio — Playwright's .check()/.click() on the
 // styled input doesn't fire Magento's shipping-change handler that recalculates
 // totals, so wait for the radio to load, then drive it in-page like a real click.
@@ -190,12 +202,28 @@ export async function configKey(page: Page): Promise<string> {
     return m[1];
 }
 
-// Open the Two payment section of the admin store config (default scope).
-export async function gotoTwoPaymentConfig(page: Page) {
+async function hideSystemMessages(page: Page) {
+    await page
+        .addStyleTag({
+            content: '.message-system, .message-system-collapsible { display: none !important; }'
+        })
+        .catch(() => {});
+}
+
+// Open a Two section of the admin store config (default scope). Section URLs carry
+// a per-section secret key, so navigate by the nav link rather than composing one.
+export async function gotoConfigSection(page: Page, section: string) {
     const cfg = await page.locator('a[href*="admin/system_config/"]').first().getAttribute('href');
     if (!cfg) throw new Error('could not find a system_config link (admin login likely failed)');
+    // Loading a Two section expands the Two tab in the nav with valid secret keys.
     await page.goto(cfg.replace(/\/?$/, '') + '/section/two_payment/', {
         waitUntil: 'domcontentloaded'
     });
-    await page.waitForSelector('.entry-edit', { timeout: 30_000 });
+    await page.waitForSelector('.entry-edit', { timeout: 30_000 }).catch(() => {});
+    const href = await page.locator(`a[href*="/section/${section}/"]`).first().getAttribute('href');
+    if (!href) throw new Error(`could not find the nav link for section ${section}`);
+    await page.goto(href, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.entry-edit', { timeout: 30_000 }).catch(() => {});
+    await hideSystemMessages(page);
+    await page.waitForTimeout(600);
 }

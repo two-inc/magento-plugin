@@ -3,27 +3,31 @@ import {
     addToCart,
     adminLogin,
     availableMethods,
+    editShippingMethod,
     fillCheckout,
-    gotoTwoPaymentConfig,
+    goToPaymentStep,
+    gotoConfigSection,
     selectShipping
 } from './_helpers';
 
 // Regression test for the minimum-order-value gate: the Two method must appear
-// and disappear LIVE as buyer-side changes (here: the shipping choice) move the
-// order total across the merchant minimum, without a page reload. The minimum is
-// pinned via the admin store config for the duration of the test so the run
-// never depends on how the shared test merchant happens to be configured, and
-// is always restored afterwards.
+// and disappear as buyer-side changes (here: the shipping choice) move the order
+// total across the merchant minimum, within one checkout and with no page
+// reload. Each crossing is submitted, because a shipping choice is estimated
+// client-side and only reaches the quote the gate judges when the shipping step
+// is submitted. The minimum is pinned via the admin store config for the
+// duration of the test so the run never depends on how the shared test merchant
+// happens to be configured, and is always restored afterwards.
 //
 // Admin-gated like the admin-config specs: skips without ADMIN_PASS.
 
-const MIN_FIELD = '#two_payment_payment_method_merchant_minimum_order';
-const BASIS_FIELD = '#two_payment_payment_method_merchant_minimum_order_basis';
+const MIN_FIELD = '#two_checkout_fields_availability_merchant_minimum_order';
+const BASIS_FIELD = '#two_checkout_fields_availability_merchant_minimum_order_basis';
 // Each config field carries a "Use Default" checkbox; while it is checked the
 // field renders disabled, so fill()/selectOption() would hang waiting for an
 // editable element. Manage the checkbox before touching the field.
-const MIN_INHERIT = '#two_payment_payment_method_merchant_minimum_order_inherit';
-const BASIS_INHERIT = '#two_payment_payment_method_merchant_minimum_order_basis_inherit';
+const MIN_INHERIT = '#two_checkout_fields_availability_merchant_minimum_order_inherit';
+const BASIS_INHERIT = '#two_checkout_fields_availability_merchant_minimum_order_basis_inherit';
 
 interface MinimumConfig {
     amount: string;
@@ -48,23 +52,23 @@ async function grandTotal(page: Page): Promise<number> {
     );
 }
 
-// The minimum-order fields live in the collapsible "payment_method" group
-// (name="groups[payment_method]..."). A section landing leaves group state to a
-// remembered UI cookie, so the fieldset can be collapsed — the fields are then
-// in the DOM but not visible, and fill() hangs on the visibility check even
-// though the input is enabled. Force the group open. Clicking the header
-// toggles, so only click when the field isn't already visible.
-async function expandPaymentGroup(page: Page) {
+// The minimum-order fields live in Checkout fields -> Availability. A section
+// landing leaves group state to a remembered UI cookie, so the fieldset can be
+// collapsed — the fields are then in the DOM but not visible, and fill() hangs
+// on the visibility check even though the input is enabled. Force the group
+// open. Clicking the header toggles, so only click when the field isn't
+// already visible.
+async function expandAvailabilityGroup(page: Page) {
     if (await page.locator(MIN_FIELD).isVisible()) {
         return;
     }
-    await page.locator('#two_payment_payment_method-head').click();
+    await page.locator('#two_checkout_fields_availability-head').click();
     await expect(page.locator(MIN_FIELD)).toBeVisible({ timeout: 10_000 });
 }
 
 async function readMinimumConfig(page: Page): Promise<MinimumConfig> {
-    await gotoTwoPaymentConfig(page);
-    await expandPaymentGroup(page);
+    await gotoConfigSection(page, 'two_checkout_fields');
+    await expandAvailabilityGroup(page);
     // inputValue() reads a disabled input fine; isChecked() tells us whether
     // the field was on its default so we can put it back exactly as found.
     return {
@@ -107,8 +111,8 @@ async function setConfigField(
 }
 
 async function writeMinimumConfig(page: Page, cfg: MinimumConfig) {
-    await gotoTwoPaymentConfig(page);
-    await expandPaymentGroup(page);
+    await gotoConfigSection(page, 'two_checkout_fields');
+    await expandAvailabilityGroup(page);
     await setConfigField(page, MIN_INHERIT, MIN_FIELD, cfg.amountInherited, () =>
         page.locator(MIN_FIELD).fill(cfg.amount)
     );
@@ -131,12 +135,26 @@ async function writeMinimumConfig(page: Page, cfg: MinimumConfig) {
 test.describe('minimum order value gate', () => {
     test.skip(!process.env.ADMIN_PASS, 'ADMIN_PASS not set');
 
-    // Skipped: the live show/hide it asserts depends on the reactive
-    // payment-availability refresh, which was reverted after the
-    // get-payment-information approach clobbered the quote totals. Re-enable
-    // once the reactive refresh is rebuilt without that side effect and
-    // browser-verified.
-    test.skip('method shows and hides live as shipping moves the total across the minimum', async ({
+    // The runner abandons the test body on a timeout, so the finally below can be
+    // skipped and leave a pinned minimum on a store other work shares.
+    let pending: MinimumConfig | null = null;
+
+    test.afterAll(async ({ browser }) => {
+        // The hook inherits the config timeout, not the test's.
+        test.setTimeout(180_000);
+        if (!pending) return;
+        const context = await browser.newContext();
+        const page = await context.newPage();
+        try {
+            await adminLogin(page);
+            await writeMinimumConfig(page, pending);
+            pending = null;
+        } finally {
+            await context.close();
+        }
+    });
+
+    test('method shows and hides live as shipping moves the total across the minimum', async ({
         page,
         browser
     }) => {
@@ -157,12 +175,25 @@ test.describe('minimum order value gate', () => {
         const pinned = ((freeTotal + flatTotal) / 2).toFixed(2);
         console.log(`totals: free=${freeTotal} flat=${flatTotal}; pinning minimum at ${pinned}`);
 
+        // Baseline before any admin write, so a later absence is attributable to
+        // the minimum rather than to the method never having been offered.
+        await selectShipping(page, 'flatrate');
+        await goToPaymentStep(page);
+        await expect
+            .poll(() => availableMethods(page), { timeout: 25_000 })
+            .toContain('two_payment');
+        // Whatever else this store offers, used below to tell "Two withheld"
+        // apart from "the list has not been populated yet".
+        const control = (await availableMethods(page)).find((m) => m !== 'two_payment');
+        expect(control, 'the store must offer a second method as a control').toBeTruthy();
+
         // Admin runs in its own context so the buyer page keeps its session and
         // is never reloaded — the whole point is the in-page recalc.
         const adminContext = await browser.newContext();
         const adminPage = await adminContext.newPage();
         await adminLogin(adminPage);
         const original = await readMinimumConfig(adminPage);
+        pending = original;
         try {
             // gross basis compares the grand total directly — the number the
             // buyer sees in the totals block. A pinned custom value, so neither
@@ -174,16 +205,25 @@ test.describe('minimum order value gate', () => {
                 basisInherited: false
             });
 
-            await selectShipping(page, 'flatrate');
-            await expect
-                .poll(() => availableMethods(page), { timeout: 25_000 })
-                .toContain('two_payment');
+            await editShippingMethod(page);
             await selectShipping(page, 'freeshipping');
+            await goToPaymentStep(page);
+            // `not.toContain` alone also passes on the empty list the payment
+            // service shows mid-repopulation.
             await expect
-                .poll(() => availableMethods(page), { timeout: 25_000 })
-                .not.toContain('two_payment');
+                .poll(async () => {
+                    const methods = await availableMethods(page);
+
+                    return {
+                        offered: methods.includes('two_payment'),
+                        populated: methods.includes(control as string)
+                    };
+                }, { timeout: 25_000 })
+                .toEqual({ offered: false, populated: true });
             // …and back, so the gate re-opens as well as closes.
+            await editShippingMethod(page);
             await selectShipping(page, 'flatrate');
+            await goToPaymentStep(page);
             await expect
                 .poll(() => availableMethods(page), { timeout: 25_000 })
                 .toContain('two_payment');
@@ -192,6 +232,7 @@ test.describe('minimum order value gate', () => {
             // default (Use Default) rather than filling an empty string into a
             // now-disabled input, which is what timed the teardown out before.
             await writeMinimumConfig(adminPage, original);
+            pending = null;
             await adminContext.close();
         }
     });

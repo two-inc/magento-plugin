@@ -11,6 +11,8 @@
  *  - only calls paymentService.setPaymentMethods() when the available-method
  *    SET changed (re-applying an unchanged list rebuilds every Luma renderer
  *    and wipes in-progress payment forms);
+ *  - only ever publishes a verdict the server reached on the SAME basket as the
+ *    emit that asked for it (ABN-509);
  *  - no fetch on the bootstrap total nor on no-op re-emits; keys on
  *    grand_total AND tax (net-basis gate);
  *  - a mid-flight change is parked and run on completion (trailing edge);
@@ -78,7 +80,13 @@ const ComponentMock = {
 /** mage/storage.get() stub returning a jQuery-style promise. */
 function makeStorage(opts) {
     opts = opts || {};
-    const response = opts.response || { payment_methods: [{ method: 'two_payment' }] };
+    // The real endpoint always returns a totals segment, and the component
+    // compares it against the emit that asked; a stub without one only ever
+    // exercises the reject branch.
+    const response = opts.response || {
+        payment_methods: [{ method: 'two_payment' }],
+        totals: { grand_total: '264.00' }
+    };
     const get = jest.fn(function () {
         let settled = null;
         const done = [];
@@ -153,7 +161,12 @@ describe('Two_Gateway/js/view/payment-availability', () => {
         const { totals, setPaymentMethods } = setup({
             initialTotals: { grand_total: '224.00' },
             available: [],
-            storage: { response: { payment_methods: [{ method: 'two_payment' }] } }
+            storage: {
+                response: {
+                    payment_methods: [{ method: 'two_payment' }],
+                    totals: { grand_total: '264.00' }
+                }
+            }
         });
         totals({ grand_total: '264.00' });
         expect(setPaymentMethods).toHaveBeenCalledTimes(1);
@@ -165,10 +178,75 @@ describe('Two_Gateway/js/view/payment-availability', () => {
         const { totals, setPaymentMethods } = setup({
             initialTotals: { grand_total: '264.00' },
             available: [{ method: 'two_payment' }],
-            storage: { response: { payment_methods: [{ method: 'two_payment' }] } }
+            storage: {
+                response: {
+                    payment_methods: [{ method: 'two_payment' }],
+                    totals: { grand_total: '300.00' }
+                }
+            }
         });
         totals({ grand_total: '300.00' });
         expect(setPaymentMethods).not.toHaveBeenCalled();
+    });
+
+    // Given a totals emit, When the response reports the basket isAvailable
+    // judged, Then the verdict is published only for the emitted basket.
+    it.each([
+        {
+            serverTotals: { grand_total: '264.00', tax_amount: '44.00' },
+            serverMethods: [{ method: 'two_payment' }, { method: 'checkmo' }],
+            shown: [{ method: 'checkmo' }],
+            applied: 1,
+            desc: 'the emitted basket - verdict published'
+        },
+        {
+            serverTotals: { grand_total: '224.00', tax_amount: '44.00' },
+            serverMethods: [{ method: 'checkmo' }],
+            shown: [{ method: 'two_payment' }, { method: 'checkmo' }],
+            applied: 0,
+            desc: 'a lower basket with the shipping choice unsaved - must not withhold'
+        },
+        {
+            serverTotals: { grand_total: '300.00', tax_amount: '44.00' },
+            serverMethods: [{ method: 'two_payment' }, { method: 'checkmo' }],
+            shown: [{ method: 'checkmo' }],
+            applied: 0,
+            desc: 'a higher basket with the shipping choice unsaved - must not offer'
+        },
+        {
+            serverTotals: { grand_total: '264.00', tax_amount: '20.00' },
+            serverMethods: [{ method: 'checkmo' }],
+            shown: [{ method: 'two_payment' }, { method: 'checkmo' }],
+            applied: 0,
+            desc: 'the same gross on a different tax - a different net basis'
+        },
+        {
+            serverTotals: undefined,
+            serverMethods: [{ method: 'checkmo' }],
+            shown: [{ method: 'two_payment' }, { method: 'checkmo' }],
+            applied: 0,
+            desc: 'no basket at all - nothing to attribute the verdict to'
+        }
+    ])('server judged $desc', ({ serverTotals, serverMethods, shown, applied }) => {
+        const { totals, setPaymentMethods } = setup({
+            initialTotals: { grand_total: '100.00', tax_amount: '0' },
+            available: shown,
+            storage: { response: { payment_methods: serverMethods, totals: serverTotals } }
+        });
+        totals({ grand_total: '264.00', tax_amount: '44.00' });
+        expect(setPaymentMethods).toHaveBeenCalledTimes(applied);
+    });
+
+    it('rolls the key back after a mismatched basket so a later emit re-asks', () => {
+        const { totals, storage } = setup({
+            initialTotals: { grand_total: '100.00', tax_amount: '0' },
+            storage: { response: { payment_methods: [], totals: { grand_total: '100.00' } } }
+        });
+        totals({ grand_total: '264.00', tax_amount: '44.00' });
+        expect(storage.get).toHaveBeenCalledTimes(1);
+
+        totals({ grand_total: '264.00', tax_amount: '44.00' });
+        expect(storage.get).toHaveBeenCalledTimes(2);
     });
 
     it('does not fetch on a no-op re-emit with an unchanged key', () => {
@@ -213,8 +291,8 @@ describe('Two_Gateway/js/view/payment-availability', () => {
         expect(() => storage.get._last._reject()).not.toThrow();
         expect(setPaymentMethods).not.toHaveBeenCalled();
 
-        // Key rolled back → a later change still fetches (retry not stranded).
-        totals({ grand_total: '300.00' });
+        // The SAME key: without the rollback this would dedup and never retry.
+        totals({ grand_total: '264.00' });
         expect(storage.get).toHaveBeenCalledTimes(2);
     });
 

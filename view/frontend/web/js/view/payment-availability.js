@@ -14,12 +14,21 @@
  * applied on the payment step), so a basket crossing the threshold keeps its
  * stale visibility until a full checkout reload. Hyvä and FireCheckout
  * re-fetch on every totals change and are unaffected; this gives Luma (and
- * Luma-derived one-step checkouts) the same behaviour.
+ * Luma-derived one-step checkouts) the same behaviour. A derivative that never
+ * persists the shipping choice mid-flow gets nothing from this component: the
+ * server it would ask cannot see the change, so the basket check below rejects
+ * every answer.
  *
  * On a genuine totals change it re-fetches the payment-information endpoint
  * (the server re-runs isAvailable) and applies the returned method list ONLY
- * WHEN the set of available methods actually changed. Two constraints drive
+ * WHEN the set of available methods actually changed. Three constraints drive
  * that:
+ *   - It applies a response only when the order value the server judged is the
+ *     one that triggered the refresh. isAvailable runs against the PERSISTED
+ *     quote, which lags a client-estimated shipping choice (saved only by
+ *     set-shipping-information), so a mismatched verdict is about a different
+ *     basket: publishing one withheld the method on a stale below-minimum
+ *     total that then never moved, so nothing restored it (ABN-509).
  *   - It never calls quote.setTotals(). The shared core action
  *     (get-payment-information) does, which stamps the server's possibly-
  *     pre-shipping totals over the correctly-collected client totals — the
@@ -105,7 +114,9 @@ define([
             }
             var tax = parseFloat(totals.tax_amount) || 0;
 
-            return grand + '|' + tax;
+            // Fixed precision, because this key is also compared against the
+            // server's own totals: raw float text makes the same basket differ.
+            return grand.toFixed(4) + '|' + tax.toFixed(4);
         },
 
         /**
@@ -149,6 +160,13 @@ define([
 
             storage.get(this._paymentInformationUrl(), false)
                 .done(function (response) {
+                    // A verdict keyed to another basket says nothing about this
+                    // one; roll back so a later emit re-asks (see class doc).
+                    if (self._readKey(response && response.totals) !== targetKey) {
+                        self._lastKey = priorKey;
+
+                        return;
+                    }
                     self._applyIfChanged(response);
                 })
                 .fail(function () {
