@@ -96,8 +96,10 @@ class FeeRatesProvider
     public function getRates(array $terms, string $buyerCountry, ?int $storeId = null): array
     {
         $cacheKey = $this->cacheKey($terms, $buyerCountry, $storeId);
-        $cooling = $cacheKey !== null
-            && $this->cache->load($cacheKey . self::FAILURE_COOLDOWN_SUFFIX) !== false;
+        if ($cacheKey === null) {
+            return ['success' => false, 'error' => 'upstream'];
+        }
+        $cooling = $this->cache->load($cacheKey . self::FAILURE_COOLDOWN_SUFFIX) !== false;
 
         $normalised = $cooling
             ? ['success' => false, 'error' => 'upstream']
@@ -106,14 +108,13 @@ class FeeRatesProvider
         if ($normalised['success']) {
             $normalised['fetched_at'] = time();
             $normalised['stale'] = false;
-            if ($cacheKey !== null) {
-                $this->cache->save($this->json->serialize($normalised), $cacheKey, self::CACHE_TAGS, null);
-                $this->cache->remove($cacheKey . self::FAILURE_COOLDOWN_SUFFIX);
-            }
+            $this->cache->save($this->json->serialize($normalised), $cacheKey, self::CACHE_TAGS, null);
+            $this->cache->remove($cacheKey . self::FAILURE_COOLDOWN_SUFFIX);
+
             return $normalised;
         }
 
-        if ($cacheKey !== null && !$cooling) {
+        if (!$cooling) {
             $this->cache->save(
                 '1',
                 $cacheKey . self::FAILURE_COOLDOWN_SUFFIX,
@@ -122,7 +123,7 @@ class FeeRatesProvider
             );
         }
 
-        $cached = $cacheKey === null ? null : $this->loadRates($cacheKey);
+        $cached = $this->loadRates($cacheKey);
         if ($cached === null) {
             return $normalised;
         }
@@ -187,8 +188,8 @@ class FeeRatesProvider
     }
 
     /**
-     * Null when no API key is stored: there is no identity to cache against,
-     * and nothing to fetch either.
+     * Null when no API key is stored: nothing to ask with, and no identity to
+     * cache an answer against.
      *
      * @param int[] $terms
      */

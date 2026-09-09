@@ -205,14 +205,68 @@ class FeeRatesProviderTest extends TestCase
         $this->assertSame($keys[0], $keys[1]);
     }
 
-    public function testNoStoredApiKeyIsNeverCachedAgainstAnIdentity(): void
+    public function testNoStoredApiKeyIsNeitherAskedNorCached(): void
     {
-        // There is no merchant to key the answer against, so nothing is written.
-        $this->apiAdapter->method('execute')->willReturn(self::RATES);
+        // Nothing to ask with, and no identity to cache an answer against.
+        $this->apiAdapter->expects($this->never())->method('execute');
         $cache = $this->emptyCache();
         $cache->expects($this->never())->method('save');
 
-        $this->assertTrue($this->build($cache, '')->getRates([30], 'NL', 1)['success']);
+        $this->assertSame(
+            ['success' => false, 'error' => 'upstream'],
+            $this->build($cache, '')->getRates([30], 'NL', 1)
+        );
+    }
+
+    public function testACoolingIdentityStillServesItsCachedSet(): void
+    {
+        $this->apiAdapter->expects($this->never())->method('execute');
+        $held = (new Json())->serialize([
+            'success' => true,
+            'currency' => 'EUR',
+            'fees' => ['30' => ['percentage' => 1.5, 'fixed' => 0.5]],
+            'fetched_at' => 1700000000,
+        ]);
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->method('load')->willReturnCallback(
+            fn(string $id) => str_ends_with($id, '_cooldown') ? '1' : $held
+        );
+
+        $rates = $this->build($cache)->getRates([30], 'NL', 1);
+
+        $this->assertTrue($rates['stale']);
+        $this->assertSame(['30' => ['percentage' => 1.5, 'fixed' => 0.5]], $rates['fees']);
+    }
+
+    public function testTheCooldownIsArmedForAMinuteAndClearedByASuccess(): void
+    {
+        $cache = $this->emptyCache();
+        $saves = [];
+        $cache->method('save')->willReturnCallback(
+            function ($data, $identifier, $tags, $lifeTime) use (&$saves) {
+                $saves[$identifier] = $lifeTime;
+                return true;
+            }
+        );
+        $removed = [];
+        $cache->method('remove')->willReturnCallback(
+            function (string $identifier) use (&$removed) {
+                $removed[] = $identifier;
+                return true;
+            }
+        );
+
+        $this->apiAdapter->method('execute')->willReturn(['error_code' => 503]);
+        $this->build($cache)->getRates([30], 'NL', 1);
+        $cooldowns = preg_grep('/_cooldown$/', array_keys($saves));
+        $this->assertCount(1, $cooldowns);
+        $this->assertSame(60, $saves[reset($cooldowns)], 'a failed fetch is not repeated for a minute');
+
+        $this->apiAdapter = $this->createMock(Adapter::class);
+        $this->apiAdapter->method('execute')->willReturn(self::RATES);
+        $this->build($cache)->getRates([30], 'NL', 1);
+
+        $this->assertCount(1, preg_grep('/_cooldown$/', $removed), 'a success lifts it');
     }
 
     public function testA200PricingNothingNeverOverwritesTheLastSet(): void

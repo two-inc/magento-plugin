@@ -205,8 +205,12 @@ class Fees extends Action
             return $raw;
         }
         $sourceCurrency = (string)($raw['currency'] ?? '');
-        if ($sourceCurrency === '' || $sourceCurrency === $targetCurrency) {
-            $raw['currency'] = $targetCurrency;
+        if ($sourceCurrency === '') {
+            // Left empty on purpose: the grid drops the fixed component rather
+            // than labelling an amount in a currency the API never stated.
+            return $raw;
+        }
+        if ($sourceCurrency === $targetCurrency) {
             return $raw;
         }
 

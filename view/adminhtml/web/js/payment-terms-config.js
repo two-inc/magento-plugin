@@ -336,6 +336,12 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     scopeId: parseInt($termsContainer.data('scope-id'), 10) || 0
                 }
             }).done(function (response) {
+                // Anything but a fresh, renderable set may be asked again for
+                // the same terms: the server's own cooldown, not this key, is
+                // what stops an outage becoming a call per render.
+                if (!response || !response.success || !response.fees || response.stale) {
+                    lastFeesKey = null;
+                }
                 if (!response || !response.success || !response.fees) {
                     showFeesUnavailable();
                     return;
@@ -404,7 +410,6 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     $span.text(' (' + inner + ')');
                 });
             }).fail(function () {
-                // A transport error may be transient, so the same term-set may be asked again.
                 lastFeesKey = null;
                 showFeesUnavailable();
             });

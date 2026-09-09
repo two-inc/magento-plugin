@@ -67,8 +67,7 @@ describe('inline merchant fees, when the pricing service cannot answer', () => {
     it.each([
         ['an upstream failure with nothing cached says so', { success: false, error: 'upstream' }, 'could not be reached'],
         ['a response with no fee set at all says so', { success: true, currency: 'EUR' }, 'could not be reached'],
-        ['a last-known-good set says it is not current', STALE, 'could not be refreshed'],
-        ['a fresh set carries no notice', FRESH, '']
+        ['a last-known-good set says it is not current', STALE, 'could not be refreshed']
     ])('%s', (description, response, expectedFragment) => {
         const loaded = load();
         expect(loaded.requests.length).toBe(1);
@@ -83,16 +82,27 @@ describe('inline merchant fees, when the pricing service cannot answer', () => {
         }
     });
 
-    it('clears a stale notice once the figures come back current', () => {
+    it('re-asks after a stale answer, and clears the notice once the figures are current', () => {
         const loaded = load();
         loaded.requests[0].settleDone(STALE);
         expect(jq(NOTICE).text()).toContain('could not be refreshed');
 
-        // A term change re-asks, and this time the service answers.
-        jq('.two-term-checkboxes__input').trigger('change');
-        loaded.requests[loaded.requests.length - 1].settleDone(FRESH);
+        // A changed term set re-asks, and this time the service answers.
+        jq('#two_payment_payment_terms_payment_terms_duration_days').val('45').trigger('change');
+        expect(loaded.requests.length).toBe(2);
+        loaded.requests[1].settleDone(FRESH);
 
         expect(jq(NOTICE).text()).toBe('');
+    });
+
+    it('asks again for the same term set once an answer was not current', () => {
+        // Otherwise a notice and its figures outlive the outage for the page's life.
+        const loaded = load();
+        loaded.requests[0].settleDone(STALE);
+
+        jq('.two-term-checkboxes__input').trigger('change');
+
+        expect(loaded.requests.length).toBe(2);
     });
 
     it('names when the figures it is showing were retrieved', () => {
