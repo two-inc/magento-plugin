@@ -25,11 +25,17 @@ use Two\Gateway\Service\Api\Adapter;
  * Cached against mode + API key, since neither a key swap nor an
  * environment switch may serve the previous merchant's record.
  *
- * Freshness is the stored success stamp, not cache expiry: the hourly cron
- * refreshes a record once it is MAX_AGE old, ahead of CACHE_LIFETIME, so
- * on an install whose cron runs the record is never evicted and a failed
- * fetch keeps serving the last good values. A read that finds no record is
- * therefore a sign the cron is not running, and is logged as such.
+ * The entry never expires and is never evicted: the scheduled hourly
+ * refresh is the only thing that replaces it. A key that stops verifying
+ * therefore costs the merchant nothing beyond the buyer-facing payment
+ * method — every admin control the record drives keeps rendering
+ * indefinitely (ABN-519). A read that finds no record at all is a fresh
+ * install or a manual cache flush, and is logged.
+ *
+ * Freshness is the stored success stamp. The cron refreshes a record once
+ * it is MAX_AGE old; a record that reaches STALE_AFTER says the cron is not
+ * running, so a read stands in for it — see refreshIfStale(), which never
+ * withholds or blocks on the outcome.
  *
  * A failure is never cached as the record and never moves the stamp —
  * callers degrade to their own "no value configured" behaviour only while
@@ -37,8 +43,8 @@ use Two\Gateway\Service\Api\Adapter;
  */
 class RecordProvider
 {
-    /** Eviction ceiling; must exceed MAX_AGE + CRON_INTERVAL so a refresh one run late still beats eviction. */
-    public const CACHE_LIFETIME = 93600;
+    /** Age at which a read concludes the cron is not running and refreshes the record itself. */
+    public const STALE_AFTER = 93600;
 
     /** Age at which the hourly cron refreshes the record. */
     public const MAX_AGE = 86400;
@@ -54,8 +60,13 @@ class RecordProvider
 
     private const FAILURE_COOLDOWN_SUFFIX = '_cooldown';
 
+    private const STALE_COOLDOWN_SUFFIX = '_stale_cooldown';
+
     /** Seconds before a failed fetch is retried, so an outage is not a fetch per read. */
     private const FAILURE_COOLDOWN = 60;
+
+    /** Seconds between stand-in refreshes of a stale record: one per run the cron owes. */
+    private const STALE_REFRESH_COOLDOWN = self::CRON_INTERVAL;
 
     /**
      * Per-call ceiling on the two GETs below. The callers that bound their own
@@ -138,7 +149,7 @@ class RecordProvider
         $cached = $this->loadRecord($cacheKey);
         if ($cached !== null) {
             $this->memo[$cacheKey] = ['record' => $cached];
-            return $cached;
+            return $this->refreshIfStale($cacheKey, $mode, $apiKey, $storeId, $cached) ?? $cached;
         }
 
         if ($this->cache->load($cacheKey . self::FAILURE_COOLDOWN_SUFFIX) !== false) {
@@ -146,12 +157,13 @@ class RecordProvider
             return null;
         }
 
-        // With the cron running the record is replaced before it can be evicted.
+        // The entry never expires, so nothing has ever fetched one for this
+        // identity, or the cache has been flushed.
         $this->logRepository->addErrorLog(
-            'RecordProvider: merchant record absent on read — the hourly scheduled refresh may not be running',
+            'RecordProvider: merchant record absent on read',
             ['store_id' => $storeId]
         );
-        $this->cache->save((string)time(), $cacheKey . self::ABSENT_SUFFIX, self::CACHE_TAGS, self::CACHE_LIFETIME);
+        $this->cache->save((string)time(), $cacheKey . self::ABSENT_SUFFIX, self::CACHE_TAGS, null);
 
         // Armed before the fetch so concurrent renders during an outage share one attempt;
         // read path only — a button press must not push readers to null.
@@ -229,6 +241,42 @@ class RecordProvider
         ];
     }
 
+    /**
+     * A record at STALE_AFTER means the scheduled refresh is not running, so
+     * a read stands in for it, once per run the cron owes. The outcome is
+     * never a verdict: the held record stays valid, nothing is withheld on
+     * staleness grounds, and a fresher record is returned only if the attempt
+     * produced one (ABN-519).
+     *
+     * @param array<string,mixed> $held record already cached, kept on a failed fetch
+     * @return array<string,mixed>|null
+     */
+    private function refreshIfStale(
+        string $cacheKey,
+        string $mode,
+        string $apiKey,
+        ?int $storeId,
+        array $held
+    ): ?array {
+        $fetchedAt = $this->loadTimestamp($cacheKey . self::STAMP_SUFFIX);
+        if ($fetchedAt !== null && time() - $fetchedAt < self::STALE_AFTER) {
+            return null;
+        }
+        if ($this->cache->load($cacheKey . self::STALE_COOLDOWN_SUFFIX) !== false) {
+            return null;
+        }
+        // Armed before the fetch, as on the absent-on-read path, so concurrent
+        // renders share one attempt.
+        $this->cache->save(
+            '1',
+            $cacheKey . self::STALE_COOLDOWN_SUFFIX,
+            self::CACHE_TAGS,
+            self::STALE_REFRESH_COOLDOWN
+        );
+
+        return $this->fetchAndStore($cacheKey, $mode, $apiKey, $storeId, $held);
+    }
+
     private function loadTimestamp(string $key): ?int
     {
         $value = $this->cache->load($key);
@@ -284,14 +332,16 @@ class RecordProvider
         // Memoize either way so a single request never pays the
         // verify+fetch round-trip twice.
         if ($record !== null) {
+            // Null lifetime: the entry never expires, so nothing but a
+            // successful refresh or a manual flush can take it away.
             $this->cache->save(
                 $this->json->serialize(['record' => $record]),
                 $cacheKey,
                 self::CACHE_TAGS,
-                self::CACHE_LIFETIME
+                null
             );
             // The success clock: moves only here, never on a failure.
-            $this->cache->save((string)time(), $cacheKey . self::STAMP_SUFFIX, self::CACHE_TAGS, self::CACHE_LIFETIME);
+            $this->cache->save((string)time(), $cacheKey . self::STAMP_SUFFIX, self::CACHE_TAGS, null);
             $this->memo[$cacheKey] = ['record' => $record];
 
             return $record;

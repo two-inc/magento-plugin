@@ -95,9 +95,11 @@ class HealthChecklist extends Field
     }
 
     /**
-     * When the merchant profile last refreshed. An absent-on-read mark the cron
-     * has had a run to clear and has not is what says the cron is not running;
-     * a newer one is the ordinary first read after a cache flush.
+     * When the merchant profile last refreshed. Two marks say the cron is not
+     * running: an absent-on-read mark it has had a run to clear and has not
+     * (a newer one is the ordinary first read after a cache flush), and a
+     * success stamp the record has outlived by STALE_AFTER. Neither withholds
+     * anything — the record is still served (ABN-519).
      *
      * @return array{label: string, ok: bool, value: string}
      */
@@ -116,11 +118,22 @@ class HealthChecklist extends Field
                 ),
             ];
         }
-        if ($status['fetched_at'] !== null) {
+        $fetchedAt = $status['fetched_at'];
+        if ($fetchedAt !== null && time() - $fetchedAt >= RecordProvider::STALE_AFTER) {
+            return [
+                'label' => $label,
+                'ok' => false,
+                'value' => (string)__(
+                    'Refreshed %1 — the hourly refresh appears not to be running',
+                    $this->formatTimestamp($fetchedAt)
+                ),
+            ];
+        }
+        if ($fetchedAt !== null) {
             return [
                 'label' => $label,
                 'ok' => true,
-                'value' => (string)__('Refreshed %1', $this->formatTimestamp($status['fetched_at'])),
+                'value' => (string)__('Refreshed %1', $this->formatTimestamp($fetchedAt)),
             ];
         }
 

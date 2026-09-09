@@ -31,12 +31,12 @@ class RefreshMerchantRecordTest extends TestCase
         $this->assertSame(3600, RecordProvider::CRON_INTERVAL);
     }
 
-    public function testTheRecordIsNeverEvictedWhileTheCronRunsOnSchedule(): void
+    public function testAStaleReadOnlyTriggersOnceTheCronHasMissedARun(): void
     {
-        // Refreshed at MAX_AGE, at most one interval late, still inside the lifetime.
+        // Refreshed at MAX_AGE, at most one interval late, still not stale.
         $this->assertGreaterThan(
             RecordProvider::MAX_AGE + RecordProvider::CRON_INTERVAL,
-            RecordProvider::CACHE_LIFETIME
+            RecordProvider::STALE_AFTER
         );
     }
 }

@@ -185,23 +185,36 @@ submitted key.
 One key configured against sandbox on one store view and production on another must
 not share a slot, or a store view serves the other environment's merchant.
 
-**The record's freshness is a stored success stamp, not cache expiry.** The hourly
-cron refreshes a record older than 24 hours; the cache's own 26-hour eviction
-ceiling sits above that sum on purpose, so a refresh one run late still beats
-eviction and a stopped cron shows up as a stale stamp rather than an empty slot. A
-fetch is bounded at 10 seconds, so a caller with its own wall-clock budget — a
-config save, the admin refresh button, a storefront render — can hold to it. A
-failed fetch is never cached as the record and never moves the stamp:
-last-known-good is served and re-fetch is bounded to once a minute, so an outage is
-not a fetch per read.
+**The record entry NEVER expires and is never evicted.** The scheduled hourly
+refresh is the only thing that replaces it, so a key that stops verifying costs the
+merchant nothing beyond the buyer-facing payment method: every admin control the
+record drives keeps rendering indefinitely (ABN-519). The motivating case is a
+merchant running two shops who rotates their key and updates only one — the
+forgotten shop must lose the tile and nothing else, however long the key stays
+wrong. Do not reintroduce a TTL on the record or its success stamp.
 
-**That last-known-good does NOT keep the method on offer through an outage.** The
-availability chain reaches the api-key verification verdict before it reaches the
-record, and a verdict caches a success for five minutes — so the method is withheld
-about five minutes into an unreachable API, whatever the record holds. Measured
-live: warm record with the API blackholed, and cleared record with the API
-blackholed, withhold identically. What the 26 hours protect is the cron and admin
-paths, not the buyer gate.
+**Freshness is the stored success stamp, and staleness is never a verdict.** The
+cron refreshes a record older than 24 hours. A record that reaches 26 hours says
+the cron is not running, so a read stands in for it — one attempt per hour, the
+held record returned either way, nothing withheld and no buyer told. A fetch is
+bounded at 10 seconds, so a caller with its own wall-clock budget — a config save,
+the admin refresh button, a storefront render — can hold to it. A failed fetch is
+never cached as the record and never moves the stamp: last-known-good is served and
+re-fetch is bounded, so an outage is not a fetch per read. The admin health
+checklist reports both an absent-on-read mark and a stamp the record has outlived.
+
+**That last-known-good does NOT keep the method on offer through an outage, and
+that is the ruling.** The availability chain reaches the api-key verification
+verdict before it reaches the record, and a verdict caches a success for five
+minutes — a heartbeat — so the method is withheld about five minutes into an
+unreachable API, whatever the record holds. Every failure category withholds
+alike: a rejected key, a transport failure, a timeout and a 5xx are not
+distinguished for this purpose, and no fallback to the record belongs on the buyer
+surface. Measured live: warm record with the API blackholed, and cleared record
+with the API blackholed, withhold identically. What the record protects is the
+cron and admin paths, and no admin surface is gated on the verdict at all — the
+one place a verdict blocks an admin action is the api-key field refusing to store
+a key the API definitively rejected.
 
 **A cache type absent from `env.php` resolves as DISABLED**, and `cache.xml`
 carries no default-state attribute, so an install has to write the state itself:
