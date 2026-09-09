@@ -152,9 +152,9 @@ class HealthChecklist extends Field
         } elseif ($apiKeyStatus['status'] === ApiKeyStatus::INVALID_KEY) {
             $reason = (string)__('the API key was rejected. Check API key and Environment.');
         } elseif ($apiKeyStatus['status'] !== ApiKeyStatus::OK) {
-            // Neither "shown" nor a reason: ApiKeyStatus::isVerified() still
-            // withholds on a transient verdict, and ABN-533's fall-through to
-            // the cached record will stop it. True either way.
+            // Neither "shown" nor a reason, because isVerified() still
+            // withholds on a transient verdict. Delete this arm with ABN-533's
+            // fall-through to the cached record, which owns that gate.
             return [
                 'label' => $label,
                 'ok' => false,
