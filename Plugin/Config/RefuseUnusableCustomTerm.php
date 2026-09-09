@@ -111,6 +111,7 @@ class RefuseUnusableCustomTerm
 
     /**
      * The scope saved, typed as the save pipeline, env.php and the config reader all name it.
+     * Truthiness, not emptiness, because Config::retrieveScope() reads a store of "0" as default.
      *
      * @return array{type: string, code: string, id: int}|null
      */
@@ -118,13 +119,13 @@ class RefuseUnusableCustomTerm
     {
         try {
             $store = (string)$subject->getStore();
-            if ($store !== '') {
+            if ($store) {
                 $resolved = $this->storeManager->getStore($store);
 
                 return ['type' => 'stores', 'code' => (string)$resolved->getCode(), 'id' => (int)$resolved->getId()];
             }
             $website = (string)$subject->getWebsite();
-            if ($website !== '') {
+            if ($website) {
                 $resolved = $this->storeManager->getWebsite($website);
 
                 return ['type' => 'websites', 'code' => (string)$resolved->getCode(), 'id' => (int)$resolved->getId()];

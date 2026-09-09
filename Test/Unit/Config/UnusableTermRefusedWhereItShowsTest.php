@@ -54,9 +54,7 @@ class UnusableTermRefusedWhereItShowsTest extends TestCase
         bool $envLocked = false,
         string $section = self::SECTION
     ): ?string {
-        $editedScope = $scopeParam === 'store'
-            ? ['stores', self::STORE_CODE, self::STORE_ID]
-            : ['websites', self::WEBSITE_CODE, self::WEBSITE_ID];
+        $editedScope = self::editedScope($scopeParam);
 
         // Any other scope answers with something unusable, so a mis-scoped read cannot pass as one.
         $scopeConfig = $this->createMock(ScopeConfigInterface::class);
@@ -88,6 +86,23 @@ class UnusableTermRefusedWhereItShowsTest extends TestCase
         }
 
         return null;
+    }
+
+    /**
+     * The scope the plugin should resolve. A param naming none is answered with a fixture nothing
+     * can match, so a read made anyway shows up as a failure rather than passing for the website's.
+     *
+     * @return array{string, string|null, int}
+     */
+    private static function editedScope(string $scopeParam): array
+    {
+        if ($scopeParam === 'store') {
+            return ['stores', self::STORE_CODE, self::STORE_ID];
+        }
+
+        return $scopeParam === 'website'
+            ? ['websites', self::WEBSITE_CODE, self::WEBSITE_ID]
+            : ['no-scope', null, -1];
     }
 
     /**
@@ -137,7 +152,11 @@ class UnusableTermRefusedWhereItShowsTest extends TestCase
             }
             public function getStore()
             {
-                return $this->scopeParam === 'store' ? '5' : '';
+                if ($this->scopeParam === 'store') {
+                    return '5';
+                }
+
+                return $this->scopeParam === 'store-zero' ? '0' : '';
             }
             public function getWebsite()
             {
@@ -239,6 +258,7 @@ class UnusableTermRefusedWhereItShowsTest extends TestCase
             [$inheriting, 'store', false, '0', false, self::SECTION, false, 'a zero reads as blank, not as junk'],
             [['value' => 'abc'], 'store', false, 'abc', false, self::SECTION, false, 'a value posted for writing is refused by its backend model instead'],
             [$inheriting, 'default', false, 'abc', false, self::SECTION, false, 'a tick at default scope removes the value rather than adopting one'],
+            [$inheriting, 'store-zero', false, 'abc', false, self::SECTION, false, 'a store of "0" is the default scope to Config::retrieveScope(), so it is not a store view here'],
             [$inheriting, 'store', false, 'abc', true, self::SECTION, false, 'env.php holds the value, so refusing would leave no way out'],
             [null, 'store', false, 'abc', false, self::SECTION, false, 'a field the form never posted is not this save'],
             [$inheriting, 'store', false, 'abc', false, 'other_payment', false, 'a section that does not declare the field'],
