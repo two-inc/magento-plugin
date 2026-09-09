@@ -6,9 +6,9 @@
  *
  * The previous attempt was payment-tile-scoped, and the same defect kept
  * resurfacing wearing different hats: state whose lifetime was per-render
- * standing in for something page-level. Every case here fails
- * against that architecture and passes against this one, so they are the
- * regression guard on the container itself rather than on any one behaviour.
+ * standing in for something page-level. Every case here fails against that
+ * architecture and passes against this one, so they are the regression guard
+ * on the container itself rather than on any one behaviour.
  *
  * The invariants:
  *  - the component is constructed exactly twice per page, by the boot

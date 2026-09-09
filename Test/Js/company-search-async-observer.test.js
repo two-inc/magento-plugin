@@ -13,9 +13,9 @@
  * payment method.
  *
  * The cases below fail against a `bind()` that registers per call. They need
- * the harness's `$.async` SIMULATION rather than its old one-shot stub: a stub
- * that never re-fires cannot express stacking, which is why this class of
- * defect survived a green suite.
+ * the harness's `$.async` SIMULATION rather than a one-shot stub: a stub that
+ * never re-fires cannot express stacking, which is why this class of defect
+ * goes undetected by a green suite.
  */
 
 'use strict';

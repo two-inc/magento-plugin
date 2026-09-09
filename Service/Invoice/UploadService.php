@@ -115,7 +115,7 @@ class UploadService
         // occasionally dispatch sales_order_shipment_save_after more than
         // once for the same shipment, and a second call resetting
         // two_invoice_upload_reference/error here would race the cron's
-        // upload() if it's already mid-flight for this order (TWO-24758).
+        // upload() if it is already mid-flight for this order (TWO-24758).
         if ($currentStatus === self::STATUS_UPLOADED || $currentStatus === self::STATUS_UPLOADING) {
             return;
         }
