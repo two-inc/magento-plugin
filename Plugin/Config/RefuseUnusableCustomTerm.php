@@ -9,22 +9,20 @@ declare(strict_types=1);
 namespace Two\Gateway\Plugin\Config;
 
 use Magento\Config\Model\Config;
+use Magento\Config\Model\Config\Loader;
 use Magento\Config\Model\Config\Reader\Source\Deployed\SettingChecker;
 use Magento\Config\Model\Config\Structure;
 use Magento\Config\Model\Config\Structure\Element\Field;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Exception\LocalizedException;
-use Magento\Store\Model\ScopeInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Model\Config\StoredTerm;
 
 /**
- * Refuses a section save that would leave an unusable custom term in effect at the scope saved.
- *
- * Every field in this group binds through `config_path`, which the admin form's config-data filter
- * does not match, so each renders with `inherit` ticked at store and website scope — and an
- * inherit-flagged field never reaches its backend model. This is the only guard those scopes reach
- * (ABN-522).
+ * Refuses a section save that would leave an unusable custom term in effect at the scope saved, in
+ * the one shape the field's own backend model never sees: a scope holding no row of its own renders
+ * the row inherited and disabled, so it posts its inherit flag and no value. What is refused over
+ * there is the value the page displayed (ABN-522).
  */
 class RefuseUnusableCustomTerm
 {
@@ -36,12 +34,13 @@ class RefuseUnusableCustomTerm
         private readonly Structure $structure,
         private readonly ScopeConfigInterface $scopeConfig,
         private readonly SettingChecker $settingChecker,
-        private readonly StoreManagerInterface $storeManager
+        private readonly StoreManagerInterface $storeManager,
+        private readonly Loader $configLoader
     ) {
     }
 
     /**
-     * @throws LocalizedException when the value the saved scope inherits is not a number of days.
+     * @throws LocalizedException when the scope saved shows an unusable value it holds no row for.
      */
     public function beforeSave(Config $subject): void
     {
@@ -57,18 +56,21 @@ class RefuseUnusableCustomTerm
         if ($field === null || $scope === null) {
             return;
         }
+        $path = (string)$field->getConfigPath();
 
         // Locked in env.php, so no answer the merchant gives removes it and refusing would deadlock.
-        if ($this->settingChecker->isReadOnly($field->getPath(), $scope['type'], $scope['code'])) {
+        if ($this->settingChecker->isReadOnly($path, $scope['type'], $scope['code'])) {
             return;
         }
 
-        $inherited = $this->scopeConfig->getValue(
-            (string)$field->getConfigPath(),
-            $scope['parentType'],
-            $scope['parentId']
-        );
-        if (!StoredTerm::isUnusable($inherited)) {
+        // A row of its own is the value on the page, so refusing over the wider scope's instead
+        // would gate the save on a string the merchant cannot see or reach from here.
+        if ($this->holdsItsOwnRow($field, $scope)) {
+            return;
+        }
+
+        $shown = $this->scopeConfig->getValue($path, $scope['type'], $scope['code']);
+        if (!StoredTerm::isUnusable($shown)) {
             return;
         }
 
@@ -76,7 +78,7 @@ class RefuseUnusableCustomTerm
             'Custom payment terms (days) holds "%1", which is not a usable number of days: untick the'
             . ' inherit box on that field and choose Remove to clear it here, or choose Remove at the'
             . ' scope it is set on.',
-            trim((string)$inherited)
+            trim((string)$shown)
         ));
     }
 
@@ -92,10 +94,25 @@ class RefuseUnusableCustomTerm
     }
 
     /**
-     * The scope saved and the wider one it inherits from. Read from the model rather than the
-     * request because the save pipeline scopes its writes from these same two values.
+     * @param array{type: string, code: string, id: int} $scope
+     */
+    private function holdsItsOwnRow(Field $field, array $scope): bool
+    {
+        // The loader filters on a path prefix, so the group is the narrowest query returning the row.
+        $rows = $this->configLoader->getConfigByPath(
+            (string)$field->getGroupPath(),
+            $scope['type'],
+            $scope['id'],
+            false
+        );
+
+        return array_key_exists((string)$field->getConfigPath(), $rows);
+    }
+
+    /**
+     * The scope saved, typed as the save pipeline, env.php and the config reader all name it.
      *
-     * @return array{type: string, code: string|null, parentType: string, parentId: int|null}|null
+     * @return array{type: string, code: string, id: int}|null
      */
     private function scope(Config $subject): ?array
     {
@@ -104,27 +121,20 @@ class RefuseUnusableCustomTerm
             if ($store !== '') {
                 $resolved = $this->storeManager->getStore($store);
 
-                return [
-                    'type' => 'stores',
-                    'code' => (string)$resolved->getCode(),
-                    'parentType' => ScopeInterface::SCOPE_WEBSITE,
-                    'parentId' => (int)$resolved->getWebsiteId(),
-                ];
+                return ['type' => 'stores', 'code' => (string)$resolved->getCode(), 'id' => (int)$resolved->getId()];
             }
             $website = (string)$subject->getWebsite();
             if ($website !== '') {
-                return [
-                    'type' => 'websites',
-                    'code' => (string)$this->storeManager->getWebsite($website)->getCode(),
-                    'parentType' => ScopeConfigInterface::SCOPE_TYPE_DEFAULT,
-                    'parentId' => null,
-                ];
+                $resolved = $this->storeManager->getWebsite($website);
+
+                return ['type' => 'websites', 'code' => (string)$resolved->getCode(), 'id' => (int)$resolved->getId()];
             }
         } catch (\Exception $e) {
             return null;
         }
 
-        // Default scope offers no inherit box, so a flag posted there names no wider scope to read.
+        // The inherit box default scope offers restores the module default, which is blank, so a
+        // tick there removes the value rather than adopting another.
         return null;
     }
 }

@@ -58,8 +58,8 @@ class PaymentTermsFieldWiringTest extends TestCase
     }
 
     /**
-     * The group's fields all bind through config_path, so at store and website scope every one of
-     * them posts an inherit flag and reaches no backend model — this plugin is the only guard left.
+     * A scope holding no row of its own renders the field inherited and disabled, so it posts no
+     * value and reaches no backend model — this plugin is the only guard that shape reaches.
      */
     public function testAdminhtmlDiXmlRegistersTheUnusableTermGuard(): void
     {
