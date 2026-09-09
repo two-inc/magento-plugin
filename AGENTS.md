@@ -216,6 +216,15 @@ stop working, and they report success while dropping nothing. Declaring the type
 is what makes a targeted clean possible at all — a config clean does not touch
 these records.
 
+**The admin fee column is a cached last-known-good set too** (ABN-512). The fee
+beside each payment term is fetched live per render, and an empty fee means that
+term carries no fee — so a failed fetch may never leave the column blank and
+silent. The last set retrieved for that merchant, buyer country and term list is
+kept with no cache expiry and served instead, with the screen saying it could not
+be refreshed and when it was retrieved. With nothing cached at all the screen says
+the pricing service could not be reached. Do not restore a bare
+`{success:false}` that the browser swallows.
+
 ## The order `isAvailable()` withholds in, and it is SILENT
 
 Core's own checks; a configured non-empty API key; the api-key verification

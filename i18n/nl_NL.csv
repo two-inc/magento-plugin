@@ -401,3 +401,8 @@
 "Default payment term %1 days is not one of the terms you offer: %2 days.","Standaardbetaaltermijn %1 dagen is niet een van de termijnen die u aanbiedt: %2 dagen."
 "Optional. Enter a custom term as a number of days after the end of the month, offered alongside the terms selected above.","Optioneel. Voer een aangepaste termijn in als een aantal dagen na het einde van de maand, aangeboden naast de hierboven geselecteerde termijnen."
 "Unrecognised surcharge method: %1. Choose one of: %2.","Onbekende toeslagmethode: %1. Kies een van: %2."
+"Fees could not be loaded because the pricing service could not be reached. The figures beside each term are missing, not zero.","De kosten konden niet worden geladen omdat de prijsservice niet bereikbaar was. De bedragen naast elke betalingstermijn ontbreken, ze zijn niet nul."
+"Fees could not be refreshed, so the figures last retrieved are shown.","De kosten konden niet worden vernieuwd, dus de laatst opgehaalde bedragen worden weergegeven."
+"Fees could not be refreshed, so the figures retrieved on %1 are shown.","De kosten konden niet worden vernieuwd, dus de op %1 opgehaalde bedragen worden weergegeven."
+"Fees cannot be shown until an API key is saved for this scope.","De kosten kunnen niet worden weergegeven totdat er een API-sleutel voor dit bereik is opgeslagen."
+"no figure","geen bedrag"

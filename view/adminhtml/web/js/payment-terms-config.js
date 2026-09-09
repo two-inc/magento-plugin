@@ -274,8 +274,36 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
         // Fetched async from admin proxy `two/config/fees` (same endpoint
         // the old surcharge-grid Fee column used). Each `.two-term-
         // checkboxes__fee` span is populated with text like " (1.50% + 0.50)"
-        // when the response arrives. On failure the span stays empty.
+        // when the response arrives.
+        //
+        // An empty span means that term carries no fee, so a failed fetch says
+        // so in the notice rather than leaving the spans empty (ABN-512).
         var lastFeesKey = null;
+
+        function setFeeNotice(text) {
+            var $notice = $termsContainer.find('.two-term-checkboxes__fee-notice');
+            if (!$notice.length) {
+                if (!text) {
+                    return;
+                }
+                $notice = $('<div class="two-term-checkboxes__fee-notice admin__field-note"></div>')
+                    .appendTo($termsContainer);
+            }
+            $notice.text(text || '');
+        }
+
+        function showFeesUnavailable(reason) {
+            $termsContainer.find('.two-term-checkboxes__fee').text('');
+            setFeeNotice(
+                reason === 'not_configured'
+                    ? $t('Fees cannot be shown until an API key is saved for this scope.')
+                    : $t('Fees could not be loaded because the pricing service could not be reached. The figures beside each term are missing, not zero.')
+            );
+        }
+
+        // Only the newest request may paint: a slow answer landing after a
+        // later one would otherwise re-state figures that are already replaced.
+        var feesRequestId = 0;
 
         function loadFees() {
             var url = $termsContainer.data('fees-url');
@@ -304,6 +332,8 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                 return;
             }
             lastFeesKey = key;
+            feesRequestId += 1;
+            var requestId = feesRequestId;
             var $formKey = $('input[name="form_key"]').first();
             $.ajax({
                 url: url,
@@ -316,13 +346,35 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     scopeId: parseInt($termsContainer.data('scope-id'), 10) || 0
                 }
             }).done(function (response) {
-                if (!response || !response.success || !response.fees) {
-                    return; // leave spans empty
+                if (requestId !== feesRequestId) {
+                    return;
                 }
-                // Currency MUST come from the API response — the fee
-                // values do too, and we don't get to guess what currency
-                // they're in. If the API omits it, we cannot safely
-                // render any fixed amount.
+                var terminal = response && response.error === 'not_configured';
+                // Anything but a fresh, renderable set may be asked again for
+                // the same terms — the server's own cooldown, not this key, is
+                // what stops an outage becoming a call per render. An unsaved
+                // key is the exception: nothing changes until it is saved.
+                if (!terminal && (!response || !response.success || !response.fees || response.stale)) {
+                    lastFeesKey = null;
+                }
+                if (!response || !response.success || !response.fees) {
+                    showFeesUnavailable(response && response.error);
+                    return;
+                }
+                if (response.stale) {
+                    var retrieved = String(response.fetched_at_display || '');
+                    setFeeNotice(
+                        retrieved === ''
+                            ? $t('Fees could not be refreshed, so the figures last retrieved are shown.')
+                            : $t('Fees could not be refreshed, so the figures retrieved on %1 are shown.')
+                                .replace('%1', retrieved)
+                    );
+                } else {
+                    setFeeNotice('');
+                }
+                // Currency comes from the API response, never guessed: the fee
+                // values are its too. A set without one is refused server-side
+                // rather than drawn.
                 var currency = String(response.currency || '').toUpperCase().trim();
                 var suffix = currency !== '' ? ' ' + currency : '';
                 // Admin locale's decimal separator, sourced server-side
@@ -339,7 +391,9 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     var term = String($span.data('term'));
                     var fee = response.fees[term];
                     if (!fee) {
-                        $span.text('');
+                        // An empty span reads as "no fee for this term", so a
+                        // term the answer did not price says so instead.
+                        $span.text(' (' + $t('no figure') + ')');
                         return;
                     }
                     var pctStr = formatAmount(fee.percentage || 0);
@@ -347,18 +401,6 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     var zero = formatAmount(0);
                     var pctZero = pctStr === zero;
                     var fixedZero = fixedStr === zero;
-                    // Without an API-supplied currency, any fixed
-                    // component would be ambiguous. Drop the fixed
-                    // portion entirely in that case; percentage can
-                    // stand alone since it carries its own unit (%).
-                    if (currency === '') {
-                        if (pctZero) {
-                            $span.text('');
-                            return;
-                        }
-                        $span.text(' (' + pctStr + '%)');
-                        return;
-                    }
                     var inner;
                     if (pctZero && fixedZero) {
                         inner = zero + suffix;
@@ -372,10 +414,11 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
                     $span.text(' (' + inner + ')');
                 });
             }).fail(function () {
-                // Allow a retry on the same term-set after a transient error,
-                // and clear any half-populated spans.
+                if (requestId !== feesRequestId) {
+                    return;
+                }
                 lastFeesKey = null;
-                $termsContainer.find('.two-term-checkboxes__fee').text('');
+                showFeesUnavailable();
             });
         }
 
