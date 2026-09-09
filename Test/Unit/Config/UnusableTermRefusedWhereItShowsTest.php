@@ -252,6 +252,7 @@ class UnusableTermRefusedWhereItShowsTest extends TestCase
             [$inheriting, 'store', false, 'abc', false, self::SECTION, true, 'a store view showing inherited junk cannot be saved'],
             [$inheriting, 'website', false, 'abc', false, self::SECTION, true, 'a website showing inherited junk cannot be saved'],
             [$inheriting, 'store', true, 'abc', false, self::SECTION, false, 'a row of its own is the value on the page, so the tick discarding it is not refused'],
+            [$inheriting, 'website', true, 'abc', false, self::SECTION, false, 'a website holding its own row is left alone on the same grounds'],
             [$inheriting, 'store', false, '30', false, self::SECTION, false, 'a usable inherited term is not refused'],
             [$inheriting, 'store', false, '37', false, self::SECTION, false, 'a term the record does not offer is still usable'],
             [$inheriting, 'store', false, '', false, self::SECTION, false, 'nothing inherited leaves nothing to refuse'],
