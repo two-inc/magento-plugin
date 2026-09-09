@@ -495,9 +495,9 @@
             this.closeSignupPopup();
             // Outside the popover the buyer has left capture, not just the signup.
             if (!inside && panel && panel.close) panel.close();
-            // The other capture's chip is a different control, and its own click handler is
-            // the one place a launch is spelled out. Last, and after closeSignupPopup() has
-            // released this watcher, so the launch's own focus is not judged here again.
+            // Another capture's chip is a different control, and its own click handler is the one
+            // place a launch is spelled out. Last, so closeSignupPopup() has already released this
+            // watcher and the launch's own focus is not judged here again.
             if (chip && typeof chip.click === 'function') chip.click();
         };
         document.addEventListener('focusin', this._returnHandler, true);

@@ -25,15 +25,15 @@ function renderCheckout() {
         + '</div>';
 }
 
+/** Every flow load() armed, so afterEach can release its watcher. */
+const loadedFlows = [];
+
 /**
  * The flow, with a signup popup already up and the watcher armed.
  *
  * @returns {object} `{ flow, windowHandlers, popupRaised, focusins, popoverClosed,
  *          returnToCheckout }`
  */
-/** Every flow load() armed, so the watchers can be released between tests. */
-const loadedFlows = [];
-
 function load() {
     const handlers = {};
     const fakeWindow = {
@@ -107,9 +107,7 @@ function load() {
 
 beforeEach(renderCheckout);
 
-// A `document` listener outlives `document.body.innerHTML = ...`, and so does the
-// flow that armed it: left armed, every earlier test's flow judges this test's
-// focus against its own still-open popup.
+// A `document` listener outlives `document.body.innerHTML = ...`: left armed, an earlier test's flow judges this test's focus against its own still-open popup.
 afterEach(() => {
     loadedFlows.splice(0).forEach((flow) => flow.stopReturnToCheckoutWatcher());
 });
@@ -157,8 +155,8 @@ test('the keyboard route raises the popup it kept, rather than reopening one', (
 
 describe('a second capture on the same page (TWO-25658)', () => {
     /**
-     * The delivery capture's own popover and chip. Magento mounts two - shipping
-     * and billing - each with its own panel, chips and sole-trader flow.
+     * A second capture's own popover and chip — this checkout mounts two, each
+     * with its own panel, chips and sole-trader flow.
      *
      * @returns {object} `{ chip, launches }`, `launches` counting activations
      */
@@ -174,29 +172,22 @@ describe('a second capture on the same page (TWO-25658)', () => {
         return { chip: chip, launches: launches };
     }
 
-    test('focus on the sibling capture\'s Sole trader chip closes this popup and launches that one', () => {
-        const ctx = load();
-        const sibling = renderSibling();
+    test.each([
+        ['soletrader-b', false, 1, 1,
+            'another control, and outside this popover: popup and capture both go, and that chip gets a popup of its own'],
+        ['soletrader', true, 0, 0,
+            'the launching chip stays exempt with a sibling on the page']
+    ])('focus landing on #%s: popup open=%s, popover closed %d time(s), sibling launched %d time(s)',
+        (chipId, open, popoverClosed, launches, why) => {
+            const ctx = load();
+            const sibling = renderSibling();
 
-        sibling.chip.focus();
+            document.getElementById(chipId).focus();
 
-        expect(ctx.flow.isPopupOpen()).toBe(false);
-        expect(ctx.popupRaised()).toBe(0);
-        // Outside this capture's popover, so the buyer has left this capture.
-        expect(ctx.popoverClosed()).toBe(1);
-        expect(sibling.launches.count).toBe(1);
-    });
-
-    test('this capture\'s own chip is still exempt with a sibling on the page', () => {
-        const ctx = load();
-        const sibling = renderSibling();
-
-        document.getElementById('soletrader').focus();
-
-        expect(ctx.flow.isPopupOpen()).toBe(true);
-        expect(ctx.popoverClosed()).toBe(0);
-        expect(sibling.launches.count).toBe(0);
-    });
+            expect(tagged(why, [
+                ctx.flow.isPopupOpen(), ctx.popoverClosed(), sibling.launches.count, ctx.popupRaised()
+            ])).toEqual(tagged(why, [open, popoverClosed, launches, 0]));
+        });
 });
 
 test('no window-level focus listener is armed at all', () => {
