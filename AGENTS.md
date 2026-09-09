@@ -340,6 +340,10 @@ returns null rather than a day count, and no caller substitutes one: the term
 set is offered empty and the buyer is refused at order placement rather than at
 selection (ABN-544).
 
+**The default term prefers 30 net days.** `getDefaultPaymentTerm()` resolves the
+admin's stored default, then the merchant record's own default term, then 30
+whenever it is offered, and only then the shortest offered term (ABN-548).
+
 ## Monetary values in the pricing request are rounded to 2dp
 
 `SurchargeCalculator::convertAmount()` rounds `cap` and `surcharge` to
