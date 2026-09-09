@@ -29,12 +29,14 @@ class SurchargeType extends AbstractSurchargeTreatmentGuard
      * @inheritDoc
      *
      * @throws LocalizedException when the submitted method is not one this
-     *         module can price, or when a surcharge method is enabled and no
-     *         surcharge tax treatment is selected.
+     *         module can price, when a stored never-taxed treatment is not
+     *         replaced by this save, or when a surcharge method is enabled
+     *         and no surcharge tax treatment is selected.
      */
     public function beforeSave()
     {
         $this->assertKnownMethod();
+        $this->assertStoredTreatmentIsReplaced();
         $this->assertTaxTreatmentSelected();
 
         return parent::beforeSave();

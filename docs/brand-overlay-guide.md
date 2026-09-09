@@ -302,6 +302,18 @@ passive). Two consequences:
 </suppressed_fields>
 ```
 
+A brand's admin surface comes ENTIRELY from
+`etc/adminhtml/brand_form_template.xml`:
+`Plugin\Config\Structure\HidePaymentSection` hides the static Two sections
+once an overlay is installed, and the deep merge with `system.xml` only
+overrides fields the template already declares. So a field — or a field's
+`source_model`, `backend_model` or `frontend_model` — added to `system.xml`
+alone is wired on no brand at all, and a missing `backend_model` means a
+save-time guard that silently does not exist for every partner while it
+still passes on Two. Declare both, in both files;
+`BrandFormModelWiringParityTest` and `DiagnosticsSectionParityTest` are the
+guards.
+
 `path` is `section_suffix/group/field` against the synthesised section
 (`{section_prefix}_payment` → `payment_terms` group here).
 `SynthesiseBrandAdminForm` sets `showInDefault/Website/Store="0"` on

@@ -409,6 +409,7 @@
                     <label>Default payment terms</label>
                     <comment>Select the payment term that will be automatically selected for your customer.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\AvailablePaymentTerms</source_model>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\DefaultPaymentTerm</frontend_model>
                     <backend_model>Two\Gateway\Model\Config\Backend\DefaultPaymentTerm</backend_model>
                     <config_path>payment/{{code}}/default_payment_term</config_path>
                 </field>
@@ -418,6 +419,10 @@
                     <label>Surcharge method</label>
                     <comment>Select a method to surcharge your customer.</comment>
                     <source_model>Two\Gateway\Model\Config\Source\SurchargeType</source_model>
+                    <!-- The section-save half of the surcharge tax treatment
+                         guard: this field is posted on every save of the
+                         section, the treatment field is not. -->
+                    <backend_model>Two\Gateway\Model\Config\Backend\SurchargeType</backend_model>
                     <config_path>payment/{{code}}/surcharge_type</config_path>
                 </field>
                 <field id="surcharge_differential" translate="label comment" type="select" sortOrder="60"

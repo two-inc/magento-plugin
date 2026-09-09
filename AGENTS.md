@@ -303,13 +303,23 @@ where the underlying service reports the cause — so the log is where a "why is
 method missing" question gets answered. An unrecognised stored surcharge method
 throws with a buyer-facing string that no buyer ever sees.
 
-## A Diagnostics field declared only in `system.xml` never reaches the admin
+## A field declared only in `system.xml` reaches no brand — nor does its model
 
-The Diagnostics pane is rendered from fields synthesised out of
+Every admin pane is rendered from fields synthesised out of
 `brand_form_template.xml`, and that deep merge only carries fields the template
 already declares — so a field added to `system.xml` alone is dropped silently and
-renders on no brand at all. Declare it in both; `DiagnosticsSectionParityTest`
-compares the two field lists and is the guard against the next one.
+renders on no brand at all. `DiagnosticsSectionParityTest` compares the two field
+lists for the Diagnostics section.
+
+**The same applies to each field's `source_model`, `backend_model` and
+`frontend_model`, and it fails far more quietly.** An overlay install renders ONLY
+the synthesised sections (`HidePaymentSection` hides the static Two ones), so a
+model wired in `system.xml` alone is a save-time guard, an option list or a field
+renderer that exists on a Two-only install and on no overlay — the invariant holds
+everywhere it is tested and nowhere a partner runs. That is how ABN-497 shipped a
+surcharge tax treatment that could not be saved blank on Two and could on every
+brand. `BrandFormModelWiringParityTest` compares all three slots across every
+shared section and is the guard against the next one.
 
 **A configured payment term is validated against the set the merchant is
 entitled to offer**, in the field's backend model and again where the read path
