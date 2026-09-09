@@ -8,6 +8,7 @@ use Magento\Framework\View\Asset\Repository as AssetRepository;
 use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\BrandRegistryInterface;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Model\Config\Repository as ConfigRepositoryImpl;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Model\Ui\CheckoutTileCopy;
@@ -30,6 +31,9 @@ use Two\Gateway\Service\Merchant\SettingsProvider;
  */
 class ConfigProviderApiKeyGateTest extends TestCase
 {
+    /** @var LogRepository|\PHPUnit\Framework\MockObject\MockObject */
+    private $logRepository;
+
     /**
      * @param array<string,mixed>|null $merchantRecord what the never-expiring record holds
      */
@@ -80,6 +84,7 @@ class ConfigProviderApiKeyGateTest extends TestCase
             'storeManager' => $this->storeManager(),
             'supportedCompanyTypes' => $this->createMock(SupportedCompanyTypes::class),
             'checkoutTileCopy' => $this->createMock(CheckoutTileCopy::class),
+            'logRepository' => $this->logRepository ?? $this->createMock(LogRepository::class),
         ];
         foreach ($properties as $name => $value) {
             $reflection->getProperty($name)->setValue($provider, $value);
@@ -263,6 +268,31 @@ class ConfigProviderApiKeyGateTest extends TestCase
                 'a shop with no record has no identity to relay',
             ],
         ];
+    }
+
+    /**
+     * ABN-518: the category and HTTP status, never a response body.
+     *
+     * @dataProvider failureCategories
+     */
+    public function testEveryVerificationFailureIsLogged(string $status, ?int $code): void
+    {
+        $this->logRepository = $this->createMock(LogRepository::class);
+        $this->logRepository->expects($this->once())->method('addDebugLog')
+            ->with(
+                'two_payment withheld from checkout: API key verification failed',
+                ['status' => $status, 'http_status' => $code]
+            );
+
+        $this->build($this->statusService($status, $code))->getConfig();
+    }
+
+    public function testNothingIsLoggedWhenTheKeyVerifies(): void
+    {
+        $this->logRepository = $this->createMock(LogRepository::class);
+        $this->logRepository->expects($this->never())->method('addDebugLog');
+
+        $this->build($this->statusService(ApiKeyStatus::OK, 200, ['id' => 'abc-123']))->getConfig();
     }
 
     public function testTheSubtreeAndItsSentinelArePresentOnSuccess(): void

@@ -11,15 +11,19 @@ use Magento\Backend\Block\Template\Context;
 use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Magento\Framework\Exception\LocalizedException;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\RecordProvider;
+use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
+use Two\Gateway\Service\Order\MinimumOrderProvider;
 
 /**
  * Read-only "install health" panel in Stores Configuration (TWO-25386).
  *
- * Deliberately limited to three checks — API key, environment, SSL
- * verification — rather than inventing new ones (e.g. webhook
- * reachability, PHP extensions).
+ * Deliberately limited to the checks an admin can act on — API key,
+ * environment, SSL verification, merchant profile refresh, and whether
+ * the payment method is currently offered at checkout — rather than
+ * inventing new ones (e.g. webhook reachability, PHP extensions).
  *
  * Uses the cached ApiKeyStatus::getStatus() rather than a live refresh():
  * the neighbouring "API key check" field (ApiKeyCheck) already performs a
@@ -48,16 +52,30 @@ class HealthChecklist extends Field
      */
     private $recordProvider;
 
+    /**
+     * @var SupportedCountriesProvider
+     */
+    private $supportedCountriesProvider;
+
+    /**
+     * @var MinimumOrderProvider
+     */
+    private $minimumOrderProvider;
+
     public function __construct(
         ConfigRepository $configRepository,
         ApiKeyStatus $apiKeyStatus,
         RecordProvider $recordProvider,
+        SupportedCountriesProvider $supportedCountriesProvider,
+        MinimumOrderProvider $minimumOrderProvider,
         Context $context,
         array $data = []
     ) {
         $this->configRepository = $configRepository;
         $this->apiKeyStatus = $apiKeyStatus;
         $this->recordProvider = $recordProvider;
+        $this->supportedCountriesProvider = $supportedCountriesProvider;
+        $this->minimumOrderProvider = $minimumOrderProvider;
         parent::__construct($context, $data);
     }
 
@@ -91,7 +109,91 @@ class HealthChecklist extends Field
                 'value' => $sslDisabled ? (string)__('Disabled') : (string)__('Enabled'),
             ],
             $this->merchantProfileRow($mode),
+            $this->checkoutVisibilityRow(),
         ];
+    }
+
+    /**
+     * Why the payment method is absent from the payment list (ABN-518). Only
+     * reasons decidable without a basket are judged; a basket-dependent one is
+     * named as a constraint instead.
+     *
+     * @return array{label: string, ok: bool, value: string}
+     */
+    private function checkoutVisibilityRow(): array
+    {
+        $label = (string)__('Payment method at checkout');
+        $notShown = (string)__('Not shown at checkout');
+
+        if (!$this->configRepository->isActive()) {
+            return [
+                'label' => $label,
+                'ok' => false,
+                'value' => $notShown . ' — '
+                    . (string)__('the payment method is disabled. Check Enable payment method.'),
+            ];
+        }
+        $status = $this->apiKeyStatus->getStatus();
+        if ($status['status'] === ApiKeyStatus::NOT_CONFIGURED) {
+            return [
+                'label' => $label,
+                'ok' => false,
+                'value' => $notShown . ' — ' . (string)__('no API key is saved. Check API key.'),
+            ];
+        }
+        if ($status['status'] === ApiKeyStatus::INVALID_KEY) {
+            return [
+                'label' => $label,
+                'ok' => false,
+                'value' => $notShown . ' — '
+                    . (string)__('the API key was rejected. Check API key and Environment.'),
+            ];
+        }
+        // ABN-533 will stop transient verdicts withholding at all, so this row
+        // must not report one as the method being hidden.
+        if ($status['status'] !== ApiKeyStatus::OK) {
+            return [
+                'label' => $label,
+                'ok' => false,
+                'value' => (string)__('Cannot be checked — the API key could not be verified just now.'),
+            ];
+        }
+        try {
+            $this->configRepository->getSurchargeType();
+        } catch (LocalizedException) {
+            return [
+                'label' => $label,
+                'ok' => false,
+                'value' => $notShown . ' — '
+                    . (string)__('the saved surcharge method is not recognised. Check Surcharge method.'),
+            ];
+        }
+        $countries = $this->supportedCountriesProvider->getAllowedCountries();
+        if ($countries !== null && $countries === []) {
+            return [
+                'label' => $label,
+                'ok' => false,
+                'value' => $notShown . ' — '
+                    . (string)__('your account allows no buyer countries. Contact us to have them enabled.'),
+            ];
+        }
+
+        $shown = (string)__('Shown at checkout');
+        $minimum = $this->minimumOrderProvider->getMinimum();
+        if ($minimum !== null) {
+            return [
+                'label' => $label,
+                'ok' => true,
+                'value' => $shown . ' — ' . (string)__(
+                    'hidden for baskets below %1 %2 (%3)',
+                    number_format($minimum['amount'], 2, '.', ''),
+                    $minimum['currency'],
+                    $minimum['basis']
+                ),
+            ];
+        }
+
+        return ['label' => $label, 'ok' => true, 'value' => $shown];
     }
 
     /**

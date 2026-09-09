@@ -3,15 +3,19 @@ declare(strict_types=1);
 
 namespace Two\Gateway\Test\Unit\Block\Adminhtml\System\Config\Field;
 
+use Magento\Framework\Exception\LocalizedException;
 use PHPUnit\Framework\TestCase;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Block\Adminhtml\System\Config\Field\HealthChecklist;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\RecordProvider;
+use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
+use Two\Gateway\Service\Order\MinimumOrderProvider;
 
 /**
- * TWO-25386: the admin "Health checklist" panel. Four checks: API key,
- * environment, SSL verification, merchant profile refresh.
+ * TWO-25386: the admin "Health checklist" panel. Five checks: API key,
+ * environment, SSL verification, merchant profile refresh, and (ABN-518)
+ * whether the payment method reaches checkout.
  */
 class HealthChecklistTest extends TestCase
 {
@@ -23,6 +27,12 @@ class HealthChecklistTest extends TestCase
 
     /** @var RecordProvider|\PHPUnit\Framework\MockObject\MockObject */
     private $recordProvider;
+
+    /** @var SupportedCountriesProvider|\PHPUnit\Framework\MockObject\MockObject */
+    private $supportedCountriesProvider;
+
+    /** @var MinimumOrderProvider|\PHPUnit\Framework\MockObject\MockObject */
+    private $minimumOrderProvider;
 
     /** @var HealthChecklist */
     private $block;
@@ -40,8 +50,22 @@ class HealthChecklistTest extends TestCase
                 'scheduled_at' => null,
             ]);
 
+        $this->supportedCountriesProvider = $this->createMock(SupportedCountriesProvider::class);
+        $this->minimumOrderProvider = $this->createMock(MinimumOrderProvider::class);
+
         $this->block = new HealthChecklistTestable();
-        $this->block->setDependencies($this->configRepository, $this->apiKeyStatus, $this->recordProvider);
+        $this->setBlockDependencies();
+    }
+
+    private function setBlockDependencies(): void
+    {
+        $this->block->setDependencies(
+            $this->configRepository,
+            $this->apiKeyStatus,
+            $this->recordProvider,
+            $this->supportedCountriesProvider,
+            $this->minimumOrderProvider
+        );
     }
 
     /**
@@ -59,7 +83,7 @@ class HealthChecklistTest extends TestCase
         $this->recordProvider->expects($this->once())->method('status')
             ->with('sandbox', 'key-a')
             ->willReturn($status);
-        $this->block->setDependencies($this->configRepository, $this->apiKeyStatus, $this->recordProvider);
+        $this->setBlockDependencies();
         $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);
         $this->configRepository->method('getMode')->willReturn('sandbox');
         $this->configRepository->method('getApiKey')->willReturn('key-a');
@@ -186,6 +210,102 @@ class HealthChecklistTest extends TestCase
         ];
     }
 
+    /**
+     * ABN-518.
+     *
+     * @dataProvider checkoutVisibilityStates
+     */
+    public function testTheCheckoutVisibilityRowNamesTheActiveReason(
+        bool $active,
+        string $apiKeyStatus,
+        bool $surchargeTypeKnown,
+        ?array $allowedCountries,
+        ?array $minimum,
+        bool $expectedOk,
+        string $expectedFragment,
+        string $description
+    ): void {
+        $this->configRepository->method('isActive')->willReturn($active);
+        $this->apiKeyStatus->method('getStatus')->willReturn(['status' => $apiKeyStatus]);
+        $this->configRepository->method('getMode')->willReturn('sandbox');
+        if ($surchargeTypeKnown) {
+            $this->configRepository->method('getSurchargeType')->willReturn('none');
+        } else {
+            $this->configRepository->method('getSurchargeType')
+                ->willThrowException(new LocalizedException(new \Magento\Framework\Phrase('unavailable')));
+        }
+        $this->supportedCountriesProvider->method('getAllowedCountries')->willReturn($allowedCountries);
+        $this->minimumOrderProvider->method('getMinimum')->willReturn($minimum);
+
+        $row = $this->block->getChecklistRows()[4];
+
+        $this->assertSame('Payment method at checkout', $row['label'], $description);
+        $this->assertSame($expectedOk, $row['ok'], $description);
+        $this->assertStringContainsString($expectedFragment, $row['value'], $description);
+    }
+
+    /**
+     * @return array<string, array{0: bool, 1: string, 2: bool, 3: array<int,string>|null,
+     *     4: array<string,mixed>|null, 5: bool, 6: string, 7: string}>
+     */
+    public static function checkoutVisibilityStates(): array
+    {
+        $eur = ['amount' => 250.0, 'currency' => 'EUR', 'basis' => 'net'];
+
+        return [
+            'disabled' => [
+                false, ApiKeyStatus::OK, true, null, null, false,
+                'Check Enable payment method',
+                'the switched-off method names the field that switches it on',
+            ],
+            'no key saved' => [
+                true, ApiKeyStatus::NOT_CONFIGURED, true, null, null, false,
+                'no API key is saved',
+                'an unconfigured install is not a rejected key',
+            ],
+            'key rejected' => [
+                true, ApiKeyStatus::INVALID_KEY, true, null, null, false,
+                'the API key was rejected',
+                'a definitive rejection names both key and environment',
+            ],
+            'key unverifiable, service down' => [
+                true, ApiKeyStatus::SERVICE_ERROR, true, null, null, false,
+                'could not be verified just now',
+                'a transient verdict must not be reported as the method being withheld (ABN-533)',
+            ],
+            'key unverifiable, unreachable' => [
+                true, ApiKeyStatus::UNREACHABLE, true, null, null, false,
+                'could not be verified just now',
+                'the same for a store that cannot reach us at all',
+            ],
+            'stored surcharge method unknown' => [
+                true, ApiKeyStatus::OK, false, null, null, false,
+                'Check Surcharge method',
+                'a corrupt stored surcharge type withholds and names its own field',
+            ],
+            'account allows no buyer countries' => [
+                true, ApiKeyStatus::OK, true, [], null, false,
+                'allows no buyer countries',
+                'an empty allowlist hides the method for every buyer, which no local field explains',
+            ],
+            'unrestricted account, no minimum' => [
+                true, ApiKeyStatus::OK, true, null, null, true,
+                'Shown at checkout',
+                'nothing withholding it reads as shown',
+            ],
+            'allowlisted account' => [
+                true, ApiKeyStatus::OK, true, ['NO', 'GB'], null, true,
+                'Shown at checkout',
+                'a populated allowlist is not a reason to withhold',
+            ],
+            'minimum order value in force' => [
+                true, ApiKeyStatus::OK, true, null, $eur, true,
+                'hidden for baskets below 250.00 EUR (net)',
+                'the basket-dependent gate is named as a constraint, not as the current state',
+            ],
+        ];
+    }
+
     public function testAllHealthyRows(): void
     {
         $this->apiKeyStatus->method('getStatus')->willReturn(['status' => ApiKeyStatus::OK]);
@@ -281,9 +401,23 @@ class HealthChecklistTestable extends HealthChecklist
     public function setDependencies(
         ConfigRepository $configRepository,
         ApiKeyStatus $apiKeyStatus,
-        RecordProvider $recordProvider
+        RecordProvider $recordProvider,
+        ?SupportedCountriesProvider $supportedCountriesProvider = null,
+        ?MinimumOrderProvider $minimumOrderProvider = null
     ): void {
         $ref = new \ReflectionClass(HealthChecklist::class);
+
+        if ($supportedCountriesProvider !== null) {
+            $countriesProp = $ref->getProperty('supportedCountriesProvider');
+            $countriesProp->setAccessible(true);
+            $countriesProp->setValue($this, $supportedCountriesProvider);
+        }
+
+        if ($minimumOrderProvider !== null) {
+            $minimumProp = $ref->getProperty('minimumOrderProvider');
+            $minimumProp->setAccessible(true);
+            $minimumProp->setValue($this, $minimumOrderProvider);
+        }
 
         $recordProp = $ref->getProperty('recordProvider');
         $recordProp->setAccessible(true);

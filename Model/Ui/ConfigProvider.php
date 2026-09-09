@@ -13,6 +13,7 @@ use Magento\Framework\View\Asset\Repository as AssetRepository;
 use Magento\Store\Model\StoreManagerInterface;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
+use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
 use Two\Gateway\Service\UrlCookie;
 use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
@@ -109,6 +110,11 @@ class ConfigProvider implements ConfigProviderInterface
     private $checkoutTileCopy;
 
     /**
+     * @var LogRepository
+     */
+    private $logRepository;
+
+    /**
      * @param string $code Payment-method code (overlay-specific). Defaults
      *                     to the Two-branded value for backward
      *                     compatibility with installs that don't override.
@@ -124,6 +130,7 @@ class ConfigProvider implements ConfigProviderInterface
         StoreManagerInterface $storeManager,
         SupportedCompanyTypes $supportedCompanyTypes,
         CheckoutTileCopy $checkoutTileCopy,
+        LogRepository $logRepository,
         ?string $code = null
     ) {
         $this->configRepository = $configRepository;
@@ -136,6 +143,7 @@ class ConfigProvider implements ConfigProviderInterface
         $this->storeManager = $storeManager;
         $this->supportedCompanyTypes = $supportedCompanyTypes;
         $this->checkoutTileCopy = $checkoutTileCopy;
+        $this->logRepository = $logRepository;
         $this->code = $code ?? $brandRegistry->getCode();
     }
 
@@ -185,6 +193,11 @@ class ConfigProvider implements ConfigProviderInterface
         // Two::isAvailable() resolves from the quote and passes explicitly —
         // so both surfaces judge the same store's key and agree.
         if ($this->apiKeyStatus->isDefinitiveFailure()) {
+            $apiKeyStatus = $this->apiKeyStatus->getStatus();
+            $this->logRepository->addDebugLog(
+                sprintf('%s withheld from checkout: API key verification failed', $this->code),
+                ['status' => $apiKeyStatus['status'], 'http_status' => $apiKeyStatus['code'] ?? null]
+            );
             return [];
         }
         // Identity only, and one shape whichever source supplies it: the
