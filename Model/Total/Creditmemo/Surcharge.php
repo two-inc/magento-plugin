@@ -49,7 +49,7 @@ class Surcharge extends AbstractTotal
         // creditmemo from request data. hasData() distinguishes "explicit
         // merchant override" (including 0) from "never set, use default".
         // Normalise to 6dp on entry — admin input is parsed by
-        // CreditmemoSurchargeOverride at locale precision (often 2dp,
+        // CreditmemoFeeOverride at locale precision (often 2dp,
         // potentially more) and we keep 6dp internally so the refund
         // line gross matches what ComposeOrder declared at placement.
         // See Model/Total/Surcharge for the 6dp invariant rationale.
