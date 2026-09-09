@@ -657,6 +657,13 @@
                     <label>Health checklist</label>
                     <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Field\HealthChecklist</frontend_model>
                 </field>
+                <field id="refresh_merchant_record" translate="label comment" type="button" sortOrder="20"
+                       showInDefault="1" showInWebsite="1" showInStore="1"
+                       brand_code="{{code}}">
+                    <label>Merchant profile</label>
+                    <comment>Your offerable payment terms, buyer-surcharge cap, minimum order value and default term are read from Two and cached. They are refreshed once a day by the scheduled job and whenever the API key or environment is saved; use this to pull a change through now.</comment>
+                    <frontend_model>Two\Gateway\Block\Adminhtml\System\Config\Button\RefreshMerchantRecord</frontend_model>
+                </field>
             </group>
         </section>
     </system>
