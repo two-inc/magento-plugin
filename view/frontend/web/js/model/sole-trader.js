@@ -63,6 +63,10 @@
     /** The one control whose focus raises the signup popup instead of closing it. */
     const SOLE_TRADER_CHIP_SELECTOR = '[data-two-chip="soletrader"]';
 
+    /** company-search-panel.js's `CLASSES.WRAP` and `CLASSES.PANEL`, which this module cannot import. */
+    const CAPTURE_WRAP_SELECTOR = '.two-company-field-wrap';
+    const CAPTURE_POPOVER_SELECTOR = '.two-company-dropdown';
+
     /**
      * Page-level, not per-flow: the host builds one capture flow per address
      * panel, and only one delegation/autofill pair may be live per checkout
@@ -483,8 +487,12 @@
             if (!this.isPopupOpen()) return;
             const target = event.target;
             const panel = this._component.panel();
-            const popover = panel && panel.getPanelElement && panel.getPanelElement();
             const field = panel && panel.getField && panel.getField()[0];
+            // Off the field, never `getPanelElement()`: a morph re-render deletes the wrap and the
+            // popover and keeps the field, and that stale stored node makes this capture's own
+            // re-rendered chip read as another capture's, inverting the rule on it.
+            const own = field && (field.closest(CAPTURE_WRAP_SELECTOR) || field.parentElement);
+            const popover = own && own.querySelector(CAPTURE_POPOVER_SELECTOR);
             const inside = !!(target && ((popover && popover.contains(target)) || target === field));
             const chip = target && target.closest && target.closest(SOLE_TRADER_CHIP_SELECTOR);
             if (inside && chip) {

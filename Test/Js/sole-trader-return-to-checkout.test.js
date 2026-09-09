@@ -16,13 +16,42 @@ const SOLE_TRADER = 'view/frontend/web/js/model/sole-trader.js';
 function renderCheckout() {
     document.body.innerHTML =
         '<input id="other-field">'
+        // The wrap holds the field and the popover as siblings, which is the shape
+        // the panel builds and the shape a morph re-render leaves the field in.
+        + '<span class="two-company-field-wrap" id="wrap">'
         // The company field is the popover's own trigger and sits outside it.
         + '<input id="company">'
         + '<div class="two-company-dropdown" id="popover">'
         + '<input id="query">'
         + '<button data-two-chip="registered" id="registered">Ingeschreven bedrijf</button>'
         + '<button data-two-chip="soletrader" id="soletrader">Eenmanszaak</button>'
-        + '</div>';
+        + '</div>'
+        + '</span>';
+}
+
+/**
+ * Re-render a capture the way a host that morphs its server markup over the live
+ * DOM does: the wrap the panel built and the popover inside it go, the field node
+ * stays. `keepWrap` is the same host before the wrap is reached.
+ *
+ * @param {Element} wrap the capture's own field wrap
+ * @param {boolean} keepWrap whether the wrap itself survives
+ * @returns {Element} the newly rendered Sole trader chip
+ */
+function remorph(wrap, keepWrap) {
+    const field = wrap.querySelector('#company');
+    const host = keepWrap ? wrap : wrap.parentElement;
+    if (!keepWrap) {
+        wrap.parentElement.insertBefore(field, wrap);
+        wrap.remove();
+    } else {
+        wrap.querySelector('.two-company-dropdown').remove();
+    }
+    const popover = document.createElement('div');
+    popover.className = 'two-company-dropdown';
+    popover.innerHTML = '<button data-two-chip="soletrader">Eenmanszaak</button>';
+    host.insertBefore(popover, field.nextSibling);
+    return popover.querySelector('[data-two-chip="soletrader"]');
 }
 
 /** Every flow load() armed, so afterEach can release its watcher. */
@@ -49,13 +78,16 @@ function load() {
     });
 
     let popoverClosed = 0;
+    const storedPopover = document.getElementById('popover');
     const flow = new SoleTraderCtor({
         host: function () { return {}; },
         identity: function () { return {}; },
         config: function () { return {}; },
         panel: function () {
             return {
-                getPanelElement: function () { return document.getElementById('popover'); },
+                // Stored, not re-queried: `getPanelElement()` hands back the node the
+                // panel built, which a re-render detaches until the panel rebuilds.
+                getPanelElement: function () { return storedPopover; },
                 getField: function () { return [document.getElementById('company')]; },
                 close: function () { popoverClosed += 1; }
             };
@@ -162,11 +194,16 @@ describe('a second capture on the same page (TWO-25658)', () => {
      */
     function renderSibling() {
         const sibling = document.createElement('div');
-        sibling.className = 'two-company-dropdown';
-        sibling.id = 'popover-b';
-        sibling.innerHTML = '<button data-two-chip="soletrader" id="soletrader-b">Eenmanszaak</button>';
+        sibling.className = 'two-company-field-wrap';
+        sibling.id = 'wrap-b';
+        sibling.innerHTML = '<input id="company-b">'
+            + '<div class="two-company-dropdown">'
+            + '<button data-two-chip="soletrader" id="soletrader-b">Eenmanszaak</button>'
+            + '</div>';
         document.body.appendChild(sibling);
-        const chip = document.getElementById('soletrader-b');
+        // Queried in the sibling's own subtree: jsdom's `getElementById` answers with
+        // the first node REGISTERED under an id, not the first in the tree.
+        const chip = sibling.querySelector('[data-two-chip="soletrader"]');
         const launches = { count: 0 };
         chip.addEventListener('click', function () { launches.count += 1; });
         return { chip: chip, launches: launches };
@@ -183,6 +220,28 @@ describe('a second capture on the same page (TWO-25658)', () => {
             const sibling = renderSibling();
 
             document.getElementById(chipId).focus();
+
+            expect(tagged(why, [
+                ctx.flow.isPopupOpen(), ctx.popoverClosed(), sibling.launches.count, ctx.popupRaised()
+            ])).toEqual(tagged(why, [open, popoverClosed, launches, 0]));
+        });
+
+    // The launching capture is the one that re-rendered, so its own chip is a node the
+    // panel's stored popover never contained.
+    test.each([
+        ['own', true, true, 0, 0,
+            'the launching capture\'s own re-rendered chip is still its own: the popup it launched stays'],
+        ['own', false, true, 0, 0,
+            'and still its own when the re-render took the wrap too, leaving the field where it is'],
+        ['sibling', true, false, 1, 1,
+            'the sibling capture\'s chip is still another control: this popup and its popover go, and that chip gets one']
+    ])('after a re-render, focus landing on the %s chip (wrap kept=%s): popup open=%s, popover closed %d time(s), sibling launched %d time(s)',
+        (which, keepWrap, open, popoverClosed, launches, why) => {
+            const ctx = load();
+            const sibling = renderSibling();
+            const ownChip = remorph(document.getElementById('wrap'), keepWrap);
+
+            (which === 'own' ? ownChip : sibling.chip).focus();
 
             expect(tagged(why, [
                 ctx.flow.isPopupOpen(), ctx.popoverClosed(), sibling.launches.count, ctx.popupRaised()
