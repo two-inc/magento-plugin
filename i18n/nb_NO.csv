@@ -274,7 +274,6 @@
 "Merchant ID:","Forhandler-ID:"
 "Refund %1","Refusjon %1"
 "Surcharge","Tillegg"
-"Amounts are shown in %1 unless otherwise stated.","Beløpet vises i %1 med mindre annet er angitt."
 "Select at least one payment term or enter a custom term.","Velg minst ett betalingsvilkår eller angi et egendefinert vilkår."
 "Please select a surcharge tax treatment. A surcharge method is enabled (see the Surcharge method field), so the Surcharge tax treatment field must be chosen explicitly before this configuration can be saved.","Velg en MVA-behandling for tillegget. En tilleggsmetode er aktivert (se feltet Tilleggsstrategi), så feltet MVA-behandling for tillegg må velges eksplisitt før denne konfigurasjonen kan lagres."
 "Unable to calculate payment terms surcharge. Please try again in a moment.","Kan ikke beregne tillegget for betalingsvilkår. Prøv på nytt om et øyeblikk."
