@@ -68,9 +68,9 @@ class DefaultPaymentTerm extends Field
 
     /**
      * Store id for the scope being edited, or null for website/default — used to resolve the
-     * per-store API key when reading merchant settings. Read from the `store` request param, as
-     * SurchargeGrid::resolveScope() does: the Data\Form object never carries scope, so asking it
-     * resolves every scope to default.
+     * per-store API key when reading merchant settings.
+     *
+     * @see SurchargeGrid::resolveScope() for why the request param and not the form object.
      */
     private function resolveStoreId(): ?int
     {

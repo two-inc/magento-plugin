@@ -83,9 +83,9 @@ class PaymentTermsCustomDays extends Field
 
     /**
      * Store id for the scope being edited, or null for website/default — the offered-terms lookup
-     * resolves the per-store API key from it. Read from the `store` request param, as
-     * SurchargeGrid::resolveScope() does: the Data\Form object never carries scope, so asking it
-     * resolves every scope to default.
+     * resolves the per-store API key from it.
+     *
+     * @see SurchargeGrid::resolveScope() for why the request param and not the form object.
      */
     private function resolveStoreId(): ?int
     {

@@ -100,6 +100,19 @@ namespace Magento\Config\Block\System\Config\Form {
                 return $this->context->getRequest();
             }
 
+            /** As core, whose Field descends from DataObject: renderers stash the element on themselves. */
+            public function setData($key, $value = null)
+            {
+                $this->data[$key] = $value;
+
+                return $this;
+            }
+
+            public function getData($key = '', $index = null)
+            {
+                return $key === '' ? $this->data : ($this->data[$key] ?? null);
+            }
+
             public function setForm($form): void
             {
                 $this->form = $form;
