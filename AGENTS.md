@@ -343,10 +343,16 @@ selection (ABN-544).
 **The default term prefers 30 days.** `getDefaultPaymentTerm()` resolves the
 admin's stored default, then the merchant record's own default term, then 30,
 then the shortest offered term — each honoured only while it is in the offered
-set (ABN-548). The admin's own default-term field pre-selects by the same order
-whenever the stored value is not offered, and its JS applies it again when a
-term is unticked: that select posts on save, so a synthesised shortest term
-would pin the stored default below 30 permanently.
+set (ABN-548). The differential surcharge baseline reads the same resolver, so
+the reference term it prices against moves with the preference.
+
+**Nothing but the admin synthesises a stored default term.** The field's first
+option is Automatic — an empty value — and neither the field nor its JS ever
+puts a day count in the select on the admin's behalf: the select posts on every
+save, so one synthesised there is stored, becomes the resolver's first step, and
+makes every later step unreachable on that scope. A stored term the merchant
+withdrew reads as Automatic rather than as the lowest offered term, which is
+what the browser shows for a value with no matching option.
 
 ## Monetary values in the pricing request are rounded to 2dp
 

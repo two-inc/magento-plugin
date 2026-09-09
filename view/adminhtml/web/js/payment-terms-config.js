@@ -1,9 +1,6 @@
 define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
     'use strict';
 
-    /** Mirrors Repository::PREFERRED_DEFAULT_TERM. */
-    var PREFERRED_DEFAULT_TERM = 30;
-
     function initPaymentTermsConfig() {
         // Discover the section-id prefix from the page. The phtml
         // template ships the checkboxes container with id
@@ -78,20 +75,17 @@ define(['jquery', 'mage/translate', 'domReady!'], function ($, $t) {
             var currentDefault = getDefaultTermValue();
 
             $defaultTerm.empty();
+            // First, so a selection that is no longer offered lands here rather
+            // than on a day count nobody chose (ABN-548).
+            $defaultTerm.append($('<option></option>').attr('value', '').text($t('Automatic')));
             $.each(terms, function (_, days) {
                 $defaultTerm.append(
                     $('<option></option>').attr('value', days).text($t('%1 days').replace('%1', days))
                 );
             });
 
-            // Keep current selection if still valid, otherwise mirror the
-            // checkout resolver: 30 when offered, else the lowest (ABN-548).
             if (terms.indexOf(currentDefault) !== -1) {
                 $defaultTerm.val(currentDefault);
-            } else if (terms.indexOf(PREFERRED_DEFAULT_TERM) !== -1) {
-                $defaultTerm.val(PREFERRED_DEFAULT_TERM);
-            } else if (terms.length) {
-                $defaultTerm.val(terms[0]);
             }
 
             $defaultTerm.trigger('change');

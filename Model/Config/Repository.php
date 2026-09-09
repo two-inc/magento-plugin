@@ -36,8 +36,8 @@ class Repository implements RepositoryInterface
      */
     private const PROVENANCE_MODULE = 'Two_Gateway';
 
-    /** Preferred default term, in net days, when no explicit default resolves (ABN-548). */
-    public const PREFERRED_DEFAULT_TERM = 30;
+    /** Preferred default term, in days, when no explicit default resolves (ABN-548). */
+    private const PREFERRED_DEFAULT_TERM = 30;
 
     /**
      * @var ScopeConfigInterface

@@ -56,7 +56,8 @@ function initWith(storedValue, foldsIn, term, inherit) {
 /** Terms the default-payment-term dropdown was rebuilt from, i.e. what the module read. */
 function offeredTermsInDropdown() {
     return $('#' + PREFIX + 'default_payment_term option').map(function () {
-        return Number(this.value);
+        // The leading Automatic option carries no term.
+        return this.value === '' ? null : Number(this.value);
     }).get();
 }
 

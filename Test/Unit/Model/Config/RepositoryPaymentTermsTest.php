@@ -257,7 +257,7 @@ class RepositoryPaymentTermsTest extends TestCase
             ['', '7,30', $allOffered, null, 30, '30 is preferred over a shorter offered term'],
             ['', '7,14', $allOffered, null, 7, 'without 30 offered the shortest term is used'],
             ['', '7,30', [7], null, 7, '30 configured but not offered by the merchant is not the default'],
-            ['', '7,30', $allOffered, 7, 7, 'the API default term outranks the 30-day preference'],
+            ['', '7,30,60', $allOffered, 60, 60, 'the API default term outranks both 30 and the shortest'],
             ['30', '90', $allOffered, null, 90, 'a single offered term wins over a stale stored default'],
             ['', '', $allOffered, null, null, 'no configured term leaves no default at all'],
             ['30', '30,60', [], null, null, 'an unresolvable merchant record leaves no default at all'],

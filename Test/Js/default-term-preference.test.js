@@ -2,10 +2,10 @@
  * Copyright © Two.inc All rights reserved.
  * See COPYING.txt for license details.
  *
- * ABN-548. When a term is unticked the default-term select rebuilds, and where
- * that drops the current selection it lands on 30 if 30 is still ticked, else
- * the lowest. The select posts on save, so a synthesised lowest would pin the
- * stored default below 30 permanently.
+ * ABN-548. The default-term select carries an Automatic option, so a selection
+ * dropped by a term being unticked lands there and the checkout resolves the
+ * term. The select posts on save, so synthesising a day count here would pin
+ * the stored default to whatever the browser happened to show.
  */
 
 'use strict';
@@ -20,9 +20,11 @@ function initWith(ticked, selected) {
     const checkboxes = ticked.map(function (days) {
         return '<input class="two-term-checkboxes__input" type="checkbox" value="' + days + '" checked />';
     }).join('');
-    const options = ticked.map(function (days) {
-        return '<option value="' + days + '"' + (days === selected ? ' selected' : '') + '>' + days + '</option>';
-    }).join('');
+    const options = ['<option value=""' + (selected === '' ? ' selected' : '') + '>Automatic</option>'].concat(
+        ticked.map(function (days) {
+            return '<option value="' + days + '"' + (days === selected ? ' selected' : '') + '>' + days + '</option>';
+        })
+    ).join('');
 
     document.body.innerHTML =
         '<table><tbody>' +
@@ -43,21 +45,47 @@ function initWith(ticked, selected) {
     loadAmdModule('view/adminhtml/web/js/payment-terms-config.js', mocks).init();
 }
 
-function untick(days) {
-    $('.two-term-checkboxes__input[value="' + days + '"]').prop('checked', false).trigger('change');
-
+function selection() {
     return $('#' + PREFIX + 'default_payment_term').val();
 }
 
-describe('the term the default-term select lands on after a rebuild', () => {
+function untick(days) {
+    $('.two-term-checkboxes__input[value="' + days + '"]').prop('checked', false).trigger('change');
+
+    return selection();
+}
+
+describe('the default-term select on load', () => {
+    it.each([
+        [[7, 30, 60], 60, '60', 'a stored term that is still ticked is kept'],
+        [[7, 30, 60], '', '', 'Automatic is kept'],
+        [[7, 30], 45, '', 'a stored term that is no longer ticked reads as Automatic, not as a day count'],
+        [[7, 14], 45, '', 'the same with no 30 ticked — no day count is synthesised']
+    ])('ticked %s selected %s -> %s — %s', (ticked, selected, expected) => {
+        initWith(ticked, selected);
+        expect(selection()).toBe(expected);
+    });
+});
+
+describe('the default-term select after a rebuild', () => {
     it.each([
         [[7, 30, 60], 60, 7, '60', 'unticking another term leaves the selection alone'],
-        [[7, 14, 30], 14, 14, '30', 'losing the selection lands on 30 rather than the lowest'],
-        [[7, 14, 60], 14, 14, '7', 'losing the selection lands on the lowest when 30 is not ticked'],
-        [[14, 30], 14, 14, '30', 'the only remaining term is selected'],
-        [[7, 30], 30, 30, '7', 'losing 30 itself lands on the lowest']
+        [[7, 14, 30], 14, 14, '', 'losing the selection falls to Automatic'],
+        [[7, 30], 30, 30, '', 'losing 30 itself falls to Automatic'],
+        [[7, 30, 60], '', 7, '', 'Automatic survives a rebuild']
     ])('ticked %s selected %s, untick %s -> %s — %s', (ticked, selected, unticked, expected) => {
         initWith(ticked, selected);
         expect(untick(unticked)).toBe(expected);
+    });
+});
+
+describe('the Automatic option itself', () => {
+    it('is offered first, ahead of every ticked term', () => {
+        initWith([7, 30], '');
+        const values = $('#' + PREFIX + 'default_payment_term option').map(function () {
+            return this.value;
+        }).get();
+
+        expect(values).toEqual(['', '7', '30']);
     });
 });
