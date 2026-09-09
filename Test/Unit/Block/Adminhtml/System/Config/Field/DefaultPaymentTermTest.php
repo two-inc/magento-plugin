@@ -97,6 +97,17 @@ class DefaultPaymentTermTest extends TestCase
             {
                 return 0;
             }
+
+            /** The real form composes every element id with these. */
+            public function getHtmlIdPrefix(): string
+            {
+                return '';
+            }
+
+            public function getHtmlIdSuffix(): string
+            {
+                return '';
+            }
         };
 
         $this->block($settingsProvider, ['store' => 'de'])

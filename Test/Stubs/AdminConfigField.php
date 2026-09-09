@@ -16,10 +16,21 @@ namespace Magento\Framework\Data\Form\Element {
     if (!class_exists(AbstractElement::class, false)) {
         class AbstractElement extends \Magento\Framework\DataObject
         {
-            /** Explicit: the shared DataObject stub's magic getter does not snake_case the key. */
+            /**
+             * As core: the rendered id is the form's prefix and suffix around the element's own,
+             * escaped. A form is always bound in production, so absent one both are empty.
+             */
             public function getHtmlId()
             {
-                return $this->getData('html_id');
+                $form = $this->getData('form');
+
+                return htmlspecialchars(
+                    ($form ? (string)$form->getHtmlIdPrefix() : '')
+                    . (string)$this->getData('html_id')
+                    . ($form ? (string)$form->getHtmlIdSuffix() : ''),
+                    ENT_QUOTES | ENT_SUBSTITUTE,
+                    'UTF-8'
+                );
             }
         }
     }
@@ -100,10 +111,17 @@ namespace Magento\Config\Block\System\Config\Form {
                 return $this->context->getRequest();
             }
 
-            /** As core, whose Field descends from DataObject: renderers stash the element on themselves. */
+            /**
+             * As core, whose Field descends from DataObject: renderers stash the element on
+             * themselves, and an array key replaces the whole bag rather than indexing it.
+             */
             public function setData($key, $value = null)
             {
-                $this->data[$key] = $value;
+                if ($key === (array)$key) {
+                    $this->data = $key;
+                } else {
+                    $this->data[(string)$key] = $value;
+                }
 
                 return $this;
             }

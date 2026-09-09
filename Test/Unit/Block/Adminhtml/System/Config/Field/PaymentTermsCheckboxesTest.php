@@ -179,6 +179,17 @@ class PaymentTermsCheckboxesTest extends TestCase
             {
                 return 0;
             }
+
+            /** The real form composes every element id with these. */
+            public function getHtmlIdPrefix(): string
+            {
+                return '';
+            }
+
+            public function getHtmlIdSuffix(): string
+            {
+                return '';
+            }
         };
         $block = $this->block(['store' => 'de'], $settingsProvider);
         $block->setData('element', new AbstractElement(['value' => '30', 'form' => $form]));
