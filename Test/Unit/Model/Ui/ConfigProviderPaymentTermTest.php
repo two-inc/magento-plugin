@@ -16,18 +16,6 @@ use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 
 /**
- * The checkout-config subtree is the gate the company-search control sits
- * behind.
- *
- * `js/model/brand-config.js::getActiveTwoBrandCode()` finds the active
- * Two-family brand by scanning `window.checkoutConfig.payment` for a
- * subtree carrying a truthy `redirectUrlCookieCode`, and the address
- * block's company-search widget mounts only when that resolves. So
- * withholding the subtree on a verification failure is what stops company
- * search rendering on a broken integration — the same job the sibling
- * plugins do by withholding their client-side bootstrap object.
- */
-/**
  * The published term seam: `defaultPaymentTerm` / `selectedPaymentTerm` are
  * what the renderer preselects a chip from, so a day count published here is
  * offered to the buyer even when the offered set is empty (ABN-544).
@@ -121,7 +109,6 @@ class ConfigProviderPaymentTermTest extends TestCase
         string $case
     ): void {
         $provider = $this->build($this->statusService(ApiKeyStatus::OK, 200, []), $defaultTerm);
-        $provider->getConfig();
         $subtree = $this->publish($provider, $sessionTerm);
 
         $this->assertSame($expectedDefault, $subtree['defaultPaymentTerm'], $case);
