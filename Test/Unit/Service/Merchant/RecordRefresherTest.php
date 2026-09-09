@@ -449,27 +449,21 @@ class RecordRefresherTest extends TestCase
         ];
     }
 
-    public function testTheWalkTakesTheCallersCacheIdentity(): void
+    public function testTheWalkKeepsOneKeysTwoEnvironmentsApart(): void
     {
-        // The FX table is keyed on the API key alone, so it collapses environments the record keeps apart.
         $this->configure(
             [1 => 1, 2 => 1],
             ['default:' => ['key-a', 'sandbox'], '1' => ['key-a', 'sandbox'], '2' => ['key-a', 'production']]
         );
         $refresher = $this->refresher();
-        $keyOnly = static function (?int $storeId, string $apiKey): string {
-            return hash('sha256', $apiKey);
-        };
 
         $this->assertSame(
-            [['store_id' => null, 'api_key' => 'key-a']],
-            $refresher->distinctScopes($keyOnly, $refresher->storeScopes()),
-            'a key-only identity sees one entry'
-        );
-        $this->assertSame(
-            [['store_id' => null, 'api_key' => 'key-a'], ['store_id' => 2, 'api_key' => 'key-a']],
-            $refresher->distinctScopes($refresher->recordIdentity(), $refresher->storeScopes()),
-            'the record identity keeps the two environments apart'
+            [
+                ['mode' => 'sandbox', 'api_key' => 'key-a', 'store_id' => null],
+                ['mode' => 'production', 'api_key' => 'key-a', 'store_id' => 2],
+            ],
+            $refresher->distinctScopes($refresher->storeScopes()),
+            'one key in two environments is two cache identities, not one'
         );
     }
 }

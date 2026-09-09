@@ -40,9 +40,9 @@ use Two\Gateway\Service\Api\Adapter;
  *   serving. A short failure cooldown stops the hot path (the payment
  *   method's isAvailable()) from re-attempting the fetch on every call
  *   while the API is unreachable.
- * - The cache key includes the API-key hash so a key swap (different
- *   merchant, or sandbox <-> production) never serves rates fetched under
- *   the old key's mode.
+ * - The cache slot is keyed on the mode and the API-key hash: one key can
+ *   be configured against both environments on two store views, and a slot
+ *   they shared would serve each other's table.
  */
 class RateTableProvider
 {
@@ -92,6 +92,9 @@ class RateTableProvider
      */
     private $memo = [];
 
+    /** @var bool */
+    private $blankModeReported = false;
+
     public function __construct(
         Adapter $apiAdapter,
         ConfigRepository $configRepository,
@@ -110,16 +113,17 @@ class RateTableProvider
      * The current FX rate table, refreshed opportunistically when stale.
      *
      * Returns the freshest table available — a stale table is still
-     * returned when a refresh attempt fails (last-known-good). Returns
-     * null only when no table has ever been fetched under the current
-     * API key and one cannot be fetched now.
+     * returned when a refresh attempt fails (last-known-good). Returns null
+     * when the scope names no API key or no mode, and when no table has ever
+     * been fetched for the pair it does name and one cannot be fetched now.
      *
      * @return array{rates: array<string,float>, as_of: ?string, fetched_at: int}|null
      */
     public function getRateTable(?int $storeId = null): ?array
     {
         $apiKey = (string)$this->configRepository->getApiKey($storeId);
-        $cacheKey = $this->cacheKey($apiKey);
+        $mode = $this->configRepository->getMode($storeId);
+        $cacheKey = $this->cacheKey($mode, $apiKey);
         if ($cacheKey === null) {
             return null;
         }
@@ -140,7 +144,7 @@ class RateTableProvider
         // the cooldown keeps an API outage from adding a fetch round-trip
         // to every page view.
         if ($this->cache->load($cacheKey . self::FAILURE_COOLDOWN_SUFFIX) === false) {
-            $fresh = $this->fetchTable($apiKey, $storeId);
+            $fresh = $this->fetchTable($mode, $apiKey, $storeId);
             if ($fresh !== null) {
                 $this->persist($cacheKey, $fresh);
                 return $fresh;
@@ -163,22 +167,23 @@ class RateTableProvider
      * Force-refresh the cached table (cron entry point). A failed fetch
      * leaves the existing cached table untouched.
      *
+     * @param string $mode the environment the table is cached under, as the caller's scope walk read it
      * @param string $apiKey the key the table is cached under, as the caller's scope walk read it
      * @param int|null $storeId a store view reading this key, for its request headers
      * @return bool whether a fresh table was fetched and cached
      */
-    public function refresh(string $apiKey, ?int $storeId = null): bool
+    public function refresh(string $mode, string $apiKey, ?int $storeId = null): bool
     {
-        $cacheKey = $this->cacheKey($apiKey);
+        $cacheKey = $this->cacheKey($mode, $apiKey);
         if ($cacheKey === null) {
             return false;
         }
 
-        $fresh = $this->fetchTable($apiKey, $storeId);
+        $fresh = $this->fetchTable($mode, $apiKey, $storeId);
         if ($fresh === null) {
             $this->logRepository->addErrorLog(
                 'RateTableProvider: background FX rate refresh failed, keeping last-known-good table',
-                ['store_id' => $storeId]
+                ['store_id' => $storeId, 'mode' => $mode]
             );
             return false;
         }
@@ -225,15 +230,27 @@ class RateTableProvider
     }
 
     /**
-     * The cache key for the current API key, or null when no key is
-     * configured (nothing to authenticate the fetch with).
+     * The cache key for a mode and API key, or null when either is unset —
+     * no key means nothing to authenticate the fetch with, and an empty mode
+     * is one Adapter resolves for itself, which would fetch from an
+     * environment the slot does not name.
      */
-    private function cacheKey(string $apiKey): ?string
+    private function cacheKey(string $mode, string $apiKey): ?string
     {
         if ($apiKey === '') {
             return null;
         }
-        return self::CACHE_KEY_PREFIX . hash('sha256', $apiKey);
+        if ($mode === '') {
+            if (!$this->blankModeReported) {
+                $this->logRepository->addErrorLog(
+                    'RateTableProvider: no environment configured, FX rates unavailable',
+                    ['api_key_hash' => hash('sha256', $apiKey)]
+                );
+                $this->blankModeReported = true;
+            }
+            return null;
+        }
+        return self::CACHE_KEY_PREFIX . hash('sha256', $mode . "\0" . $apiKey);
     }
 
     /**
@@ -251,9 +268,11 @@ class RateTableProvider
     /**
      * @return array{rates: array<string,float>, as_of: ?string, fetched_at: int}|null
      */
-    private function fetchTable(string $apiKey, ?int $storeId): ?array
+    private function fetchTable(string $mode, string $apiKey, ?int $storeId): ?array
     {
-        $response = $this->apiAdapter->execute(self::ENDPOINT, [], 'GET', $storeId, $apiKey);
+        // The slot names the environment, so the fetch must hit that one
+        // rather than whichever the store scope resolves.
+        $response = $this->apiAdapter->execute(self::ENDPOINT, [], 'GET', $storeId, $apiKey, $mode);
 
         // Adapter::execute always returns an array; a failure is signalled
         // by an error_code / http_status marker (never present on a real
