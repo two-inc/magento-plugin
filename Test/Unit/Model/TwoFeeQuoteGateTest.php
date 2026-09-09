@@ -4,29 +4,25 @@ declare(strict_types=1);
 namespace Two\Gateway\Test\Unit\Model;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
-use Magento\Framework\Exception\LocalizedException;
-use Magento\Framework\Phrase;
 use Magento\Quote\Model\Quote;
 use Magento\Quote\Model\Quote\Address;
 use Magento\Store\Model\Store;
 use PHPUnit\Framework\TestCase;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
-use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
-use Two\Gateway\Service\Order\ChargedTermResolver;
+use Two\Gateway\Service\Order\FeeQuoteGate;
 use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Service\Order\SurchargeCalculator;
+use Two\Gateway\Test\Unit\Service\Order\Doubles\FixedVerdictFeeQuoteGate;
 
 /**
- * ABN-546: the payment method is withheld when the fee for the term the
- * checkout would be charged for cannot be priced, judged on the request
- * that renders the payment-method list.
+ * ABN-546: the fee-quote verdict reaches isAvailable(), and a withhold is
+ * silent apart from one debug line. FeeQuoteGateTest owns the verdict itself.
  */
 class TwoFeeQuoteGateTest extends TestCase
 {
@@ -34,39 +30,18 @@ class TwoFeeQuoteGateTest extends TestCase
     private $logRepository;
 
     /**
-     * Given a cart and a pricing outcome; when the payment-method list
-     * renders; then the method is offered or withheld, and a pricing call is
-     * made only where there is something to price.
+     * Given a fee-quote verdict; when the payment-method list renders; then
+     * the method follows it and says why once.
      *
-     * @dataProvider feeQuoteScenarios
+     * @dataProvider verdicts
      */
-    public function testTheFeeQuoteDecidesAvailability(
-        string $surchargeType,
-        float $grandTotal,
-        int $itemCount,
-        string $currency,
-        int $chargedTerm,
-        bool $quoteRefused,
-        bool $expectPricingCall,
+    public function testTheFeeQuoteVerdictReachesAvailability(
+        bool $quotable,
         bool $expectedAvailable,
         ?string $expectedReason,
         string $case
     ): void {
-        $calls = [];
-        $calculator = $this->createMock(SurchargeCalculator::class);
-        $calculator->method('isSurchargeResolvable')->willReturn(true);
-        $calculator->method('calculate')->willReturnCallback(
-            function (...$args) use (&$calls, $quoteRefused): array {
-                $calls[] = $args;
-                if ($quoteRefused) {
-                    // Plain string: __() here would mint a phrase for collect-phrases.
-                    throw new LocalizedException(new Phrase('pricing refused'));
-                }
-                return ['amount' => 12.5, 'tax_rate' => 0.0, 'description' => 'fee'];
-            }
-        );
-
-        $model = $this->build($calculator, $surchargeType, $chargedTerm);
+        $model = $this->build($quotable);
 
         // The pricing service already reported the cause where it happened.
         $this->logRepository->expects($this->never())->method('addErrorLog');
@@ -77,21 +52,7 @@ class TwoFeeQuoteGateTest extends TestCase
             }
         );
 
-        $available = $model->isAvailable($this->makeQuote($grandTotal, $itemCount, $currency));
-
-        $this->assertSame($expectedAvailable, $available, $case);
-        $this->assertCount(
-            $expectPricingCall ? 1 : 0,
-            $calls,
-            'pricing calls: ' . $case
-        );
-        if ($expectPricingCall) {
-            $this->assertSame(
-                [$grandTotal, $chargedTerm, 'NO', $currency, 1],
-                $calls[0],
-                'the quote asks for the charged term on this cart: ' . $case
-            );
-        }
+        $this->assertSame($expectedAvailable, $model->isAvailable($this->makeQuote()), $case);
         if ($expectedReason === null) {
             $this->assertSame([], $debug, 'nothing to report: ' . $case);
             return;
@@ -100,45 +61,16 @@ class TwoFeeQuoteGateTest extends TestCase
         $this->assertStringContainsString($expectedReason, $debug[0], $case);
     }
 
-    public function feeQuoteScenarios(): array
+    public function verdicts(): array
     {
         return [
-            [
-                SurchargeType::PERCENTAGE, 1000.0, 1, 'EUR', 30, true, true, false,
-                'buyer fee quote failed', 'the charged term cannot be priced',
-            ],
-            [
-                SurchargeType::PERCENTAGE, 1000.0, 1, 'EUR', 30, false, true, true,
-                null, 'the quote answers, so the method is offered',
-            ],
-            [
-                SurchargeType::NONE, 1000.0, 1, 'EUR', 30, false, false, true,
-                null, 'no surcharge is configured, so there is no fee to price',
-            ],
-            [
-                SurchargeType::PERCENTAGE, 0.0, 1, 'EUR', 30, false, false, true,
-                null, 'the basket total is not positive',
-            ],
-            [
-                SurchargeType::PERCENTAGE, 1000.0, 0, 'EUR', 30, false, false, true,
-                null, 'the basket has no items',
-            ],
-            [
-                SurchargeType::PERCENTAGE, 1000.0, 1, '', 30, false, false, true,
-                null, 'there is no currency to price in',
-            ],
-            [
-                SurchargeType::PERCENTAGE, 1000.0, 1, 'EUR', 0, false, false, true,
-                null, 'no term is offered, so none is charged',
-            ],
+            [false, false, 'buyer fee quote failed', 'the fee cannot be priced'],
+            [true, true, null, 'the fee can be priced'],
         ];
     }
 
-    private function build(
-        SurchargeCalculator $surchargeCalculator,
-        string $surchargeType,
-        int $chargedTerm
-    ): Two {
+    private function build(bool $quotable): Two
+    {
         $reflection = new \ReflectionClass(Two::class);
         $model = $reflection->newInstanceWithoutConstructor();
 
@@ -154,18 +86,14 @@ class TwoFeeQuoteGateTest extends TestCase
         $countriesProvider = $this->createMock(SupportedCountriesProvider::class);
         $countriesProvider->method('isAllowed')->willReturn(true);
 
-        $configRepository = $this->createMock(ConfigRepository::class);
-        $configRepository->method('getSurchargeType')->willReturn($surchargeType);
-
-        $termResolver = $this->createMock(ChargedTermResolver::class);
-        $termResolver->method('resolve')->willReturn($chargedTerm);
+        $surchargeCalculator = $this->createMock(SurchargeCalculator::class);
+        $surchargeCalculator->method('isSurchargeResolvable')->willReturn(true);
 
         $this->logRepository = $this->createMock(LogRepository::class);
 
         $properties = [
             '_scopeConfig' => $scopeConfig,
             'apiKeyStatus' => $apiKeyStatus,
-            'configRepository' => $configRepository,
             'logRepository' => $this->logRepository,
             'minimumOrderProvider' => $this->createMock(MinimumOrderProvider::class),
             'minimumOrderGate' => $minimumOrderGate,
@@ -176,7 +104,7 @@ class TwoFeeQuoteGateTest extends TestCase
             'buyerCountryResolver' => new BuyerCountryResolver(),
             'supportedCountriesProvider' => $countriesProvider,
             'surchargeCalculator' => $surchargeCalculator,
-            'chargedTermResolver' => $termResolver,
+            'feeQuoteGate' => new FixedVerdictFeeQuoteGate($quotable),
         ];
         foreach ($properties as $name => $value) {
             $reflection->getProperty($name)->setValue($model, $value);
@@ -185,24 +113,20 @@ class TwoFeeQuoteGateTest extends TestCase
         return $model;
     }
 
-    private function makeQuote(float $grandTotal, int $itemCount, string $currency): Quote
+    private function makeQuote(): Quote
     {
         $address = $this->createMock(Address::class);
         $address->method('getCountryId')->willReturn('NO');
 
         $store = $this->createMock(Store::class);
         $store->method('getId')->willReturn(1);
-        $store->method('getBaseCurrencyCode')->willReturn($currency);
+        $store->method('getBaseCurrencyCode')->willReturn('EUR');
 
         $quote = $this->createMock(Quote::class);
         $quote->method('getBillingAddress')->willReturn($address);
         $quote->method('getStore')->willReturn($store);
         $quote->method('getStoreId')->willReturn(1);
-        $quote->method('getQuoteCurrencyCode')->willReturn($currency);
-        $quote->method('getGrandTotal')->willReturn($grandTotal);
-        $quote->method('getAllVisibleItems')->willReturn(
-            array_fill(0, $itemCount, new \stdClass())
-        );
+        $quote->method('getQuoteCurrencyCode')->willReturn('EUR');
         return $quote;
     }
 }

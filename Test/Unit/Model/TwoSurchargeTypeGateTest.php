@@ -17,6 +17,7 @@ use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Service\Order\SurchargeCalculator;
+use Two\Gateway\Test\Unit\Service\Order\Doubles\FixedVerdictFeeQuoteGate;
 
 /**
  * A corrupt stored surcharge method withdraws THIS payment method and
@@ -52,6 +53,8 @@ class TwoSurchargeTypeGateTest extends TestCase
             '_scopeConfig' => $scopeConfig,
             'apiKeyStatus' => $apiKeyStatus,
             'logRepository' => $this->logRepository,
+            // Not this test's subject: the fee quote concedes.
+            'feeQuoteGate' => new FixedVerdictFeeQuoteGate(true),
             'minimumOrderProvider' => $this->createMock(MinimumOrderProvider::class),
             'minimumOrderGate' => $minimumOrderGate,
             'merchantMinimumResolver' => null,

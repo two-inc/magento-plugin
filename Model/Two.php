@@ -31,16 +31,15 @@ use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Status\HistoryFactory;
 use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
-use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
-use Two\Gateway\Service\Order\ChargedTermResolver;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
+use Two\Gateway\Service\Order\FeeQuoteGate;
 use Two\Gateway\Service\Order\LifecycleEventDispatcher;
 use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
@@ -158,9 +157,9 @@ class Two extends AbstractMethod
      */
     private $surchargeCalculator;
     /**
-     * @var ChargedTermResolver
+     * @var FeeQuoteGate
      */
-    private $chargedTermResolver;
+    private $feeQuoteGate;
     /**
      * @var LifecycleEventDispatcher
      */
@@ -214,7 +213,7 @@ class Two extends AbstractMethod
      * @param ConfigDataCollectionFactory $configDataCollectionFactory
      * @param ApiKeyStatus $apiKeyStatus
      * @param SurchargeCalculator $surchargeCalculator
-     * @param ChargedTermResolver $chargedTermResolver
+     * @param FeeQuoteGate $feeQuoteGate
      * @param LifecycleEventDispatcher $lifecycleEvents
      * @param BuyerCountryResolver $buyerCountryResolver
      * @param SupportedCountriesProvider $supportedCountriesProvider
@@ -249,7 +248,7 @@ class Two extends AbstractMethod
         ConfigDataCollectionFactory $configDataCollectionFactory,
         ApiKeyStatus $apiKeyStatus,
         SurchargeCalculator $surchargeCalculator,
-        ChargedTermResolver $chargedTermResolver,
+        FeeQuoteGate $feeQuoteGate,
         LifecycleEventDispatcher $lifecycleEvents,
         BuyerCountryResolver $buyerCountryResolver,
         SupportedCountriesProvider $supportedCountriesProvider,
@@ -288,7 +287,7 @@ class Two extends AbstractMethod
         $this->configDataCollectionFactory = $configDataCollectionFactory;
         $this->apiKeyStatus = $apiKeyStatus;
         $this->surchargeCalculator = $surchargeCalculator;
-        $this->chargedTermResolver = $chargedTermResolver;
+        $this->feeQuoteGate = $feeQuoteGate;
         $this->lifecycleEvents = $lifecycleEvents;
         $this->buyerCountryResolver = $buyerCountryResolver;
         $this->supportedCountriesProvider = $supportedCountriesProvider;
@@ -1195,48 +1194,12 @@ class Two extends AbstractMethod
     }
 
     /**
-     * One pricing call per request at most — calculate() memoizes it and caches
-     * a success, so the totals collector and the chip endpoints reuse this
-     * quote. The guards concede without a call when there is no cart to price,
-     * which is also why no adminhtml or cron path reaches one.
+     * See FeeQuoteGate::isQuotable(). Concedes rather than withholds whenever
+     * there is nothing to price.
      */
     private function isFeeQuotable(?CartInterface $quote, ?int $storeId): bool
     {
-        if (!$quote instanceof \Magento\Quote\Model\Quote) {
-            return true;
-        }
-        $store = $quote->getStore();
-        if ($store === null) {
-            return true;
-        }
-        $storeId = $storeId ?? (int)$store->getId();
-        try {
-            if ($this->configRepository->getSurchargeType($storeId) === SurchargeType::NONE) {
-                return true;
-            }
-            $grossAmount = (float)$quote->getGrandTotal();
-            if ($grossAmount <= 0.0 || $quote->getAllVisibleItems() === []) {
-                return true;
-            }
-            $currency = (string)($quote->getQuoteCurrencyCode() ?: $store->getBaseCurrencyCode());
-            if ($currency === '') {
-                return true;
-            }
-            $chargedTerm = $this->chargedTermResolver->resolve($storeId);
-            if ($chargedTerm <= 0) {
-                return true;
-            }
-            $this->surchargeCalculator->calculate(
-                $grossAmount,
-                $chargedTerm,
-                $this->buyerCountryResolver->resolve($quote),
-                $currency,
-                $storeId
-            );
-            return true;
-        } catch (LocalizedException) {
-            return false;
-        }
+        return $this->feeQuoteGate->isQuotable($quote, $storeId);
     }
 
     /**

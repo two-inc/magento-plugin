@@ -12,6 +12,7 @@ use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
+use Two\Gateway\Test\Unit\Service\Order\Doubles\FixedVerdictFeeQuoteGate;
 
 /**
  * The api-key verdict is the only upstream failure that may withhold the
@@ -48,6 +49,8 @@ class TwoApiKeyGateTest extends TestCase
             '_scopeConfig' => $scopeConfig,
             'apiKeyStatus' => $apiKeyStatus,
             'logRepository' => $this->createMock(LogRepository::class),
+            // Not this test's subject: the fee quote concedes.
+            'feeQuoteGate' => new FixedVerdictFeeQuoteGate(true),
             'minimumOrderProvider' => $this->createMock(MinimumOrderProvider::class),
             'minimumOrderGate' => $minimumOrderGate,
             'amastyCheckoutStore' => [],

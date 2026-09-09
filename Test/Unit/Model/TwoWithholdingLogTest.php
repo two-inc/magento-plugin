@@ -8,9 +8,7 @@ use Magento\Quote\Model\Quote;
 use Magento\Quote\Model\Quote\Address;
 use Magento\Store\Model\Store;
 use PHPUnit\Framework\TestCase;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
-use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
@@ -19,6 +17,7 @@ use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 use Two\Gateway\Service\Order\SurchargeCalculator;
+use Two\Gateway\Test\Unit\Service\Order\Doubles\FixedVerdictFeeQuoteGate;
 
 /**
  * TWO-25641: every branch that withholds the method names its own reason, so one
@@ -115,9 +114,8 @@ class TwoWithholdingLogTest extends TestCase
             '_scopeConfig' => $scopeConfig,
             'stubAvailableInBase' => $knob !== 'core_refuses',
             'logRepository' => $logRepository,
-            // No surcharge configured: the fee-quote gate concedes without
-            // pricing anything, which is not this test's subject.
-            'configRepository' => $this->surchargeFreeConfig(),
+            // Not this test's subject: the fee quote concedes.
+            'feeQuoteGate' => new FixedVerdictFeeQuoteGate(true),
             'apiKeyStatus' => $apiKeyStatus,
             'surchargeCalculator' => $surchargeCalculator,
             'minimumOrderGate' => $gate,
@@ -162,7 +160,6 @@ class TwoWithholdingLogTest extends TestCase
         $quote->method('getQuoteCurrencyCode')->willReturn('GBP');
         return $quote;
     }
-
 
     /**
      * @return ConfigRepository|\PHPUnit\Framework\MockObject\MockObject

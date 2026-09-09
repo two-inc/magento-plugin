@@ -18,6 +18,7 @@ class ChargedTermResolverTest extends TestCase
      */
     public function testResolvesTheTermTheCheckoutWouldBeChargedFor(
         int $sessionTerm,
+        bool $sessionTermStillOffered,
         ?int $defaultTerm,
         int $expected,
         string $case
@@ -27,6 +28,7 @@ class ChargedTermResolverTest extends TestCase
 
         $config = $this->createMock(ConfigRepository::class);
         $config->method('getDefaultPaymentTerm')->willReturn($defaultTerm);
+        $config->method('isBuyerTermAvailable')->willReturn($sessionTermStillOffered);
 
         $this->assertSame(
             $expected,
@@ -38,9 +40,10 @@ class ChargedTermResolverTest extends TestCase
     public function terms(): array
     {
         return [
-            [14, 30, 14, 'the buyer picked a term'],
-            [0, 30, 30, 'no pick, so the configured default is charged'],
-            [0, null, 0, 'no term is offered at all'],
+            [14, true, 30, 14, 'the buyer picked an offered term'],
+            [14, false, 30, 30, 'the picked term has since been withdrawn'],
+            [0, true, 30, 30, 'no pick, so the configured default is charged'],
+            [0, true, null, 0, 'no term is offered at all'],
         ];
     }
 }

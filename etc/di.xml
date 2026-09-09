@@ -158,11 +158,16 @@
         named-array DI items across modules so the list grows additively.
     -->
     <!--
-        The availability gate resolves the charged term on adminhtml and cron
-        paths that have no frontend session; a \Proxy defers constructing one
-        until a quote is actually being judged.
+        Both are constructed on adminhtml and cron paths that have no frontend
+        session; a \Proxy defers building one until a quote is being judged.
     -->
     <type name="Two\Gateway\Service\Order\ChargedTermResolver">
+        <arguments>
+            <argument name="checkoutSession" xsi:type="object">Magento\Checkout\Model\Session\Proxy</argument>
+        </arguments>
+    </type>
+
+    <type name="Two\Gateway\Service\Order\FeeQuoteGate">
         <arguments>
             <argument name="checkoutSession" xsi:type="object">Magento\Checkout\Model\Session\Proxy</argument>
         </arguments>

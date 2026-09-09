@@ -122,6 +122,9 @@ class SurchargeCalculator
      * @param string $buyerCountry ISO Alpha-2 country code
      * @param string $orderCurrency ISO 4217 currency code of the order
      * @param int|null $storeId
+     * @param int|null $timeoutSeconds Overrides the adapter default; deliberately
+     *        outside both cache keys so a short-timeout caller and a normal one
+     *        still share one quote
      *
      * @return array{amount: float, tax_rate: float, description: string}
      * @throws LocalizedException when no FX rate is resolvable for the pair, or when
@@ -132,7 +135,8 @@ class SurchargeCalculator
         int $selectedTermDays,
         string $buyerCountry,
         string $orderCurrency,
-        ?int $storeId = null
+        ?int $storeId = null,
+        ?int $timeoutSeconds = null
     ): array {
         $cacheKey = md5(serialize([$grossAmount, $selectedTermDays, $buyerCountry, $orderCurrency, $storeId]));
         if (isset($this->responseCache[$cacheKey])) {
@@ -172,7 +176,15 @@ class SurchargeCalculator
             return $this->responseCache[$cacheKey] = $this->json->unserialize($cached);
         }
 
-        $response = $this->apiAdapter->execute('/v1/pricing/order/fee', $request, 'POST', $storeId);
+        $response = $this->apiAdapter->execute(
+            '/v1/pricing/order/fee',
+            $request,
+            'POST',
+            $storeId,
+            null,
+            null,
+            $timeoutSeconds
+        );
 
         // `http_status` may be set on success too (observability convenience);
         // gate on the actual 4xx/5xx range plus presence of `error_code`.

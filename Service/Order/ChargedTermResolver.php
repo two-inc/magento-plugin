@@ -34,7 +34,9 @@ class ChargedTermResolver
     public function resolve(?int $storeId = null): int
     {
         $selected = (int)$this->checkoutSession->getTwoSelectedTerm();
-        if ($selected > 0) {
+        // A selection the merchant has since withdrawn is refused at placement,
+        // so honouring it here would price a fee the order cannot carry.
+        if ($selected > 0 && $this->configRepository->isBuyerTermAvailable($selected, $storeId)) {
             return $selected;
         }
         return $this->configRepository->getDefaultPaymentTerm($storeId) ?? 0;

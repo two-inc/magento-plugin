@@ -118,12 +118,7 @@ namespace Magento\Quote\Model {
                 return [];
             }
 
-            /**
-             * Declared so tests can configure it: Model\Two's fee-quote gate
-             * asks whether there is a basket to price.
-             *
-             * @return array<int, mixed>
-             */
+            /** @return array<int, mixed> */
             public function getAllVisibleItems()
             {
                 return [];

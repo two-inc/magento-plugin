@@ -85,6 +85,7 @@ class SurchargeTest extends TestCase
     {
         $this->session = new CheckoutSession();
         $this->config = $this->createMock(ConfigRepository::class);
+        $this->config->method('isBuyerTermAvailable')->willReturn(true);
         $this->surchargeCalculator = $this->createMock(SurchargeCalculator::class);
         $this->taxCalculator = $this->createMock(SurchargeTaxCalculator::class);
         $this->minimumOrderGate = $this->createMock(MinimumOrderGate::class);

@@ -263,26 +263,34 @@ only its definitive-rejection categories withhold (ABN-533). Do not widen it
 back to every failure category, and do not add a further gate that withholds
 because a call to Two failed; both are defects the rule exists to stop coming
 back. The buyer fee quote is the one named exception (ABN-546): a term whose
-fee cannot be priced cannot be charged, so the gate prices it rather than wait
-to be told. It resolves the charged term — the buyer's own selection, else the
-configured default, through `Service\Order\ChargedTermResolver`, the same
-resolver the totals collector uses so the two can never disagree — and asks
-`SurchargeCalculator::calculate()` for that one term on the cart being judged.
-A refusal withholds the method for that request and that cart only, and the
-next request re-asks, so recovery needs no expiry and one buyer's refused quote
-cannot reach another's checkout.
+fee cannot be priced cannot be charged, so `Service\Order\FeeQuoteGate` prices
+it rather than wait to be told — the term-chip endpoints answer after the
+payment list has rendered, and the totals collector prices only once this
+method is already selected, so no later request is guaranteed to notice.
 
-Four guards run before any call and concede the method without one: no
-surcharge configured, no cart carrying items and a positive total, no currency,
-no term offered. They are also why no adminhtml or cron path ever prices
-anything — none of them presents a cart to price. Cost is bounded at one
-pricing call per render: `calculate()` memoizes per request and caches a
-success for 300 seconds keyed on the request body, so the totals collector and
-the term-chip endpoints reuse the same quote.
+The gate resolves the charged term through `Service\Order\ChargedTermResolver`,
+the same resolver the totals collector uses, so the two cannot disagree; a
+selection the merchant has since withdrawn falls back to the default rather
+than pricing a term the order would be refused for at placement. It prices the
+fee-EXCLUSIVE total, as the collector and both chip endpoints do, so the fee
+already on the quote is neither compounded nor a cache miss against their
+quote. The call carries its own short timeout instead of the adapter's default,
+because a hanging endpoint on a render path would otherwise stall the payment
+step. A refusal — including a malformed response, which is caught as broadly
+as the collector catches it — withholds the method for that request and that
+cart only; the next request re-asks, so recovery needs no expiry and one
+buyer's refused quote cannot reach another's checkout.
 
-The admin settings page is untouched: its fee preview reads merchant rates
-through `Service\Merchant\FeeRatesProvider`, never the buyer quote, so a
-merchant is never locked out of the settings needed to fix this.
+Guards run before any call and concede the method without one: the adminhtml
+area, no surcharge configured, no cart carrying items and a positive
+fee-exclusive total, no currency, no term offered. The area guard is what keeps
+admin order create from pricing: Magento evaluates payment availability there
+against a quote, and `canUseInternal()` is not consulted first, so without it
+an admin session's term would be quoted.
+
+The admin settings page prices nothing either way: its fee preview reads
+merchant rates through `Service\Merchant\FeeRatesProvider`, never the buyer
+quote, so a merchant is never locked out of the settings needed to fix this.
 
 **Every buyer-facing surface asks that same question, and must keep asking it.**
 Three besides `isAvailable()`: `Model\Ui\ConfigProvider::getConfig()`, whose

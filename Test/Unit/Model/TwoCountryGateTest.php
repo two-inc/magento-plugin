@@ -8,9 +8,7 @@ use Magento\Quote\Model\Quote;
 use Magento\Quote\Model\Quote\Address;
 use Magento\Store\Model\Store;
 use PHPUnit\Framework\TestCase;
-use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Api\Log\RepositoryInterface as LogRepository;
-use Two\Gateway\Model\Config\Source\SurchargeType;
 use Two\Gateway\Model\Two;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
@@ -18,6 +16,7 @@ use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
+use Two\Gateway\Test\Unit\Service\Order\Doubles\FixedVerdictFeeQuoteGate;
 
 /**
  * TWO-40: the method is withdrawn when the buyer's country is outside the
@@ -209,9 +208,8 @@ class TwoCountryGateTest extends TestCase
             '_scopeConfig' => $scopeConfig,
             'apiKeyStatus' => $apiKeyStatus,
             'logRepository' => $this->createMock(LogRepository::class),
-            // No surcharge configured: the fee-quote gate concedes without
-            // pricing anything, which is not this test's subject.
-            'configRepository' => $this->surchargeFreeConfig(),
+            // Not this test's subject: the fee quote concedes.
+            'feeQuoteGate' => new FixedVerdictFeeQuoteGate(true),
             'minimumOrderProvider' => $this->createMock(MinimumOrderProvider::class),
             'merchantMinimumResolver' => $this->createMock(MerchantMinimumResolver::class),
             'minimumOrderGate' => $minimumOrderGate,
@@ -275,7 +273,6 @@ class TwoCountryGateTest extends TestCase
         $address->method('getCountryId')->willReturn($country);
         return $address;
     }
-
 
     /**
      * @return ConfigRepository|\PHPUnit\Framework\MockObject\MockObject

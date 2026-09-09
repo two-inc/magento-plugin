@@ -29,10 +29,10 @@ use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
-use Two\Gateway\Service\Order\ChargedTermResolver;
 use Two\Gateway\Service\Order\ComposeCapture;
 use Two\Gateway\Service\Order\ComposeOrder;
 use Two\Gateway\Service\Order\ComposeRefund;
+use Two\Gateway\Service\Order\FeeQuoteGate;
 use Two\Gateway\Service\Order\LifecycleEventDispatcher;
 use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderGate;
@@ -88,7 +88,7 @@ class GenericPaymentMethod extends Two
         ConfigDataCollectionFactory $configDataCollectionFactory,
         ApiKeyStatus $apiKeyStatus,
         SurchargeCalculator $surchargeCalculator,
-        ChargedTermResolver $chargedTermResolver,
+        FeeQuoteGate $feeQuoteGate,
         LifecycleEventDispatcher $lifecycleEvents,
         BuyerCountryResolver $buyerCountryResolver,
         SupportedCountriesProvider $supportedCountriesProvider,
@@ -123,7 +123,7 @@ class GenericPaymentMethod extends Two
             $configDataCollectionFactory,
             $apiKeyStatus,
             $surchargeCalculator,
-            $chargedTermResolver,
+            $feeQuoteGate,
             $lifecycleEvents,
             $buyerCountryResolver,
             $supportedCountriesProvider,
