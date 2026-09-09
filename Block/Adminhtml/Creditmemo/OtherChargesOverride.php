@@ -144,35 +144,26 @@ class OtherChargesOverride extends Template
     }
 
     /**
-     * Default value for the input. Prefers whatever collectTotals just produced
-     * on the creditmemo (which honours any merchant override stamped via the
-     * Plugin\Model\Sales\CreditmemoFeeOverride beforeCollectTotals plugin),
-     * falling back to the proportional default when the field has not been
-     * collected yet.
+     * Default value for the input: whatever collectTotals resolved on this
+     * creditmemo — the proportional default, or the merchant's override
+     * stamped via the Plugin\Model\Sales\CreditmemoFeeOverride
+     * beforeCollectTotals plugin, an explicit 0 included.
+     *
+     * Nothing collected means the collector granted nothing, which is a
+     * deferral, so the field offers 0.00. Recomputing a proportional default
+     * here instead would prefill a value the collector has already refused,
+     * and the merchant saving that untouched form would post it as an explicit
+     * instruction — turning a fee this memo silently omits into a refusal that
+     * blocks the credit memo.
      */
     public function getDefaultRefund(): float
     {
         $cm = $this->getCreditmemo();
-        $order = $this->getOrder();
-        if (!$cm || !$order) {
+        if (!$cm || !$cm->hasData('two_other_charges_amount')) {
             return 0.0;
         }
-        // Once collectTotals has run, the collector has resolved the refundable
-        // charge — the proportional default OR the merchant's override,
-        // including an explicit 0. Honour that value verbatim; testing `> 0`
-        // would make an explicit 0 snap back to the full default, discarding
-        // the merchant's "refund no charge".
-        if ($cm->hasData('two_other_charges_amount')) {
-            return min(max(0.0, (float)$cm->getTwoOtherChargesAmount()), $this->getMaxRefundable());
-        }
-        // Not yet collected (defensive) — fall back to the proportional default.
-        $orderSubtotal = (float)$order->getSubtotal();
-        if ($orderSubtotal <= 0) {
-            return 0.0;
-        }
-        $proportion = (float)$cm->getSubtotal() / $orderSubtotal;
 
-        return min(round($this->chargedNet() * $proportion, 2), $this->getMaxRefundable());
+        return min(max(0.0, (float)$cm->getTwoOtherChargesAmount()), $this->getMaxRefundable());
     }
 
     public function shouldDisplay(): bool

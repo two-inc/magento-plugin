@@ -184,8 +184,13 @@ class OtherChargesOverrideTest extends TestCase
     public static function defaultProvider(): array
     {
         return [
-            [200.0, 'absent', 0.0, self::CHARGED, 'uncollected, the whole charge on a full refund'],
-            [100.0, 'absent', 0.0, self::CHARGED / 2, 'uncollected, the proportional default'],
+            [
+                200.0,
+                'absent',
+                0.0,
+                0.0,
+                'the collector granted nothing, so the field must not prefill an amount it refused',
+            ],
             [
                 100.0,
                 7.25,
@@ -200,8 +205,8 @@ class OtherChargesOverrideTest extends TestCase
                 0.0,
                 'an explicit zero must not snap back to the full default',
             ],
-            [200.0, 'absent', 6.0, 4.0, 'the prefill cannot exceed what the charge has left'],
             [200.0, 99.0, 0.0, self::CHARGED, 'a resolved value above the cap is shown at the cap'],
+            [200.0, 9.0, 6.0, 4.0, 'the prefill cannot exceed what the charge has left'],
         ];
     }
 
