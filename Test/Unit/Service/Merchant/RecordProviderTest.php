@@ -267,6 +267,7 @@ class RecordProviderTest extends TestCase
         $names = [
             '_stale_cooldown' => 'arm stale cooldown',
             '_stood_in_at' => 'mark stand-in',
+            '_scheduled_at' => 'mark scheduled run',
             '_cooldown' => 'arm cooldown',
             '_fetched_at' => 'store stamp',
             '_absent_on_read' => 'mark absent',
