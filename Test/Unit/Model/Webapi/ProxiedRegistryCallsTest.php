@@ -18,6 +18,7 @@ use Two\Gateway\Model\Webapi\OrderIntent;
 use Two\Gateway\Service\Api\Adapter;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\RecordProvider;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
 use Two\Gateway\Service\Order\BuyerCountryResolver;
 use Two\Gateway\Service\RateLimiter;
@@ -112,17 +113,18 @@ class ProxiedRegistryCallsTest extends TestCase
     private function orderIntent(
         string $status = ApiKeyStatus::OK,
         ?int $storeId = null,
-        ?array $merchantRecord = null,
+        ?array $merchantRecord = [],
         ?string $buyerCountry = null
     ): OrderIntent {
         // Real provider over a mocked record fetch: the tri-state derivation
         // the gate depends on is the shipped one, not a mock's.
         $recordProvider = $this->createMock(RecordProvider::class);
-        $recordProvider->method('getRecord')->willReturn($merchantRecord);
+        $recordProvider->method('getRecord')->willReturn(self::record($merchantRecord));
 
         return new OrderIntent(
             $this->adapter(),
             $this->apiKeyStatus($status),
+            new SettingsProvider($recordProvider),
             $this->rateLimiter(),
             $this->logRepository(),
             $this->checkoutSession($storeId, $buyerCountry),
@@ -131,29 +133,70 @@ class ProxiedRegistryCallsTest extends TestCase
         );
     }
 
-    private function companyLookup(string $status = ApiKeyStatus::OK, ?int $storeId = null): CompanyLookup
-    {
+    private function companyLookup(
+        string $status = ApiKeyStatus::OK,
+        ?int $storeId = null,
+        ?array $merchantRecord = []
+    ): CompanyLookup {
+        $recordProvider = $this->createMock(RecordProvider::class);
+        $recordProvider->method('getRecord')->willReturn(self::record($merchantRecord));
+
         return new CompanyLookup(
             $this->adapter(),
             $this->apiKeyStatus($status),
+            new SettingsProvider($recordProvider),
             $this->rateLimiter(),
             $this->logRepository(),
             $this->checkoutSession($storeId)
         );
     }
 
+    /**
+     * What the never-expiring record holds. A resolved shop always has an
+     * identity in it, so the builders default to one and a case only says what
+     * it wants to differ; null is the shop where nothing has ever resolved.
+     *
+     * @param array<string,mixed>|null $overrides
+     * @return array<string,mixed>|null
+     */
+    private static function record(?array $overrides): ?array
+    {
+        return $overrides === null
+            ? null
+            : array_merge(['id' => 'merchant-uuid', 'short_name' => 'acme'], $overrides);
+    }
+
+    /**
+     * The real ApiKeyStatus over a stubbed verdict — only getStatus() is
+     * overridden — so these gates run the production predicate. A plain mock
+     * answers isDefinitiveFailure() with a default false, which would let a
+     * rejected key through unnoticed.
+     */
     private function apiKeyStatus(string $status): ApiKeyStatus
     {
-        $apiKeyStatus = $this->createMock(ApiKeyStatus::class);
-        $apiKeyStatus->method('getStatus')->willReturn([
+        $verdict = [
             'status' => $status,
             'code' => 200,
             'merchant' => $status === ApiKeyStatus::OK
                 ? ['id' => 'merchant-uuid', 'short_name' => 'acme']
                 : null,
-        ]);
+        ];
 
-        return $apiKeyStatus;
+        return new class ($verdict) extends ApiKeyStatus {
+            /** @var array{status: string, code: int|null, merchant: array<string,mixed>|null} */
+            private $verdict;
+
+            /** @param array{status: string, code: int|null, merchant: array<string,mixed>|null} $verdict */
+            public function __construct(array $verdict)
+            {
+                $this->verdict = $verdict;
+            }
+
+            public function getStatus(?int $storeId = null): array
+            {
+                return $this->verdict;
+            }
+        };
     }
 
     private function rateLimiter(): RateLimiter
@@ -449,33 +492,68 @@ class ProxiedRegistryCallsTest extends TestCase
     }
 
     /**
-     * Given a key that does not currently verify; When an intent is placed;
-     * Then nothing is sent upstream at all.
+     * ABN-533. This route is reachable whenever the tile is offered, so only a
+     * definitive rejection may refuse an intent — a transient failure relays
+     * the never-expiring record's identity instead, and refusing would put a
+     * red unavailability notice on a correctly configured checkout.
      *
      * @dataProvider unverifiedKeyCategories
      */
-    public function testOrderIntentIsRefusedRatherThanSentWithoutAMerchant(
+    public function testOnlyADefinitiveRejectionRefusesAnOrderIntent(
         string $status,
+        bool $refused,
         string $description
     ): void {
-        $decoded = json_decode($this->orderIntent($status)->place('{"gross_amount":"10.00"}'), true);
+        // The verdict carries no merchant for any of the non-OK rows, so an
+        // identity that reaches upstream can only have come from the record.
+        $decoded = json_decode(
+            $this->orderIntent($status)->place('{"gross_amount":"10.00"}'),
+            true
+        );
 
-        $this->assertSame('', $this->requestedBody, $description);
-        $this->assertFalse($decoded['ok'], $description);
-        $this->assertSame(503, $decoded['status'], $description);
+        $this->assertSame($refused, $this->requestedBody === '', $description);
+        if ($refused) {
+            $this->assertFalse($decoded['ok'], $description);
+            $this->assertSame(503, $decoded['status'], $description);
+            return;
+        }
+        $sent = json_decode($this->requestedBody, true);
+        $this->assertSame('merchant-uuid', $sent['merchant_id'], $description);
+        $this->assertSame('acme', $sent['merchant_short_name'], $description);
     }
 
     /**
-     * @return array<string, array{0: string, 1: string}>
+     * @return array<string, array{0: string, 1: bool, 2: string}>
      */
     public static function unverifiedKeyCategories(): array
     {
         return [
-            'rejected key' => [ApiKeyStatus::INVALID_KEY, 'a wrong key never reaches the upstream call'],
-            'service error' => [ApiKeyStatus::SERVICE_ERROR, 'a transient blip does not degrade the request'],
-            'unreachable' => [ApiKeyStatus::UNREACHABLE, 'an outage does not degrade the request'],
-            'not configured' => [ApiKeyStatus::NOT_CONFIGURED, 'an unconfigured store sends nothing'],
+            'rejected key' => [ApiKeyStatus::INVALID_KEY, true,
+                'a wrong key never reaches the upstream call'],
+            'not configured' => [ApiKeyStatus::NOT_CONFIGURED, true,
+                'an unconfigured store sends nothing'],
+            'service error' => [ApiKeyStatus::SERVICE_ERROR, false,
+                'a transient blip relays last-known-good rather than refusing'],
+            'unreachable' => [ApiKeyStatus::UNREACHABLE, false,
+                'an outage relays last-known-good rather than refusing'],
+            'other error' => [ApiKeyStatus::ERROR, false,
+                'a non-2xx that is not a 401/403 is not a rejection'],
         ];
+    }
+
+    /**
+     * With no record ever resolved there is genuinely no identity to send, so
+     * a fall-through still refuses rather than posting an unattributed intent.
+     */
+    public function testAnIntentIsStillRefusedWhenNoIdentityHasEverResolved(): void
+    {
+        $decoded = json_decode(
+            $this->orderIntent(ApiKeyStatus::UNREACHABLE, null, null)->place('{"gross_amount":"10.00"}'),
+            true
+        );
+
+        $this->assertSame('', $this->requestedBody);
+        $this->assertSame(503, $decoded['status']);
     }
 
     /**
@@ -597,17 +675,64 @@ class ProxiedRegistryCallsTest extends TestCase
     }
 
     /**
+     * A registry lookup is never failed over the verdict — the buyer may be
+     * mid-typing. ABN-533: a transient failure keeps the merchant attribution
+     * too, off the never-expiring record, so lookups stay merchant-scoped for
+     * the duration of an outage instead of going out unscoped.
+     *
      * @dataProvider registryCalls
      */
-    public function testARegistryCallIsStillMadeWhenTheKeyDoesNotVerify(
+    public function testARegistryCallIsStillMadeAndStillAttributedThroughAnOutage(
         string $endpoint,
         string $description
     ): void {
-        $this->invoke($endpoint, ApiKeyStatus::SERVICE_ERROR);
+        if ($endpoint === 'search') {
+            $this->companyLookup(ApiKeyStatus::SERVICE_ERROR)->search('no', 'acme');
+        } else {
+            $this->companyLookup(ApiKeyStatus::SERVICE_ERROR)->get('lookup-1');
+        }
 
         parse_str((string)parse_url($this->requestedUrl, PHP_URL_QUERY), $query);
-        $this->assertArrayNotHasKey('merchant', $query, $description);
         $this->assertNotSame('', $this->requestedUrl, $description);
+        $this->assertSame('acme', $query['merchant'] ?? null, $description);
+    }
+
+    /**
+     * The two states that genuinely carry no attribution — a rejected key, and
+     * a shop where no record has ever resolved — still make the call, because
+     * the registry endpoint answers unauthenticated and the buyer may be
+     * mid-typing.
+     *
+     * @dataProvider unattributableStates
+     */
+    public function testAnUnattributableRegistryCallStillRuns(
+        string $endpoint,
+        string $status,
+        ?array $merchantRecord,
+        string $description
+    ): void {
+        $lookup = $this->companyLookup($status, null, $merchantRecord);
+        $endpoint === 'search' ? $lookup->search('no', 'acme') : $lookup->get('lookup-1');
+
+        parse_str((string)parse_url($this->requestedUrl, PHP_URL_QUERY), $query);
+        $this->assertNotSame('', $this->requestedUrl, $description);
+        $this->assertArrayNotHasKey('merchant', $query, $description);
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string, 2: array<string,mixed>|null, 3: string}>
+     */
+    public static function unattributableStates(): array
+    {
+        $states = [];
+        foreach (['search', 'get'] as $endpoint) {
+            $states[$endpoint . ': rejected key'] = [$endpoint, ApiKeyStatus::INVALID_KEY, [],
+                'a rejected key attributes nothing even with a record'];
+            $states[$endpoint . ': nothing ever resolved'] = [$endpoint, ApiKeyStatus::SERVICE_ERROR, null,
+                'no record means no short name to attribute with'];
+        }
+
+        return $states;
     }
 
     /**
@@ -796,6 +921,7 @@ class ProxiedRegistryCallsTest extends TestCase
         (new OrderIntent(
             $this->adapter(),
             $apiKeyStatus,
+            new SettingsProvider($this->createMock(RecordProvider::class)),
             $this->rateLimiter(),
             $this->logRepository(),
             $this->checkoutSession(),

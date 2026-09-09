@@ -114,6 +114,51 @@ class SettingsProvider
     }
 
     /**
+     * The merchant's identity off the never-expiring record — the
+     * last-known-good `id` and `short_name` from GET /v1/merchant.
+     *
+     * ABN-533: the verification verdict carries a merchant only on a success,
+     * so the surfaces that keep serving a buyer through an upstream failure
+     * read their identity from here instead. Null when nothing has resolved
+     * yet, which is the one state that genuinely has no identity to send.
+     *
+     * @return array{id: string, short_name: string|null}|null
+     */
+    public function getMerchantIdentity(?int $storeId = null): ?array
+    {
+        return $this->identityFrom($this->recordProvider->getRecord($storeId));
+    }
+
+    /**
+     * The identity a merchant payload carries, or null when it names no
+     * merchant. The callers prefer the verification verdict's own merchant and
+     * reach for the record only when it has none, so both sources normalise
+     * here and cannot drift.
+     *
+     * `mixed`, not `?array`: the verdict is served from a cache whose only
+     * structural guarantee is a `status` key, so a scalar or an array naming no
+     * merchant must resolve to null rather than throw out of a checkout render
+     * or an anonymous REST route. Both sources decode JSON, so an object never
+     * reaches here — one would still fatal.
+     *
+     * @param mixed $merchant
+     * @return array{id: string, short_name: string|null}|null
+     */
+    public function identityFrom($merchant): ?array
+    {
+        $id = $merchant['id'] ?? null;
+        if (!is_string($id) || $id === '') {
+            return null;
+        }
+        $shortName = $merchant['short_name'] ?? null;
+
+        return [
+            'id' => $id,
+            'short_name' => is_string($shortName) && $shortName !== '' ? $shortName : null,
+        ];
+    }
+
+    /**
      * Whether the merchant self-distributes their own invoices to the
      * buyer (invoice_distributed_by_merchant on the merchant record).
      * Absent, unresolvable, or malformed all degrade to false — the

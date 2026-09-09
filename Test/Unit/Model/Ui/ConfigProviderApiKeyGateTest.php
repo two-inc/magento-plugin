@@ -14,22 +14,26 @@ use Two\Gateway\Model\Ui\CheckoutTileCopy;
 use Two\Gateway\Model\Ui\ConfigProvider;
 use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\RecordProvider;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 
 /**
- * The checkout-config subtree is the gate the company-search control sits
- * behind.
+ * The checkout-config subtree is the gate the company-search control AND the
+ * payment renderer sit behind.
  *
  * `js/model/brand-config.js::getActiveTwoBrandCode()` finds the active
  * Two-family brand by scanning `window.checkoutConfig.payment` for a
- * subtree carrying a truthy `redirectUrlCookieCode`, and the address
- * block's company-search widget mounts only when that resolves. So
- * withholding the subtree on a verification failure is what stops company
- * search rendering on a broken integration — the same job the sibling
- * plugins do by withholding their client-side bootstrap object.
+ * subtree carrying a truthy `redirectUrlCookieCode`, and both mount only
+ * when that resolves. It must therefore withhold on exactly the verdicts
+ * Two::isAvailable() withholds on (ABN-533) — a rejected key and no key —
+ * or an outage leaves the method offered with no config to render it.
  */
 class ConfigProviderApiKeyGateTest extends TestCase
 {
-    private function build(ApiKeyStatus $apiKeyStatus): ConfigProvider
+    /**
+     * @param array<string,mixed>|null $merchantRecord what the never-expiring record holds
+     */
+    private function build(ApiKeyStatus $apiKeyStatus, ?array $merchantRecord = null): ConfigProvider
     {
         $reflection = new \ReflectionClass(ConfigProvider::class);
         $provider = $reflection->newInstanceWithoutConstructor();
@@ -48,6 +52,11 @@ class ConfigProviderApiKeyGateTest extends TestCase
         $brandRegistry->method('getProviderFullName')->willReturn('Acme Pay Ltd');
         $brandRegistry->method('getAboutUrl')->willReturn('');
 
+        // The real settings provider over a mocked record fetch, so the
+        // identity fall-back is the shipped derivation.
+        $recordProvider = $this->createMock(RecordProvider::class);
+        $recordProvider->method('getRecord')->willReturn($merchantRecord);
+
         $two = $this->createMock(Two::class);
         $two->method('getMinimumOrderVisibility')->willReturn(['minimums' => [], 'unresolved' => false]);
 
@@ -64,6 +73,7 @@ class ConfigProviderApiKeyGateTest extends TestCase
             'configRepository' => $configRepository,
             'brandRegistry' => $brandRegistry,
             'apiKeyStatus' => $apiKeyStatus,
+            'settingsProvider' => new SettingsProvider($recordProvider),
             'two' => $two,
             'assetRepository' => $this->createMock(AssetRepository::class),
             'checkoutSession' => $checkoutSession,
@@ -95,42 +105,51 @@ class ConfigProviderApiKeyGateTest extends TestCase
         return $storeManager;
     }
 
+    /**
+     * The real ApiKeyStatus over a stubbed verdict — only getStatus() is
+     * overridden — so the gate runs the production predicate and cannot pass
+     * by re-stating the rule in the test.
+     */
     private function statusService(string $status, ?int $code = null, ?array $merchant = null): ApiKeyStatus
     {
-        $service = $this->createMock(ApiKeyStatus::class);
-        $service->method('getStatus')->willReturn(
-            ['status' => $status, 'code' => $code, 'merchant' => $merchant]
-        );
-        return $service;
+        return new class (['status' => $status, 'code' => $code, 'merchant' => $merchant]) extends ApiKeyStatus {
+            /** @var array{status: string, code: int|null, merchant: array<string,mixed>|null} */
+            private $verdict;
+
+            /** @param array{status: string, code: int|null, merchant: array<string,mixed>|null} $verdict */
+            public function __construct(array $verdict)
+            {
+                $this->verdict = $verdict;
+            }
+
+            public function getStatus(?int $storeId = null): array
+            {
+                return $this->verdict;
+            }
+        };
     }
 
     /**
-     * @dataProvider failureCategories
-     */
-    public function testNoConfigSubtreeIsEmittedOnAnyVerificationFailure(string $status, ?int $code): void
-    {
-        $config = $this->build($this->statusService($status, $code))->getConfig();
-
-        $this->assertSame([], $config);
-    }
-
-    /**
-     * The gate as its JS consumer actually reads it: no subtree anywhere in
-     * `payment` carrying a truthy `redirectUrlCookieCode` means
-     * getActiveTwoBrandCode() resolves to null and company search never
-     * mounts.
+     * Asserted through a PHP mirror of the JS consumer, so this fails if the
+     * emitted shape stops matching what getActiveTwoBrandCode() looks for,
+     * not merely if a key is renamed.
      *
-     * @dataProvider failureCategories
+     * @dataProvider verdictCategories
      */
-    public function testTheCompanySearchSentinelIsAbsentOnAnyVerificationFailure(
+    public function testTheSubtreeIsWithheldOnlyOnADefinitiveRejection(
         string $status,
-        ?int $code
+        ?int $code,
+        bool $emitted,
+        string $description
     ): void {
-        $config = $this->build($this->statusService($status, $code))->getConfig();
+        $merchant = $status === ApiKeyStatus::OK ? ['id' => 'abc-123'] : null;
+        $config = $this->build($this->statusService($status, $code, $merchant))->getConfig();
 
-        $this->assertNull(
+        $this->assertSame($emitted, $config !== [], $description);
+        $this->assertSame(
+            $emitted ? 'two_payment' : null,
             self::resolveActiveTwoBrandCode($config),
-            'a resolvable brand code would let company search mount on a broken integration'
+            $description
         );
     }
 
@@ -154,17 +173,95 @@ class ConfigProviderApiKeyGateTest extends TestCase
     }
 
     /**
-     * @return array<string, array{0: string, 1: int|null}>
+     * @return array<string, array{0: string, 1: int|null, 2: bool, 3: string}>
      */
-    public static function failureCategories(): array
+    public static function verdictCategories(): array
     {
         return [
-            'rejected key' => [ApiKeyStatus::INVALID_KEY, 401],
-            'service error' => [ApiKeyStatus::SERVICE_ERROR, 503],
-            'unreachable' => [ApiKeyStatus::UNREACHABLE, null],
-            'other error' => [ApiKeyStatus::ERROR, 404],
-            'malformed response' => [ApiKeyStatus::MALFORMED_RESPONSE, null],
-            'not configured' => [ApiKeyStatus::NOT_CONFIGURED, null],
+            'ok' => [ApiKeyStatus::OK, 200, true,
+                'a verifying key emits the subtree'],
+            'rejected key' => [ApiKeyStatus::INVALID_KEY, 401, false,
+                'Two rejected the key, so nothing can mount'],
+            'not configured' => [ApiKeyStatus::NOT_CONFIGURED, null, false,
+                'there is no key to mount against'],
+            'service error' => [ApiKeyStatus::SERVICE_ERROR, 503, true,
+                'the method stays offered, so its renderer needs its config'],
+            'unreachable' => [ApiKeyStatus::UNREACHABLE, null, true,
+                'an outage must not leave the method offered with no config'],
+            'other error' => [ApiKeyStatus::ERROR, 404, true,
+                'a non-2xx that is not a 401/403 is not a rejection'],
+            'malformed response' => [ApiKeyStatus::MALFORMED_RESPONSE, null, true,
+                'an unreadable answer is about the service, not the key'],
+        ];
+    }
+
+    /**
+     * The verdict carries no merchant on a fall-through, so the identity the
+     * browser is handed comes from the never-expiring record instead. With
+     * neither it is null, and the api-client params omit the short name
+     * rather than sending "undefined".
+     *
+     * @dataProvider fallThroughIdentitySources
+     * @param array<string,mixed>|null $record
+     * @param array<string,string|null>|null $expected
+     */
+    public function testAFallThroughRelaysTheRecordsIdentity(
+        ?array $record,
+        ?array $expected,
+        string $description
+    ): void {
+        $config = $this->build($this->statusService(ApiKeyStatus::UNREACHABLE), $record)->getConfig();
+
+        $this->assertSame('two_payment', self::resolveActiveTwoBrandCode($config), $description);
+        $this->assertSame(
+            $expected,
+            $config['payment']['two_payment']['orderIntentConfig']['merchant'],
+            $description
+        );
+    }
+
+    /** With both sources resolvable the verdict wins, and only on a success has it one. */
+    public function testTheVerdictsOwnMerchantWinsOverTheRecord(): void
+    {
+        $record = ['id' => 'from-record', 'short_name' => 'record-name'];
+
+        $verified = $this->build(
+            $this->statusService(ApiKeyStatus::OK, 200, ['id' => 'from-verdict', 'short_name' => 'verdict-name']),
+            $record
+        )->getConfig();
+        $this->assertSame(
+            ['id' => 'from-verdict', 'short_name' => 'verdict-name'],
+            $verified['payment']['two_payment']['orderIntentConfig']['merchant']
+        );
+
+        $fallThrough = $this->build($this->statusService(ApiKeyStatus::UNREACHABLE), $record)->getConfig();
+        $this->assertSame(
+            ['id' => 'from-record', 'short_name' => 'record-name'],
+            $fallThrough['payment']['two_payment']['orderIntentConfig']['merchant']
+        );
+    }
+
+    /**
+     * @return array<string, array{0: array<string,mixed>|null, 1: array<string,string|null>|null, 2: string}>
+     */
+    public static function fallThroughIdentitySources(): array
+    {
+        return [
+            'record resolved' => [
+                ['id' => 'abc-123', 'short_name' => 'example'],
+                ['id' => 'abc-123', 'short_name' => 'example'],
+                'last-known-good identity reaches the browser through an outage',
+            ],
+            'record has no short name' => [
+                ['id' => 'abc-123'],
+                ['id' => 'abc-123', 'short_name' => null],
+                'an absent short name is null, not the string "undefined"',
+            ],
+            'nothing ever resolved' => [
+                null,
+                null,
+                'a shop with no record has no identity to relay',
+            ],
         ];
     }
 
@@ -178,6 +275,73 @@ class ConfigProviderApiKeyGateTest extends TestCase
         $this->assertNotEmpty($config['payment']['two_payment']['redirectUrlCookieCode']);
         // And through the gate as its JS consumer reads it.
         $this->assertSame('two_payment', self::resolveActiveTwoBrandCode($config));
+    }
+
+    /**
+     * The verdict's `merchant` is the whole verify_api_key body. Only the
+     * identity reaches the page — the merchant's commercial fields are not the
+     * browser's business, and one shape for this key means the fall-through and
+     * the success case cannot be told apart by a consumer.
+     */
+    public function testOnlyTheMerchantIdentityReachesThePage(): void
+    {
+        $verdictBody = [
+            'id' => 'abc-123',
+            'short_name' => 'acme',
+            'available_terms' => [14, 30],
+            'min_order_amount' => ['amount' => '250.00', 'currency' => 'EUR'],
+            'invoice_distributed_by_merchant' => true,
+        ];
+
+        $config = $this->build($this->statusService(ApiKeyStatus::OK, 200, $verdictBody))->getConfig();
+
+        $this->assertSame(
+            ['id' => 'abc-123', 'short_name' => 'acme'],
+            $config['payment']['two_payment']['orderIntentConfig']['merchant']
+        );
+        $this->assertStringNotContainsString(
+            'min_order_amount',
+            (string)json_encode($config),
+            'the merchant record\'s commercial fields must not reach the page'
+        );
+    }
+
+    /**
+     * The verdict is served from a cache whose only structural guarantee is a
+     * `status` key, so an unreadable entry must degrade rather than fatal out
+     * of a checkout render.
+     *
+     * @dataProvider unreadableVerdictMerchants
+     * @param mixed $merchant
+     */
+    public function testAnUnreadableVerdictMerchantDegradesToTheRecord($merchant, string $description): void
+    {
+        $service = $this->createMock(ApiKeyStatus::class);
+        $service->method('getStatus')->willReturn(
+            ['status' => ApiKeyStatus::OK, 'code' => 200, 'merchant' => $merchant]
+        );
+        $service->method('isDefinitiveFailure')->willReturn(false);
+
+        $config = $this->build($service, ['id' => 'from-record'])->getConfig();
+
+        $this->assertSame(
+            ['id' => 'from-record', 'short_name' => null],
+            $config['payment']['two_payment']['orderIntentConfig']['merchant'],
+            $description
+        );
+    }
+
+    /**
+     * @return array<string, array{0: mixed, 1: string}>
+     */
+    public static function unreadableVerdictMerchants(): array
+    {
+        return [
+            'a string' => ['not-an-array', 'a scalar cache entry must not fatal'],
+            'a bool' => [false, 'nor a bool'],
+            'an int' => [0, 'nor an int'],
+            'an array with no id' => [['short_name' => 'acme'], 'an array naming no merchant resolves nothing'],
+        ];
     }
 
     public function testTheCachedVerificationSuppliesTheMerchantRecord(): void

@@ -255,6 +255,27 @@ only its definitive-rejection categories withhold (ABN-533). Do not add another
 gate that withholds because a call to Two failed, and do not widen this one back
 to every failure category; both are defects the rule exists to stop coming back.
 
+**Every buyer-facing surface asks that same question, and must keep asking it.**
+Three besides `isAvailable()`: `Model\Ui\ConfigProvider::getConfig()`, whose
+emptiness is a withhold in all but name because the Luma company-search widget
+and the payment renderer both mount behind `getActiveTwoBrandCode()` finding a
+`payment` subtree with a truthy `redirectUrlCookieCode`;
+`Model\Webapi\OrderIntent::place()`, reachable whenever the tile is offered, so a
+refusal there is a red unavailability notice on a working checkout; and
+`Model\Webapi\CompanyLookup::merchantParams()`. Widen any of them past
+`isDefinitiveFailure()` and an outage puts the method on offer with no config,
+or a notice, or unattributed lookups.
+
+**Merchant IDENTITY on those surfaces falls back to the record.**
+`ApiKeyStatus::getStatus()['merchant']` is populated only on a success, so a
+fall-through reads `SettingsProvider::getMerchantIdentity()` — the
+never-expiring record's `id` and `short_name`. Both sources normalise through
+`SettingsProvider::identityFrom()`, so the checkout config publishes
+`{id, short_name}` either way rather than the whole verify_api_key body on a
+success; the merchant's commercial fields have no business in the page. The one
+state with no identity to send is a shop where no record has ever resolved, and
+the order-intent route still refuses there.
+
 Two on the list are NOT the store's own configuration and are worth knowing
 about. The surcharge FX gate resolves its rate table from Two, and the
 minimum-order gate fails closed when it cannot convert at that same table. Both

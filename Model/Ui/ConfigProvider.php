@@ -16,6 +16,7 @@ use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Two\Gateway\Service\UrlCookie;
 use Two\Gateway\Service\Api\SupportedCompanyTypes;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
+use Two\Gateway\Service\Merchant\SettingsProvider;
 use Two\Gateway\Model\Two;
 
 /**
@@ -78,6 +79,11 @@ class ConfigProvider implements ConfigProviderInterface
     private $apiKeyStatus;
 
     /**
+     * @var SettingsProvider
+     */
+    private $settingsProvider;
+
+    /**
      * @var AssetRepository
      */
     private $assetRepository;
@@ -111,6 +117,7 @@ class ConfigProvider implements ConfigProviderInterface
         ConfigRepository $configRepository,
         BrandRegistryInterface $brandRegistry,
         ApiKeyStatus $apiKeyStatus,
+        SettingsProvider $settingsProvider,
         Two $two,
         AssetRepository $assetRepository,
         CheckoutSession $checkoutSession,
@@ -122,6 +129,7 @@ class ConfigProvider implements ConfigProviderInterface
         $this->configRepository = $configRepository;
         $this->brandRegistry = $brandRegistry;
         $this->apiKeyStatus = $apiKeyStatus;
+        $this->settingsProvider = $settingsProvider;
         $this->two = $two;
         $this->assetRepository = $assetRepository;
         $this->checkoutSession = $checkoutSession;
@@ -162,36 +170,30 @@ class ConfigProvider implements ConfigProviderInterface
      */
     public function getConfig(): array
     {
-        // No config subtree at all unless the stored API key currently
-        // verifies. This is the gate the company-search control sits behind:
-        // `js/model/brand-config.js::getActiveTwoBrandCode()` identifies the
-        // active Two-family brand by scanning
-        // `window.checkoutConfig.payment` for a subtree carrying a truthy
-        // `redirectUrlCookieCode`, and its consumers — the address block's
-        // company-search widget (`js/view/address-autocomplete.js`) and the
-        // payment-method renderer — mount only when that resolves. Emitting
-        // nothing therefore withholds company search as well as the tile,
-        // matching the sibling plugins, where the equivalent client-side
-        // bootstrap object is withheld on a verification failure.
-        //
-        // The check is the same one Two::isAvailable() makes, and cached
-        // (see ApiKeyStatus), so this no longer costs a live HTTP round-trip
-        // on every checkout render as it did when the verify call was made
-        // inline here.
+        // Emitting nothing here withholds company search AND the tile's
+        // renderer: `js/model/brand-config.js::getActiveTwoBrandCode()` finds
+        // the active brand by scanning `window.checkoutConfig.payment` for a
+        // subtree carrying a truthy `redirectUrlCookieCode`, and both mount
+        // only when that resolves. So it must ask exactly the question
+        // Two::isAvailable() asks — a rejected key, or no key (ABN-533) — or
+        // an outage leaves the method offered with no config to render it.
         //
         // No store id is passed, matching every other configRepository read
         // in this method: ConfigRepository resolves a null store id through
         // ScopeInterface::SCOPE_STORE, i.e. the current store. On a checkout
         // render that is the quote's store, which is the id
         // Two::isAvailable() resolves from the quote and passes explicitly —
-        // so both surfaces judge the same store's key and agree. They would
-        // only diverge if this provider were evaluated outside the store
-        // whose quote is being rendered, which checkout does not do.
-        $apiKeyStatus = $this->apiKeyStatus->getStatus();
-        if ($apiKeyStatus['status'] !== ApiKeyStatus::OK) {
+        // so both surfaces judge the same store's key and agree.
+        if ($this->apiKeyStatus->isDefinitiveFailure()) {
             return [];
         }
-        $merchant = $apiKeyStatus['merchant'];
+        // Identity only, and one shape whichever source supplies it: the
+        // verdict's `merchant` is the whole verify_api_key body, and the
+        // record's commercial fields have no business in the page. The verdict
+        // carries a merchant only on a success, so a fall-through reads the
+        // never-expiring record instead.
+        $merchant = $this->settingsProvider->identityFrom($this->apiKeyStatus->getStatus()['merchant'] ?? null)
+            ?? $this->settingsProvider->getMerchantIdentity();
         $orderIntentConfig = [
             'extensionPlatformName' => $this->configRepository->getExtensionPlatformName(),
             'extensionDBVersion' => $this->configRepository->getExtensionDBVersion(),
