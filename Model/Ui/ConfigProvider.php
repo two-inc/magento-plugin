@@ -196,7 +196,7 @@ class ConfigProvider implements ConfigProviderInterface
             $apiKeyStatus = $this->apiKeyStatus->getStatus();
             $this->logRepository->addDebugLog(
                 sprintf('%s withheld from checkout: API key verification failed', $this->code),
-                ['status' => $apiKeyStatus['status'], 'http_status' => $apiKeyStatus['code'] ?? null]
+                ['status' => $apiKeyStatus['status'], 'http_status' => $apiKeyStatus['code']]
             );
             return [];
         }

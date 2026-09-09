@@ -12,17 +12,18 @@ use Magento\Config\Block\System\Config\Form\Field;
 use Magento\Framework\Data\Form\Element\AbstractElement;
 use Two\Gateway\Api\Config\RepositoryInterface as ConfigRepository;
 use Magento\Framework\Exception\LocalizedException;
+use Magento\Store\Model\ScopeInterface;
+use Two\Gateway\Api\BrandRegistryInterface;
 use Two\Gateway\Service\Merchant\ApiKeyStatus;
 use Two\Gateway\Service\Merchant\RecordProvider;
 use Two\Gateway\Service\Merchant\SupportedCountriesProvider;
+use Two\Gateway\Service\Order\MerchantMinimumResolver;
 use Two\Gateway\Service\Order\MinimumOrderProvider;
 
 /**
  * Read-only "install health" panel in Stores Configuration (TWO-25386).
  *
- * Deliberately limited to the checks an admin can act on — API key,
- * environment, SSL verification, merchant profile refresh, and whether
- * the payment method is currently offered at checkout — rather than
+ * Deliberately limited to the checks an admin can act on, rather than
  * inventing new ones (e.g. webhook reachability, PHP extensions).
  *
  * Uses the cached ApiKeyStatus::getStatus() rather than a live refresh():
@@ -62,12 +63,24 @@ class HealthChecklist extends Field
      */
     private $minimumOrderProvider;
 
+    /**
+     * @var MerchantMinimumResolver
+     */
+    private $merchantMinimumResolver;
+
+    /**
+     * @var BrandRegistryInterface
+     */
+    private $brandRegistry;
+
     public function __construct(
         ConfigRepository $configRepository,
         ApiKeyStatus $apiKeyStatus,
         RecordProvider $recordProvider,
         SupportedCountriesProvider $supportedCountriesProvider,
         MinimumOrderProvider $minimumOrderProvider,
+        MerchantMinimumResolver $merchantMinimumResolver,
+        BrandRegistryInterface $brandRegistry,
         Context $context,
         array $data = []
     ) {
@@ -76,6 +89,8 @@ class HealthChecklist extends Field
         $this->recordProvider = $recordProvider;
         $this->supportedCountriesProvider = $supportedCountriesProvider;
         $this->minimumOrderProvider = $minimumOrderProvider;
+        $this->merchantMinimumResolver = $merchantMinimumResolver;
+        $this->brandRegistry = $brandRegistry;
         parent::__construct($context, $data);
     }
 
@@ -109,7 +124,7 @@ class HealthChecklist extends Field
                 'value' => $sslDisabled ? (string)__('Disabled') : (string)__('Enabled'),
             ],
             $this->merchantProfileRow($mode),
-            $this->checkoutVisibilityRow(),
+            $this->checkoutVisibilityRow($status),
         ];
     }
 
@@ -118,82 +133,139 @@ class HealthChecklist extends Field
      * reasons decidable without a basket are judged; a basket-dependent one is
      * named as a constraint instead.
      *
+     * @param array{status: string, code: int|null} $apiKeyStatus
      * @return array{label: string, ok: bool, value: string}
      */
-    private function checkoutVisibilityRow(): array
+    private function checkoutVisibilityRow(array $apiKeyStatus): array
     {
+        $storeId = $this->resolveScopeStoreId();
         $label = (string)__('Payment method at checkout');
         $notShown = (string)__('Not shown at checkout');
+        $reason = null;
 
-        if (!$this->configRepository->isActive()) {
-            return [
-                'label' => $label,
-                'ok' => false,
-                'value' => $notShown . ' — '
-                    . (string)__('the payment method is disabled. Check Enable payment method.'),
-            ];
-        }
-        $status = $this->apiKeyStatus->getStatus();
-        if ($status['status'] === ApiKeyStatus::NOT_CONFIGURED) {
-            return [
-                'label' => $label,
-                'ok' => false,
-                'value' => $notShown . ' — ' . (string)__('no API key is saved. Check API key.'),
-            ];
-        }
-        if ($status['status'] === ApiKeyStatus::INVALID_KEY) {
-            return [
-                'label' => $label,
-                'ok' => false,
-                'value' => $notShown . ' — '
-                    . (string)__('the API key was rejected. Check API key and Environment.'),
-            ];
-        }
-        // ABN-533 will stop transient verdicts withholding at all, so this row
-        // must not report one as the method being hidden.
-        if ($status['status'] !== ApiKeyStatus::OK) {
+        if (!$this->configRepository->isActive($storeId)) {
+            $reason = (string)__('the payment method is disabled. Check Enable payment method.');
+        } elseif ($apiKeyStatus['status'] === ApiKeyStatus::NOT_CONFIGURED) {
+            $reason = (string)__('no API key is saved. Check API key.');
+        } elseif ($apiKeyStatus['status'] === ApiKeyStatus::INVALID_KEY) {
+            $reason = (string)__('the API key was rejected. Check API key and Environment.');
+        } elseif ($apiKeyStatus['status'] !== ApiKeyStatus::OK) {
+            // ABN-533 will stop transient verdicts withholding at all, so this
+            // row must not report one as the method being hidden.
             return [
                 'label' => $label,
                 'ok' => false,
                 'value' => (string)__('Cannot be checked — the API key could not be verified just now.'),
             ];
         }
-        try {
-            $this->configRepository->getSurchargeType();
-        } catch (LocalizedException) {
-            return [
-                'label' => $label,
-                'ok' => false,
-                'value' => $notShown . ' — '
-                    . (string)__('the saved surcharge method is not recognised. Check Surcharge method.'),
-            ];
+        if ($reason === null) {
+            try {
+                $this->configRepository->getSurchargeType($storeId);
+            } catch (LocalizedException) {
+                $reason = (string)__('the saved surcharge method is not recognised. Check Surcharge method.');
+            }
         }
-        $countries = $this->supportedCountriesProvider->getAllowedCountries();
-        if ($countries !== null && $countries === []) {
-            return [
-                'label' => $label,
-                'ok' => false,
-                'value' => $notShown . ' — '
-                    . (string)__('your account allows no buyer countries. Contact us to have them enabled.'),
-            ];
+        if ($reason === null && $this->supportedCountriesProvider->getAllowedCountries($storeId) === []) {
+            $reason = (string)__(
+                'no buyer countries are currently enabled for your account. Contact %1 to have them enabled.',
+                $this->brandRegistry->getProviderFullName()
+            );
+        }
+        if ($reason === null && $this->coreCountryGateAllowsNothing($storeId)) {
+            $reason = (string)__(
+                'Country availability is set to specific countries and Allowed countries is empty.'
+            );
+        }
+        if ($reason !== null) {
+            return ['label' => $label, 'ok' => false, 'value' => $notShown . ' — ' . $reason];
         }
 
+        return ['label' => $label, 'ok' => true, 'value' => $this->offeredValue($storeId)];
+    }
+
+    /**
+     * "Shown at checkout", plus the minimum-order floors that hide it for a
+     * small basket. Both floors bind; they can be denominated differently, so
+     * neither can be reduced to the other without an FX rate.
+     */
+    private function offeredValue(?int $storeId): string
+    {
         $shown = (string)__('Shown at checkout');
-        $minimum = $this->minimumOrderProvider->getMinimum();
-        if ($minimum !== null) {
-            return [
-                'label' => $label,
-                'ok' => true,
-                'value' => $shown . ' — ' . (string)__(
-                    'hidden for baskets below %1 %2 (%3)',
-                    number_format($minimum['amount'], 2, '.', ''),
-                    $minimum['currency'],
-                    $minimum['basis']
-                ),
-            ];
+        $store = $this->_storeManager->getStore($storeId ?? 0);
+        $platform = $this->minimumOrderProvider->getMinimum($storeId);
+        $merchant = $this->merchantMinimumResolver->resolve(
+            $this->brandRegistry->getCode(),
+            (string)$store->getBaseCurrencyCode(),
+            $platform,
+            $storeId
+        );
+        $floors = array_values(array_filter([$platform, $merchant]));
+        if ($floors === []) {
+            return $shown;
+        }
+        if (count($floors) === 1) {
+            return $shown . ' — ' . (string)__(
+                'hidden for baskets below %1',
+                $this->describeFloor($floors[0])
+            );
         }
 
-        return ['label' => $label, 'ok' => true, 'value' => $shown];
+        return $shown . ' — ' . (string)__(
+            'hidden for baskets below %1 or %2',
+            $this->describeFloor($floors[0]),
+            $this->describeFloor($floors[1])
+        );
+    }
+
+    /**
+     * @param array{amount: float, currency: string, basis: string} $floor
+     */
+    private function describeFloor(array $floor): string
+    {
+        return sprintf(
+            '%s %s (%s)',
+            number_format($floor['amount'], 2, '.', ''),
+            $floor['currency'],
+            $floor['basis'] === 'net' ? (string)__('excluding tax') : (string)__('including tax')
+        );
+    }
+
+    /**
+     * Core's own allowlist restricted to specific countries with none chosen —
+     * the one state of it that withholds from every buyer, so the only one
+     * decidable without a basket.
+     */
+    private function coreCountryGateAllowsNothing(?int $storeId): bool
+    {
+        $path = 'payment/' . $this->brandRegistry->getCode() . '/';
+        if (!$this->_scopeConfig->isSetFlag($path . 'allowspecific', ScopeInterface::SCOPE_STORE, $storeId)) {
+            return false;
+        }
+        $countries = (string)$this->_scopeConfig->getValue(
+            $path . 'specificcountry',
+            ScopeInterface::SCOPE_STORE,
+            $storeId
+        );
+
+        return trim($countries) === '';
+    }
+
+    /**
+     * The scope the config page is open at, so the row reports the same
+     * store's verdict the checkout gate would.
+     */
+    protected function resolveScopeStoreId(): ?int
+    {
+        $store = (string)$this->getRequest()->getParam('store');
+        if ($store !== '') {
+            return (int)$this->_storeManager->getStore($store)->getId();
+        }
+        $website = (string)$this->getRequest()->getParam('website');
+        if ($website !== '') {
+            return (int)$this->_storeManager->getWebsite($website)->getDefaultStore()->getId();
+        }
+
+        return null;
     }
 
     /**
